@@ -249,7 +249,7 @@ class TestValidateDirectoryInput(unittest.TestCase):
     def test_file_not_directory(self):
         """File path (not a directory) raises ValidationError."""
         filepath = os.path.join(self.temp_dir, "file.txt")
-        with open(filepath, "w") as f:
+        with open(filepath, "w", encoding="utf-8") as f:
             f.write("x")
         with self.assertRaises(ValidationError):
             validate_directory_input(filepath)

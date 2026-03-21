@@ -22,6 +22,7 @@ from typing import Dict, Tuple
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
+from .crypt_utils import eprint
 from .crypto_secure_memory import CryptoKey
 from .pqc import PQCAlgorithm, PQCipher
 from .secure_memory import SecureBytes, secure_memzero
@@ -520,7 +521,7 @@ def unwrap_password_for_recipient(
 
 if __name__ == "__main__":
     # Simple test of password wrapping
-    print("Testing PasswordWrapper...")
+    eprint("Testing PasswordWrapper...")
 
     # Initialize wrapper
     wrapper = PasswordWrapper("ML-KEM-768")
@@ -529,11 +530,11 @@ if __name__ == "__main__":
     cipher = PQCipher("ML-KEM-768")
     recipient_pubkey, recipient_privkey = cipher.generate_keypair()
 
-    print(f"Recipient keys: pub={len(recipient_pubkey)} bytes, priv={len(recipient_privkey)} bytes")
+    eprint(f"Recipient keys: pub={len(recipient_pubkey)} bytes, priv={len(recipient_privkey)} bytes")
 
     # Generate random password
     password = secrets.token_bytes(32)
-    print(f"Password: {len(password)} bytes")
+    eprint(f"Password: {len(password)} bytes")
 
     # Wrap password
     with SecureBytes(password) as secure_password:
@@ -542,8 +543,8 @@ if __name__ == "__main__":
         with SecureBytes(shared_secret_raw) as shared_secret:
             encrypted_password = wrapper.wrap_password(bytes(secure_password), bytes(shared_secret))
 
-    print(f"Encapsulated key: {len(encapsulated_key)} bytes")
-    print(f"Encrypted password: {len(encrypted_password)} bytes")
+    eprint(f"Encapsulated key: {len(encapsulated_key)} bytes")
+    eprint(f"Encrypted password: {len(encrypted_password)} bytes")
 
     # Unwrap password
     with CryptoKey(key_data=recipient_privkey) as priv_crypto:
@@ -555,17 +556,17 @@ if __name__ == "__main__":
     # Verify (wrap recovered password in SecureBytes for secure cleanup)
     with SecureBytes(password_recovered) as recovered:
         if password == bytes(recovered):
-            print("✅ Password wrapping roundtrip successful!")
+            eprint("✅ Password wrapping roundtrip successful!")
         else:
-            print("❌ Password wrapping failed!")
-            print(f"  Original:  {password.hex()[:64]}...")
-            print(f"  Recovered: {bytes(recovered).hex()[:64]}...")
+            eprint("❌ Password wrapping failed!")
+            eprint(f"  Original:  {password.hex()[:64]}...")
+            eprint(f"  Recovered: {bytes(recovered).hex()[:64]}...")
 
     # Clean up original password
     secure_memzero(password)
 
     # Test metadata canonicalization
-    print("\nTesting MetadataCanonicalizer...")
+    eprint("\nTesting MetadataCanonicalizer...")
 
     test_metadata = {
         "format_version": 7,
@@ -580,14 +581,14 @@ if __name__ == "__main__":
     canonical1 = MetadataCanonicalizer.canonicalize(test_metadata)
     canonical2 = MetadataCanonicalizer.canonicalize(test_metadata)
 
-    print(f"Canonical bytes: {len(canonical1)} bytes")
-    print(f"Deterministic: {canonical1 == canonical2}")
+    eprint(f"Canonical bytes: {len(canonical1)} bytes")
+    eprint(f"Deterministic: {canonical1 == canonical2}")
 
     # Verify signature field was removed
     canonical_str = canonical1.decode("utf-8")
     if '"signature"' not in canonical_str:
-        print("✅ Signature field correctly removed")
+        eprint("✅ Signature field correctly removed")
     else:
-        print("❌ Signature field not removed!")
+        eprint("❌ Signature field not removed!")
 
-    print("\n✅ All asymmetric_core tests passed!")
+    eprint("\n✅ All asymmetric_core tests passed!")

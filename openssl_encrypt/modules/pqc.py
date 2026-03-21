@@ -23,6 +23,7 @@ from .algorithm_warnings import (
     is_deprecated,
     warn_deprecated_algorithm,
 )
+from .crypt_utils import eprint
 from .secure_memory import SecureBytes, secure_memzero, secure_string
 
 # Set up module-level logger
@@ -307,14 +308,14 @@ class PQCipher:
             replacement = get_recommended_replacement(algorithm)
             warn_deprecated_algorithm(algorithm, "PQCipher initialization")
             if not should_be_quiet and replacement and verbose:
-                print(f"Warning: The algorithm '{algorithm}' is deprecated.")
-                print(f"Consider using '{replacement}' instead for better security.")
+                eprint(f"Warning: The algorithm '{algorithm}' is deprecated.")
+                eprint(f"Consider using '{replacement}' instead for better security.")
 
             # Try to normalize to standardized name if available
             standardized_name = normalize_algorithm_name(algorithm, use_standard=True)
             if standardized_name != algorithm:
                 if not should_be_quiet and verbose:
-                    print(
+                    eprint(
                         f"Using standardized algorithm name '{standardized_name}' instead of '{algorithm}'"
                     )
                 algorithm = standardized_name
@@ -325,8 +326,8 @@ class PQCipher:
             warn_deprecated_algorithm(encryption_data, "PQC data encryption")
             # Only show direct warning messages if verbose or not an INFO level warning
             if not should_be_quiet and data_replacement and verbose:
-                print(f"Warning: The data encryption algorithm '{encryption_data}' is deprecated.")
-                print(f"Consider using '{data_replacement}' instead for better security.")
+                eprint(f"Warning: The data encryption algorithm '{encryption_data}' is deprecated.")
+                eprint(f"Consider using '{data_replacement}' instead for better security.")
 
         # Store the encryption_data parameter
         self.encryption_data = encryption_data
@@ -367,7 +368,7 @@ class PQCipher:
                 self.algorithm_name = standard_name
                 # Log a deprecation warning if we're using a legacy name
                 if not should_be_quiet:
-                    print(
+                    eprint(
                         f"Warning: Algorithm name '{requested_algo}' is deprecated. "
                         f"Using standardized name '{standard_name}' instead."
                     )
@@ -427,7 +428,7 @@ class PQCipher:
 
         # Report the actual algorithm being used
         if not self.quiet and verbose:
-            print(f"Using algorithm: {self.algorithm_name}")
+            eprint(f"Using algorithm: {self.algorithm_name}")
 
         # All Kyber/ML-KEM/HQC algorithms are KEM algorithms
         self.is_kem = any(x in self.algorithm_name.lower() for x in ["ml-kem", "kyber", "hqc"])
@@ -490,10 +491,10 @@ class PQCipher:
             return public_key, private_key
         except Exception as e:
             if not self.quiet:
-                print(f"Error generating keypair: {e}")
+                eprint(f"Error generating keypair: {e}")
                 # For debugging, show what methods are available
                 with oqs.KeyEncapsulation(self.algorithm_name) as kem:
-                    print(f"Available methods: {dir(kem)}")
+                    eprint(f"Available methods: {dir(kem)}")
             raise
 
     def encapsulate_only(self, public_key: bytes) -> Tuple[bytes, bytes]:
@@ -534,7 +535,7 @@ class PQCipher:
 
         except Exception as e:
             if not self.quiet:
-                print(f"Error in KEM encapsulation: {e}")
+                eprint(f"Error in KEM encapsulation: {e}")
             # Clean up on error
             if shared_secret is not None:
                 secure_memzero(shared_secret)
@@ -577,7 +578,7 @@ class PQCipher:
 
         except Exception as e:
             if not self.quiet:
-                print(f"Error in KEM decapsulation: {e}")
+                eprint(f"Error in KEM decapsulation: {e}")
             # Clean up on error
             if shared_secret is not None:
                 secure_memzero(shared_secret)
@@ -680,7 +681,7 @@ class PQCipher:
 
         except Exception as e:
             if not self.quiet:
-                print(f"Error in post-quantum encryption: {e}")
+                eprint(f"Error in post-quantum encryption: {e}")
             raise ValueError(f"PQC encryption failed: {e}")
         finally:
             # Clean up sensitive data
@@ -832,7 +833,7 @@ class PQCipher:
                                         metadata_encryption_data = metadata["encryption_data"]
                             except Exception as e:
                                 if not self.quiet:
-                                    print(f"Error extracting encryption_data from metadata: {e}")
+                                    eprint(f"Error extracting encryption_data from metadata: {e}")
                     except Exception as e:
                         # Ignore extraction errors
                         pass
@@ -840,7 +841,7 @@ class PQCipher:
                 # Validate encryption_data against metadata if available
                 if metadata_encryption_data and self.encryption_data != metadata_encryption_data:
                     if not self.quiet:
-                        print(
+                        eprint(
                             f"Error: Encryption data mismatch - provided '{self.encryption_data}' but metadata has '{metadata_encryption_data}'"
                         )
                     raise ValueError(
@@ -860,13 +861,13 @@ class PQCipher:
                         cipher = XChaCha20Poly1305(symmetric_key)
                     except ImportError as e:
                         if not self.quiet:
-                            print(
+                            eprint(
                                 f"XChaCha20Poly1305 not available ({e}), falling back to ChaCha20Poly1305"
                             )
                         cipher = self.ChaCha20Poly1305(symmetric_key)
                     except Exception as e:
                         if not self.quiet:
-                            print(
+                            eprint(
                                 f"XChaCha20Poly1305 creation failed ({e}), falling back to ChaCha20Poly1305"
                             )
                         cipher = self.ChaCha20Poly1305(symmetric_key)
@@ -906,7 +907,7 @@ class PQCipher:
                 else:
                     # Default to AES-GCM for unknown algorithms
                     if not self.quiet:
-                        print(
+                        eprint(
                             f"Unknown encryption algorithm {self.encryption_data}, falling back to aes-gcm"
                         )
                     cipher = self.AESGCM(symmetric_key)
@@ -946,10 +947,10 @@ class PQCipher:
                     raise ValueError("Decryption failed: authentication error")
         except Exception as e:
             if not self.quiet:
-                print(f"Error in post-quantum decryption: {e}")
+                eprint(f"Error in post-quantum decryption: {e}")
             if "kem" in locals():
                 if not self.quiet:
-                    print(f"Available methods on KEM object: {dir(kem)}")
+                    eprint(f"Available methods on KEM object: {dir(kem)}")
             raise
         finally:
             # Clean up sensitive data

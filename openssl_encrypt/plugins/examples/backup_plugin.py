@@ -36,6 +36,7 @@ from ...modules.plugin_system import (
     PreProcessorPlugin,
     UtilityPlugin,
 )
+from openssl_encrypt.modules.file_permissions import PermissionLevel, set_permissions
 
 
 class FileBackupPlugin(PreProcessorPlugin):
@@ -70,7 +71,7 @@ class FileBackupPlugin(PreProcessorPlugin):
             self.backup_base_dir.mkdir(parents=True, exist_ok=True)
 
             # Set secure permissions
-            os.chmod(self.backup_base_dir, 0o700)  # Only owner can access
+            set_permissions(self.backup_base_dir, PermissionLevel.OWNER_FULL)  # Only owner can access
 
             return PluginResult.success_result(
                 f"Backup plugin initialized with directory: {self.backup_base_dir}"
@@ -89,7 +90,7 @@ class FileBackupPlugin(PreProcessorPlugin):
             if not self.backup_base_dir:
                 self.backup_base_dir = Path.home() / ".openssl_encrypt_backups"
                 self.backup_base_dir.mkdir(parents=True, exist_ok=True)
-                os.chmod(self.backup_base_dir, 0o700)
+                set_permissions(self.backup_base_dir, PermissionLevel.OWNER_FULL)
 
             # Generate backup path with timestamp
             source_path = Path(file_path)
@@ -99,7 +100,7 @@ class FileBackupPlugin(PreProcessorPlugin):
             # Create dated subdirectory
             date_dir = self.backup_base_dir / datetime.now().strftime("%Y-%m-%d")
             date_dir.mkdir(exist_ok=True)
-            os.chmod(date_dir, 0o700)
+            set_permissions(date_dir, PermissionLevel.OWNER_FULL)
 
             backup_path = date_dir / backup_name
 

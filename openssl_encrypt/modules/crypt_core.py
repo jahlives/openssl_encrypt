@@ -63,7 +63,7 @@ from .crypt_errors import (  # Error handling imports are at the top of file
 )
 
 # Import utility functions
-from .crypt_utils import safe_open_file
+from .crypt_utils import eprint, safe_open_file
 
 # Import integrity plugin for remote metadata verification
 try:
@@ -888,14 +888,15 @@ def set_secure_permissions(file_path):
     try:
         canonical_path = os.path.realpath(os.path.abspath(file_path))
         if not os.path.samefile(file_path, canonical_path):
-            print(f"Warning: Path canonicalization changed target: {file_path} -> {canonical_path}")
+            eprint(f"Warning: Path canonicalization changed target: {file_path} -> {canonical_path}")
         file_path = canonical_path
     except (OSError, ValueError) as e:
-        print(f"Error canonicalizing path '{file_path}': {e}")
+        eprint(f"Error canonicalizing path '{file_path}': {e}")
         return
 
     # Set permissions to 0600 (read/write for owner only)
-    os.chmod(file_path, stat.S_IRUSR | stat.S_IWUSR)
+    from openssl_encrypt.modules.file_permissions import PermissionLevel, set_permissions
+    set_permissions(file_path, PermissionLevel.OWNER_ONLY)
 
 
 def get_file_permissions(file_path):
@@ -918,13 +919,14 @@ def get_file_permissions(file_path):
     try:
         canonical_path = os.path.realpath(os.path.abspath(file_path))
         if not os.path.samefile(file_path, canonical_path):
-            print(f"Warning: Path canonicalization changed target: {file_path} -> {canonical_path}")
+            eprint(f"Warning: Path canonicalization changed target: {file_path} -> {canonical_path}")
         file_path = canonical_path
     except (OSError, ValueError) as e:
-        print(f"Error canonicalizing path '{file_path}': {e}")
+        eprint(f"Error canonicalizing path '{file_path}': {e}")
         raise
 
-    return os.stat(file_path).st_mode & 0o777  # Get just the permission bits
+    from openssl_encrypt.modules.file_permissions import get_posix_mode
+    return get_posix_mode(file_path)
 
 
 def copy_permissions(source_file, target_file):
@@ -938,10 +940,8 @@ def copy_permissions(source_file, target_file):
         target_file (str): Path to the target file
     """
     try:
-        # Get the permissions from the source file
-        mode = get_file_permissions(source_file)
-        # Apply to the target file
-        os.chmod(target_file, mode)
+        from openssl_encrypt.modules import file_permissions as fp_mod
+        fp_mod.copy_permissions(source_file, target_file)
     except Exception:
         # If we can't copy permissions, fall back to secure permissions
         set_secure_permissions(target_file)
@@ -1014,7 +1014,7 @@ def show_animated_progress(message, stop_event, quiet=False):
         position = int((elapsed % 3) * 10)  # Moves every 0.1 seconds
         bar = " " * position + "█████" + " " * (bar_length - 5 - position)
 
-        print(f"\r{message}: [{bar}] {animation[idx]} {time_str}", end="", flush=True)
+        eprint(f"\r{message}: [{bar}] {animation[idx]} {time_str}", end="", flush=True)
         idx = (idx + 1) % len(animation)
         time.sleep(0.1)
 
@@ -1057,8 +1057,8 @@ def with_progress_bar(func, message, *args, quiet=False, **kwargs):
             # Set a timeout to prevent hanging
             progress_thread.join(timeout=1.0)
             # Clear the current line
-            print(f"\r{' ' * 80}\r", end="", flush=True)
-            print(f"{message} completed in {duration:.2f} seconds")
+            eprint(f"\r{' ' * 80}\r", end="", flush=True)
+            eprint(f"{message} completed in {duration:.2f} seconds")
 
         return result
     except Exception as e:
@@ -1068,7 +1068,7 @@ def with_progress_bar(func, message, *args, quiet=False, **kwargs):
             # Set a timeout to prevent hanging
             progress_thread.join(timeout=1.0)
             # Clear the current line
-            print(f"\r{' ' * 80}\r", end="", flush=True)
+            eprint(f"\r{' ' * 80}\r", end="", flush=True)
         raise e
 
 
@@ -1163,14 +1163,14 @@ def multi_hash_password(
         filled_length = int(bar_length * current // total)
         bar = "█" * filled_length + " " * (bar_length - filled_length)
 
-        print(
+        eprint(
             f"\r{algorithm} hashing: [{bar}] {percent:.1f}% ({current}/{total})",
             end="",
             flush=True,
         )
 
         if current == total:
-            print()  # New line after completion
+            eprint()  # New line after completion
 
     stretch_hash = False
     try:
@@ -1250,9 +1250,9 @@ def multi_hash_password(
 
                 if algorithm == "sha512" and params > 0:
                     if not quiet and not progress:
-                        print(f"Applying {params} rounds of SHA-512", end=" ")
+                        eprint(f"Applying {params} rounds of SHA-512", end=" ")
                     elif not quiet:
-                        print(f"Applying {params} rounds of SHA-512")
+                        eprint(f"Applying {params} rounds of SHA-512")
 
                     if debug:
                         logger.debug(f"SHA-512: Starting {params} rounds")
@@ -1285,13 +1285,13 @@ def multi_hash_password(
                                 logger.debug(f"SHA-512:XOR-INTERMEDIATE: {normalized.hex()}")
 
                         if not quiet and not progress:
-                            print("✅")
+                            eprint("✅")
 
                 elif algorithm == "sha256" and params > 0:
                     if not quiet and not progress:
-                        print(f"Applying {params} rounds of SHA-256", end=" ")
+                        eprint(f"Applying {params} rounds of SHA-256", end=" ")
                     elif not quiet:
-                        print(f"Applying {params} rounds of SHA-256")
+                        eprint(f"Applying {params} rounds of SHA-256")
 
                     if debug:
                         logger.debug(f"SHA-256: Starting {params} rounds")
@@ -1324,13 +1324,13 @@ def multi_hash_password(
                                 logger.debug(f"SHA-256:XOR-INTERMEDIATE: {normalized.hex()}")
 
                         if not quiet and not progress:
-                            print("✅")
+                            eprint("✅")
 
                 elif algorithm == "sha3_256" and params > 0:
                     if not quiet and not progress:
-                        print(f"Applying {params} rounds of SHA3-256", end=" ")
+                        eprint(f"Applying {params} rounds of SHA3-256", end=" ")
                     elif not quiet:
-                        print(f"Applying {params} rounds of SHA3-256")
+                        eprint(f"Applying {params} rounds of SHA3-256")
 
                     if debug:
                         logger.debug(f"SHA3-256: Starting {params} rounds")
@@ -1365,13 +1365,13 @@ def multi_hash_password(
                                 logger.debug(f"SHA3-256:XOR-INTERMEDIATE: {normalized.hex()}")
 
                         if not quiet and not progress:
-                            print("✅")
+                            eprint("✅")
 
                 elif algorithm == "sha3_512" and params > 0:
                     if not quiet and not progress:
-                        print(f"Applying {params} rounds of SHA3-512", end=" ")
+                        eprint(f"Applying {params} rounds of SHA3-512", end=" ")
                     elif not quiet:
-                        print(f"Applying {params} rounds of SHA3-512")
+                        eprint(f"Applying {params} rounds of SHA3-512")
                     # SHA3-512 produces 64 bytes
                     with secure_buffer(64, zero=False) as hash_buffer:
                         for i in range(params):
@@ -1390,13 +1390,13 @@ def multi_hash_password(
                                 logger.debug(f"SHA3-512:XOR-INTERMEDIATE: {normalized.hex()}")
 
                         if not quiet and not progress:
-                            print("✅")
+                            eprint("✅")
 
                 elif algorithm == "blake2b" and params > 0:
                     if not quiet and not progress:
-                        print(f"Applying {params} rounds of BLAKE2b", end=" ")
+                        eprint(f"Applying {params} rounds of BLAKE2b", end=" ")
                     elif not quiet:
-                        print(f"Applying {params} rounds of BLAKE2b")
+                        eprint(f"Applying {params} rounds of BLAKE2b")
                     # BLAKE2b produces 64 bytes by default
                     with secure_buffer(64, zero=False) as hash_buffer:
                         for i in range(params):
@@ -1433,14 +1433,14 @@ def multi_hash_password(
                                 logger.debug(f"BLAKE2b:XOR-INTERMEDIATE: {normalized.hex()}")
 
                         if not quiet and not progress:
-                            print("✅")
+                            eprint("✅")
 
                 elif algorithm == "blake3" and params > 0:
 
                     if not quiet and not progress:
-                        print(f"Applying {params} rounds of BLAKE3", end=" ")
+                        eprint(f"Applying {params} rounds of BLAKE3", end=" ")
                     elif not quiet:
-                        print(f"Applying {params} rounds of BLAKE3")
+                        eprint(f"Applying {params} rounds of BLAKE3")
 
                     if debug:
                         logger.debug(f"BLAKE3: Starting {params} rounds")
@@ -1509,10 +1509,10 @@ def multi_hash_password(
                                     logger.debug(f"BLAKE3:XOR-INTERMEDIATE: {normalized.hex()}")
 
                             if not quiet and not progress:
-                                print("✅")
+                                eprint("✅")
                     else:
                         if not quiet:
-                            print("❌ BLAKE3 not available, falling back to BLAKE2b")
+                            eprint("❌ BLAKE3 not available, falling back to BLAKE2b")
                         # Fallback to BLAKE2b if BLAKE3 is not available
                         with secure_buffer(64, zero=False) as hash_buffer:
                             for i in range(params):
@@ -1536,13 +1536,13 @@ def multi_hash_password(
                                     )
 
                             if not quiet and not progress:
-                                print("✅")
+                                eprint("✅")
 
                 elif algorithm == "shake256" and params > 0:
                     if not quiet and not progress:
-                        print(f"Applying {params} rounds of SHAKE-256", end=" ")
+                        eprint(f"Applying {params} rounds of SHAKE-256", end=" ")
                     elif not quiet:
-                        print(f"Applying {params} rounds of SHAKE-256")
+                        eprint(f"Applying {params} rounds of SHAKE-256")
                     # SHAKE-256 can produce variable length output, we use 64 bytes for consistency
                     # with other hash functions like SHA-512 and BLAKE2b
                     with secure_buffer(64, zero=False) as hash_buffer:
@@ -1585,7 +1585,7 @@ def multi_hash_password(
                                 logger.debug(f"SHAKE256:XOR-INTERMEDIATE: {normalized.hex()}")
 
                         if not quiet and not progress:
-                            print("✅")
+                            eprint("✅")
             result = SecureBytes.copy_from(hashed)
 
         # NEW: Return both final hash and intermediates if collecting
@@ -1598,7 +1598,7 @@ def multi_hash_password(
     except ImportError:
         # Fall back to standard method if secure_memory is not available
         if not quiet:
-            print("Warning: secure_memory module not available")
+            eprint("Warning: secure_memory module not available")
         sys.exit(1)
     finally:
         if "hashed" in locals():
@@ -1821,7 +1821,7 @@ def compute_hash_independent(
                     filled = int(bar_length * (i + 1) / rounds)
                     bar = "█" * filled + " " * (bar_length - filled)
                     # Overwrite current line with progress bar
-                    print(
+                    eprint(
                         f"\r{algo_display} hashing: [{bar}] {percent:.1f}% ({i+1}/{rounds})",
                         end="",
                         flush=True,
@@ -1838,7 +1838,7 @@ def compute_hash_independent(
 
                 # Move to new line after progress bar completes
                 if progress and not quiet:
-                    print()  # Move to next line
+                    eprint()  # Move to next line
 
         if debug:
             logger.debug(f"INDEPENDENT-XOR: {algorithm} result (normalized): {result.hex()}")
@@ -2165,7 +2165,7 @@ def generate_key_independent_xor(
 
                 if not quiet and not progress:
                     # Only print initial message if progress bars disabled
-                    print(
+                    eprint(
                         f"Computing {algo_display} hash ({rounds} rounds)...", end=" ", flush=True
                     )
                 elif not quiet and progress:
@@ -2180,7 +2180,7 @@ def generate_key_independent_xor(
                         "shake256": "SHAKE-256",
                     }
                     algo_name = algo_names.get(algo, algo.upper())
-                    print(f"Applying {rounds} rounds of {algo_name}")
+                    eprint(f"Applying {rounds} rounds of {algo_name}")
 
                 result = compute_hash_independent(
                     password=algorithm_input,  # Use initial hash instead of raw password
@@ -2195,7 +2195,7 @@ def generate_key_independent_xor(
                 xor_components.append(result)
 
                 if not quiet and not progress:
-                    print("✅")
+                    eprint("✅")
 
                 if debug:
                     logger.debug(f"INDEPENDENT-XOR: Added {algo} component #{len(xor_components)}")
@@ -2212,9 +2212,9 @@ def generate_key_independent_xor(
             argon2_config = kdf_config_section["argon2"]
 
             if not quiet and not progress:
-                print("Computing Argon2 KDF...", end=" ", flush=True)
+                eprint("Computing Argon2 KDF...", end=" ", flush=True)
             elif not quiet and progress:
-                print("Using Argon2 for key derivation")
+                eprint("Using Argon2 for key derivation")
 
             result = compute_kdf_independent(
                 password=algorithm_input,  # Use initial hash instead of raw password
@@ -2229,7 +2229,7 @@ def generate_key_independent_xor(
             xor_components.append(result)
 
             if not quiet and not progress:
-                print("✅")
+                eprint("✅")
 
             if debug:
                 logger.debug(f"INDEPENDENT-XOR: Added Argon2 component #{len(xor_components)}")
@@ -2239,9 +2239,9 @@ def generate_key_independent_xor(
             scrypt_config = kdf_config_section["scrypt"]
 
             if not quiet and not progress:
-                print("Computing Scrypt KDF...", end=" ", flush=True)
+                eprint("Computing Scrypt KDF...", end=" ", flush=True)
             elif not quiet and progress:
-                print("Using Scrypt for key derivation")
+                eprint("Using Scrypt for key derivation")
 
             result = compute_kdf_independent(
                 password=algorithm_input,  # Use initial hash instead of raw password
@@ -2256,7 +2256,7 @@ def generate_key_independent_xor(
             xor_components.append(result)
 
             if not quiet and not progress:
-                print("✅")
+                eprint("✅")
 
             if debug:
                 logger.debug(f"INDEPENDENT-XOR: Added Scrypt component #{len(xor_components)}")
@@ -2266,9 +2266,9 @@ def generate_key_independent_xor(
             balloon_config = kdf_config_section["balloon"]
 
             if not quiet and not progress:
-                print("Computing Balloon KDF...", end=" ", flush=True)
+                eprint("Computing Balloon KDF...", end=" ", flush=True)
             elif not quiet and progress:
-                print("Using Balloon-Hashing for key derivation")
+                eprint("Using Balloon-Hashing for key derivation")
 
             result = compute_kdf_independent(
                 password=algorithm_input,  # Use initial hash instead of raw password
@@ -2283,7 +2283,7 @@ def generate_key_independent_xor(
             xor_components.append(result)
 
             if not quiet and not progress:
-                print("✅")
+                eprint("✅")
 
             if debug:
                 logger.debug(f"INDEPENDENT-XOR: Added Balloon component #{len(xor_components)}")
@@ -2291,7 +2291,7 @@ def generate_key_independent_xor(
         # Check and process HKDF
         if kdf_config_section.get("hkdf", {}).get("enabled", False):
             if not quiet and not progress:
-                print("Computing HKDF...", end=" ")
+                eprint("Computing HKDF...", end=" ")
 
             hkdf_config = kdf_config_section["hkdf"]
             result = compute_kdf_independent(
@@ -2307,7 +2307,7 @@ def generate_key_independent_xor(
             xor_components.append(result)
 
             if not quiet and not progress:
-                print("✅")
+                eprint("✅")
 
             if debug:
                 logger.debug(f"INDEPENDENT-XOR: Added HKDF component #{len(xor_components)}")
@@ -2328,7 +2328,7 @@ def generate_key_independent_xor(
         final_key = xor_bytes_secure(xor_components)
 
         if not quiet:
-            print(f"✅ Combined {len(xor_components)} independent components using XOR (Massey)")
+            eprint(f"✅ Combined {len(xor_components)} independent components using XOR (Massey)")
 
         # 4. Generate IV
         iv = os.urandom(16)
@@ -2523,14 +2523,14 @@ def generate_key(
         filled_length = int(bar_length * current // total)
         bar = "█" * filled_length + " " * (bar_length - filled_length)
 
-        print(
+        eprint(
             f"\r{algorithm} hashing: [{bar}] {percent:.1f}% ({current}/{total})",
             end="",
             flush=True,
         )
 
         if current == total:
-            print()  # New line after completion
+            eprint()  # New line after completion
 
     # Determine required key length based on algorithm
     if algorithm == EncryptionAlgorithm.FERNET.value:
@@ -2649,9 +2649,9 @@ def generate_key(
 
     if has_hash_iterations:
         if not quiet and not progress:
-            print("Applying hash iterations", end=" ")
+            eprint("Applying hash iterations", end=" ")
         elif not quiet:
-            print("Applying hash iterations")
+            eprint("Applying hash iterations")
         # Apply multiple hash algorithms in sequence
         # Call multi_hash_password with v10/v8 parameters if using XOR composition
         if use_xor_composition:
@@ -2739,25 +2739,25 @@ def generate_key(
                 if use_scrypt:
                     enabled_kdfs.append("Scrypt")
 
-                print("\n⚠️  WARNING: Security Risk Detected")
-                print(
+                eprint("\n⚠️  WARNING: Security Risk Detected")
+                eprint(
                     f"KDFs ({', '.join(enabled_kdfs)}) will operate directly on your password without prior hashing."
                 )
-                print("This may be insecure if your password is short or has low entropy.")
-                print(
+                eprint("This may be insecure if your password is short or has low entropy.")
+                eprint(
                     "Consider adding hash rounds (--sha256-rounds, --blake2b-rounds, etc.) for better security."
                 )
-                print("Continue anyway? [y/N]: ", end="", flush=True)
+                eprint("Continue anyway? [y/N]: ", end="", flush=True)
 
                 # Get user confirmation
                 try:
                     response = input().strip().lower()
                     if response not in ["y", "yes"]:
-                        print("Operation cancelled by user.")
+                        eprint("Operation cancelled by user.")
                         sys.exit(1)
-                    print()  # Add blank line after confirmation
+                    eprint()  # Add blank line after confirmation
                 except (KeyboardInterrupt, EOFError):
-                    print("\nOperation cancelled by user.")
+                    eprint("\nOperation cancelled by user.")
                     sys.exit(1)
 
     # If hash_config has argon2 section with enabled explicitly set to False, honor that
@@ -2769,9 +2769,9 @@ def generate_key(
         base_salt = salt
         # Use Argon2 for key derivation
         if not quiet and not progress:
-            print("Using Argon2 for key derivation", end=" ")
+            eprint("Using Argon2 for key derivation", end=" ")
         elif not quiet:
-            print("Using Argon2 for key derivation")
+            eprint("Using Argon2 for key derivation")
 
         # Get parameters from the argon2 section of hash_config, or use defaults
         # Account for both v3 and v4 hash config structures
@@ -2935,10 +2935,10 @@ def generate_key(
                     logger.debug(f"V10-XOR: Added Argon2 final output: {argon2_normalized.hex()}")
 
             if not quiet and not progress:
-                print("✅")
+                eprint("✅")
         except Exception as e:
             if not quiet:
-                print(f"Argon2 key derivation failed: {str(e)}. KDF failed.")
+                eprint(f"Argon2 key derivation failed: {str(e)}. KDF failed.")
             # Mark Argon2 as failed
             use_argon2 = False
 
@@ -2947,9 +2947,9 @@ def generate_key(
         # This helps prevent salt reuse issues
         base_salt = salt
         if not quiet and not progress:
-            print("Using Balloon-Hashing for key derivation", end=" ")
+            eprint("Using Balloon-Hashing for key derivation", end=" ")
         elif not quiet:
-            print("Using Balloon-Hashing for key derivation")
+            eprint("Using Balloon-Hashing for key derivation")
         balloon_config = hash_config.get("balloon", {}) if hash_config else {}
         time_cost = balloon_config.get("time_cost", 3)
         space_cost = balloon_config.get("space_cost", 65536)  # renamed from memory_cost
@@ -3060,10 +3060,10 @@ def generate_key(
                     logger.debug(f"V10-XOR: Added Balloon final output: {balloon_normalized.hex()}")
 
             if not quiet and not progress:
-                print("✅")
+                eprint("✅")
         except Exception as e:
             if not quiet:
-                print(f"Balloon key derivation failed: {str(e)}. KDF failed.")
+                eprint(f"Balloon key derivation failed: {str(e)}. KDF failed.")
             use_balloon = False  # KDF failed, continuing
 
     if use_scrypt and SCRYPT_AVAILABLE:
@@ -3071,9 +3071,9 @@ def generate_key(
         # This helps prevent salt reuse issues
         base_salt = salt
         if not quiet and not progress:
-            print("Using Scrypt for key derivation", end=" ")
+            eprint("Using Scrypt for key derivation", end=" ")
         elif not quiet:
-            print("Using Scrypt for key derivation")
+            eprint("Using Scrypt for key derivation")
         try:
             for i in range(hash_config.get("scrypt", {}).get("rounds", 1)):
                 # Generate a new unique salt for each round to prevent salt reuse attacks
@@ -3155,10 +3155,10 @@ def generate_key(
                     logger.debug(f"V10-XOR: Added Scrypt final output: {scrypt_normalized.hex()}")
 
             if not quiet and not progress:
-                print("✅")
+                eprint("✅")
         except Exception as e:
             if not quiet:
-                print(f"Scrypt key derivation failed: {str(e)}. KDF failed.")
+                eprint(f"Scrypt key derivation failed: {str(e)}. KDF failed.")
             use_scrypt = False  # KDF failed, continuing
 
     if use_hkdf and HKDF_AVAILABLE:
@@ -3166,9 +3166,9 @@ def generate_key(
         # This helps prevent salt reuse issues
         base_salt = salt
         if not quiet and not progress:
-            print("Using HKDF for key derivation", end=" ")
+            eprint("Using HKDF for key derivation", end=" ")
         elif not quiet:
-            print("Using HKDF for key derivation")
+            eprint("Using HKDF for key derivation")
         hkdf_config = hash_config.get("hkdf", {}) if hash_config else {}
         algorithm = hkdf_config.get("algorithm", "sha256")
         info = hkdf_config.get("info", b"openssl_encrypt_hkdf")
@@ -3229,7 +3229,7 @@ def generate_key(
                 KeyStretch.key_stretch = True
 
             if not quiet and not progress:
-                print(" ✅")
+                eprint(" ✅")
 
             # Update config to record HKDF usage
             if isinstance(hash_config, dict) and "hkdf" in hash_config:
@@ -3245,7 +3245,7 @@ def generate_key(
 
         except Exception:
             if not quiet:
-                print("❌ HKDF failed")
+                eprint("❌ HKDF failed")
             # Don't set use_hkdf to False here, as we want to record the attempt
             use_hkdf = False  # KDF failed, continuing
 
@@ -3263,9 +3263,9 @@ def generate_key(
         randomx_salt_material = salt + password_for_salt[:16] + b"randomx_salt"
         base_salt = hashlib.sha256(randomx_salt_material).digest()[:16]
         if not quiet and not progress:
-            print("Using RandomX for key derivation", end=" ")
+            eprint("Using RandomX for key derivation", end=" ")
         elif not quiet:
-            print("Using RandomX for key derivation")
+            eprint("Using RandomX for key derivation")
 
         # Get RandomX parameters from appropriate config structure
         if (
@@ -3329,7 +3329,7 @@ def generate_key(
                 show_progress("RandomX", i + 1, rounds)
 
             if not quiet and not progress:
-                print(" ✅")
+                eprint(" ✅")
 
             KeyStretch.key_stretch = True
 
@@ -3347,14 +3347,14 @@ def generate_key(
 
         except Exception as e:
             if not quiet:
-                print("❌ RandomX failed, continuing without RandomX")
+                eprint("❌ RandomX failed, continuing without RandomX")
             logger.warning(f"RandomX key derivation failed: {e}")
             # Don't fail the entire operation, just skip RandomX
             use_randomx = False
 
     elif use_randomx and not RANDOMX_AVAILABLE:
         if not quiet:
-            print("⚠️ RandomX requested but not available (install pyrx package)")
+            eprint("⚠️ RandomX requested but not available (install pyrx package)")
         logger.warning("RandomX requested but pyrx library not available")
 
     any_kdf_requested = (
@@ -3435,7 +3435,7 @@ def generate_key(
                 logger.debug(f"V10-XOR: Final XOR result: {bytes(password).hex()}")
 
             if not quiet:
-                print(f"✅ Combined {len(xor_accumulator)} intermediate values using XOR")
+                eprint(f"✅ Combined {len(xor_accumulator)} intermediate values using XOR")
 
         finally:
             # CRITICAL: Clean up ALL intermediate values
@@ -4392,19 +4392,19 @@ def create_metadata_v7(
 
     # Move KDF configurations from hash_config if present
     if not quiet and verbose:
-        print(f"  DEBUG: hash_config keys before KDF copy: {list(hash_config.keys())}")
+        eprint(f"  DEBUG: hash_config keys before KDF copy: {list(hash_config.keys())}")
 
     kdf_algorithms = ["scrypt", "argon2", "balloon", "hkdf", "randomx"]
     for kdf in kdf_algorithms:
         if kdf in hash_config:
             if not quiet and verbose:
-                print(f"  DEBUG: Copying KDF '{kdf}' to metadata: {hash_config[kdf]}")
+                eprint(f"  DEBUG: Copying KDF '{kdf}' to metadata: {hash_config[kdf]}")
             metadata["derivation_config"]["kdf_config"][kdf] = hash_config[kdf]
         elif not quiet and verbose:
-            print(f"  DEBUG: KDF '{kdf}' NOT found in hash_config")
+            eprint(f"  DEBUG: KDF '{kdf}' NOT found in hash_config")
 
     if not quiet and verbose:
-        print(
+        eprint(
             f"  DEBUG: Final kdf_config in metadata: {metadata['derivation_config']['kdf_config']}"
         )
 
@@ -4511,7 +4511,7 @@ def decrypt_file_asymmetric(
         raise ValueError("Recipient identity must have encryption private key")
 
     if not quiet:
-        print(f"Decrypting {input_file} for {recipient.name}...")
+        eprint(f"Decrypting {input_file} for {recipient.name}...")
 
     # Step 1: Parse file and metadata
     with open(input_file, "rb") as f:
@@ -4553,7 +4553,7 @@ def decrypt_file_asymmetric(
         )
 
     if not quiet:
-        print(f"Found entry for: {recipient.name}")
+        eprint(f"Found entry for: {recipient.name}")
 
     # Step 3: **CRITICAL - VERIFY SIGNATURE BEFORE KDF**
     # This is the DoS protection - signature verification is fast (~1-5ms)
@@ -4600,11 +4600,11 @@ def decrypt_file_asymmetric(
 
         if not quiet:
             sender_id = metadata["asymmetric"]["sender"]["key_id"]
-            print(f"Signature verified from: {sender_id} ✅")
+            eprint(f"Signature verified from: {sender_id} ✅")
 
     else:
         if not quiet:
-            print("⚠️ WARNING: Signature verification SKIPPED!")
+            eprint("⚠️ WARNING: Signature verification SKIPPED!")
 
     # Step 4: Unwrap password (fast)
     try:
@@ -4636,7 +4636,7 @@ def decrypt_file_asymmetric(
         secure_memzero(encrypted_password)
 
     if not quiet:
-        print("Password unwrapped successfully ✅")
+        eprint("Password unwrapped successfully ✅")
 
     # Step 5: NOW it's safe to run expensive KDF
     # (signature has been verified, so we know this is legitimate)
@@ -4661,7 +4661,7 @@ def decrypt_file_asymmetric(
                     hash_config[kdf_name] = kdf_params
 
             if not quiet:
-                print("Running KDF chain (this may take a while)...")
+                eprint("Running KDF chain (this may take a while)...")
 
             # Derive key
             derived_key, _, _ = generate_key(
@@ -4674,7 +4674,7 @@ def decrypt_file_asymmetric(
             )
 
             if not quiet:
-                print("Key derived successfully ✅")
+                eprint("Key derived successfully ✅")
 
             # Step 6: Decrypt data
             encrypted_data = base64.b64decode(encrypted_data_b64)
@@ -4694,15 +4694,15 @@ def decrypt_file_asymmetric(
                 raise ValueError("Hash verification failed! File may be corrupted.")
 
             if not quiet:
-                print("Hash verified ✅")
+                eprint("Hash verified ✅")
 
             # Write output
             with open(output_file, "wb") as f:
                 f.write(plaintext)
 
             if not quiet:
-                print(f"File decrypted successfully: {output_file} ✅")
-                print(
+                eprint(f"File decrypted successfully: {output_file} ✅")
+                eprint(
                     f"File size: {len(encrypted_data)} bytes (encrypted) → {len(plaintext)} bytes"
                 )
 
@@ -4794,7 +4794,7 @@ def encrypt_file_asymmetric(
         }
 
     if not quiet:
-        print(f"Encrypting {input_file} for {len(recipients)} recipient(s)...")
+        eprint(f"Encrypting {input_file} for {len(recipients)} recipient(s)...")
 
     # Step 1: Generate random password (32 bytes)
     random_password = secrets.token_bytes(32)
@@ -4862,7 +4862,7 @@ def encrypt_file_asymmetric(
                     )
 
                     if not quiet:
-                        print(
+                        eprint(
                             f"Wrapped password for: {recipient.name} ({recipient.fingerprint}) ✅"
                         )
 
@@ -4940,7 +4940,7 @@ def encrypt_file_asymmetric(
             }
 
             if not quiet:
-                print(f"Signed with: {sender.name} ({sender.fingerprint}) ✅")
+                eprint(f"Signed with: {sender.name} ({sender.fingerprint}) ✅")
 
             # Step 6: Write encrypted file in proper format: base64(metadata):base64(data)
             metadata_json = json.dumps(metadata_unsigned)
@@ -4951,7 +4951,7 @@ def encrypt_file_asymmetric(
                 f.write(metadata_b64 + b":" + encrypted_data_b64)
 
             if not quiet:
-                print(f"File encrypted successfully: {output_file} ✅")
+                eprint(f"File encrypted successfully: {output_file} ✅")
 
             # Store sizes before cleanup
             original_size = len(plaintext)
@@ -5142,7 +5142,7 @@ def encrypt_file(
 
         if not quiet:
             m = _archive_manifest
-            print(
+            eprint(
                 f"Archiving directory: {input_file} "
                 f"({m['total_files']} files, {m['total_dirs']} dirs, "
                 f"{m['total_size_bytes']} bytes)"
@@ -5209,11 +5209,11 @@ def encrypt_file(
                 plugin_context.add_metadata("output_path", output_file)
 
             if not quiet and verbose:
-                print("🔌 Plugin system initialized")
+                eprint("🔌 Plugin system initialized")
 
         except ImportError:
             if not quiet and verbose:
-                print("⚠️  Plugin system not available")
+                eprint("⚠️  Plugin system not available")
             plugin_context = None
 
     if isinstance(algorithm, str):
@@ -5229,20 +5229,20 @@ def encrypt_file(
                 if plugin_reg.enabled:
                     try:
                         if not quiet and verbose:
-                            print(f"🔌 Executing pre-processor: {plugin_reg.plugin.name}")
+                            eprint(f"🔌 Executing pre-processor: {plugin_reg.plugin.name}")
 
                         result = plugin_manager.execute_plugin(
                             plugin_reg.plugin.plugin_id, plugin_context
                         )
                         if not result.success:
                             if not quiet:
-                                print(
+                                eprint(
                                     f"⚠️  Pre-processor plugin {plugin_reg.plugin.name} failed: {result.message}"
                                 )
                             # Continue with encryption even if plugin fails
                     except Exception as e:
                         if not quiet:
-                            print(f"⚠️  Pre-processor plugin error: {e}")
+                            eprint(f"⚠️  Pre-processor plugin error: {e}")
                         # Continue with encryption even if plugin fails
         except ImportError:
             pass  # Plugin system not available
@@ -5286,19 +5286,19 @@ def encrypt_file(
         sig_algorithm = HYBRID_ALGORITHM_MAP[algorithm.value]
 
         if not quiet:
-            print(f"Generating {sig_algorithm} signature keypair...")
+            eprint(f"Generating {sig_algorithm} signature keypair...")
 
         try:
             sig_cipher = ExtendedPQCipher(sig_algorithm, quiet=quiet, verbose=verbose)
             public_key, private_key = sig_cipher.generate_keypair()
             pqc_keypair = (public_key, private_key)
             if not quiet:
-                print(
+                eprint(
                     f"✅ Generated {sig_algorithm} keypair: pub={len(public_key)}B, priv={len(private_key)}B"
                 )
         except Exception as e:
             if not quiet:
-                print(f"❌ Failed to generate {sig_algorithm} keypair: {e}")
+                eprint(f"❌ Failed to generate {sig_algorithm} keypair: {e}")
             raise ValidationError(f"Failed to generate signature keypair: {e}")
 
     # Handle default configuration when hash_config is None
@@ -5349,7 +5349,7 @@ def encrypt_file(
     # Generate a key from the password
     salt = secrets.token_bytes(16)  # Unique salt for each encryption
     if not quiet:
-        print("\nGenerating encryption key...")
+        eprint("\nGenerating encryption key...")
     algorithm_value = algorithm.value if isinstance(algorithm, EncryptionAlgorithm) else algorithm
     print_hash_config(
         hash_config,
@@ -5365,7 +5365,7 @@ def encrypt_file(
     hsm_slot_used = None
     if hsm_plugin:
         if not quiet:
-            print("Deriving hardware-bound pepper from HSM...")
+            eprint("Deriving hardware-bound pepper from HSM...")
 
         try:
             from .plugin_system import PluginCapability, PluginSecurityContext
@@ -5412,7 +5412,7 @@ def encrypt_file(
                 )
 
             if not quiet:
-                print(f"Hardware pepper derived ({len(hsm_pepper)} bytes)")
+                eprint(f"Hardware pepper derived ({len(hsm_pepper)} bytes)")
 
             if debug:
                 logger.debug(f"HSM pepper length: {len(hsm_pepper)} bytes")
@@ -5431,13 +5431,13 @@ def encrypt_file(
 
     if pepper_plugin:
         if not quiet:
-            print("Processing remote pepper...")
+            eprint("Processing remote pepper...")
 
         try:
             if pepper_name:
                 # Retrieve existing pepper by name
                 if not quiet:
-                    print(f"Retrieving pepper '{pepper_name}' from remote server...")
+                    eprint(f"Retrieving pepper '{pepper_name}' from remote server...")
 
                 try:
                     encrypted_pepper_data = pepper_plugin.get_pepper(pepper_name)
@@ -5476,7 +5476,7 @@ def encrypt_file(
                         "Use --pepper-name with bytes input."
                     )
                 if not quiet:
-                    print("Generating new remote pepper...")
+                    eprint("Generating new remote pepper...")
 
                 # Generate 32-byte random pepper
                 remote_pepper = secrets.token_bytes(32)
@@ -5509,13 +5509,13 @@ def encrypt_file(
                     remote_pepper_name = file_id
 
                     if not quiet:
-                        print(f"Pepper stored on remote server (id: {file_id[:16]}...)")
+                        eprint(f"Pepper stored on remote server (id: {file_id[:16]}...)")
                 except Exception as e:
                     # If pepper already exists, try to update it instead
                     if "already exists" in str(e):
                         try:
                             if not quiet:
-                                print(f"Pepper {file_id[:16]}... already exists, updating...")
+                                eprint(f"Pepper {file_id[:16]}... already exists, updating...")
                             pepper_plugin.update_pepper(
                                 name=file_id,
                                 pepper_encrypted=encrypted_pepper_data,
@@ -5524,7 +5524,7 @@ def encrypt_file(
                             remote_pepper_name = file_id
 
                             if not quiet:
-                                print(f"Pepper updated on remote server (id: {file_id[:16]}...)")
+                                eprint(f"Pepper updated on remote server (id: {file_id[:16]}...)")
                         except Exception as update_e:
                             raise KeyDerivationError(
                                 f"Failed to update existing pepper on remote server: {update_e}"
@@ -5540,7 +5540,7 @@ def encrypt_file(
                 raise KeyDerivationError("Invalid pepper: exceeds maximum 128 bytes")
 
             if not quiet:
-                print(f"Remote pepper active ({len(remote_pepper)} bytes)")
+                eprint(f"Remote pepper active ({len(remote_pepper)} bytes)")
 
         except ImportError as e:
             raise KeyDerivationError(f"Pepper plugin dependencies not available: {e}")
@@ -5644,14 +5644,14 @@ def encrypt_file(
     if _use_streaming:
         # Streaming path: two-pass encryption for large files
         if not quiet:
-            print(f"Using streaming encryption (chunk size: {_streaming_chunk_size} bytes)")
+            eprint(f"Using streaming encryption (chunk size: {_streaming_chunk_size} bytes)")
 
         # Pass 1: Calculate hash without loading entire file
         if not quiet:
-            print("Calculating content hash (streaming)", end=" ")
+            eprint("Calculating content hash (streaming)", end=" ")
         original_hash = calculate_hash_streaming(input_file, _streaming_chunk_size)
         if not quiet:
-            print("✅")
+            eprint("✅")
 
         # Prepare cascade encryptor if needed
         _cascade_enc_streaming = None
@@ -5738,14 +5738,14 @@ def encrypt_file(
                 if cascade and cipher_names
                 else algorithm_value
             )
-            print(f"Encrypting content with {cipher_desc} (streaming)", end=" ")
+            eprint(f"Encrypting content with {cipher_desc} (streaming)", end=" ")
 
         progress_cb = None
         if progress and not quiet:
 
             def progress_cb(idx, total):
                 pct = ((idx + 1) / total) * 100 if total > 0 else 100
-                print(f"\rEncrypting: {pct:.1f}% ({idx + 1}/{total} chunks)", end="", flush=True)
+                eprint(f"\rEncrypting: {pct:.1f}% ({idx + 1}/{total} chunks)", end="", flush=True)
 
         streaming_enc.encrypt_file(
             input_file=input_file,
@@ -5757,10 +5757,10 @@ def encrypt_file(
         )
 
         if progress and not quiet:
-            print()  # newline after progress
+            eprint()  # newline after progress
 
         if not quiet:
-            print("✅")
+            eprint("✅")
 
         # Set secure permissions
         set_secure_permissions(output_file)
@@ -5790,29 +5790,29 @@ def encrypt_file(
     if input_is_bytes:
         data = bytes(input_file)  # copy bytearray to bytes; no-op for bytes
         if not quiet:
-            print(f"Reading {len(data)} bytes from memory")
+            eprint(f"Reading {len(data)} bytes from memory")
     else:
         if not quiet:
-            print(f"Reading file: {input_file}")
+            eprint(f"Reading file: {input_file}")
         with safe_open_file(input_file, "rb", secure_mode=secure_mode) as file:
             data = file.read()
 
     # Calculate hash of original data for integrity verification
     if not quiet:
-        print("Calculating content hash", end=" ")
+        eprint("Calculating content hash", end=" ")
 
     original_hash = calculate_hash(data)
     if not quiet:
-        print("✅")
+        eprint("✅")
 
     # Encrypt the data
     if not quiet:
         if cascade and cipher_names:
             # Show all algorithms in the cascade chain
             cipher_list = " → ".join(cipher_names)
-            print(f"Encrypting content with cascade ({cipher_list})", end=" ")
+            eprint(f"Encrypting content with cascade ({cipher_list})", end=" ")
         else:
-            print("Encrypting content with " + algorithm_value, end=" ")
+            eprint("Encrypting content with " + algorithm_value, end=" ")
 
     # Helper function to get appropriate nonce for each algorithm
     def get_algorithm_nonce(alg, test_mode=False):
@@ -6309,7 +6309,7 @@ def encrypt_file(
                 # Store private key only if requested (for self-decryption)
                 if (pqc_store_private_key or pqc_dual_encrypt_key) and len(pqc_keypair) > 1:
                     if not quiet:
-                        print(
+                        eprint(
                             "Storing encrypted post-quantum private key in file for self-decryption"
                         )
                     # Create a separate derived key that specifically depends on the provided password
@@ -6347,7 +6347,7 @@ def encrypt_file(
                         pqc_info["dual_encrypt_key"] = True
 
                 elif not quiet:
-                    print(
+                    eprint(
                         "Post-quantum private key NOT stored - you'll need the key file for decryption"
                     )
             elif "private_key" in locals():
@@ -6357,7 +6357,7 @@ def encrypt_file(
                 # Store the private key if requested
                 if pqc_store_private_key or pqc_dual_encrypt_key:
                     if not quiet:
-                        print(
+                        eprint(
                             "Storing encrypted post-quantum private key in file for self-decryption"
                         )
                     # Create a separate derived key that specifically depends on the provided password
@@ -6442,11 +6442,11 @@ def encrypt_file(
             total_overhead_bytes = cascade_enc.get_total_overhead()
 
             if verbose:
-                print("🔗 Cascade encryption enabled:")
-                print(f"   Cipher chain: {' → '.join(cipher_names)}")
-                print(f"   HKDF hash: {cascade_hash}")
-                print(f"   Total layers: {len(cipher_names)}")
-                print(f"   Post-quantum security: {pq_security_level} bits")
+                eprint("🔗 Cascade encryption enabled:")
+                eprint(f"   Cipher chain: {' → '.join(cipher_names)}")
+                eprint(f"   HKDF hash: {cascade_hash}")
+                eprint(f"   Total layers: {len(cipher_names)}")
+                eprint(f"   Post-quantum security: {pq_security_level} bits")
 
         # Create metadata WITHOUT encrypted_hash (before encryption)
         # Use V8 format if cascade is enabled OR format version is 8/10
@@ -6515,8 +6515,8 @@ def encrypt_file(
                 config = IntegrityConfig.from_file()
                 if not config.enabled:
                     if not quiet:
-                        print("Warning: --integrity flag used but integrity plugin not configured")
-                        print("Configure at: ~/.openssl_encrypt/plugins/integrity/config.json")
+                        eprint("Warning: --integrity flag used but integrity plugin not configured")
+                        eprint("Configure at: ~/.openssl_encrypt/plugins/integrity/config.json")
                 else:
                     with IntegrityPlugin(config) as plugin:
                         from pathlib import Path as PathLib
@@ -6536,33 +6536,33 @@ def encrypt_file(
                                 description=f"Encrypted: {PathLib(output_file).name}",
                             )
                             if not quiet:
-                                print(f"✓ Metadata hash uploaded to integrity server")
+                                eprint(f"✓ Metadata hash uploaded to integrity server")
                         except Exception as store_e:
                             # If hash already exists (409 Conflict), try to update it
                             if "409" in str(store_e) or "Conflict" in str(store_e):
                                 try:
                                     if not quiet:
-                                        print(f"Integrity hash already exists, updating...")
+                                        eprint(f"Integrity hash already exists, updating...")
                                     plugin.update_hash(
                                         file_id=file_id,
                                         metadata_hash=metadata_hash,
                                         description=f"Encrypted: {PathLib(output_file).name} (updated)",
                                     )
                                     if not quiet:
-                                        print(f"✓ Metadata hash updated on integrity server")
+                                        eprint(f"✓ Metadata hash updated on integrity server")
                                 except Exception as update_e:
                                     if not quiet:
-                                        print(
+                                        eprint(
                                             f"Warning: Failed to update integrity hash: {update_e}"
                                         )
                             else:
                                 if not quiet:
-                                    print(f"Warning: Failed to store integrity hash: {store_e}")
+                                    eprint(f"Warning: Failed to store integrity hash: {store_e}")
             except Exception as e:
                 if not quiet:
-                    print(f"Warning: Failed to store integrity hash: {e}")
+                    eprint(f"Warning: Failed to store integrity hash: {e}")
         elif integrity and input_is_bytes and not quiet:
-            print("Warning: --integrity skipped (requires file path input)")
+            eprint("Warning: --integrity skipped (requires file path input)")
 
     # Only show progress for larger files (> 1MB)
     if len(data) > 1024 * 1024 and not quiet:
@@ -6581,17 +6581,17 @@ def encrypt_file(
         )
 
     if not quiet:
-        print("✅")
+        eprint("✅")
 
     # For non-AEAD algorithms, create metadata AFTER encryption (includes encrypted_hash)
     if not use_aead_binding:
         # Calculate hash of encrypted data
         if not quiet:
-            print("Calculating encrypted content hash", end=" ")
+            eprint("Calculating encrypted content hash", end=" ")
 
         encrypted_hash = calculate_hash(encrypted_data)
         if not quiet:
-            print("✅")
+            eprint("✅")
 
         # Create metadata with all necessary information using version 4 format
         # Prepare PQC information if applicable
@@ -6626,7 +6626,7 @@ def encrypt_file(
                 # Store private key only if requested (for self-decryption)
                 if (pqc_store_private_key or pqc_dual_encrypt_key) and len(pqc_keypair) > 1:
                     if not quiet:
-                        print(
+                        eprint(
                             "Storing encrypted post-quantum private key in file for self-decryption"
                         )
                     # Create a separate derived key that specifically depends on the provided password
@@ -6664,7 +6664,7 @@ def encrypt_file(
                         pqc_info["dual_encrypt_key"] = True
 
                 elif not quiet:
-                    print(
+                    eprint(
                         "Post-quantum private key NOT stored - you'll need the key file for decryption"
                     )
             elif "private_key" in locals():
@@ -6674,7 +6674,7 @@ def encrypt_file(
                 # Store the private key if requested
                 if pqc_store_private_key or pqc_dual_encrypt_key:
                     if not quiet:
-                        print(
+                        eprint(
                             "Storing encrypted post-quantum private key in file for self-decryption"
                         )
                     # Create a separate derived key that specifically depends on the provided password
@@ -6781,8 +6781,8 @@ def encrypt_file(
                 config = IntegrityConfig.from_file()
                 if not config.enabled:
                     if not quiet:
-                        print("Warning: --integrity flag used but integrity plugin not configured")
-                        print("Configure at: ~/.openssl_encrypt/plugins/integrity/config.json")
+                        eprint("Warning: --integrity flag used but integrity plugin not configured")
+                        eprint("Configure at: ~/.openssl_encrypt/plugins/integrity/config.json")
                 else:
                     with IntegrityPlugin(config) as plugin:
                         from pathlib import Path as PathLib
@@ -6802,31 +6802,31 @@ def encrypt_file(
                                 description=f"Encrypted: {PathLib(output_file).name}",
                             )
                             if not quiet:
-                                print(f"✓ Metadata hash uploaded to integrity server")
+                                eprint(f"✓ Metadata hash uploaded to integrity server")
                         except Exception as store_e:
                             # If hash already exists (409 Conflict), try to update it
                             if "409" in str(store_e) or "Conflict" in str(store_e):
                                 try:
                                     if not quiet:
-                                        print(f"Integrity hash already exists, updating...")
+                                        eprint(f"Integrity hash already exists, updating...")
                                     plugin.update_hash(
                                         file_id=file_id,
                                         metadata_hash=metadata_hash,
                                         description=f"Encrypted: {PathLib(output_file).name} (updated)",
                                     )
                                     if not quiet:
-                                        print(f"✓ Metadata hash updated on integrity server")
+                                        eprint(f"✓ Metadata hash updated on integrity server")
                                 except Exception as update_e:
                                     if not quiet:
-                                        print(
+                                        eprint(
                                             f"Warning: Failed to update integrity hash: {update_e}"
                                         )
                             else:
                                 if not quiet:
-                                    print(f"Warning: Failed to store integrity hash: {store_e}")
+                                    eprint(f"Warning: Failed to store integrity hash: {store_e}")
             except Exception as e:
                 if not quiet:
-                    print(f"Warning: Failed to store integrity hash: {e}")
+                    eprint(f"Warning: Failed to store integrity hash: {e}")
     else:
         # AEAD: metadata was already created and encoded before encryption
         metadata_base64 = metadata_b64
@@ -6840,12 +6840,12 @@ def encrypt_file(
     # Return bytes if no output file specified (in-memory mode)
     if output_file is None:
         if not quiet:
-            print(f"Encrypted {len(output_bytes)} bytes in memory ✅")
+            eprint(f"Encrypted {len(output_bytes)} bytes in memory ✅")
         return output_bytes
 
     # Write the metadata and encrypted data to the output file
     if not quiet:
-        print(f"Writing encrypted file: {output_file}", end=" ")
+        eprint(f"Writing encrypted file: {output_file}", end=" ")
 
     with safe_open_file(output_file, "wb", secure_mode=secure_mode) as file:
         file.write(output_bytes)
@@ -6856,7 +6856,7 @@ def encrypt_file(
     # Set secure permissions on the output file
     set_secure_permissions(output_file)
     if not quiet:
-        print("✅")
+        eprint("✅")
 
     # Emit telemetry event (if enabled)
     try:
@@ -6878,20 +6878,20 @@ def encrypt_file(
                 if plugin_reg.enabled:
                     try:
                         if not quiet and verbose:
-                            print(f"🔌 Executing post-processor: {plugin_reg.plugin.name}")
+                            eprint(f"🔌 Executing post-processor: {plugin_reg.plugin.name}")
 
                         result = plugin_manager.execute_plugin(
                             plugin_reg.plugin.plugin_id, plugin_context
                         )
                         if not result.success:
                             if not quiet:
-                                print(
+                                eprint(
                                     f"⚠️  Post-processor plugin {plugin_reg.plugin.name} failed: {result.message}"
                                 )
                             # Continue even if plugin fails
                     except Exception as e:
                         if not quiet:
-                            print(f"⚠️  Post-processor plugin error: {e}")
+                            eprint(f"⚠️  Post-processor plugin error: {e}")
                         # Continue even if plugin fails
         except ImportError:
             pass  # Plugin system not available
@@ -7068,50 +7068,50 @@ def print_file_info(input_file: str, json_output: bool = False) -> dict:
     aead_binding = metadata.get("aead_binding", False)
     encrypted_at = metadata.get("encrypted_at")
 
-    print("File Information:")
-    print(f"  Format Version:    {format_version}")
-    print(f"  Mode:              {mode}")
+    eprint("File Information:")
+    eprint(f"  Format Version:    {format_version}")
+    eprint(f"  Mode:              {mode}")
     if xor_mode:
-        print(f"  XOR Mode:          {xor_mode}")
-    print(f"  AEAD Binding:      {'yes' if aead_binding else 'no'}")
+        eprint(f"  XOR Mode:          {xor_mode}")
+    eprint(f"  AEAD Binding:      {'yes' if aead_binding else 'no'}")
     if encrypted_at:
-        print(f"  Encrypted At:      {encrypted_at}")
+        eprint(f"  Encrypted At:      {encrypted_at}")
 
     # Encryption section
     encryption = metadata.get("encryption", {})
     is_cascade = encryption.get("cascade", False)
 
-    print()
-    print("  Encryption:")
+    eprint()
+    eprint("  Encryption:")
     if is_cascade:
         cipher_chain = encryption.get("cipher_chain", [])
-        print(f"    Cipher Chain:    {' -> '.join(cipher_chain)}")
+        eprint(f"    Cipher Chain:    {' -> '.join(cipher_chain)}")
         hkdf_hash = encryption.get("hkdf_hash")
         if hkdf_hash:
-            print(f"    HKDF Hash:       {hkdf_hash}")
+            eprint(f"    HKDF Hash:       {hkdf_hash}")
         layer_info = encryption.get("layer_info", [])
         if layer_info:
-            print(f"    Layers:          {len(layer_info)}")
+            eprint(f"    Layers:          {len(layer_info)}")
             for i, layer in enumerate(layer_info):
                 cipher = layer.get("cipher", "unknown")
                 key_size = layer.get("key_size", 0)
-                print(f"      Layer {i+1}:       {cipher} ({key_size * 8} bits)")
+                eprint(f"      Layer {i+1}:       {cipher} ({key_size * 8} bits)")
         total_overhead = encryption.get("total_overhead")
         if total_overhead:
-            print(f"    Total Overhead:  {total_overhead} bytes")
+            eprint(f"    Total Overhead:  {total_overhead} bytes")
     else:
         algorithm = encryption.get("algorithm", "unknown")
-        print(f"    Algorithm:       {algorithm}")
+        eprint(f"    Algorithm:       {algorithm}")
         encryption_data = encryption.get("encryption_data")
         if encryption_data:
-            print(f"    Encryption Data: {encryption_data}")
+            eprint(f"    Encryption Data: {encryption_data}")
         key_size = encryption.get("key_size")
         if key_size:
-            print(f"    Key Size:        {key_size * 8} bits")
+            eprint(f"    Key Size:        {key_size * 8} bits")
 
     pq_bits = encryption.get("pq_security_bits")
     if pq_bits:
-        print(f"    PQ Security:     {pq_bits} bits")
+        eprint(f"    PQ Security:     {pq_bits} bits")
 
     # Key derivation section
     derivation = metadata.get("derivation_config", {})
@@ -7119,13 +7119,13 @@ def print_file_info(input_file: str, json_output: bool = False) -> dict:
     hash_config = derivation.get("hash_config", {})
     kdf_config = derivation.get("kdf_config", {})
 
-    print()
-    print("  Key Derivation:")
+    eprint()
+    eprint("  Key Derivation:")
     if salt:
-        print(f"    Salt:            {salt}")
+        eprint(f"    Salt:            {salt}")
 
     if hash_config:
-        print("    Hash Functions:")
+        eprint("    Hash Functions:")
         for algo, config in hash_config.items():
             if isinstance(config, dict):
                 rounds = config.get("rounds", 0)
@@ -7133,58 +7133,58 @@ def print_file_info(input_file: str, json_output: bool = False) -> dict:
                 rounds = config
             if rounds > 0:
                 display_name = algo.upper().replace("_", "-")
-                print(f"      {display_name}:{' ' * max(1, 13 - len(display_name))}{rounds} rounds")
+                eprint(f"      {display_name}:{' ' * max(1, 13 - len(display_name))}{rounds} rounds")
 
     if kdf_config:
-        print("    KDFs:")
+        eprint("    KDFs:")
         for kdf_name, kdf_params in kdf_config.items():
             if isinstance(kdf_params, dict) and kdf_params.get("enabled", True):
                 display_name = kdf_name.capitalize()
                 params_str = _format_kdf_params(kdf_name, kdf_params)
-                print(f"      {display_name}:{' ' * max(1, 13 - len(display_name))}{params_str}")
+                eprint(f"      {display_name}:{' ' * max(1, 13 - len(display_name))}{params_str}")
 
     # Integrity section
     hashes = metadata.get("hashes", {})
     original_hash = hashes.get("original_hash")
     if original_hash:
-        print()
-        print("  Integrity:")
-        print(f"    Original Hash:   {original_hash}")
+        eprint()
+        eprint("  Integrity:")
+        eprint(f"    Original Hash:   {original_hash}")
         encrypted_hash = hashes.get("encrypted_hash")
         if encrypted_hash:
-            print(f"    Encrypted Hash:  {encrypted_hash}")
+            eprint(f"    Encrypted Hash:  {encrypted_hash}")
 
     # PQC info
     pqc = metadata.get("pqc")
     if pqc:
-        print()
-        print("  Post-Quantum:")
+        eprint()
+        eprint("  Post-Quantum:")
         pub_key = pqc.get("public_key")
         if pub_key:
-            print(f"    Public Key:      {pub_key[:40]}...")
+            eprint(f"    Public Key:      {pub_key[:40]}...")
 
     # HSM info
     hsm_config = encryption.get("hsm_config")
     hsm_plugin = encryption.get("hsm_plugin")
     if hsm_config or hsm_plugin:
-        print()
-        print("  HSM:")
+        eprint()
+        eprint("  HSM:")
         if hsm_plugin:
-            print(f"    Plugin:          {hsm_plugin}")
+            eprint(f"    Plugin:          {hsm_plugin}")
         if hsm_config:
             slot = hsm_config.get("slot")
             if slot is not None:
-                print(f"    Slot:            {slot}")
+                eprint(f"    Slot:            {slot}")
 
     # Pepper info
     pepper_plugin = encryption.get("pepper_plugin")
     if pepper_plugin:
-        print()
-        print("  Pepper:")
-        print(f"    Plugin:          {pepper_plugin}")
+        eprint()
+        eprint("  Pepper:")
+        eprint(f"    Plugin:          {pepper_plugin}")
         pepper_name = encryption.get("pepper_name")
         if pepper_name:
-            print(f"    Name:            {pepper_name}")
+            eprint(f"    Name:            {pepper_name}")
 
     return metadata
 
@@ -7336,7 +7336,7 @@ def rekey_file(
 
         # Step 1: Decrypt to memory
         if not quiet:
-            print("Decrypting with old password...")
+            eprint("Decrypting with old password...")
 
         plaintext_data = decrypt_file(
             input_file=input_file,
@@ -7363,7 +7363,7 @@ def rekey_file(
 
         # Step 2: Re-encrypt directly from memory (plaintext never touches disk)
         if not quiet:
-            print("Re-encrypting with new password...")
+            eprint("Re-encrypting with new password...")
 
         input_dir = os.path.dirname(os.path.abspath(input_file))
 
@@ -7417,7 +7417,7 @@ def rekey_file(
             temp_output_path = None  # Prevent cleanup since it's been moved
 
         if not quiet:
-            print("Rekey completed successfully.")
+            eprint("Rekey completed successfully.")
 
         return True
 
@@ -7544,11 +7544,11 @@ def decrypt_file(
                 plugin_context.add_metadata("output_path", output_file)
 
             if not quiet and verbose:
-                print("🔌 Plugin system initialized for decryption")
+                eprint("🔌 Plugin system initialized for decryption")
 
         except ImportError:
             if not quiet and verbose:
-                print("⚠️  Plugin system not available")
+                eprint("⚠️  Plugin system not available")
             plugin_context = None
 
     # Execute pre-processing plugins (work with encrypted file)
@@ -7561,20 +7561,20 @@ def decrypt_file(
                 if plugin_reg.enabled:
                     try:
                         if not quiet and verbose:
-                            print(f"🔌 Executing pre-processor: {plugin_reg.plugin.name}")
+                            eprint(f"🔌 Executing pre-processor: {plugin_reg.plugin.name}")
 
                         result = plugin_manager.execute_plugin(
                             plugin_reg.plugin.plugin_id, plugin_context
                         )
                         if not result.success:
                             if not quiet:
-                                print(
+                                eprint(
                                     f"⚠️  Pre-processor plugin {plugin_reg.plugin.name} failed: {result.message}"
                                 )
                             # Continue with decryption even if plugin fails
                     except Exception as e:
                         if not quiet:
-                            print(f"⚠️  Pre-processor plugin error: {e}")
+                            eprint(f"⚠️  Pre-processor plugin error: {e}")
                         # Continue with decryption even if plugin fails
         except ImportError:
             pass  # Plugin system not available
@@ -7584,7 +7584,7 @@ def decrypt_file(
     KeyStretch.hash_stretch = False
     # Read the encrypted file
     if not quiet:
-        print(f"\nReading encrypted file: {input_file}")
+        eprint(f"\nReading encrypted file: {input_file}")
 
     # Read metadata incrementally (avoids loading full file for streaming v12)
     file_content = None  # Only populated for non-streaming path (needed for secure cleanup)
@@ -7646,10 +7646,10 @@ def decrypt_file(
             config = IntegrityConfig.from_file()
             if not config.enabled:
                 if not quiet:
-                    print(
+                    eprint(
                         "Warning: --verify-integrity flag used but integrity plugin not configured"
                     )
-                    print("Configure at: ~/.openssl_encrypt/plugins/integrity/config.json")
+                    eprint("Configure at: ~/.openssl_encrypt/plugins/integrity/config.json")
             else:
                 with IntegrityPlugin(config) as plugin:
                     from pathlib import Path as PathLib
@@ -7664,14 +7664,14 @@ def decrypt_file(
 
                     if match:
                         if not quiet:
-                            print(f"✓ Integrity verification passed")
+                            eprint(f"✓ Integrity verification passed")
                     else:
                         warning_msg = details.get("warning", "Hash mismatch or not found")
-                        print(f"\n⚠️  INTEGRITY VERIFICATION FAILED!")
-                        print(f"    Reason: {warning_msg}")
-                        print(f"\n    This file's metadata may have been tampered with.")
-                        print(f"    Proceeding could expose you to a DoS attack via")
-                        print(f"    malicious hash/KDF parameters.\n")
+                        eprint(f"\n⚠️  INTEGRITY VERIFICATION FAILED!")
+                        eprint(f"    Reason: {warning_msg}")
+                        eprint(f"\n    This file's metadata may have been tampered with.")
+                        eprint(f"    Proceeding could expose you to a DoS attack via")
+                        eprint(f"    malicious hash/KDF parameters.\n")
 
                         # Ask user if they want to proceed
                         try:
@@ -7682,7 +7682,7 @@ def decrypt_file(
                                 raise IntegrityVerificationError(
                                     f"Decryption aborted due to integrity verification failure: {warning_msg}"
                                 )
-                            print("⚠️  Proceeding despite integrity verification failure...")
+                            eprint("⚠️  Proceeding despite integrity verification failure...")
                         except (EOFError, KeyboardInterrupt):
                             raise IntegrityVerificationError(
                                 "Decryption aborted by user due to integrity verification failure"
@@ -7691,8 +7691,8 @@ def decrypt_file(
             raise  # Re-raise to abort decryption
         except Exception as e:
             if not quiet:
-                print(f"Warning: Integrity verification failed: {e}")
-                print("Proceeding with decryption...")
+                eprint(f"Warning: Integrity verification failed: {e}")
+                eprint("Proceeding with decryption...")
 
     # Initialize cascade variables (will be set later for V8 format)
     is_cascade = False
@@ -7770,10 +7770,10 @@ def decrypt_file(
                 cascade_salt_decrypt = base64.b64decode(cascade_salt_b64)
 
             if verbose:
-                print("🔗 Detected cascade encryption:")
-                print(f"   Cipher chain: {' → '.join(cascade_cipher_chain)}")
-                print(f"   HKDF hash: {cascade_hkdf_hash}")
-                print(f"   Layers: {len(cascade_cipher_chain)}")
+                eprint("🔗 Detected cascade encryption:")
+                eprint(f"   Cipher chain: {' → '.join(cascade_cipher_chain)}")
+                eprint(f"   HKDF hash: {cascade_hkdf_hash}")
+                eprint(f"   Layers: {len(cascade_cipher_chain)}")
 
         # For cascade mode, set algorithm to indicate cascade
         if is_cascade:
@@ -7895,11 +7895,11 @@ def decrypt_file(
                 age = datetime.datetime.utcnow() - enc_time
                 if age.days > 730:  # > 2 years
                     years = age.days / 365.25
-                    print(
+                    eprint(
                         f"\n\u26a0\ufe0f  This file was encrypted {years:.1f} years ago ({encrypted_at}).",
                         file=sys.stderr,
                     )
-                    print(
+                    eprint(
                         "    Consider re-encrypting with current parameters for stronger protection.",
                         file=sys.stderr,
                     )
@@ -7911,37 +7911,37 @@ def decrypt_file(
         try:
             from .decryption_estimator import estimate_decryption_cost, format_memory, format_time
 
-            print("\n" + "=" * 60)
-            print("DECRYPTION COST ESTIMATE")
-            print("=" * 60)
+            eprint("\n" + "=" * 60)
+            eprint("DECRYPTION COST ESTIMATE")
+            eprint("=" * 60)
 
             estimate = estimate_decryption_cost(metadata)
 
             # Show breakdown if operations exist
             if estimate.breakdown:
-                print("\nOperation Breakdown:")
+                eprint("\nOperation Breakdown:")
                 for op_name, time_sec, memory_kb in estimate.breakdown:
-                    print(f"  • {op_name}")
-                    print(
+                    eprint(f"  • {op_name}")
+                    eprint(
                         f"    Time: ~{format_time(time_sec)}, "
                         f"Memory: ~{format_memory(memory_kb)}"
                     )
 
             # Show totals
-            print("\nEstimated Total:")
-            print(f"  Time: ~{format_time(estimate.total_time_seconds)}")
-            print(f"  Peak Memory: ~{format_memory(estimate.peak_memory_kb)}")
+            eprint("\nEstimated Total:")
+            eprint(f"  Time: ~{format_time(estimate.total_time_seconds)}")
+            eprint(f"  Peak Memory: ~{format_memory(estimate.peak_memory_kb)}")
 
             # Show warnings if thresholds exceeded
             if estimate.warnings:
-                print()
+                eprint()
                 for warning in estimate.warnings:
-                    print(warning)
+                    eprint(warning)
 
-            print("=" * 60)
-            print("Note: Estimates are approximate based on benchmark data.")
-            print("Press Ctrl+C within 2 seconds to cancel decryption.")
-            print("=" * 60 + "\n")
+            eprint("=" * 60)
+            eprint("Note: Estimates are approximate based on benchmark data.")
+            eprint("Press Ctrl+C within 2 seconds to cancel decryption.")
+            eprint("=" * 60 + "\n")
 
             # 2-second sleep for user to review and cancel
             import time
@@ -7951,12 +7951,12 @@ def decrypt_file(
         except Exception as e:
             # Don't fail decryption if estimation fails
             if verbose or debug:
-                print(f"Warning: Could not estimate decryption cost: {e}")
+                eprint(f"Warning: Could not estimate decryption cost: {e}")
 
     # Verify the hash of encrypted data
     if encrypted_hash:
         if not quiet:
-            print("Verifying encrypted content integrity", end=" ")
+            eprint("Verifying encrypted content integrity", end=" ")
 
         # Use our constant-time comparison from crypt_errors
         from .crypt_errors import constant_time_compare
@@ -7965,7 +7965,7 @@ def decrypt_file(
         # Use constant-time comparison to prevent timing attacks
         if not constant_time_compare(computed_hash, encrypted_hash):
             if not quiet:
-                print("❌")  # Red X symbol
+                eprint("❌")  # Red X symbol
 
             # In test mode, use a more detailed message for compatibility with tests
             if os.environ.get("PYTEST_CURRENT_TEST") is not None:
@@ -7974,7 +7974,7 @@ def decrypt_file(
                 # In production mode, use a generic message to avoid leaking specifics
                 raise AuthenticationError("Content integrity verification failed")
         elif not quiet:
-            print("✅")  # Green check symbol
+            eprint("✅")  # Green check symbol
 
     # HSM pepper derivation if required
     hsm_pepper = None
@@ -7982,7 +7982,7 @@ def decrypt_file(
         # Auto-load HSM plugin if not provided via CLI
         if not hsm_plugin:
             if not quiet:
-                print(f"File requires HSM plugin '{hsm_plugin_name}', loading automatically...")
+                eprint(f"File requires HSM plugin '{hsm_plugin_name}', loading automatically...")
 
             try:
                 # Use plugin manager to dynamically discover and load HSM plugin
@@ -8045,7 +8045,7 @@ def decrypt_file(
                     )
 
                 if not quiet:
-                    print(f"✅ Auto-loaded HSM plugin: {hsm_plugin.name}")
+                    eprint(f"✅ Auto-loaded HSM plugin: {hsm_plugin.name}")
 
             except ImportError as e:
                 raise KeyDerivationError(
@@ -8061,7 +8061,7 @@ def decrypt_file(
             )
 
         if not quiet:
-            print("Deriving hardware-bound pepper from HSM for decryption...")
+            eprint("Deriving hardware-bound pepper from HSM for decryption...")
 
         try:
             from .plugin_system import PluginCapability, PluginSecurityContext
@@ -8111,7 +8111,7 @@ def decrypt_file(
                 )
 
             if not quiet:
-                print(f"Hardware pepper derived ({len(hsm_pepper)} bytes)")
+                eprint(f"Hardware pepper derived ({len(hsm_pepper)} bytes)")
 
             if debug:
                 logger.debug(f"HSM pepper length: {len(hsm_pepper)} bytes")
@@ -8125,7 +8125,7 @@ def decrypt_file(
     remote_pepper = None
     if pepper_plugin_name:
         if not quiet:
-            print(f"File requires remote pepper plugin '{pepper_plugin_name}'...")
+            eprint(f"File requires remote pepper plugin '{pepper_plugin_name}'...")
 
         try:
             from ..plugins.pepper import PepperConfig, PepperError, PepperPlugin
@@ -8145,7 +8145,7 @@ def decrypt_file(
                 )
 
             if not quiet:
-                print(f"Retrieving pepper '{pepper_name[:16]}...' from remote server...")
+                eprint(f"Retrieving pepper '{pepper_name[:16]}...' from remote server...")
 
             try:
                 encrypted_pepper_data = pepper_plugin.get_pepper(pepper_name)
@@ -8181,7 +8181,7 @@ def decrypt_file(
                 raise KeyDerivationError("Invalid pepper retrieved from server")
 
             if not quiet:
-                print(f"Remote pepper decrypted ({len(remote_pepper)} bytes)")
+                eprint(f"Remote pepper decrypted ({len(remote_pepper)} bytes)")
 
         except ImportError as e:
             raise KeyDerivationError(
@@ -8205,7 +8205,7 @@ def decrypt_file(
 
     # Generate the key from the password and salt (with combined pepper if applicable)
     if not quiet:
-        print("Generating decryption key ✅")  # Green check symbol)
+        eprint("Generating decryption key ✅")  # Green check symbol)
 
     # Check XOR mode from metadata to determine which key generation function to use
     xor_mode = metadata.get("xor_mode", "sequential")  # Default to sequential for backward compat
@@ -8327,7 +8327,7 @@ def decrypt_file(
                 if format_version in [4, 5, 6, 7, 8, 9, 10]:
                     if "pqc_key_salt" not in metadata["encryption"]:
                         if not quiet:
-                            print("Failed to decrypt post-quantum private key - wrong format")
+                            eprint("Failed to decrypt post-quantum private key - wrong format")
                         raise DecryptionError("Missing PQC key salt in metadata")
                     else:
                         # Decode the salt from v4/v5/v6/v9 structure
@@ -8335,7 +8335,7 @@ def decrypt_file(
                 else:  # format_version 3
                     if "pqc_key_salt" not in metadata:
                         if not quiet:
-                            print("Failed to decrypt post-quantum private key - wrong format")
+                            eprint("Failed to decrypt post-quantum private key - wrong format")
                         raise DecryptionError("Missing PQC key salt in metadata")
                     else:
                         # Decode the salt from v3 structure
@@ -8404,7 +8404,7 @@ def decrypt_file(
                 # WARNING: This is insecure but needed for backward compatibility
                 pqc_private_key_from_metadata = encrypted_private_key
                 if not quiet:
-                    print("WARNING: Using legacy unencrypted private key from metadata")
+                    eprint("WARNING: Using legacy unencrypted private key from metadata")
 
             # If no private key was provided explicitly, use the one from metadata
             if pqc_private_key is None:
@@ -8419,7 +8419,7 @@ def decrypt_file(
 
         except Exception as e:
             if not quiet:
-                print(f"Error processing PQC private key: {str(e)}")
+                eprint(f"Error processing PQC private key: {str(e)}")
             # If there's an error, we'll continue without a private key    # Decrypt the data
     # --- Streaming decryption path for format_version 12 ---
     if format_version == 12 and metadata.get("streaming", {}).get("enabled", False):
@@ -8460,14 +8460,14 @@ def decrypt_file(
                 if is_cascade and cascade_cipher_chain
                 else algorithm
             )
-            print(f"Decrypting content with {cipher_desc} (streaming)", end=" ")
+            eprint(f"Decrypting content with {cipher_desc} (streaming)", end=" ")
 
         progress_cb = None
         if progress and not quiet:
 
             def progress_cb(idx, total):
                 pct = ((idx + 1) / total) * 100 if total > 0 else 100
-                print(f"\rDecrypting: {pct:.1f}% ({idx + 1}/{total} chunks)", end="", flush=True)
+                eprint(f"\rDecrypting: {pct:.1f}% ({idx + 1}/{total} chunks)", end="", flush=True)
 
         result = streaming_dec.decrypt_file(
             input_file=input_file,
@@ -8480,10 +8480,10 @@ def decrypt_file(
         )
 
         if progress and not quiet:
-            print()  # newline after progress
+            eprint()  # newline after progress
 
         if not quiet:
-            print("✅")
+            eprint("✅")
 
         # Set secure permissions on output
         if output_file:
@@ -8502,9 +8502,9 @@ def decrypt_file(
         if is_cascade and cascade_cipher_chain:
             # Show all algorithms in the cascade chain (in reverse order for decryption)
             cipher_list = " → ".join(reversed(cascade_cipher_chain))
-            print(f"Decrypting content with cascade ({cipher_list})", end=" ")
+            eprint(f"Decrypting content with cascade ({cipher_list})", end=" ")
         else:
-            print("Decrypting content with " + algorithm, end=" ")
+            eprint("Decrypting content with " + algorithm, end=" ")
 
     # For AEAD algorithms, prepare AAD from metadata
     if aead_binding:
@@ -8734,7 +8734,7 @@ def decrypt_file(
                     if hasattr(e, "args") and len(e.args) > 0:
                         err_msg = str(e.args[0])
                         if "integrity" in err_msg.lower():
-                            print(f"PQC integrity verification failed: {err_msg}")
+                            eprint(f"PQC integrity verification failed: {err_msg}")
                     raise ValueError("Decryption failed: post-quantum decryption error")
         else:
             # Get possible nonce sizes for this algorithm
@@ -8882,7 +8882,7 @@ def decrypt_file(
                             cipher = XChaCha20Poly1305(key)
                             # Show warning when using legacy size
                             if stored_size != 24 and not quiet:
-                                print(
+                                eprint(
                                     "\nWARNING: Using legacy 12-byte nonce for XChaCha20-Poly1305"
                                 )
                             result = cipher.decrypt(
@@ -8983,11 +8983,11 @@ def decrypt_file(
         )
 
     if not quiet:
-        print("✅")  # Green check symbol
+        eprint("✅")  # Green check symbol
     # Verify the hash of decrypted data
     if original_hash:
         if not quiet:
-            print("Verifying decrypted content integrity", end=" ")
+            eprint("Verifying decrypted content integrity", end=" ")
 
         # Check for PQC special cases
         pqc_special_case = False
@@ -9002,7 +9002,7 @@ def decrypt_file(
             pqc_special_case = True
             # Skip verification for special PQC test cases
             if not quiet:
-                print("⚠️ (PQC test mode)")
+                eprint("⚠️ (PQC test mode)")
         else:
             # Use our constant-time comparison from crypt_errors
             from .crypt_errors import constant_time_compare
@@ -9011,13 +9011,13 @@ def decrypt_file(
             # Use constant-time comparison to prevent timing attacks
             if not constant_time_compare(computed_hash, original_hash):
                 if not quiet:
-                    print("❌")  # Red X symbol
+                    eprint("❌")  # Red X symbol
 
                 # Always fail hard on integrity check failure regardless of algorithm.
                 # Never silently return empty data or bypass the check.
                 raise AuthenticationError("Content integrity verification failed")
             elif not quiet:
-                print("✅")  # Green check symbol
+                eprint("✅")  # Green check symbol
 
     # Emit telemetry event (if enabled) - successful decryption
     try:
@@ -9037,7 +9037,7 @@ def decrypt_file(
         if not quiet:
             manifest = archive_info.get("manifest", {})
             original_path = archive_info.get("original_path", "archive")
-            print(
+            eprint(
                 f"Extracting directory archive: {original_path} "
                 f"({manifest.get('total_files', '?')} files)"
             )
@@ -9051,11 +9051,11 @@ def decrypt_file(
         secure_tar_extract(decrypted_data, output_dir)
 
         if not quiet:
-            print(f"Directory extracted to: {output_dir}")
+            eprint(f"Directory extracted to: {output_dir}")
     else:
         # Write the decrypted data to file
         if not quiet:
-            print(f"Writing decrypted file: {output_file}")
+            eprint(f"Writing decrypted file: {output_file}")
 
         with safe_open_file(output_file, "wb", secure_mode=secure_mode) as file:
             file.write(decrypted_data)
@@ -9081,20 +9081,20 @@ def decrypt_file(
                 if plugin_reg.enabled:
                     try:
                         if not quiet and verbose:
-                            print(f"🔌 Executing post-processor: {plugin_reg.plugin.name}")
+                            eprint(f"🔌 Executing post-processor: {plugin_reg.plugin.name}")
 
                         result = plugin_manager.execute_plugin(
                             plugin_reg.plugin.plugin_id, plugin_context
                         )
                         if not result.success:
                             if not quiet:
-                                print(
+                                eprint(
                                     f"⚠️  Post-processor plugin {plugin_reg.plugin.name} failed: {result.message}"
                                 )
                             # Continue even if plugin fails
                     except Exception as e:
                         if not quiet:
-                            print(f"⚠️  Post-processor plugin error: {e}")
+                            eprint(f"⚠️  Post-processor plugin error: {e}")
                         # Continue even if plugin fails
         except ImportError:
             pass  # Plugin system not available

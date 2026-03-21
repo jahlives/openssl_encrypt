@@ -17,6 +17,7 @@ import sys
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 
+from .crypt_utils import eprint
 from .security_scorer import SecurityLevel, SecurityScorer
 
 # Import registry helper functions for algorithm discovery
@@ -104,28 +105,28 @@ class ConfigurationWizard:
 
     def _show_welcome(self):
         """Display wizard welcome message."""
-        print("\n" + "=" * 60)
-        print("    OpenSSL Encrypt - Configuration Wizard")
-        print("=" * 60)
-        print("\nThis wizard will help you configure secure encryption settings")
-        print("based on your expertise level and intended use case.\n")
-        print("The wizard provides:")
-        print("• Guided security configuration setup")
-        print("• Intelligent recommendations for your use case")
-        print("• Educational explanations of security options")
-        print("• Real-time security scoring feedback")
-        print("\nPress Ctrl+C at any time to exit.\n")
+        eprint("\n" + "=" * 60)
+        eprint("    OpenSSL Encrypt - Configuration Wizard")
+        eprint("=" * 60)
+        eprint("\nThis wizard will help you configure secure encryption settings")
+        eprint("based on your expertise level and intended use case.\n")
+        eprint("The wizard provides:")
+        eprint("• Guided security configuration setup")
+        eprint("• Intelligent recommendations for your use case")
+        eprint("• Educational explanations of security options")
+        eprint("• Real-time security scoring feedback")
+        eprint("\nPress Ctrl+C at any time to exit.\n")
 
     def _gather_user_info(self):
         """Gather user expertise and use case information."""
         # Determine user expertise level
-        print("STEP 1: Expertise Level")
-        print("-" * 25)
-        print("Please select your cryptography expertise level:")
-        print("1. Beginner     - New to encryption, want simple secure defaults")
-        print("2. Intermediate - Some experience, want balanced security/performance")
-        print("3. Advanced     - Good understanding, want to customize settings")
-        print("4. Expert       - Deep knowledge, want full control")
+        eprint("STEP 1: Expertise Level")
+        eprint("-" * 25)
+        eprint("Please select your cryptography expertise level:")
+        eprint("1. Beginner     - New to encryption, want simple secure defaults")
+        eprint("2. Intermediate - Some experience, want balanced security/performance")
+        eprint("3. Advanced     - Good understanding, want to customize settings")
+        eprint("4. Expert       - Deep knowledge, want full control")
 
         while True:
             try:
@@ -143,21 +144,21 @@ class ConfigurationWizard:
                     self.user_expertise = UserExpertise.EXPERT
                     break
                 else:
-                    print("Please enter a number between 1 and 4.")
+                    eprint("Please enter a number between 1 and 4.")
             except (EOFError, KeyboardInterrupt):
-                print("\nWizard cancelled.")
+                eprint("\nWizard cancelled.")
                 sys.exit(0)
 
         # Determine use case
-        print(f"\nSTEP 2: Use Case ({self.user_expertise.value.title()} Mode)")
-        print("-" * 40)
-        print("What will you primarily use encryption for?")
-        print("1. Personal files      - Photos, documents, backups")
-        print("2. Business documents  - Corporate files, communications")
-        print("3. Sensitive data      - Financial, medical, legal records")
-        print("4. Archival storage    - Long-term data preservation")
-        print("5. High security       - Classified or highly sensitive material")
-        print("6. Compliance          - Regulatory requirements (HIPAA, GDPR, etc.)")
+        eprint(f"\nSTEP 2: Use Case ({self.user_expertise.value.title()} Mode)")
+        eprint("-" * 40)
+        eprint("What will you primarily use encryption for?")
+        eprint("1. Personal files      - Photos, documents, backups")
+        eprint("2. Business documents  - Corporate files, communications")
+        eprint("3. Sensitive data      - Financial, medical, legal records")
+        eprint("4. Archival storage    - Long-term data preservation")
+        eprint("5. High security       - Classified or highly sensitive material")
+        eprint("6. Compliance          - Regulatory requirements (HIPAA, GDPR, etc.)")
 
         while True:
             try:
@@ -181,9 +182,9 @@ class ConfigurationWizard:
                     self.use_case = UseCase.COMPLIANCE
                     break
                 else:
-                    print("Please enter a number between 1 and 6.")
+                    eprint("Please enter a number between 1 and 6.")
             except (EOFError, KeyboardInterrupt):
-                print("\nWizard cancelled.")
+                eprint("\nWizard cancelled.")
                 sys.exit(0)
 
     def _generate_base_config(self) -> Dict[str, Any]:
@@ -253,18 +254,18 @@ class ConfigurationWizard:
             # Skip for beginners - use defaults
             return
 
-        print(f"\nSTEP 3: Hash Algorithm Configuration")
-        print("-" * 40)
-        print("Current hash configuration:")
+        eprint(f"\nSTEP 3: Hash Algorithm Configuration")
+        eprint("-" * 40)
+        eprint("Current hash configuration:")
 
         for alg, settings in self.config["hash_algorithms"].items():
-            print(f"• {alg.upper()}: {settings['rounds']:,} rounds")
+            eprint(f"• {alg.upper()}: {settings['rounds']:,} rounds")
 
         if self.user_expertise in [UserExpertise.INTERMEDIATE, UserExpertise.ADVANCED]:
-            print("\nWould you like to:")
-            print("1. Keep current settings (recommended)")
-            print("2. Add more hash algorithms for extra security")
-            print("3. Adjust iteration counts")
+            eprint("\nWould you like to:")
+            eprint("1. Keep current settings (recommended)")
+            eprint("2. Add more hash algorithms for extra security")
+            eprint("3. Adjust iteration counts")
 
             try:
                 choice = input("\nEnter your choice (1-3): ").strip()
@@ -273,7 +274,7 @@ class ConfigurationWizard:
                 elif choice == "3":
                     self._adjust_hash_rounds()
             except (EOFError, KeyboardInterrupt):
-                print("\nUsing current settings.")
+                eprint("\nUsing current settings.")
 
     def _add_hash_algorithms(self):
         """Add additional hash algorithms."""
@@ -306,12 +307,12 @@ class ConfigurationWizard:
         available = {k: v for k, v in available_hashes.items() if k not in current_hashes}
 
         if not available:
-            print("All recommended hash algorithms are already configured.")
+            eprint("All recommended hash algorithms are already configured.")
             return
 
-        print("\nAvailable hash algorithms to add:")
+        eprint("\nAvailable hash algorithms to add:")
         for i, (alg, desc) in enumerate(available.items(), 1):
-            print(f"{i}. {alg.upper()}: {desc}")
+            eprint(f"{i}. {alg.upper()}: {desc}")
 
         try:
             choices = input(
@@ -325,19 +326,19 @@ class ConfigurationWizard:
                         if 0 <= idx < len(alg_list):
                             alg = alg_list[idx]
                             self.config["hash_algorithms"][alg] = {"rounds": 1000000}
-                            print(f"Added {alg.upper()} with 1,000,000 rounds")
+                            eprint(f"Added {alg.upper()} with 1,000,000 rounds")
                     except ValueError:
-                        print(f"Skipping invalid choice: {choice}")
+                        eprint(f"Skipping invalid choice: {choice}")
         except (EOFError, KeyboardInterrupt):
-            print("\nNo changes made.")
+            eprint("\nNo changes made.")
 
     def _adjust_hash_rounds(self):
         """Adjust hash algorithm round counts."""
-        print("\nCurrent hash settings:")
+        eprint("\nCurrent hash settings:")
         hash_list = list(self.config["hash_algorithms"].items())
 
         for i, (alg, settings) in enumerate(hash_list, 1):
-            print(f"{i}. {alg.upper()}: {settings['rounds']:,} rounds")
+            eprint(f"{i}. {alg.upper()}: {settings['rounds']:,} rounds")
 
         try:
             choice = input(f"\nSelect algorithm to adjust (1-{len(hash_list)}): ").strip()
@@ -345,103 +346,103 @@ class ConfigurationWizard:
 
             if 0 <= idx < len(hash_list):
                 alg, settings = hash_list[idx]
-                print(f"\nCurrent {alg.upper()} rounds: {settings['rounds']:,}")
-                print("Recommendations:")
-                print("• 500,000 - Faster, suitable for frequent use")
-                print("• 1,000,000 - Balanced security/performance")
-                print("• 2,000,000 - Higher security, slower")
-                print("• 5,000,000 - Maximum security, much slower")
+                eprint(f"\nCurrent {alg.upper()} rounds: {settings['rounds']:,}")
+                eprint("Recommendations:")
+                eprint("• 500,000 - Faster, suitable for frequent use")
+                eprint("• 1,000,000 - Balanced security/performance")
+                eprint("• 2,000,000 - Higher security, slower")
+                eprint("• 5,000,000 - Maximum security, much slower")
 
                 new_rounds = input(f"Enter new round count for {alg.upper()}: ").strip()
                 if new_rounds.isdigit():
                     rounds = int(new_rounds)
                     if 100000 <= rounds <= 10000000:
                         self.config["hash_algorithms"][alg]["rounds"] = rounds
-                        print(f"Updated {alg.upper()} to {rounds:,} rounds")
+                        eprint(f"Updated {alg.upper()} to {rounds:,} rounds")
                     else:
-                        print("Round count should be between 100,000 and 10,000,000")
+                        eprint("Round count should be between 100,000 and 10,000,000")
         except (ValueError, EOFError, KeyboardInterrupt):
-            print("\nNo changes made.")
+            eprint("\nNo changes made.")
 
     def _configure_kdf_settings(self):
         """Interactive KDF configuration."""
         if self.user_expertise == UserExpertise.BEGINNER:
             return
 
-        print(f"\nSTEP 4: Key Derivation Function (KDF) Configuration")
-        print("-" * 55)
-        print("Current KDF configuration:")
+        eprint(f"\nSTEP 4: Key Derivation Function (KDF) Configuration")
+        eprint("-" * 55)
+        eprint("Current KDF configuration:")
 
         for kdf, settings in self.config["kdf_settings"].items():
             if settings.get("enabled"):
                 if kdf == "argon2":
-                    print(
+                    eprint(
                         f"• Argon2: {settings['memory_cost']//1024}MB memory, {settings['time_cost']} iterations"
                     )
                 elif kdf == "scrypt":
-                    print(f"• Scrypt: N={settings['n']}, r={settings['r']}, p={settings['p']}")
+                    eprint(f"• Scrypt: N={settings['n']}, r={settings['r']}, p={settings['p']}")
 
         if self.user_expertise in [UserExpertise.ADVANCED, UserExpertise.EXPERT]:
-            print("\nWould you like to adjust KDF settings? (y/N): ", end="")
+            eprint("\nWould you like to adjust KDF settings? (y/N): ", end="")
             try:
                 response = input().strip().lower()
                 if response in ["y", "yes"]:
                     self._adjust_kdf_settings()
             except (EOFError, KeyboardInterrupt):
-                print("\nUsing current settings.")
+                eprint("\nUsing current settings.")
 
     def _adjust_kdf_settings(self):
         """Adjust KDF parameters."""
-        print("\nKDF adjustment options:")
-        print("1. Adjust Argon2 memory usage")
-        print("2. Add secondary KDF (Scrypt)")
-        print("3. Fine-tune Argon2 parameters")
+        eprint("\nKDF adjustment options:")
+        eprint("1. Adjust Argon2 memory usage")
+        eprint("2. Add secondary KDF (Scrypt)")
+        eprint("3. Fine-tune Argon2 parameters")
 
         if REGISTRY_AVAILABLE:
-            print("\n(Tip: Use 'list-algorithms --category=kdfs' to see all available KDFs)")
+            eprint("\n(Tip: Use 'list-algorithms --category=kdfs' to see all available KDFs)")
 
         try:
             choice = input("Enter your choice (1-3): ").strip()
 
             if choice == "1":
                 current_mb = self.config["kdf_settings"]["argon2"]["memory_cost"] // 1024
-                print(f"\nCurrent Argon2 memory: {current_mb}MB")
-                print("Memory recommendations:")
-                print("• 32MB  - Low memory systems")
-                print("• 64MB  - Balanced (default)")
-                print("• 128MB - Higher security")
-                print("• 256MB - Strong security")
-                print("• 512MB - Maximum practical security")
+                eprint(f"\nCurrent Argon2 memory: {current_mb}MB")
+                eprint("Memory recommendations:")
+                eprint("• 32MB  - Low memory systems")
+                eprint("• 64MB  - Balanced (default)")
+                eprint("• 128MB - Higher security")
+                eprint("• 256MB - Strong security")
+                eprint("• 512MB - Maximum practical security")
 
                 new_mb = input("Enter memory in MB: ").strip()
                 if new_mb.isdigit():
                     mb = int(new_mb)
                     if 16 <= mb <= 2048:
                         self.config["kdf_settings"]["argon2"]["memory_cost"] = mb * 1024
-                        print(f"Updated Argon2 memory to {mb}MB")
+                        eprint(f"Updated Argon2 memory to {mb}MB")
 
             elif choice == "2" and "scrypt" not in self.config["kdf_settings"]:
-                print("\nAdding Scrypt as secondary KDF for enhanced security...")
+                eprint("\nAdding Scrypt as secondary KDF for enhanced security...")
                 self.config["kdf_settings"]["scrypt"] = {
                     "enabled": True,
                     "n": 16384,
                     "r": 8,
                     "p": 1,
                 }
-                print("Added Scrypt KDF with secure defaults")
+                eprint("Added Scrypt KDF with secure defaults")
 
         except (ValueError, EOFError, KeyboardInterrupt):
-            print("\nNo changes made.")
+            eprint("\nNo changes made.")
 
     def _configure_encryption(self):
         """Interactive encryption algorithm configuration."""
         if self.user_expertise in [UserExpertise.BEGINNER, UserExpertise.INTERMEDIATE]:
             return
 
-        print(f"\nSTEP 5: Encryption Algorithm")
-        print("-" * 30)
+        eprint(f"\nSTEP 5: Encryption Algorithm")
+        eprint("-" * 30)
         current_alg = self.config["encryption"]["algorithm"]
-        print(f"Current algorithm: {current_alg.upper()}")
+        eprint(f"Current algorithm: {current_alg.upper()}")
 
         # Use registry if available for cipher information
         if REGISTRY_AVAILABLE:
@@ -468,14 +469,14 @@ class ConfigurationWizard:
                 "chacha20-poly1305": "ChaCha20-Poly1305 - Fast, modern alternative to AES",
             }
 
-        print("\nAvailable encryption algorithms:")
+        eprint("\nAvailable encryption algorithms:")
         alg_list = list(algorithms.items())
         for i, (alg, desc) in enumerate(alg_list, 1):
             marker = " (current)" if alg == current_alg else ""
-            print(f"{i}. {desc}{marker}")
+            eprint(f"{i}. {desc}{marker}")
 
         if REGISTRY_AVAILABLE:
-            print(
+            eprint(
                 "\n(Tip: Use 'list-algorithms --category=ciphers' for detailed cipher information)"
             )
 
@@ -488,39 +489,39 @@ class ConfigurationWizard:
                 if 0 <= idx < len(alg_list):
                     new_alg = alg_list[idx][0]
                     self.config["encryption"]["algorithm"] = new_alg
-                    print(f"Updated to {new_alg.upper()}")
+                    eprint(f"Updated to {new_alg.upper()}")
         except (ValueError, EOFError, KeyboardInterrupt):
-            print("\nUsing current algorithm.")
+            eprint("\nUsing current algorithm.")
 
     def _configure_post_quantum(self):
         """Interactive post-quantum configuration."""
         if self.user_expertise == UserExpertise.BEGINNER:
             return
 
-        print(f"\nSTEP 6: Post-Quantum Cryptography")
-        print("-" * 35)
+        eprint(f"\nSTEP 6: Post-Quantum Cryptography")
+        eprint("-" * 35)
 
         pqc_enabled = self.config["post_quantum"].get("enabled", False)
 
         if not pqc_enabled:
-            print("Post-quantum cryptography: DISABLED")
-            print("\nPost-quantum algorithms protect against future quantum computers.")
-            print("Recommended for:")
-            print("• Long-term data storage (>10 years)")
-            print("• Highly sensitive information")
-            print("• Compliance with quantum-safe requirements")
+            eprint("Post-quantum cryptography: DISABLED")
+            eprint("\nPost-quantum algorithms protect against future quantum computers.")
+            eprint("Recommended for:")
+            eprint("• Long-term data storage (>10 years)")
+            eprint("• Highly sensitive information")
+            eprint("• Compliance with quantum-safe requirements")
 
             try:
                 enable = input("\nEnable post-quantum protection? (y/N): ").strip().lower()
                 if enable in ["y", "yes"]:
                     self.config["post_quantum"]["enabled"] = True
                     self.config["post_quantum"]["algorithm"] = "ml-kem-768"
-                    print("Enabled ML-KEM-768 (NIST standard)")
+                    eprint("Enabled ML-KEM-768 (NIST standard)")
             except (EOFError, KeyboardInterrupt):
-                print("\nPost-quantum remains disabled.")
+                eprint("\nPost-quantum remains disabled.")
         else:
             current_alg = self.config["post_quantum"]["algorithm"]
-            print(f"Post-quantum cryptography: ENABLED ({current_alg.upper()})")
+            eprint(f"Post-quantum cryptography: ENABLED ({current_alg.upper()})")
 
             if self.user_expertise in [UserExpertise.ADVANCED, UserExpertise.EXPERT]:
                 algorithms = {
@@ -530,11 +531,11 @@ class ConfigurationWizard:
                     "hqc-256": "HQC-256 - Alternative approach, code-based",
                 }
 
-                print("\nAvailable post-quantum algorithms:")
+                eprint("\nAvailable post-quantum algorithms:")
                 alg_list = list(algorithms.items())
                 for i, (alg, desc) in enumerate(alg_list, 1):
                     marker = " (current)" if alg == current_alg else ""
-                    print(f"{i}. {desc}{marker}")
+                    eprint(f"{i}. {desc}{marker}")
 
                 try:
                     choice = input(
@@ -545,15 +546,15 @@ class ConfigurationWizard:
                         if 0 <= idx < len(alg_list):
                             new_alg = alg_list[idx][0]
                             self.config["post_quantum"]["algorithm"] = new_alg
-                            print(f"Updated to {new_alg.upper()}")
+                            eprint(f"Updated to {new_alg.upper()}")
                 except (ValueError, EOFError, KeyboardInterrupt):
-                    print("\nUsing current algorithm.")
+                    eprint("\nUsing current algorithm.")
 
     def _show_configuration_summary(self):
         """Display final configuration summary with security score."""
-        print(f"\n{'='*60}")
-        print("    CONFIGURATION SUMMARY")
-        print(f"{'='*60}")
+        eprint(f"\n{'='*60}")
+        eprint("    CONFIGURATION SUMMARY")
+        eprint(f"{'='*60}")
 
         # Convert config to scoring format
         hash_config = self.config["hash_algorithms"]
@@ -571,51 +572,51 @@ class ConfigurationWizard:
         # Calculate security score
         analysis = self.scorer.score_configuration(hash_config, kdf_config, cipher_info, pqc_info)
 
-        print(f"\nSECURITY SCORE: {analysis['overall']['score']}/10")
-        print(f"Security Level: {analysis['overall']['level'].name}")
-        print(f"Assessment: {analysis['overall']['description']}")
+        eprint(f"\nSECURITY SCORE: {analysis['overall']['score']}/10")
+        eprint(f"Security Level: {analysis['overall']['level'].name}")
+        eprint(f"Assessment: {analysis['overall']['description']}")
 
-        print(f"\nCONFIGURATION DETAILS:")
-        print(f"─────────────────────")
+        eprint(f"\nCONFIGURATION DETAILS:")
+        eprint(f"─────────────────────")
 
         # Hash algorithms
-        print("Hash Algorithms:")
+        eprint("Hash Algorithms:")
         for alg, settings in self.config["hash_algorithms"].items():
-            print(f"  • {alg.upper()}: {settings['rounds']:,} rounds")
+            eprint(f"  • {alg.upper()}: {settings['rounds']:,} rounds")
 
         # KDF settings
-        print("Key Derivation Functions:")
+        eprint("Key Derivation Functions:")
         for kdf, settings in self.config["kdf_settings"].items():
             if settings.get("enabled"):
                 if kdf == "argon2":
-                    print(
+                    eprint(
                         f"  • Argon2: {settings['memory_cost']//1024}MB memory, {settings['time_cost']} iterations, {settings['parallelism']} threads"
                     )
                 elif kdf == "scrypt":
-                    print(f"  • Scrypt: N={settings['n']}, r={settings['r']}, p={settings['p']}")
+                    eprint(f"  • Scrypt: N={settings['n']}, r={settings['r']}, p={settings['p']}")
 
         # Encryption
-        print(f"Encryption Algorithm:")
-        print(f"  • {self.config['encryption']['algorithm'].upper()}")
+        eprint(f"Encryption Algorithm:")
+        eprint(f"  • {self.config['encryption']['algorithm'].upper()}")
 
         # Post-quantum
         if self.config["post_quantum"].get("enabled"):
-            print(f"Post-Quantum Cryptography:")
-            print(f"  • {self.config['post_quantum']['algorithm'].upper()}")
+            eprint(f"Post-Quantum Cryptography:")
+            eprint(f"  • {self.config['post_quantum']['algorithm'].upper()}")
         else:
-            print("Post-Quantum Cryptography: Disabled")
+            eprint("Post-Quantum Cryptography: Disabled")
 
         # Show recommendations
         if analysis["suggestions"]:
-            print(f"\nRECOMMENDATIONS:")
-            print(f"─────────────────")
+            eprint(f"\nRECOMMENDATIONS:")
+            eprint(f"─────────────────")
             for i, suggestion in enumerate(analysis["suggestions"], 1):
-                print(f"{i}. {suggestion}")
+                eprint(f"{i}. {suggestion}")
 
-        print(f"\n{'='*60}")
-        print("Configuration wizard completed!")
-        print("Use these settings with the encrypt command for optimal security.")
-        print(f"{'='*60}\n")
+        eprint(f"\n{'='*60}")
+        eprint("Configuration wizard completed!")
+        eprint("Use these settings with the encrypt command for optimal security.")
+        eprint(f"{'='*60}\n")
 
 
 def run_configuration_wizard(quiet: bool = False) -> Dict[str, Any]:

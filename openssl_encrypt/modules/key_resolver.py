@@ -20,6 +20,7 @@ Resolution order:
 import logging
 from typing import TYPE_CHECKING, Callable, Optional
 
+from .crypt_utils import eprint
 from .identity import Identity, IdentityStore
 from .key_bundle import InvalidFingerprintError, InvalidSignatureError
 
@@ -68,9 +69,9 @@ class KeyResolver:
             identity = resolver.resolve("alice@example.com", load_private_keys=False)
             # Use identity for encryption
         except KeyNotFoundError:
-            print("Key not found")
+            eprint("Key not found")
         except TrustDeclinedError:
-            print("User declined to trust key")
+            eprint("User declined to trust key")
     """
 
     def __init__(
@@ -203,25 +204,25 @@ def default_trust_callback(bundle: "PublicKeyBundle") -> bool:
         logger.error("Invalid bundle type in trust callback")
         return False
 
-    print("\n" + "=" * 60)
-    print("KEYSERVER KEY VERIFICATION")
-    print("=" * 60)
-    print(f"Identity:    {bundle.name}")
-    print(f"Email:       {bundle.email or 'N/A'}")
-    print(f"Fingerprint: {bundle.fingerprint}")
-    print(f"Algorithms:  {bundle.encryption_algorithm} / {bundle.signing_algorithm}")
-    print(f"Created:     {bundle.created_at}")
-    print("=" * 60)
-    print()
-    print("IMPORTANT: Verify the fingerprint through a trusted channel")
-    print("(e.g., in-person, phone call, secure messaging)")
-    print()
+    eprint("\n" + "=" * 60)
+    eprint("KEYSERVER KEY VERIFICATION")
+    eprint("=" * 60)
+    eprint(f"Identity:    {bundle.name}")
+    eprint(f"Email:       {bundle.email or 'N/A'}")
+    eprint(f"Fingerprint: {bundle.fingerprint}")
+    eprint(f"Algorithms:  {bundle.encryption_algorithm} / {bundle.signing_algorithm}")
+    eprint(f"Created:     {bundle.created_at}")
+    eprint("=" * 60)
+    eprint()
+    eprint("IMPORTANT: Verify the fingerprint through a trusted channel")
+    eprint("(e.g., in-person, phone call, secure messaging)")
+    eprint()
 
     try:
         response = input("Trust and import this key? [y/N]: ").strip().lower()
         return response in ("y", "yes")
     except (KeyboardInterrupt, EOFError):
-        print("\nAborted")
+        eprint("\nAborted")
         return False
 
 
@@ -244,4 +245,4 @@ def silent_trust_callback(bundle: "PublicKeyBundle") -> bool:
 
 if __name__ == "__main__":
     # Simple test
-    print("KeyResolver module loaded successfully")
+    eprint("KeyResolver module loaded successfully")

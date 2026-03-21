@@ -235,11 +235,11 @@ class TestCryptCliArguments(unittest.TestCase):
         )
 
         # Read all three files and combine the source code
-        with open(cli_module_path, "r") as f:
+        with open(cli_module_path, "r", encoding="utf-8") as f:
             main_cli_code = f.read()
-        with open(subparser_module_path, "r") as f:
+        with open(subparser_module_path, "r", encoding="utf-8") as f:
             subparser_code = f.read()
-        with open(aliases_module_path, "r") as f:
+        with open(aliases_module_path, "r", encoding="utf-8") as f:
             aliases_code = f.read()
 
         cls.source_code = main_cli_code + "\n" + subparser_code + "\n" + aliases_code
@@ -350,9 +350,10 @@ def generate_cli_argument_tests():
 
             # Use the module path since crypt.py might not exist
             result = subprocess.run(
-                ["python", "-m", "openssl_encrypt.crypt", "--help"],
+                [sys.executable, "-m", "openssl_encrypt.crypt", "--help"],
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
             )
 
             help_text = result.stdout or result.stderr
@@ -407,7 +408,7 @@ class CLITestBase(unittest.TestCase):
 
         # Create a test file
         self.test_file = os.path.join(self.test_dir, "cli_test.txt")
-        with open(self.test_file, "w") as f:
+        with open(self.test_file, "w", encoding="utf-8") as f:
             f.write("This is a test file for CLI interface testing.")
 
         # Save original sys.argv
@@ -468,7 +469,7 @@ class TestCLIEncryptDecrypt(CLITestBase):
 
         # Redirect stdout to capture output
         original_stdout = sys.stdout
-        sys.stdout = open(os.devnull, "w")
+        sys.stdout = open(os.devnull, "w", encoding="utf-8")
 
         try:
             with mock.patch("sys.exit") as mock_exit:
@@ -496,7 +497,7 @@ class TestCLIEncryptDecrypt(CLITestBase):
         ]
 
         # Redirect stdout again
-        sys.stdout = open(os.devnull, "w")
+        sys.stdout = open(os.devnull, "w", encoding="utf-8")
 
         try:
             with mock.patch("sys.exit") as mock_exit:
@@ -510,7 +511,7 @@ class TestCLIEncryptDecrypt(CLITestBase):
         # Verify decrypted file and content
         self.assertTrue(os.path.exists(decrypted_file))
 
-        with open(self.test_file, "r") as original, open(decrypted_file, "r") as decrypted:
+        with open(self.test_file, "r", encoding="utf-8") as original, open(decrypted_file, "r", encoding="utf-8") as decrypted:
             self.assertEqual(original.read(), decrypted.read())
 
 
@@ -555,21 +556,21 @@ class TestCLISecurityInfo(CLITestBase):
         # Configure CLI args
         sys.argv = ["crypt.py", "security-info"]
 
-        # Redirect stdout to capture output
-        original_stdout = sys.stdout
+        # Redirect stderr to capture output (security info goes to stderr)
+        original_stderr = sys.stderr
         output_file = os.path.join(self.test_dir, "security_info_output.txt")
 
         try:
-            with open(output_file, "w") as f:
-                sys.stdout = f
+            with open(output_file, "w", encoding="utf-8") as f:
+                sys.stderr = f
 
                 with mock.patch("sys.exit"):
                     cli_main()
         finally:
-            sys.stdout = original_stdout
+            sys.stderr = original_stderr
 
         # Verify output contains expected security information
-        with open(output_file, "r") as f:
+        with open(output_file, "r", encoding="utf-8") as f:
             content = f.read()
             self.assertIn("SECURITY RECOMMENDATIONS", content)
             self.assertIn("Password Hashing Algorithm Recommendations", content)
@@ -842,7 +843,7 @@ class TestCLIAdvancedOperations(CLITestBase):
             # Run decrypt command with stdin input
             process = subprocess.Popen(
                 [
-                    "python",
+                    sys.executable,
                     "-m",
                     "openssl_encrypt.crypt",
                     "--quiet",  # Global flags must come before subcommand
@@ -864,7 +865,7 @@ class TestCLIAdvancedOperations(CLITestBase):
 
             # Check that the process succeeded
             self.assertEqual(
-                process.returncode, 0, f"Stdin decryption failed. stderr: {stderr.decode()}"
+                process.returncode, 0, f"Stdin decryption failed. stderr: {stderr.decode('utf-8', errors='replace')}"
             )
 
             # Verify we got some decrypted output
@@ -904,7 +905,7 @@ class TestCLIAdvancedOperations(CLITestBase):
             # Run decrypt command with stdin input and verbose flag
             process = subprocess.Popen(
                 [
-                    "python",
+                    sys.executable,
                     "-m",
                     "openssl_encrypt.crypt",
                     "--verbose",  # Global flags must come before subcommand
@@ -928,7 +929,7 @@ class TestCLIAdvancedOperations(CLITestBase):
             self.assertEqual(
                 process.returncode,
                 0,
-                f"Stdin decryption with warnings failed. stderr: {stderr.decode()}",
+                f"Stdin decryption with warnings failed. stderr: {stderr.decode('utf-8', errors='replace')}",
             )
 
             # Verify we got some decrypted output

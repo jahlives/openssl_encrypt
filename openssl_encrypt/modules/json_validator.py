@@ -19,6 +19,8 @@ import os
 import sys
 from typing import Any, Dict, Optional, Union
 
+from .crypt_utils import eprint
+
 _logger = logging.getLogger(__name__)
 
 try:
@@ -96,18 +98,18 @@ class SecureJSONValidator:
                             schema_content = f.read()
                             # Validate schema size
                             if len(schema_content) > self.MAX_JSON_SIZE:
-                                print(f"Warning: Schema file {filename} is too large, skipping")
+                                eprint(f"Warning: Schema file {filename} is too large, skipping")
                                 continue
 
                             schema_data = json.loads(schema_content)
                             self.schemas[schema_name] = schema_data
                     except (json.JSONDecodeError, OSError) as e:
-                        print(f"Warning: Could not load schema {filename}: {e}")
+                        eprint(f"Warning: Could not load schema {filename}: {e}")
                 else:
-                    print(f"Warning: Schema file {schema_path} not found")
+                    eprint(f"Warning: Schema file {schema_path} not found")
 
         except Exception as e:
-            print(f"Warning: Error loading schemas: {e}")
+            eprint(f"Warning: Error loading schemas: {e}")
 
     def validate_json_security(self, json_string: str) -> None:
         """
@@ -293,7 +295,7 @@ class SecureJSONValidator:
             schema_name = "metadata_v12"
         else:
             # For unknown versions, perform basic validation without schema
-            print(
+            eprint(
                 f"Warning: Unknown metadata format version {format_version}, skipping schema validation"
             )
             return data

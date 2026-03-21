@@ -16,6 +16,7 @@ import logging
 import time
 from typing import Tuple
 
+from .crypt_utils import eprint
 from .secure_memory import SecureBytes
 
 # Set up module-level logger
@@ -386,29 +387,29 @@ def verify_with_ml_dsa_65(message: bytes, signature: bytes, public_key: bytes) -
 
 if __name__ == "__main__":
     # Simple test
-    print("Testing PQC Signer...")
+    eprint("Testing PQC Signer...")
 
     signer = PQCSigner("ML-DSA-65")
 
     # Generate keypair
     public_key, private_key = signer.generate_keypair()
-    print(f"Public key: {len(public_key)} bytes")
-    print(f"Private key: {len(private_key)} bytes")
+    eprint(f"Public key: {len(public_key)} bytes")
+    eprint(f"Private key: {len(private_key)} bytes")
 
     # Sign message
     message = b"Hello, Post-Quantum World!"
     with SecureBytes(private_key) as secure_key:
         signature = signer.sign(message, bytes(secure_key))
-    print(f"Signature: {len(signature)} bytes")
+    eprint(f"Signature: {len(signature)} bytes")
 
     # Verify signature
     is_valid = signer.verify(message, signature, public_key)
-    print(f"Verification: {'VALID' if is_valid else 'INVALID'}")
+    eprint(f"Verification: {'VALID' if is_valid else 'INVALID'}")
 
     # Test with wrong message
     is_valid = signer.verify(b"Wrong message", signature, public_key)
-    print(f"Wrong message verification: {'VALID' if is_valid else 'INVALID'}")
+    eprint(f"Wrong message verification: {'VALID' if is_valid else 'INVALID'}")
 
     # Calculate fingerprint
     fingerprint = calculate_fingerprint(public_key)
-    print(f"Fingerprint: {fingerprint[:60]}...")
+    eprint(f"Fingerprint: {fingerprint[:60]}...")

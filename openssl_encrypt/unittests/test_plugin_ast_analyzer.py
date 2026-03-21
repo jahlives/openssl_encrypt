@@ -328,10 +328,10 @@ def plugin_function(config_dir):
     # Safe file operations - sandbox controls allowed paths
     config_file = os.path.join(config_dir, "config.json")
 
-    with open(config_file, "r") as f:
+    with open(config_file, "r", encoding="utf-8") as f:
         config = json.load(f)
 
-    with open(config_file, "w") as f:
+    with open(config_file, "w", encoding="utf-8") as f:
         json.dump(config, f)
 
     return config

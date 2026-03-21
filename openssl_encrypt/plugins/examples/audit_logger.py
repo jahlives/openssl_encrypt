@@ -41,6 +41,7 @@ from ...modules.plugin_system import (
     PreProcessorPlugin,
     UtilityPlugin,
 )
+from openssl_encrypt.modules.file_permissions import PermissionLevel, set_permissions
 
 
 class AuditLogger:
@@ -51,7 +52,7 @@ class AuditLogger:
         self.log_dir.mkdir(parents=True, exist_ok=True)
 
         # Set secure permissions on log directory
-        os.chmod(self.log_dir, 0o700)
+        set_permissions(self.log_dir, PermissionLevel.OWNER_FULL)
 
         # Setup logging
         self.logger = logging.getLogger("openssl_encrypt_audit")
@@ -63,7 +64,7 @@ class AuditLogger:
 
         # Secure log file permissions
         if log_file.exists():
-            os.chmod(log_file, 0o600)
+            set_permissions(log_file, PermissionLevel.OWNER_ONLY)
 
         # Format for structured logging
         formatter = logging.Formatter(
@@ -622,7 +623,7 @@ class AuditUtilityPlugin(UtilityPlugin):
                 json.dump(report, f, indent=2, default=str)
 
             # Set secure permissions
-            os.chmod(report_file, 0o600)
+            set_permissions(report_file, PermissionLevel.OWNER_ONLY)
 
             report["report_file"] = str(report_file)
             return report

@@ -30,6 +30,8 @@ import logging
 import sys
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from .crypt_utils import eprint
+
 try:
     import dbus
     from dbus.mainloop.glib import DBusGMainLoop
@@ -157,10 +159,10 @@ class CryptoClient:
 
         Example:
             def on_progress(op_id, percent, message):
-                print(f"Progress: {percent}% - {message}")
+                eprint(f"Progress: {percent}% - {message}")
 
             def on_complete(op_id, success, error):
-                print(f"Complete: success={success}")
+                eprint(f"Complete: success={success}")
 
             success, error, op_id = client.encrypt_file(
                 "/path/to/file.txt",
@@ -543,25 +545,25 @@ def main():
 
     # Get version
     version = client.get_version()
-    print(f"openssl_encrypt version: {version}")
+    eprint(f"openssl_encrypt version: {version}")
 
     # Get supported algorithms
     algorithms = client.get_supported_algorithms()
-    print(f"\nSupported algorithms: {', '.join(algorithms[:5])}...")
+    eprint(f"\nSupported algorithms: {', '.join(algorithms[:5])}...")
 
     # Validate password
     valid, issues = client.validate_password("weak")
-    print(f"\nPassword 'weak' valid: {valid}")
+    eprint(f"\nPassword 'weak' valid: {valid}")
     if issues:
-        print(f"Issues: {', '.join(issues)}")
+        eprint(f"Issues: {', '.join(issues)}")
 
     # Example encryption (would need actual files)
-    print("\nExample usage:")
-    print(
+    eprint("\nExample usage:")
+    eprint(
         """
     # Define progress callback
     def on_progress(op_id, percent, message):
-        print(f"Progress: {percent:.1f}% - {message}")
+        eprint(f"Progress: {percent:.1f}% - {message}")
 
     # Encrypt a file
     success, error, op_id = client.encrypt_file(
@@ -574,9 +576,9 @@ def main():
     )
 
     if success:
-        print(f"Encryption started: {op_id}")
+        eprint(f"Encryption started: {op_id}")
     else:
-        print(f"Encryption failed: {error}")
+        eprint(f"Encryption failed: {error}")
     """
     )
 

@@ -18,8 +18,12 @@ import gc
 import logging
 import multiprocessing
 import os
-import resource
 import sys
+
+try:
+    import resource
+except ImportError:
+    resource = None  # Not available on Windows
 import tempfile
 import threading
 import time
@@ -300,7 +304,7 @@ class ResourceMonitor:
         """Get current memory usage in bytes."""
         try:
             # Try to get RSS (Resident Set Size) on Unix systems
-            if hasattr(resource, "RUSAGE_SELF"):
+            if resource is not None and hasattr(resource, "RUSAGE_SELF"):
                 usage = resource.getrusage(resource.RUSAGE_SELF)
                 # On Linux, ru_maxrss is in KB, on BSD systems it's in bytes
                 if sys.platform == "linux":
@@ -472,7 +476,7 @@ class PluginSandbox:
 
             # Set memory limits only for process isolation (Unix only)
             # Threading mode needs more memory for thread creation, so we skip strict limits
-            if use_process_isolation and hasattr(resource, "RLIMIT_AS"):
+            if use_process_isolation and resource is not None and hasattr(resource, "RLIMIT_AS"):
                 try:
                     # Set virtual memory limit
                     memory_limit = max_memory_mb * 1024 * 1024
@@ -503,7 +507,7 @@ class PluginSandbox:
                     logger.error(f"Error cleaning up temp directory: {e}")
 
             # Reset memory limits only if we set them
-            if memory_limit_set and hasattr(resource, "RLIMIT_AS"):
+            if memory_limit_set and resource is not None and hasattr(resource, "RLIMIT_AS"):
                 try:
                     resource.setrlimit(resource.RLIMIT_AS, (-1, -1))
                 except (OSError, ValueError):

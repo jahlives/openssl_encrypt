@@ -15,9 +15,12 @@ an HSM pepper that is combined with the password for key derivation.
 import base64
 import hashlib
 import secrets
+import sys
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, Optional
+
+from .crypt_utils import eprint
 
 from argon2.low_level import Type, hash_secret_raw
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -305,9 +308,11 @@ class IdentityKeyProtectionService:
                     "Please configure slot 1 or 2 for HMAC-SHA1 Challenge-Response."
                 )
 
-        # Show touch prompt if required
+        # Show touch prompt if required. Write to stdout so it is visible
+        # even when stderr is redirected (e.g. 2>/dev/null).
         if hsm_config.require_touch:
-            print("Touch your Yubikey to continue...", flush=True)
+            sys.stdout.write("👆 Touch your Yubikey to continue...\n")
+            sys.stdout.flush()
 
         # Perform Challenge-Response
         try:

@@ -26,6 +26,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 import yaml
 
 from .config_analyzer import ConfigurationAnalyzer, analyze_configuration_from_args
+from .crypt_utils import eprint
 from .security_scorer import SecurityLevel
 
 
@@ -352,7 +353,7 @@ class TemplateManager:
                 try:
                     return self._load_template_file(filepath)
                 except Exception as e:
-                    print(f"Error loading template from {filepath}: {e}")
+                    eprint(f"Error loading template from {filepath}: {e}")
                     continue
 
         return None

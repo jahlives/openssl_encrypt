@@ -34,6 +34,8 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 
+from openssl_encrypt.modules.crypt_utils import eprint
+
 from ..core import (
     CapacityError,
     CoverMediaError,
@@ -1141,24 +1143,24 @@ def is_flac_steganography_available() -> bool:
 if __name__ == "__main__":
     # Simple test
     if is_flac_steganography_available():
-        print("FLAC steganography is available")
+        eprint("FLAC steganography is available")
 
         # Create test audio
         test_flac = create_flac_test_audio(duration_seconds=3.0, sample_rate=44100, channels=2)
-        print(f"Created test FLAC: {len(test_flac)} bytes")
+        eprint(f"Created test FLAC: {len(test_flac)} bytes")
 
         # Test steganography
         flac_stego = FLACSteganography(bits_per_sample=2)
         capacity = flac_stego.calculate_capacity(test_flac)
-        print(f"FLAC capacity: {capacity} bytes")
+        eprint(f"FLAC capacity: {capacity} bytes")
 
         # Test hiding/extraction
         test_data = b"FLAC steganography test!"
         if len(test_data) <= capacity:
             stego_data = flac_stego.hide_data(test_flac, test_data)
             extracted = flac_stego.extract_data(stego_data)
-            print(f"Test successful: {extracted.startswith(test_data)}")
+            eprint(f"Test successful: {extracted.startswith(test_data)}")
         else:
-            print("Test data too large for capacity")
+            eprint("Test data too large for capacity")
     else:
-        print("FLAC steganography not available")
+        eprint("FLAC steganography not available")

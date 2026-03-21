@@ -18,7 +18,6 @@ import hashlib
 import json
 import os
 import secrets
-import stat
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -58,7 +57,8 @@ class APIKeyManager:
         """
         if self.key_file.exists():
             # Set permissions to 0600 (read/write for owner only)
-            os.chmod(self.key_file, stat.S_IRUSR | stat.S_IWUSR)
+            from openssl_encrypt.modules.file_permissions import PermissionLevel, set_permissions
+            set_permissions(self.key_file, PermissionLevel.OWNER_ONLY)
 
     def _load_key_data(self) -> Optional[Dict]:
         """

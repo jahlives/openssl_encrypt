@@ -32,6 +32,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from openssl_encrypt.modules.crypt_utils import eprint
+from openssl_encrypt.modules.file_permissions import (
+    PermissionLevel,
+    create_secure_directory,
+    set_permissions,
+)
+
 try:
     from fido2.client import DefaultClientDataCollector, Fido2Client, UserInteraction
     from fido2.ctap2 import Ctap2
@@ -54,11 +61,11 @@ try:
 
         def prompt_up(self):
             """Prompt user to touch their security key."""
-            print("\n🔐 Touch your security key now...")
+            eprint("\n🔐 Touch your security key now...")
 
         def request_pin(self, permissions, rd_id):
             """Request PIN from user."""
-            print("🔑 Your security key requires a PIN.")
+            eprint("🔑 Your security key requires a PIN.")
             return getpass.getpass("Enter PIN: ")
 
         def request_uv(self, permissions, rd_id):
@@ -149,9 +156,7 @@ class FIDO2HSMPlugin(HSMPlugin):
                 self.config_dir = config_dir
             else:
                 # Custom directory - create it directly with secure permissions
-                self.config_dir.mkdir(parents=True, exist_ok=True)
-                if hasattr(os, "chmod"):
-                    os.chmod(self.config_dir, 0o700)
+                create_secure_directory(self.config_dir)
                 logger.info(f"Created custom FIDO2 config directory: {self.config_dir}")
         except Exception as e:
             logger.error(f"Failed to create config directory: {e}")
@@ -291,7 +296,7 @@ class FIDO2HSMPlugin(HSMPlugin):
                 json.dump(data, f, indent=2)
 
             # Set secure permissions (0o600)
-            os.chmod(temp_file, 0o600)
+            set_permissions(temp_file, PermissionLevel.OWNER_ONLY)
 
             # Atomic replace
             temp_file.replace(self.credential_file)
@@ -761,7 +766,7 @@ class FIDO2HSMPlugin(HSMPlugin):
             with open(self.credential_file, "w") as f:
                 json.dump(data, f, indent=2)
 
-            os.chmod(self.credential_file, 0o600)
+            set_permissions(self.credential_file, PermissionLevel.OWNER_ONLY)
 
             logger.info(f"Credential removed: {target_id}")
             return PluginResult.success_result(f"Credential removed: {target_id}")

@@ -32,6 +32,8 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 from PIL import Image
 
+from openssl_encrypt.modules.crypt_utils import eprint
+
 from ..core import (
     CapacityError,
     CoverMediaError,
@@ -839,24 +841,24 @@ def is_webp_steganography_available() -> bool:
 if __name__ == "__main__":
     # Simple test
     if is_webp_steganography_available():
-        print("WEBP steganography is available")
+        eprint("WEBP steganography is available")
 
         # Create test image
         test_webp = create_webp_test_image(100, 100, lossless=True)
-        print(f"Created test WEBP: {len(test_webp)} bytes")
+        eprint(f"Created test WEBP: {len(test_webp)} bytes")
 
         # Test steganography
         webp_stego = WEBPSteganography(bits_per_channel=2)
         capacity = webp_stego.calculate_capacity(test_webp)
-        print(f"WEBP capacity: {capacity} bytes")
+        eprint(f"WEBP capacity: {capacity} bytes")
 
         # Test hiding/extraction
         test_data = b"WEBP steganography test!"
         if len(test_data) <= capacity:
             stego_data = webp_stego.hide_data(test_webp, test_data)
             extracted = webp_stego.extract_data(stego_data)
-            print(f"Test successful: {extracted == test_data}")
+            eprint(f"Test successful: {extracted == test_data}")
         else:
-            print("Test data too large for capacity")
+            eprint("Test data too large for capacity")
     else:
-        print("WEBP steganography not available")
+        eprint("WEBP steganography not available")

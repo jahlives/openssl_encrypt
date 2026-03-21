@@ -27,6 +27,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from .crypt_utils import eprint
 from .security_logger import get_security_logger
 
 
@@ -332,46 +333,46 @@ def main():
         # Check for anomalies
         anomalies = generator.check_for_anomalies(hours=args.hours)
 
-        print("=" * 80)
-        print("SECURITY ANOMALY DETECTION".center(80))
-        print("=" * 80)
-        print()
+        eprint("=" * 80)
+        eprint("SECURITY ANOMALY DETECTION".center(80))
+        eprint("=" * 80)
+        eprint()
 
         has_anomalies = False
 
         if anomalies["critical_events"]:
             has_anomalies = True
-            print(f"⚠️  CRITICAL: {len(anomalies['critical_events'])} critical events detected!")
+            eprint(f"⚠️  CRITICAL: {len(anomalies['critical_events'])} critical events detected!")
             for event in anomalies["critical_events"]:
-                print(f"  [{event['timestamp']}] {event['event_type']}")
+                eprint(f"  [{event['timestamp']}] {event['event_type']}")
 
         if anomalies["repeated_auth_failures"]:
             has_anomalies = True
-            print(
+            eprint(
                 f"\n⚠️  Possible brute-force: {len(anomalies['repeated_auth_failures'])} authentication failures"
             )
 
         if anomalies["path_traversal_attempts"]:
             has_anomalies = True
-            print(f"\n⚠️  Path traversal attempts: {len(anomalies['path_traversal_attempts'])}")
+            eprint(f"\n⚠️  Path traversal attempts: {len(anomalies['path_traversal_attempts'])}")
 
         if anomalies["suspicious_plugin_activity"]:
             has_anomalies = True
-            print(
+            eprint(
                 f"\n⚠️  Suspicious plugin activity: {len(anomalies['suspicious_plugin_activity'])} blocked plugins"
             )
 
         if not has_anomalies:
-            print("✓ No security anomalies detected")
+            eprint("✓ No security anomalies detected")
 
-        print()
+        eprint()
         sys.exit(1 if has_anomalies else 0)
     else:
         # Generate full report
         report = generator.generate_report(
             hours=args.hours, severity=args.severity, event_type=args.event_type, format=args.format
         )
-        print(report)
+        eprint(report)
 
 
 if __name__ == "__main__":

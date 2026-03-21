@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
 
 from .crypt_errors import ValidationError
+from .crypt_utils import eprint
 
 
 @dataclass
@@ -510,13 +511,13 @@ def verify_file_integrity(
         print(json.dumps(output, indent=2))
     else:
         status = "PASS" if all_passed else "FAIL"
-        print(f"Verification: {status}")
-        print(f"File: {input_file}")
-        print()
+        eprint(f"Verification: {status}")
+        eprint(f"File: {input_file}")
+        eprint()
         for r in results:
             icon = "[+]" if r.passed else "[-]"
-            print(f"  {icon} {r.check_name}: {r.message}")
+            eprint(f"  {icon} {r.check_name}: {r.message}")
             if verbose and r.details:
-                print(f"      {r.details}")
+                eprint(f"      {r.details}")
 
     return all_passed, results

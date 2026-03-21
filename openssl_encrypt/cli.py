@@ -9,6 +9,8 @@ delegating to the actual CLI implementation in modules.crypt_cli or launching GU
 import argparse
 import sys
 
+from .modules.crypt_utils import eprint
+
 
 def main():
     """Main entry point for the openssl-encrypt command."""
@@ -35,30 +37,30 @@ def main():
 
         # If only asking for help, show GUI option first
         if len(sys.argv) == 2 and ("--help" in sys.argv or "-h" in sys.argv):
-            print("usage: openssl-encrypt [--gui] | [command] [options...]")
-            print("")
-            print("Encrypt or decrypt files with password protection")
-            print("")
-            print("Available commands:")
-            print("  encrypt              Encrypt files with password protection")
-            print("  decrypt              Decrypt previously encrypted files")
-            print("  shred                Securely delete files")
-            print("  generate-password    Generate cryptographically secure passwords")
-            print("  list-algorithms      List available cryptographic algorithms")
-            print("  security-info        Display security information and algorithms")
-            print("  check-argon2         Verify Argon2 implementation")
-            print("  check-pqc           Check post-quantum cryptography support")
-            print("  version             Show version information")
-            print("")
-            print("Steganography:")
-            print("  Use --stego-hide with encrypt command to hide encrypted data in images")
-            print("  Use --stego-extract with decrypt command to extract data from images")
-            print("")
-            print("Global options:")
-            print("  --gui               Launch graphical user interface")
-            print("  -h, --help          Show this help message")
-            print("")
-            print("For detailed help on a command: openssl-encrypt <command> --help")
+            eprint("usage: openssl-encrypt [--gui] | [command] [options...]")
+            eprint("")
+            eprint("Encrypt or decrypt files with password protection")
+            eprint("")
+            eprint("Available commands:")
+            eprint("  encrypt              Encrypt files with password protection")
+            eprint("  decrypt              Decrypt previously encrypted files")
+            eprint("  shred                Securely delete files")
+            eprint("  generate-password    Generate cryptographically secure passwords")
+            eprint("  list-algorithms      List available cryptographic algorithms")
+            eprint("  security-info        Display security information and algorithms")
+            eprint("  check-argon2         Verify Argon2 implementation")
+            eprint("  check-pqc           Check post-quantum cryptography support")
+            eprint("  version             Show version information")
+            eprint("")
+            eprint("Steganography:")
+            eprint("  Use --stego-hide with encrypt command to hide encrypted data in images")
+            eprint("  Use --stego-extract with decrypt command to extract data from images")
+            eprint("")
+            eprint("Global options:")
+            eprint("  --gui               Launch graphical user interface")
+            eprint("  -h, --help          Show this help message")
+            eprint("")
+            eprint("For detailed help on a command: openssl-encrypt <command> --help")
             return
 
     # Otherwise, delegate to the CLI

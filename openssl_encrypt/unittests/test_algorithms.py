@@ -843,7 +843,7 @@ class TestAEADBinding(unittest.TestCase):
         self.test_files.extend([input_file, encrypted_file])
 
         # Create test file
-        with open(input_file, "w") as f:
+        with open(input_file, "w", encoding="utf-8") as f:
             f.write("test data")
 
         # Encrypt with AEAD algorithm
@@ -882,7 +882,7 @@ class TestAEADBinding(unittest.TestCase):
         self.test_files.extend([input_file, encrypted_file])
 
         # Create test file
-        with open(input_file, "w") as f:
+        with open(input_file, "w", encoding="utf-8") as f:
             f.write("test data")
 
         # Encrypt with non-AEAD algorithm
@@ -922,7 +922,7 @@ class TestAEADBinding(unittest.TestCase):
         self.test_files.extend([input_file, encrypted_file, output_file])
 
         # Create test file
-        with open(input_file, "w") as f:
+        with open(input_file, "w", encoding="utf-8") as f:
             f.write("test data for tampering")
 
         # Encrypt with AEAD algorithm
@@ -977,7 +977,7 @@ class TestAEADBinding(unittest.TestCase):
 
                 # Create test file
                 test_data = f"test data for {algorithm.value}"
-                with open(input_file, "w") as f:
+                with open(input_file, "w", encoding="utf-8") as f:
                     f.write(test_data)
 
                 # Encrypt
@@ -1007,6 +1007,6 @@ class TestAEADBinding(unittest.TestCase):
                 )
 
                 # Verify content matches
-                with open(output_file, "r") as f:
+                with open(output_file, "r", encoding="utf-8") as f:
                     decrypted_data = f.read()
                 self.assertEqual(decrypted_data, test_data, f"{algorithm.value} decryption failed")

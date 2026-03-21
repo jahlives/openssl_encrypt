@@ -462,7 +462,8 @@ class PQCKeystore:
                 f.write(ciphertext)
 
             # Restrict keystore file to owner read/write only
-            os.chmod(self.keystore_path, 0o600)
+            from openssl_encrypt.modules.file_permissions import PermissionLevel, set_permissions
+            set_permissions(self.keystore_path, PermissionLevel.OWNER_ONLY)
 
             return True
 
