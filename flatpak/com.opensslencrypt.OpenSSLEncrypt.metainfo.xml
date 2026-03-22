@@ -39,6 +39,11 @@
   </screenshots>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="1.4.1rc2" date="2026-03-22" type="development">
+      <description>
+        <p>Security dependency update: bumped nltk to 3.9.3 (CVE-2026-33236, CVE-2026-33231, CVE-2026-33230, GHSA-rf74-v2fm-23pw).</p>
+      </description>
+    </release>
     <release version="1.4.1rc1" date="2026-03-21" type="development">
       <description>
         <p>Streaming chunked encryption (format v12), Windows compatibility, stderr output separation, and security hardening.</p>
