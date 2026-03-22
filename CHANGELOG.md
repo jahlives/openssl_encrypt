@@ -5,11 +5,41 @@ All notable changes to the openssl_encrypt project will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.4.1rc2] - 2026-03-22
+## [1.4.1] - 2026-03-22
+
+### Added
+
+- **Streaming chunked encryption (format v12)**: Large files now encrypted in authenticated chunks with configurable chunk size, enabling constant-memory operation, per-chunk integrity verification, and efficient handling of multi-gigabyte files
+- **`--info` CLI action**: Display metadata about an encrypted file (format version, algorithms, `encrypted_at` timestamp) without decrypting
+- **`encrypted_at` timestamp**: Metadata now records encryption time for auditing purposes
+- **Windows compatibility**: Full Windows support backported from v1.5.x including NTFS ACL-based file permissions, UTF-8 encoding fixes across all file I/O, and an automated Whirlpool build step for Windows
+- **Cross-platform `tty_write`/`tty_clear_line` helpers**: Interactive terminal prompts (YubiKey touch, password clear) now bypass stdout/stderr redirection by writing directly to `/dev/tty` on Unix or `msvcrt` on Windows, with emoji-safe fallback for Windows consoles
+- **Stderr output separation**: All status, progress, and diagnostic output now goes to stderr via `eprint()`. Redirecting with `2>/dev/null` correctly suppresses all non-data output without affecting the decrypted content on stdout
 
 ### Security
 
 - **Dependency bump: nltk to 3.9.3**: Resolves CVE-2026-33236, CVE-2026-33231, CVE-2026-33230, GHSA-rf74-v2fm-23pw
+- **Key zeroization in streaming/cascade/crypt_core**: All derived intermediate keys zeroed via `SecureBytes`/`secure_memzero` immediately after use
+- **HKDF for keystore password wrap key**: Replaced bare SHA-256 with HKDF for deriving the keystore password wrap key
+- **HKDF for streaming HMAC key** (v12+): Per-encryption HMAC key derived via HKDF rather than direct KDF output
+- **Per-layer salt and AAD for cascade** (v12+): Each cascade layer receives an independently derived salt; all layers bound to the ciphertext via AAD
+- **HKDF for pepper and PQC signature keys** (v12+): Pepper and PQC signature keys derived via HKDF with `format_version` wired through the derivation context
+- **Per-chunk nonce bound into cascade**: Streaming chunk nonces passed to each cascade layer, preventing cross-chunk nonce reuse
+- **Chunk count validation**: Streaming decryptor validates `chunk_count` from metadata against actual payload size, preventing truncation attacks
+- **Plugin sandbox hardening**: Blocked additional dangerous modules and attribute access; added TOCTOU mitigations; hardened AST analyzer
+- **Algorithm registries frozen after init**: Algorithm registries are made immutable after initialization, preventing runtime tampering
+- **Restrictive file permissions**: Keystore files set to `0o600`; pepper config directory `0o700`, pepper config file `0o600`
+- **Identity import fingerprint verification**: Fingerprint verified on identity import to detect tampering; identity names validated against path traversal
+- **Dependency security**: Bumped `authlib` to 1.6.9, `python-jose` to 3.4.0, `cryptography` to ≥46.0.5, `nltk` to 3.9.3
+
+### Performance
+
+- **Incremental metadata reads for v12**: `_read_metadata_only()` uses 8KB incremental reads to locate the metadata separator, avoiding loading the full file into memory before decryption begins
+- **Bounded streaming decrypt**: `decrypt_file()` in streaming.py uses bounded reads instead of a single `fin.read()`, keeping memory usage proportional to chunk size regardless of file size
+
+### Changed
+
+- **`eprint()` replaces `print()` for all non-data output**: ~1,500 call sites across all modules now route to stderr by default, making it safe to capture stdout for scripting and automation
 
 ## [1.4.1rc1] - 2026-03-21
 
