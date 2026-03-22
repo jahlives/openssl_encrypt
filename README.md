@@ -2,7 +2,7 @@
 
 A Python-based file encryption tool with modern ciphers, post-quantum algorithms, and defense-in-depth key derivation.
 
-> **Looking for the stable release?** The latest stable version is [v1.3.6](https://github.com/jahlives/openssl_encrypt/tree/releases/1.3.x) on the releases/1.3.x branch.
+> **Looking for the stable release?** The latest stable version is [v1.4.0](https://github.com/jahlives/openssl_encrypt/tree/releases/1.4.x) on the releases/1.4.x branch.
 
 ## History
 
@@ -65,9 +65,21 @@ The following algorithms have been **completely removed** in v1.5.0 — both enc
 
 **If you have files encrypted with any of these algorithms**, you must act before upgrading:
 
-1. **Decrypt** all affected files using **v1.4.x or earlier**
-2. **Re-encrypt** with a supported algorithm (e.g. `aes-gcm`, `ml-kem-768-hybrid`)
-3. **Upgrade** to v1.5.0
+1. **Re-encrypt** all affected files using the `rekey` command in **v1.4.x** (see below)
+2. **Upgrade** to v1.5.0
+
+The easiest way is to use the `rekey` command available in v1.4.x, which handles decrypt + re-encrypt in one step:
+
+```bash
+# Re-encrypt in-place with a new algorithm
+python -m openssl_encrypt.crypt rekey -i file.enc --algorithm aes-gcm
+
+# Re-encrypt with a new password and algorithm
+python -m openssl_encrypt.crypt rekey -i file.enc --algorithm aes-gcm --rekey-password-file new_pass.txt
+
+# Re-encrypt using a security template
+python -m openssl_encrypt.crypt rekey -i file.enc --standard
+```
 
 If you cannot re-encrypt, **stay on v1.4.x** — it still supports decryption of all legacy formats.
 
