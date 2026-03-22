@@ -664,5 +664,20 @@ class TestThreefish1024:
         assert decrypted == plaintext
 
 
+class TestRegistryFreeze:
+    """Tests for M9: Registry freeze prevents post-init algorithm injection"""
+
+    def test_default_registry_is_frozen(self):
+        """Default singleton registries must be frozen after initialization."""
+        registry = CipherRegistry.default()
+        assert registry.is_frozen
+
+    def test_frozen_registry_rejects_registration(self):
+        """Attempting to register on a frozen registry must raise RuntimeError."""
+        registry = CipherRegistry.default()
+        with pytest.raises(RuntimeError, match="registry is frozen"):
+            registry.register(AES256GCM)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

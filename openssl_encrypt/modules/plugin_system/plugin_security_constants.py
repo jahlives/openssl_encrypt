@@ -33,5 +33,7 @@ BLOCKED_MODULES = frozenset(
         "platform",
         "pathlib",  # Path.read_text() etc. bypass sandbox file restrictions
         "io",  # io.open() bypasses sandbox restricted_open
+        "marshal",  # Can deserialize arbitrary code objects to bypass sandbox
+        "codecs",  # codecs.open() bypasses sandbox restricted_open
     }
 )

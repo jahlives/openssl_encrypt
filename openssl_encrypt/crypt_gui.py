@@ -14,6 +14,7 @@ import time
 import tkinter as tk
 from time import sleep
 from tkinter import filedialog, messagebox, simpledialog, ttk
+from openssl_encrypt.modules.crypt_utils import eprint
 
 # Import secure memory functions
 try:
@@ -62,7 +63,7 @@ try:
     from .modules.crypt_settings import DEFAULT_CONFIG, SettingsTab
 except ImportError:
     # Fallback if module is not found
-    print("Settings module not found, using default configuration")
+    eprint("Settings module not found, using default configuration")
     DEFAULT_CONFIG = {
         "sha512": 10000,
         "sha256": 0,

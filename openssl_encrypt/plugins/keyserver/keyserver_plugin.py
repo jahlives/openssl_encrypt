@@ -33,6 +33,7 @@ from ...modules.key_bundle import PublicKeyBundle
 from ...modules.plugin_system.plugin_base import BasePlugin, PluginCapability, PluginType
 from .cache import KeyserverCache
 from .config import KeyserverConfig
+from ...modules.crypt_utils import eprint
 
 logger = logging.getLogger(__name__)
 
@@ -369,6 +370,12 @@ class KeyserverPlugin(BasePlugin):
                 raise ValueError("No keyservers configured")
             server_url = self.config.servers[0]
 
+        # Enforce HTTPS for all server URLs
+        if not server_url.startswith("https://"):
+            raise ValueError(
+                f"Invalid server URL: {server_url}. Only HTTPS URLs are allowed for security."
+            )
+
         register_url = f"{server_url}/api/v1/keys/register"
 
         try:
@@ -598,4 +605,4 @@ class KeyserverPlugin(BasePlugin):
 
 if __name__ == "__main__":
     # Simple test
-    print("KeyserverPlugin module loaded successfully")
+    eprint("KeyserverPlugin module loaded successfully")

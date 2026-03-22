@@ -36,7 +36,10 @@ class ConfigError(Exception):
 def _get_default_config_dir() -> Path:
     """Get default configuration directory for pepper plugin."""
     config_dir = Path.home() / ".openssl_encrypt" / "plugins" / "pepper"
-    config_dir.mkdir(parents=True, exist_ok=True)
+    config_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    # Fix permissions if directory already existed with wrong mode
+    if config_dir.exists():
+        config_dir.chmod(0o700)
     return config_dir
 
 
@@ -173,8 +176,10 @@ class PepperConfig:
         if config_path is None:
             config_path = _get_default_config_path()
 
-        # Ensure parent directory exists
-        config_path.parent.mkdir(parents=True, exist_ok=True)
+        # Ensure parent directory exists with secure permissions
+        config_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        if config_path.parent.exists():
+            config_path.parent.chmod(0o700)
 
         # Convert to dict and serialize paths
         data = {
@@ -187,8 +192,13 @@ class PepperConfig:
             "read_timeout_seconds": self.read_timeout_seconds,
         }
 
-        with open(config_path, "w") as f:
-            json.dump(data, f, indent=2)
+        fd = os.open(str(config_path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        try:
+            with os.fdopen(fd, "w") as f:
+                json.dump(data, f, indent=2)
+        except Exception:
+            # fd is closed by os.fdopen even on error
+            raise
 
         logger.info(f"Saved pepper config to {config_path}")
 

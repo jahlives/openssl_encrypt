@@ -17,6 +17,21 @@ OpenSSL Encrypt follows [Semantic Versioning (SemVer)](https://semver.org/) for 
 
 ## Release History
 
+### 1.4.0 (Development) - Streaming Encryption & Security Enhancements
+**Release Date:** TBD
+**Status:** In Development
+
+**Enhancements:**
+- **Streaming chunked encryption** for large files (format v12):
+  - Per-chunk AEAD with HKDF-SHA256 derived nonces for constant-memory encryption
+  - Trailer HMAC-SHA256 commitment for global integrity verification
+  - Auto-activates for files >10 MB with AEAD algorithms (configurable via `--streaming-threshold`)
+  - CLI controls: `--chunk-size`, `--no-streaming`, `--streaming-threshold`
+- Secure chained salt derivation (format v9)
+- `--info` CLI action and `encrypted_at` timestamp
+- `--rekey` action for re-encrypting with new password
+- Bytes input/output support
+
 ### 1.3.1 (Current) - Maintenance Release
 **Release Date:** December 2025
 **Status:** Production Release

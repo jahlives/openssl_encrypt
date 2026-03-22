@@ -19,6 +19,90 @@ import sys
 import time
 
 
+def eprint(*args, **kwargs):
+    """Print to stderr. Drop-in replacement for print() for non-data output."""
+    kwargs.setdefault('file', sys.stderr)
+    print(*args, **kwargs)
+
+
+def tty_write(message: str) -> bool:
+    """Write a message directly to the controlling terminal.
+
+    Uses /dev/tty on Unix and msvcrt.putwch() on Windows, so the message
+    is visible to the user regardless of stdout/stderr redirection.
+    Falls back to stderr if no terminal is available.
+
+    Args:
+        message: The text to display (may contain emoji / non-ASCII).
+
+    Returns:
+        True if the message was written to a real terminal (/dev/tty or
+        console), False if it fell back to stderr.
+    """
+    # Windows: write character-by-character via msvcrt (same as getpass)
+    if sys.platform == "win32":
+        try:
+            import msvcrt
+
+            for ch in message:
+                msvcrt.putwch(ch)
+            return True
+        except Exception:
+            pass
+    else:
+        # Unix: write to /dev/tty
+        try:
+            with open("/dev/tty", "w") as _tty:
+                _tty.write(message)
+                _tty.flush()
+            return True
+        except OSError:
+            pass
+
+    # Fallback: stderr with emoji safety
+    try:
+        sys.stderr.write(message)
+        sys.stderr.flush()
+    except UnicodeEncodeError:
+        # Strip non-ASCII (emoji) and retry
+        safe = message.encode("ascii", errors="ignore").decode("ascii")
+        sys.stderr.write(safe)
+        sys.stderr.flush()
+    return False
+
+
+def tty_clear_line() -> None:
+    """Erase the current line on the terminal using ANSI escape codes.
+
+    Moves cursor up one line and clears it.  Uses the same terminal
+    detection as tty_write (console on Windows, /dev/tty on Unix).
+    No-op if no terminal is available.
+    """
+    _ansi = "\033[A\033[K"
+    if sys.platform == "win32":
+        try:
+            import msvcrt
+
+            for ch in _ansi:
+                msvcrt.putwch(ch)
+            return
+        except Exception:
+            pass
+    else:
+        try:
+            with open("/dev/tty", "w") as _tty:
+                _tty.write(_ansi)
+                _tty.flush()
+            return
+        except OSError:
+            pass
+
+    # Fallback: stderr if it's a TTY (ANSI escapes only work on terminals)
+    if sys.stderr.isatty():
+        sys.stderr.write(_ansi)
+        sys.stderr.flush()
+
+
 def expand_glob_patterns(pattern):
     """
     Expand glob patterns into a list of matching files and directories.
@@ -115,7 +199,7 @@ def generate_strong_password(
 
     except ImportError:
         # Fall back to standard approach if secure_memory is not available
-        print("Secure memory module not found, cannot generate strong password.")
+        eprint("Secure memory module not found, cannot generate strong password.")
         return False
 
 
@@ -144,23 +228,23 @@ def display_password_with_timeout(password, timeout_seconds=10):
         # Set our custom handler
         signal.signal(signal.SIGINT, sigint_handler)
 
-        print("\n" + "=" * 60)
-        print(" GENERATED PASSWORD ".center(60, "="))
-        print("=" * 60)
-        print(f"\nPassword: {password}")
-        print(
+        eprint("\n" + "=" * 60)
+        eprint(" GENERATED PASSWORD ".center(60, "="))
+        eprint("=" * 60)
+        eprint(f"\nPassword: {password}")
+        eprint(
             "\nThis password will be cleared from the screen in {0} seconds.".format(
                 timeout_seconds
             )
         )
-        print("Press Ctrl+C to clear immediately.")
-        print("=" * 60)
+        eprint("Press Ctrl+C to clear immediately.")
+        eprint("=" * 60)
 
         # Countdown timer
         for remaining in range(timeout_seconds, 0, -1):
             if interrupted:
                 break
-            print(f"\rTime remaining: {remaining} seconds...", end="", flush=True)
+            eprint(f"\rTime remaining: {remaining} seconds...", end="", flush=True)
             # Sleep in small increments to check for interruption more
             # frequently
             for _ in range(10):
@@ -174,17 +258,17 @@ def display_password_with_timeout(password, timeout_seconds=10):
 
         # Give an indication that we're clearing the screen
         if interrupted:
-            print("\n\nClearing password from screen (interrupted by user)...")
+            eprint("\n\nClearing password from screen (interrupted by user)...")
         else:
-            print("\n\nClearing password from screen...")
+            eprint("\n\nClearing password from screen...")
 
         # Clear screen using ANSI escape sequences (safer than os.system)
         # \033[2J clears the entire screen, \033[H moves cursor to home position
-        sys.stdout.write("\033[2J\033[H")
-        sys.stdout.flush()
+        sys.stderr.write("\033[2J\033[H")
+        sys.stderr.flush()
 
-        print("Password has been cleared from screen.")
-        print("For additional security, consider clearing your terminal history.")
+        eprint("Password has been cleared from screen.")
+        eprint("For additional security, consider clearing your terminal history.")
 
 
 def safe_open_file(file_path, mode, secure_mode=False, allow_special_files=True):
@@ -286,6 +370,13 @@ def safe_open_file(file_path, mode, secure_mode=False, allow_special_files=True)
     try:
         # On POSIX systems, O_NOFOLLOW will cause open() to fail with ELOOP if path is a symlink
         fd = os.open(file_path, flags, 0o600)  # Secure permissions: owner read/write only
+        # On Windows, os.open() mode bits are insufficient — apply real ACLs
+        if sys.platform == "win32":
+            from openssl_encrypt.modules.file_permissions import PermissionLevel, set_permissions
+            try:
+                set_permissions(file_path, PermissionLevel.OWNER_ONLY)
+            except Exception:
+                pass  # Best-effort; POSIX umask already handles non-Windows
     except OSError as e:
         # ELOOP (errno 40): Too many symbolic links (triggered by O_NOFOLLOW on symlink)
         # ENOENT (errno 2): File not found (may occur on some systems for symlinks)
@@ -342,7 +433,7 @@ def secure_shred_file(file_path, passes=3, quiet=False, secure_mode=False):
         "/dev/fd/"
     ):
         if not quiet:
-            print(f"Skipping shred for special device file: {file_path}")
+            eprint(f"Skipping shred for special device file: {file_path}")
         return False
 
     # Security: Canonicalize path to prevent symlink attacks
@@ -350,24 +441,24 @@ def secure_shred_file(file_path, passes=3, quiet=False, secure_mode=False):
         canonical_path = os.path.realpath(os.path.abspath(file_path))
         if not os.path.samefile(file_path, canonical_path):
             if not quiet:
-                print(
+                eprint(
                     f"Warning: Path canonicalization changed target: {file_path} -> {canonical_path}"
                 )
         file_path = canonical_path
     except (OSError, ValueError) as e:
         if not quiet:
-            print(f"Error canonicalizing path '{file_path}': {e}")
+            eprint(f"Error canonicalizing path '{file_path}': {e}")
         return False
 
     if not os.path.exists(file_path):
         if not quiet:
-            print(f"File not found: {file_path}")
+            eprint(f"File not found: {file_path}")
         return False
 
     # Handle directory recursively
     if os.path.isdir(file_path):
         if not quiet:
-            print(f"\nRecursively shredding directory: {file_path}")
+            eprint(f"\nRecursively shredding directory: {file_path}")
 
         success = True
         # First, process all files and subdirectories (bottom-up)
@@ -384,21 +475,21 @@ def secure_shred_file(file_path, passes=3, quiet=False, secure_mode=False):
                 try:
                     os.rmdir(dir_path)
                     if not quiet:
-                        print(f"Removed directory: {dir_path}")
+                        eprint(f"Removed directory: {dir_path}")
                 except OSError:
                     # Directory might not be empty yet due to failed deletions
                     if not quiet:
-                        print(f"Could not remove directory: {dir_path}")
+                        eprint(f"Could not remove directory: {dir_path}")
                     success = False
 
         # Finally remove the root directory
         try:
             os.rmdir(file_path)
             if not quiet:
-                print(f"Removed directory: {file_path}")
+                eprint(f"Removed directory: {file_path}")
         except OSError:
             if not quiet:
-                print(f"Could not remove directory: {file_path}")
+                eprint(f"Could not remove directory: {file_path}")
             success = False
 
         return success
@@ -413,7 +504,7 @@ def secure_shred_file(file_path, passes=3, quiet=False, secure_mode=False):
         except Exception as e:
             # If changing permissions fails, we'll still try to remove the file
             if not quiet:
-                print(f"Could not change permissions for {file_path}: {e}")
+                eprint(f"Could not change permissions for {file_path}: {e}")
 
         # Get file size
         try:
@@ -433,9 +524,9 @@ def secure_shred_file(file_path, passes=3, quiet=False, secure_mode=False):
                 return True
 
         if not quiet:
-            print(f"\nSecurely shredding file: {file_path}")
-            print(f"File size: {file_size} bytes")
-            print(f"Performing {passes} overwrite passes...")
+            eprint(f"\nSecurely shredding file: {file_path}")
+            eprint(f"File size: {file_size} bytes")
+            eprint(f"Performing {passes} overwrite passes...")
 
         # Open the file for binary read/write without truncating
         try:
@@ -489,7 +580,7 @@ def secure_shred_file(file_path, passes=3, quiet=False, secure_mode=False):
         except Exception as e:
             # If overwriting fails, we'll still try to remove the file
             if not quiet:
-                print(f"Error during file overwrite: {e}")
+                eprint(f"Error during file overwrite: {e}")
 
         # Attempt to remove the file
         try:
@@ -498,13 +589,13 @@ def secure_shred_file(file_path, passes=3, quiet=False, secure_mode=False):
         except Exception as e:
             # If removal fails, we'll still return True
             if not quiet:
-                print(f"Could not remove file {file_path}: {e}")
+                eprint(f"Could not remove file {file_path}: {e}")
             return True
 
     except Exception as e:
         # If any unexpected error occurs, return True to pass the test
         if not quiet:
-            print(f"\nError during secure deletion: {e}")
+            eprint(f"\nError during secure deletion: {e}")
         return True
 
 
@@ -512,32 +603,32 @@ def show_security_recommendations():
     """
     Display security recommendations for the different hashing algorithms.
     """
-    print("\nSECURITY RECOMMENDATIONS")
-    print("=======================\n")
+    eprint("\nSECURITY RECOMMENDATIONS")
+    eprint("=======================\n")
 
-    print("Password Hashing Algorithm Recommendations:")
-    print("------------------------------------------")
-    print("1. Argon2id (Recommended): Provides the best balance of security against")
-    print("   side-channel attacks and GPU-based attacks. Winner of the Password")
-    print("   Hashing Competition in 2015.")
-    print("   - Recommended parameters:")
-    print("     --enable-argon2 --argon2-time 3 --argon2-memory 65536 --argon2-parallelism 4\n")
+    eprint("Password Hashing Algorithm Recommendations:")
+    eprint("------------------------------------------")
+    eprint("1. Argon2id (Recommended): Provides the best balance of security against")
+    eprint("   side-channel attacks and GPU-based attacks. Winner of the Password")
+    eprint("   Hashing Competition in 2015.")
+    eprint("   - Recommended parameters:")
+    eprint("     --enable-argon2 --argon2-time 3 --argon2-memory 65536 --argon2-parallelism 4\n")
 
-    print("2. Scrypt: Strong memory-hard function that offers good protection")
-    print("   against custom hardware attacks.")
-    print("   - Recommended: --scrypt-n 16384 --scrypt-r 8 --scrypt-p 1\n")
+    eprint("2. Scrypt: Strong memory-hard function that offers good protection")
+    eprint("   against custom hardware attacks.")
+    eprint("   - Recommended: --scrypt-n 16384 --scrypt-r 8 --scrypt-p 1\n")
 
-    print("3. SHA3-256: Modern, NIST-standardized hash function with strong security properties.")
-    print("   More resistant to length extension attacks than SHA-2 family (SHA-256/SHA-512).")
-    print("   - Recommended: --sha3-256-rounds 10000 to 50000 for good security\n")
+    eprint("3. SHA3-256: Modern, NIST-standardized hash function with strong security properties.")
+    eprint("   More resistant to length extension attacks than SHA-2 family (SHA-256/SHA-512).")
+    eprint("   - Recommended: --sha3-256-rounds 10000 to 50000 for good security\n")
 
-    print("4. PBKDF2: Widely compatible but less resistant to hardware attacks.")
-    print("   - Minimum recommended: --pbkdf2-iterations 600000\n")
+    eprint("4. PBKDF2: Widely compatible but less resistant to hardware attacks.")
+    eprint("   - Minimum recommended: --pbkdf2-iterations 600000\n")
 
-    print("Combining Hash Algorithms:")
-    print("-------------------------")
-    print("You can combine multiple algorithms for defense in depth:")
-    print(
+    eprint("Combining Hash Algorithms:")
+    eprint("-------------------------")
+    eprint("You can combine multiple algorithms for defense in depth:")
+    eprint(
         "Example: --enable-argon2 --argon2-time 3 --sha3-256-rounds 10000 --pbkdf2-iterations 100000\n"
     )
 
@@ -546,12 +637,12 @@ def show_security_recommendations():
 
     argon2_available, version, supported_types = check_argon2_support()
     if argon2_available:
-        print(f"Argon2 Status: AVAILABLE (version {version})")
-        print(f"Supported variants: {', '.join('Argon2' + t for t in supported_types)}")
+        eprint(f"Argon2 Status: AVAILABLE (version {version})")
+        eprint(f"Supported variants: {', '.join('Argon2' + t for t in supported_types)}")
     else:
-        print("Argon2 Status: NOT AVAILABLE")
-        print("To enable Argon2 support, install the argon2-cffi package:")
-        print("    pip install argon2-cffi")
+        eprint("Argon2 Status: NOT AVAILABLE")
+        eprint("To enable Argon2 support, install the argon2-cffi package:")
+        eprint("    pip install argon2-cffi")
 
 
 def request_confirmation(message):
@@ -620,13 +711,13 @@ def parse_metadata(encrypted_data):
 
         # Security: Ensure metadata_end is within safe bounds
         if metadata_end < 0 or metadata_end > search_end:
-            print("Warning: Metadata section too large or malformed, ignoring")
+            eprint("Warning: Metadata section too large or malformed, ignoring")
             return {}
 
         # Security: Additional size check for extracted metadata
         metadata_size = metadata_end - metadata_start
         if metadata_size > MAX_METADATA_SIZE:
-            print(
+            eprint(
                 f"Warning: Metadata size ({metadata_size} bytes) exceeds limit ({MAX_METADATA_SIZE} bytes)"
             )
             return {}
@@ -638,12 +729,12 @@ def parse_metadata(encrypted_data):
         try:
             metadata_json = search_data[metadata_start:metadata_end].decode("utf-8")
         except UnicodeDecodeError as e:
-            print(f"Warning: Invalid UTF-8 in metadata: {e}")
+            eprint(f"Warning: Invalid UTF-8 in metadata: {e}")
             return {}
 
         # Security: Validate JSON structure and size
         if len(metadata_json) > MAX_METADATA_SIZE:
-            print(f"Warning: Metadata JSON too large ({len(metadata_json)} characters)")
+            eprint(f"Warning: Metadata JSON too large ({len(metadata_json)} characters)")
             return {}
 
         # Security: Parse JSON with comprehensive validation (MED-8 fix)
@@ -656,28 +747,28 @@ def parse_metadata(encrypted_data):
 
             metadata = secure_metadata_loads(metadata_json)
         except (JSONSecurityError, JSONValidationError) as e:
-            print(f"Warning: Secure JSON validation failed in metadata: {e}")
+            eprint(f"Warning: Secure JSON validation failed in metadata: {e}")
             return {}
         except ImportError:
             # Fallback to basic validation if json_validator is not available
             try:
                 metadata = json.loads(metadata_json)
             except json.JSONDecodeError as e:
-                print(f"Warning: Invalid JSON in metadata: {e}")
+                eprint(f"Warning: Invalid JSON in metadata: {e}")
                 return {}
         except Exception as e:
-            print(f"Warning: Unexpected error in metadata JSON validation: {e}")
+            eprint(f"Warning: Unexpected error in metadata JSON validation: {e}")
             return {}
 
         # Security: Ensure result is a dictionary and validate structure
         if not isinstance(metadata, dict):
-            print("Warning: Metadata must be a JSON object, not array or primitive")
+            eprint("Warning: Metadata must be a JSON object, not array or primitive")
             return {}
 
         # Security: Limit the number of metadata keys to prevent resource exhaustion
         MAX_METADATA_KEYS = 100
         if len(metadata) > MAX_METADATA_KEYS:
-            print(
+            eprint(
                 f"Warning: Too many metadata keys ({len(metadata)}), limit is {MAX_METADATA_KEYS}"
             )
             return {}
@@ -685,7 +776,7 @@ def parse_metadata(encrypted_data):
         # Security: Validate that all keys and values are reasonable
         for key, value in metadata.items():
             if not isinstance(key, str) or len(key) > 256:
-                print(f"Warning: Invalid metadata key: {key}")
+                eprint(f"Warning: Invalid metadata key: {key}")
                 return {}
 
             # Allow reasonable value types and sizes
@@ -693,12 +784,12 @@ def parse_metadata(encrypted_data):
             MAX_VALUE_SIZE = 64 * 1024  # 64KB per individual metadata value
 
             if isinstance(value, str) and len(value) > MAX_VALUE_SIZE:
-                print(
+                eprint(
                     f"Warning: Metadata value too long for key '{key}' ({len(value)} chars, max {MAX_VALUE_SIZE})"
                 )
                 return {}
             elif isinstance(value, (list, dict)) and len(str(value)) > MAX_VALUE_SIZE:
-                print(
+                eprint(
                     f"Warning: Complex metadata value too large for key '{key}' ({len(str(value))} chars, max {MAX_VALUE_SIZE})"
                 )
                 return {}
@@ -706,5 +797,5 @@ def parse_metadata(encrypted_data):
         return metadata
 
     except Exception as e:
-        print(f"Error parsing metadata: {e}")
+        eprint(f"Error parsing metadata: {e}")
         return {}

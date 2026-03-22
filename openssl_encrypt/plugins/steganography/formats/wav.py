@@ -34,6 +34,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 
+from ....modules.crypt_utils import eprint
 from ..core import (
     CapacityError,
     CoverMediaError,
@@ -860,24 +861,24 @@ def is_wav_steganography_available() -> bool:
 if __name__ == "__main__":
     # Simple test
     if is_wav_steganography_available():
-        print("WAV steganography is available")
+        eprint("WAV steganography is available")
 
         # Create test audio
         test_wav = create_wav_test_audio(duration_seconds=2.0, sample_rate=44100, channels=2)
-        print(f"Created test WAV: {len(test_wav)} bytes")
+        eprint(f"Created test WAV: {len(test_wav)} bytes")
 
         # Test steganography
         wav_stego = WAVSteganography(bits_per_sample=2)
         capacity = wav_stego.calculate_capacity(test_wav)
-        print(f"WAV capacity: {capacity} bytes")
+        eprint(f"WAV capacity: {capacity} bytes")
 
         # Test hiding/extraction
         test_data = b"WAV audio steganography test!"
         if len(test_data) <= capacity:
             stego_data = wav_stego.hide_data(test_wav, test_data)
             extracted = wav_stego.extract_data(stego_data)
-            print(f"Test successful: {extracted == test_data}")
+            eprint(f"Test successful: {extracted == test_data}")
         else:
-            print("Test data too large for capacity")
+            eprint("Test data too large for capacity")
     else:
-        print("WAV steganography not available")
+        eprint("WAV steganography not available")

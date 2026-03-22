@@ -544,3 +544,196 @@ def test():
 
         assert is_safe
         assert len(violations) == 0
+
+
+class TestBypassVectorHardening:
+    """Tests for H8: AST analysis bypass vectors that were previously undetected"""
+
+    def test_globals_call_detected(self):
+        """globals() can leak the module namespace and enable sandbox escape"""
+        code = """
+def test():
+    g = globals()
+    return g
+"""
+        is_safe, violations = analyze_plugin_code(code, "test.py", strict_mode=True)
+
+        assert not is_safe
+        assert any(v.violation_type == "dangerous_function" for v in violations)
+        assert any("globals" in v.description for v in violations)
+
+    def test_locals_call_detected(self):
+        """locals() can leak local scope for introspection attacks"""
+        code = """
+def test():
+    l = locals()
+    return l
+"""
+        is_safe, violations = analyze_plugin_code(code, "test.py", strict_mode=True)
+
+        assert not is_safe
+        assert any(v.violation_type == "dangerous_function" for v in violations)
+        assert any("locals" in v.description for v in violations)
+
+    def test_vars_call_detected(self):
+        """vars() exposes object __dict__ for attribute manipulation"""
+        code = """
+def test(obj):
+    v = vars(obj)
+    return v
+"""
+        is_safe, violations = analyze_plugin_code(code, "test.py", strict_mode=True)
+
+        assert not is_safe
+        assert any(v.violation_type == "dangerous_function" for v in violations)
+        assert any("vars" in v.description for v in violations)
+
+    def test_dir_call_detected(self):
+        """dir() enables attribute discovery for sandbox escape"""
+        code = """
+def test(obj):
+    attrs = dir(obj)
+    return attrs
+"""
+        is_safe, violations = analyze_plugin_code(code, "test.py", strict_mode=True)
+
+        assert not is_safe
+        assert any(v.violation_type == "dangerous_function" for v in violations)
+
+    def test_type_call_detected(self):
+        """type() with 3 args creates new classes dynamically, enabling sandbox escape"""
+        code = """
+def test():
+    MyClass = type("MyClass", (object,), {"x": 1})
+    return MyClass
+"""
+        is_safe, violations = analyze_plugin_code(code, "test.py", strict_mode=True)
+
+        assert not is_safe
+        assert any(v.violation_type == "dangerous_function" for v in violations)
+
+    def test_breakpoint_call_detected(self):
+        """breakpoint() drops into debugger which can execute arbitrary code"""
+        code = """
+def test():
+    breakpoint()
+    return True
+"""
+        is_safe, violations = analyze_plugin_code(code, "test.py", strict_mode=True)
+
+        assert not is_safe
+        assert any(v.violation_type == "dangerous_function" for v in violations)
+
+    def test_class_dunder_access_detected(self):
+        """__class__ attribute enables type hierarchy traversal escape"""
+        code = """
+def test():
+    x = "".__class__.__bases__[0].__subclasses__()
+    return x
+"""
+        is_safe, violations = analyze_plugin_code(code, "test.py", strict_mode=True)
+
+        assert not is_safe
+        # Should detect __class__, __bases__, and __subclasses__
+        dunder_violations = [v for v in violations if v.violation_type == "dunder_access"]
+        assert len(dunder_violations) >= 2  # __class__ and __bases__ at minimum
+
+    def test_dynamic_getattr_detected(self):
+        """getattr with non-constant attribute name can compute dangerous names at runtime"""
+        code = """
+def test(obj, attr_name):
+    return getattr(obj, attr_name)
+"""
+        is_safe, violations = analyze_plugin_code(code, "test.py", strict_mode=True)
+
+        assert not is_safe
+        assert any(v.violation_type == "dynamic_getattr" for v in violations)
+
+    def test_dynamic_getattr_with_variable_detected(self):
+        """getattr with variable computed from string operations"""
+        code = """
+def test(obj):
+    name = "ev" + "al"
+    return getattr(obj, name)
+"""
+        is_safe, violations = analyze_plugin_code(code, "test.py", strict_mode=True)
+
+        assert not is_safe
+        assert any(v.violation_type == "dynamic_getattr" for v in violations)
+
+    def test_dynamic_getattr_with_format_detected(self):
+        """getattr with f-string or format call"""
+        code = """
+def test(obj):
+    return getattr(obj, f"__{'class'}__")
+"""
+        is_safe, violations = analyze_plugin_code(code, "test.py", strict_mode=True)
+
+        assert not is_safe
+        assert any(v.violation_type == "dynamic_getattr" for v in violations)
+
+    def test_static_getattr_with_safe_constant_allowed(self):
+        """getattr with a safe constant string should be allowed"""
+        code = """
+def test(obj):
+    return getattr(obj, "name", None)
+"""
+        is_safe, violations = analyze_plugin_code(code, "test.py", strict_mode=True)
+
+        assert is_safe
+        assert len(violations) == 0
+
+    def test_os_execv_variants_detected(self):
+        """os.execv/execve/execvp/execvpe should be blocked"""
+        for func in ["execv", "execve", "execvp", "execvpe", "execl", "execle", "execlp"]:
+            code = f"""
+import os
+
+def test():
+    os.{func}("/bin/sh", [])
+"""
+            is_safe, violations = analyze_plugin_code(code, "test.py", strict_mode=True)
+
+            assert not is_safe, f"os.{func}() was not detected as dangerous"
+            assert any(
+                v.violation_type == "dangerous_os_function" for v in violations
+            ), f"os.{func}() not flagged as dangerous_os_function"
+
+    def test_os_remove_detected(self):
+        """os.remove/unlink should be blocked to prevent file deletion"""
+        for func in ["remove", "unlink", "rmdir", "removedirs"]:
+            code = f"""
+import os
+
+def test():
+    os.{func}("/tmp/important")
+"""
+            is_safe, violations = analyze_plugin_code(code, "test.py", strict_mode=True)
+
+            assert not is_safe, f"os.{func}() was not detected as dangerous"
+
+    def test_os_symlink_detected(self):
+        """os.symlink/link should be blocked to prevent symlink attacks"""
+        for func in ["symlink", "link"]:
+            code = f"""
+import os
+
+def test():
+    os.{func}("/etc/passwd", "/tmp/link")
+"""
+            is_safe, violations = analyze_plugin_code(code, "test.py", strict_mode=True)
+
+            assert not is_safe, f"os.{func}() was not detected as dangerous"
+
+    def test_os_chmod_chown_detected(self):
+        """os.chmod/chown should be blocked to prevent permission changes"""
+        for func in ["chmod", "chown"]:
+            code = f"""
+import os
+
+def test():
+    os.{func}("/tmp/file", 0o777)
+"""
+            is_safe, violations = analyze_plugin_code(code, "test.py", strict_mode=True)
+
+            assert not is_safe, f"os.{func}() was not detected as dangerous"

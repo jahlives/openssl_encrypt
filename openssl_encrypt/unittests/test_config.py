@@ -493,7 +493,7 @@ class SimpleTestPlugin(PreProcessorPlugin):
 """
 
             plugin_file = os.path.join(self.plugin_dir, "simple_test.py")
-            with open(plugin_file, "w") as f:
+            with open(plugin_file, "w", encoding="utf-8") as f:
                 f.write(plugin_code)
 
             self.assertTrue(os.path.exists(plugin_file))
@@ -647,29 +647,70 @@ class SimpleTestPlugin(PreProcessorPlugin):
                 PluginSecurityContext,
             )
 
-            # Use the module-level SlowPluginForTimeout class (defined outside for picklability)
-            if SlowPluginForTimeout is None:
-                self.skipTest("Plugin system not available")
+            import importlib.util
+            import tempfile
+            import textwrap
 
-            plugin = SlowPluginForTimeout()
-            context = PluginSecurityContext("slow_test", {PluginCapability.READ_FILES})
-            # No need to add file paths since we're overriding execute()
-            sandbox = PluginSandbox()
+            # Create a standalone slow plugin module in a temp file so the AST
+            # analyzer only sees clean code (no blocked imports from test_config.py).
+            slow_plugin_source = textwrap.dedent("""\
+                import time
+                from openssl_encrypt.modules.plugin_system.plugin_base import (
+                    PreProcessorPlugin,
+                    PluginCapability,
+                    PluginResult,
+                )
 
-            # Execute with short timeout and process isolation
-            result = sandbox.execute_plugin(
-                plugin, context, max_execution_time=0.5, use_process_isolation=True
-            )
+                class SlowPluginForTimeout(PreProcessorPlugin):
+                    def __init__(self):
+                        super().__init__("slow_test", "Slow Test Plugin", "1.0.0")
 
-            # Should fail due to timeout or process crash (both indicate plugin didn't complete)
-            # After many tests, the subprocess may crash (exit -11) due to resource exhaustion
-            # instead of timing out gracefully, but both outcomes are acceptable
-            self.assertFalse(result.success)
-            # Accept either timeout message or process failure message
-            self.assertTrue(
-                "timed out" in result.message.lower() or "process" in result.message.lower(),
-                f"Expected timeout or process failure, got: {result.message}",
-            )
+                    def get_required_capabilities(self):
+                        return {PluginCapability.READ_FILES}
+
+                    def get_description(self):
+                        return "A slow plugin for timeout testing"
+
+                    def process_file(self, file_path, context):
+                        time.sleep(2)
+                        return PluginResult.success_result("Should not reach here")
+
+                    def execute(self, context):
+                        time.sleep(2)
+                        return PluginResult.success_result("Should not reach here")
+            """)
+
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".py", prefix="slow_plugin_", delete=False
+            ) as f:
+                f.write(slow_plugin_source)
+                slow_module_path = f.name
+
+            try:
+                spec = importlib.util.spec_from_file_location("_slow_plugin_mod", slow_module_path)
+                slow_mod = importlib.util.module_from_spec(spec)
+                sys.modules["_slow_plugin_mod"] = slow_mod
+                spec.loader.exec_module(slow_mod)
+
+                plugin = slow_mod.SlowPluginForTimeout()
+                context = PluginSecurityContext("slow_test", {PluginCapability.READ_FILES})
+                sandbox = PluginSandbox()
+
+                # Execute with short timeout and process isolation
+                result = sandbox.execute_plugin(
+                    plugin, context, max_execution_time=0.5, use_process_isolation=True
+                )
+
+                # Should fail due to timeout or process crash
+                self.assertFalse(result.success)
+                self.assertTrue(
+                    "timed out" in result.message.lower()
+                    or "process" in result.message.lower(),
+                    f"Expected timeout or process failure, got: {result.message}",
+                )
+            finally:
+                sys.modules.pop("_slow_plugin_mod", None)
+                os.unlink(slow_module_path)
 
         except ImportError:
             self.skipTest("Plugin system not available")
@@ -930,17 +971,17 @@ class TestPluginIntegration(unittest.TestCase):
 
         # Create various test files
         self.text_file = os.path.join(self.test_dir, "test.txt")
-        with open(self.text_file, "w") as f:
+        with open(self.text_file, "w", encoding="utf-8") as f:
             f.write("This is a test file for plugin integration.\nLine 2\nLine 3")
         self.test_files.append(self.text_file)
 
         self.json_file = os.path.join(self.test_dir, "test.json")
-        with open(self.json_file, "w") as f:
+        with open(self.json_file, "w", encoding="utf-8") as f:
             json.dump({"name": "test", "data": [1, 2, 3], "nested": {"key": "value"}}, f)
         self.test_files.append(self.json_file)
 
         self.csv_file = os.path.join(self.test_dir, "test.csv")
-        with open(self.csv_file, "w") as f:
+        with open(self.csv_file, "w", encoding="utf-8") as f:
             f.write("name,age,city\nAlice,30,New York\nBob,25,London\n")
         self.test_files.append(self.csv_file)
 
@@ -1026,7 +1067,7 @@ class TestPluginIntegration(unittest.TestCase):
             self.assertTrue(os.path.exists(backup_path))
 
             # Verify backup content matches original
-            with open(self.text_file, "r") as original, open(backup_path, "r") as backup:
+            with open(self.text_file, "r", encoding="utf-8") as original, open(backup_path, "r", encoding="utf-8") as backup:
                 self.assertEqual(original.read(), backup.read())
 
             # Test backup verification
@@ -1080,7 +1121,7 @@ class TestPluginIntegration(unittest.TestCase):
             self.assertTrue(os.path.exists(json_output))
 
             # Verify JSON output is valid
-            with open(json_output, "r") as f:
+            with open(json_output, "r", encoding="utf-8") as f:
                 converted_data = json.load(f)
                 self.assertIsInstance(converted_data, list)
                 self.assertEqual(len(converted_data), 2)  # Two data rows
@@ -1137,7 +1178,7 @@ class TestPluginIntegration(unittest.TestCase):
 
             # Test post-processing audit
             encrypted_file = os.path.join(self.test_dir, "dummy.enc")
-            with open(encrypted_file, "w") as f:
+            with open(encrypted_file, "w", encoding="utf-8") as f:
                 f.write("dummy encrypted content")
             self.test_files.append(encrypted_file)
 

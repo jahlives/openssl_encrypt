@@ -54,14 +54,19 @@ class DangerousPatternVisitor(ast.NodeVisitor):
         "exec",
         "compile",
         "__import__",
+        "globals",
+        "locals",
+        "vars",
+        "dir",
+        "type",
+        "breakpoint",
     }
 
     # Dunder attributes that enable type hierarchy traversal / sandbox escape.
-    # Note: __init__, __new__, __del__, __dict__, __func__, __self__, __class__
-    # are NOT included here because they are standard Python and commonly used
-    # in legitimate plugin code.  Only attributes that enable sandbox escapes
-    # (type hierarchy traversal, scope access, code manipulation, pickle exploits)
-    # are blocked.
+    # Note: __init__, __new__, __del__ are NOT included here because they are
+    # standard Python and commonly used in legitimate plugin code.
+    # __dict__, __func__, __self__ are blocked because they enable chained
+    # sandbox escapes (e.g. method.__func__.__globals__).
     DANGEROUS_DUNDER_ATTRIBUTES = {
         "__mro__",
         "__subclasses__",
@@ -71,6 +76,13 @@ class DangerousPatternVisitor(ast.NodeVisitor):
         "__code__",
         "__reduce__",
         "__reduce_ex__",
+        "__class__",
+        "__import__",
+        "__loader__",
+        "__spec__",
+        "__dict__",
+        "__func__",
+        "__self__",
     }
 
     # Use the shared blocked modules set to keep AST and runtime in sync
@@ -84,7 +96,16 @@ class DangerousPatternVisitor(ast.NodeVisitor):
         "popen",
         "spawn",
         "exec",
+        "execl",
+        "execle",
+        "execlp",
+        "execlpe",
+        "execv",
+        "execve",
+        "execvp",
+        "execvpe",
         "fork",
+        "forkpty",
         "kill",
         "killpg",
         "spawnl",
@@ -95,6 +116,26 @@ class DangerousPatternVisitor(ast.NodeVisitor):
         "spawnve",
         "spawnvp",
         "spawnvpe",
+        "popen2",
+        "popen3",
+        "popen4",
+        "remove",
+        "unlink",
+        "rmdir",
+        "removedirs",
+        "rename",
+        "renames",
+        "symlink",
+        "link",
+        "chmod",
+        "chown",
+        "chroot",
+        "lchmod",
+        "lchown",
+        "setuid",
+        "setgid",
+        "seteuid",
+        "setegid",
     }
 
     def __init__(self, strict_mode: bool = True):
@@ -249,6 +290,16 @@ class DangerousPatternVisitor(ast.NodeVisitor):
                                     f"This is a known sandbox bypass technique.",
                                     "critical",
                                 )
+                else:
+                    # Dynamic getattr with non-constant attribute name — potential bypass
+                    self.add_violation(
+                        node,
+                        "dynamic_getattr",
+                        "getattr() called with a dynamic (non-constant) attribute name. "
+                        "This can be used to bypass sandbox restrictions by computing "
+                        "dangerous attribute names at runtime.",
+                        "high",
+                    )
 
         self.generic_visit(node)
 
@@ -325,6 +376,47 @@ class DangerousPatternVisitor(ast.NodeVisitor):
 
         self.generic_visit(node)
 
+    def _extract_concat_string(self, node: ast.AST) -> Optional[str]:
+        """Try to statically resolve a string concatenation chain."""
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return node.value
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+            left = self._extract_concat_string(node.left)
+            right = self._extract_concat_string(node.right)
+            if left is not None and right is not None:
+                return left + right
+        return None
+
+    def visit_BinOp(self, node: ast.BinOp) -> None:
+        """
+        Detect string concatenation used to build dangerous names.
+
+        Catches patterns like '__' + 'globals' + '__' which bypass
+        simple attribute name checks.
+        """
+        if isinstance(node.op, ast.Add):
+            resolved = self._extract_concat_string(node)
+            if resolved is not None:
+                # Check if the concatenated result is a dangerous dunder or function
+                if resolved in self.DANGEROUS_DUNDER_ATTRIBUTES:
+                    self.add_violation(
+                        node,
+                        "string_concat_bypass",
+                        f"String concatenation builds dangerous attribute name "
+                        f"'{resolved}'. This is a known sandbox bypass technique.",
+                        "critical",
+                    )
+                elif resolved in self.DANGEROUS_FUNCTIONS:
+                    self.add_violation(
+                        node,
+                        "string_concat_bypass",
+                        f"String concatenation builds dangerous function name "
+                        f"'{resolved}'. This is a known sandbox bypass technique.",
+                        "critical",
+                    )
+
+        self.generic_visit(node)
+
     def visit_Str(self, node: ast.Str) -> None:
         """Check for suspicious strings (base64 encoded code, etc.)"""
         # This is for older Python versions; in 3.8+ ast.Str is deprecated
@@ -365,10 +457,12 @@ def analyze_plugin_code(
         visitor = DangerousPatternVisitor(strict_mode=strict_mode)
         visitor.visit(tree)
 
-        # In strict mode, any critical violation fails validation
+        # In strict mode, any critical or high severity violation fails validation
         if strict_mode:
-            critical_violations = [v for v in visitor.violations if v.severity == "critical"]
-            is_safe = len(critical_violations) == 0
+            blocking_violations = [
+                v for v in visitor.violations if v.severity in ("critical", "high")
+            ]
+            is_safe = len(blocking_violations) == 0
         else:
             # In permissive mode, we just warn but allow
             is_safe = True

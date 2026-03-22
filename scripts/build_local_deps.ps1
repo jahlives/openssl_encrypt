@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     Build script for liboqs and liboqs-python dependencies on Windows.
@@ -8,7 +8,7 @@
     Equivalent of build_local_deps.sh for Windows systems.
 
 .PARAMETER InstallPrefix
-    Installation directory for liboqs. Default: C:\liboqs
+    Installation directory for liboqs. Default: $HOME\_oqs
 
 .PARAMETER LiboqsVersion
     Version of liboqs to build. Default: 0.12.0
@@ -21,12 +21,12 @@
 
 .EXAMPLE
     .\build_local_deps.ps1
-    .\build_local_deps.ps1 -InstallPrefix "D:\liboqs"
+    .\build_local_deps.ps1 -InstallPrefix "C:\liboqs"
     .\build_local_deps.ps1 -SkipEnvSetup
 #>
 
 param(
-    [string]$InstallPrefix = "C:\liboqs",
+    [string]$InstallPrefix = (Join-Path $env:USERPROFILE "_oqs"),
     [string]$LiboqsVersion = "0.12.0",
     [string]$LiboqsPythonVersion = "0.12.0",
     [switch]$SkipEnvSetup
@@ -107,7 +107,9 @@ function Install-Dependency {
         $response = Read-Host "Install $Name now using winget? (y/N)"
         if ($response -match "^[Yy]$") {
             Write-Step "Installing $Name via winget..."
-            winget install --id $WingetId --accept-source-agreements --accept-package-agreements 2>&1 | Write-Host
+            & { $ErrorActionPreference = 'Continue'
+                winget install --id $WingetId --accept-source-agreements --accept-package-agreements 2>&1 | Write-Host
+            }
 
             if ($LASTEXITCODE -eq 0) {
                 Write-Success "$Name installed successfully"
@@ -160,9 +162,11 @@ function Install-VsBuildTools {
             Write-Step "Installing Visual Studio Build Tools via winget..."
             Write-Warn "The installer UI will open. Select 'Desktop development with C++' workload."
             Write-Host ""
-            winget install --id Microsoft.VisualStudio.2022.BuildTools `
-                --override "--wait --passive --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended" `
-                --accept-source-agreements --accept-package-agreements 2>&1 | Write-Host
+            & { $ErrorActionPreference = 'Continue'
+                winget install --id Microsoft.VisualStudio.2022.BuildTools `
+                    --override "--wait --passive --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended" `
+                    --accept-source-agreements --accept-package-agreements 2>&1 | Write-Host
+            }
 
             if ($LASTEXITCODE -eq 0) {
                 Write-Success "Visual Studio Build Tools installed"
@@ -196,6 +200,15 @@ function Find-VsDevShell {
         Write-Success "MSVC compiler (cl.exe) already available"
         return $true
     }
+
+    # Fallback: check via where.exe (Get-Command may miss inherited PATH entries)
+    try {
+        $whereResult = & where.exe cl 2>$null
+        if ($LASTEXITCODE -eq 0 -and $whereResult) {
+            Write-Success "MSVC compiler (cl.exe) found via PATH"
+            return $true
+        }
+    } catch { }
 
     # Try to find and import VsDevShell
     $vsWherePath = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
@@ -286,7 +299,7 @@ try {
 }
 catch {
     Write-Step "pip not found, attempting to bootstrap..."
-    python -m ensurepip 2>&1 | Write-Host
+    & { $ErrorActionPreference = 'Continue'; python -m ensurepip 2>&1 | Write-Host }
     if ($LASTEXITCODE -ne 0) {
         Write-Fail "Could not bootstrap pip. Run: python -m ensurepip"
         exit 1
@@ -377,7 +390,7 @@ if ($liboqsOk -and $liboqsPythonOk) {
 # ──────────────────────────────────────────────────────────
 
 if (-not $liboqsOk) {
-    Write-Banner "Step 1/2: Building liboqs $LiboqsVersion"
+    Write-Banner "Step 1/4: Building liboqs $LiboqsVersion"
 
     # Create temp directory
     $tempDir = Join-Path ([System.IO.Path]::GetTempPath()) "liboqs-build-$(Get-Random)"
@@ -385,8 +398,10 @@ if (-not $liboqsOk) {
 
     try {
         Write-Step "Cloning liboqs $LiboqsVersion..."
-        git clone --depth 1 --branch $LiboqsVersion `
-            "https://github.com/open-quantum-safe/liboqs.git" $tempDir 2>&1 | Write-Host
+        & { $ErrorActionPreference = 'Continue'
+            git clone --depth 1 --branch $LiboqsVersion `
+                "https://github.com/open-quantum-safe/liboqs.git" $tempDir 2>&1 | Write-Host
+        }
 
         if ($LASTEXITCODE -ne 0) {
             Write-Fail "Failed to clone liboqs repository"
@@ -399,13 +414,15 @@ if (-not $liboqsOk) {
         Write-Step "Configuring with CMake..."
         Push-Location $buildDir
         try {
-            cmake .. -G "NMake Makefiles" `
-                -DCMAKE_BUILD_TYPE=Release `
-                -DBUILD_SHARED_LIBS=ON `
-                -DOQS_BUILD_ONLY_LIB=ON `
-                -DOQS_DIST_BUILD=ON `
-                -DOQS_USE_OPENSSL=OFF `
-                -DCMAKE_INSTALL_PREFIX="$InstallPrefix" 2>&1 | Write-Host
+            & { $ErrorActionPreference = 'Continue'
+                cmake .. -G "NMake Makefiles" `
+                    -DCMAKE_BUILD_TYPE=Release `
+                    -DBUILD_SHARED_LIBS=ON `
+                    -DOQS_BUILD_ONLY_LIB=ON `
+                    -DOQS_DIST_BUILD=ON `
+                    -DOQS_USE_OPENSSL=OFF `
+                    -DCMAKE_INSTALL_PREFIX="$InstallPrefix" 2>&1 | Write-Host
+            }
 
             if ($LASTEXITCODE -ne 0) {
                 Write-Fail "CMake configuration failed"
@@ -413,7 +430,7 @@ if (-not $liboqsOk) {
             }
 
             Write-Step "Building liboqs (this may take a few minutes)..."
-            nmake 2>&1 | Write-Host
+            & { $ErrorActionPreference = 'Continue'; nmake 2>&1 | Write-Host }
 
             if ($LASTEXITCODE -ne 0) {
                 Write-Fail "Build failed"
@@ -421,7 +438,7 @@ if (-not $liboqsOk) {
             }
 
             Write-Step "Installing to $InstallPrefix..."
-            nmake install 2>&1 | Write-Host
+            & { $ErrorActionPreference = 'Continue'; nmake install 2>&1 | Write-Host }
 
             if ($LASTEXITCODE -ne 0) {
                 Write-Fail "Installation failed"
@@ -463,14 +480,14 @@ if (-not $liboqsOk) {
     }
 }
 else {
-    Write-Step "Step 1/2: liboqs already installed, skipping build"
+    Write-Step "Step 1/4: liboqs already installed, skipping build"
 }
 
 # ──────────────────────────────────────────────────────────
 # Step 2: Install liboqs-python
 # ──────────────────────────────────────────────────────────
 
-Write-Banner "Step 2/2: Installing liboqs-python $LiboqsPythonVersion"
+Write-Banner "Step 2/4: Installing liboqs-python $LiboqsPythonVersion"
 
 # Set environment for liboqs-python build
 $env:LIBOQS_INSTALL_PATH = $InstallPrefix
@@ -479,8 +496,10 @@ $env:CFLAGS = "-I$InstallPrefix\include"
 $env:LDFLAGS = "-L$InstallPrefix\lib"
 
 Write-Step "Installing liboqs-python from source..."
-python -m pip install --no-cache-dir `
-    "git+https://github.com/open-quantum-safe/liboqs-python.git@$LiboqsPythonVersion" 2>&1 | Write-Host
+& { $ErrorActionPreference = 'Continue'
+    python -m pip install --no-cache-dir `
+        "git+https://github.com/open-quantum-safe/liboqs-python.git@$LiboqsPythonVersion" 2>&1 | Write-Host
+}
 
 if ($LASTEXITCODE -ne 0) {
     Write-Fail "Failed to install liboqs-python"
@@ -521,6 +540,347 @@ try {
 catch {
     Write-Fail "liboqs-python verification failed: $_"
     exit 1
+}
+
+# ──────────────────────────────────────────────────────────
+# Step 3: Build RandomX for Windows (MSVC patch)
+# ──────────────────────────────────────────────────────────
+
+$RandomXVersion = "1.1.10.post3"
+$RandomXGitTag = "v1.1.10"
+
+# Check if randomx is already installed and working
+$randomxOk = $false
+try {
+    $rxResult = python -c "import randomx; vm = randomx.RandomX(b'test_seed_hash_00000000000000000'); h = vm.calculate_hash(b'test'); print(len(h))" 2>&1
+    if ($LASTEXITCODE -eq 0 -and $rxResult.Trim() -eq "32") {
+        $randomxOk = $true
+    }
+} catch { }
+
+if ($randomxOk) {
+    Write-Banner "Step 3/4: RandomX already installed and working"
+}
+else {
+    Write-Banner "Step 3/4: Building RandomX $RandomXVersion for Windows"
+
+    # RandomX from PyPI doesn't build on Windows/MSVC due to:
+    # 1. AMD64 not recognized as x86_64 (JIT files skipped)
+    # 2. GAS .S assembly not supported by MSVC (need MASM .asm)
+    # 3. advapi32.lib not linked
+    # This step patches the source and builds with MASM support.
+
+    $randomxTemp = Join-Path ([System.IO.Path]::GetTempPath()) "randomx-build-$(Get-Random)"
+    New-Item -ItemType Directory -Path $randomxTemp -Force | Out-Null
+
+    try {
+        # Download source
+        Write-Step "Downloading RandomX source..."
+        & { $ErrorActionPreference = 'Continue'
+            python -m pip download "randomx==$RandomXVersion" --no-binary :all: --no-deps --no-build-isolation -d $randomxTemp 2>&1 | Write-Host
+        }
+        $tarball = Get-ChildItem -Path $randomxTemp -Filter "*.tar.gz" | Select-Object -First 1
+        if (-not $tarball) {
+            Write-Fail "Failed to download RandomX source"
+            exit 1
+        }
+
+        # Extract
+        Write-Step "Extracting source..."
+        python -c "
+import tarfile, sys
+with tarfile.open(r'$($tarball.FullName)') as t:
+    t.extractall(r'$randomxTemp', filter='data')
+"
+        $sourceDir = Get-ChildItem -Path $randomxTemp -Directory -Filter "RandomX-*" | Select-Object -First 1
+        if (-not $sourceDir) {
+            Write-Fail "Failed to extract RandomX source"
+            exit 1
+        }
+        $srcRoot = $sourceDir.FullName
+        $asmSrcDir = Join-Path $srcRoot "RandomX\src"
+
+        # Download MASM assembly files from upstream (matching version)
+        Write-Step "Downloading MASM assembly files (tag $RandomXGitTag)..."
+        $asmDir = Join-Path $asmSrcDir "asm"
+        New-Item -ItemType Directory -Path $asmDir -Force | Out-Null
+
+        $baseUrl = "https://raw.githubusercontent.com/tevador/RandomX/refs/tags/$RandomXGitTag/src"
+
+        # Download main MASM file
+        python -c "
+import urllib.request, os
+base_url = '$baseUrl'
+asm_dir = r'$asmDir'
+asm_src_dir = r'$asmSrcDir'
+
+# Main MASM file
+urllib.request.urlretrieve(f'{base_url}/jit_compiler_x86_static.asm',
+    os.path.join(asm_src_dir, 'jit_compiler_x86_static.asm'))
+print('Downloaded jit_compiler_x86_static.asm')
+
+# Include files
+inc_files = [
+    'configuration.asm',
+    'program_prologue_win64.inc',
+    'program_xmm_constants.inc',
+    'program_loop_load.inc',
+    'program_read_dataset.inc',
+    'program_read_dataset_sshash_init.inc',
+    'program_read_dataset_sshash_fin.inc',
+    'program_loop_store.inc',
+    'program_epilogue_store.inc',
+    'program_epilogue_win64.inc',
+    'program_sshash_load.inc',
+    'program_sshash_prefetch.inc',
+    'program_sshash_constants.inc',
+    'randomx_reciprocal.inc',
+]
+for f in inc_files:
+    urllib.request.urlretrieve(f'{base_url}/asm/{f}', os.path.join(asm_dir, f))
+    print(f'Downloaded asm/{f}')
+"
+        if ($LASTEXITCODE -ne 0) {
+            Write-Fail "Failed to download MASM files"
+            exit 1
+        }
+        Write-Success "MASM assembly files downloaded"
+
+        # Patch setup.py
+        Write-Step "Patching setup.py for Windows/MSVC..."
+        $setupPy = Join-Path $srcRoot "setup.py"
+        $patchedSetup = @'
+from setuptools import setup, Extension
+from Cython.Build import cythonize
+
+import glob, os, platform, subprocess, sys
+
+machine = platform.machine()
+is_windows = sys.platform == 'win32'
+is_msvc = is_windows
+
+if is_msvc:
+    compile_flags = ['/O2', '/EHsc', '/std:c++14']
+else:
+    compile_flags = ['-march=native','-std=c++11','-fpic', '-O3']
+
+source_root_dir = os.path.join('RandomX', 'src')
+sources = []
+sources.extend(glob.glob('**/*.c', root_dir=source_root_dir, recursive=True))
+sources.extend(glob.glob('**/*.cpp', root_dir=source_root_dir, recursive=True))
+if not is_msvc:
+    sources.extend(glob.glob('**/*.S', root_dir=source_root_dir, recursive=True))
+sources = [source for source in sources if 'jit_' not in source and 'tests' not in source]
+
+extra_objects = []
+
+if machine in ['i386', 'i686', 'x86_64', 'AMD64']:
+    sources.extend(['jit_compiler_x86.cpp'])
+    if is_msvc:
+        asm_file = os.path.join(source_root_dir, 'jit_compiler_x86_static.asm')
+        obj_file = os.path.join(source_root_dir, 'jit_compiler_x86_static.obj')
+        if os.path.exists(asm_file):
+            print(f"Assembling {asm_file} with ml64...")
+            try:
+                subprocess.check_call(['ml64', '/c', '/nologo',
+                    f'/I{source_root_dir}',
+                    f'/Fo{obj_file}', asm_file])
+                extra_objects.append(obj_file)
+                print(f"Successfully assembled {obj_file}")
+            except (subprocess.CalledProcessError, FileNotFoundError) as e:
+                print(f"WARNING: Failed to assemble {asm_file}: {e}")
+    else:
+        sources.extend(['jit_compiler_x86_static.S'])
+elif machine in ['aarch64_be', 'aarch64', 'armv8b', 'armv8l']:
+    sources.extend(['jit_compiler_a64_static.s', 'jit_compiler_a64.cpp'])
+    compile_flags.append('-DHAVE_HWCAP')
+elif machine.startswith('ppc'):
+    compile_flags.append('-mcpu=native')
+sources = [os.path.join(source_root_dir,source) for source in sources]
+
+libraries = []
+if is_windows:
+    libraries.append('advapi32')
+
+if not is_msvc:
+    extra_objects.extend([source for source in sources if source.endswith('.S')])
+
+setup(
+    name='RandomX',
+    version=open('version').read(),
+    description='RandomX Proof-of-Work Hasher',
+    long_description=open('README.md').read(),
+    long_description_content_type='text/markdown',
+    package_dir={'randomx': 'randomx'},
+    packages=['randomx'],
+    url='https://github.com/xloem/RandomX-Python',
+    keywords=['randomx', 'crypto', 'cryptocurrency', 'blockchain', 'pow'],
+    classifiers=[
+      'Programming Language :: Python :: 3',
+      'Operating System :: OS Independent',
+    ],
+    include_package_data=True,
+    package_data={'': ['*.pyx', '*.pxd', '*.inc', '*.S', '*.h', '*.c', '*.hpp', '*.cpp']},
+    ext_modules=cythonize(
+        Extension(
+            'randomx', [
+                os.path.join('randomx','randomx.pyx'),
+                *[source for source in sources if source.endswith('.c') or source.endswith('.cpp')]
+            ],
+            include_dirs=[os.path.join('RandomX','src')],
+            extra_objects=extra_objects,
+            extra_compile_args=compile_flags,
+            libraries=libraries,
+            language='c++',
+        ),
+        compiler_directives=dict(
+            language_level='3',
+            embedsignature=True
+        )
+    )
+)
+'@
+        Set-Content -Path $setupPy -Value $patchedSetup -Encoding UTF8
+        Write-Success "setup.py patched"
+
+        # Build and install
+        Write-Step "Building RandomX (this may take a minute)..."
+        Push-Location $srcRoot
+        try {
+            & { $ErrorActionPreference = 'Continue'
+                python -m pip install --no-build-isolation --no-deps . 2>&1 | Write-Host
+            }
+
+            if ($LASTEXITCODE -ne 0) {
+                Write-Fail "RandomX build failed"
+                exit 1
+            }
+        }
+        finally {
+            Pop-Location
+        }
+
+        # Verify
+        Write-Step "Verifying RandomX..."
+        $rxVerify = python -c "import randomx; vm = randomx.RandomX(b'test_seed_hash_00000000000000000'); h = vm.calculate_hash(b'test'); print(len(h))" 2>&1
+        if ($LASTEXITCODE -eq 0 -and $rxVerify.Trim() -eq "32") {
+            Write-Success "RandomX $RandomXVersion built and verified successfully"
+        }
+        else {
+            Write-Fail "RandomX verification failed: $rxVerify"
+            exit 1
+        }
+    }
+    finally {
+        # Cleanup
+        Write-Step "Cleaning up RandomX build directory..."
+        Remove-Item -Recurse -Force $randomxTemp -ErrorAction SilentlyContinue
+    }
+}
+
+# ──────────────────────────────────────────────────────────
+# Step 4: Build Whirlpool for Windows (MSVC patch)
+# ──────────────────────────────────────────────────────────
+
+$WhirlpoolVersion = "1.0.0"
+
+# Check if whirlpool is already installed and working
+$whirlpoolOk = $false
+try {
+    $wpResult = python -c "import whirlpool; print(whirlpool.new(b'test').hexdigest()[:8])" 2>&1
+    if ($LASTEXITCODE -eq 0 -and $wpResult.Trim().Length -eq 8) {
+        $whirlpoolOk = $true
+    }
+} catch { }
+
+if ($whirlpoolOk) {
+    Write-Banner "Step 4/4: Whirlpool already installed and working"
+}
+else {
+    Write-Banner "Step 4/4: Building Whirlpool $WhirlpoolVersion for Windows"
+
+    # The whirlpool PyPI package uses Py_TYPE() as an lvalue which MSVC rejects
+    # since Python 3.12+. This patches the source to use Py_SET_TYPE() instead.
+
+    $whirlpoolTemp = Join-Path ([System.IO.Path]::GetTempPath()) "whirlpool-build-$(Get-Random)"
+    New-Item -ItemType Directory -Path $whirlpoolTemp -Force | Out-Null
+
+    try {
+        # Download source
+        Write-Step "Downloading Whirlpool source..."
+        & { $ErrorActionPreference = 'Continue'
+            python -m pip download "whirlpool==$WhirlpoolVersion" --no-binary :all: --no-deps --no-build-isolation -d $whirlpoolTemp 2>&1 | Write-Host
+        }
+        $tarball = Get-ChildItem -Path $whirlpoolTemp -Filter "*.tar.gz" | Select-Object -First 1
+        if (-not $tarball) {
+            Write-Fail "Failed to download Whirlpool source"
+            exit 1
+        }
+
+        # Extract
+        Write-Step "Extracting source..."
+        python -c "
+import tarfile
+with tarfile.open(r'$($tarball.FullName)') as t:
+    t.extractall(r'$whirlpoolTemp', filter='data')
+"
+        $sourceDir = Get-ChildItem -Path $whirlpoolTemp -Directory -Filter "Whirlpool-*" | Select-Object -First 1
+        if (-not $sourceDir) {
+            Write-Fail "Failed to extract Whirlpool source"
+            exit 1
+        }
+        $srcRoot = $sourceDir.FullName
+
+        # Patch pywhirlpool.c for MSVC compatibility
+        Write-Step "Patching pywhirlpool.c for MSVC (Py_TYPE lvalue fix)..."
+        $cFile = Join-Path $srcRoot "whirlpool\pywhirlpool.c"
+        if (Test-Path $cFile) {
+            $content = Get-Content $cFile -Raw
+            $content = $content.Replace(
+                'Py_TYPE(&Whirlpooltype) = &PyType_Type;',
+                'Py_SET_TYPE(&Whirlpooltype, &PyType_Type);'
+            )
+            Set-Content -Path $cFile -Value $content -NoNewline
+            Write-Success "Patched pywhirlpool.c"
+        }
+        else {
+            Write-Fail "pywhirlpool.c not found at $cFile"
+            exit 1
+        }
+
+        # Build and install
+        Write-Step "Building Whirlpool..."
+        Push-Location $srcRoot
+        try {
+            & { $ErrorActionPreference = 'Continue'
+                python -m pip install --no-build-isolation --no-deps . 2>&1 | Write-Host
+            }
+
+            if ($LASTEXITCODE -ne 0) {
+                Write-Fail "Whirlpool build failed"
+                exit 1
+            }
+        }
+        finally {
+            Pop-Location
+        }
+
+        # Verify
+        Write-Step "Verifying Whirlpool..."
+        $wpVerify = python -c "import whirlpool; print(whirlpool.new(b'test').hexdigest()[:8])" 2>&1
+        if ($LASTEXITCODE -eq 0 -and $wpVerify.Trim().Length -eq 8) {
+            Write-Success "Whirlpool $WhirlpoolVersion built and verified successfully"
+        }
+        else {
+            Write-Fail "Whirlpool verification failed: $wpVerify"
+            exit 1
+        }
+    }
+    finally {
+        # Cleanup
+        Write-Step "Cleaning up Whirlpool build directory..."
+        Remove-Item -Recurse -Force $whirlpoolTemp -ErrorAction SilentlyContinue
+    }
 }
 
 # ──────────────────────────────────────────────────────────
@@ -600,7 +960,7 @@ except Exception as e:
     print('This is normal if the package is not yet installed.')
 "@
 
-    python -c $verifyScript 2>&1 | Write-Host
+    & { $ErrorActionPreference = 'Continue'; python -c $verifyScript 2>&1 | Write-Host }
 }
 catch {
     Write-Host "Note: Final verification skipped (package not in path yet)"

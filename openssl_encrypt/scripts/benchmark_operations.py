@@ -20,6 +20,7 @@ import sys
 import time
 import tracemalloc
 from typing import Dict, Tuple
+from openssl_encrypt.modules.crypt_utils import eprint
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -30,7 +31,7 @@ try:
     from cryptography.hazmat.primitives import hashes
     from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 except ImportError:
-    print("Error: cryptography library not installed")
+    eprint("Error: cryptography library not installed")
     sys.exit(1)
 
 # Import argon2
@@ -40,7 +41,7 @@ try:
     ARGON2_AVAILABLE = True
 except ImportError:
     ARGON2_AVAILABLE = False
-    print("Warning: argon2-cffi not available, skipping Argon2 benchmark")
+    eprint("Warning: argon2-cffi not available, skipping Argon2 benchmark")
 
 # Import optional libraries
 try:
@@ -49,7 +50,7 @@ try:
     BLAKE3_AVAILABLE = True
 except ImportError:
     BLAKE3_AVAILABLE = False
-    print("Warning: blake3 not available, will use fallback estimate")
+    eprint("Warning: blake3 not available, will use fallback estimate")
 
 try:
     import pywhirlpool
@@ -57,17 +58,17 @@ try:
     WHIRLPOOL_AVAILABLE = True
 except ImportError:
     WHIRLPOOL_AVAILABLE = False
-    print("Warning: whirlpool not available, skipping Whirlpool benchmark")
+    eprint("Warning: whirlpool not available, skipping Whirlpool benchmark")
 
 try:
     from openssl_encrypt.modules.randomx import check_randomx_support, randomx_kdf
 
     RANDOMX_AVAILABLE = check_randomx_support()
     if not RANDOMX_AVAILABLE:
-        print("Warning: RandomX library not installed, skipping RandomX benchmark")
+        eprint("Warning: RandomX library not installed, skipping RandomX benchmark")
 except ImportError:
     RANDOMX_AVAILABLE = False
-    print("Warning: RandomX module not available, skipping RandomX benchmark")
+    eprint("Warning: RandomX module not available, skipping RandomX benchmark")
 
 # Import local modules for KDF benchmarking
 try:
@@ -76,7 +77,7 @@ try:
     BALLOON_AVAILABLE = True
 except ImportError:
     BALLOON_AVAILABLE = False
-    print("Warning: Balloon KDF not available")
+    eprint("Warning: Balloon KDF not available")
 
 
 def benchmark_hash_algorithm(algo_name: str, hash_func, rounds: int = 10000) -> float:
@@ -91,7 +92,7 @@ def benchmark_hash_algorithm(algo_name: str, hash_func, rounds: int = 10000) -> 
     Returns:
         Time in seconds for the specified rounds
     """
-    print(f"  Benchmarking {algo_name} for {rounds:,} rounds...", end=" ", flush=True)
+    eprint(f"  Benchmarking {algo_name} for {rounds:,} rounds...", end=" ", flush=True)
 
     data = b"test_password_for_benchmarking_12345"
 
@@ -101,7 +102,7 @@ def benchmark_hash_algorithm(algo_name: str, hash_func, rounds: int = 10000) -> 
         result = hash_func(result).digest()
     elapsed = time.perf_counter() - start
 
-    print(f"{elapsed:.4f}s")
+    eprint(f"{elapsed:.4f}s")
     return elapsed
 
 
@@ -117,7 +118,7 @@ def benchmark_kdf_with_memory(kdf_name: str, kdf_func, **kwargs) -> Tuple[float,
     Returns:
         Tuple of (time_seconds, peak_memory_kb)
     """
-    print(f"  Benchmarking {kdf_name}...", end=" ", flush=True)
+    eprint(f"  Benchmarking {kdf_name}...", end=" ", flush=True)
 
     tracemalloc.start()
     start_memory = tracemalloc.get_traced_memory()[0]
@@ -126,7 +127,7 @@ def benchmark_kdf_with_memory(kdf_name: str, kdf_func, **kwargs) -> Tuple[float,
     try:
         kdf_func(**kwargs)  # Execute KDF function
     except Exception as e:
-        print(f"FAILED ({e})")
+        eprint(f"FAILED ({e})")
         tracemalloc.stop()
         return (0.0, 0)
 
@@ -136,15 +137,15 @@ def benchmark_kdf_with_memory(kdf_name: str, kdf_func, **kwargs) -> Tuple[float,
 
     peak_memory_kb = (peak - start_memory) / 1024
 
-    print(f"{elapsed:.4f}s, {peak_memory_kb:.1f} KB")
+    eprint(f"{elapsed:.4f}s, {peak_memory_kb:.1f} KB")
     return (elapsed, int(peak_memory_kb))
 
 
 def benchmark_hash_algorithms() -> Dict[str, Dict]:
     """Benchmark all hash algorithms."""
-    print("\n" + "=" * 60)
-    print("BENCHMARKING HASH ALGORITHMS (per 10,000 rounds)")
-    print("=" * 60)
+    eprint("\n" + "=" * 60)
+    eprint("BENCHMARKING HASH ALGORITHMS (per 10,000 rounds)")
+    eprint("=" * 60)
 
     results = {}
 
@@ -192,7 +193,7 @@ def benchmark_hash_algorithms() -> Dict[str, Dict]:
             "time_per_10k_rounds": results["blake2b"]["time_per_10k_rounds"] * 0.8,
             "estimated": True,
         }
-        print(f"  BLAKE3: {results['blake3']['time_per_10k_rounds']:.4f}s (estimated)")
+        eprint(f"  BLAKE3: {results['blake3']['time_per_10k_rounds']:.4f}s (estimated)")
 
     # SHAKE family (extendable-output functions)
     def shake128_hash(data):
@@ -246,7 +247,7 @@ def benchmark_hash_algorithms() -> Dict[str, Dict]:
 
 def benchmark_pbkdf2() -> Dict:
     """Benchmark PBKDF2 KDF."""
-    print("\n  Benchmarking PBKDF2 (100,000 iterations)...")
+    eprint("\n  Benchmarking PBKDF2 (100,000 iterations)...")
 
     def pbkdf2_func():
         kdf = PBKDF2HMAC(
@@ -277,7 +278,7 @@ def benchmark_argon2() -> Dict:
             "estimated": True,
         }
 
-    print("\n  Benchmarking Argon2id...")
+    eprint("\n  Benchmarking Argon2id...")
 
     def argon2_func():
         ph = argon2.PasswordHasher(
@@ -317,7 +318,7 @@ def benchmark_argon2() -> Dict:
 
 def benchmark_scrypt() -> Dict:
     """Benchmark Scrypt KDF."""
-    print("\n  Benchmarking Scrypt...")
+    eprint("\n  Benchmarking Scrypt...")
 
     def scrypt_func():
         return hashlib.scrypt(
@@ -364,7 +365,7 @@ def benchmark_balloon() -> Dict:
             "estimated": True,
         }
 
-    print("\n  Benchmarking Balloon (balloon_m with parallel_cost=4)...")
+    eprint("\n  Benchmarking Balloon (balloon_m with parallel_cost=4)...")
 
     def balloon_func():
         return balloon_m(
@@ -388,7 +389,7 @@ def benchmark_balloon() -> Dict:
 
 def benchmark_hkdf() -> Dict:
     """Benchmark HKDF KDF."""
-    print("\n  Benchmarking HKDF...")
+    eprint("\n  Benchmarking HKDF...")
 
     from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
@@ -417,7 +418,7 @@ def benchmark_randomx() -> Dict:
             "estimated": True,
         }
 
-    print("\n  Benchmarking RandomX...")
+    eprint("\n  Benchmarking RandomX...")
 
     # Light mode
     def randomx_light_func():
@@ -443,9 +444,9 @@ def benchmark_randomx() -> Dict:
 
 def benchmark_kdf_operations() -> Dict[str, Dict]:
     """Benchmark all KDF operations."""
-    print("\n" + "=" * 60)
-    print("BENCHMARKING KDF OPERATIONS")
-    print("=" * 60)
+    eprint("\n" + "=" * 60)
+    eprint("BENCHMARKING KDF OPERATIONS")
+    eprint("=" * 60)
 
     results = {}
 
@@ -477,9 +478,9 @@ def generate_constants_file(hash_results: Dict, kdf_results: Dict, system_info: 
         "benchmark_constants.py",
     )
 
-    print("\n" + "=" * 60)
-    print(f"GENERATING: {output_path}")
-    print("=" * 60)
+    eprint("\n" + "=" * 60)
+    eprint(f"GENERATING: {output_path}")
+    eprint("=" * 60)
 
     with open(output_path, "w") as f:
         f.write('"""\n')
@@ -531,29 +532,29 @@ def generate_constants_file(hash_results: Dict, kdf_results: Dict, system_info: 
         f.write('    "memory_kb": 1048576  # 1GB\n')
         f.write("}\n")
 
-    print(f"✓ Generated {output_path}")
+    eprint(f"✓ Generated {output_path}")
 
 
 def main():
     """Main benchmarking function."""
-    print("=" * 60)
-    print("OpenSSL Encrypt - Performance Benchmarking Script")
-    print("=" * 60)
-    print("\nThis script will measure the performance of all hash algorithms")
-    print("and KDF operations. Results will be saved to benchmark_constants.py")
-    print("\nPress Ctrl+C to cancel.\n")
+    eprint("=" * 60)
+    eprint("OpenSSL Encrypt - Performance Benchmarking Script")
+    eprint("=" * 60)
+    eprint("\nThis script will measure the performance of all hash algorithms")
+    eprint("and KDF operations. Results will be saved to benchmark_constants.py")
+    eprint("\nPress Ctrl+C to cancel.\n")
 
     try:
         time.sleep(2)
     except KeyboardInterrupt:
-        print("\nCancelled.")
+        eprint("\nCancelled.")
         sys.exit(0)
 
     # Collect system info
     system_info = get_system_info()
-    print(f"\nSystem: {system_info['platform']}")
-    print(f"CPU: {system_info['cpu']}")
-    print(f"Python: {system_info['python_version']}")
+    eprint(f"\nSystem: {system_info['platform']}")
+    eprint(f"CPU: {system_info['cpu']}")
+    eprint(f"Python: {system_info['python_version']}")
 
     # Run benchmarks
     hash_results = benchmark_hash_algorithms()
@@ -562,13 +563,13 @@ def main():
     # Generate output file
     generate_constants_file(hash_results, kdf_results, system_info)
 
-    print("\n" + "=" * 60)
-    print("BENCHMARKING COMPLETE")
-    print("=" * 60)
-    print("\nNext steps:")
-    print("1. Review generated benchmark_constants.py")
-    print("2. Implement decryption_estimator.py module")
-    print("3. Integrate into crypt_core.py")
+    eprint("\n" + "=" * 60)
+    eprint("BENCHMARKING COMPLETE")
+    eprint("=" * 60)
+    eprint("\nNext steps:")
+    eprint("1. Review generated benchmark_constants.py")
+    eprint("2. Implement decryption_estimator.py module")
+    eprint("3. Integrate into crypt_core.py")
 
 
 if __name__ == "__main__":

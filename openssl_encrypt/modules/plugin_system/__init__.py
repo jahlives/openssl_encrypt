@@ -36,7 +36,7 @@ Example Usage:
     for plugin_file in plugin_files:
         result = plugin_manager.load_plugin(plugin_file)
         if result.success:
-            print(f"Loaded plugin: {result.data['plugin_id']}")
+            eprint(f"Loaded plugin: {result.data['plugin_id']}")
 
     # Execute plugin
     from openssl_encrypt.modules.plugin_system import PluginSecurityContext, PluginCapability
@@ -46,7 +46,7 @@ Example Usage:
 
     result = plugin_manager.execute_plugin("example_plugin", context)
     if result.success:
-        print("Plugin executed successfully")
+        eprint("Plugin executed successfully")
 
 Security Architecture:
     The plugin system maintains strict security boundaries:
@@ -108,6 +108,7 @@ from .plugin_sandbox import (
     ResourceMonitor,
     SandboxViolationError,
 )
+from ..crypt_utils import eprint
 
 # Plugin system availability and status
 PLUGIN_SYSTEM_AVAILABLE = True

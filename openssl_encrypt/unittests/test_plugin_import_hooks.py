@@ -60,7 +60,7 @@ class TestPlugin(PreProcessorPlugin):
         return PluginResult.success_result("Executed")
 """
         plugin_path = os.path.join(self.temp_dir, f"{plugin_id}.py")
-        with open(plugin_path, 'w') as f:
+        with open(plugin_path, 'w', encoding='utf-8') as f:
             f.write(plugin_content)
         return plugin_path
 
@@ -216,7 +216,7 @@ class TestPlugin(PreProcessorPlugin):
         return PluginResult.success_result("Done")
 """
         plugin_path = os.path.join(self.temp_dir, f"{plugin_id}.py")
-        with open(plugin_path, 'w') as f:
+        with open(plugin_path, 'w', encoding='utf-8') as f:
             f.write(plugin_content)
         return plugin_path
 
@@ -294,7 +294,7 @@ class TestPlugin(PreProcessorPlugin):
         {code}
 """
         plugin_path = os.path.join(self.temp_dir, f"{plugin_id}.py")
-        with open(plugin_path, 'w') as f:
+        with open(plugin_path, 'w', encoding='utf-8') as f:
             f.write(plugin_content)
         return plugin_path
 
@@ -445,7 +445,7 @@ class TestPlugin(PreProcessorPlugin):
         return PluginResult.success_result("Done")
 """
         plugin_path = os.path.join(self.temp_dir, f"{plugin_id}.py")
-        with open(plugin_path, 'w') as f:
+        with open(plugin_path, 'w', encoding='utf-8') as f:
             f.write(plugin_content)
         return plugin_path
 
@@ -524,7 +524,7 @@ class TestPlugin(PreProcessorPlugin):
         {code}
 """
         plugin_path = os.path.join(self.temp_dir, f"{plugin_id}.py")
-        with open(plugin_path, 'w') as f:
+        with open(plugin_path, 'w', encoding='utf-8') as f:
             f.write(plugin_content)
         return plugin_path
 

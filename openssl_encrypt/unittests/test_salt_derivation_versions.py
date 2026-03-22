@@ -30,7 +30,7 @@ class TestSaltDerivationVersions(unittest.TestCase):
 
         # Create test file
         self.test_file = os.path.join(self.test_dir, "test.txt")
-        with open(self.test_file, "w") as f:
+        with open(self.test_file, "w", encoding="utf-8") as f:
             f.write("Test content for salt derivation versions\n")
         self.test_files.append(self.test_file)
 
@@ -107,9 +107,9 @@ class TestSaltDerivationVersions(unittest.TestCase):
         )
 
         # Verify content
-        with open(self.test_file, "r") as f:
+        with open(self.test_file, "r", encoding="utf-8") as f:
             original_content = f.read()
-        with open(decrypted_file, "r") as f:
+        with open(decrypted_file, "r", encoding="utf-8") as f:
             decrypted_content = f.read()
 
         self.assertEqual(original_content, decrypted_content)
@@ -317,9 +317,9 @@ class TestSaltDerivationVersions(unittest.TestCase):
         )
 
         # Verify content
-        with open(self.test_file, "r") as f:
+        with open(self.test_file, "r", encoding="utf-8") as f:
             original_content = f.read()
-        with open(decrypted_file, "r") as f:
+        with open(decrypted_file, "r", encoding="utf-8") as f:
             decrypted_content = f.read()
 
         self.assertEqual(original_content, decrypted_content)

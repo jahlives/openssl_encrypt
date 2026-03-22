@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Optional
 
 from ...modules.plugin_system.plugin_config import ensure_plugin_data_dir
+from ...modules.crypt_utils import eprint
 
 logger = logging.getLogger(__name__)
 
@@ -197,7 +198,7 @@ class IntegrityConfig:
 if __name__ == "__main__":
     # Example 1: Create default config (disabled)
     config = IntegrityConfig()
-    print(f"Default config: enabled={config.enabled}, server_url={config.server_url}")
+    eprint(f"Default config: enabled={config.enabled}, server_url={config.server_url}")
 
     # Example 2: Create config with mTLS certificates
     cert_dir = _get_default_cert_dir()
@@ -212,4 +213,4 @@ if __name__ == "__main__":
     # Save and load
     config.to_file()
     loaded_config = IntegrityConfig.from_file()
-    print(f"Loaded config: enabled={loaded_config.enabled}")
+    eprint(f"Loaded config: enabled={loaded_config.enabled}")

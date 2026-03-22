@@ -244,6 +244,20 @@ class RegistryBase(Generic[T]):
         """Initialize empty registry."""
         self._algorithms: Dict[str, Type[T]] = {}
         self._aliases: Dict[str, str] = {}  # alias -> canonical name
+        self._frozen: bool = False
+
+    def freeze(self) -> None:
+        """Freeze the registry to prevent further registrations.
+
+        Once frozen, register() will raise RuntimeError. This should be
+        called after all algorithms are registered during initialization.
+        """
+        self._frozen = True
+
+    @property
+    def is_frozen(self) -> bool:
+        """Whether the registry is frozen."""
+        return self._frozen
 
     def register(self, algorithm_class: Type[T]) -> None:
         """
@@ -254,7 +268,14 @@ class RegistryBase(Generic[T]):
 
         Raises:
             ValueError: If name or alias already registered
+            RuntimeError: If registry is frozen
         """
+        if self._frozen:
+            info = algorithm_class.info()
+            raise RuntimeError(
+                f"Cannot register algorithm '{info.name}': registry is frozen"
+            )
+
         info = algorithm_class.info()
 
         # Register canonical name

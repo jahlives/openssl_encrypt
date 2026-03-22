@@ -48,11 +48,13 @@ from .crypt_core import (
 from .crypt_errors import set_debug_mode
 from .crypt_utils import (
     display_password_with_timeout,
+    eprint,
     expand_glob_patterns,
     generate_strong_password,
     request_confirmation,
     secure_shred_file,
     show_security_recommendations,
+    tty_clear_line,
 )
 
 # Try to import the CLI helper module
@@ -317,14 +319,14 @@ class StdinMetadataExtractor:
 
                 metadata = secure_metadata_loads(metadata_json)
             except (JSONSecurityError, JSONValidationError) as e:
-                print(f"Error: Invalid metadata JSON: {e}")
+                eprint(f"Error: Invalid metadata JSON: {e}")
                 return None
             except ImportError:
                 # Fallback to basic JSON loading if validator not available
                 try:
                     metadata = json.loads(metadata_json)
                 except json.JSONDecodeError as e:
-                    print(f"Error: Invalid JSON in metadata: {e}")
+                    eprint(f"Error: Invalid JSON in metadata: {e}")
                     return None
 
             # Extract algorithm info based on format version
@@ -485,7 +487,7 @@ def load_template_file(template_name: str) -> Optional[Dict[str, Any]]:
     """
     # Security: Validate template name to prevent path traversal attacks
     if not template_name or not isinstance(template_name, str):
-        print("Error: Invalid template name provided")
+        eprint("Error: Invalid template name provided")
         sys.exit(1)
 
     # Remove any path separators and parent directory references
@@ -498,14 +500,14 @@ def load_template_file(template_name: str) -> Optional[Dict[str, Any]]:
         or "/" in template_name
         or "\\" in template_name
     ):
-        print(
+        eprint(
             f"Error: Invalid template name '{template_name}'. Template names cannot contain path separators or parent directory references."
         )
         sys.exit(1)
 
     # Ensure the cleaned name is not empty
     if not safe_template_name:
-        print("Error: Empty template name after security validation")
+        eprint("Error: Empty template name after security validation")
         sys.exit(1)
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -528,13 +530,13 @@ def load_template_file(template_name: str) -> Optional[Dict[str, Any]]:
         try:
             common_path = os.path.commonpath([resolved_template_path, resolved_template_dir])
             if common_path != resolved_template_dir:
-                print(
+                eprint(
                     f"Error: Security violation - template path '{template_path}' is outside allowed directory"
                 )
                 sys.exit(1)
         except ValueError:
             # Different drives/roots on Windows - definitely not under template_dir
-            print(
+            eprint(
                 f"Error: Security violation - template path '{template_path}' is outside allowed directory"
             )
             sys.exit(1)
@@ -554,22 +556,22 @@ def load_template_file(template_name: str) -> Optional[Dict[str, Any]]:
 
                             return secure_template_loads(json_content)
                         except (JSONSecurityError, JSONValidationError) as e:
-                            print(f"Error: Invalid template JSON in {template_path}: {e}")
+                            eprint(f"Error: Invalid template JSON in {template_path}: {e}")
                             sys.exit(1)
                         except ImportError:
                             # Fallback to basic JSON loading if validator not available
                             try:
                                 return json.loads(json_content)
                             except json.JSONDecodeError as e:
-                                print(f"Error: Invalid JSON in template {template_path}: {e}")
+                                eprint(f"Error: Invalid JSON in template {template_path}: {e}")
                                 sys.exit(1)
                     else:
                         return yaml.safe_load(f)
             except Exception as e:
-                print(f"Error loading template {template_path}: {e}")
+                eprint(f"Error loading template {template_path}: {e}")
                 sys.exit(1)
 
-    print(f"Template {safe_template_name} not found in {template_dir}")
+    eprint(f"Template {safe_template_name} not found in {template_dir}")
     sys.exit(1)
 
 
@@ -672,10 +674,10 @@ def get_template_config(template: str or SecurityTemplate) -> Dict[str, Any]:
                 if "hash_config" in custom_template:
                     return custom_template
                 else:
-                    print("Invalid template format: missing 'hash_config' key")
+                    eprint("Invalid template format: missing 'hash_config' key")
                     sys.exit(1)
         except Exception as e:
-            print(f"Error loading template file: {e}")
+            eprint(f"Error loading template file: {e}")
             sys.exit(1)
 
 
@@ -759,8 +761,8 @@ def analyze_current_security_configuration(args):
     Args:
         args: Parsed command line arguments containing security configuration
     """
-    print("\nSECURITY CONFIGURATION ANALYSIS")
-    print("===============================")
+    eprint("\nSECURITY CONFIGURATION ANALYSIS")
+    eprint("===============================")
 
     try:
         # Extract hash configuration
@@ -852,53 +854,53 @@ def analyze_current_security_configuration(args):
         analysis = scorer.score_configuration(hash_config, kdf_config, cipher_info, pqc_info)
 
         # Display analysis results
-        print(f"\nOVERALL SECURITY SCORE: {analysis['overall']['score']}/10")
-        print(f"Security Level: {analysis['overall']['level'].name}")
-        print(f"Description: {analysis['overall']['description']}")
+        eprint(f"\nOVERALL SECURITY SCORE: {analysis['overall']['score']}/10")
+        eprint(f"Security Level: {analysis['overall']['level'].name}")
+        eprint(f"Description: {analysis['overall']['description']}")
 
-        print("\nCOMPONENT ANALYSIS:")
-        print("─────────────────────")
-        print(
+        eprint("\nCOMPONENT ANALYSIS:")
+        eprint("─────────────────────")
+        eprint(
             f"Hash Security: {analysis['hash_analysis']['score']:.1f}/10 ({analysis['hash_analysis']['description']})"
         )
         if analysis["hash_analysis"]["algorithms"]:
-            print(f"  Active algorithms: {', '.join(analysis['hash_analysis']['algorithms'])}")
-            print(f"  Total rounds: {analysis['hash_analysis']['total_rounds']:,}")
+            eprint(f"  Active algorithms: {', '.join(analysis['hash_analysis']['algorithms'])}")
+            eprint(f"  Total rounds: {analysis['hash_analysis']['total_rounds']:,}")
 
-        print(
+        eprint(
             f"KDF Security: {analysis['kdf_analysis']['score']:.1f}/10 ({analysis['kdf_analysis']['description']})"
         )
         if analysis["kdf_analysis"]["algorithms"]:
-            print(f"  Active algorithms: {', '.join(analysis['kdf_analysis']['algorithms'])}")
+            eprint(f"  Active algorithms: {', '.join(analysis['kdf_analysis']['algorithms'])}")
 
-        print(
+        eprint(
             f"Encryption: {analysis['cipher_analysis']['score']:.1f}/10 ({analysis['cipher_analysis']['description']})"
         )
-        print(f"  Algorithm: {analysis['cipher_analysis']['algorithm']}")
-        print(f"  Authenticated: {'Yes' if analysis['cipher_analysis']['authenticated'] else 'No'}")
+        eprint(f"  Algorithm: {analysis['cipher_analysis']['algorithm']}")
+        eprint(f"  Authenticated: {'Yes' if analysis['cipher_analysis']['authenticated'] else 'No'}")
 
         if analysis["pqc_analysis"]["enabled"]:
-            print(f"Post-Quantum: {analysis['pqc_analysis']['score']:.1f}/10 (Quantum-resistant)")
+            eprint(f"Post-Quantum: {analysis['pqc_analysis']['score']:.1f}/10 (Quantum-resistant)")
         else:
-            print("Post-Quantum: Not enabled")
+            eprint("Post-Quantum: Not enabled")
 
-        print("\nSECURITY ESTIMATES:")
-        print("─────────────────────")
-        print(f"Estimated brute-force time: {analysis['estimates']['brute_force_time']}")
-        print(f"Note: {analysis['estimates']['note']}")
-        print(f"Disclaimer: {analysis['estimates']['disclaimer']}")
+        eprint("\nSECURITY ESTIMATES:")
+        eprint("─────────────────────")
+        eprint(f"Estimated brute-force time: {analysis['estimates']['brute_force_time']}")
+        eprint(f"Note: {analysis['estimates']['note']}")
+        eprint(f"Disclaimer: {analysis['estimates']['disclaimer']}")
 
         if analysis["suggestions"]:
-            print("\nRECOMMENDATIONS:")
-            print("─────────────────")
+            eprint("\nRECOMMENDATIONS:")
+            eprint("─────────────────")
             for i, suggestion in enumerate(analysis["suggestions"], 1):
-                print(f"{i}. {suggestion}")
+                eprint(f"{i}. {suggestion}")
 
-        print()
+        eprint()
 
     except Exception as e:
-        print(f"Error analyzing security configuration: {e}")
-        print("Please check your configuration parameters.")
+        eprint(f"Error analyzing security configuration: {e}")
+        eprint("Please check your configuration parameters.")
 
 
 def validate_algorithm_availability(args):
@@ -1007,8 +1009,8 @@ def show_algorithm_registry(args):
         if output_format == "detailed":
             # Show detailed information with descriptions
             for cat in categories:
-                print(format_algorithm_help(cat))
-                print()  # Blank line between categories
+                eprint(format_algorithm_help(cat))
+                eprint()  # Blank line between categories
         else:
             # Simple format - just list names
             from .registry import (
@@ -1031,17 +1033,17 @@ def show_algorithm_registry(args):
                 if cat in getters:
                     title, getter = getters[cat]
                     algorithms = getter()
-                    print(f"\n{title}:")
-                    print("=" * len(title))
+                    eprint(f"\n{title}:")
+                    eprint("=" * len(title))
                     for algo in algorithms:
-                        print(f"  {algo}")
+                        eprint(f"  {algo}")
 
     except ImportError:
-        print("Error: Registry system not available.")
-        print("The algorithm registry module could not be imported.")
+        eprint("Error: Registry system not available.")
+        eprint("The algorithm registry module could not be imported.")
         sys.exit(1)
     except Exception as e:
-        print(f"Error displaying algorithms: {e}")
+        eprint(f"Error displaying algorithms: {e}")
         sys.exit(1)
 
 
@@ -1283,30 +1285,30 @@ def install_optional_dependencies(args):
     import shutil
     import subprocess
 
-    print("\n" + "=" * 70)
-    print("OpenSSL-Encrypt: Optional Dependencies Installer")
-    print("=" * 70)
-    print("\nThis will install:")
-    print("  • liboqs 0.12.0 (post-quantum cryptography)")
-    print("  • liboqs-python 0.12.0 (Python bindings)")
-    print("  • threefish_native (large-block cipher)")
-    print("\nRequirements:")
-    print("  • cmake, ninja (or make), gcc, g++, git")
-    print("  • Rust toolchain (rustc, cargo) for threefish")
-    print("  • ~500MB disk space, ~10-15 minutes build time")
-    print("=" * 70 + "\n")
+    eprint("\n" + "=" * 70)
+    eprint("OpenSSL-Encrypt: Optional Dependencies Installer")
+    eprint("=" * 70)
+    eprint("\nThis will install:")
+    eprint("  • liboqs 0.12.0 (post-quantum cryptography)")
+    eprint("  • liboqs-python 0.12.0 (Python bindings)")
+    eprint("  • threefish_native (large-block cipher)")
+    eprint("\nRequirements:")
+    eprint("  • cmake, ninja (or make), gcc, g++, git")
+    eprint("  • Rust toolchain (rustc, cargo) for threefish")
+    eprint("  • ~500MB disk space, ~10-15 minutes build time")
+    eprint("=" * 70 + "\n")
 
     if not args.yes:
         response = input("Continue? [y/N]: ").strip().lower()
         if response not in ("y", "yes"):
-            print("Installation cancelled.")
+            eprint("Installation cancelled.")
             return
 
     success_count = 0
     failed = []
 
     # Check for required build tools
-    print("\n[1/4] Checking build tools...")
+    eprint("\n[1/4] Checking build tools...")
     required_tools = {
         "cmake": "cmake",
         "ninja or make": ["ninja", "make"],
@@ -1322,17 +1324,17 @@ def install_optional_dependencies(args):
             commands = [commands]
         found = any(shutil.which(cmd) for cmd in commands)
         if found:
-            print(f"  ✓ {tool_name} found")
+            eprint(f"  ✓ {tool_name} found")
         else:
-            print(f"  ✗ {tool_name} NOT found")
+            eprint(f"  ✗ {tool_name} NOT found")
             missing_tools.append(tool_name)
 
     if missing_tools:
-        print(f"\n✗ Missing required tools: {', '.join(missing_tools)}")
-        print("\nPlease install them first:")
-        print("  Ubuntu/Debian: sudo apt-get install cmake ninja-build gcc g++ git cargo")
-        print("  Fedora: sudo dnf install cmake ninja-build gcc g++ git cargo")
-        print("  macOS: brew install cmake ninja gcc git rust")
+        eprint(f"\n✗ Missing required tools: {', '.join(missing_tools)}")
+        eprint("\nPlease install them first:")
+        eprint("  Ubuntu/Debian: sudo apt-get install cmake ninja-build gcc g++ git cargo")
+        eprint("  Fedora: sudo dnf install cmake ninja-build gcc g++ git cargo")
+        eprint("  macOS: brew install cmake ninja gcc git rust")
         sys.exit(1)
 
     # Get package root directory
@@ -1342,25 +1344,25 @@ def install_optional_dependencies(args):
         package_dir = os.path.dirname(os.path.abspath(openssl_encrypt.__file__))
         repo_root = os.path.dirname(package_dir)  # Go up one level
     except Exception as e:
-        print(f"✗ Could not locate package directory: {e}")
+        eprint(f"✗ Could not locate package directory: {e}")
         sys.exit(1)
 
     # [2/4] Build liboqs
-    print("\n[2/4] Building liboqs 0.12.0...")
+    eprint("\n[2/4] Building liboqs 0.12.0...")
     try:
         # Check if already installed
         result = subprocess.run(
             ["pkg-config", "--modversion", "liboqs"], capture_output=True, text=True, timeout=5
         )
         if result.returncode == 0 and result.stdout.strip() == "0.12.0":
-            print("  ✓ liboqs 0.12.0 already installed")
+            eprint("  ✓ liboqs 0.12.0 already installed")
             success_count += 1
         else:
             # Try using the build script if available
             build_script = os.path.join(repo_root, "scripts", "build_local_deps.sh")
             if not os.path.exists(build_script):
                 # Build manually
-                print("  Building from source...")
+                eprint("  Building from source...")
                 build_dir = os.path.expanduser("~/.cache/openssl-encrypt-build")
                 os.makedirs(build_dir, exist_ok=True)
 
@@ -1400,7 +1402,7 @@ def install_optional_dependencies(args):
                 subprocess.run(["ninja"], cwd=build_path, check=True)
                 subprocess.run(["ninja", "install"], cwd=build_path, check=True)
 
-                print("  ✓ liboqs 0.12.0 built and installed to ~/.local")
+                eprint("  ✓ liboqs 0.12.0 built and installed to ~/.local")
                 success_count += 1
             else:
                 # Use build script
@@ -1411,14 +1413,14 @@ def install_optional_dependencies(args):
 
                 bash_cmd = shutil.which("bash") or "/bin/bash"
                 subprocess.run([bash_cmd, build_script], env=env, check=True)
-                print("  ✓ liboqs 0.12.0 built and installed")
+                eprint("  ✓ liboqs 0.12.0 built and installed")
                 success_count += 1
     except Exception as e:
-        print(f"  ✗ Failed to build liboqs: {e}")
+        eprint(f"  ✗ Failed to build liboqs: {e}")
         failed.append("liboqs")
 
     # [3/4] Install liboqs-python
-    print("\n[3/4] Installing liboqs-python 0.12.0...")
+    eprint("\n[3/4] Installing liboqs-python 0.12.0...")
     try:
         # Check if already installed
         result = subprocess.run(
@@ -1428,7 +1430,7 @@ def install_optional_dependencies(args):
             timeout=5,
         )
         if result.returncode == 0 and result.stdout.strip() == "0.12.0":
-            print("  ✓ liboqs-python 0.12.0 already installed")
+            eprint("  ✓ liboqs-python 0.12.0 already installed")
             success_count += 1
         else:
             # Install via pip
@@ -1442,20 +1444,20 @@ def install_optional_dependencies(args):
                 ],
                 check=True,
             )
-            print("  ✓ liboqs-python 0.12.0 installed")
+            eprint("  ✓ liboqs-python 0.12.0 installed")
             success_count += 1
     except Exception as e:
-        print(f"  ✗ Failed to install liboqs-python: {e}")
+        eprint(f"  ✗ Failed to install liboqs-python: {e}")
         failed.append("liboqs-python")
 
     # [4/4] Build threefish_native
-    print("\n[4/4] Building threefish_native...")
+    eprint("\n[4/4] Building threefish_native...")
     try:
         # Check if already installed
         try:
             import threefish_native
 
-            print(
+            eprint(
                 f"  ✓ threefish_native already installed (version {getattr(threefish_native, '__version__', 'unknown')})"
             )
             success_count += 1
@@ -1463,8 +1465,8 @@ def install_optional_dependencies(args):
             # Try to build it
             threefish_dir = os.path.join(repo_root, "threefish_native")
             if not os.path.exists(threefish_dir):
-                print("  ✗ threefish_native source not found")
-                print("     This is only available when installing from source repository")
+                eprint("  ✗ threefish_native source not found")
+                eprint("     This is only available when installing from source repository")
                 failed.append("threefish_native")
             else:
                 # Install maturin if needed
@@ -1497,28 +1499,28 @@ def install_optional_dependencies(args):
                         ],
                         check=True,
                     )
-                    print("  ✓ threefish_native built and installed")
+                    eprint("  ✓ threefish_native built and installed")
                     success_count += 1
                 else:
-                    print("  ✗ No wheel file found after build")
+                    eprint("  ✗ No wheel file found after build")
                     failed.append("threefish_native")
     except Exception as e:
-        print(f"  ✗ Failed to build threefish_native: {e}")
+        eprint(f"  ✗ Failed to build threefish_native: {e}")
         failed.append("threefish_native")
 
     # Summary
-    print("\n" + "=" * 70)
-    print("Installation Summary")
-    print("=" * 70)
-    print(f"  Successfully installed: {success_count}/3 components")
+    eprint("\n" + "=" * 70)
+    eprint("Installation Summary")
+    eprint("=" * 70)
+    eprint(f"  Successfully installed: {success_count}/3 components")
     if failed:
-        print(f"  Failed: {', '.join(failed)}")
+        eprint(f"  Failed: {', '.join(failed)}")
     else:
-        print("  All components installed successfully!")
+        eprint("  All components installed successfully!")
 
-    print("\nTo verify installation, run:")
-    print("  openssl-encrypt list-available-algorithms")
-    print("=" * 70 + "\n")
+    eprint("\nTo verify installation, run:")
+    eprint("  openssl-encrypt list-available-algorithms")
+    eprint("=" * 70 + "\n")
 
     if failed:
         sys.exit(1)
@@ -1535,8 +1537,8 @@ def run_config_wizard(args):
         quiet = getattr(args, "quiet", False)
 
         if not quiet:
-            print("Starting Configuration Wizard...")
-            print("This will help you create secure encryption settings.\n")
+            eprint("Starting Configuration Wizard...")
+            eprint("This will help you create secure encryption settings.\n")
 
         # Run the wizard
         config = run_configuration_wizard(quiet=quiet)
@@ -1545,19 +1547,19 @@ def run_config_wizard(args):
             # Generate CLI arguments for the configuration
             cli_args = generate_cli_arguments(config)
 
-            print("\nTo use this configuration, run:")
-            print("─" * 40)
-            print(f"crypt_cli encrypt --input <file> {' '.join(cli_args)}")
-            print("\nOr save these settings to a template file for reuse.")
+            eprint("\nTo use this configuration, run:")
+            eprint("─" * 40)
+            eprint(f"crypt_cli encrypt --input <file> {' '.join(cli_args)}")
+            eprint("\nOr save these settings to a template file for reuse.")
 
         return config
 
     except KeyboardInterrupt:
         if not quiet:
-            print("\n\nConfiguration wizard cancelled.")
+            eprint("\n\nConfiguration wizard cancelled.")
         return None
     except Exception as e:
-        print(f"Error running configuration wizard: {e}")
+        eprint(f"Error running configuration wizard: {e}")
         return None
 
 
@@ -1575,8 +1577,8 @@ def run_config_analyzer(args):
         compliance_frameworks = getattr(args, "compliance_frameworks", None)
 
         if not quiet and output_format == "text":
-            print("Analyzing Configuration...")
-            print("Performing comprehensive security and performance analysis.\n")
+            eprint("Analyzing Configuration...")
+            eprint("Performing comprehensive security and performance analysis.\n")
 
         # Convert args to configuration dictionary
         config = vars(args)
@@ -1597,97 +1599,97 @@ def run_config_analyzer(args):
         return analysis
 
     except Exception as e:
-        print(f"Error analyzing configuration: {e}")
+        eprint(f"Error analyzing configuration: {e}")
         sys.exit(1)
 
 
 def _display_analysis_results(analysis):
     """Display formatted analysis results."""
 
-    print("=" * 60)
-    print("CONFIGURATION ANALYSIS RESULTS")
-    print("=" * 60)
-    print()
+    eprint("=" * 60)
+    eprint("CONFIGURATION ANALYSIS RESULTS")
+    eprint("=" * 60)
+    eprint()
 
     # Overall Summary
-    print("📊 OVERALL ASSESSMENT")
-    print("─" * 30)
-    print(f"Security Score: {analysis.overall_score:.1f}/10.0")
-    print(f"Security Level: {analysis.security_level.name}")
-    print(f"Analysis Time: {analysis.analysis_timestamp}")
-    print()
+    eprint("📊 OVERALL ASSESSMENT")
+    eprint("─" * 30)
+    eprint(f"Security Score: {analysis.overall_score:.1f}/10.0")
+    eprint(f"Security Level: {analysis.security_level.name}")
+    eprint(f"Analysis Time: {analysis.analysis_timestamp}")
+    eprint()
 
     # Configuration Summary
-    print("⚙️  CONFIGURATION SUMMARY")
-    print("─" * 30)
+    eprint("⚙️  CONFIGURATION SUMMARY")
+    eprint("─" * 30)
     summary = analysis.configuration_summary
-    print(f"Algorithm: {summary['algorithm']}")
-    print(f"Hash Functions: {', '.join(summary['active_hash_functions']) or 'None'}")
-    print(f"Key Derivation: {', '.join(summary['active_kdfs']) or 'None'}")
-    print(f"Post-Quantum: {'Yes' if summary['post_quantum_enabled'] else 'No'}")
-    print(f"Complexity: {summary['configuration_complexity'].title()}")
-    print(f"Suitable For: {', '.join(summary['suitable_for'])}")
-    print()
+    eprint(f"Algorithm: {summary['algorithm']}")
+    eprint(f"Hash Functions: {', '.join(summary['active_hash_functions']) or 'None'}")
+    eprint(f"Key Derivation: {', '.join(summary['active_kdfs']) or 'None'}")
+    eprint(f"Post-Quantum: {'Yes' if summary['post_quantum_enabled'] else 'No'}")
+    eprint(f"Complexity: {summary['configuration_complexity'].title()}")
+    eprint(f"Suitable For: {', '.join(summary['suitable_for'])}")
+    eprint()
 
     # Performance Assessment
-    print("🚀 PERFORMANCE ASSESSMENT")
-    print("─" * 30)
+    eprint("🚀 PERFORMANCE ASSESSMENT")
+    eprint("─" * 30)
     perf = analysis.performance_assessment
-    print(f"Overall Score: {perf['overall_score']:.1f}/10.0")
-    print(f"Speed Rating: {perf['estimated_relative_speed'].replace('_', ' ').title()}")
-    print(
+    eprint(f"Overall Score: {perf['overall_score']:.1f}/10.0")
+    eprint(f"Speed Rating: {perf['estimated_relative_speed'].replace('_', ' ').title()}")
+    eprint(
         f"Memory Usage: {perf['memory_requirements']['estimated_peak_mb']}MB ({perf['memory_requirements']['classification']})"
     )
-    print(f"CPU Intensity: {perf['cpu_intensity'].replace('_', ' ').title()}")
-    print()
+    eprint(f"CPU Intensity: {perf['cpu_intensity'].replace('_', ' ').title()}")
+    eprint()
 
     # Compatibility
-    print("🔗 COMPATIBILITY")
-    print("─" * 30)
+    eprint("🔗 COMPATIBILITY")
+    eprint("─" * 30)
     compat = analysis.compatibility_matrix
-    print(f"Overall Score: {compat['overall_compatibility_score']:.1f}/10.0")
+    eprint(f"Overall Score: {compat['overall_compatibility_score']:.1f}/10.0")
 
     platform_issues = [p for p, status in compat["platform_compatibility"].items() if not status]
     if platform_issues:
-        print(f"Platform Limitations: {', '.join(platform_issues)}")
+        eprint(f"Platform Limitations: {', '.join(platform_issues)}")
     else:
-        print("Platform Support: Universal")
+        eprint("Platform Support: Universal")
 
     library_issues = [lib for lib, status in compat["library_compatibility"].items() if not status]
     if library_issues:
-        print(f"Library Limitations: {', '.join(library_issues)}")
+        eprint(f"Library Limitations: {', '.join(library_issues)}")
     else:
-        print("Library Support: Excellent")
-    print()
+        eprint("Library Support: Excellent")
+    eprint()
 
     # Future Proofing
-    print("🔮 FUTURE PROOFING")
-    print("─" * 30)
+    eprint("🔮 FUTURE PROOFING")
+    eprint("─" * 30)
     future = analysis.future_proofing
-    print(f"Algorithm Longevity: {future['algorithm_longevity_score']:.1f}/10.0")
-    print(f"Key Size Adequacy: {future['key_size_adequacy_score']:.1f}/10.0")
-    print(f"Quantum Resistant: {'Yes' if future['post_quantum_ready'] else 'No'}")
-    print(f"Estimated Secure: {future['estimated_secure_years']}")
-    print()
+    eprint(f"Algorithm Longevity: {future['algorithm_longevity_score']:.1f}/10.0")
+    eprint(f"Key Size Adequacy: {future['key_size_adequacy_score']:.1f}/10.0")
+    eprint(f"Quantum Resistant: {'Yes' if future['post_quantum_ready'] else 'No'}")
+    eprint(f"Estimated Secure: {future['estimated_secure_years']}")
+    eprint()
 
     # Compliance Status
     if analysis.compliance_status:
-        print("📋 COMPLIANCE STATUS")
-        print("─" * 30)
+        eprint("📋 COMPLIANCE STATUS")
+        eprint("─" * 30)
         for framework, status in analysis.compliance_status.items():
             framework_name = framework.replace("_", " ").title()
             compliance_status = "✅ Compliant" if status["compliant"] else "❌ Non-Compliant"
-            print(f"{framework_name}: {compliance_status}")
+            eprint(f"{framework_name}: {compliance_status}")
 
             if status.get("issues"):
                 for issue in status["issues"]:
-                    print(f"  • {issue}")
-        print()
+                    eprint(f"  • {issue}")
+        eprint()
 
     # Recommendations
     if analysis.recommendations:
-        print("💡 RECOMMENDATIONS")
-        print("─" * 30)
+        eprint("💡 RECOMMENDATIONS")
+        eprint("─" * 30)
 
         # Group recommendations by priority
         by_priority = {}
@@ -1703,26 +1705,26 @@ def _display_analysis_results(analysis):
         for priority in ["critical", "high", "medium", "low", "info"]:
             if priority in by_priority:
                 recommendations = by_priority[priority]
-                print(f"\n{priority_icons[priority]} {priority.upper()} PRIORITY:")
+                eprint(f"\n{priority_icons[priority]} {priority.upper()} PRIORITY:")
 
                 for i, rec in enumerate(recommendations, 1):
-                    print(f"\n{i}. {rec.title}")
-                    print(f"   Category: {rec.category.value.replace('_', ' ').title()}")
-                    print(f"   Issue: {rec.description}")
-                    print(f"   Action: {rec.action}")
-                    print(f"   Impact: {rec.impact}")
+                    eprint(f"\n{i}. {rec.title}")
+                    eprint(f"   Category: {rec.category.value.replace('_', ' ').title()}")
+                    eprint(f"   Issue: {rec.description}")
+                    eprint(f"   Action: {rec.action}")
+                    eprint(f"   Impact: {rec.impact}")
 
                     if rec.applies_to and rec.applies_to != ["all"]:
-                        print(f"   Applies To: {', '.join(rec.applies_to)}")
+                        eprint(f"   Applies To: {', '.join(rec.applies_to)}")
     else:
-        print("💡 RECOMMENDATIONS")
-        print("─" * 30)
-        print("✅ No specific recommendations - configuration looks good!")
+        eprint("💡 RECOMMENDATIONS")
+        eprint("─" * 30)
+        eprint("✅ No specific recommendations - configuration looks good!")
 
-    print()
-    print("=" * 60)
-    print("Analysis complete. Use recommendations above to enhance your configuration.")
-    print("=" * 60)
+    eprint()
+    eprint("=" * 60)
+    eprint("Analysis complete. Use recommendations above to enhance your configuration.")
+    eprint("=" * 60)
 
 
 def _display_json_results(analysis):
@@ -1790,10 +1792,10 @@ def run_template_manager(args):
         elif subcommand == "delete":
             _handle_template_delete(template_mgr, args)
         else:
-            print("Invalid template subcommand. Use --help for available options.")
+            eprint("Invalid template subcommand. Use --help for available options.")
 
     except Exception as e:
-        print(f"Error in template management: {e}")
+        eprint(f"Error in template management: {e}")
         sys.exit(1)
 
 
@@ -1814,10 +1816,10 @@ def run_smart_recommendations(args):
         elif subcommand == "quick":
             _handle_recommendations_quick(engine, args)
         else:
-            print("Invalid smart recommendations subcommand. Use --help for available options.")
+            eprint("Invalid smart recommendations subcommand. Use --help for available options.")
 
     except Exception as e:
-        print(f"Error in smart recommendations: {e}")
+        eprint(f"Error in smart recommendations: {e}")
         sys.exit(1)
 
 
@@ -1870,13 +1872,13 @@ def _handle_recommendations_get(engine, args):
     recommendations = engine.generate_recommendations(user_context, current_config)
 
     # Display recommendations
-    print("🧠 SMART RECOMMENDATIONS")
-    print("=" * 50)
-    print()
+    eprint("🧠 SMART RECOMMENDATIONS")
+    eprint("=" * 50)
+    eprint()
 
     if not recommendations:
-        print("No specific recommendations at this time.")
-        print("Your current configuration appears to be well-optimized!")
+        eprint("No specific recommendations at this time.")
+        eprint("Your current configuration appears to be well-optimized!")
         return
 
     for i, rec in enumerate(recommendations, 1):
@@ -1896,9 +1898,9 @@ def _handle_recommendations_profile(engine, args):
         # Create new profile
         user_context = UserContext()
 
-        print("Creating new user profile...")
-        print("Please answer the following questions to personalize your recommendations:")
-        print()
+        eprint("Creating new user profile...")
+        eprint("Please answer the following questions to personalize your recommendations:")
+        eprint()
 
         # Interactive profile creation
         user_context.user_type = (
@@ -1933,29 +1935,29 @@ def _handle_recommendations_profile(engine, args):
             ]
 
         engine.save_user_context(user_id, user_context)
-        print(f"\n✅ Profile '{user_id}' created successfully!")
+        eprint(f"\n✅ Profile '{user_id}' created successfully!")
 
     elif hasattr(args, "show") and args.show:
         # Show existing profile
         user_context = engine.load_user_context(user_id)
         if not user_context:
-            print(f"❌ No profile found for user '{user_id}'")
+            eprint(f"❌ No profile found for user '{user_id}'")
             return
 
-        print(f"👤 USER PROFILE: {user_id}")
-        print("=" * 40)
-        print(f"User Type: {user_context.user_type}")
-        print(f"Experience Level: {user_context.experience_level}")
-        print(f"Primary Use Cases: {', '.join(user_context.primary_use_cases)}")
-        print(f"Data Sensitivity: {user_context.data_sensitivity}")
-        print(f"Performance Priority: {user_context.performance_priority}")
+        eprint(f"👤 USER PROFILE: {user_id}")
+        eprint("=" * 40)
+        eprint(f"User Type: {user_context.user_type}")
+        eprint(f"Experience Level: {user_context.experience_level}")
+        eprint(f"Primary Use Cases: {', '.join(user_context.primary_use_cases)}")
+        eprint(f"Data Sensitivity: {user_context.data_sensitivity}")
+        eprint(f"Performance Priority: {user_context.performance_priority}")
         if user_context.compliance_requirements:
-            print(f"Compliance Requirements: {', '.join(user_context.compliance_requirements)}")
+            eprint(f"Compliance Requirements: {', '.join(user_context.compliance_requirements)}")
         if user_context.preferred_algorithms:
-            print(f"Preferred Algorithms: {', '.join(user_context.preferred_algorithms)}")
+            eprint(f"Preferred Algorithms: {', '.join(user_context.preferred_algorithms)}")
         if user_context.avoided_algorithms:
-            print(f"Avoided Algorithms: {', '.join(user_context.avoided_algorithms)}")
-        print()
+            eprint(f"Avoided Algorithms: {', '.join(user_context.avoided_algorithms)}")
+        eprint()
 
 
 def _handle_recommendations_feedback(engine, args):
@@ -1968,9 +1970,9 @@ def _handle_recommendations_feedback(engine, args):
     engine.record_feedback(user_id, rec_id, accepted, feedback_text)
 
     status = "accepted" if accepted else "rejected"
-    print(f"✅ Feedback recorded: Recommendation {rec_id} was {status}")
+    eprint(f"✅ Feedback recorded: Recommendation {rec_id} was {status}")
     if feedback_text:
-        print(f"Comment: {feedback_text}")
+        eprint(f"Comment: {feedback_text}")
 
 
 def _handle_recommendations_quick(engine, args):
@@ -1980,15 +1982,15 @@ def _handle_recommendations_quick(engine, args):
 
     quick_recs = engine.get_quick_recommendations(use_case, experience_level)
 
-    print(f"⚡ QUICK RECOMMENDATIONS FOR {use_case.upper()}")
-    print("=" * 50)
-    print()
+    eprint(f"⚡ QUICK RECOMMENDATIONS FOR {use_case.upper()}")
+    eprint("=" * 50)
+    eprint()
 
     for rec in quick_recs:
-        print(rec)
-        print()
+        eprint(rec)
+        eprint()
 
-    print("💬 For detailed recommendations with explanations, use 'smart-recommendations get'")
+    eprint("💬 For detailed recommendations with explanations, use 'smart-recommendations get'")
 
 
 def _display_recommendation(rec, number: int):
@@ -2002,28 +2004,28 @@ def _display_recommendation(rec, number: int):
     priority_icon = priority_icons.get(rec.priority.value, "🔷")
     confidence_stars = confidence_indicators.get(rec.confidence.value, "⭐⭐⭐")
 
-    print(f"{number}. {priority_icon} {rec.title}")
-    print(f"   📝 {rec.description}")
-    print(f"   💡 Action: {rec.action}")
-    print(
+    eprint(f"{number}. {priority_icon} {rec.title}")
+    eprint(f"   📝 {rec.description}")
+    eprint(f"   💡 Action: {rec.action}")
+    eprint(
         f"   🎯 Confidence: {confidence_stars} | Difficulty: {rec.implementation_difficulty} | Impact: {rec.estimated_impact}"
     )
 
     if rec.reasoning:
-        print(f"   🤔 Reasoning: {rec.reasoning}")
+        eprint(f"   🤔 Reasoning: {rec.reasoning}")
 
     if rec.evidence:
-        print("   📊 Evidence:")
+        eprint("   📊 Evidence:")
         for evidence in rec.evidence:
-            print(f"      • {evidence}")
+            eprint(f"      • {evidence}")
 
     if rec.trade_offs:
-        print("   ⚖️  Trade-offs:")
+        eprint("   ⚖️  Trade-offs:")
         for aspect, impact in rec.trade_offs.items():
-            print(f"      • {aspect.title()}: {impact}")
+            eprint(f"      • {aspect.title()}: {impact}")
 
-    print(f"   🏷️  Category: {rec.category.value} | ID: {rec.id}")
-    print()
+    eprint(f"   🏷️  Category: {rec.category.value} | ID: {rec.id}")
+    eprint()
 
 
 def run_security_tests(args):
@@ -2038,7 +2040,7 @@ def run_security_tests(args):
         test_action = getattr(args, "test_action", None)
 
         if not test_action:
-            print("No test action specified. Use --help for available options.")
+            eprint("No test action specified. Use --help for available options.")
             return
 
         # Build execution plan
@@ -2057,7 +2059,7 @@ def run_security_tests(args):
         elif test_action == "all":
             suite_types = [TestSuiteType.ALL]
         else:
-            print(f"Unknown test action: {test_action}")
+            eprint(f"Unknown test action: {test_action}")
             return
 
         # Build configuration from arguments
@@ -2119,42 +2121,42 @@ def run_security_tests(args):
             logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
         # Run tests
-        print(f"🔒 Starting OpenSSL Encrypt Security Tests - {test_action.upper()}")
-        print("=" * 60)
-        print()
+        eprint(f"🔒 Starting OpenSSL Encrypt Security Tests - {test_action.upper()}")
+        eprint("=" * 60)
+        eprint()
 
         report = runner.run_tests(execution_plan)
 
         # Display summary
-        print("\n" + "=" * 60)
-        print("📊 TEST SUMMARY")
-        print("=" * 60)
+        eprint("\n" + "=" * 60)
+        eprint("📊 TEST SUMMARY")
+        eprint("=" * 60)
 
         summary = report.overall_summary
-        print(f"Total Suites: {summary['total_suites']}")
-        print(f"Successful Suites: {summary['successful_suites']}")
-        print(f"Suite Success Rate: {summary['suite_success_rate']:.1f}%")
-        print(f"Total Tests: {summary['total_tests']}")
-        print(f"Passed Tests: {summary['passed_tests']}")
-        print(f"Warning Tests: {summary['warning_tests']}")
-        print(f"Failed Tests: {summary['error_tests']}")
-        print(f"Test Success Rate: {summary['test_success_rate']:.1f}%")
-        print(f"Total Duration: {report.total_duration:.1f} seconds")
+        eprint(f"Total Suites: {summary['total_suites']}")
+        eprint(f"Successful Suites: {summary['successful_suites']}")
+        eprint(f"Suite Success Rate: {summary['suite_success_rate']:.1f}%")
+        eprint(f"Total Tests: {summary['total_tests']}")
+        eprint(f"Passed Tests: {summary['passed_tests']}")
+        eprint(f"Warning Tests: {summary['warning_tests']}")
+        eprint(f"Failed Tests: {summary['error_tests']}")
+        eprint(f"Test Success Rate: {summary['test_success_rate']:.1f}%")
+        eprint(f"Total Duration: {report.total_duration:.1f} seconds")
 
         # Show report locations
         if output_dir:
-            print(f"\n📁 Reports saved to: {output_dir}")
+            eprint(f"\n📁 Reports saved to: {output_dir}")
             for fmt in output_formats:
                 filename = f"security_test_report_{report.run_id}.{fmt}"
-                print(f"   • {fmt.upper()}: {filename}")
+                eprint(f"   • {fmt.upper()}: {filename}")
 
-        print("\n✅ Testing completed!")
+        eprint("\n✅ Testing completed!")
 
     except ImportError as e:
-        print(f"Error: Testing framework not available: {e}")
+        eprint(f"Error: Testing framework not available: {e}")
         sys.exit(1)
     except Exception as e:
-        print(f"Error running security tests: {e}")
+        eprint(f"Error running security tests: {e}")
         if hasattr(args, "debug") and args.debug:
             import traceback
 
@@ -2171,45 +2173,45 @@ def _handle_template_list(template_mgr: TemplateManager, args):
     templates = template_mgr.list_templates(category)
 
     if not templates:
-        print("No templates found.")
+        eprint("No templates found.")
         return
 
-    print("📋 AVAILABLE TEMPLATES")
-    print("=" * 50)
-    print()
+    eprint("📋 AVAILABLE TEMPLATES")
+    eprint("=" * 50)
+    eprint()
 
     current_category = None
     for template in templates:
         # Group by category
         if template.metadata.category != current_category:
             current_category = template.metadata.category
-            print(f"\n🏷️  {current_category.value.upper().replace('_', ' ')}")
-            print("-" * 30)
+            eprint(f"\n🏷️  {current_category.value.upper().replace('_', ' ')}")
+            eprint("-" * 30)
 
         # Display template info
         security_icon = _get_security_icon(template.metadata.security_level)
-        print(f"\n{security_icon} {template.metadata.name}")
-        print(f"   Description: {template.metadata.description}")
-        print(
+        eprint(f"\n{security_icon} {template.metadata.name}")
+        eprint(f"   Description: {template.metadata.description}")
+        eprint(
             f"   Security: {template.metadata.security_level} ({template.metadata.security_score:.1f}/10)"
         )
         if template.metadata.use_cases:
-            print(f"   Use Cases: {', '.join(template.metadata.use_cases)}")
+            eprint(f"   Use Cases: {', '.join(template.metadata.use_cases)}")
         if template.metadata.tags:
-            print(f"   Tags: {', '.join(template.metadata.tags)}")
+            eprint(f"   Tags: {', '.join(template.metadata.tags)}")
 
         if hasattr(args, "verbose") and args.verbose:
-            print(f"   Author: {template.metadata.author}")
-            print(f"   Created: {template.metadata.created_date}")
+            eprint(f"   Author: {template.metadata.author}")
+            eprint(f"   Created: {template.metadata.created_date}")
             if not template.is_built_in and template.file_path:
-                print(f"   File: {template.file_path}")
+                eprint(f"   File: {template.file_path}")
 
 
 def _handle_template_create(template_mgr: TemplateManager, args):
     """Handle template creation from current configuration."""
     name = getattr(args, "template_name", None)
     if not name:
-        print("Error: Template name is required for creation.")
+        eprint("Error: Template name is required for creation.")
         sys.exit(1)
 
     description = getattr(args, "description", "")
@@ -2221,9 +2223,9 @@ def _handle_template_create(template_mgr: TemplateManager, args):
     # Validate template
     is_valid, errors = template_mgr.validate_template(template)
     if not is_valid:
-        print("❌ Template validation failed:")
+        eprint("❌ Template validation failed:")
         for error in errors:
-            print(f"   • {error}")
+            eprint(f"   • {error}")
         sys.exit(1)
 
     # Save template
@@ -2231,18 +2233,18 @@ def _handle_template_create(template_mgr: TemplateManager, args):
         output_format = TemplateFormat(getattr(args, "format", "json"))
         filepath = template_mgr.save_template(template, format=output_format)
 
-        print("✅ Template created successfully!")
-        print(f"📁 Saved to: {filepath}")
-        print(
+        eprint("✅ Template created successfully!")
+        eprint(f"📁 Saved to: {filepath}")
+        eprint(
             f"🔒 Security Level: {template.metadata.security_level} ({template.metadata.security_score:.1f}/10)"
         )
 
         if use_cases:
-            print(f"🎯 Use Cases: {', '.join(use_cases)}")
+            eprint(f"🎯 Use Cases: {', '.join(use_cases)}")
 
     except FileExistsError as e:
-        print(f"❌ {e}")
-        print("Use --overwrite to replace existing template.")
+        eprint(f"❌ {e}")
+        eprint("Use --overwrite to replace existing template.")
         sys.exit(1)
 
 
@@ -2250,52 +2252,52 @@ def _handle_template_analyze(template_mgr: TemplateManager, args):
     """Handle template analysis command."""
     template_name = getattr(args, "template_name", None)
     if not template_name:
-        print("Error: Template name is required for analysis.")
+        eprint("Error: Template name is required for analysis.")
         sys.exit(1)
 
     template = template_mgr.get_template_by_name(template_name)
     if not template:
-        print(f"❌ Template '{template_name}' not found.")
+        eprint(f"❌ Template '{template_name}' not found.")
         sys.exit(1)
 
     report = template_mgr.generate_template_report(template)
 
-    print("🔍 TEMPLATE ANALYSIS REPORT")
-    print("=" * 50)
-    print(f"\n📋 Template: {template.metadata.name}")
-    print(f"📝 Description: {template.metadata.description}")
-    print(f"👤 Author: {template.metadata.author}")
-    print(f"📅 Created: {template.metadata.created_date}")
+    eprint("🔍 TEMPLATE ANALYSIS REPORT")
+    eprint("=" * 50)
+    eprint(f"\n📋 Template: {template.metadata.name}")
+    eprint(f"📝 Description: {template.metadata.description}")
+    eprint(f"👤 Author: {template.metadata.author}")
+    eprint(f"📅 Created: {template.metadata.created_date}")
 
     # Validation status
     validation = report["validation"]
     if validation["is_valid"]:
-        print("\n✅ VALIDATION: PASSED")
+        eprint("\n✅ VALIDATION: PASSED")
     else:
-        print("\n❌ VALIDATION: FAILED")
+        eprint("\n❌ VALIDATION: FAILED")
         for error in validation["errors"]:
-            print(f"   • {error}")
+            eprint(f"   • {error}")
 
     # Analysis results
     if "analysis" in report and "overall_score" in report["analysis"]:
         analysis = report["analysis"]
         security_icon = _get_security_icon(analysis["security_level"])
 
-        print("\n🔒 SECURITY ANALYSIS")
-        print(f"   {security_icon} Overall Score: {analysis['overall_score']:.1f}/10")
-        print(f"   🛡️  Security Level: {analysis['security_level']}")
+        eprint("\n🔒 SECURITY ANALYSIS")
+        eprint(f"   {security_icon} Overall Score: {analysis['overall_score']:.1f}/10")
+        eprint(f"   🛡️  Security Level: {analysis['security_level']}")
 
         if "performance" in analysis:
             perf = analysis["performance"]
-            print("\n🚀 PERFORMANCE ANALYSIS")
-            print(
+            eprint("\n🚀 PERFORMANCE ANALYSIS")
+            eprint(
                 f"   ⚡ Speed Rating: {perf['estimated_relative_speed'].replace('_', ' ').title()}"
             )
-            print(f"   💾 Memory Usage: {perf['memory_requirements']['estimated_peak_mb']}MB")
-            print(f"   🖥️  CPU Intensity: {perf['cpu_intensity'].replace('_', ' ').title()}")
+            eprint(f"   💾 Memory Usage: {perf['memory_requirements']['estimated_peak_mb']}MB")
+            eprint(f"   🖥️  CPU Intensity: {perf['cpu_intensity'].replace('_', ' ').title()}")
 
         if "recommendations" in analysis and analysis["recommendations"]:
-            print("\n💡 RECOMMENDATIONS:")
+            eprint("\n💡 RECOMMENDATIONS:")
             for i, rec in enumerate(analysis["recommendations"][:3], 1):  # Show top 3
                 priority_icon = (
                     "🚨"
@@ -2304,9 +2306,9 @@ def _handle_template_analyze(template_mgr: TemplateManager, args):
                     if rec["priority"] == "high"
                     else "💡"
                 )
-                print(f"   {i}. {priority_icon} {rec['title']}")
-                print(f"      {rec['description']}")
-                print(f"      Action: {rec['action']}")
+                eprint(f"   {i}. {priority_icon} {rec['title']}")
+                eprint(f"      {rec['description']}")
+                eprint(f"      Action: {rec['action']}")
 
 
 def _handle_template_compare(template_mgr: TemplateManager, args):
@@ -2315,106 +2317,106 @@ def _handle_template_compare(template_mgr: TemplateManager, args):
     template2_name = getattr(args, "template2", None)
 
     if not template1_name or not template2_name:
-        print("Error: Both template names are required for comparison.")
+        eprint("Error: Both template names are required for comparison.")
         sys.exit(1)
 
     template1 = template_mgr.get_template_by_name(template1_name)
     template2 = template_mgr.get_template_by_name(template2_name)
 
     if not template1:
-        print(f"❌ Template '{template1_name}' not found.")
+        eprint(f"❌ Template '{template1_name}' not found.")
         sys.exit(1)
     if not template2:
-        print(f"❌ Template '{template2_name}' not found.")
+        eprint(f"❌ Template '{template2_name}' not found.")
         sys.exit(1)
 
     comparison = template_mgr.compare_templates(template1, template2)
 
-    print("🔄 TEMPLATE COMPARISON")
-    print("=" * 50)
+    eprint("🔄 TEMPLATE COMPARISON")
+    eprint("=" * 50)
 
     t1_data = comparison["templates"]["template1"]
     t2_data = comparison["templates"]["template2"]
 
-    print("\n📊 OVERVIEW")
-    print(
+    eprint("\n📊 OVERVIEW")
+    eprint(
         f"   Template 1: {t1_data['name']} ({t1_data['security_level']}, {t1_data['security_score']:.1f}/10)"
     )
-    print(
+    eprint(
         f"   Template 2: {t2_data['name']} ({t2_data['security_level']}, {t2_data['security_score']:.1f}/10)"
     )
 
-    print("\n🔒 SECURITY COMPARISON")
-    print(f"   {comparison['security_comparison']['verdict']}")
+    eprint("\n🔒 SECURITY COMPARISON")
+    eprint(f"   {comparison['security_comparison']['verdict']}")
 
     if "performance_comparison" in comparison:
-        print("\n🚀 PERFORMANCE COMPARISON")
-        print(f"   {comparison['performance_comparison']['verdict']}")
+        eprint("\n🚀 PERFORMANCE COMPARISON")
+        eprint(f"   {comparison['performance_comparison']['verdict']}")
 
     # Use case comparison
     common_use_cases = set(t1_data["use_cases"]) & set(t2_data["use_cases"])
     if common_use_cases:
-        print(f"\n🎯 COMMON USE CASES: {', '.join(common_use_cases)}")
+        eprint(f"\n🎯 COMMON USE CASES: {', '.join(common_use_cases)}")
 
 
 def _handle_template_recommend(template_mgr: TemplateManager, args):
     """Handle template recommendation command."""
     use_case = getattr(args, "use_case", None)
     if not use_case:
-        print("Error: Use case is required for recommendations.")
+        eprint("Error: Use case is required for recommendations.")
         sys.exit(1)
 
     recommendations = template_mgr.recommend_templates(use_case)
 
     if not recommendations:
-        print(f"No template recommendations found for use case: {use_case}")
+        eprint(f"No template recommendations found for use case: {use_case}")
         return
 
-    print(f"💡 TEMPLATE RECOMMENDATIONS FOR '{use_case.upper()}'")
-    print("=" * 50)
+    eprint(f"💡 TEMPLATE RECOMMENDATIONS FOR '{use_case.upper()}'")
+    eprint("=" * 50)
 
     for i, (template, reason) in enumerate(recommendations, 1):
         security_icon = _get_security_icon(template.metadata.security_level)
-        print(f"\n{i}. {security_icon} {template.metadata.name}")
-        print(f"   📝 {template.metadata.description}")
-        print(
+        eprint(f"\n{i}. {security_icon} {template.metadata.name}")
+        eprint(f"   📝 {template.metadata.description}")
+        eprint(
             f"   🔒 Security: {template.metadata.security_level} ({template.metadata.security_score:.1f}/10)"
         )
-        print(f"   ✨ Reason: {reason}")
+        eprint(f"   ✨ Reason: {reason}")
 
         if template.is_built_in:
-            print("   📦 Type: Built-in template")
+            eprint("   📦 Type: Built-in template")
         else:
-            print(f"   📁 Type: {template.metadata.category.value.replace('_', ' ').title()}")
+            eprint(f"   📁 Type: {template.metadata.category.value.replace('_', ' ').title()}")
 
 
 def _handle_template_delete(template_mgr: TemplateManager, args):
     """Handle template deletion command."""
     template_name = getattr(args, "template_name", None)
     if not template_name:
-        print("Error: Template name is required for deletion.")
+        eprint("Error: Template name is required for deletion.")
         sys.exit(1)
 
     template = template_mgr.get_template_by_name(template_name)
     if not template:
-        print(f"❌ Template '{template_name}' not found.")
+        eprint(f"❌ Template '{template_name}' not found.")
         sys.exit(1)
 
     if template.is_built_in:
-        print(f"❌ Cannot delete built-in template '{template_name}'.")
+        eprint(f"❌ Cannot delete built-in template '{template_name}'.")
         sys.exit(1)
 
     # Confirm deletion unless forced
     if not getattr(args, "force", False):
         confirm = input(f"⚠️  Are you sure you want to delete template '{template_name}'? [y/N]: ")
         if confirm.lower() != "y":
-            print("Deletion cancelled.")
+            eprint("Deletion cancelled.")
             return
 
     if template_mgr.delete_template(template):
-        print(f"✅ Template '{template_name}' deleted successfully.")
+        eprint(f"✅ Template '{template_name}' deleted successfully.")
     else:
-        print(f"❌ Failed to delete template '{template_name}'.")
+        eprint(f"❌ Failed to delete template '{template_name}'.")
         sys.exit(1)
 
 
@@ -2449,13 +2451,13 @@ def handle_hsm_command(args):
     try:
         from ..plugins.hsm.fido2_pepper import FIDO2_AVAILABLE, FIDO2HSMPlugin
     except ImportError:
-        print("❌ Error: FIDO2 library not available")
-        print("Install with: pip install fido2>=1.1.0")
+        eprint("❌ Error: FIDO2 library not available")
+        eprint("Install with: pip install fido2>=1.1.0")
         sys.exit(1)
 
     if not FIDO2_AVAILABLE:
-        print("❌ Error: FIDO2 library not available")
-        print("Install with: pip install fido2>=1.1.0")
+        eprint("❌ Error: FIDO2 library not available")
+        eprint("Install with: pip install fido2>=1.1.0")
         sys.exit(1)
 
     # Get HSM action
@@ -2469,96 +2471,96 @@ def handle_hsm_command(args):
 
     if action == "fido2-register":
         # Register new FIDO2 credential
-        print("\n🔐 FIDO2 Credential Registration")
-        print("=" * 50)
+        eprint("\n🔐 FIDO2 Credential Registration")
+        eprint("=" * 50)
 
         description = getattr(args, "description", None)
         backup = getattr(args, "backup", False)
 
         if backup:
-            print("📦 Registering backup credential...")
+            eprint("📦 Registering backup credential...")
         else:
-            print("🔑 Registering primary credential...")
+            eprint("🔑 Registering primary credential...")
 
         if description:
-            print(f"Description: {description}")
+            eprint(f"Description: {description}")
 
-        print("\nPlease insert your FIDO2 security key and follow the prompts.")
-        print("You will need to:")
-        print("  1. Touch your security key")
-        print("  2. Enter your security key PIN (if configured)\n")
+        eprint("\nPlease insert your FIDO2 security key and follow the prompts.")
+        eprint("You will need to:")
+        eprint("  1. Touch your security key")
+        eprint("  2. Enter your security key PIN (if configured)\n")
 
         # Initialize plugin
         init_result = plugin.initialize()
         if not init_result.success:
-            print(f"❌ Error: {init_result.message}")
+            eprint(f"❌ Error: {init_result.message}")
             sys.exit(1)
 
         # Register credential
         result = plugin.register_credential(description=description, is_backup=backup)
 
         if result.success:
-            print(f"\n✅ {result.message}")
-            print(f"\nCredential ID: {result.data.get('credential_id')}")
-            print(f"Configuration saved to: {plugin.credential_file}")
-            print("\nYou can now use this credential with:")
-            print("  openssl_encrypt encrypt --hsm fido2 <file>")
+            eprint(f"\n✅ {result.message}")
+            eprint(f"\nCredential ID: {result.data.get('credential_id')}")
+            eprint(f"Configuration saved to: {plugin.credential_file}")
+            eprint("\nYou can now use this credential with:")
+            eprint("  openssl_encrypt encrypt --hsm fido2 <file>")
         else:
-            print(f"\n❌ Registration failed: {result.message}")
+            eprint(f"\n❌ Registration failed: {result.message}")
             sys.exit(1)
 
     elif action == "fido2-status":
         # Show FIDO2 registration status
-        print("\n🔐 FIDO2 Registration Status")
-        print("=" * 50)
+        eprint("\n🔐 FIDO2 Registration Status")
+        eprint("=" * 50)
 
         if not plugin.is_registered():
-            print("❌ No FIDO2 credentials registered")
-            print("\nTo register a credential, run:")
-            print("  openssl_encrypt hsm fido2-register --description 'My Security Key'")
+            eprint("❌ No FIDO2 credentials registered")
+            eprint("\nTo register a credential, run:")
+            eprint("  openssl_encrypt hsm fido2-register --description 'My Security Key'")
             sys.exit(0)
 
         # Load credentials
         credentials = plugin._load_credentials()
 
-        print(f"✅ {len(credentials)} credential(s) registered")
-        print(f"Configuration file: {plugin.credential_file}")
-        print(f"Relying Party ID: {plugin.rp_id}\n")
+        eprint(f"✅ {len(credentials)} credential(s) registered")
+        eprint(f"Configuration file: {plugin.credential_file}")
+        eprint(f"Relying Party ID: {plugin.rp_id}\n")
 
         # Display each credential
         for i, cred in enumerate(credentials, 1):
-            print(f"Credential #{i}:")
-            print(f"  ID: {cred['id']}")
-            print(f"  Description: {cred.get('description', 'N/A')}")
-            print(f"  Created: {cred.get('created_at', 'N/A')}")
-            print(f"  AAGUID: {cred.get('authenticator_aaguid', 'N/A')}")
-            print(f"  Backup: {'Yes' if cred.get('is_backup', False) else 'No'}")
-            print()
+            eprint(f"Credential #{i}:")
+            eprint(f"  ID: {cred['id']}")
+            eprint(f"  Description: {cred.get('description', 'N/A')}")
+            eprint(f"  Created: {cred.get('created_at', 'N/A')}")
+            eprint(f"  AAGUID: {cred.get('authenticator_aaguid', 'N/A')}")
+            eprint(f"  Backup: {'Yes' if cred.get('is_backup', False) else 'No'}")
+            eprint()
 
     elif action == "fido2-test":
         # Test FIDO2 pepper derivation
-        print("\n🔐 FIDO2 Pepper Derivation Test")
-        print("=" * 50)
+        eprint("\n🔐 FIDO2 Pepper Derivation Test")
+        eprint("=" * 50)
 
         # Initialize plugin
         init_result = plugin.initialize()
         if not init_result.success:
-            print(f"❌ Error: {init_result.message}")
+            eprint(f"❌ Error: {init_result.message}")
             sys.exit(1)
 
         if not plugin.is_registered():
-            print("❌ No FIDO2 credentials registered")
-            print("\nRegister a credential first:")
-            print("  openssl_encrypt hsm fido2-register")
+            eprint("❌ No FIDO2 credentials registered")
+            eprint("\nRegister a credential first:")
+            eprint("  openssl_encrypt hsm fido2-register")
             sys.exit(1)
 
         # Generate random test salt
         test_salt = secrets.token_bytes(16)
-        print(f"Test salt: {test_salt.hex()}")
-        print("\nPlease insert your FIDO2 security key and follow the prompts.")
-        print("You will need to:")
-        print("  1. Touch your security key")
-        print("  2. Enter your security key PIN (if configured)\n")
+        eprint(f"Test salt: {test_salt.hex()}")
+        eprint("\nPlease insert your FIDO2 security key and follow the prompts.")
+        eprint("You will need to:")
+        eprint("  1. Touch your security key")
+        eprint("  2. Enter your security key PIN (if configured)\n")
 
         # Create dummy security context
         from ..modules.plugin_system.plugin_base import PluginSecurityContext
@@ -2572,56 +2574,56 @@ def handle_hsm_command(args):
 
         if result.success:
             pepper = result.data.get("hsm_pepper")
-            print(f"\n✅ Test successful!")
-            print(f"Pepper length: {len(pepper)} bytes")
-            print(f"Pepper (hex): {pepper.hex()}")
-            print("\nYour FIDO2 credential is working correctly.")
+            eprint(f"\n✅ Test successful!")
+            eprint(f"Pepper length: {len(pepper)} bytes")
+            eprint(f"Pepper (hex): {pepper.hex()}")
+            eprint("\nYour FIDO2 credential is working correctly.")
         else:
-            print(f"\n❌ Test failed: {result.message}")
+            eprint(f"\n❌ Test failed: {result.message}")
             sys.exit(1)
 
     elif action == "fido2-list":
         # List connected FIDO2 devices
-        print("\n🔐 Connected FIDO2 Devices")
-        print("=" * 50)
+        eprint("\n🔐 Connected FIDO2 Devices")
+        eprint("=" * 50)
 
         devices = plugin.list_devices()
 
         if not devices:
-            print("❌ No FIDO2 devices found")
-            print("\nPlease connect a FIDO2 security key (YubiKey, Nitrokey, etc.)")
+            eprint("❌ No FIDO2 devices found")
+            eprint("\nPlease connect a FIDO2 security key (YubiKey, Nitrokey, etc.)")
             sys.exit(0)
 
-        print(f"Found {len(devices)} device(s):\n")
+        eprint(f"Found {len(devices)} device(s):\n")
 
         for i, device in enumerate(devices, 1):
             if "error" in device:
-                print(f"Device #{i}: {device.get('product_name', 'Unknown')}")
-                print(f"  Error: {device['error']}\n")
+                eprint(f"Device #{i}: {device.get('product_name', 'Unknown')}")
+                eprint(f"  Error: {device['error']}\n")
                 continue
 
-            print(f"Device #{i}: {device.get('product_name', 'Unknown')}")
-            print(f"  Manufacturer: {device.get('manufacturer', 'Unknown')}")
-            print(f"  AAGUID: {device.get('aaguid', 'Unknown')}")
-            print(f"  Versions: {', '.join(device.get('versions', []))}")
-            print(f"  Extensions: {', '.join(device.get('extensions', []))}")
+            eprint(f"Device #{i}: {device.get('product_name', 'Unknown')}")
+            eprint(f"  Manufacturer: {device.get('manufacturer', 'Unknown')}")
+            eprint(f"  AAGUID: {device.get('aaguid', 'Unknown')}")
+            eprint(f"  Versions: {', '.join(device.get('versions', []))}")
+            eprint(f"  Extensions: {', '.join(device.get('extensions', []))}")
 
             # Highlight hmac-secret support
             hmac_support = device.get("hmac_secret_support", False)
             if hmac_support:
-                print(f"  hmac-secret: ✅ Supported")
+                eprint(f"  hmac-secret: ✅ Supported")
             else:
-                print(f"  hmac-secret: ❌ Not supported")
+                eprint(f"  hmac-secret: ❌ Not supported")
 
-            print()
+            eprint()
 
     elif action == "fido2-unregister":
         # Remove FIDO2 credential(s)
-        print("\n🔐 FIDO2 Credential Removal")
-        print("=" * 50)
+        eprint("\n🔐 FIDO2 Credential Removal")
+        eprint("=" * 50)
 
         if not plugin.is_registered():
-            print("❌ No FIDO2 credentials registered")
+            eprint("❌ No FIDO2 credentials registered")
             sys.exit(0)
 
         credential_id = getattr(args, "credential_id", None)
@@ -2638,25 +2640,25 @@ def handle_hsm_command(args):
 
             confirmation = input(prompt).strip().lower()
             if confirmation != "y":
-                print("Operation cancelled.")
+                eprint("Operation cancelled.")
                 sys.exit(0)
 
         # Unregister
         result = plugin.unregister(credential_id=credential_id, remove_all=remove_all)
 
         if result.success:
-            print(f"\n✅ {result.message}")
+            eprint(f"\n✅ {result.message}")
 
             if remove_all:
-                print(f"Configuration file removed: {plugin.credential_file}")
+                eprint(f"Configuration file removed: {plugin.credential_file}")
             else:
-                print(f"Configuration updated: {plugin.credential_file}")
+                eprint(f"Configuration updated: {plugin.credential_file}")
         else:
-            print(f"\n❌ Removal failed: {result.message}")
+            eprint(f"\n❌ Removal failed: {result.message}")
             sys.exit(1)
 
     else:
-        print(f"❌ Unknown HSM action: {action}")
+        eprint(f"❌ Unknown HSM action: {action}")
         sys.exit(1)
 
 
@@ -2674,14 +2676,14 @@ def handle_keyserver_command(args):
         from ..plugins.keyserver import KeyserverConfig, KeyserverPlugin
         from .identity import IdentityStore
     except ImportError as e:
-        print(f"Error: Keyserver plugin not available: {e}")
+        eprint(f"Error: Keyserver plugin not available: {e}")
         return
 
     # Get configuration
     try:
         config = KeyserverConfig.from_file()
     except Exception as e:
-        print(f"Error: Failed to load keyserver configuration: {e}")
+        eprint(f"Error: Failed to load keyserver configuration: {e}")
         return
 
     # Handle subcommands
@@ -2692,53 +2694,53 @@ def handle_keyserver_command(args):
         config.enabled = True
         try:
             config.to_file()
-            print("✓ Keyserver plugin enabled")
-            print(f"  Servers: {', '.join(config.servers)}")
-            print("  Use 'openssl-encrypt keyserver status' to verify configuration")
+            eprint("✓ Keyserver plugin enabled")
+            eprint(f"  Servers: {', '.join(config.servers)}")
+            eprint("  Use 'openssl-encrypt keyserver status' to verify configuration")
         except Exception as e:
-            print(f"✗ Failed to enable keyserver: {e}")
+            eprint(f"✗ Failed to enable keyserver: {e}")
 
     elif action == "disable":
         # Disable keyserver
         config.enabled = False
         try:
             config.to_file()
-            print("✓ Keyserver plugin disabled")
+            eprint("✓ Keyserver plugin disabled")
         except Exception as e:
-            print(f"✗ Failed to disable keyserver: {e}")
+            eprint(f"✗ Failed to disable keyserver: {e}")
 
     elif action == "status":
         # Show keyserver status
         plugin = KeyserverPlugin(config)
         cache_stats = plugin.get_cache_stats()
 
-        print("\nKEYSERVER STATUS")
-        print("=" * 60)
-        print(f"Enabled: {'Yes' if config.enabled else 'No'}")
-        print(f"Servers: {', '.join(config.servers)}")
-        print(
+        eprint("\nKEYSERVER STATUS")
+        eprint("=" * 60)
+        eprint(f"Enabled: {'Yes' if config.enabled else 'No'}")
+        eprint(f"Servers: {', '.join(config.servers)}")
+        eprint(
             f"Cache TTL: {config.cache_ttl_seconds} seconds ({config.cache_ttl_seconds // 3600} hours)"
         )
-        print(f"Cache Max Entries: {config.cache_max_entries}")
-        print(f"Upload Enabled: {'Yes' if config.upload_enabled else 'No'}")
-        print(f"API Token: {'Present' if config.load_api_token() else 'Not set'}")
-        print()
-        print("CACHE STATISTICS")
-        print("-" * 60)
-        print(f"Total Entries: {cache_stats['total_entries']}")
-        print(f"Valid Entries: {cache_stats['valid_entries']}")
-        print(f"Expired Entries: {cache_stats['expired_entries']}")
-        print(f"Total Accesses: {cache_stats['total_accesses']}")
+        eprint(f"Cache Max Entries: {config.cache_max_entries}")
+        eprint(f"Upload Enabled: {'Yes' if config.upload_enabled else 'No'}")
+        eprint(f"API Token: {'Present' if config.load_api_token() else 'Not set'}")
+        eprint()
+        eprint("CACHE STATISTICS")
+        eprint("-" * 60)
+        eprint(f"Total Entries: {cache_stats['total_entries']}")
+        eprint(f"Valid Entries: {cache_stats['valid_entries']}")
+        eprint(f"Expired Entries: {cache_stats['expired_entries']}")
+        eprint(f"Total Accesses: {cache_stats['total_accesses']}")
         if cache_stats["most_accessed"]:
-            print(
+            eprint(
                 f"Most Accessed: {cache_stats['most_accessed']['name']} ({cache_stats['most_accessed']['count']} times)"
             )
-        print("=" * 60)
+        eprint("=" * 60)
 
     elif action == "register":
         # Register with keyserver and obtain API token
         if not config.enabled:
-            print("✗ Keyserver plugin is disabled. Enable with: openssl-encrypt keyserver enable")
+            eprint("✗ Keyserver plugin is disabled. Enable with: openssl-encrypt keyserver enable")
             return
 
         plugin = KeyserverPlugin(config)
@@ -2747,61 +2749,61 @@ def handle_keyserver_command(args):
         server_url = args.server if hasattr(args, "server") and args.server else None
 
         try:
-            print("Registering with keyserver...")
+            eprint("Registering with keyserver...")
             result = plugin.register(server_url=server_url)
 
-            print("\n✓ Successfully registered with keyserver")
-            print("=" * 60)
-            print(f"Client ID:   {result['client_id']}")
-            print(f"Expires:     {result['expires_at']}")
-            print(f"Token Type:  {result['token_type']}")
-            print(f"Token File:  {config.api_token_file}")
-            print("=" * 60)
-            print("\nAPI token has been securely saved.")
-            print("You can now upload and revoke keys using:")
-            print("  openssl-encrypt keyserver upload <identity>")
-            print("  openssl-encrypt keyserver revoke <fingerprint>")
+            eprint("\n✓ Successfully registered with keyserver")
+            eprint("=" * 60)
+            eprint(f"Client ID:   {result['client_id']}")
+            eprint(f"Expires:     {result['expires_at']}")
+            eprint(f"Token Type:  {result['token_type']}")
+            eprint(f"Token File:  {config.api_token_file}")
+            eprint("=" * 60)
+            eprint("\nAPI token has been securely saved.")
+            eprint("You can now upload and revoke keys using:")
+            eprint("  openssl-encrypt keyserver upload <identity>")
+            eprint("  openssl-encrypt keyserver revoke <fingerprint>")
 
         except Exception as e:
-            print(f"\n✗ Registration failed: {e}")
-            print("\nTroubleshooting:")
-            print("  - Check network connectivity")
-            print("  - Verify keyserver URL is correct")
-            print(
+            eprint(f"\n✗ Registration failed: {e}")
+            eprint("\nTroubleshooting:")
+            eprint("  - Check network connectivity")
+            eprint("  - Verify keyserver URL is correct")
+            eprint(
                 f"  - Server: {server_url or config.servers[0] if config.servers else 'Not configured'}"
             )
 
     elif action == "search":
         # Search for key on keyserver
         if not config.enabled:
-            print("✗ Keyserver plugin is disabled. Enable with: openssl-encrypt keyserver enable")
+            eprint("✗ Keyserver plugin is disabled. Enable with: openssl-encrypt keyserver enable")
             return
 
         plugin = KeyserverPlugin(config)
         identifier = args.identifier
 
-        print(f"Searching for '{identifier}' on keyserver...")
+        eprint(f"Searching for '{identifier}' on keyserver...")
         bundle = plugin.fetch_key(identifier)
 
         if bundle:
             if args.json:
                 print(json.dumps(bundle.to_dict(), indent=2))
             else:
-                print("\n✓ Key found")
-                print("-" * 60)
-                print(f"Name:        {bundle.name}")
-                print(f"Email:       {bundle.email or 'N/A'}")
-                print(f"Fingerprint: {bundle.fingerprint}")
-                print(f"Algorithms:  {bundle.encryption_algorithm} / {bundle.signing_algorithm}")
-                print(f"Created:     {bundle.created_at}")
-                print("-" * 60)
+                eprint("\n✓ Key found")
+                eprint("-" * 60)
+                eprint(f"Name:        {bundle.name}")
+                eprint(f"Email:       {bundle.email or 'N/A'}")
+                eprint(f"Fingerprint: {bundle.fingerprint}")
+                eprint(f"Algorithms:  {bundle.encryption_algorithm} / {bundle.signing_algorithm}")
+                eprint(f"Created:     {bundle.created_at}")
+                eprint("-" * 60)
         else:
-            print(f"✗ Key not found for '{identifier}'")
+            eprint(f"✗ Key not found for '{identifier}'")
 
     elif action == "import":
         # Import key from keyserver
         if not config.enabled:
-            print("✗ Keyserver plugin is disabled. Enable with: openssl-encrypt keyserver enable")
+            eprint("✗ Keyserver plugin is disabled. Enable with: openssl-encrypt keyserver enable")
             return
 
         from .key_resolver import (
@@ -2820,19 +2822,19 @@ def handle_keyserver_command(args):
 
         try:
             identity = resolver.resolve(args.identifier, load_private_keys=False)
-            print(f"✓ Successfully imported '{identity.name}' to local store")
-            print(f"  Fingerprint: {identity.fingerprint}")
+            eprint(f"✓ Successfully imported '{identity.name}' to local store")
+            eprint(f"  Fingerprint: {identity.fingerprint}")
         except KeyNotFoundError:
-            print(f"✗ Key not found for '{args.identifier}'")
+            eprint(f"✗ Key not found for '{args.identifier}'")
         except TrustDeclinedError:
-            print("✗ Import cancelled (user declined to trust key)")
+            eprint("✗ Import cancelled (user declined to trust key)")
         except Exception as e:
-            print(f"✗ Failed to import key: {e}")
+            eprint(f"✗ Failed to import key: {e}")
 
     elif action == "upload":
         # Upload key to keyserver
         if not config.enabled:
-            print("✗ Keyserver plugin is disabled. Enable with: openssl-encrypt keyserver enable")
+            eprint("✗ Keyserver plugin is disabled. Enable with: openssl-encrypt keyserver enable")
             return
 
         from .key_bundle import PublicKeyBundle
@@ -2854,44 +2856,44 @@ def handle_keyserver_command(args):
             )
 
             if not identity:
-                print(f"✗ Identity '{identity_name}' not found")
+                eprint(f"✗ Identity '{identity_name}' not found")
                 return
 
             if not identity.is_own_identity:
-                print(f"✗ Cannot upload '{identity_name}': not your own identity (no private keys)")
+                eprint(f"✗ Cannot upload '{identity_name}': not your own identity (no private keys)")
                 return
 
             # Create bundle
             bundle = PublicKeyBundle.from_identity(identity)
 
             # Upload
-            print(f"Uploading '{identity_name}' to keyserver...")
+            eprint(f"Uploading '{identity_name}' to keyserver...")
             success = plugin.upload_key(bundle)
 
             if success:
-                print(f"✓ Successfully uploaded '{identity_name}'")
-                print(f"  Fingerprint: {bundle.fingerprint}")
+                eprint(f"✓ Successfully uploaded '{identity_name}'")
+                eprint(f"  Fingerprint: {bundle.fingerprint}")
             else:
-                print(f"✗ Failed to upload '{identity_name}'")
+                eprint(f"✗ Failed to upload '{identity_name}'")
 
         except Exception as e:
-            print(f"✗ Failed to upload key: {e}")
+            eprint(f"✗ Failed to upload key: {e}")
 
     elif action == "revoke":
         # Revoke key on keyserver
-        print("✗ Key revocation not yet implemented")
-        print("  (Requires revocation signature generation)")
+        eprint("✗ Key revocation not yet implemented")
+        eprint("  (Requires revocation signature generation)")
 
     elif action == "set-token":
         # Set API token
         token = args.token
         try:
             config.save_api_token(token)
-            print("✓ API token saved securely")
-            print(f"  Token file: {config.api_token_file}")
-            print("  Permissions: 0600 (owner read/write only)")
+            eprint("✓ API token saved securely")
+            eprint(f"  Token file: {config.api_token_file}")
+            eprint("  Permissions: 0600 (owner read/write only)")
         except Exception as e:
-            print(f"✗ Failed to save API token: {e}")
+            eprint(f"✗ Failed to save API token: {e}")
 
     elif action == "show-token":
         # Show API token (masked)
@@ -2902,21 +2904,21 @@ def handle_keyserver_command(args):
                 masked = token[:8] + "*" * (len(token) - 12) + token[-4:]
             else:
                 masked = "*" * len(token)
-            print(f"API Token: {masked}")
-            print(f"Token file: {config.api_token_file}")
+            eprint(f"API Token: {masked}")
+            eprint(f"Token file: {config.api_token_file}")
         else:
-            print("✗ No API token set")
-            print("  Use: openssl-encrypt keyserver set-token <token>")
+            eprint("✗ No API token set")
+            eprint("  Use: openssl-encrypt keyserver set-token <token>")
 
     elif action == "clear-token":
         # Delete API token
         try:
             if config.clear_api_token():
-                print("✓ API token deleted")
+                eprint("✓ API token deleted")
             else:
-                print("No API token to delete")
+                eprint("No API token to delete")
         except Exception as e:
-            print(f"✗ Failed to delete API token: {e}")
+            eprint(f"✗ Failed to delete API token: {e}")
 
     elif action == "cache-clear":
         # Clear cache
@@ -2924,42 +2926,42 @@ def handle_keyserver_command(args):
         count = plugin.cache.get_pending_count()
 
         if count == 0:
-            print("Cache is already empty")
+            eprint("Cache is already empty")
             return
 
         if not args.force:
             response = input(f"Clear {count} cached keys? (yes/no): ")
             if response.lower() not in ["yes", "y"]:
-                print("Cancelled")
+                eprint("Cancelled")
                 return
 
         cleared = plugin.clear_cache()
-        print(f"✓ Cleared {cleared} cached keys")
+        eprint(f"✓ Cleared {cleared} cached keys")
 
     elif action == "cache-stats":
         # Show cache statistics
         plugin = KeyserverPlugin(config)
         stats = plugin.get_cache_stats()
 
-        print("\nKEYSERVER CACHE STATISTICS")
-        print("=" * 60)
-        print(f"Total Entries: {stats['total_entries']}")
-        print(f"Valid Entries: {stats['valid_entries']}")
-        print(f"Expired Entries: {stats['expired_entries']}")
-        print(f"Max Entries: {stats['max_entries']}")
-        print(f"TTL: {stats['ttl_seconds']} seconds ({stats['ttl_seconds'] // 3600} hours)")
-        print(f"Total Accesses: {stats['total_accesses']}")
+        eprint("\nKEYSERVER CACHE STATISTICS")
+        eprint("=" * 60)
+        eprint(f"Total Entries: {stats['total_entries']}")
+        eprint(f"Valid Entries: {stats['valid_entries']}")
+        eprint(f"Expired Entries: {stats['expired_entries']}")
+        eprint(f"Max Entries: {stats['max_entries']}")
+        eprint(f"TTL: {stats['ttl_seconds']} seconds ({stats['ttl_seconds'] // 3600} hours)")
+        eprint(f"Total Accesses: {stats['total_accesses']}")
 
         if stats["most_accessed"]:
-            print(
+            eprint(
                 f"Most Accessed Key: {stats['most_accessed']['name']} ({stats['most_accessed']['count']} times)"
             )
 
-        print(f"Cache Path: {stats['cache_path']}")
-        print("=" * 60)
+        eprint(f"Cache Path: {stats['cache_path']}")
+        eprint("=" * 60)
 
     else:
-        print(f"Unknown keyserver action: {action}")
+        eprint(f"Unknown keyserver action: {action}")
 
 
 def handle_telemetry_command(args):
@@ -2973,15 +2975,15 @@ def handle_telemetry_command(args):
         # Import telemetry plugin
         from ..plugins.telemetry import OpenSSLEncryptTelemetryPlugin
     except ImportError as e:
-        print("Error: Telemetry plugin not available.")
-        print(f"Details: {e}")
+        eprint("Error: Telemetry plugin not available.")
+        eprint(f"Details: {e}")
         return
 
     # Get or create telemetry plugin instance
     try:
         plugin = OpenSSLEncryptTelemetryPlugin()
     except Exception as e:
-        print(f"Error: Failed to initialize telemetry plugin: {e}")
+        eprint(f"Error: Failed to initialize telemetry plugin: {e}")
         return
 
     # Handle subcommands
@@ -2990,24 +2992,24 @@ def handle_telemetry_command(args):
     if action == "status":
         # Show telemetry status
         status = plugin.get_status()
-        print("\nTELEMETRY STATUS")
-        print("=" * 60)
-        print(f"Enabled: {'Yes' if status['enabled'] else 'No'}")
-        print(f"Pending Events: {status['pending_events']}")
-        print(f"Server URL: {status['server_url']}")
-        print(f"API Key: {'Present' if status['has_api_key'] else 'Not registered'}")
-        print(
+        eprint("\nTELEMETRY STATUS")
+        eprint("=" * 60)
+        eprint(f"Enabled: {'Yes' if status['enabled'] else 'No'}")
+        eprint(f"Pending Events: {status['pending_events']}")
+        eprint(f"Server URL: {status['server_url']}")
+        eprint(f"API Key: {'Present' if status['has_api_key'] else 'Not registered'}")
+        eprint(
             f"Upload Interval: {status['upload_interval']} seconds ({status['upload_interval'] // 3600} hours)"
         )
-        print(f"Background Upload: {'Running' if status['upload_thread_alive'] else 'Stopped'}")
-        print("=" * 60)
+        eprint(f"Background Upload: {'Running' if status['upload_thread_alive'] else 'Stopped'}")
+        eprint("=" * 60)
 
     elif action == "show-pending":
         # Show pending events (transparency)
         events = plugin.get_pending_events(limit=args.limit)
 
         if not events:
-            print("No pending telemetry events.")
+            eprint("No pending telemetry events.")
             return
 
         if args.json:
@@ -3017,96 +3019,96 @@ def handle_telemetry_command(args):
             print(json.dumps(events, indent=2))
         else:
             # Human-readable output
-            print(f"\nPENDING TELEMETRY EVENTS (showing {min(len(events), args.limit)} events)")
-            print("=" * 80)
+            eprint(f"\nPENDING TELEMETRY EVENTS (showing {min(len(events), args.limit)} events)")
+            eprint("=" * 80)
 
             for i, event in enumerate(events[: args.limit], 1):
-                print(f"\n--- Event {i} (ID: {event.get('id', 'N/A')}) ---")
-                print(f"  Timestamp: {event.get('timestamp', 'N/A')}")
-                print(f"  Operation: {event.get('operation', 'N/A')}")
-                print(f"  Mode: {event.get('mode', 'N/A')}")
-                print(f"  Format Version: {event.get('format_version', 'N/A')}")
-                print(f"  Encryption: {event.get('encryption_algorithm', 'N/A')}")
-                print(f"  Hash Algorithms: {', '.join(event.get('hash_algorithms', []))}")
-                print(f"  KDF Algorithms: {', '.join(event.get('kdf_algorithms', []))}")
+                eprint(f"\n--- Event {i} (ID: {event.get('id', 'N/A')}) ---")
+                eprint(f"  Timestamp: {event.get('timestamp', 'N/A')}")
+                eprint(f"  Operation: {event.get('operation', 'N/A')}")
+                eprint(f"  Mode: {event.get('mode', 'N/A')}")
+                eprint(f"  Format Version: {event.get('format_version', 'N/A')}")
+                eprint(f"  Encryption: {event.get('encryption_algorithm', 'N/A')}")
+                eprint(f"  Hash Algorithms: {', '.join(event.get('hash_algorithms', []))}")
+                eprint(f"  KDF Algorithms: {', '.join(event.get('kdf_algorithms', []))}")
 
                 if event.get("cascade_enabled"):
-                    print(f"  Cascade: Enabled ({event.get('cascade_cipher_count', 0)} ciphers)")
+                    eprint(f"  Cascade: Enabled ({event.get('cascade_cipher_count', 0)} ciphers)")
 
                 if event.get("pqc_kem_algorithm"):
-                    print(f"  PQC KEM: {event.get('pqc_kem_algorithm')}")
+                    eprint(f"  PQC KEM: {event.get('pqc_kem_algorithm')}")
 
                 if event.get("pqc_signing_algorithm"):
-                    print(f"  PQC Signing: {event.get('pqc_signing_algorithm')}")
+                    eprint(f"  PQC Signing: {event.get('pqc_signing_algorithm')}")
 
                 if event.get("hsm_plugin_used"):
-                    print(f"  HSM Plugin: {event.get('hsm_plugin_used')}")
+                    eprint(f"  HSM Plugin: {event.get('hsm_plugin_used')}")
 
-                print(f"  Success: {event.get('success', True)}")
+                eprint(f"  Success: {event.get('success', True)}")
 
                 if event.get("error_category"):
-                    print(f"  Error Category: {event.get('error_category')}")
+                    eprint(f"  Error Category: {event.get('error_category')}")
 
-                print(f"  Retry Count: {event.get('retry_count', 0)}")
+                eprint(f"  Retry Count: {event.get('retry_count', 0)}")
 
-            print("\n" + "=" * 80)
-            print(f"Total pending events: {plugin.buffer.get_pending_count()}")
+            eprint("\n" + "=" * 80)
+            eprint(f"Total pending events: {plugin.buffer.get_pending_count()}")
 
     elif action == "flush":
         # Upload all pending events immediately
-        print("Uploading pending telemetry events...")
+        eprint("Uploading pending telemetry events...")
         result = plugin.flush()
 
         if result.success:
-            print(f"✓ {result.message}")
+            eprint(f"✓ {result.message}")
         else:
-            print(f"✗ {result.message}")
+            eprint(f"✗ {result.message}")
 
     elif action == "clear":
         # Delete all pending events without uploading
         pending_count = plugin.buffer.get_pending_count()
 
         if pending_count == 0:
-            print("No pending events to clear.")
+            eprint("No pending events to clear.")
             return
 
         if not args.force:
             response = input(f"Delete {pending_count} pending events without uploading? (yes/no): ")
             if response.lower() not in ["yes", "y"]:
-                print("Cancelled.")
+                eprint("Cancelled.")
                 return
 
         deleted = plugin.buffer.clear_all()
-        print(f"✓ Deleted {deleted} pending events.")
+        eprint(f"✓ Deleted {deleted} pending events.")
 
     elif action == "opt-out":
         # Complete opt-out: disable telemetry and delete all data
         pending_count = plugin.buffer.get_pending_count()
 
         if not args.force:
-            print("\n⚠️  OPT-OUT WARNING ⚠️")
-            print("This will:")
-            print("  1. Disable telemetry collection")
-            print(f"  2. Delete {pending_count} pending events")
-            print("  3. Delete your API key")
-            print("  4. Stop background uploads")
-            print()
+            eprint("\n⚠️  OPT-OUT WARNING ⚠️")
+            eprint("This will:")
+            eprint("  1. Disable telemetry collection")
+            eprint(f"  2. Delete {pending_count} pending events")
+            eprint("  3. Delete your API key")
+            eprint("  4. Stop background uploads")
+            eprint()
             response = input("Are you sure you want to opt out? (yes/no): ")
             if response.lower() not in ["yes", "y"]:
-                print("Cancelled.")
+                eprint("Cancelled.")
                 return
 
         result = plugin.opt_out()
 
         if result.success:
-            print(f"✓ {result.message}")
-            print("\nTelemetry has been completely disabled.")
-            print("To re-enable, use: --telemetry flag or set OPENSSL_ENCRYPT_TELEMETRY=1")
+            eprint(f"✓ {result.message}")
+            eprint("\nTelemetry has been completely disabled.")
+            eprint("To re-enable, use: --telemetry flag or set OPENSSL_ENCRYPT_TELEMETRY=1")
         else:
-            print(f"✗ {result.message}")
+            eprint(f"✗ {result.message}")
 
     else:
-        print(f"Unknown telemetry action: {action}")
+        eprint(f"Unknown telemetry action: {action}")
 
 
 def main():
@@ -3222,12 +3224,12 @@ def _get_steganography_plugin(quiet=False):
 
     except ImportError:
         if not quiet:
-            print("Error: Steganography requires additional dependencies.")
-            print("Install with: pip install Pillow numpy")
+            eprint("Error: Steganography requires additional dependencies.")
+            eprint("Install with: pip install Pillow numpy")
         return None
     except Exception as e:
         if not quiet:
-            print(f"Error loading steganography plugin: {e}")
+            eprint(f"Error loading steganography plugin: {e}")
         return None
 
 
@@ -3244,7 +3246,7 @@ def main_with_args(args=None):
                 if os.path.exists(temp_file):
                     os.remove(temp_file)
                     if not args.quiet:
-                        print(f"Cleaned up temporary file: {temp_file}")
+                        eprint(f"Cleaned up temporary file: {temp_file}")
             except Exception:
                 pass
 
@@ -3264,7 +3266,10 @@ def main_with_args(args=None):
         os.kill(os.getpid(), signum)
 
     # Register handlers for common termination signals
-    for sig in [signal.SIGINT, signal.SIGTERM, signal.SIGHUP]:
+    _sigs = [signal.SIGINT, signal.SIGTERM]
+    if hasattr(signal, 'SIGHUP'):
+        _sigs.append(signal.SIGHUP)
+    for sig in _sigs:
         try:
             signal.signal(sig, signal_handler)
         except AttributeError:
@@ -3339,6 +3344,12 @@ def main_with_args(args=None):
         help="Suppress all output except decrypted content and exit code",
     )
     global_group.add_argument(
+        "--json",
+        action="store_true",
+        default=False,
+        help="Output in JSON format (for info action)",
+    )
+    global_group.add_argument(
         "-t",
         "--template",
         help="Specify a template name (built-in or from ./template directory)",
@@ -3364,6 +3375,7 @@ def main_with_args(args=None):
         choices=[
             "encrypt",
             "decrypt",
+            "info",
             "rekey",
             "shred",
             "generate-password",
@@ -3382,7 +3394,7 @@ def main_with_args(args=None):
             "disable-plugin",
             "reload-plugin",
         ],
-        help="Action to perform: encrypt/decrypt files, shred data, generate passwords, "
+        help="Action to perform: encrypt/decrypt/info files, shred data, generate passwords, "
         "show security recommendations, analyze security configuration, configuration wizard, analyze configuration details, check Argon2 support, check post-quantum cryptography support, "
         "create/verify portable USB drives, manage plugins",
     )
@@ -4060,6 +4072,32 @@ def main_with_args(args=None):
         "If not specified, the plugin will auto-detect the configured slot.",
     )
 
+    # Streaming encryption options
+    streaming_group = parser.add_argument_group(
+        "Streaming Options", "Configure streaming encryption for large files"
+    )
+    streaming_group.add_argument(
+        "--chunk-size",
+        type=str,
+        default=None,
+        metavar="SIZE",
+        help="Chunk size for streaming encryption (e.g., '512K', '1M', '4M'). "
+        "Default: 1M. Only used for files above the streaming threshold.",
+    )
+    streaming_group.add_argument(
+        "--no-streaming",
+        action="store_true",
+        help="Disable streaming mode and load entire file into memory.",
+    )
+    streaming_group.add_argument(
+        "--streaming-threshold",
+        type=str,
+        default=None,
+        metavar="SIZE",
+        help="File size threshold for automatic streaming mode (e.g., '10M', '100M'). "
+        "Default: 10M. Files below this size use one-shot encryption.",
+    )
+
     # Add CLI aliases for simplified user experience
     alias_processor = add_cli_aliases(parser)
 
@@ -4072,7 +4110,7 @@ def main_with_args(args=None):
         args, alias_errors = process_cli_aliases(args, alias_processor)
         if alias_errors:
             for error in alias_errors:
-                print(f"Error: {error}", file=sys.stderr)
+                eprint(f"Error: {error}", file=sys.stderr)
             sys.exit(1)
 
     # Add compatibility layer for subparser args - set missing attributes to defaults
@@ -4179,6 +4217,10 @@ def main_with_args(args=None):
         "min_password_length": None,
         "min_password_entropy": None,
         "disable_common_password_check": False,
+        # Streaming defaults
+        "chunk_size": None,
+        "no_streaming": False,
+        "streaming_threshold": None,
     }
 
     for attr, default_val in default_attrs.items():
@@ -4214,25 +4256,25 @@ def main_with_args(args=None):
             pass
 
         # Security warning for debug mode
-        print("\n" + "=" * 78)
-        print("⚠️  WARNING: DEBUG MODE ENABLED - SENSITIVE DATA LOGGING ACTIVE")
-        print("=" * 78)
-        print("Debug mode logs sensitive information including:")
-        print("  • Password hex dumps during key derivation")
-        print("  • Detailed cryptographic operation traces")
-        print("  • Internal state information")
-        print()
-        print("SECURITY NOTICE:")
-        print("  ❌ DO NOT use --debug with production data or real passwords")
-        print("  ✅ Only use for testing with dummy/test data")
-        print("  ⚠️  Debug logs may be stored in log files or terminal history")
-        print("=" * 78 + "\n")
+        eprint("\n" + "=" * 78)
+        eprint("⚠️  WARNING: DEBUG MODE ENABLED - SENSITIVE DATA LOGGING ACTIVE")
+        eprint("=" * 78)
+        eprint("Debug mode logs sensitive information including:")
+        eprint("  • Password hex dumps during key derivation")
+        eprint("  • Detailed cryptographic operation traces")
+        eprint("  • Internal state information")
+        eprint()
+        eprint("SECURITY NOTICE:")
+        eprint("  ❌ DO NOT use --debug with production data or real passwords")
+        eprint("  ✅ Only use for testing with dummy/test data")
+        eprint("  ⚠️  Debug logs may be stored in log files or terminal history")
+        eprint("=" * 78 + "\n")
 
-        print(f"DEBUG: sys.argv = {sys.argv}")
+        eprint(f"DEBUG: sys.argv = {sys.argv}")
 
         # Enable raw exception passthrough in debug mode
         set_debug_mode(True)
-        print("DEBUG: Raw exception passthrough enabled")
+        eprint("DEBUG: Raw exception passthrough enabled")
 
     # Enhance the args with better defaults for extended algorithms
     args = enhance_cli_args(args)
@@ -4268,7 +4310,7 @@ def main_with_args(args=None):
         args.use_balloon = True
 
     if args.action == "version":
-        print(show_version_info())
+        eprint(show_version_info())
         return 0
 
     if args.action == "show-version-file":
@@ -4280,17 +4322,17 @@ def main_with_args(args=None):
 
             # Additionally, show the full version info dictionary
             version_info = get_version_info()
-            print("\nComplete Version Information:")
-            print("----------------------------")
+            eprint("\nComplete Version Information:")
+            eprint("----------------------------")
             for key, value in version_info.items():
                 if key == "history":
                     # Skip history as it was already printed by print_version_info
                     continue
-                print(f"{key}: {value}")
+                eprint(f"{key}: {value}")
 
             return 0
         except ImportError:
-            print("Version module not found. Run 'pip install -e .' to generate the version file.")
+            eprint("Version module not found. Run 'pip install -e .' to generate the version file.")
             return 1
 
     # Handle USB operations
@@ -4300,7 +4342,7 @@ def main_with_args(args=None):
 
             # Validate required arguments
             if not getattr(args, "usb_path", None):
-                print("Error: --usb-path is required for create-usb operation")
+                eprint("Error: --usb-path is required for create-usb operation")
                 return 1
 
             if not args.password:
@@ -4389,33 +4431,33 @@ def main_with_args(args=None):
             )
 
             if result.get("success"):
-                print(f"✓ Successfully created portable USB at: {result['usb_path']}")
-                print(f"  Security Profile: {result['security_profile']}")
-                print(f"  Portable Root: {result['portable_root']}")
+                eprint(f"✓ Successfully created portable USB at: {result['usb_path']}")
+                eprint(f"  Security Profile: {result['security_profile']}")
+                eprint(f"  Portable Root: {result['portable_root']}")
                 if result["executable"]["included"]:
-                    print(f"  Executable: {result['executable']['path']}")
+                    eprint(f"  Executable: {result['executable']['path']}")
                 if result["keystore"]["included"]:
-                    print("  Keystore: Encrypted and included")
-                print(f"  Auto-run files: {', '.join(result['autorun']['files_created'])}")
+                    eprint("  Keystore: Encrypted and included")
+                eprint(f"  Auto-run files: {', '.join(result['autorun']['files_created'])}")
                 if result.get("manifest", {}).get("created"):
                     manifest_info = result["manifest"]
-                    print(
+                    eprint(
                         f"  Hash Manifest: {manifest_info['files_covered']} files, {manifest_info['hash_algorithm']}"
                     )
-                    print(
+                    eprint(
                         f"    Password: {manifest_info['password_type']}, Profile: {manifest_info.get('security_profile', 'default')}"
                     )
-                    print("    Manual verification: VERIFY_INTEGRITY.md")
+                    eprint("    Manual verification: VERIFY_INTEGRITY.md")
                 return 0
             else:
-                print("✗ Failed to create portable USB")
+                eprint("✗ Failed to create portable USB")
                 return 1
 
         except ImportError:
-            print("Error: Portable media module not available")
+            eprint("Error: Portable media module not available")
             return 1
         except Exception as e:
-            print(f"Error creating USB: {e}")
+            eprint(f"Error creating USB: {e}")
             return 1
 
     elif args.action == "verify-usb":
@@ -4424,7 +4466,7 @@ def main_with_args(args=None):
 
             # Validate required arguments
             if not getattr(args, "usb_path", None):
-                print("Error: --usb-path is required for verify-usb operation")
+                eprint("Error: --usb-path is required for verify-usb operation")
                 return 1
 
             if not args.password:
@@ -4468,28 +4510,28 @@ def main_with_args(args=None):
             )
 
             if result.get("integrity_ok"):
-                print("✓ USB integrity verification PASSED")
-                print(f"  Files verified: {result['verified_files']}")
-                print(
+                eprint("✓ USB integrity verification PASSED")
+                eprint(f"  Files verified: {result['verified_files']}")
+                eprint(
                     f"  Created at: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(result['created_at']))}"
                 )
                 return 0
             else:
-                print("✗ USB integrity verification FAILED")
-                print(f"  Files verified: {result['verified_files']}")
-                print(f"  Failed files: {result['failed_files']}")
-                print(f"  Missing files: {result['missing_files']}")
+                eprint("✗ USB integrity verification FAILED")
+                eprint(f"  Files verified: {result['verified_files']}")
+                eprint(f"  Failed files: {result['failed_files']}")
+                eprint(f"  Missing files: {result['missing_files']}")
                 if result["tampered_files"]:
-                    print(f"  Tampered files: {', '.join(result['tampered_files'])}")
+                    eprint(f"  Tampered files: {', '.join(result['tampered_files'])}")
                 if result["missing_file_list"]:
-                    print(f"  Missing files: {', '.join(result['missing_file_list'])}")
+                    eprint(f"  Missing files: {', '.join(result['missing_file_list'])}")
                 return 1
 
         except ImportError:
-            print("Error: Portable media module not available")
+            eprint("Error: Portable media module not available")
             return 1
         except Exception as e:
-            print(f"Error verifying USB: {e}")
+            eprint(f"Error verifying USB: {e}")
             return 1
 
     # Handle scrypt_cost conversion to scrypt_n
@@ -4558,12 +4600,12 @@ def main_with_args(args=None):
 
     elif args.action == "check-argon2":
         argon2_available, version, supported_types = check_argon2_support()
-        print("\nARGON2 SUPPORT CHECK")
-        print("====================")
+        eprint("\nARGON2 SUPPORT CHECK")
+        eprint("====================")
         if argon2_available:
-            print(f"✓ Argon2 is AVAILABLE (version {version})")
+            eprint(f"✓ Argon2 is AVAILABLE (version {version})")
             variants = ", ".join("Argon2" + t for t in supported_types)
-            print(f"✓ Supported variants: {variants}")
+            eprint(f"✓ Supported variants: {variants}")
 
             # Try a test hash to verify functionality
             try:
@@ -4579,15 +4621,15 @@ def main_with_args(args=None):
                     type=argon2.low_level.Type.ID,
                 )
                 if len(test_hash) == 16:
-                    print("✓ Argon2 functionality test: PASSED")
+                    eprint("✓ Argon2 functionality test: PASSED")
                 else:
-                    print("✗ Argon2 functionality test: FAILED (unexpected hash length)")
+                    eprint("✗ Argon2 functionality test: FAILED (unexpected hash length)")
             except Exception as e:
-                print(f"✗ Argon2 functionality test: FAILED with error: {e}")
+                eprint(f"✗ Argon2 functionality test: FAILED with error: {e}")
         else:
-            print("✗ Argon2 is NOT AVAILABLE")
-            print("\nTo enable Argon2 support, install the argon2-cffi package:")
-            print("    pip install argon2-cffi")
+            eprint("✗ Argon2 is NOT AVAILABLE")
+            eprint("\nTo enable Argon2 support, install the argon2-cffi package:")
+            eprint("    pip install argon2-cffi")
         sys.exit(0)
 
     elif args.action == "check-pqc":
@@ -4595,26 +4637,26 @@ def main_with_args(args=None):
 
         pqc_available, version, supported_algorithms = check_pqc_support(quiet=args.quiet)
         if not args.quiet:
-            print("\nPOST-QUANTUM CRYPTOGRAPHY SUPPORT CHECK")
-            print("======================================")
+            eprint("\nPOST-QUANTUM CRYPTOGRAPHY SUPPORT CHECK")
+            eprint("======================================")
         if pqc_available:
             if not args.quiet:
-                print(f"✓ Post-quantum cryptography is AVAILABLE (liboqs version {version})")
-                print("✓ Supported algorithms:")
+                eprint(f"✓ Post-quantum cryptography is AVAILABLE (liboqs version {version})")
+                eprint("✓ Supported algorithms:")
 
                 # Organize algorithms by type
                 kems = [algo for algo in supported_algorithms if "Kyber" in algo]
                 sigs = [algo for algo in supported_algorithms if "Kyber" not in algo]
 
                 if kems:
-                    print("\n  Key Encapsulation Mechanisms (KEMs):")
+                    eprint("\n  Key Encapsulation Mechanisms (KEMs):")
                     for algo in kems:
-                        print(f"    - {algo}")
+                        eprint(f"    - {algo}")
 
                 if sigs:
-                    print("\n  Digital Signature Algorithms:")
+                    eprint("\n  Digital Signature Algorithms:")
                     for algo in sigs:
-                        print(f"    - {algo}")
+                        eprint(f"    - {algo}")
 
             # Try a test encryption to verify functionality
             try:
@@ -4627,29 +4669,29 @@ def main_with_args(args=None):
                 decrypted = test_cipher.decrypt(encrypted, private_key)
 
                 if decrypted == test_data:
-                    print("\n✓ Post-quantum encryption functionality test: PASSED")
+                    eprint("\n✓ Post-quantum encryption functionality test: PASSED")
                 else:
-                    print(
+                    eprint(
                         "\n✗ Post-quantum encryption functionality test: FAILED (decryption mismatch)"
                     )
             except Exception as e:
-                print(f"\n✗ Post-quantum encryption functionality test: FAILED with error: {e}")
+                eprint(f"\n✗ Post-quantum encryption functionality test: FAILED with error: {e}")
         else:
-            print("✗ Post-quantum cryptography is NOT AVAILABLE")
-            print(
+            eprint("✗ Post-quantum cryptography is NOT AVAILABLE")
+            eprint(
                 "\nTo enable post-quantum cryptography support, install the liboqs-python package:"
             )
-            print("    pip install liboqs-python")
+            eprint("    pip install liboqs-python")
 
-        print("\nUsage examples:")
-        print("  Encrypt with Kyber-768 (NIST Level 3):")
-        print("    python -m openssl_encrypt.crypt encrypt -i file.txt --algorithm kyber768-hybrid")
-        print("\n  Generate and save a key pair:")
-        print(
+        eprint("\nUsage examples:")
+        eprint("  Encrypt with Kyber-768 (NIST Level 3):")
+        eprint("    python -m openssl_encrypt.crypt encrypt -i file.txt --algorithm kyber768-hybrid")
+        eprint("\n  Generate and save a key pair:")
+        eprint(
             "    python -m openssl_encrypt.crypt encrypt -i file.txt --algorithm kyber768-hybrid --pqc-gen-key --pqc-keyfile key.pqc"
         )
-        print("\n  Decrypt using a saved key pair:")
-        print(
+        eprint("\n  Decrypt using a saved key pair:")
+        eprint(
             "    python -m openssl_encrypt.crypt decrypt -i file.txt.enc -o file.txt --pqc-keyfile key.pqc"
         )
 
@@ -4667,46 +4709,46 @@ def main_with_args(args=None):
             # Discover and load plugins
             discovered = plugin_manager.discover_plugins()
             if not args.quiet:
-                print(f"Discovered {len(discovered)} plugin files")
+                eprint(f"Discovered {len(discovered)} plugin files")
 
             # Load plugins
             for plugin_file in discovered:
                 load_result = plugin_manager.load_plugin(plugin_file)
                 if not load_result.success and not args.quiet:
-                    print(f"⚠️  Failed to load {plugin_file}: {load_result.message}")
+                    eprint(f"⚠️  Failed to load {plugin_file}: {load_result.message}")
 
             # List loaded plugins
             plugins = plugin_manager.list_plugins()
             if not plugins:
-                print("No plugins loaded")
+                eprint("No plugins loaded")
             else:
-                print("\nLoaded Plugins:")
-                print("=" * 50)
+                eprint("\nLoaded Plugins:")
+                eprint("=" * 50)
                 for plugin in plugins:
                     status = "🟢 Enabled" if plugin["enabled"] else "🔴 Disabled"
-                    print(f"{status} {plugin['name']} (v{plugin['version']})")
-                    print(f"    ID: {plugin['id']}")
-                    print(f"    Type: {plugin['type']}")
-                    print(f"    Description: {plugin['description']}")
-                    print(f"    Capabilities: {', '.join(plugin['capabilities'])}")
+                    eprint(f"{status} {plugin['name']} (v{plugin['version']})")
+                    eprint(f"    ID: {plugin['id']}")
+                    eprint(f"    Type: {plugin['type']}")
+                    eprint(f"    Description: {plugin['description']}")
+                    eprint(f"    Capabilities: {', '.join(plugin['capabilities'])}")
                     if plugin.get("usage_count", 0) > 0:
-                        print(
+                        eprint(
                             f"    Usage: {plugin['usage_count']} executions, {plugin.get('error_count', 0)} errors"
                         )
-                    print()
+                    eprint()
 
             sys.exit(0)
 
         except ImportError:
-            print("❌ Plugin system not available")
+            eprint("❌ Plugin system not available")
             sys.exit(1)
         except Exception as e:
-            print(f"❌ Error listing plugins: {e}")
+            eprint(f"❌ Error listing plugins: {e}")
             sys.exit(1)
 
     elif args.action == "plugin-info":
         if not args.plugin_id:
-            print("❌ Plugin ID required for plugin-info command (use --plugin-id)")
+            eprint("❌ Plugin ID required for plugin-info command (use --plugin-id)")
             sys.exit(1)
 
         try:
@@ -4723,50 +4765,50 @@ def main_with_args(args=None):
 
             plugin_info = plugin_manager.get_plugin_info(args.plugin_id)
             if not plugin_info:
-                print(f"❌ Plugin not found: {args.plugin_id}")
+                eprint(f"❌ Plugin not found: {args.plugin_id}")
                 sys.exit(1)
 
             # Show detailed plugin information
-            print(f"\nPlugin Information: {args.plugin_id}")
-            print("=" * 50)
-            print(f"Name: {plugin_info['name']}")
-            print(f"Version: {plugin_info['version']}")
-            print(f"Type: {plugin_info['type']}")
-            print(f"Description: {plugin_info['description']}")
-            print(f"Status: {'🟢 Enabled' if plugin_info['enabled'] else '🔴 Disabled'}")
-            print(f"File: {plugin_info['file_path']}")
-            print(f"Capabilities: {', '.join(plugin_info['capabilities'])}")
-            print(
+            eprint(f"\nPlugin Information: {args.plugin_id}")
+            eprint("=" * 50)
+            eprint(f"Name: {plugin_info['name']}")
+            eprint(f"Version: {plugin_info['version']}")
+            eprint(f"Type: {plugin_info['type']}")
+            eprint(f"Description: {plugin_info['description']}")
+            eprint(f"Status: {'🟢 Enabled' if plugin_info['enabled'] else '🔴 Disabled'}")
+            eprint(f"File: {plugin_info['file_path']}")
+            eprint(f"Capabilities: {', '.join(plugin_info['capabilities'])}")
+            eprint(
                 f"Load Time: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(plugin_info['load_time']))}"
             )
 
             if plugin_info.get("last_used"):
-                print(
+                eprint(
                     f"Last Used: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(plugin_info['last_used']))}"
                 )
 
             if plugin_info.get("usage_count", 0) > 0:
-                print("Usage Statistics:")
-                print(f"  - Total executions: {plugin_info['usage_count']}")
-                print(f"  - Errors: {plugin_info.get('error_count', 0)}")
+                eprint("Usage Statistics:")
+                eprint(f"  - Total executions: {plugin_info['usage_count']}")
+                eprint(f"  - Errors: {plugin_info.get('error_count', 0)}")
                 success_rate = (
                     (plugin_info["usage_count"] - plugin_info.get("error_count", 0))
                     / plugin_info["usage_count"]
                 ) * 100
-                print(f"  - Success rate: {success_rate:.1f}%")
+                eprint(f"  - Success rate: {success_rate:.1f}%")
 
             sys.exit(0)
 
         except ImportError:
-            print("❌ Plugin system not available")
+            eprint("❌ Plugin system not available")
             sys.exit(1)
         except Exception as e:
-            print(f"❌ Error getting plugin info: {e}")
+            eprint(f"❌ Error getting plugin info: {e}")
             sys.exit(1)
 
     elif args.action == "enable-plugin":
         if not args.plugin_id:
-            print("❌ Plugin ID required for enable-plugin command (use --plugin-id)")
+            eprint("❌ Plugin ID required for enable-plugin command (use --plugin-id)")
             sys.exit(1)
 
         try:
@@ -4783,23 +4825,23 @@ def main_with_args(args=None):
 
             result = plugin_manager.enable_plugin(args.plugin_id)
             if result.success:
-                print(f"✅ Plugin {args.plugin_id} enabled successfully")
+                eprint(f"✅ Plugin {args.plugin_id} enabled successfully")
             else:
-                print(f"❌ Failed to enable plugin: {result.message}")
+                eprint(f"❌ Failed to enable plugin: {result.message}")
                 sys.exit(1)
 
             sys.exit(0)
 
         except ImportError:
-            print("❌ Plugin system not available")
+            eprint("❌ Plugin system not available")
             sys.exit(1)
         except Exception as e:
-            print(f"❌ Error enabling plugin: {e}")
+            eprint(f"❌ Error enabling plugin: {e}")
             sys.exit(1)
 
     elif args.action == "disable-plugin":
         if not args.plugin_id:
-            print("❌ Plugin ID required for disable-plugin command (use --plugin-id)")
+            eprint("❌ Plugin ID required for disable-plugin command (use --plugin-id)")
             sys.exit(1)
 
         try:
@@ -4816,23 +4858,23 @@ def main_with_args(args=None):
 
             result = plugin_manager.disable_plugin(args.plugin_id)
             if result.success:
-                print(f"✅ Plugin {args.plugin_id} disabled successfully")
+                eprint(f"✅ Plugin {args.plugin_id} disabled successfully")
             else:
-                print(f"❌ Failed to disable plugin: {result.message}")
+                eprint(f"❌ Failed to disable plugin: {result.message}")
                 sys.exit(1)
 
             sys.exit(0)
 
         except ImportError:
-            print("❌ Plugin system not available")
+            eprint("❌ Plugin system not available")
             sys.exit(1)
         except Exception as e:
-            print(f"❌ Error disabling plugin: {e}")
+            eprint(f"❌ Error disabling plugin: {e}")
             sys.exit(1)
 
     elif args.action == "reload-plugin":
         if not args.plugin_id:
-            print("❌ Plugin ID required for reload-plugin command (use --plugin-id)")
+            eprint("❌ Plugin ID required for reload-plugin command (use --plugin-id)")
             sys.exit(1)
 
         try:
@@ -4849,18 +4891,18 @@ def main_with_args(args=None):
 
             result = plugin_manager.reload_plugin(args.plugin_id)
             if result.success:
-                print(f"✅ Plugin {args.plugin_id} reloaded successfully")
+                eprint(f"✅ Plugin {args.plugin_id} reloaded successfully")
             else:
-                print(f"❌ Failed to reload plugin: {result.message}")
+                eprint(f"❌ Failed to reload plugin: {result.message}")
                 sys.exit(1)
 
             sys.exit(0)
 
         except ImportError:
-            print("❌ Plugin system not available")
+            eprint("❌ Plugin system not available")
             sys.exit(1)
         except Exception as e:
-            print(f"❌ Error reloading plugin: {e}")
+            eprint(f"❌ Error reloading plugin: {e}")
             sys.exit(1)
 
     elif args.action == "generate-password":
@@ -4882,7 +4924,7 @@ def main_with_args(args=None):
 
             # Ensure length meets policy requirements
             if args.length < policy.min_length:
-                print(
+                eprint(
                     f"\nIncreasing password length from {args.length} to {policy.min_length} to meet policy requirements"
                 )
                 args.length = policy.min_length
@@ -4898,7 +4940,7 @@ def main_with_args(args=None):
 
         # Check password strength
         entropy, strength = get_password_strength(password)
-        print(f"\nPassword strength: {strength} (entropy: {entropy:.1f} bits)")
+        eprint(f"\nPassword strength: {strength} (entropy: {entropy:.1f} bits)")
 
         # Validate against policy
         if args.password_policy != "none":
@@ -4919,8 +4961,8 @@ def main_with_args(args=None):
             valid, _ = policy.validate_password(password, quiet=True)
             if not valid:
                 # This is rare but could happen with specific combinations of constraints
-                print("Warning: Generated password does not meet policy requirements.")
-                print("Consider adjusting character requirements or using a longer length.")
+                eprint("Warning: Generated password does not meet policy requirements.")
+                eprint("Consider adjusting character requirements or using a longer length.")
 
         # Display the password
         display_password_with_timeout(password)
@@ -4945,7 +4987,7 @@ def main_with_args(args=None):
 
     # Handle stdin input FIRST - convert to temp file to avoid multiple reads
     # This must happen BEFORE detect_encryption_type() which would consume stdin
-    if args.action == "decrypt" and getattr(args, "input", None) == "/dev/stdin":
+    if args.action in ("decrypt", "info") and getattr(args, "input", None) == "/dev/stdin":
         import tempfile
 
         # Read stdin once into a temp file
@@ -4956,14 +4998,14 @@ def main_with_args(args=None):
         # Copy all data from stdin to temp file
         stdin_data = sys.stdin.buffer.read()
         if args.debug:
-            print(f"DEBUG: Read {len(stdin_data)} bytes from stdin (early)", file=sys.stderr)
+            eprint(f"DEBUG: Read {len(stdin_data)} bytes from stdin (early)", file=sys.stderr)
         stdin_temp_file_early.write(stdin_data)
         stdin_temp_file_early.close()
 
         # Update args.input to point to the temp file for all subsequent operations
         args.input = stdin_temp_file_early.name
         if args.debug:
-            print(f"DEBUG: Converted stdin to temp file: {args.input}", file=sys.stderr)
+            eprint(f"DEBUG: Converted stdin to temp file: {args.input}", file=sys.stderr)
 
     # Auto-detect encryption type for decrypt operations
     # Only run auto-detection if user didn't explicitly provide --with-key
@@ -4979,7 +5021,7 @@ def main_with_args(args=None):
         except Exception as e:
             # If detection fails, assume symmetric and continue
             if args.debug:
-                print(f"DEBUG: Auto-detection failed: {e}")
+                eprint(f"DEBUG: Auto-detection failed: {e}")
             encryption_info = {"type": "symmetric", "format_version": 0}
 
         if encryption_info and encryption_info["type"] == "asymmetric":
@@ -4993,18 +5035,18 @@ def main_with_args(args=None):
 
             if len(matching) == 0:
                 # No matching identity found
-                print(
+                eprint(
                     "ERROR: This file is encrypted asymmetrically but no matching identity found.",
                     file=sys.stderr,
                 )
-                print("\nFile was encrypted for:", file=sys.stderr)
+                eprint("\nFile was encrypted for:", file=sys.stderr)
                 for fp in encryption_info["recipient_fingerprints"]:
-                    print(f"  • {fp}", file=sys.stderr)
-                print(
+                    eprint(f"  • {fp}", file=sys.stderr)
+                eprint(
                     "\nTo decrypt, you need one of these identities in your keystore.",
                     file=sys.stderr,
                 )
-                print(
+                eprint(
                     "Import the private key or use --with-key to specify an identity.",
                     file=sys.stderr,
                 )
@@ -5013,7 +5055,7 @@ def main_with_args(args=None):
                 # Use first matching identity
                 args.key_identity = matching[0].name
                 if not args.quiet:
-                    print(f"Using identity '{args.key_identity}' for decryption")
+                    eprint(f"Using identity '{args.key_identity}' for decryption")
 
     # Get password (only for encrypt/decrypt actions)
     # Skip password prompt for asymmetric encryption/decryption (uses identity-based keys)
@@ -5034,11 +5076,11 @@ def main_with_args(args=None):
     if args.action in ["encrypt", "decrypt", "rekey"]:
         validation_warnings = validate_algorithm_availability(args)
         if validation_warnings and not args.quiet:
-            print("\nWARNING: Some requested algorithms are not available:")
+            eprint("\nWARNING: Some requested algorithms are not available:")
             for warning in validation_warnings:
-                print(f"  ⚠ {warning}")
-            print("\nUse 'list-algorithms' command to see available algorithms.")
-            print("Install required packages or choose different algorithms.\n")
+                eprint(f"  ⚠ {warning}")
+            eprint("\nUse 'list-algorithms' command to see available algorithms.")
+            eprint("Install required packages or choose different algorithms.\n")
 
     if args.action in ["encrypt", "decrypt", "rekey"] and not (
         is_asymmetric_encrypt or is_asymmetric_decrypt
@@ -5064,14 +5106,14 @@ def main_with_args(args=None):
                             with open(password_file, "r") as f:
                                 args.password = f.readline().rstrip("\n")
                     except (IOError, OSError) as e:
-                        print(f"Error reading password file: {e}", file=sys.stderr)
+                        eprint(f"Error reading password file: {e}", file=sys.stderr)
                         sys.exit(1)
                 elif password_fd is not None:
                     try:
                         with os.fdopen(password_fd, "r", closefd=False) as f:
                             args.password = f.readline().rstrip("\n")
                     except (IOError, OSError) as e:
-                        print(f"Error reading from fd {password_fd}: {e}", file=sys.stderr)
+                        eprint(f"Error reading from fd {password_fd}: {e}", file=sys.stderr)
                         sys.exit(1)
                 elif env_pw:
                     args.password = env_pw
@@ -5087,7 +5129,7 @@ def main_with_args(args=None):
             ):
                 # Warn about --password being visible in process list
                 if not args.quiet:
-                    print(
+                    eprint(
                         "WARNING: --password is visible in process list. "
                         "Use --password-file or OPENSSL_ENCRYPT_PASSWORD env var instead.",
                         file=sys.stderr,
@@ -5115,7 +5157,7 @@ def main_with_args(args=None):
                         # Ensure random password length meets policy requirements
                         if args.random < policy.min_length:
                             if not args.quiet:
-                                print(
+                                eprint(
                                     f"\nIncreasing random password length from {args.random} to {policy.min_length} to meet policy requirements"
                                 )
                             args.random = policy.min_length
@@ -5151,11 +5193,11 @@ def main_with_args(args=None):
                         if not args.quiet:
                             for msg in msgs:
                                 if "Password strength:" in msg:
-                                    print(f"\n{msg}")
+                                    eprint(f"\n{msg}")
 
                     password_secure.extend(generated_password.encode())
                     if not args.quiet:
-                        print("\nGenerated a random password for encryption.")
+                        eprint("\nGenerated a random password for encryption.")
 
                 # Check for password from environment variable first
                 elif os.environ.get("CRYPT_PASSWORD"):
@@ -5207,11 +5249,11 @@ def main_with_args(args=None):
                             if not args.quiet:
                                 # Calculate and display password strength
                                 entropy, strength = get_password_strength(env_password)
-                                print(
+                                eprint(
                                     f"\nPassword strength: {strength} (entropy: {entropy:.1f} bits)"
                                 )
-                                print(f"Password validation failed: {str(e)}")
-                                print("Use --force-password to bypass validation (not recommended)")
+                                eprint(f"Password validation failed: {str(e)}")
+                                eprint("Use --force-password to bypass validation (not recommended)")
                             sys.exit(1)
 
                     password_secure.extend(env_password.encode())
@@ -5257,11 +5299,11 @@ def main_with_args(args=None):
                             if not args.quiet:
                                 # Calculate and display password strength
                                 entropy, strength = get_password_strength(args.password)
-                                print(
+                                eprint(
                                     f"\nPassword strength: {strength} (entropy: {entropy:.1f} bits)"
                                 )
-                                print(f"Password validation failed: {str(e)}")
-                                print("Use --force-password to bypass validation (not recommended)")
+                                eprint(f"Password validation failed: {str(e)}")
+                                eprint("Use --force-password to bypass validation (not recommended)")
                             sys.exit(1)
 
                     password_secure.extend(args.password.encode())
@@ -5319,11 +5361,11 @@ def main_with_args(args=None):
                                         entropy, strength = get_password_strength(
                                             pwd1.decode("utf-8", errors="ignore")
                                         )
-                                        print(
+                                        eprint(
                                             f"\nPassword strength: {strength} (entropy: {entropy:.1f} bits)"
                                         )
-                                        print(f"Password validation failed: {str(e)}")
-                                        print(
+                                        eprint(f"Password validation failed: {str(e)}")
+                                        eprint(
                                             "Use --force-password to bypass validation (not recommended)"
                                         )
                                         valid_password = False
@@ -5339,17 +5381,17 @@ def main_with_args(args=None):
                                 # Securely clear the temporary buffers
                                 pwd1 = "\x00" * len(pwd1)
                                 pwd2 = "\x00" * len(pwd2)
-                                print("Passwords do not match. Please try again.")
+                                eprint("Passwords do not match. Please try again.")
                     # For decryption or quiet mode, just ask once
                     else:
                         # Always prompt for a password, even in quiet mode
                         # We need to show the prompt but we can hide any extra text
                         pwd = getpass.getpass("Enter password: ")
 
-                        # In quiet mode, move up one line and clear it after getting the password
-                        if args.quiet:
-                            sys.stdout.write("\033[A\033[K")
-                            sys.stdout.flush()
+                        # In quiet or progress mode, move up one line and clear it after
+                        # getting the password.
+                        if args.quiet or getattr(args, "progress", False):
+                            tty_clear_line()
 
                         password_secure.extend(pwd.encode("utf-8"))
                         # Securely clear the temporary buffer
@@ -5377,7 +5419,7 @@ def main_with_args(args=None):
                                 with open(rekey_pw_file, "r") as f:
                                     rekey_pw_arg = f.readline().rstrip("\n")
                         except (IOError, OSError) as e:
-                            print(
+                            eprint(
                                 f"Error reading rekey password file: {e}",
                                 file=sys.stderr,
                             )
@@ -5387,7 +5429,7 @@ def main_with_args(args=None):
                             with os.fdopen(rekey_pw_fd, "r", closefd=False) as f:
                                 rekey_pw_arg = f.readline().rstrip("\n")
                         except (IOError, OSError) as e:
-                            print(
+                            eprint(
                                 f"Error reading from rekey fd {rekey_pw_fd}: {e}",
                                 file=sys.stderr,
                             )
@@ -5403,7 +5445,7 @@ def main_with_args(args=None):
 
                 if rekey_pw_arg:
                     if not rekey_pw_file and rekey_pw_fd is None and not args.quiet:
-                        print(
+                        eprint(
                             "WARNING: --rekey-password is visible in process list. "
                             "Use --rekey-password-file or OPENSSL_ENCRYPT_REKEY_PASSWORD env var instead.",
                             file=sys.stderr,
@@ -5424,24 +5466,24 @@ def main_with_args(args=None):
                         else:
                             pwd1 = b"\x00" * len(pwd1)
                             pwd2 = b"\x00" * len(pwd2)
-                            print("Passwords do not match. Please try again.")
+                            eprint("Passwords do not match. Please try again.")
 
         except ImportError:
             # Fall back to standard method if secure_memory is not
             # available
             if not args.quiet:
-                print("Warning: secure_memory module not available")
+                eprint("Warning: secure_memory module not available")
             sys.exit(1)
 
     # Check for Whirlpool availability if needed and not in quiet mode
     if args.whirlpool_rounds > 0 and not WHIRLPOOL_AVAILABLE and not args.quiet:
-        print("Warning: pywhirlpool module not found. SHA-512 will be used instead.")
+        eprint("Warning: pywhirlpool module not found. SHA-512 will be used instead.")
 
     # Check for Argon2 availability if needed
     if (args.enable_argon2 or args.argon2_preset) and not ARGON2_AVAILABLE:
         if not args.quiet:
-            print("Warning: argon2-cffi module not found. Argon2 will be disabled.")
-            print("Install with: pip install argon2-cffi")
+            eprint("Warning: argon2-cffi module not found. Argon2 will be disabled.")
+            eprint("Install with: pip install argon2-cffi")
         args.enable_argon2 = False
         args.argon2_preset = None
 
@@ -5457,11 +5499,11 @@ def main_with_args(args=None):
 
         if not pqc_available:
             if not args.quiet:
-                print(
+                eprint(
                     "Warning: liboqs-python module not found. Post-quantum cryptography will not be available."
                 )
-                print("Install with: pip install liboqs-python")
-                print("Falling back to aes-gcm algorithm.")
+                eprint("Install with: pip install liboqs-python")
+                eprint("Falling back to aes-gcm algorithm.")
             args.algorithm = "aes-gcm"
 
     # Validate random password parameter
@@ -5472,7 +5514,7 @@ def main_with_args(args=None):
             parser.error("--password and --random cannot be used together")
         if args.random < 12:
             if not args.quiet:
-                print("Warning: Random password length increased to 12 (minimum secure length)")
+                eprint("Warning: Random password length increased to 12 (minimum secure length)")
             args.random = 12
 
     # Set default iterations if SHA algorithms are requested but no iterations
@@ -5484,62 +5526,62 @@ def main_with_args(args=None):
     if args.sha512_rounds == 1:  # When flag is provided without value
         args.sha512_rounds = MIN_SHA_ITERATIONS
         if not args.quiet:
-            print(f"Using default of {MIN_SHA_ITERATIONS} iterations for SHA-512")
+            eprint(f"Using default of {MIN_SHA_ITERATIONS} iterations for SHA-512")
 
     if args.sha384_rounds == 1:  # When flag is provided without value
         args.sha384_rounds = MIN_SHA_ITERATIONS
         if not args.quiet:
-            print(f"Using default of {MIN_SHA_ITERATIONS} iterations for SHA-384")
+            eprint(f"Using default of {MIN_SHA_ITERATIONS} iterations for SHA-384")
 
     if args.sha256_rounds == 1:  # When flag is provided without value
         args.sha256_rounds = MIN_SHA_ITERATIONS
         if not args.quiet:
-            print(f"Using default of {MIN_SHA_ITERATIONS} iterations for SHA-256")
+            eprint(f"Using default of {MIN_SHA_ITERATIONS} iterations for SHA-256")
 
     if args.sha224_rounds == 1:  # When flag is provided without value
         args.sha224_rounds = MIN_SHA_ITERATIONS
         if not args.quiet:
-            print(f"Using default of {MIN_SHA_ITERATIONS} iterations for SHA-224")
+            eprint(f"Using default of {MIN_SHA_ITERATIONS} iterations for SHA-224")
 
     if args.sha3_512_rounds == 1:  # When flag is provided without value
         args.sha3_512_rounds = MIN_SHA_ITERATIONS
         if not args.quiet:
-            print(f"Using default of {MIN_SHA_ITERATIONS} iterations for SHA3-512")
+            eprint(f"Using default of {MIN_SHA_ITERATIONS} iterations for SHA3-512")
 
     if args.sha3_384_rounds == 1:  # When flag is provided without value
         args.sha3_384_rounds = MIN_SHA_ITERATIONS
         if not args.quiet:
-            print(f"Using default of {MIN_SHA_ITERATIONS} iterations for SHA3-384")
+            eprint(f"Using default of {MIN_SHA_ITERATIONS} iterations for SHA3-384")
 
     if args.sha3_256_rounds == 1:  # When flag is provided without value
         args.sha3_256_rounds = MIN_SHA_ITERATIONS
         if not args.quiet:
-            print(f"Using default of {MIN_SHA_ITERATIONS} iterations for SHA3-256")
+            eprint(f"Using default of {MIN_SHA_ITERATIONS} iterations for SHA3-256")
 
     if args.sha3_224_rounds == 1:  # When flag is provided without value
         args.sha3_224_rounds = MIN_SHA_ITERATIONS
         if not args.quiet:
-            print(f"Using default of {MIN_SHA_ITERATIONS} iterations for SHA3-224")
+            eprint(f"Using default of {MIN_SHA_ITERATIONS} iterations for SHA3-224")
 
     if args.blake2b_rounds == 1:  # When flag is provided without value
         args.blake2b_rounds = MIN_SHA_ITERATIONS
         if not args.quiet:
-            print(f"Using default of {MIN_SHA_ITERATIONS} iterations for BLAKE2b")
+            eprint(f"Using default of {MIN_SHA_ITERATIONS} iterations for BLAKE2b")
 
     if args.blake3_rounds == 1:  # When flag is provided without value
         args.blake3_rounds = MIN_SHA_ITERATIONS
         if not args.quiet:
-            print(f"Using default of {MIN_SHA_ITERATIONS} iterations for BLAKE3")
+            eprint(f"Using default of {MIN_SHA_ITERATIONS} iterations for BLAKE3")
 
     if args.shake256_rounds == 1:  # When flag is provided without value
         args.shake256_rounds = MIN_SHA_ITERATIONS
         if not args.quiet:
-            print(f"Using default of {MIN_SHA_ITERATIONS} iterations for SHAKE-256")
+            eprint(f"Using default of {MIN_SHA_ITERATIONS} iterations for SHAKE-256")
 
     if args.shake128_rounds == 1:  # When flag is provided without value
         args.shake128_rounds = MIN_SHA_ITERATIONS
         if not args.quiet:
-            print(f"Using default of {MIN_SHA_ITERATIONS} iterations for SHAKE-128")
+            eprint(f"Using default of {MIN_SHA_ITERATIONS} iterations for SHAKE-128")
 
     # Determine default rounds value to use - either from --kdf-rounds or default of 10
     default_rounds = args.kdf_rounds if args.kdf_rounds > 0 else 10
@@ -5669,12 +5711,12 @@ def main_with_args(args=None):
         args.argon2_type = preset["type"]
 
         if not args.quiet:
-            print(f"Using Argon2 preset '{args.argon2_preset}' with parameters:")
-            print(f"  - Time cost: {args.argon2_time}")
-            print(f"  - Memory: {args.argon2_memory} KB")
-            print(f"  - Parallelism: {args.argon2_parallelism}")
-            print(f"  - Hash length: {args.argon2_hash_len} bytes")
-            print(f"  - Type: Argon2{args.argon2_type}")
+            eprint(f"Using Argon2 preset '{args.argon2_preset}' with parameters:")
+            eprint(f"  - Time cost: {args.argon2_time}")
+            eprint(f"  - Memory: {args.argon2_memory} KB")
+            eprint(f"  - Parallelism: {args.argon2_parallelism}")
+            eprint(f"  - Hash length: {args.argon2_hash_len} bytes")
+            eprint(f"  - Type: Argon2{args.argon2_type}")
 
     # Create the hash configuration dictionary
     if args.paranoid or args.quick or args.standard:
@@ -5819,21 +5861,21 @@ def main_with_args(args=None):
                 for plugin_file in discovered:
                     load_result = plugin_manager.load_plugin(plugin_file)
                     if not load_result.success and args.verbose and not args.quiet:
-                        print(f"⚠️  Failed to load plugin {plugin_file}: {load_result.message}")
+                        eprint(f"⚠️  Failed to load plugin {plugin_file}: {load_result.message}")
 
                 if args.verbose and not args.quiet:
                     loaded_count = len(plugin_manager.list_plugins())
                     if loaded_count > 0:
-                        print(f"🔌 Plugin system initialized with {loaded_count} plugins")
+                        eprint(f"🔌 Plugin system initialized with {loaded_count} plugins")
 
             except ImportError:
                 if args.verbose and not args.quiet:
-                    print("⚠️  Plugin system not available")
+                    eprint("⚠️  Plugin system not available")
                 plugin_manager = None
                 enable_plugins = False
             except Exception as e:
                 if not args.quiet:
-                    print(f"⚠️  Plugin system error: {e}")
+                    eprint(f"⚠️  Plugin system error: {e}")
                 plugin_manager = None
                 enable_plugins = False
 
@@ -5850,15 +5892,15 @@ def main_with_args(args=None):
                     # Initialize plugin
                     init_result = hsm_plugin_instance.initialize({})
                     if not init_result.success:
-                        print(f"Error initializing HSM plugin: {init_result.message}")
+                        eprint(f"Error initializing HSM plugin: {init_result.message}")
                         sys.exit(1)
 
                     if not args.quiet:
-                        print(f"✅ Loaded HSM plugin: {hsm_plugin_instance.name}")
+                        eprint(f"✅ Loaded HSM plugin: {hsm_plugin_instance.name}")
                         if hasattr(args, "hsm_slot") and args.hsm_slot:
-                            print(f"   Using manual slot: {args.hsm_slot}")
+                            eprint(f"   Using manual slot: {args.hsm_slot}")
                         else:
-                            print("   Auto-detecting Challenge-Response slot")
+                            eprint("   Auto-detecting Challenge-Response slot")
 
                 elif args.hsm.lower() == "fido2":
                     from ..plugins.hsm.fido2_pepper import FIDO2HSMPlugin
@@ -5868,32 +5910,32 @@ def main_with_args(args=None):
                     # Initialize plugin
                     init_result = hsm_plugin_instance.initialize({})
                     if not init_result.success:
-                        print(f"Error initializing HSM plugin: {init_result.message}")
+                        eprint(f"Error initializing HSM plugin: {init_result.message}")
                         sys.exit(1)
 
                     if not args.quiet:
-                        print(f"✅ Loaded HSM plugin: {hsm_plugin_instance.name}")
-                        print(f"   RP ID: {hsm_plugin_instance.rp_id}")
+                        eprint(f"✅ Loaded HSM plugin: {hsm_plugin_instance.name}")
+                        eprint(f"   RP ID: {hsm_plugin_instance.rp_id}")
                         if not hsm_plugin_instance.is_registered():
-                            print(
+                            eprint(
                                 "   ⚠️  No credentials registered. Run: openssl_encrypt hsm fido2-register"
                             )
 
                 else:
-                    print(f"Error: Unknown HSM plugin '{args.hsm}'. Supported: yubikey, fido2")
+                    eprint(f"Error: Unknown HSM plugin '{args.hsm}'. Supported: yubikey, fido2")
                     sys.exit(1)
 
             except ImportError as e:
-                print(f"Error: Could not import HSM plugin: {e}")
+                eprint(f"Error: Could not import HSM plugin: {e}")
                 if args.hsm.lower() == "yubikey":
-                    print(
+                    eprint(
                         "Make sure yubikey-manager is installed: pip install -r requirements-hsm.txt"
                     )
                 elif args.hsm.lower() == "fido2":
-                    print("Make sure fido2 library is installed: pip install fido2>=1.1.0")
+                    eprint("Make sure fido2 library is installed: pip install fido2>=1.1.0")
                 sys.exit(1)
             except Exception as e:
-                print(f"Error initializing HSM plugin: {e}")
+                eprint(f"Error initializing HSM plugin: {e}")
                 sys.exit(1)
 
         # Load pepper plugin if requested
@@ -5905,8 +5947,8 @@ def main_with_args(args=None):
 
                 config = PepperConfig.from_file()
                 if not config.enabled:
-                    print("ERROR: --pepper flag used but pepper plugin not configured")
-                    print(f"Configure at: {PepperConfig.get_default_config_path()}")
+                    eprint("ERROR: --pepper flag used but pepper plugin not configured")
+                    eprint(f"Configure at: {PepperConfig.get_default_config_path()}")
                     sys.exit(1)
 
                 pepper_plugin_instance = PepperPlugin(config)
@@ -5916,14 +5958,14 @@ def main_with_args(args=None):
                 pepper_name_to_use = None
 
                 if not args.quiet:
-                    print(f"Pepper plugin enabled (auto-generate mode)")
+                    eprint(f"Pepper plugin enabled (auto-generate mode)")
 
             except ImportError as e:
-                print(f"ERROR: Could not import pepper plugin: {e}")
-                print("Make sure pepper plugin is properly installed")
+                eprint(f"ERROR: Could not import pepper plugin: {e}")
+                eprint("Make sure pepper plugin is properly installed")
                 sys.exit(1)
             except Exception as e:
-                print(f"ERROR: Pepper plugin initialization failed: {e}")
+                eprint(f"ERROR: Pepper plugin initialization failed: {e}")
                 sys.exit(1)
 
         elif hasattr(args, "pepper_name") and args.pepper_name:
@@ -5932,25 +5974,45 @@ def main_with_args(args=None):
 
                 config = PepperConfig.from_file()
                 if not config.enabled:
-                    print("ERROR: --pepper-name flag used but pepper plugin not configured")
-                    print(f"Configure at: {PepperConfig.get_default_config_path()}")
+                    eprint("ERROR: --pepper-name flag used but pepper plugin not configured")
+                    eprint(f"Configure at: {PepperConfig.get_default_config_path()}")
                     sys.exit(1)
 
                 pepper_plugin_instance = PepperPlugin(config)
                 pepper_name_to_use = args.pepper_name
 
                 if not args.quiet:
-                    print(f"Pepper plugin enabled (using existing pepper: {pepper_name_to_use})")
+                    eprint(f"Pepper plugin enabled (using existing pepper: {pepper_name_to_use})")
 
             except ImportError as e:
-                print(f"ERROR: Could not import pepper plugin: {e}")
-                print("Make sure pepper plugin is properly installed")
+                eprint(f"ERROR: Could not import pepper plugin: {e}")
+                eprint("Make sure pepper plugin is properly installed")
                 sys.exit(1)
             except Exception as e:
-                print(f"ERROR: Pepper plugin initialization failed: {e}")
+                eprint(f"ERROR: Pepper plugin initialization failed: {e}")
                 sys.exit(1)
 
         if args.action == "encrypt":
+            # Parse streaming size arguments
+            _streaming_chunk_size = None
+            _streaming_threshold = None
+            if getattr(args, "chunk_size", None):
+                from .streaming import parse_size_string
+
+                try:
+                    _streaming_chunk_size = parse_size_string(args.chunk_size)
+                except ValueError as e:
+                    eprint(f"ERROR: Invalid --chunk-size: {e}", file=sys.stderr)
+                    sys.exit(1)
+            if getattr(args, "streaming_threshold", None):
+                from .streaming import parse_size_string
+
+                try:
+                    _streaming_threshold = parse_size_string(args.streaming_threshold)
+                except ValueError as e:
+                    eprint(f"ERROR: Invalid --streaming-threshold: {e}", file=sys.stderr)
+                    sys.exit(1)
+
             # Check if asymmetric mode (--for flag present)
             if hasattr(args, "for_identity") and args.for_identity:
                 # Asymmetric encryption mode
@@ -5969,20 +6031,20 @@ def main_with_args(args=None):
                         if config.enabled:
                             keyserver_plugin = KeyserverPlugin(config)
                             if not args.quiet:
-                                print(
+                                eprint(
                                     "🔑 Keyserver enabled: will fetch public keys from remote if not found locally"
                                 )
                         else:
                             if not args.quiet:
-                                print(
+                                eprint(
                                     "⚠️  Keyserver is disabled. Enable with: openssl-encrypt keyserver enable"
                                 )
                     except ImportError:
                         if not args.quiet:
-                            print("⚠️  Keyserver plugin not available")
+                            eprint("⚠️  Keyserver plugin not available")
                     except Exception as e:
                         if not args.quiet:
-                            print(f"⚠️  Failed to initialize keyserver: {e}")
+                            eprint(f"⚠️  Failed to initialize keyserver: {e}")
 
                 # Load recipients (with KeyResolver support)
                 recipients = []
@@ -6009,34 +6071,34 @@ def main_with_args(args=None):
                         recipients.append(recipient)
 
                     except KeyNotFoundError:
-                        print(
+                        eprint(
                             f"ERROR: Recipient identity '{recipient_name}' not found ❌",
                             file=sys.stderr,
                         )
                         sys.exit(1)
                     except TrustDeclinedError:
-                        print(f"ERROR: Trust declined for '{recipient_name}' ❌", file=sys.stderr)
+                        eprint(f"ERROR: Trust declined for '{recipient_name}' ❌", file=sys.stderr)
                         sys.exit(1)
                     except KeyError as e:
-                        print(f"ERROR: {e} ❌", file=sys.stderr)
+                        eprint(f"ERROR: {e} ❌", file=sys.stderr)
                         sys.exit(1)
                     except Exception as e:
                         error_msg = f"ERROR: Failed to load identity '{recipient_name}'"
                         if str(e):
                             error_msg += f": {e}"
                         error_msg += " ❌"
-                        print(error_msg, file=sys.stderr)
+                        eprint(error_msg, file=sys.stderr)
                         sys.exit(1)
 
                 # Load sender
                 if not hasattr(args, "sign_with") or not args.sign_with:
-                    print("ERROR: --sign-with required for asymmetric encryption", file=sys.stderr)
+                    eprint("ERROR: --sign-with required for asymmetric encryption", file=sys.stderr)
                     sys.exit(1)
 
                 # First load identity metadata to check protection level
                 sender_metadata = store.get_by_name(args.sign_with, load_private_keys=False)
                 if sender_metadata is None:
-                    print(f"ERROR: Sender identity '{args.sign_with}' not found ❌", file=sys.stderr)
+                    eprint(f"ERROR: Sender identity '{args.sign_with}' not found ❌", file=sys.stderr)
                     sys.exit(1)
 
                 # Determine if passphrase is needed
@@ -6056,7 +6118,7 @@ def main_with_args(args=None):
                         args.sign_with, passphrase=sender_passphrase, load_private_keys=True
                     )
                     if sender is None:
-                        print(
+                        eprint(
                             f"ERROR: Sender identity '{args.sign_with}' not found ❌",
                             file=sys.stderr,
                         )
@@ -6066,7 +6128,7 @@ def main_with_args(args=None):
                     if str(e):
                         error_msg += f": {e}"
                     error_msg += " ❌"
-                    print(error_msg, file=sys.stderr)
+                    eprint(error_msg, file=sys.stderr)
                     sys.exit(1)
                 finally:
                     # Clean up passphrase from memory
@@ -6194,11 +6256,11 @@ def main_with_args(args=None):
                         shutil.move(temp_output, output_file)
 
                     if not args.quiet:
-                        print("\nAsymmetric encryption successful! ✅")
-                        print(
+                        eprint("\nAsymmetric encryption successful! ✅")
+                        eprint(
                             f"File size: {result['original_size']} bytes → {result['encrypted_size']} bytes (encrypted)"
                         )
-                        print(f"Encrypted file: {output_file}")
+                        eprint(f"Encrypted file: {output_file}")
 
                     # Shred original if requested
                     if args.shred:
@@ -6209,7 +6271,7 @@ def main_with_args(args=None):
                     sys.exit(0)
 
                 except Exception as e:
-                    print(f"ERROR: Asymmetric encryption failed: {e}", file=sys.stderr)
+                    eprint(f"ERROR: Asymmetric encryption failed: {e}", file=sys.stderr)
                     if args.debug:
                         import traceback
 
@@ -6218,16 +6280,16 @@ def main_with_args(args=None):
 
             # DEPRECATED: Whirlpool is no longer supported for new encryptions
             if hasattr(args, "whirlpool_rounds") and getattr(args, "whirlpool_rounds", 0) > 0:
-                print("ERROR: Whirlpool is deprecated for new encryptions.")
-                print("Please use BLAKE2b, BLAKE3, or SHA-3 instead.")
-                print("Existing files encrypted with Whirlpool can still be decrypted.")
+                eprint("ERROR: Whirlpool is deprecated for new encryptions.")
+                eprint("Please use BLAKE2b, BLAKE3, or SHA-3 instead.")
+                eprint("Existing files encrypted with Whirlpool can still be decrypted.")
                 sys.exit(1)
 
             # DEPRECATED: PBKDF2 is no longer supported for new encryptions
             if hasattr(args, "pbkdf2_iterations") and getattr(args, "pbkdf2_iterations", 0) > 0:
-                print("ERROR: PBKDF2 is deprecated for new encryptions.")
-                print("Please use Argon2, Scrypt, or Balloon hashing instead.")
-                print("Existing files encrypted with PBKDF2 can still be decrypted.")
+                eprint("ERROR: PBKDF2 is deprecated for new encryptions.")
+                eprint("Please use Argon2, Scrypt, or Balloon hashing instead.")
+                eprint("Existing files encrypted with PBKDF2 can still be decrypted.")
                 sys.exit(1)
 
             # DEPRECATED: Kyber algorithms are no longer supported for new encryptions
@@ -6241,11 +6303,11 @@ def main_with_args(args=None):
             # Check the original user input, not the mapped algorithm
             user_provided_algorithm = original_algorithm or args.algorithm
             if args.debug:
-                print(f"DEBUG: args.algorithm = {args.algorithm}")
-                print(f"DEBUG: original_algorithm = {original_algorithm}")
-                print(f"DEBUG: original_ml_kem_algorithm = {original_ml_kem_algorithm}")
-                print(f"DEBUG: user_provided_algorithm = {user_provided_algorithm}")
-                print(
+                eprint(f"DEBUG: args.algorithm = {args.algorithm}")
+                eprint(f"DEBUG: original_algorithm = {original_algorithm}")
+                eprint(f"DEBUG: original_ml_kem_algorithm = {original_ml_kem_algorithm}")
+                eprint(f"DEBUG: user_provided_algorithm = {user_provided_algorithm}")
+                eprint(
                     f"DEBUG: user_provided_algorithm in ml_kem_algorithms = {user_provided_algorithm in ml_kem_algorithms}"
                 )
 
@@ -6262,15 +6324,15 @@ def main_with_args(args=None):
                     "kyber1024-hybrid": "ml-kem-1024-hybrid",
                 }
                 recommended = ml_kem_mapping[args.algorithm]
-                print(f"ERROR: {args.algorithm} is deprecated for new encryptions.")
-                print(f"Please use {recommended} instead (NIST standardized equivalent).")
-                print(f"Existing files encrypted with {args.algorithm} can still be decrypted.")
+                eprint(f"ERROR: {args.algorithm} is deprecated for new encryptions.")
+                eprint(f"Please use {recommended} instead (NIST standardized equivalent).")
+                eprint(f"Existing files encrypted with {args.algorithm} can still be decrypted.")
                 sys.exit(1)
 
             # Enforce deprecation policy: Block encryption with deprecated algorithms in version 1.2.0
             if is_encryption_blocked_for_algorithm(args.algorithm):
                 error_message = get_encryption_block_message(args.algorithm)
-                print(f"ERROR: {error_message}")
+                eprint(f"ERROR: {error_message}")
                 sys.exit(1)
 
             # Check if main algorithm is deprecated and issue warning
@@ -6282,15 +6344,15 @@ def main_with_args(args=None):
                     and replacement
                     and (args.verbose or not args.algorithm.startswith(("kyber", "ml-kem")))
                 ):
-                    print(f"Warning: The algorithm '{args.algorithm}' is deprecated.")
-                    print(f"Consider using '{replacement}' instead for better security.")
+                    eprint(f"Warning: The algorithm '{args.algorithm}' is deprecated.")
+                    eprint(f"Consider using '{replacement}' instead for better security.")
 
             # Enforce deprecation policy for PQC data encryption algorithms
             if args.algorithm.endswith("-hybrid") and is_encryption_blocked_for_algorithm(
                 args.encryption_data
             ):
                 data_error_message = get_encryption_block_message(args.encryption_data)
-                print(f"ERROR: PQC data encryption - {data_error_message}")
+                eprint(f"ERROR: PQC data encryption - {data_error_message}")
                 sys.exit(1)
 
             # Check if data encryption algorithm is deprecated for PQC
@@ -6302,10 +6364,10 @@ def main_with_args(args=None):
                     and data_replacement
                     and (args.verbose or not args.encryption_data.startswith(("kyber", "ml-kem")))
                 ):
-                    print(
+                    eprint(
                         f"Warning: The data encryption algorithm '{args.encryption_data}' is deprecated."
                     )
-                    print(f"Consider using '{data_replacement}' instead for better security.")
+                    eprint(f"Consider using '{data_replacement}' instead for better security.")
 
             # Handle output file path
             if args.overwrite:
@@ -6393,7 +6455,7 @@ def main_with_args(args=None):
                             hqc256_algo = hqc256_options[0] if hqc256_options else "HQC-256"
 
                             if not args.quiet:
-                                print(
+                                eprint(
                                     f"Using algorithm mappings: kyber512-hybrid → {kyber512_algo}, kyber768-hybrid → {kyber768_algo}, kyber1024-hybrid → {kyber1024_algo}, hqc-128-hybrid → {hqc128_algo}, hqc-192-hybrid → {hqc192_algo}, hqc-256-hybrid → {hqc256_algo}"
                                 )
 
@@ -6431,7 +6493,7 @@ def main_with_args(args=None):
                                 json.dump(key_data, f)
 
                             if not args.quiet:
-                                print(f"Post-quantum key pair saved to {args.pqc_keyfile}")
+                                eprint(f"Post-quantum key pair saved to {args.pqc_keyfile}")
 
                             pqc_keypair = (public_key, private_key)
 
@@ -6452,14 +6514,14 @@ def main_with_args(args=None):
 
                                     key_data = secure_json_loads(json_content)
                                 except (JSONSecurityError, JSONValidationError) as e:
-                                    print(f"Error: PQC key file validation failed: {e}")
+                                    eprint(f"Error: PQC key file validation failed: {e}")
                                     sys.exit(1)
                                 except ImportError:
                                     # Fallback to basic JSON loading if validator not available
                                     try:
                                         key_data = json.loads(json_content)
                                     except json.JSONDecodeError as e:
-                                        print(f"Error: Invalid JSON in PQC key file: {e}")
+                                        eprint(f"Error: Invalid JSON in PQC key file: {e}")
                                         sys.exit(1)
 
                             if "public_key" in key_data and "private_key" in key_data:
@@ -6468,7 +6530,7 @@ def main_with_args(args=None):
                                 pqc_keypair = (public_key, private_key)
 
                                 if not args.quiet:
-                                    print(f"Loaded post-quantum key pair from {args.pqc_keyfile}")
+                                    eprint(f"Loaded post-quantum key pair from {args.pqc_keyfile}")
 
                     # For PQC algorithms, we may need to generate a keypair if not specified
                     if (
@@ -6563,7 +6625,7 @@ def main_with_args(args=None):
                         }
 
                         if not args.quiet:
-                            print(
+                            eprint(
                                 f"Generating ephemeral post-quantum key pair for {args.algorithm}"
                             )
                             if args.pqc_store_key:
@@ -6573,7 +6635,7 @@ def main_with_args(args=None):
                                 )
                             else:
                                 # Keep this as a print since it's a warning
-                                print(
+                                eprint(
                                     "WARNING: Private key will NOT be stored - you must use a key file for decryption"
                                 )
 
@@ -6590,15 +6652,15 @@ def main_with_args(args=None):
                             if getattr(args, "auto_create_keystore", False):
                                 # Auto-create keystore is enabled
                                 if not args.quiet:
-                                    print(
+                                    eprint(
                                         f"Keystore not found at {args.keystore}, creating a new one"
                                     )
                                 create_new = True
                             else:
                                 # Prompt the user if they want to create a new keystore or abort
                                 if not args.quiet:
-                                    print(f"Keystore not found at {args.keystore}")
-                                    print(
+                                    eprint(f"Keystore not found at {args.keystore}")
+                                    eprint(
                                         "Use --auto-create-keystore option to automatically create keystore"
                                     )
                                     create_prompt = (
@@ -6625,7 +6687,7 @@ def main_with_args(args=None):
                                             keystore_password = f.read().strip()
                                     except Exception as e:
                                         if not args.quiet:
-                                            print(
+                                            eprint(
                                                 f"Warning: Failed to read keystore password from file: {e}"
                                             )
                                             keystore_password = getpass.getpass(
@@ -6638,7 +6700,7 @@ def main_with_args(args=None):
                                     confirm = getpass.getpass("Confirm new keystore password: ")
                                     if keystore_password != confirm:
                                         if not args.quiet:
-                                            print("Passwords do not match")
+                                            eprint("Passwords do not match")
                                         raise ValueError("Keystore passwords do not match")
 
                                 # Create the keystore
@@ -6647,11 +6709,11 @@ def main_with_args(args=None):
                                     keystore_password, KeystoreSecurityLevel.STANDARD
                                 )
                                 if not args.quiet:
-                                    print(f"Created new keystore at {args.keystore}")
+                                    eprint(f"Created new keystore at {args.keystore}")
                             else:
                                 # Abort
                                 if not args.quiet:
-                                    print(
+                                    eprint(
                                         f"Encryption aborted: Keystore not found at {args.keystore}"
                                     )
                                 return 1
@@ -6668,7 +6730,7 @@ def main_with_args(args=None):
                                     keystore_password = f.read().strip()
                             except Exception as e:
                                 if not args.quiet:
-                                    print(
+                                    eprint(
                                         f"Warning: Failed to read keystore password from file: {e}"
                                     )
                                     keystore_password = getpass.getpass("Enter keystore password: ")
@@ -6685,7 +6747,7 @@ def main_with_args(args=None):
                             # Set the auto_generate_key flag for the auto_generate_pqc_key function
                             if not hasattr(args, "auto_generate_key") or not args.auto_generate_key:
                                 if not args.quiet:
-                                    print("Auto-generating key for keystore")
+                                    eprint("Auto-generating key for keystore")
                                 setattr(args, "auto_generate_key", True)
                             # Auto-generate key
                             # This will update hash_config with key_id
@@ -6728,7 +6790,7 @@ def main_with_args(args=None):
                                 registry = CipherRegistry.default()
                             except ImportError:
                                 if not args.quiet:
-                                    print(
+                                    eprint(
                                         "Error: Cipher registry not available for cascade mode",
                                         file=sys.stderr,
                                     )
@@ -6741,7 +6803,7 @@ def main_with_args(args=None):
                                     cipher_names = [c.strip() for c in args.algorithm.split(",")]
                                 else:
                                     if not args.quiet:
-                                        print(
+                                        eprint(
                                             "Error: --cascade requires comma-separated algorithms "
                                             "(e.g., --cascade --algorithm aes-256-gcm,chacha20-poly1305) "
                                             "or a preset (e.g., --cascade=standard)",
@@ -6752,13 +6814,13 @@ def main_with_args(args=None):
                                 # Preset mode
                                 cipher_names = CASCADE_PRESETS[args.cascade]
                                 if not args.quiet:
-                                    print(
+                                    eprint(
                                         f"Using cascade preset '{args.cascade}': {' → '.join(cipher_names)}"
                                     )
                             else:
                                 if not args.quiet:
                                     available_presets = ", ".join(CASCADE_PRESETS.keys())
-                                    print(
+                                    eprint(
                                         f"Error: Unknown cascade preset '{args.cascade}'. "
                                         f"Available: {available_presets}",
                                         file=sys.stderr,
@@ -6768,7 +6830,7 @@ def main_with_args(args=None):
                             # Validate minimum 2 ciphers
                             if len(cipher_names) < 2:
                                 if not args.quiet:
-                                    print(
+                                    eprint(
                                         "Error: Cascade mode requires at least 2 ciphers",
                                         file=sys.stderr,
                                     )
@@ -6779,7 +6841,7 @@ def main_with_args(args=None):
                                 if not registry.exists(cipher_name):
                                     available = ", ".join(registry.list_names())
                                     if not args.quiet:
-                                        print(
+                                        eprint(
                                             f"Error: Unknown cipher '{cipher_name}'. "
                                             f"Available: {available}",
                                             file=sys.stderr,
@@ -6788,7 +6850,7 @@ def main_with_args(args=None):
 
                                 if not registry.is_available(cipher_name):
                                     if not args.quiet:
-                                        print(
+                                        eprint(
                                             f"Error: Cipher '{cipher_name}' not available. "
                                             "Install required dependencies.",
                                             file=sys.stderr,
@@ -6815,32 +6877,32 @@ def main_with_args(args=None):
                                         if warning.level == DiversityWarningLevel.ERROR:
                                             has_error = True
                                             if not args.quiet:
-                                                print(
+                                                eprint(
                                                     f"\033[91mERROR:\033[0m {warning.message}",
                                                     file=sys.stderr,
                                                 )
                                         elif warning.level == DiversityWarningLevel.WARNING:
                                             has_warning = True
                                             if not args.quiet:
-                                                print(
+                                                eprint(
                                                     f"\033[93mWARNING:\033[0m {warning.message}",
                                                     file=sys.stderr,
                                                 )
                                         else:  # INFO
                                             if not args.quiet:
-                                                print(
+                                                eprint(
                                                     f"\033[94mINFO:\033[0m {warning.message}",
                                                     file=sys.stderr,
                                                 )
 
                                         # Display suggestion if available
                                         if warning.suggestion and not args.quiet:
-                                            print(f"  → {warning.suggestion}", file=sys.stderr)
+                                            eprint(f"  → {warning.suggestion}", file=sys.stderr)
 
                                     # Abort if errors or strict mode with warnings
                                     if has_error or (strict_mode and has_warning):
                                         if not args.quiet:
-                                            print(
+                                            eprint(
                                                 "\nCascade diversity validation failed. "
                                                 "Use --no-diversity-check to bypass.",
                                                 file=sys.stderr,
@@ -6862,7 +6924,7 @@ def main_with_args(args=None):
 
                         # Check mutual exclusivity
                         if use_xor and use_independent_xor:
-                            print(
+                            eprint(
                                 "Error: Cannot use both --use-xor-composition and --independent-xor. "
                                 "Choose one XOR mode.",
                                 file=sys.stderr,
@@ -6902,6 +6964,9 @@ def main_with_args(args=None):
                             format_version=format_version,
                             parallel_kdf=getattr(args, "parallel_kdf", False),
                             kdf_workers=getattr(args, "kdf_workers", None),
+                            chunk_size=_streaming_chunk_size,
+                            no_streaming=getattr(args, "no_streaming", False),
+                            streaming_threshold=_streaming_threshold,
                         )
 
                     if success:
@@ -6945,17 +7010,17 @@ def main_with_args(args=None):
 
                                     if result.success:
                                         if not args.quiet:
-                                            print(
+                                            eprint(
                                                 f"Data successfully hidden in image: {output_file}"
                                             )
                                     else:
-                                        print(f"Steganography error: {result.message}")
+                                        eprint(f"Steganography error: {result.message}")
                                         return 1
                                 else:
                                     # Fallback to normal file output
                                     os.replace(temp_output, output_file)
                             except Exception as e:
-                                print(f"Steganography error: {e}")
+                                eprint(f"Steganography error: {e}")
                                 return 1
                         else:
                             # Normal file output
@@ -6986,7 +7051,7 @@ def main_with_args(args=None):
                     output_file = args.input + ".encrypted"
             else:
                 if args.debug:
-                    print(f"FLOW-DEBUG: Using normal output path: {args.output}")
+                    eprint(f"FLOW-DEBUG: Using normal output path: {args.output}")
                 output_file = args.output
 
             # Handle stdout output for stdin input
@@ -7015,7 +7080,7 @@ def main_with_args(args=None):
 
                         registry = CipherRegistry.default()
                     except ImportError:
-                        print(
+                        eprint(
                             "Error: Cipher registry not available for cascade mode",
                             file=sys.stderr,
                         )
@@ -7027,7 +7092,7 @@ def main_with_args(args=None):
                         if "," in args.algorithm:
                             cipher_names = [c.strip() for c in args.algorithm.split(",")]
                         else:
-                            print(
+                            eprint(
                                 "Error: --cascade requires comma-separated algorithms "
                                 "(e.g., --cascade --algorithm aes-256-gcm,chacha20-poly1305) "
                                 "or a preset (e.g., --cascade=standard)",
@@ -7039,7 +7104,7 @@ def main_with_args(args=None):
                         cipher_names = CASCADE_PRESETS[args.cascade]
                     else:
                         available_presets = ", ".join(CASCADE_PRESETS.keys())
-                        print(
+                        eprint(
                             f"Error: Unknown cascade preset '{args.cascade}'. "
                             f"Available: {available_presets}",
                             file=sys.stderr,
@@ -7048,7 +7113,7 @@ def main_with_args(args=None):
 
                     # Validate minimum 2 ciphers
                     if len(cipher_names) < 2:
-                        print(
+                        eprint(
                             "Error: Cascade mode requires at least 2 ciphers",
                             file=sys.stderr,
                         )
@@ -7058,7 +7123,7 @@ def main_with_args(args=None):
                     for cipher_name in cipher_names:
                         if not registry.exists(cipher_name):
                             available = ", ".join(registry.list_names())
-                            print(
+                            eprint(
                                 f"Error: Unknown cipher '{cipher_name}'. "
                                 f"Available: {available}",
                                 file=sys.stderr,
@@ -7066,7 +7131,7 @@ def main_with_args(args=None):
                             sys.exit(1)
 
                         if not registry.is_available(cipher_name):
-                            print(
+                            eprint(
                                 f"Error: Cipher '{cipher_name}' not available. "
                                 "Install required dependencies.",
                                 file=sys.stderr,
@@ -7092,29 +7157,29 @@ def main_with_args(args=None):
                             for warning in diversity_warnings:
                                 if warning.level == DiversityWarningLevel.ERROR:
                                     has_error = True
-                                    print(
+                                    eprint(
                                         f"\033[91mERROR:\033[0m {warning.message}",
                                         file=sys.stderr,
                                     )
                                 elif warning.level == DiversityWarningLevel.WARNING:
                                     has_warning = True
-                                    print(
+                                    eprint(
                                         f"\033[93mWARNING:\033[0m {warning.message}",
                                         file=sys.stderr,
                                     )
                                 else:  # INFO
-                                    print(
+                                    eprint(
                                         f"\033[94mINFO:\033[0m {warning.message}",
                                         file=sys.stderr,
                                     )
 
                                 # Display suggestion if available
                                 if warning.suggestion:
-                                    print(f"  → {warning.suggestion}", file=sys.stderr)
+                                    eprint(f"  → {warning.suggestion}", file=sys.stderr)
 
                             # Abort if errors or strict mode with warnings
                             if has_error or (strict_mode and has_warning):
-                                print(
+                                eprint(
                                     "\nCascade diversity validation failed. "
                                     "Use --no-diversity-check to bypass.",
                                     file=sys.stderr,
@@ -7136,7 +7201,7 @@ def main_with_args(args=None):
 
                 # Check mutual exclusivity
                 if use_xor and use_independent_xor:
-                    print(
+                    eprint(
                         "Error: Cannot use both --use-xor-composition and --independent-xor. "
                         "Choose one XOR mode.",
                         file=sys.stderr,
@@ -7172,6 +7237,9 @@ def main_with_args(args=None):
                     pepper_plugin=pepper_plugin_instance,
                     pepper_name=pepper_name_to_use,
                     format_version=format_version,
+                    chunk_size=_streaming_chunk_size,
+                    no_streaming=getattr(args, "no_streaming", False),
+                    streaming_threshold=_streaming_threshold,
                 )
 
                 if success:
@@ -7182,7 +7250,7 @@ def main_with_args(args=None):
                         sys.stdout.buffer.flush()
                     except Exception as e:
                         if not args.quiet:
-                            print(f"Error writing to stdout: {e}", file=sys.stderr)
+                            eprint(f"Error writing to stdout: {e}", file=sys.stderr)
                         success = False
                     finally:
                         # Clean up temporary file
@@ -7262,7 +7330,7 @@ def main_with_args(args=None):
                     hqc256_algo = hqc256_options[0] if hqc256_options else "HQC-256"
 
                     if not args.quiet:
-                        print(
+                        eprint(
                             f"Using algorithm mappings: kyber512-hybrid → {kyber512_algo}, kyber768-hybrid → {kyber768_algo}, kyber1024-hybrid → {kyber1024_algo}, hqc-128-hybrid → {hqc128_algo}, hqc-192-hybrid → {hqc192_algo}, hqc-256-hybrid → {hqc256_algo}"
                         )
 
@@ -7328,7 +7396,7 @@ def main_with_args(args=None):
                         json.dump(key_data, f)
 
                     if not args.quiet:
-                        print(f"Post-quantum key pair saved to {args.pqc_keyfile}")
+                        eprint(f"Post-quantum key pair saved to {args.pqc_keyfile}")
 
                     pqc_keypair = (public_key, private_key)
 
@@ -7349,14 +7417,14 @@ def main_with_args(args=None):
 
                             key_data = secure_json_loads(json_content)
                         except (JSONSecurityError, JSONValidationError) as e:
-                            print(f"Error: PQC key file validation failed: {e}")
+                            eprint(f"Error: PQC key file validation failed: {e}")
                             sys.exit(1)
                         except ImportError:
                             # Fallback to basic JSON loading if validator not available
                             try:
                                 key_data = json.loads(json_content)
                             except json.JSONDecodeError as e:
-                                print(f"Error: Invalid JSON in PQC key file: {e}")
+                                eprint(f"Error: Invalid JSON in PQC key file: {e}")
                                 sys.exit(1)
 
                     if "public_key" in key_data and "private_key" in key_data:
@@ -7366,7 +7434,7 @@ def main_with_args(args=None):
                         # Check if key is encrypted (will be for keys created after our fix)
                         if key_data.get("key_encrypted", False):
                             if not args.quiet:
-                                print("Found encrypted private key in keyfile")
+                                eprint("Found encrypted private key in keyfile")
 
                             # Get password to decrypt the private key
                             keyfile_password = None
@@ -7399,23 +7467,23 @@ def main_with_args(args=None):
                                 private_key = aes_cipher.decrypt(nonce, encrypted_key_data, None)
 
                                 if not args.quiet:
-                                    print("Successfully decrypted private key from keyfile")
+                                    eprint("Successfully decrypted private key from keyfile")
                             except Exception as e:
-                                print(f"Error decrypting private key: {e}. Wrong password?")
-                                print("Will proceed with only the public key.")
+                                eprint(f"Error decrypting private key: {e}. Wrong password?")
+                                eprint("Will proceed with only the public key.")
                                 private_key = None
                         else:
                             # Legacy support for non-encrypted keys (created before our fix)
                             private_key = encrypted_private_key
                             if not args.quiet:
-                                print("WARNING: Using legacy unencrypted private key from keyfile")
+                                eprint("WARNING: Using legacy unencrypted private key from keyfile")
 
                         pqc_keypair = (
                             (public_key, private_key) if private_key else (public_key, None)
                         )
 
                         if not args.quiet:
-                            print(f"Loaded post-quantum key pair from {args.pqc_keyfile}")
+                            eprint(f"Loaded post-quantum key pair from {args.pqc_keyfile}")
                 else:
                     # No keyfile specified - generate an ephemeral keypair for this encryption
                     from .pqc import PQCipher, check_pqc_support
@@ -7490,7 +7558,7 @@ def main_with_args(args=None):
 
                     # Generate a new ephemeral keypair
                     if not args.quiet:
-                        print(f"Generating ephemeral post-quantum key pair for {args.algorithm}")
+                        eprint(f"Generating ephemeral post-quantum key pair for {args.algorithm}")
                         if args.pqc_store_key:
                             # Only log this message with INFO level so it only appears in verbose mode
                             logger.info(
@@ -7498,7 +7566,7 @@ def main_with_args(args=None):
                             )
                         else:
                             # Keep this as a print since it's a warning
-                            print(
+                            eprint(
                                 "WARNING: Private key will NOT be stored - you must use a key file for decryption"
                             )
 
@@ -7517,13 +7585,13 @@ def main_with_args(args=None):
                         if getattr(args, "auto_create_keystore", False):
                             # Auto-create keystore is enabled
                             if not args.quiet:
-                                print(f"Keystore not found at {args.keystore}, creating a new one")
+                                eprint(f"Keystore not found at {args.keystore}, creating a new one")
                             create_new = True
                         else:
                             # Prompt the user if they want to create a new keystore or abort
                             if not args.quiet:
-                                print(f"Keystore not found at {args.keystore}")
-                                print(
+                                eprint(f"Keystore not found at {args.keystore}")
+                                eprint(
                                     "Use --auto-create-keystore option to automatically create keystore"
                                 )
                                 create_prompt = (
@@ -7550,7 +7618,7 @@ def main_with_args(args=None):
                                         keystore_password = f.read().strip()
                                 except Exception as e:
                                     if not args.quiet:
-                                        print(
+                                        eprint(
                                             f"Warning: Failed to read keystore password from file: {e}"
                                         )
                                         keystore_password = getpass.getpass(
@@ -7561,7 +7629,7 @@ def main_with_args(args=None):
                                 confirm = getpass.getpass("Confirm new keystore password: ")
                                 if keystore_password != confirm:
                                     if not args.quiet:
-                                        print("Passwords do not match")
+                                        eprint("Passwords do not match")
                                     raise ValueError("Keystore passwords do not match")
 
                             # Create the keystore
@@ -7570,11 +7638,11 @@ def main_with_args(args=None):
                                 keystore_password, KeystoreSecurityLevel.STANDARD
                             )
                             if not args.quiet:
-                                print(f"Created new keystore at {args.keystore}")
+                                eprint(f"Created new keystore at {args.keystore}")
                         else:
                             # Abort
                             if not args.quiet:
-                                print(f"Encryption aborted: Keystore not found at {args.keystore}")
+                                eprint(f"Encryption aborted: Keystore not found at {args.keystore}")
                             return 1
 
                     # Get keystore password if needed
@@ -7587,7 +7655,7 @@ def main_with_args(args=None):
                                 keystore_password = f.read().strip()
                         except Exception as e:
                             if not args.quiet:
-                                print(f"Warning: Failed to read keystore password from file: {e}")
+                                eprint(f"Warning: Failed to read keystore password from file: {e}")
                                 keystore_password = getpass.getpass("Enter keystore password: ")
                     else:
                         keystore_password = getpass.getpass("Enter keystore password: ")
@@ -7602,7 +7670,7 @@ def main_with_args(args=None):
                         # Set the auto_generate_key flag for the auto_generate_pqc_key function
                         if not hasattr(args, "auto_generate_key") or not args.auto_generate_key:
                             if not args.quiet:
-                                print("Auto-generating key for keystore")
+                                eprint("Auto-generating key for keystore")
                             setattr(args, "auto_generate_key", True)
                         # Auto-generate key
                         # This will update hash_config with key_id
@@ -7644,7 +7712,7 @@ def main_with_args(args=None):
                             registry = CipherRegistry.default()
                         except ImportError:
                             if not args.quiet:
-                                print(
+                                eprint(
                                     "Error: Cipher registry not available for cascade mode",
                                     file=sys.stderr,
                                 )
@@ -7657,7 +7725,7 @@ def main_with_args(args=None):
                                 cipher_names = [c.strip() for c in args.algorithm.split(",")]
                             else:
                                 if not args.quiet:
-                                    print(
+                                    eprint(
                                         "Error: --cascade requires comma-separated algorithms "
                                         "(e.g., --cascade --algorithm aes-256-gcm,chacha20-poly1305) "
                                         "or a preset (e.g., --cascade=standard)",
@@ -7668,13 +7736,13 @@ def main_with_args(args=None):
                             # Preset mode
                             cipher_names = CASCADE_PRESETS[args.cascade]
                             if not args.quiet:
-                                print(
+                                eprint(
                                     f"Using cascade preset '{args.cascade}': {' → '.join(cipher_names)}"
                                 )
                         else:
                             if not args.quiet:
                                 available_presets = ", ".join(CASCADE_PRESETS.keys())
-                                print(
+                                eprint(
                                     f"Error: Unknown cascade preset '{args.cascade}'. "
                                     f"Available: {available_presets}",
                                     file=sys.stderr,
@@ -7684,7 +7752,7 @@ def main_with_args(args=None):
                         # Validate minimum 2 ciphers
                         if len(cipher_names) < 2:
                             if not args.quiet:
-                                print(
+                                eprint(
                                     "Error: Cascade mode requires at least 2 ciphers",
                                     file=sys.stderr,
                                 )
@@ -7695,7 +7763,7 @@ def main_with_args(args=None):
                             if not registry.exists(cipher_name):
                                 available = ", ".join(registry.list_names())
                                 if not args.quiet:
-                                    print(
+                                    eprint(
                                         f"Error: Unknown cipher '{cipher_name}'. "
                                         f"Available: {available}",
                                         file=sys.stderr,
@@ -7704,7 +7772,7 @@ def main_with_args(args=None):
 
                             if not registry.is_available(cipher_name):
                                 if not args.quiet:
-                                    print(
+                                    eprint(
                                         f"Error: Cipher '{cipher_name}' not available. "
                                         "Install required dependencies.",
                                         file=sys.stderr,
@@ -7731,32 +7799,32 @@ def main_with_args(args=None):
                                     if warning.level == DiversityWarningLevel.ERROR:
                                         has_error = True
                                         if not args.quiet:
-                                            print(
+                                            eprint(
                                                 f"\033[91mERROR:\033[0m {warning.message}",
                                                 file=sys.stderr,
                                             )
                                     elif warning.level == DiversityWarningLevel.WARNING:
                                         has_warning = True
                                         if not args.quiet:
-                                            print(
+                                            eprint(
                                                 f"\033[93mWARNING:\033[0m {warning.message}",
                                                 file=sys.stderr,
                                             )
                                     else:  # INFO
                                         if not args.quiet:
-                                            print(
+                                            eprint(
                                                 f"\033[94mINFO:\033[0m {warning.message}",
                                                 file=sys.stderr,
                                             )
 
                                     # Display suggestion if available
                                     if warning.suggestion and not args.quiet:
-                                        print(f"  → {warning.suggestion}", file=sys.stderr)
+                                        eprint(f"  → {warning.suggestion}", file=sys.stderr)
 
                                 # Abort if errors or strict mode with warnings
                                 if has_error or (strict_mode and has_warning):
                                     if not args.quiet:
-                                        print(
+                                        eprint(
                                             "\nCascade diversity validation failed. "
                                             "Use --no-diversity-check to bypass.",
                                             file=sys.stderr,
@@ -7778,7 +7846,7 @@ def main_with_args(args=None):
 
                     # Check mutual exclusivity
                     if use_xor and use_independent_xor:
-                        print(
+                        eprint(
                             "Error: Cannot use both --use-xor-composition and --independent-xor. "
                             "Choose one XOR mode.",
                             file=sys.stderr,
@@ -7816,6 +7884,9 @@ def main_with_args(args=None):
                         pepper_plugin=pepper_plugin_instance,
                         pepper_name=pepper_name_to_use,
                         format_version=format_version,
+                        chunk_size=_streaming_chunk_size,
+                        no_streaming=getattr(args, "no_streaming", False),
+                        streaming_threshold=_streaming_threshold,
                     )
 
                 # Handle steganography if requested
@@ -7853,12 +7924,12 @@ def main_with_args(args=None):
 
                             if result.success:
                                 if not args.quiet:
-                                    print(f"Data successfully hidden in image: {output_file}")
+                                    eprint(f"Data successfully hidden in image: {output_file}")
                             else:
-                                print(f"Steganography error: {result.message}")
+                                eprint(f"Steganography error: {result.message}")
                                 return 1
                     except Exception as e:
-                        print(f"Steganography error: {e}")
+                        eprint(f"Steganography error: {e}")
                         return 1
 
             if success:
@@ -7880,7 +7951,7 @@ def main_with_args(args=None):
                 if not args.quiet:
                     # Skip leading newline for stdout/stderr to avoid blank line
                     prefix = "" if output_file in ("/dev/stdout", "/dev/stderr") else "\n"
-                    print(f"{prefix}File encrypted successfully: {output_file}")
+                    eprint(f"{prefix}File encrypted successfully: {output_file}")
 
                     # If we used a generated password, display it with a
                     # warning
@@ -7902,25 +7973,25 @@ def main_with_args(args=None):
                             # Set our custom handler
                             signal.signal(signal.SIGINT, sigint_handler)
 
-                            print("\n" + "!" * 80)
-                            print("IMPORTANT: SAVE THIS PASSWORD NOW".center(80))
-                            print("!" * 80)
-                            print(f"\nGenerated Password: {generated_password}")
-                            print(
+                            eprint("\n" + "!" * 80)
+                            eprint("IMPORTANT: SAVE THIS PASSWORD NOW".center(80))
+                            eprint("!" * 80)
+                            eprint(f"\nGenerated Password: {generated_password}")
+                            eprint(
                                 "\nWARNING: This is the ONLY time this password will be displayed."
                             )
-                            print("         If you lose it, your data CANNOT be recovered.")
-                            print(
+                            eprint("         If you lose it, your data CANNOT be recovered.")
+                            eprint(
                                 "         Please write it down or save it in a password manager now."
                             )
-                            print("\nThis message will disappear in 10 seconds...")
+                            eprint("\nThis message will disappear in 10 seconds...")
 
                             # Wait for 10 seconds or until keyboard interrupt
                             for remaining in range(10, 0, -1):
                                 if interrupted:
                                     break
                                 # Overwrite the line with updated countdown
-                                print(
+                                eprint(
                                     f"\rTime remaining: {remaining} seconds...",
                                     end="",
                                     flush=True,
@@ -7938,25 +8009,37 @@ def main_with_args(args=None):
 
                             # Give an indication that we're clearing the screen
                             if interrupted:
-                                print("\n\nClearing password from screen (interrupted by user)...")
+                                eprint("\n\nClearing password from screen (interrupted by user)...")
                             else:
-                                print("\n\nClearing password from screen...")
+                                eprint("\n\nClearing password from screen...")
 
                             # Clear screen using ANSI escape sequences (safer than os.system)
                             # \033[2J clears the entire screen, \033[H moves cursor to home position
-                            sys.stdout.write("\033[2J\033[H")
-                            sys.stdout.flush()
+                            sys.stderr.write("\033[2J\033[H")
+                            sys.stderr.flush()
 
-                            print("Password has been cleared from screen.")
-                            print(
+                            eprint("Password has been cleared from screen.")
+                            eprint(
                                 "For additional security, consider clearing your terminal history."
                             )
 
                 # If shredding was requested and encryption was successful
                 if args.shred and not args.overwrite:
                     if not args.quiet:
-                        print("Shredding the original file as requested...")
+                        eprint("Shredding the original file as requested...")
                     secure_shred_file(args.input, args.shred_passes, args.quiet)
+
+        elif args.action == "info":
+            # Display encrypted file metadata without decrypting
+            try:
+                from .crypt_core import print_file_info
+
+                json_output = getattr(args, "json", False)
+                print_file_info(args.input, json_output=json_output)
+                sys.exit(0)
+            except ValueError as e:
+                eprint(f"Error: {e}", file=sys.stderr)
+                sys.exit(1)
 
         elif args.action == "decrypt":
             # Check if asymmetric mode by reading metadata
@@ -7985,7 +8068,7 @@ def main_with_args(args=None):
                                 # Load recipient (decrypt with this identity)
                                 # Note: key_identity should already be set by auto-detection
                                 if not hasattr(args, "key_identity") or not args.key_identity:
-                                    print(
+                                    eprint(
                                         "ERROR: No matching identity found. This should not happen after auto-detection.",
                                         file=sys.stderr,
                                     )
@@ -7996,7 +8079,7 @@ def main_with_args(args=None):
                                     args.key_identity, load_private_keys=False
                                 )
                                 if recipient_metadata is None:
-                                    print(
+                                    eprint(
                                         f"ERROR: Identity '{args.key_identity}' not found ❌",
                                         file=sys.stderr,
                                     )
@@ -8017,8 +8100,8 @@ def main_with_args(args=None):
 
                                 # Clear passphrase prompt line immediately in quiet mode
                                 if args.quiet and recipient_passphrase:
-                                    sys.stdout.write("\033[F\033[K")
-                                    sys.stdout.flush()
+                                    sys.stderr.write("\033[F\033[K")
+                                    sys.stderr.flush()
 
                                 try:
                                     recipient = store.get_by_name(
@@ -8027,7 +8110,7 @@ def main_with_args(args=None):
                                         load_private_keys=True,
                                     )
                                     if recipient is None:
-                                        print(
+                                        eprint(
                                             f"ERROR: Identity '{args.key_identity}' not found ❌",
                                             file=sys.stderr,
                                         )
@@ -8039,7 +8122,7 @@ def main_with_args(args=None):
                                     if str(e):
                                         error_msg += f": {e}"
                                     error_msg += " ❌"
-                                    print(error_msg, file=sys.stderr)
+                                    eprint(error_msg, file=sys.stderr)
                                     sys.exit(1)
                                 finally:
                                     # Clean up passphrase from memory
@@ -8060,7 +8143,7 @@ def main_with_args(args=None):
                                             load_private_keys=False,
                                         )
                                         if sender is None:
-                                            print(
+                                            eprint(
                                                 f"ERROR: Sender identity '{args.verify_from}' not found ❌",
                                                 file=sys.stderr,
                                             )
@@ -8109,9 +8192,9 @@ def main_with_args(args=None):
 
                                     try:
                                         if not args.quiet:
-                                            print("\nAsymmetric decryption successful! ✅")
+                                            eprint("\nAsymmetric decryption successful! ✅")
                                             # Show decrypted content as last line with blank line before
-                                            print()
+                                            eprint()
                                             print(plaintext.decode("utf-8", errors="replace"))
                                         else:
                                             # In quiet mode, show only decrypted content
@@ -8130,7 +8213,7 @@ def main_with_args(args=None):
 
                                     sys.exit(0)
                                 except Exception as e:
-                                    print(
+                                    eprint(
                                         f"ERROR: Asymmetric decryption failed: {e}", file=sys.stderr
                                     )
                                     sys.exit(1)
@@ -8154,7 +8237,7 @@ def main_with_args(args=None):
                             # Load recipient (decrypt with this identity)
                             # Note: key_identity should already be set by auto-detection
                             if not hasattr(args, "key_identity") or not args.key_identity:
-                                print(
+                                eprint(
                                     "ERROR: No matching identity found. This should not happen after auto-detection.",
                                     file=sys.stderr,
                                 )
@@ -8165,7 +8248,7 @@ def main_with_args(args=None):
                                 args.key_identity, load_private_keys=False
                             )
                             if recipient_metadata is None:
-                                print(
+                                eprint(
                                     f"ERROR: Identity '{args.key_identity}' not found ❌",
                                     file=sys.stderr,
                                 )
@@ -8185,8 +8268,8 @@ def main_with_args(args=None):
 
                             # Clear passphrase prompt line immediately in quiet mode
                             if args.quiet and recipient_passphrase:
-                                sys.stdout.write("\033[F\033[K")
-                                sys.stdout.flush()
+                                sys.stderr.write("\033[F\033[K")
+                                sys.stderr.flush()
 
                             try:
                                 recipient = store.get_by_name(
@@ -8195,7 +8278,7 @@ def main_with_args(args=None):
                                     load_private_keys=True,
                                 )
                                 if recipient is None:
-                                    print(
+                                    eprint(
                                         f"ERROR: Identity '{args.key_identity}' not found ❌",
                                         file=sys.stderr,
                                     )
@@ -8205,7 +8288,7 @@ def main_with_args(args=None):
                                 if str(e):
                                     error_msg += f": {e}"
                                 error_msg += " ❌"
-                                print(error_msg, file=sys.stderr)
+                                eprint(error_msg, file=sys.stderr)
                                 sys.exit(1)
                             finally:
                                 # Clean up passphrase from memory
@@ -8224,7 +8307,7 @@ def main_with_args(args=None):
                                         args.verify_from, passphrase=None, load_private_keys=False
                                     )
                                     if sender is None:
-                                        print(
+                                        eprint(
                                             f"ERROR: Sender identity '{args.verify_from}' not found ❌",
                                             file=sys.stderr,
                                         )
@@ -8244,11 +8327,11 @@ def main_with_args(args=None):
                                         if sender:
                                             sender_public_key = sender.signing_public_key
                                         else:
-                                            print(
+                                            eprint(
                                                 f"WARNING: Sender with fingerprint {sender_key_id} not found in store",
                                                 file=sys.stderr,
                                             )
-                                            print(
+                                            eprint(
                                                 "Use --verify-from to specify sender or --no-verify to skip verification",
                                                 file=sys.stderr,
                                             )
@@ -8294,9 +8377,9 @@ def main_with_args(args=None):
 
                                 try:
                                     if not args.quiet:
-                                        print("\nAsymmetric decryption successful! ✅")
+                                        eprint("\nAsymmetric decryption successful! ✅")
                                         # Show decrypted content as last line with blank line before
-                                        print()
+                                        eprint()
                                         print(plaintext.decode("utf-8", errors="replace"))
                                     else:
                                         # In quiet mode, show only decrypted content
@@ -8316,7 +8399,7 @@ def main_with_args(args=None):
                                 sys.exit(0)
 
                             except Exception as e:
-                                print(f"ERROR: Asymmetric decryption failed: {e}", file=sys.stderr)
+                                eprint(f"ERROR: Asymmetric decryption failed: {e}", file=sys.stderr)
                                 if args.debug:
                                     import traceback
 
@@ -8346,10 +8429,10 @@ def main_with_args(args=None):
                             and replacement
                             and (args.verbose or not algorithm.startswith(("kyber", "ml-kem")))
                         ):
-                            print(
+                            eprint(
                                 f"Warning: The algorithm '{algorithm}' used in this file is deprecated."
                             )
-                            print(
+                            eprint(
                                 f"Consider re-encrypting with '{replacement}' for better security."
                             )
 
@@ -8364,10 +8447,10 @@ def main_with_args(args=None):
                                 args.verbose or not encryption_data.startswith(("kyber", "ml-kem"))
                             )
                         ):
-                            print(
+                            eprint(
                                 f"Warning: The data encryption algorithm '{encryption_data}' used in this file is deprecated."
                             )
-                            print(
+                            eprint(
                                 f"Consider re-encrypting with '{data_replacement}' for better security."
                             )
 
@@ -8394,7 +8477,7 @@ def main_with_args(args=None):
                 except Exception as e:
                     # If we can't extract metadata from stdin, continue with decryption
                     if args.verbose:
-                        print(f"Warning: Could not check stdin for deprecated algorithms: {e}")
+                        eprint(f"Warning: Could not check stdin for deprecated algorithms: {e}")
                     stdin_temp_file = None
             else:
                 # Use file-based metadata extraction for regular files
@@ -8412,10 +8495,10 @@ def main_with_args(args=None):
                             and replacement
                             and (args.verbose or not algorithm.startswith(("kyber", "ml-kem")))
                         ):
-                            print(
+                            eprint(
                                 f"Warning: The algorithm '{algorithm}' used in this file is deprecated."
                             )
-                            print(
+                            eprint(
                                 f"Consider re-encrypting with '{replacement}' for better security."
                             )
 
@@ -8430,16 +8513,16 @@ def main_with_args(args=None):
                                 args.verbose or not encryption_data.startswith(("kyber", "ml-kem"))
                             )
                         ):
-                            print(
+                            eprint(
                                 f"Warning: The data encryption algorithm '{encryption_data}' used in this file is deprecated."
                             )
-                            print(
+                            eprint(
                                 f"Consider re-encrypting with '{data_replacement}' for better security."
                             )
                 except Exception as e:
                     # If we can't read metadata, continue with decryption (it will fail with proper error)
                     if args.verbose:
-                        print(f"Warning: Could not check file for deprecated algorithms: {e}")
+                        eprint(f"Warning: Could not check file for deprecated algorithms: {e}")
             if args.overwrite:
                 output_file = args.input
                 # Create a temporary file for the decryption
@@ -8462,7 +8545,7 @@ def main_with_args(args=None):
                             import tempfile
 
                             if not args.quiet:
-                                print("Extracting encrypted data from steganographic image...")
+                                eprint("Extracting encrypted data from steganographic image...")
 
                             # Get steganography plugin
                             stego_plugin = _get_steganography_plugin(quiet=args.quiet)
@@ -8505,12 +8588,12 @@ def main_with_args(args=None):
                                     temp_files_to_cleanup.append(temp_extracted_file)
 
                                     if not args.quiet:
-                                        print(f"Extracted {len(encrypted_data)} bytes from image")
+                                        eprint(f"Extracted {len(encrypted_data)} bytes from image")
                                 else:
-                                    print(f"Steganography extraction error: {result.message}")
+                                    eprint(f"Steganography extraction error: {result.message}")
                                     return 1
                         except Exception as e:
-                            print(f"Steganography extraction error: {e}")
+                            eprint(f"Steganography extraction error: {e}")
                             return 1
 
                     # Get original file permissions before doing anything
@@ -8535,14 +8618,14 @@ def main_with_args(args=None):
 
                                     key_data = secure_json_loads(json_content)
                                 except (JSONSecurityError, JSONValidationError) as e:
-                                    print(f"Error: PQC key file validation failed: {e}")
+                                    eprint(f"Error: PQC key file validation failed: {e}")
                                     sys.exit(1)
                                 except ImportError:
                                     # Fallback to basic JSON loading if validator not available
                                     try:
                                         key_data = json.loads(json_content)
                                     except json.JSONDecodeError as e:
-                                        print(f"Error: Invalid JSON in PQC key file: {e}")
+                                        eprint(f"Error: Invalid JSON in PQC key file: {e}")
                                         sys.exit(1)
 
                             if "private_key" in key_data:
@@ -8551,7 +8634,7 @@ def main_with_args(args=None):
                                 # Check if key is encrypted (will be for keys created after our fix)
                                 if key_data.get("key_encrypted", False):
                                     if not args.quiet:
-                                        print("Found encrypted private key in keyfile")
+                                        eprint("Found encrypted private key in keyfile")
 
                                     # Get password to decrypt the private key
                                     keyfile_password = None
@@ -8586,26 +8669,26 @@ def main_with_args(args=None):
                                         )
 
                                         if not args.quiet:
-                                            print("Successfully decrypted private key from keyfile")
+                                            eprint("Successfully decrypted private key from keyfile")
                                     except Exception as e:
-                                        print(f"Error decrypting private key: {e}. Wrong password?")
-                                        print("Decryption may fail without a valid private key.")
+                                        eprint(f"Error decrypting private key: {e}. Wrong password?")
+                                        eprint("Decryption may fail without a valid private key.")
                                         pqc_private_key = None
                                 else:
                                     # Legacy support for non-encrypted keys (created before our fix)
                                     pqc_private_key = encrypted_private_key
                                     if not args.quiet:
-                                        print(
+                                        eprint(
                                             "WARNING: Using legacy unencrypted private key from keyfile"
                                         )
 
                                 if not args.quiet and pqc_private_key:
-                                    print(
+                                    eprint(
                                         f"Loaded post-quantum private key from {args.pqc_keyfile}"
                                     )
                         except Exception as e:
                             if not args.quiet:
-                                print(f"Warning: Failed to load PQC key file: {e}")
+                                eprint(f"Warning: Failed to load PQC key file: {e}")
 
                     # Check if we should use keystore integration
                     if hasattr(args, "keystore") and args.keystore:
@@ -8621,7 +8704,7 @@ def main_with_args(args=None):
                                     keystore_password = f.read().strip()
                             except Exception as e:
                                 if not args.quiet:
-                                    print(
+                                    eprint(
                                         f"Warning: Failed to read keystore password from file: {e}"
                                     )
                                     keystore_password = getpass.getpass("Enter keystore password: ")
@@ -8634,10 +8717,10 @@ def main_with_args(args=None):
                         # Double-check: If no key ID provided or extracted from metadata,
                         # print a warning and suggest user to provide key ID manually
                         if key_id is None and not args.quiet:
-                            print(
+                            eprint(
                                 "\nWarning: No key ID found in metadata and --key-id not provided."
                             )
-                            print(
+                            eprint(
                                 "If decryption fails, please specify the key ID with --key-id parameter."
                             )
 
@@ -8716,14 +8799,14 @@ def main_with_args(args=None):
 
                                 key_data = secure_json_loads(json_content)
                             except (JSONSecurityError, JSONValidationError) as e:
-                                print(f"Error: PQC key file validation failed: {e}")
+                                eprint(f"Error: PQC key file validation failed: {e}")
                                 sys.exit(1)
                             except ImportError:
                                 # Fallback to basic JSON loading if validator not available
                                 try:
                                     key_data = json.loads(json_content)
                                 except json.JSONDecodeError as e:
-                                    print(f"Error: Invalid JSON in PQC key file: {e}")
+                                    eprint(f"Error: Invalid JSON in PQC key file: {e}")
                                     sys.exit(1)
 
                         if "private_key" in key_data:
@@ -8732,7 +8815,7 @@ def main_with_args(args=None):
                             # Check if key is encrypted (will be for keys created after our fix)
                             if key_data.get("key_encrypted", False):
                                 if not args.quiet:
-                                    print("Found encrypted private key in keyfile")
+                                    eprint("Found encrypted private key in keyfile")
 
                                 # Get password to decrypt the private key
                                 keyfile_password = None
@@ -8767,24 +8850,24 @@ def main_with_args(args=None):
                                     )
 
                                     if not args.quiet:
-                                        print("Successfully decrypted private key from keyfile")
+                                        eprint("Successfully decrypted private key from keyfile")
                                 except Exception as e:
-                                    print(f"Error decrypting private key: {e}. Wrong password?")
-                                    print("Decryption may fail without a valid private key.")
+                                    eprint(f"Error decrypting private key: {e}. Wrong password?")
+                                    eprint("Decryption may fail without a valid private key.")
                                     pqc_private_key = None
                             else:
                                 # Legacy support for non-encrypted keys (created before our fix)
                                 pqc_private_key = encrypted_private_key
                                 if not args.quiet:
-                                    print(
+                                    eprint(
                                         "WARNING: Using legacy unencrypted private key from keyfile"
                                     )
 
                             if not args.quiet and pqc_private_key:
-                                print(f"Loaded post-quantum private key from {args.pqc_keyfile}")
+                                eprint(f"Loaded post-quantum private key from {args.pqc_keyfile}")
                     except Exception as e:
                         if not args.quiet:
-                            print(f"Warning: Failed to load PQC key file: {e}")
+                            eprint(f"Warning: Failed to load PQC key file: {e}")
 
                 # Handle steganography extraction if requested
                 actual_input_file = args.input
@@ -8795,7 +8878,7 @@ def main_with_args(args=None):
                         import tempfile
 
                         if not args.quiet:
-                            print("Extracting encrypted data from steganographic image...")
+                            eprint("Extracting encrypted data from steganographic image...")
 
                         # Get steganography plugin
                         stego_plugin = _get_steganography_plugin(quiet=args.quiet)
@@ -8836,12 +8919,12 @@ def main_with_args(args=None):
                                 temp_files_to_cleanup.append(temp_extracted_file)
 
                                 if not args.quiet:
-                                    print(f"Extracted {len(encrypted_data)} bytes from image")
+                                    eprint(f"Extracted {len(encrypted_data)} bytes from image")
                             else:
-                                print(f"Steganography extraction error: {result.message}")
+                                eprint(f"Steganography extraction error: {result.message}")
                                 return 1
                     except Exception as e:
-                        print(f"Steganography extraction error: {e}")
+                        eprint(f"Steganography extraction error: {e}")
                         return 1
 
                 # Check if we should use keystore integration
@@ -8856,7 +8939,7 @@ def main_with_args(args=None):
                                 keystore_password = f.read().strip()
                         except Exception as e:
                             if not args.quiet:
-                                print(f"Warning: Failed to read keystore password from file: {e}")
+                                eprint(f"Warning: Failed to read keystore password from file: {e}")
                                 keystore_password = getpass.getpass("Enter keystore password: ")
                     else:
                         keystore_password = getpass.getpass("Enter keystore password: ")
@@ -8914,12 +8997,12 @@ def main_with_args(args=None):
                     if not args.quiet:
                         # Skip leading newline for stdout/stderr to avoid blank line
                         prefix = "" if args.output in ("/dev/stdout", "/dev/stderr") else "\n"
-                        print(f"{prefix}File decrypted successfully: {args.output}")
+                        eprint(f"{prefix}File decrypted successfully: {args.output}")
 
                 # If shredding was requested and decryption was successful
                 if args.shred and success:
                     if not args.quiet:
-                        print("Shredding the encrypted file as requested...")
+                        eprint("Shredding the encrypted file as requested...")
                     secure_shred_file(args.input, args.shred_passes, args.quiet)
             else:
                 # Handle PQC key operations for decryption to screen
@@ -8941,14 +9024,14 @@ def main_with_args(args=None):
 
                                 key_data = secure_json_loads(json_content)
                             except (JSONSecurityError, JSONValidationError) as e:
-                                print(f"Error: PQC key file validation failed: {e}")
+                                eprint(f"Error: PQC key file validation failed: {e}")
                                 sys.exit(1)
                             except ImportError:
                                 # Fallback to basic JSON loading if validator not available
                                 try:
                                     key_data = json.loads(json_content)
                                 except json.JSONDecodeError as e:
-                                    print(f"Error: Invalid JSON in PQC key file: {e}")
+                                    eprint(f"Error: Invalid JSON in PQC key file: {e}")
                                     sys.exit(1)
 
                         if "private_key" in key_data:
@@ -8957,7 +9040,7 @@ def main_with_args(args=None):
                             # Check if key is encrypted (will be for keys created after our fix)
                             if key_data.get("key_encrypted", False):
                                 if not args.quiet:
-                                    print("Found encrypted private key in keyfile")
+                                    eprint("Found encrypted private key in keyfile")
 
                                 # Get password to decrypt the private key
                                 keyfile_password = None
@@ -8992,24 +9075,24 @@ def main_with_args(args=None):
                                     )
 
                                     if not args.quiet:
-                                        print("Successfully decrypted private key from keyfile")
+                                        eprint("Successfully decrypted private key from keyfile")
                                 except Exception as e:
-                                    print(f"Error decrypting private key: {e}. Wrong password?")
-                                    print("Decryption may fail without a valid private key.")
+                                    eprint(f"Error decrypting private key: {e}. Wrong password?")
+                                    eprint("Decryption may fail without a valid private key.")
                                     pqc_private_key = None
                             else:
                                 # Legacy support for non-encrypted keys (created before our fix)
                                 pqc_private_key = encrypted_private_key
                                 if not args.quiet:
-                                    print(
+                                    eprint(
                                         "WARNING: Using legacy unencrypted private key from keyfile"
                                     )
 
                             if not args.quiet and pqc_private_key:
-                                print(f"Loaded post-quantum private key from {args.pqc_keyfile}")
+                                eprint(f"Loaded post-quantum private key from {args.pqc_keyfile}")
                     except Exception as e:
                         if not args.quiet:
-                            print(f"Warning: Failed to load PQC key file: {e}")
+                            eprint(f"Warning: Failed to load PQC key file: {e}")
 
                 # Decrypt to screen if no output file specified (useful for
                 # text files)
@@ -9026,7 +9109,7 @@ def main_with_args(args=None):
                                 keystore_password = f.read().strip()
                         except Exception as e:
                             if not args.quiet:
-                                print(f"Warning: Failed to read keystore password from file: {e}")
+                                eprint(f"Warning: Failed to read keystore password from file: {e}")
                                 keystore_password = getpass.getpass("Enter keystore password: ")
                     else:
                         keystore_password = getpass.getpass("Enter keystore password: ")
@@ -9071,11 +9154,11 @@ def main_with_args(args=None):
                 try:
                     # Try to decode as text
                     if not args.quiet:
-                        print("\nDecrypted content:")
+                        eprint("\nDecrypted content:")
                     print(decrypted.decode().rstrip())
                 except UnicodeDecodeError:
                     if not args.quiet:
-                        print(
+                        eprint(
                             "\nDecrypted successfully, but content is binary and cannot be displayed."
                         )
 
@@ -9154,7 +9237,7 @@ def main_with_args(args=None):
                 else:
                     exit_code = 1
                     if not args.quiet:
-                        print("Rekey operation failed.", file=sys.stderr)
+                        eprint("Rekey operation failed.", file=sys.stderr)
 
             except Exception as e:
                 exit_code = 1
@@ -9164,7 +9247,7 @@ def main_with_args(args=None):
 
                         traceback.print_exc()
                     else:
-                        print(f"Rekey failed: {e}", file=sys.stderr)
+                        eprint(f"Rekey failed: {e}", file=sys.stderr)
 
         elif args.action == "shred":
             # Direct shredding of files or directories without
@@ -9175,12 +9258,12 @@ def main_with_args(args=None):
 
             if not matched_paths:
                 if not args.quiet:
-                    print(f"No files or directories match the pattern: {args.input}")
+                    eprint(f"No files or directories match the pattern: {args.input}")
                 exit_code = 1
             else:
                 # If there are multiple files/dirs to shred, inform the user
                 if len(matched_paths) > 1 and not args.quiet:
-                    print(f"Found {len(matched_paths)} files/directories matching the pattern.")
+                    eprint(f"Found {len(matched_paths)} files/directories matching the pattern.")
 
                 overall_success = True
 
@@ -9193,7 +9276,7 @@ def main_with_args(args=None):
                             # In quiet mode, fail immediately without
                             # confirmation
                             if not args.quiet:
-                                print(
+                                eprint(
                                     f"Error: {path} is a directory. "
                                     f"Use --recursive to shred directories."
                                 )
@@ -9211,12 +9294,12 @@ def main_with_args(args=None):
                                 if not success:
                                     overall_success = False
                             else:
-                                print(f"Skipping directory: {path}")
+                                eprint(f"Skipping directory: {path}")
                                 continue
                     else:
                         # File or directory with recursive flag
                         if not args.quiet:
-                            print(
+                            eprint(
                                 f"Securely shredding {'directory' if os.path.isdir(path) else 'file'}: {path}"
                             )
 
@@ -9230,7 +9313,7 @@ def main_with_args(args=None):
 
     except Exception as e:
         if not args.quiet:
-            print(f"\nError: {e}")
+            eprint(f"\nError: {e}")
         exit_code = 1
 
     # Exit with appropriate code

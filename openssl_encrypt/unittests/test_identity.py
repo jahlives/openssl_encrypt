@@ -64,7 +64,7 @@ class TestAsymmetricEncryption(unittest.TestCase):
 
         # Create test file
         self.test_file = os.path.join(self.temp_dir, "test.txt")
-        with open(self.test_file, "w") as f:
+        with open(self.test_file, "w", encoding="utf-8") as f:
             f.write("This is a secret message for testing asymmetric encryption!")
 
     def tearDown(self):
@@ -260,7 +260,7 @@ class TestAsymmetricDecryption(unittest.TestCase):
         # Create test file
         self.test_file = os.path.join(self.temp_dir, "test.txt")
         self.test_content = "This is a secret message for testing asymmetric encryption!"
-        with open(self.test_file, "w") as f:
+        with open(self.test_file, "w", encoding="utf-8") as f:
             f.write(self.test_content)
 
     def tearDown(self):
@@ -296,7 +296,7 @@ class TestAsymmetricDecryption(unittest.TestCase):
 
         # Verify
         self.assertTrue(os.path.exists(decrypted_file))
-        with open(decrypted_file, "r") as f:
+        with open(decrypted_file, "r", encoding="utf-8") as f:
             decrypted_content = f.read()
         self.assertEqual(decrypted_content, self.test_content)
 
@@ -327,7 +327,7 @@ class TestAsymmetricDecryption(unittest.TestCase):
                 quiet=True,
             )
 
-            with open(decrypted_file, "r") as f:
+            with open(decrypted_file, "r", encoding="utf-8") as f:
                 decrypted_content = f.read()
             self.assertEqual(decrypted_content, self.test_content)
 
@@ -435,7 +435,7 @@ class TestAsymmetricDecryption(unittest.TestCase):
         )
 
         # Should succeed
-        with open(decrypted_file, "r") as f:
+        with open(decrypted_file, "r", encoding="utf-8") as f:
             decrypted_content = f.read()
         self.assertEqual(decrypted_content, self.test_content)
 
@@ -690,6 +690,40 @@ class TestIdentity(unittest.TestCase):
         self.assertIn("Test", str_repr)
         self.assertIn("test@example.com", str_repr)
         self.assertIn(identity.fingerprint[:16], str_repr)
+
+    def test_import_public_with_tampered_fingerprint_rejected(self):
+        """Fingerprint verification rejects tampering on import (M5)."""
+        identity = Identity.generate("TestTamper", "t@t.com", "pass")
+        exported = identity.export_public()
+        # Tamper with the fingerprint
+        exported["fingerprint"] = "00:00:00:00:00:00:00:00"
+        with self.assertRaises(IdentityError) as ctx:
+            Identity.import_public(exported)
+        self.assertIn("Fingerprint verification failed", str(ctx.exception))
+
+    def test_import_public_with_tampered_key_rejected(self):
+        """Tampered public keys must be rejected on import (M5)."""
+        identity = Identity.generate("TestTamper2", "t@t.com", "pass")
+        exported = identity.export_public()
+        # Tamper with the encryption public key
+        import base64
+        exported["encryption_public_key"] = base64.b64encode(b"tampered" * 100).decode()
+        with self.assertRaises(IdentityError) as ctx:
+            Identity.import_public(exported)
+        self.assertIn("Fingerprint verification failed", str(ctx.exception))
+
+    def test_path_traversal_identity_name_rejected(self):
+        """Path traversal in identity names must be rejected (H1/H2)."""
+        from openssl_encrypt.modules.identity import validate_identity_name
+        for bad_name in ["../../etc/passwd", "../secret", "a/b/c", ".hidden", "", "a" * 256]:
+            with self.assertRaises(IdentityError):
+                validate_identity_name(bad_name)
+
+    def test_valid_identity_names_accepted(self):
+        """Valid identity names must be accepted."""
+        from openssl_encrypt.modules.identity import validate_identity_name
+        for good_name in ["alice", "bob-key", "my_identity", "test.key", "A1"]:
+            validate_identity_name(good_name)  # Should not raise
 
 
 @unittest.skipIf(not LIBOQS_AVAILABLE, "liboqs not available")
@@ -1033,7 +1067,7 @@ class TestIdentityCLI(unittest.TestCase):
         self.assertTrue(os.path.exists(args.output))
 
         # Verify it's valid JSON with public keys
-        with open(args.output, "r") as f:
+        with open(args.output, "r", encoding="utf-8") as f:
             data = json.load(f)
             self.assertEqual(data["name"], "Charlie")
             self.assertIn("encryption_public_key", data)
@@ -1074,7 +1108,7 @@ class TestIdentityCLI(unittest.TestCase):
 
         # Write to file
         import_file = os.path.join(self.temp_dir, "eve_public.json")
-        with open(import_file, "w") as f:
+        with open(import_file, "w", encoding="utf-8") as f:
             json.dump(public_data, f)
 
         args = MagicMock()

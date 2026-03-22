@@ -38,6 +38,7 @@ from .crypt_errors import secure_memory_error_handler
 # Import secure memory utility functions
 from .secure_memory import SecureBytes as BaseSecureBytes
 from .secure_memory import get_memory_page_size, secure_memzero, verify_memory_zeroed
+from .crypt_utils import eprint
 
 
 class SecureHeapBlock:
@@ -146,7 +147,7 @@ class SecureHeapBlock:
         # First check canaries to detect any overflow before wiping
         canaries_intact = self.check_canaries()
         if not canaries_intact and os.environ.get("DEBUG_SECURE_ALLOCATOR") == "1":
-            print(f"WARNING: Canary violation detected in block {self.block_id} before wiping")
+            eprint(f"WARNING: Canary violation detected in block {self.block_id} before wiping")
             # Still continue with wiping to clean up what we can
 
         # Securely wipe the entire buffer
@@ -284,7 +285,7 @@ class SecureHeap:
                     pass
         except:
             if self.debug_mode:
-                print("Failed to set up core dump prevention")
+                eprint("Failed to set up core dump prevention")
 
     def _detect_debugger(self) -> bool:
         """
@@ -350,7 +351,7 @@ class SecureHeap:
 
         # Security check: Detect debugger
         if self._detect_debugger() and not self.quiet:
-            print("Warning: Debugger detected during secure memory allocation")
+            eprint("Warning: Debugger detected during secure memory allocation")
 
         with self.lock:
             # Create a new secure block
@@ -414,7 +415,7 @@ class SecureHeap:
 
             # Check canaries before wiping
             if not block.check_canaries() and not self.quiet:
-                print(f"Warning: Canary violation detected in block {block_id} during free")
+                eprint(f"Warning: Canary violation detected in block {block_id} during free")
 
             # Wipe the block
             success = block.wipe(verification_level)

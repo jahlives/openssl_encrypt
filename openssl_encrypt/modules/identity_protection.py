@@ -23,6 +23,7 @@ from argon2.low_level import Type, hash_secret_raw
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from .secure_memory import SecureBytes, secure_memzero
+from .crypt_utils import eprint, tty_write
 
 
 class ProtectionLevel(Enum):
@@ -305,9 +306,10 @@ class IdentityKeyProtectionService:
                     "Please configure slot 1 or 2 for HMAC-SHA1 Challenge-Response."
                 )
 
-        # Show touch prompt if required
+        # Write touch prompt directly to the terminal (bypasses stdout/stderr
+        # redirection) so it's always visible to the user.
         if hsm_config.require_touch:
-            print("Touch your Yubikey to continue...", flush=True)
+            tty_write("👆 Touch your Yubikey to continue...\n")
 
         # Perform Challenge-Response
         try:
@@ -331,9 +333,9 @@ class IdentityKeyProtectionService:
             if pepper is None or len(pepper) != 20:
                 raise HSMNotAvailableError("Invalid HSM pepper returned")
 
-            # Cache for this operation
-            self._cached_pepper = pepper
-            return pepper
+            # Cache as bytearray so secure_memzero can operate on actual data
+            self._cached_pepper = bytearray(pepper)
+            return bytes(self._cached_pepper)
 
         except TimeoutError:
             raise HSMTouchTimeoutError(
@@ -347,7 +349,7 @@ class IdentityKeyProtectionService:
     def clear_pepper_cache(self):
         """Clear cached HSM pepper."""
         if self._cached_pepper is not None:
-            secure_memzero(bytearray(self._cached_pepper))
+            secure_memzero(self._cached_pepper)
             self._cached_pepper = None
 
     def _derive_key(
@@ -405,6 +407,7 @@ class IdentityKeyProtectionService:
         password: Optional[str],
         protection: IdentityProtection,
         identity_name: str,
+        key_purpose: str = "",
     ) -> bytes:
         """
         Encrypt a private key with password and/or HSM.
@@ -444,10 +447,13 @@ class IdentityKeyProtectionService:
         )
 
         try:
+            # Build AAD to bind ciphertext to identity and key purpose
+            aad = f"identity:{identity_name}:purpose:{key_purpose}".encode("utf-8") if identity_name and key_purpose else None
+
             # Encrypt with AES-256-GCM
             nonce = secrets.token_bytes(self.NONCE_SIZE)
             aesgcm = AESGCM(encryption_key)
-            ciphertext = aesgcm.encrypt(nonce, private_key_data, None)
+            ciphertext = aesgcm.encrypt(nonce, private_key_data, aad)
 
             return nonce + ciphertext
 
@@ -463,6 +469,7 @@ class IdentityKeyProtectionService:
         password: Optional[str],
         protection: IdentityProtection,
         identity_name: str,
+        key_purpose: str = "",
     ) -> bytes:
         """
         Decrypt a private key with password and/or HSM.
@@ -510,10 +517,20 @@ class IdentityKeyProtectionService:
             nonce = encrypted_data[: self.NONCE_SIZE]
             ciphertext = encrypted_data[self.NONCE_SIZE :]
 
+            # Build AAD to bind ciphertext to identity and key purpose
+            aad = f"identity:{identity_name}:purpose:{key_purpose}".encode("utf-8") if identity_name and key_purpose else None
+
             # Decrypt with AES-256-GCM
             aesgcm = AESGCM(encryption_key)
             try:
-                plaintext = aesgcm.decrypt(nonce, ciphertext, None)
+                if aad:
+                    try:
+                        plaintext = aesgcm.decrypt(nonce, ciphertext, aad)
+                    except Exception:
+                        # Legacy key encrypted without AAD — fall back
+                        plaintext = aesgcm.decrypt(nonce, ciphertext, None)
+                else:
+                    plaintext = aesgcm.decrypt(nonce, ciphertext, None)
                 return plaintext
             except Exception:
                 raise InvalidCredentialsError(

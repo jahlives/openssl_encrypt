@@ -594,7 +594,9 @@ class TOTPService:
             self._rate_limiter.record_attempt(client.cert_fingerprint)
 
             # Log security event for failed TOTP attempt
-            attempt_count = len(self._rate_limiter.attempts.get(client.cert_fingerprint, []))
+            attempt_count = self._rate_limiter.backend.get_attempt_count(
+                client.cert_fingerprint, self._rate_limiter.window
+            )
             security_logger.log_event(
                 SecurityEventType.TOTP_FAILURE,
                 SecurityEventSeverity.WARNING,

@@ -25,6 +25,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from .crypto_secure_memory import CryptoKey
 from .pqc import PQCAlgorithm, PQCipher
 from .secure_memory import SecureBytes, secure_memzero
+from .crypt_utils import eprint
 
 # Set up module-level logger
 logger = logging.getLogger(__name__)
@@ -202,11 +203,17 @@ class PasswordWrapper:
         nonce = None
 
         try:
-            # Derive 32-byte key from shared secret
-            h = hashlib.sha256()
-            h.update(b"openssl_encrypt.password_wrap.v1")
-            h.update(shared_secret)
-            wrap_key_bytes = h.digest()
+            # Derive 32-byte key from shared secret using HKDF
+            from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+            from cryptography.hazmat.primitives import hashes as crypto_hashes
+
+            hkdf = HKDF(
+                algorithm=crypto_hashes.SHA256(),
+                length=32,
+                salt=None,
+                info=b"openssl_encrypt.password_wrap.v2",
+            )
+            wrap_key_bytes = hkdf.derive(shared_secret)
 
             # Generate random nonce (96 bits for GCM)
             nonce = secrets.token_bytes(12)
@@ -273,15 +280,33 @@ class PasswordWrapper:
         wrap_key_bytes = None
 
         try:
-            # Derive same AES-256 key from shared secret
-            h = hashlib.sha256()
-            h.update(b"openssl_encrypt.password_wrap.v1")
-            h.update(shared_secret)
-            wrap_key_bytes = h.digest()
-
             # Extract components
             nonce = encrypted_password[:12]
             ciphertext_with_tag = encrypted_password[12:]
+
+            # Try HKDF-based derivation first (v2), fall back to SHA-256 (v1 legacy)
+            from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+            from cryptography.hazmat.primitives import hashes as crypto_hashes
+
+            hkdf = HKDF(
+                algorithm=crypto_hashes.SHA256(),
+                length=32,
+                salt=None,
+                info=b"openssl_encrypt.password_wrap.v2",
+            )
+            wrap_key_bytes = hkdf.derive(shared_secret)
+
+            try:
+                aesgcm = AESGCM(wrap_key_bytes)
+                password = aesgcm.decrypt(nonce, ciphertext_with_tag, None)
+                return password
+            except Exception:
+                # Legacy SHA-256 derivation fallback
+                secure_memzero(bytearray(wrap_key_bytes))
+                h = hashlib.sha256()
+                h.update(b"openssl_encrypt.password_wrap.v1")
+                h.update(shared_secret)
+                wrap_key_bytes = h.digest()
 
             # Decrypt with AES-256-GCM
             aesgcm = AESGCM(wrap_key_bytes)
@@ -520,7 +545,7 @@ def unwrap_password_for_recipient(
 
 if __name__ == "__main__":
     # Simple test of password wrapping
-    print("Testing PasswordWrapper...")
+    eprint("Testing PasswordWrapper...")
 
     # Initialize wrapper
     wrapper = PasswordWrapper("ML-KEM-768")
@@ -529,11 +554,11 @@ if __name__ == "__main__":
     cipher = PQCipher("ML-KEM-768")
     recipient_pubkey, recipient_privkey = cipher.generate_keypair()
 
-    print(f"Recipient keys: pub={len(recipient_pubkey)} bytes, priv={len(recipient_privkey)} bytes")
+    eprint(f"Recipient keys: pub={len(recipient_pubkey)} bytes, priv={len(recipient_privkey)} bytes")
 
     # Generate random password
     password = secrets.token_bytes(32)
-    print(f"Password: {len(password)} bytes")
+    eprint(f"Password: {len(password)} bytes")
 
     # Wrap password
     with SecureBytes(password) as secure_password:
@@ -542,8 +567,8 @@ if __name__ == "__main__":
         with SecureBytes(shared_secret_raw) as shared_secret:
             encrypted_password = wrapper.wrap_password(bytes(secure_password), bytes(shared_secret))
 
-    print(f"Encapsulated key: {len(encapsulated_key)} bytes")
-    print(f"Encrypted password: {len(encrypted_password)} bytes")
+    eprint(f"Encapsulated key: {len(encapsulated_key)} bytes")
+    eprint(f"Encrypted password: {len(encrypted_password)} bytes")
 
     # Unwrap password
     with CryptoKey(key_data=recipient_privkey) as priv_crypto:
@@ -555,17 +580,17 @@ if __name__ == "__main__":
     # Verify (wrap recovered password in SecureBytes for secure cleanup)
     with SecureBytes(password_recovered) as recovered:
         if password == bytes(recovered):
-            print("✅ Password wrapping roundtrip successful!")
+            eprint("✅ Password wrapping roundtrip successful!")
         else:
-            print("❌ Password wrapping failed!")
-            print(f"  Original:  {password.hex()[:64]}...")
-            print(f"  Recovered: {bytes(recovered).hex()[:64]}...")
+            eprint("❌ Password wrapping failed!")
+            eprint(f"  Original:  {password.hex()[:64]}...")
+            eprint(f"  Recovered: {bytes(recovered).hex()[:64]}...")
 
     # Clean up original password
     secure_memzero(password)
 
     # Test metadata canonicalization
-    print("\nTesting MetadataCanonicalizer...")
+    eprint("\nTesting MetadataCanonicalizer...")
 
     test_metadata = {
         "format_version": 7,
@@ -580,14 +605,14 @@ if __name__ == "__main__":
     canonical1 = MetadataCanonicalizer.canonicalize(test_metadata)
     canonical2 = MetadataCanonicalizer.canonicalize(test_metadata)
 
-    print(f"Canonical bytes: {len(canonical1)} bytes")
-    print(f"Deterministic: {canonical1 == canonical2}")
+    eprint(f"Canonical bytes: {len(canonical1)} bytes")
+    eprint(f"Deterministic: {canonical1 == canonical2}")
 
     # Verify signature field was removed
     canonical_str = canonical1.decode("utf-8")
     if '"signature"' not in canonical_str:
-        print("✅ Signature field correctly removed")
+        eprint("✅ Signature field correctly removed")
     else:
-        print("❌ Signature field not removed!")
+        eprint("❌ Signature field not removed!")
 
-    print("\n✅ All asymmetric_core tests passed!")
+    eprint("\n✅ All asymmetric_core tests passed!")

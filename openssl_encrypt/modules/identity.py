@@ -77,6 +77,40 @@ class IdentityExistsError(IdentityError):
     pass
 
 
+import re
+from .crypt_utils import eprint
+
+# Strict pattern for identity names: alphanumeric, hyphens, underscores, dots.
+# No path separators, no ".." sequences, no leading dots.
+_IDENTITY_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
+
+
+def validate_identity_name(name: str) -> None:
+    """Validate that an identity name is safe for use as a directory name.
+
+    Rejects path traversal attempts (e.g., "../../etc"), absolute paths,
+    names with path separators, and names starting with dots.
+
+    Args:
+        name: Identity name to validate.
+
+    Raises:
+        IdentityError: If the name is invalid or potentially malicious.
+    """
+    if not name:
+        raise IdentityError("Identity name cannot be empty")
+    if len(name) > 255:
+        raise IdentityError("Identity name too long (max 255 characters)")
+    if not _IDENTITY_NAME_RE.match(name):
+        raise IdentityError(
+            f"Invalid identity name '{name}': must contain only "
+            f"alphanumeric characters, hyphens, underscores, and dots, "
+            f"and must not start with a dot"
+        )
+    if ".." in name:
+        raise IdentityError(f"Invalid identity name '{name}': must not contain '..'")
+
+
 @dataclass
 class Identity:
     """
@@ -156,6 +190,7 @@ class Identity:
             RuntimeError: If key generation fails
             HSMNotAvailableError: If HSM required but not available
         """
+        validate_identity_name(name)
         logger.info(f"Generating identity '{name}' with {kem_algorithm} + {sig_algorithm}")
 
         try:
@@ -287,8 +322,12 @@ class Identity:
                 sig_priv_encrypted = f.read()
 
             # Decrypt private keys (pass protection and identity name)
-            enc_private_key = _decrypt_private_key(enc_priv_encrypted, passphrase, protection, name)
-            sig_private_key = _decrypt_private_key(sig_priv_encrypted, passphrase, protection, name)
+            enc_private_key = _decrypt_private_key(
+                enc_priv_encrypted, passphrase, protection, name, key_purpose="encryption",
+            )
+            sig_private_key = _decrypt_private_key(
+                sig_priv_encrypted, passphrase, protection, name, key_purpose="signing",
+            )
 
         identity = cls(
             name=name,
@@ -333,7 +372,16 @@ class Identity:
             raise IdentityExistsError(f"Identity already exists at {path}")
 
         # Create directory with secure permissions
-        path.mkdir(parents=True, exist_ok=overwrite, mode=0o700)
+        from openssl_encrypt.modules.file_permissions import (
+            PermissionLevel,
+            create_secure_directory,
+            set_permissions,
+        )
+        if overwrite and path.exists():
+            # create_secure_directory uses exist_ok=True, just ensure permissions
+            create_secure_directory(path, level=PermissionLevel.OWNER_FULL)
+        else:
+            create_secure_directory(path, level=PermissionLevel.OWNER_FULL)
 
         logger.debug(f"Saving identity '{self.name}' to {path}")
 
@@ -357,7 +405,7 @@ class Identity:
         identity_json_path = path / "identity.json"
         with open(identity_json_path, "w") as f:
             json.dump(identity_data, f, indent=2)
-        os.chmod(identity_json_path, 0o600)
+        set_permissions(identity_json_path, PermissionLevel.OWNER_ONLY)
 
         # Save public keys
         enc_pub_path = path / "encryption_public.pem"
@@ -365,11 +413,11 @@ class Identity:
 
         with open(enc_pub_path, "wb") as f:
             f.write(self.encryption_public_key)
-        os.chmod(enc_pub_path, 0o644)
+        set_permissions(enc_pub_path, PermissionLevel.OWNER_WRITE_PUBLIC_READ)
 
         with open(sig_pub_path, "wb") as f:
             f.write(self.signing_public_key)
-        os.chmod(sig_pub_path, 0o644)
+        set_permissions(sig_pub_path, PermissionLevel.OWNER_WRITE_PUBLIC_READ)
 
         # Save private keys if available
         if self.encryption_private_key or self.signing_private_key:
@@ -381,21 +429,23 @@ class Identity:
 
             if self.encryption_private_key:
                 enc_priv_encrypted = _encrypt_private_key(
-                    self.encryption_private_key.get_bytes(), passphrase, self.protection, self.name
+                    self.encryption_private_key.get_bytes(), passphrase, self.protection, self.name,
+                    key_purpose="encryption",
                 )
                 enc_priv_path = path / "encryption_private.pem"
                 with open(enc_priv_path, "wb") as f:
                     f.write(enc_priv_encrypted)
-                os.chmod(enc_priv_path, 0o600)
+                set_permissions(enc_priv_path, PermissionLevel.OWNER_ONLY)
 
             if self.signing_private_key:
                 sig_priv_encrypted = _encrypt_private_key(
-                    self.signing_private_key.get_bytes(), passphrase, self.protection, self.name
+                    self.signing_private_key.get_bytes(), passphrase, self.protection, self.name,
+                    key_purpose="signing",
                 )
                 sig_priv_path = path / "signing_private.pem"
                 with open(sig_priv_path, "wb") as f:
                     f.write(sig_priv_encrypted)
-                os.chmod(sig_priv_path, 0o600)
+                set_permissions(sig_priv_path, PermissionLevel.OWNER_ONLY)
 
         logger.info(f"Saved identity '{self.name}' to {path}")
 
@@ -431,8 +481,12 @@ class Identity:
 
         Returns:
             Identity instance (without private keys)
+
+        Raises:
+            IdentityError: If name is invalid or fingerprint doesn't match keys
         """
-        return cls(
+        validate_identity_name(data["name"])
+        identity = cls(
             name=data["name"],
             email=data.get("email"),
             fingerprint=data["fingerprint"],
@@ -445,6 +499,13 @@ class Identity:
             signing_private_key=None,
             is_own_identity=False,
         )
+        # Verify fingerprint matches the actual public keys to detect tampering
+        if not identity.verify_fingerprint():
+            raise IdentityError(
+                f"Fingerprint verification failed for imported identity '{data['name']}': "
+                f"the fingerprint does not match the public keys"
+            )
+        return identity
 
     def calculate_fingerprint(self) -> str:
         """
@@ -574,6 +635,8 @@ class IdentityStore:
         Returns:
             Identity or None if not found
         """
+        validate_identity_name(name)
+
         # Check own identities first
         path = self.base_path / name
         if path.exists():
@@ -632,6 +695,8 @@ class IdentityStore:
         Raises:
             IdentityExistsError: If identity exists and overwrite=False
         """
+        validate_identity_name(identity.name)
+
         if identity.is_own_identity:
             path = self.base_path / identity.name
         else:
@@ -650,6 +715,8 @@ class IdentityStore:
             True if deleted, False if not found
         """
         import shutil
+
+        validate_identity_name(name)
 
         # Check own identities
         path = self.base_path / name
@@ -677,6 +744,7 @@ class IdentityStore:
         Returns:
             True if identity exists
         """
+        validate_identity_name(name)
         path = self.base_path / name
         contact_path = self.contacts_path / name
         return path.exists() or contact_path.exists()
@@ -704,6 +772,7 @@ def _encrypt_private_key(
     passphrase: Optional[str],
     protection: Optional[IdentityProtection] = None,
     identity_name: str = "",
+    key_purpose: str = "",
 ) -> bytes:
     """
     Encrypt private key for at-rest storage.
@@ -733,6 +802,7 @@ def _encrypt_private_key(
             password=passphrase,
             protection=protection,
             identity_name=identity_name,
+            key_purpose=key_purpose,
         )
 
     # Legacy password-only encryption (backward compatible)
@@ -753,10 +823,13 @@ def _encrypt_private_key(
         type=argon2.low_level.Type.ID,
     )
 
+    # Build AAD to bind ciphertext to identity and key purpose
+    aad = f"identity:{identity_name}:purpose:{key_purpose}".encode("utf-8") if identity_name and key_purpose else None
+
     # Encrypt with AES-256-GCM
     nonce = secrets.token_bytes(12)
     cipher = AESGCM(key)
-    ciphertext = cipher.encrypt(nonce, private_key, None)
+    ciphertext = cipher.encrypt(nonce, private_key, aad)
 
     # Clean sensitive data
     secure_memzero(key)
@@ -770,6 +843,7 @@ def _decrypt_private_key(
     passphrase: Optional[str],
     protection: Optional[IdentityProtection] = None,
     identity_name: str = "",
+    key_purpose: str = "",
 ) -> CryptoKey:
     """
     Decrypt private key from at-rest storage.
@@ -801,6 +875,7 @@ def _decrypt_private_key(
                 password=passphrase,
                 protection=protection,
                 identity_name=identity_name,
+                key_purpose=key_purpose,
             )
             # Wrap in CryptoKey for secure memory
             crypto_key = CryptoKey(key_data=private_key_bytes)
@@ -836,7 +911,22 @@ def _decrypt_private_key(
     try:
         # Decrypt with AES-256-GCM
         cipher = AESGCM(key)
-        private_key_bytes = cipher.decrypt(nonce, ciphertext, None)
+
+        # Build AAD to bind ciphertext to identity and key purpose
+        aad = f"identity:{identity_name}:purpose:{key_purpose}".encode("utf-8") if identity_name and key_purpose else None
+
+        # Try with AAD first (new format), fall back to no-AAD (legacy)
+        try:
+            if aad:
+                private_key_bytes = cipher.decrypt(nonce, ciphertext, aad)
+            else:
+                private_key_bytes = cipher.decrypt(nonce, ciphertext, None)
+        except Exception:
+            if aad:
+                # Legacy key encrypted without AAD — fall back
+                private_key_bytes = cipher.decrypt(nonce, ciphertext, None)
+            else:
+                raise
 
         # Wrap in CryptoKey for secure memory
         crypto_key = CryptoKey(key_data=private_key_bytes)
@@ -854,19 +944,19 @@ def _decrypt_private_key(
 
 if __name__ == "__main__":
     # Simple test
-    print("Testing Identity Management...")
+    eprint("Testing Identity Management...")
 
     # Generate identity
     identity = Identity.generate("test_user", "test@example.com", "test_passphrase")
-    print(f"Generated: {identity}")
-    print(f"Fingerprint: {identity.fingerprint}")
+    eprint(f"Generated: {identity}")
+    eprint(f"Fingerprint: {identity.fingerprint}")
 
     # Test fingerprint verification
     assert identity.verify_fingerprint(), "Fingerprint verification failed"
-    print("✓ Fingerprint verified")
+    eprint("✓ Fingerprint verified")
 
     # Test context manager
     with identity:
-        print("✓ Context manager works")
+        eprint("✓ Context manager works")
 
-    print("\nAll tests passed!")
+    eprint("\nAll tests passed!")

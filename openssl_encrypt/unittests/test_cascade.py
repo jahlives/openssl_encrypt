@@ -105,8 +105,8 @@ class TestCascadeKeyDerivation(unittest.TestCase):
 
         self.assertEqual(len(layers), 2)
         for key, nonce in layers:
-            self.assertIsInstance(key, bytes)
-            self.assertIsInstance(nonce, bytes)
+            self.assertIsInstance(key, (bytes, bytearray))
+            self.assertIsInstance(nonce, (bytes, bytearray))
 
     def test_derived_keys_are_different(self):
         """Test that each layer gets different keys."""
@@ -857,6 +857,215 @@ class TestCascadeDiversityValidator(unittest.TestCase):
         info_warnings = [w for w in warnings if w.level == DiversityWarningLevel.INFO]
         good_diversity = [w for w in info_warnings if "Good design diversity" in w.message]
         self.assertTrue(len(good_diversity) > 0)
+
+
+@pytest.mark.skipif(not REGISTRY_AVAILABLE, reason="Cipher registry not available")
+class TestCascadePerLayerSalt(unittest.TestCase):
+    """Test per-layer salt derivation for cascade encryption (H6/H7).
+
+    For format_version >= 12, each cascade layer should derive its own
+    unique salt from the master salt, preventing all layers from sharing
+    the same (master_key, salt) pair in HKDF.
+    """
+
+    def setUp(self):
+        """Set up test environment."""
+        self.master_key = secrets.token_bytes(32)
+        self.salt = secrets.token_bytes(32)
+        self.plaintext = b"Test per-layer salt derivation."
+        self.config = CascadeConfig(
+            cipher_names=["aes-256-gcm", "chacha20-poly1305"], hkdf_hash="sha256"
+        )
+
+    def test_v12_keys_differ_from_legacy_keys(self):
+        """Test that v12+ per-layer salt produces different keys than legacy."""
+        kd_legacy = CascadeKeyDerivation(self.config)
+        kd_v12 = CascadeKeyDerivation(self.config, format_version=12)
+
+        legacy_layers = kd_legacy.derive_layer_keys(self.master_key, self.salt)
+        v12_layers = kd_v12.derive_layer_keys(self.master_key, self.salt)
+
+        self.assertNotEqual(legacy_layers[0][0], v12_layers[0][0])
+        self.assertNotEqual(legacy_layers[1][0], v12_layers[1][0])
+
+    def test_legacy_format_unchanged(self):
+        """Test that legacy (no format_version) key derivation is unchanged."""
+        kd1 = CascadeKeyDerivation(self.config)
+        kd2 = CascadeKeyDerivation(self.config, format_version=None)
+        kd3 = CascadeKeyDerivation(self.config, format_version=11)
+
+        layers1 = kd1.derive_layer_keys(self.master_key, self.salt)
+        layers2 = kd2.derive_layer_keys(self.master_key, self.salt)
+        layers3 = kd3.derive_layer_keys(self.master_key, self.salt)
+
+        self.assertEqual(layers1[0][0], layers2[0][0])
+        self.assertEqual(layers1[0][0], layers3[0][0])
+        self.assertEqual(layers1[1][0], layers2[1][0])
+        self.assertEqual(layers1[1][0], layers3[1][0])
+
+    def test_v12_per_layer_salts_are_unique(self):
+        """Test that v12+ derives a unique salt for each layer."""
+        kd = CascadeKeyDerivation(self.config, format_version=12)
+        layers = kd.derive_layer_keys(self.master_key, self.salt)
+
+        self.assertNotEqual(layers[0][0], layers[1][0])
+
+    def test_v12_deterministic(self):
+        """Test that v12+ per-layer salt derivation is deterministic."""
+        kd = CascadeKeyDerivation(self.config, format_version=12)
+
+        layers1 = kd.derive_layer_keys(self.master_key, self.salt)
+        layers2 = kd.derive_layer_keys(self.master_key, self.salt)
+
+        self.assertEqual(layers1[0][0], layers2[0][0])
+        self.assertEqual(layers1[0][1], layers2[0][1])
+        self.assertEqual(layers1[1][0], layers2[1][0])
+        self.assertEqual(layers1[1][1], layers2[1][1])
+
+    def test_v12_encrypt_decrypt_roundtrip(self):
+        """Test that v12+ cascade encrypt/decrypt roundtrip works."""
+        cascade = CascadeEncryption(self.config, format_version=12)
+
+        ciphertext = cascade.encrypt(self.plaintext, self.master_key, self.salt)
+        decrypted = cascade.decrypt(ciphertext, self.master_key, self.salt)
+
+        self.assertEqual(decrypted, self.plaintext)
+
+    def test_v12_cross_version_incompatible(self):
+        """Test that v12+ ciphertext cannot be decrypted with legacy keys."""
+        cascade_v12 = CascadeEncryption(self.config, format_version=12)
+        cascade_legacy = CascadeEncryption(self.config)
+
+        ciphertext = cascade_v12.encrypt(self.plaintext, self.master_key, self.salt)
+
+        with self.assertRaises((AuthenticationError, CascadeError)):
+            cascade_legacy.decrypt(ciphertext, self.master_key, self.salt)
+
+    def test_v12_five_layer_roundtrip(self):
+        """Test v12+ per-layer salt with five cascade layers."""
+        config = CascadeConfig(
+            cipher_names=[
+                "aes-256-gcm",
+                "chacha20-poly1305",
+                "aes-256-gcm-siv",
+                "threefish-512",
+                "threefish-1024",
+            ],
+            hkdf_hash="sha256",
+        )
+        cascade = CascadeEncryption(config, format_version=12)
+
+        ciphertext = cascade.encrypt(self.plaintext, self.master_key, self.salt)
+        decrypted = cascade.decrypt(ciphertext, self.master_key, self.salt)
+
+        self.assertEqual(decrypted, self.plaintext)
+
+    def test_v12_with_aad(self):
+        """Test v12+ per-layer salt with AAD."""
+        cascade = CascadeEncryption(self.config, format_version=12)
+        aad = b"authenticated metadata"
+
+        ciphertext = cascade.encrypt(
+            self.plaintext, self.master_key, self.salt, associated_data=aad
+        )
+        decrypted = cascade.decrypt(ciphertext, self.master_key, self.salt, associated_data=aad)
+
+        self.assertEqual(decrypted, self.plaintext)
+
+
+@pytest.mark.skipif(not REGISTRY_AVAILABLE, reason="Cipher registry not available")
+class TestCascadeAllLayerAAD(unittest.TestCase):
+    """Test AAD applied to all cascade layers for v12+ (M12).
+
+    For format_version >= 12, AAD should be applied to ALL layers,
+    not just the first one.
+    """
+
+    def setUp(self):
+        """Set up test environment."""
+        self.master_key = secrets.token_bytes(32)
+        self.salt = secrets.token_bytes(32)
+        self.plaintext = b"Test AAD on all layers."
+        self.aad = b"metadata to authenticate"
+        self.config = CascadeConfig(
+            cipher_names=["aes-256-gcm", "chacha20-poly1305"], hkdf_hash="sha256"
+        )
+
+    def test_v12_aad_roundtrip(self):
+        """Test v12+ encrypt/decrypt roundtrip with AAD on all layers."""
+        cascade = CascadeEncryption(self.config, format_version=12)
+
+        ciphertext = cascade.encrypt(
+            self.plaintext, self.master_key, self.salt, associated_data=self.aad
+        )
+        decrypted = cascade.decrypt(
+            ciphertext, self.master_key, self.salt, associated_data=self.aad
+        )
+
+        self.assertEqual(decrypted, self.plaintext)
+
+    def test_v12_wrong_aad_fails(self):
+        """Test that wrong AAD fails in v12+."""
+        cascade = CascadeEncryption(self.config, format_version=12)
+
+        ciphertext = cascade.encrypt(
+            self.plaintext, self.master_key, self.salt, associated_data=self.aad
+        )
+
+        with self.assertRaises((AuthenticationError, CascadeError)):
+            cascade.decrypt(
+                ciphertext, self.master_key, self.salt, associated_data=b"wrong"
+            )
+
+    def test_v12_ciphertext_differs_from_legacy_with_aad(self):
+        """Test that v12+ AAD on all layers produces different ciphertext than legacy."""
+        cascade_legacy = CascadeEncryption(self.config)
+        cascade_v12 = CascadeEncryption(self.config, format_version=12)
+
+        ct_legacy = cascade_legacy.encrypt(
+            self.plaintext, self.master_key, self.salt, associated_data=self.aad
+        )
+        ct_v12 = cascade_v12.encrypt(
+            self.plaintext, self.master_key, self.salt, associated_data=self.aad
+        )
+
+        self.assertNotEqual(ct_legacy, ct_v12)
+
+    def test_legacy_aad_only_first_layer(self):
+        """Test that legacy still applies AAD only to first layer."""
+        cascade = CascadeEncryption(self.config)
+
+        ciphertext = cascade.encrypt(
+            self.plaintext, self.master_key, self.salt, associated_data=self.aad
+        )
+        decrypted = cascade.decrypt(
+            ciphertext, self.master_key, self.salt, associated_data=self.aad
+        )
+
+        self.assertEqual(decrypted, self.plaintext)
+
+    def test_v12_five_layer_aad(self):
+        """Test v12+ AAD on all layers with five cipher layers."""
+        config = CascadeConfig(
+            cipher_names=[
+                "aes-256-gcm",
+                "chacha20-poly1305",
+                "aes-256-gcm-siv",
+                "threefish-512",
+                "threefish-1024",
+            ],
+            hkdf_hash="sha256",
+        )
+        cascade = CascadeEncryption(config, format_version=12)
+
+        ciphertext = cascade.encrypt(
+            self.plaintext, self.master_key, self.salt, associated_data=self.aad
+        )
+        decrypted = cascade.decrypt(
+            ciphertext, self.master_key, self.salt, associated_data=self.aad
+        )
+
+        self.assertEqual(decrypted, self.plaintext)
 
 
 if __name__ == "__main__":

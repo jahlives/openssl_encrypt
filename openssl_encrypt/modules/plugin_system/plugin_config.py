@@ -18,6 +18,7 @@ import json
 import logging
 import os
 import stat
+import sys
 import threading
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Union
@@ -168,48 +169,26 @@ def ensure_plugin_data_dir(plugin_id: str, subdir: str = "") -> Optional[Path]:
         data_dir = base_dir
 
     try:
-        # Save old umask and set restrictive umask
-        old_umask = os.umask(0o077)  # Temporarily set umask to create with 0o700
+        from openssl_encrypt.modules.file_permissions import (
+            PermissionLevel,
+            check_permissions,
+            create_secure_directory,
+        )
 
-        try:
-            # Create directory with mode 0o700 atomically
-            # The mode parameter ensures atomic permission setting
-            data_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        create_secure_directory(data_dir, level=PermissionLevel.OWNER_FULL)
 
-            # Restore original umask
-            os.umask(old_umask)
+        # Verify permissions were set correctly (defense in depth)
+        if not check_permissions(data_dir, PermissionLevel.OWNER_FULL):
+            logger.warning(
+                f"Failed to set secure permissions (0o700) on {data_dir}"
+            )
+            return None
 
-            # Verify permissions were set correctly (defense in depth)
-            if hasattr(os, "chmod"):
-                current_perms = stat.S_IMODE(os.stat(data_dir).st_mode)
-                if current_perms != 0o700:
-                    # Try to fix permissions if they're wrong
-                    try:
-                        os.chmod(data_dir, 0o700)
-                        logger.info(f"Fixed permissions on {data_dir} from {oct(current_perms)} to 0o700")
-
-                        # Verify fix was successful
-                        fixed_perms = stat.S_IMODE(os.stat(data_dir).st_mode)
-                        if fixed_perms != 0o700:
-                            logger.warning(
-                                f"Failed to fix permissions on {data_dir}, "
-                                f"current permissions: {oct(fixed_perms)}"
-                            )
-                            return None
-                    except (OSError, PermissionError) as e:
-                        logger.warning(
-                            f"Could not fix permissions on {data_dir}: {e}"
-                        )
-                        return None
-
-                # Also ensure parent is secured if we created a subdirectory
-                if subdir and base_dir.exists():
-                    parent_perms = stat.S_IMODE(os.stat(base_dir).st_mode)
-                    if parent_perms != 0o700:
-                        os.chmod(base_dir, 0o700)
-        finally:
-            # Always restore umask even if error occurs
-            os.umask(old_umask)
+        # Also ensure parent is secured if we created a subdirectory
+        if subdir and base_dir.exists():
+            if not check_permissions(base_dir, PermissionLevel.OWNER_FULL):
+                from openssl_encrypt.modules.file_permissions import set_permissions
+                set_permissions(base_dir, PermissionLevel.OWNER_FULL)
 
         return data_dir
 
@@ -238,24 +217,22 @@ class PluginConfigManager:
         self.schemas: Dict[str, PluginConfigSchema] = {}
         self.lock = threading.RLock()
 
-        # Create config directory with atomic permission setting
-        old_umask = os.umask(0o077)  # Temporarily set umask for 0o700
-        try:
-            self.config_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
-        finally:
-            os.umask(old_umask)
+        # Create config directory with secure permissions
+        from openssl_encrypt.modules.file_permissions import (
+            PermissionLevel,
+            check_permissions,
+            create_secure_directory,
+        )
+        create_secure_directory(self.config_dir, level=PermissionLevel.OWNER_FULL)
 
         # Verify permissions were set correctly (defense in depth)
-        if hasattr(os, "chmod"):
-            try:
-                current_perms = stat.S_IMODE(os.stat(self.config_dir).st_mode)
-                if current_perms != 0o700:
-                    logger.warning(
-                        f"Failed to set secure permissions (0o700) on {self.config_dir}, "
-                        f"current permissions: {oct(current_perms)}"
-                    )
-            except (OSError, PermissionError) as e:
-                logger.warning(f"Failed to verify permissions on {self.config_dir}: {e}")
+        try:
+            if not check_permissions(self.config_dir, PermissionLevel.OWNER_FULL):
+                logger.warning(
+                    f"Failed to set secure permissions (0o700) on {self.config_dir}"
+                )
+        except (OSError, PermissionError) as e:
+            logger.warning(f"Failed to verify permissions on {self.config_dir}: {e}")
 
         # Load existing configurations
         self._load_all_configs()
@@ -474,27 +451,18 @@ class PluginConfigManager:
             # Serialize config to JSON
             config_json = json.dumps(config, indent=2, sort_keys=True)
 
-            # Save old umask and set restrictive umask
-            old_umask = os.umask(0o077)  # Create file with 0o600
+            from openssl_encrypt.modules.file_permissions import (
+                PermissionLevel,
+                create_secure_file,
+            )
 
+            # Open file with secure permissions
+            fd = create_secure_file(config_file, level=PermissionLevel.OWNER_ONLY)
             try:
-                # Open file with atomic permission setting
-                # O_CREAT | O_WRONLY | O_TRUNC = create or truncate for writing
-                # mode=0o600 sets permissions atomically on creation
-                fd = os.open(
-                    config_file,
-                    os.O_CREAT | os.O_WRONLY | os.O_TRUNC,
-                    0o600  # Read/write for owner only
-                )
-
-                try:
-                    # Write config via file descriptor
-                    os.write(fd, config_json.encode('utf-8'))
-                finally:
-                    os.close(fd)
+                # Write config via file descriptor
+                os.write(fd, config_json.encode('utf-8'))
             finally:
-                # Always restore umask
-                os.umask(old_umask)
+                os.close(fd)
 
         except (IOError, json.JSONEncodeError, OSError) as e:
             logger.error(f"Error saving config file for plugin {plugin_id}: {e}")
@@ -511,14 +479,14 @@ class PluginConfigManager:
         if not safe_plugin_id:
             raise ValueError(f"Invalid plugin_id: '{plugin_id}' - contains no valid characters")
 
-        # Create plugin directory if needed with atomic permission setting
+        # Create plugin directory if needed with secure permissions
         plugin_dir = self.config_dir / safe_plugin_id
 
-        old_umask = os.umask(0o077)  # Temporarily set umask for 0o700
-        try:
-            plugin_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
-        finally:
-            os.umask(old_umask)
+        from openssl_encrypt.modules.file_permissions import (
+            PermissionLevel,
+            create_secure_directory,
+        )
+        create_secure_directory(plugin_dir, level=PermissionLevel.OWNER_FULL)
 
         return plugin_dir / "config.json"
 

@@ -145,7 +145,7 @@ These features have some components complete but are still in active development
   - 📋 GPU acceleration for compatible algorithms
   - 📋 Multi-threaded encryption for large files
   - 📋 Memory-mapped file processing
-  - 📋 Streaming encryption for real-time applications
+  - ✅ Streaming chunked encryption for large files (v1.4.0+, format v12)
   - 📋 Parallel processing across multiple CPU cores
 - **Estimated Effort for Completion**: 3-4 weeks
 

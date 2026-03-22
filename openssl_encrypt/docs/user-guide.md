@@ -682,6 +682,41 @@ python -m openssl_encrypt.crypt encrypt -i file.txt --template my_template
 
 ## Advanced Features
 
+### Streaming Chunked Encryption
+
+For large files, OpenSSL Encrypt automatically uses streaming chunked encryption to maintain constant memory usage. Files are split into independently authenticated chunks, each encrypted with its own AEAD nonce.
+
+#### When It Activates
+
+Streaming mode activates automatically when all of the following are true:
+- Input file size is **above 10 MB** (configurable)
+- An **AEAD algorithm** is selected (AES-GCM, ChaCha20-Poly1305, XChaCha20-Poly1305, AES-GCM-SIV, AES-SIV)
+- Input is a **file** (not piped bytes)
+
+#### CLI Options
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--chunk-size SIZE` | Chunk size for streaming (e.g., `512K`, `1M`, `4M`) | `1M` |
+| `--no-streaming` | Disable streaming, load entire file into memory | Off |
+| `--streaming-threshold SIZE` | File size threshold for auto-activation | `10M` |
+
+#### Examples
+
+```bash
+# Encrypt a large file (streaming auto-activates for files >10 MB)
+python -m openssl_encrypt.crypt encrypt -i database_backup.sql --algorithm aes-gcm
+
+# Use larger chunks for better throughput on fast storage
+python -m openssl_encrypt.crypt encrypt -i video.mp4 --algorithm aes-gcm --chunk-size 4M
+
+# Force one-shot encryption (loads entire file into memory)
+python -m openssl_encrypt.crypt encrypt -i largefile.bin --algorithm aes-gcm --no-streaming
+
+# Lower the threshold to stream smaller files
+python -m openssl_encrypt.crypt encrypt -i data.bin --algorithm chacha20-poly1305 --streaming-threshold 1M
+```
+
 ### Dual Encryption
 
 Combine password-based encryption with keystore keys for enhanced security:
@@ -954,4 +989,4 @@ python -m openssl_encrypt.crypt decrypt -i file.enc --debug
 
 This user guide provides comprehensive information for using OpenSSL Encrypt effectively and securely. For advanced security topics, refer to the [Security Documentation](security.md).
 
-**Last updated**: June 16, 2025
+**Last updated**: March 5, 2026

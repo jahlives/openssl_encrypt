@@ -172,7 +172,7 @@ class MaliciousPlugin(PreProcessorPlugin):
         return PluginResult.success_result("Done")
 """
         plugin_path = os.path.join(self.temp_dir, "malicious_plugin.py")
-        with open(plugin_path, "w") as f:
+        with open(plugin_path, "w", encoding="utf-8") as f:
             f.write(plugin_content)
         return plugin_path
 
@@ -209,7 +209,7 @@ class MaliciousPlugin(PreProcessorPlugin):
         plugin_path = os.path.join(self.temp_dir, "huge_plugin.py")
 
         # Create a plugin larger than 1MB
-        with open(plugin_path, "w") as f:
+        with open(plugin_path, "w", encoding="utf-8") as f:
             f.write("# " + "A" * (1024 * 1024 + 1000))  # > 1MB
 
         result = self.plugin_manager.load_plugin(plugin_path)
@@ -267,7 +267,7 @@ class NetworkPlugin(PreProcessorPlugin):
             return PluginResult.error_result(str(e))
 """
         plugin_path = os.path.join(self.temp_dir, "network_plugin.py")
-        with open(plugin_path, "w") as f:
+        with open(plugin_path, "w", encoding="utf-8") as f:
             f.write(plugin_content)
         return plugin_path
 
@@ -364,7 +364,7 @@ class SubprocessPlugin(PreProcessorPlugin):
             return PluginResult.error_result(str(e))
 """
         plugin_path = os.path.join(self.temp_dir, "subprocess_plugin.py")
-        with open(plugin_path, "w") as f:
+        with open(plugin_path, "w", encoding="utf-8") as f:
             f.write(plugin_content)
         return plugin_path
 
@@ -454,7 +454,7 @@ class TimeoutPlugin(PreProcessorPlugin):
         return PluginResult.success_result("Should not reach here")
 """
         plugin_path = os.path.join(self.temp_dir, "timeout_plugin.py")
-        with open(plugin_path, "w") as f:
+        with open(plugin_path, "w", encoding="utf-8") as f:
             f.write(plugin_content)
         return plugin_path
 
@@ -588,6 +588,37 @@ class TestResultValidation(unittest.TestCase):
         self.assertEqual(result.data["total_size"], 1024)
         self.assertEqual(result.data["operation_time"], 1.5)
 
+    def test_sensitive_data_filtered_in_constructor(self):
+        """Sensitive data passed via constructor must also be filtered (M10).
+
+        Previously only add_data() filtered keys, so a plugin could bypass
+        filtering by passing data directly to PluginResult().
+        """
+        result = PluginResult(
+            success=True,
+            message="test",
+            data={"password": "stolen", "file_count": 5, "secret": "leaked"},
+        )
+        self.assertNotIn("password", result.data)
+        self.assertNotIn("secret", result.data)
+        self.assertEqual(result.data["file_count"], 5)
+
+    def test_sensitive_data_filtered_in_success_result(self):
+        """success_result class method must also filter sensitive keys (M10)."""
+        result = PluginResult.success_result(
+            "test", data={"api_key": "abc123", "status": "ok"}
+        )
+        self.assertNotIn("api_key", result.data)
+        self.assertEqual(result.data["status"], "ok")
+
+    def test_sensitive_data_filtered_in_error_result(self):
+        """error_result class method must also filter sensitive keys (M10)."""
+        result = PluginResult.error_result(
+            "failed", data={"auth_token": "tok_xyz", "error_code": 42}
+        )
+        self.assertNotIn("auth_token", result.data)
+        self.assertEqual(result.data["error_code"], 42)
+
 
 class TestSecurityModes(unittest.TestCase):
     """Test strict vs permissive security modes"""
@@ -625,7 +656,7 @@ class EvalPlugin(PreProcessorPlugin):
         return PluginResult.success_result(str(result))
 """
         plugin_path = os.path.join(self.temp_dir, "eval_plugin.py")
-        with open(plugin_path, "w") as f:
+        with open(plugin_path, "w", encoding="utf-8") as f:
             f.write(plugin_content)
         return plugin_path
 
@@ -675,42 +706,47 @@ class TestConfigDirectoryPermissions(unittest.TestCase):
 
     def test_ensure_plugin_data_dir_creates_with_0o700(self):
         """Verify directories are created with 0o700 permissions."""
-        import stat
-
+        from openssl_encrypt.modules.file_permissions import PermissionLevel, check_permissions
         from openssl_encrypt.modules.plugin_system.plugin_config import ensure_plugin_data_dir
 
         test_dir = ensure_plugin_data_dir("test_security_plugin", "")
         self.assertIsNotNone(test_dir, "Directory creation should succeed")
         self.test_dirs.append(test_dir)
 
-        # Check permissions (Unix only)
-        if hasattr(os, "chmod"):
-            perms = stat.S_IMODE(os.stat(test_dir).st_mode)
-            self.assertEqual(perms, 0o700, f"Expected 0o700, got {oct(perms)}")
+        # Check permissions (cross-platform)
+        self.assertTrue(
+            check_permissions(test_dir, PermissionLevel.OWNER_FULL),
+            "Directory should have OWNER_FULL (0o700) permissions",
+        )
 
     def test_ensure_plugin_data_dir_with_subdir(self):
         """Verify subdirectories are created with 0o700 permissions."""
-        import stat
-
+        from openssl_encrypt.modules.file_permissions import PermissionLevel, check_permissions
         from openssl_encrypt.modules.plugin_system.plugin_config import ensure_plugin_data_dir
 
         test_dir = ensure_plugin_data_dir("test_security_plugin", "subdir")
         self.assertIsNotNone(test_dir, "Subdirectory creation should succeed")
         self.test_dirs.append(test_dir.parent)
 
-        # Check subdirectory permissions (Unix only)
-        if hasattr(os, "chmod"):
-            perms = stat.S_IMODE(os.stat(test_dir).st_mode)
-            self.assertEqual(perms, 0o700, f"Expected 0o700, got {oct(perms)}")
+        # Check subdirectory permissions (cross-platform)
+        self.assertTrue(
+            check_permissions(test_dir, PermissionLevel.OWNER_FULL),
+            "Subdirectory should have OWNER_FULL (0o700) permissions",
+        )
 
-            # Check parent directory permissions too
-            parent_perms = stat.S_IMODE(os.stat(test_dir.parent).st_mode)
-            self.assertEqual(parent_perms, 0o700, f"Parent expected 0o700, got {oct(parent_perms)}")
+        # Check parent directory permissions too
+        self.assertTrue(
+            check_permissions(test_dir.parent, PermissionLevel.OWNER_FULL),
+            "Parent directory should have OWNER_FULL (0o700) permissions",
+        )
 
     def test_ensure_plugin_data_dir_fixes_existing_permissions(self):
         """Verify existing directories have permissions corrected."""
-        import stat
-
+        from openssl_encrypt.modules.file_permissions import (
+            PermissionLevel,
+            check_permissions,
+            set_permissions,
+        )
         from openssl_encrypt.modules.plugin_system.plugin_config import ensure_plugin_data_dir
 
         # First create with correct permissions
@@ -718,19 +754,19 @@ class TestConfigDirectoryPermissions(unittest.TestCase):
         self.assertIsNotNone(test_dir)
         self.test_dirs.append(test_dir)
 
-        if hasattr(os, "chmod"):
-            # Change to insecure permissions
-            os.chmod(test_dir, 0o755)
-            initial_perms = stat.S_IMODE(os.stat(test_dir).st_mode)
-            self.assertEqual(initial_perms, 0o755)
+        # Change to insecure permissions (use OWNER_WRITE_PUBLIC_READ as "insecure")
+        set_permissions(test_dir, PermissionLevel.OWNER_WRITE_PUBLIC_READ)
+        self.assertFalse(check_permissions(test_dir, PermissionLevel.OWNER_FULL))
 
-            # Call again - should fix permissions
-            test_dir2 = ensure_plugin_data_dir("test_security_plugin2", "")
-            self.assertIsNotNone(test_dir2)
+        # Call again - should fix permissions
+        test_dir2 = ensure_plugin_data_dir("test_security_plugin2", "")
+        self.assertIsNotNone(test_dir2)
 
-            # Check permissions were fixed
-            fixed_perms = stat.S_IMODE(os.stat(test_dir).st_mode)
-            self.assertEqual(fixed_perms, 0o700, "Permissions should be corrected to 0o700")
+        # Check permissions were fixed
+        self.assertTrue(
+            check_permissions(test_dir, PermissionLevel.OWNER_FULL),
+            "Permissions should be corrected to OWNER_FULL (0o700)",
+        )
 
     def test_plugin_load_fails_on_insecure_config_dir(self):
         """Verify plugins don't load if config dir permissions cannot be secured."""
@@ -774,12 +810,11 @@ class TestPlugin(PreProcessorPlugin):
 
                     result = plugin_manager.load_plugin(str(plugin_file))
 
-                    # Should fail to load
-                    if hasattr(os, "chmod"):  # Only on Unix systems
-                        self.assertFalse(
-                            result.success, "Plugin load should fail with insecure permissions"
-                        )
-                        self.assertIn("insecure permissions", result.message.lower())
+                    # Should fail to load on all platforms
+                    self.assertFalse(
+                        result.success, "Plugin load should fail with insecure permissions"
+                    )
+                    self.assertIn("insecure permissions", result.message.lower())
 
 
 class TestPackagePluginDiscovery(unittest.TestCase):
@@ -993,6 +1028,33 @@ class TestBuiltinPluginTrust(unittest.TestCase):
         self.plugin_manager.strict_security_mode = True
 
         self.assertFalse(self.plugin_manager._validate_plugin_file(str(plugin_file)))
+
+    @unittest.skipIf(sys.platform == "win32", "Symlink creation requires privileges on Windows")
+    def test_symlink_into_builtin_root_does_not_bypass_validation(self):
+        """A symlink inside builtin_plugin_root pointing outside must NOT bypass AST analysis.
+
+        Regression test for H10: symlink-based bypass of builtin trust check.
+        Uses realpath() to resolve symlinks before checking the path prefix.
+        """
+        # Create a malicious plugin outside builtin root
+        other_dir = Path(tempfile.mkdtemp())
+        try:
+            malicious_file = other_dir / "malicious.py"
+            malicious_file.write_text("import subprocess\ndef execute(): pass\n")
+
+            # Create a symlink inside the builtin root pointing to the malicious file
+            symlink_path = self.test_dir / "symlinked_plugin.py"
+            symlink_path.symlink_to(malicious_file)
+
+            self.plugin_manager.builtin_plugin_root = str(self.test_dir)
+            self.plugin_manager.strict_security_mode = True
+
+            # The symlink resolves to a file outside builtin root — must be AST-checked and blocked
+            self.assertFalse(self.plugin_manager._validate_plugin_file(str(symlink_path)))
+        finally:
+            import shutil
+
+            shutil.rmtree(other_dir)
 
 
 class TestUnifiedConfigPaths(unittest.TestCase):
