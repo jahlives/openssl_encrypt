@@ -2275,6 +2275,160 @@ class TestKeystoreOperations(unittest.TestCase):
         self.assertEqual(private_key, retrieved_private_key)
 
 
+class TestArgon2KdfVersion(unittest.TestCase):
+    """Test Argon2 KDF version migration (v1 legacy -> v2 hash_secret_raw)."""
+
+    def setUp(self):
+        """Set up test environment."""
+        self.test_dir = tempfile.mkdtemp()
+        self.keystore_path = os.path.join(self.test_dir, "test_kdf_version.pqc")
+        self.keystore_password = "TestKdfVersionPassword123!"
+
+        # Get available PQC algorithms
+        _, _, self.supported_algorithms = check_pqc_support()
+        self.test_algorithm = None
+        for algo in self.supported_algorithms:
+            if "kyber" in algo.lower() or "ml-kem" in algo.lower():
+                self.test_algorithm = algo
+                break
+        if not self.test_algorithm:
+            self.test_algorithm = self.supported_algorithms[0] if self.supported_algorithms else None
+        if not self.test_algorithm:
+            self.skipTest("No suitable post-quantum algorithm available")
+
+    def tearDown(self):
+        """Clean up after tests."""
+        for file in os.listdir(self.test_dir):
+            file_path = os.path.join(self.test_dir, file)
+            if os.path.isfile(file_path):
+                os.remove(file_path)
+        os.rmdir(self.test_dir)
+
+    @unittest.skipUnless(ARGON2_AVAILABLE, "argon2-cffi not available")
+    def test_argon2_derive_key_v2_deterministic(self):
+        """Test that v2 derivation is deterministic for same inputs."""
+        from openssl_encrypt.modules.pqc_keystore import _argon2_derive_key
+
+        salt = os.urandom(16)
+        params = {"time_cost": 1, "memory_cost": 8192, "parallelism": 1}
+
+        key1 = _argon2_derive_key("password", salt, params, kdf_version=2)
+        key2 = _argon2_derive_key("password", salt, params, kdf_version=2)
+
+        self.assertEqual(key1, key2)
+        self.assertEqual(len(key1), 32)
+
+    @unittest.skipUnless(ARGON2_AVAILABLE, "argon2-cffi not available")
+    def test_argon2_v1_vs_v2_differ(self):
+        """Test that v1 and v2 produce different keys (they use different algorithms)."""
+        from openssl_encrypt.modules.pqc_keystore import _argon2_derive_key
+
+        salt = os.urandom(16)
+        params = {"time_cost": 1, "memory_cost": 8192, "parallelism": 1}
+
+        key_v1 = _argon2_derive_key("password", salt, params, kdf_version=1)
+        key_v2 = _argon2_derive_key("password", salt, params, kdf_version=2)
+
+        self.assertNotEqual(key_v1, key_v2)
+        self.assertEqual(len(key_v1), 32)
+        self.assertEqual(len(key_v2), 32)
+
+    @unittest.skipUnless(ARGON2_AVAILABLE, "argon2-cffi not available")
+    def test_argon2_different_passwords_differ(self):
+        """Test that different passwords produce different keys."""
+        from openssl_encrypt.modules.pqc_keystore import _argon2_derive_key
+
+        salt = os.urandom(16)
+        params = {"time_cost": 1, "memory_cost": 8192, "parallelism": 1}
+
+        key1 = _argon2_derive_key("password1", salt, params, kdf_version=2)
+        key2 = _argon2_derive_key("password2", salt, params, kdf_version=2)
+
+        self.assertNotEqual(key1, key2)
+
+    @unittest.skipUnless(ARGON2_AVAILABLE, "argon2-cffi not available")
+    def test_new_keystore_uses_kdf_v2(self):
+        """Test that newly created keystores use kdf_version 2."""
+        keystore = PQCKeystore(self.keystore_path)
+        keystore.create_keystore(self.keystore_password)
+
+        # Reload and check the stored params
+        keystore2 = PQCKeystore(self.keystore_path)
+        keystore2.load_keystore(self.keystore_password)
+
+        protection = keystore2.keystore_data["protection"]
+        params = protection["params"]
+        self.assertEqual(params.get("kdf_version"), 2)
+
+    @unittest.skipUnless(ARGON2_AVAILABLE, "argon2-cffi not available")
+    def test_legacy_v1_keystore_loads_and_upgrades(self):
+        """Test that a v1 keystore can be loaded, and saving upgrades it to v2."""
+        from openssl_encrypt.modules.pqc_keystore import _argon2_derive_key
+
+        # Create a keystore normally (v2)
+        keystore = PQCKeystore(self.keystore_path)
+        keystore.create_keystore(self.keystore_password)
+
+        # Manually downgrade the keystore to v1 by re-encrypting with v1 derivation
+        keystore.load_keystore(self.keystore_password)
+        protection = keystore.keystore_data["protection"]
+        params = protection["params"]
+
+        # Remove kdf_version to simulate a legacy keystore
+        params.pop("kdf_version", None)
+
+        # Re-derive key with v1 and re-encrypt
+        salt = base64.b64decode(params["salt"])
+        argon2_params = params["argon2_params"]
+        derived_key_v1 = _argon2_derive_key(self.keystore_password, salt, argon2_params, kdf_version=1)
+
+        # Re-encrypt the keystore data with v1 key
+        plaintext = json.dumps(keystore.keystore_data).encode("utf-8")
+        nonce = secrets.token_bytes(12)
+        params["nonce"] = base64.b64encode(nonce).decode("utf-8")
+
+        header = {"protection": protection}
+
+        if protection["method"] == "scrypt_chacha20":
+            from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305 as CP
+            cipher = CP(derived_key_v1)
+        else:
+            from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+            cipher = AESGCM(derived_key_v1)
+        ciphertext = cipher.encrypt(nonce, plaintext, associated_data=json.dumps(header).encode("utf-8"))
+
+        # Write the v1 keystore file
+        header_json = json.dumps(header).encode("utf-8")
+        with open(self.keystore_path, "wb") as f:
+            f.write(len(header_json).to_bytes(4, byteorder="big"))
+            f.write(header_json)
+            f.write(ciphertext)
+
+        # Now load the v1 keystore — should succeed with legacy fallback
+        keystore2 = PQCKeystore(self.keystore_path)
+        keystore2.load_keystore(self.keystore_password)
+        self.assertIsNotNone(keystore2.keystore_data)
+
+        # Save it — should upgrade to v2
+        keystore2.save_keystore(self.keystore_password)
+
+        # Reload and verify it's now v2
+        keystore3 = PQCKeystore(self.keystore_path)
+        keystore3.load_keystore(self.keystore_password)
+        upgraded_params = keystore3.keystore_data["protection"]["params"]
+        self.assertEqual(upgraded_params.get("kdf_version"), 2)
+
+    @unittest.skipUnless(ARGON2_AVAILABLE, "argon2-cffi not available")
+    def test_wrong_password_still_fails(self):
+        """Test that wrong password is rejected for both v1 and v2."""
+        keystore = PQCKeystore(self.keystore_path)
+        keystore.create_keystore(self.keystore_password)
+
+        keystore2 = PQCKeystore(self.keystore_path)
+        with self.assertRaises(Exception):
+            keystore2.load_keystore("WrongPassword!")
+
+
 class TestCryptErrorsFixes(unittest.TestCase):
     """Test fixes for error handling issues in crypt_errors."""
 

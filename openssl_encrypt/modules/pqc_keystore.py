@@ -36,6 +36,41 @@ except ImportError:
     ARGON2_AVAILABLE = False
 
 
+def _argon2_derive_key(password: str, salt: bytes, argon2_params: dict, kdf_version: int = 2) -> bytes:
+    """Derive a 32-byte key using Argon2id.
+
+    Args:
+        password: The master password.
+        salt: Raw salt bytes.
+        argon2_params: Dict with time_cost, memory_cost, parallelism.
+        kdf_version: 1 = legacy (PasswordHasher + SHA-256), 2 = hash_secret_raw.
+
+    Returns:
+        32-byte derived key.
+    """
+    if kdf_version >= 2:
+        return argon2.low_level.hash_secret_raw(
+            secret=password.encode("utf-8"),
+            salt=salt,
+            time_cost=argon2_params["time_cost"],
+            memory_cost=argon2_params["memory_cost"],
+            parallelism=argon2_params["parallelism"],
+            hash_len=32,
+            type=argon2.low_level.Type.ID,
+        )
+    else:
+        # Legacy path: PasswordHasher.hash() + SHA-256 truncation
+        ph = PasswordHasher(
+            time_cost=argon2_params["time_cost"],
+            memory_cost=argon2_params["memory_cost"],
+            parallelism=argon2_params["parallelism"],
+            hash_len=32,
+        )
+        salt_b64 = base64.b64encode(salt).decode("utf-8")
+        hash_result = ph.hash(password + salt_b64)
+        return hashlib.sha256(hash_result.encode("utf-8")).digest()
+
+
 class KeystoreSecurityLevel(Enum):
     """Security levels for keystore protection"""
 
@@ -196,20 +231,10 @@ class PQCKeystore:
 
                 # Derive key with Argon2
                 argon2_params = params["argon2_params"]
-                ph = PasswordHasher(
-                    time_cost=argon2_params["time_cost"],
-                    memory_cost=argon2_params["memory_cost"],
-                    parallelism=argon2_params["parallelism"],
-                    hash_len=32,
-                )
+                salt = base64.b64decode(params["salt"])
+                kdf_version = params.get("kdf_version", 1)
 
-                # Encode salt as required by argon2-cffi
-                salt_b64 = params["salt"]
-                salt = base64.b64decode(salt_b64)
-
-                # Hash the password with Argon2id
-                hash_result = ph.hash(master_password + salt_b64)
-                derived_key = hashlib.sha256(hash_result.encode("utf-8")).digest()
+                derived_key = _argon2_derive_key(master_password, salt, argon2_params, kdf_version)
 
             elif method == KeystoreProtectionMethod.SCRYPT_CHACHA20.value:
                 # Derive key with Scrypt
@@ -373,22 +398,12 @@ class PQCKeystore:
                             "Argon2 is required for this keystore but not available"
                         )
 
-                    # Derive key with Argon2
+                    # Derive key with Argon2 (always use v2 for new saves)
                     argon2_params = params["argon2_params"]
-                    ph = PasswordHasher(
-                        time_cost=argon2_params["time_cost"],
-                        memory_cost=argon2_params["memory_cost"],
-                        parallelism=argon2_params["parallelism"],
-                        hash_len=32,
-                    )
+                    salt = base64.b64decode(params["salt"])
 
-                    # Encode salt as required by argon2-cffi
-                    salt_b64 = params["salt"]
-                    salt = base64.b64decode(salt_b64)
-
-                    # Hash the password with Argon2id
-                    hash_result = ph.hash(master_password + salt_b64)
-                    derived_key = hashlib.sha256(hash_result.encode("utf-8")).digest()
+                    derived_key = _argon2_derive_key(master_password, salt, argon2_params, kdf_version=2)
+                    params["kdf_version"] = 2
 
                 elif method == KeystoreProtectionMethod.SCRYPT_CHACHA20.value:
                     # Derive key with Scrypt
@@ -1105,17 +1120,15 @@ class PQCKeystore:
             memory_cost = 65536  # 64 MB
             parallelism = 4
 
-            # Derive key with Argon2
-            ph = PasswordHasher(
-                time_cost=time_cost, memory_cost=memory_cost, parallelism=parallelism, hash_len=32
-            )
+            # Derive key with Argon2 (always v2 for new encryptions)
+            argon2_params = {
+                "time_cost": time_cost,
+                "memory_cost": memory_cost,
+                "parallelism": parallelism,
+            }
+            derived_key = _argon2_derive_key(password, salt, argon2_params, kdf_version=2)
 
-            # Encode salt as required by argon2-cffi
             salt_b64 = base64.b64encode(salt).decode("utf-8")
-
-            # Hash the password with Argon2id
-            hash_result = ph.hash(password + salt_b64)
-            derived_key = hashlib.sha256(hash_result.encode("utf-8")).digest()
 
             # Encrypt with AES-GCM
             cipher = AESGCM(derived_key)
@@ -1134,11 +1147,8 @@ class PQCKeystore:
                 "params": {
                     "salt": salt_b64,
                     "nonce": base64.b64encode(nonce).decode("utf-8"),
-                    "argon2_params": {
-                        "time_cost": time_cost,
-                        "memory_cost": memory_cost,
-                        "parallelism": parallelism,
-                    },
+                    "argon2_params": argon2_params,
+                    "kdf_version": 2,
                 },
                 "ciphertext": base64.b64encode(ciphertext).decode("utf-8"),
             }
@@ -1239,20 +1249,12 @@ class PQCKeystore:
 
                 # Extract parameters
                 salt_b64 = params["salt"]
+                salt = base64.b64decode(salt_b64)
                 nonce = base64.b64decode(params["nonce"])
                 argon2_params = params["argon2_params"]
+                kdf_version = params.get("kdf_version", 1)
 
-                # Derive key with Argon2
-                ph = PasswordHasher(
-                    time_cost=argon2_params["time_cost"],
-                    memory_cost=argon2_params["memory_cost"],
-                    parallelism=argon2_params["parallelism"],
-                    hash_len=32,
-                )
-
-                # Hash the password with Argon2id
-                hash_result = ph.hash(password + salt_b64)
-                derived_key = hashlib.sha256(hash_result.encode("utf-8")).digest()
+                derived_key = _argon2_derive_key(password, salt, argon2_params, kdf_version)
 
                 # Decrypt with AES-GCM
                 cipher = AESGCM(derived_key)
