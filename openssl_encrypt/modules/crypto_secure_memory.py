@@ -346,7 +346,7 @@ def create_key_from_password(
     password: Union[str, bytes, bytearray],
     salt: bytes,
     key_size: int,
-    hash_iterations: int = 100000,
+    hash_iterations: int = 600000,
 ) -> CryptoKey:
     """
     Create a secure key from a password using a key derivation function.
