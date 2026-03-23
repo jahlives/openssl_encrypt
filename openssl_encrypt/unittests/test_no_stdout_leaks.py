@@ -30,11 +30,11 @@ STDOUT_WHITELIST = [
     ("crypt_cli.py", 8385, "asymmetric decrypted plaintext path 2 (quiet)"),
     ("crypt_cli.py", 9157, "symmetric decrypted text content"),
     # crypt_core.py — JSON data output
-    ("crypt_core.py", 7738, "print_file_info JSON output"),
+    ("crypt_core.py", 7727, "print_file_info JSON output"),
     # crypt_core.py — protected DO NOT CHANGE block
-    ("crypt_core.py", 9089, "PQC key decryption status (protected)"),
-    ("crypt_core.py", 9096, "PQC key decryption failure (protected)"),
-    ("crypt_core.py", 9102, "PQC key decryption error (protected)"),
+    ("crypt_core.py", 9078, "PQC key decryption status (protected)"),
+    ("crypt_core.py", 9085, "PQC key decryption failure (protected)"),
+    ("crypt_core.py", 9091, "PQC key decryption error (protected)"),
     # crypt_utils.py — eprint() helper's own print() call
     ("crypt_utils.py", 25, "eprint() helper implementation"),
     # usb_creator.py — decrypted text content
@@ -109,8 +109,8 @@ def _get_source_files() -> list:
         for f in files:
             if not f.endswith(".py"):
                 continue
-            # Skip test files
-            if f.startswith("test_"):
+            # Skip test files and generated files
+            if f.startswith("test_") or f == "version.py":
                 continue
 
             source_files.append(os.path.join(root, f))
