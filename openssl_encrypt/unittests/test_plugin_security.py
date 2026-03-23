@@ -1121,6 +1121,9 @@ class TestPluginSetStateWhitelist(unittest.TestCase):
             def get_plugin_type(self):
                 return PluginType.PRE_PROCESSOR
 
+            def get_description(self):
+                return "Test plugin"
+
             def get_required_capabilities(self):
                 return set()
 
