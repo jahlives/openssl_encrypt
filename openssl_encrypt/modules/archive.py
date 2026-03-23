@@ -8,6 +8,7 @@ with security-hardened extraction to prevent path traversal attacks.
 
 import os
 import stat
+import sys
 import tarfile
 import tempfile
 from typing import Dict, Optional
@@ -233,7 +234,12 @@ def secure_tar_extract(tar_data_or_path, output_dir: str) -> None:
 
         # All checks passed — extract
         os.makedirs(output_dir, exist_ok=True)
-        tar.extractall(path=output_dir, filter="data")
+        if sys.version_info >= (3, 12):
+            tar.extractall(path=output_dir, filter="data")
+        else:
+            # Python < 3.12 lacks the filter parameter;
+            # security is already enforced by the manual validation above
+            tar.extractall(path=output_dir)
     finally:
         tar.close()
 
