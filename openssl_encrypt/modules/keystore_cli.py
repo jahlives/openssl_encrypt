@@ -254,9 +254,11 @@ class PQCKeystore:
             encrypted = self._encrypt_data(test_data)
             self.keystore_data["test_key"] = base64.b64encode(encrypted).decode("utf-8")
 
-        # Create a temporary file first
+        # Create a temporary file with secure permissions first
+        from .file_permissions import PermissionLevel, create_secure_file
         temp_path = self.keystore_path + ".tmp"
-        with open(temp_path, "w") as f:
+        fd = create_secure_file(temp_path, PermissionLevel.OWNER_ONLY)
+        with os.fdopen(fd, "w") as f:
             json.dump(self.keystore_data, f, indent=2)
 
         # Atomically replace the original file

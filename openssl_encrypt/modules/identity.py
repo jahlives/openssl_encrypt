@@ -35,6 +35,7 @@ from .crypt_utils import eprint
 from .file_permissions import (
     PermissionLevel,
     create_secure_directory,
+    create_secure_file,
     set_permissions,
 )
 
@@ -396,9 +397,9 @@ class Identity:
             identity_data["protection"] = self.protection.to_dict()
 
         identity_json_path = path / "identity.json"
-        with open(identity_json_path, "w") as f:
+        fd = create_secure_file(identity_json_path, PermissionLevel.OWNER_ONLY)
+        with os.fdopen(fd, "w") as f:
             json.dump(identity_data, f, indent=2)
-        set_permissions(identity_json_path, PermissionLevel.OWNER_ONLY)
 
         # Save public keys
         enc_pub_path = path / "encryption_public.pem"
@@ -425,18 +426,18 @@ class Identity:
                     self.encryption_private_key.get_bytes(), passphrase, self.protection, self.name
                 )
                 enc_priv_path = path / "encryption_private.pem"
-                with open(enc_priv_path, "wb") as f:
+                fd = create_secure_file(enc_priv_path, PermissionLevel.OWNER_ONLY)
+                with os.fdopen(fd, "wb") as f:
                     f.write(enc_priv_encrypted)
-                set_permissions(enc_priv_path, PermissionLevel.OWNER_ONLY)
 
             if self.signing_private_key:
                 sig_priv_encrypted = _encrypt_private_key(
                     self.signing_private_key.get_bytes(), passphrase, self.protection, self.name
                 )
                 sig_priv_path = path / "signing_private.pem"
-                with open(sig_priv_path, "wb") as f:
+                fd = create_secure_file(sig_priv_path, PermissionLevel.OWNER_ONLY)
+                with os.fdopen(fd, "wb") as f:
                     f.write(sig_priv_encrypted)
-                set_permissions(sig_priv_path, PermissionLevel.OWNER_ONLY)
 
         logger.info(f"Saved identity '{self.name}' to {path}")
 
