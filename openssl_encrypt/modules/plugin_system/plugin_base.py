@@ -266,12 +266,19 @@ class BasePlugin(abc.ABC):
         state.pop("logger", None)
         return state
 
+    # Attributes allowed to be restored during unpickling
+    _PICKLABLE_ATTRS = frozenset({"plugin_id", "name", "version", "enabled"})
+
     def __setstate__(self, state):
         """
         Support unpickling for multiprocessing.
 
-        Recreate the logger after unpickling.
+        Only restores expected attributes to prevent arbitrary attribute
+        injection via crafted pickle data. Recreates the logger after.
         """
+        for key in list(state.keys()):
+            if key not in self._PICKLABLE_ATTRS:
+                state.pop(key)
         self.__dict__.update(state)
         # Recreate logger
         self.logger = logging.getLogger(f"plugin.{self.plugin_id}")
