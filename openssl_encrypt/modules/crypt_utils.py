@@ -549,9 +549,7 @@ def secure_shred_file(file_path, passes=3, quiet=False, secure_mode=False):
                         # First pattern: Random data
                         while bytes_written < file_size:
                             chunk_size = min(buffer_size, file_size - bytes_written)
-                            random_bytes = bytearray(
-                                random.getrandbits(8) for _ in range(chunk_size)
-                            )
+                            random_bytes = os.urandom(chunk_size)
                             f.write(random_bytes)
                             bytes_written += chunk_size
 
