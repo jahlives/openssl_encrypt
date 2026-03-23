@@ -41,13 +41,6 @@ def constant_time_compare(
     Returns:
         bool: True if the sequences match, False otherwise
     """
-    # Handle direct string comparison for backward compatibility
-    if isinstance(a, str) and isinstance(b, str):
-        # For strings, we can first do a quick equality check
-        # This maintains backward compatibility with code that
-        # was already doing string comparisons
-        return a == b
-
     # Add a small random delay to mask timing differences
     add_timing_jitter(1, 3)  # 1-3ms
 
@@ -226,30 +219,12 @@ def verify_mac(
     elif expected_mac is None or received_mac is None:
         return False
 
-    # Check if the inputs are already equal (for backward compatibility)
-    # This uses the ordinary equality operator, which is fast but not constant-time
-    # We'll follow up with a constant-time comparison for security
-    preliminary_check = expected_mac == received_mac
-
     # Convert to bytes if needed
     expected_bytes = bytes(expected_mac)
     received_bytes = bytes(received_mac)
 
-    # Add a small timing component for associated data if provided
-    if associated_data is not None and len(associated_data) > 0:
-        # Much smaller delay to ensure tests don't slow down too much
-        delay_factor = min(2, len(associated_data) // 2048) / 1000.0
-        if delay_factor > 0:
-            time.sleep(delay_factor)
-
-    # If preliminary check failed, use the constant-time comparison
-    # This ensures both backward compatibility for simple cases
-    # and security for sensitive cryptographic operations
-    if not preliminary_check:
-        # Use specialized MAC verification from the core module
-        result = constant_time_mac_verify(expected_bytes, received_bytes)
-    else:
-        result = True
+    # Always use constant-time comparison to prevent timing attacks
+    result = constant_time_mac_verify(expected_bytes, received_bytes)
 
     # Add final timing jitter
     add_timing_jitter(1, 3)  # 1-3ms
