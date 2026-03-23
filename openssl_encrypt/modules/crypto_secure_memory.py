@@ -15,9 +15,8 @@ import sys
 from typing import Any, BinaryIO, Callable, Dict, List, Optional, Tuple, Union
 
 # Import secure error handling
-from .crypt_errors import KeyDerivationError
 from .crypt_errors import MemoryError as SecureMemoryError
-from .crypt_errors import secure_key_derivation_error_handler, secure_memory_error_handler
+from .crypt_errors import secure_memory_error_handler
 
 # Import from secure_allocator module
 from .secure_allocator import (
@@ -339,69 +338,6 @@ def generate_secure_key(key_size: int) -> CryptoKey:
         CryptoKey: A new secure random key
     """
     return CryptoKey(key_size=key_size)
-
-
-@secure_key_derivation_error_handler
-def create_key_from_password(
-    password: Union[str, bytes, bytearray],
-    salt: bytes,
-    key_size: int,
-    hash_iterations: int = 100000,
-) -> CryptoKey:
-    """
-    Create a secure key from a password using a key derivation function.
-
-    Args:
-        password: The password to derive the key from
-        salt: Salt value for the KDF
-        key_size: Size of the derived key in bytes
-        hash_iterations: Number of iterations for the KDF
-
-    Returns:
-        CryptoKey: A secure key derived from the password
-    """
-    # Validate inputs before processing
-    if salt is None or not isinstance(salt, (bytes, bytearray)):
-        raise KeyDerivationError("Salt must be bytes or bytearray")
-
-    if not isinstance(key_size, int) or key_size <= 0:
-        raise KeyDerivationError("Key size must be a positive integer")
-
-    if not isinstance(hash_iterations, int) or hash_iterations <= 0:
-        raise KeyDerivationError("Hash iterations must be a positive integer")
-
-    password_bytes = None
-    derived_key = None
-    try:
-        # Import key derivation function
-        from cryptography.hazmat.primitives import hashes
-        from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-
-        # Convert password to mutable bytearray
-        if isinstance(password, str):
-            password_bytes = bytearray(password.encode("utf-8"))
-        else:
-            password_bytes = bytearray(password)
-
-        # Derive the key
-        kdf = PBKDF2HMAC(
-            algorithm=hashes.SHA256(),
-            length=key_size,
-            salt=salt,
-            iterations=hash_iterations,
-        )
-        derived_key = bytearray(kdf.derive(password_bytes))
-
-        # Create a secure key from the derived material
-        result = CryptoKey(key_data=derived_key)
-
-        return result
-
-    finally:
-        if password_bytes is not None:
-            secure_memzero(password_bytes)
-        if derived_key is not None:
-            secure_memzero(derived_key)
 
 
 @secure_memory_error_handler

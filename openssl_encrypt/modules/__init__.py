@@ -15,7 +15,6 @@ from .crypto_secure_memory import (
     CryptoIV,
     CryptoKey,
     CryptoSecureBuffer,
-    create_key_from_password,
     generate_secure_key,
     secure_crypto_buffer,
     secure_crypto_iv,

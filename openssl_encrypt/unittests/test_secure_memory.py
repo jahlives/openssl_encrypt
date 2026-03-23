@@ -30,7 +30,6 @@ from openssl_encrypt.modules.crypt_errors import SecureError
 from openssl_encrypt.modules.crypto_secure_memory import (
     CryptoKey,
     CryptoSecureBuffer,
-    create_key_from_password,
     generate_secure_key,
     validate_crypto_memory_integrity,
 )
@@ -262,7 +261,6 @@ class TestCryptoSecureMemory(unittest.TestCase):
         # Import from crypto_secure_memory module
         from openssl_encrypt.modules.crypto_secure_memory import (
             CryptoKey,
-            create_key_from_password,
             generate_secure_key,
         )
 
@@ -270,17 +268,12 @@ class TestCryptoSecureMemory(unittest.TestCase):
         key = generate_secure_key(32)
         self.assertEqual(len(key), 32)
 
-        # Create a key from a password
-        password_key = create_key_from_password("test password", b"salt", 32)
-        self.assertEqual(len(password_key), 32)
-
         # Create a specific key container
         key_container = CryptoKey(key_data=key.get_bytes())
         self.assertEqual(len(key_container), 32)
 
         # Clean up
         key.clear()  # Using clear() as implemented in CryptoKey
-        password_key.clear()
         key_container.clear()
 
 
@@ -403,24 +396,6 @@ class TestCryptoSecureMemoryErrorHandling(unittest.TestCase):
         with self.assertRaises(SecureError) as context:
             buffer.get_bytes()
         self.assertEqual(context.exception.category, ErrorCategory.MEMORY)
-
-    def test_key_derivation_errors(self):
-        """Test error handling in key derivation."""
-        # Test with invalid salt
-        with self.assertRaises(SecureError) as context:
-            create_key_from_password("password", None, 32)
-        self.assertEqual(context.exception.category, ErrorCategory.KEY_DERIVATION)
-
-        # Test with invalid key size
-        with self.assertRaises(SecureError) as context:
-            create_key_from_password("password", b"salt", -1)
-        self.assertEqual(context.exception.category, ErrorCategory.KEY_DERIVATION)
-
-        # Test with invalid hash iterations
-        with self.assertRaises(SecureError) as context:
-            create_key_from_password("password", b"salt", 32, "not a number")
-        self.assertEqual(context.exception.category, ErrorCategory.KEY_DERIVATION)
-
 
 class TestThreadedErrorHandling(unittest.TestCase):
     """Test error handling in multi-threaded environments."""
