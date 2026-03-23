@@ -2428,6 +2428,38 @@ class TestArgon2KdfVersion(unittest.TestCase):
         with self.assertRaises(Exception):
             keystore2.load_keystore("WrongPassword!")
 
+    @unittest.skipUnless(ARGON2_AVAILABLE, "argon2-cffi not available")
+    def test_v2_keystore_rejects_tampered_aad(self):
+        """Test that v2 keystores reject decryption when AAD is tampered with."""
+        # Create a v2 keystore
+        keystore = PQCKeystore(self.keystore_path)
+        keystore.create_keystore(self.keystore_password)
+
+        # Read the raw keystore file
+        with open(self.keystore_path, "rb") as f:
+            raw = f.read()
+
+        header_size = int.from_bytes(raw[:4], byteorder="big")
+        header_json = raw[4:4 + header_size]
+        ciphertext = raw[4 + header_size:]
+
+        # Tamper with the header (which is used as AAD)
+        header = json.loads(header_json.decode("utf-8"))
+        header["tampered"] = True
+        tampered_header_json = json.dumps(header).encode("utf-8")
+        tampered_header_size = len(tampered_header_json)
+
+        # Write tampered keystore
+        with open(self.keystore_path, "wb") as f:
+            f.write(tampered_header_size.to_bytes(4, byteorder="big"))
+            f.write(tampered_header_json)
+            f.write(ciphertext)
+
+        # Loading should fail — AAD mismatch, no fallback for v2
+        keystore2 = PQCKeystore(self.keystore_path)
+        with self.assertRaises(Exception):
+            keystore2.load_keystore(self.keystore_password)
+
 
 class TestCryptErrorsFixes(unittest.TestCase):
     """Test fixes for error handling issues in crypt_errors."""

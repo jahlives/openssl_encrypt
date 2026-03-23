@@ -267,53 +267,43 @@ class PQCKeystore:
                 raise ValidationError(f"Unsupported protection method: {method}")
 
             # Decrypt the keystore data
+            kdf_version = params.get("kdf_version", 1)
+
             if method == KeystoreProtectionMethod.SCRYPT_CHACHA20.value:
                 # Use ChaCha20Poly1305
                 cipher = ChaCha20Poly1305(derived_key)
                 nonce = base64.b64decode(params["nonce"])
+                header_aad = json.dumps(header).encode("utf-8")
 
-                # Try multiple approaches for robustness - order matters for backward compatibility
-                try:
-                    # First try with header as associated_data (recommended approach)
-                    plaintext = cipher.decrypt(
-                        nonce, ciphertext, associated_data=json.dumps(header).encode("utf-8")
-                    )
-                except Exception as e1:
+                if kdf_version >= 2:
+                    # v2+: strict AAD — no fallback
+                    plaintext = cipher.decrypt(nonce, ciphertext, associated_data=header_aad)
+                else:
+                    # Legacy: try with header AAD, fall back for old keystores
                     try:
-                        # Then try without associated_data (older versions)
-                        plaintext = cipher.decrypt(nonce, ciphertext, associated_data=None)
-                    except Exception as e2:
+                        plaintext = cipher.decrypt(nonce, ciphertext, associated_data=header_aad)
+                    except Exception as e1:
                         try:
-                            # Finally try with empty string
-                            plaintext = cipher.decrypt(nonce, ciphertext, associated_data=b"")
-                        except Exception as e3:
-                            # Raise the original error
+                            plaintext = cipher.decrypt(nonce, ciphertext, associated_data=None)
+                        except Exception:
                             raise e1
             else:
                 # Use AES-GCM
                 cipher = AESGCM(derived_key)
                 nonce = base64.b64decode(params["nonce"])
+                header_aad = json.dumps(header).encode("utf-8")
 
-                # For AES-GCM, associated_data must match exactly between encryption and decryption
-                # Try multiple approaches for backward compatibility - order matters
-                try:
-                    # First try with header JSON as associated_data (matches our save_keystore)
-                    header_json = json.dumps(header).encode("utf-8")
-                    plaintext = cipher.decrypt(nonce, ciphertext, associated_data=header_json)
-                except Exception as e1:
+                if kdf_version >= 2:
+                    # v2+: strict AAD — no fallback
+                    plaintext = cipher.decrypt(nonce, ciphertext, associated_data=header_aad)
+                else:
+                    # Legacy: try with header AAD, fall back for old keystores
                     try:
-                        # Then try with None as associated_data (for older keystores)
-                        plaintext = cipher.decrypt(nonce, ciphertext, associated_data=None)
-                    except Exception as e2:
+                        plaintext = cipher.decrypt(nonce, ciphertext, associated_data=header_aad)
+                    except Exception as e1:
                         try:
-                            # Finally try with empty bytes (another possible approach)
-                            plaintext = cipher.decrypt(nonce, ciphertext, associated_data=b"")
-                        except Exception as e3:
-                            # Log more details about the error for debugging
-                            import traceback
-
-                            traceback.print_exc()
-                            # Raise the original error
+                            plaintext = cipher.decrypt(nonce, ciphertext, associated_data=None)
+                        except Exception:
                             raise e1
 
             # Parse the decrypted data with secure validation (MED-8 fix)
@@ -1184,6 +1174,7 @@ class PQCKeystore:
                     "salt": base64.b64encode(salt).decode("utf-8"),
                     "nonce": base64.b64encode(nonce).decode("utf-8"),
                     "scrypt_params": {"n": n, "r": r, "p": p},
+                    "kdf_version": 2,
                 },
                 "ciphertext": base64.b64encode(ciphertext).decode("utf-8"),
             }
@@ -1214,6 +1205,7 @@ class PQCKeystore:
                     "salt": base64.b64encode(salt).decode("utf-8"),
                     "nonce": base64.b64encode(nonce).decode("utf-8"),
                     "pbkdf2_params": {"iterations": iterations},
+                    "kdf_version": 2,
                 },
                 "ciphertext": base64.b64encode(ciphertext).decode("utf-8"),
             }
@@ -1263,14 +1255,15 @@ class PQCKeystore:
                     "method": method,
                     "params": {"salt": salt_b64, "nonce": base64.b64encode(nonce).decode("utf-8")},
                 }
-                # Try both methods for backward compatibility
-                try:
-                    plaintext = cipher.decrypt(
-                        nonce, ciphertext, associated_data=json.dumps(header).encode("utf-8")
-                    )
-                except Exception:
-                    # Fallback for old encrypted data
-                    plaintext = cipher.decrypt(nonce, ciphertext, associated_data=None)
+                header_aad = json.dumps(header).encode("utf-8")
+
+                if kdf_version >= 2:
+                    plaintext = cipher.decrypt(nonce, ciphertext, associated_data=header_aad)
+                else:
+                    try:
+                        plaintext = cipher.decrypt(nonce, ciphertext, associated_data=header_aad)
+                    except Exception:
+                        plaintext = cipher.decrypt(nonce, ciphertext, associated_data=None)
 
             elif method == KeystoreProtectionMethod.SCRYPT_CHACHA20.value:
                 # Extract parameters
@@ -1298,14 +1291,16 @@ class PQCKeystore:
                         "nonce": base64.b64encode(nonce).decode("utf-8"),
                     },
                 }
-                # Try both methods for backward compatibility
-                try:
-                    plaintext = cipher.decrypt(
-                        nonce, ciphertext, associated_data=json.dumps(header).encode("utf-8")
-                    )
-                except Exception:
-                    # Fallback for old encrypted data
-                    plaintext = cipher.decrypt(nonce, ciphertext, associated_data=None)
+                header_aad = json.dumps(header).encode("utf-8")
+                kdf_version = params.get("kdf_version", 1)
+
+                if kdf_version >= 2:
+                    plaintext = cipher.decrypt(nonce, ciphertext, associated_data=header_aad)
+                else:
+                    try:
+                        plaintext = cipher.decrypt(nonce, ciphertext, associated_data=header_aad)
+                    except Exception:
+                        plaintext = cipher.decrypt(nonce, ciphertext, associated_data=None)
 
             elif method == KeystoreProtectionMethod.PBKDF2_AES_GCM.value:
                 # Extract parameters
@@ -1329,14 +1324,16 @@ class PQCKeystore:
                     "method": method,
                     "params": {"salt": salt_b64, "nonce": base64.b64encode(nonce).decode("utf-8")},
                 }
-                # Try both methods for backward compatibility
-                try:
-                    plaintext = cipher.decrypt(
-                        nonce, ciphertext, associated_data=json.dumps(header).encode("utf-8")
-                    )
-                except Exception:
-                    # Fallback for old encrypted data
-                    plaintext = cipher.decrypt(nonce, ciphertext, associated_data=None)
+                header_aad = json.dumps(header).encode("utf-8")
+                kdf_version = params.get("kdf_version", 1)
+
+                if kdf_version >= 2:
+                    plaintext = cipher.decrypt(nonce, ciphertext, associated_data=header_aad)
+                else:
+                    try:
+                        plaintext = cipher.decrypt(nonce, ciphertext, associated_data=header_aad)
+                    except Exception:
+                        plaintext = cipher.decrypt(nonce, ciphertext, associated_data=None)
 
             else:
                 raise ValidationError(f"Unsupported protection method: {method}")
