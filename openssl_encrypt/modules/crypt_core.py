@@ -1269,18 +1269,7 @@ def calculate_hash(data):
         raise ValidationError(f"Data must be bytes-like object, got {type(data).__name__}")
 
     try:
-        # Add a small timing jitter to prevent timing analysis
-        jitter_ms = secrets.randbelow(5) + 1  # 1-5ms
-        time.sleep(jitter_ms / 1000.0)
-
-        # Calculate the hash
-        hash_result = hashlib.sha256(data).hexdigest()
-
-        # Add another small jitter after calculation
-        jitter_ms = secrets.randbelow(5) + 1  # 1-5ms
-        time.sleep(jitter_ms / 1000.0)
-
-        return hash_result
+        return hashlib.sha256(data).hexdigest()
     except Exception as e:
         raise InternalError("Hash calculation failed", original_exception=e)
 

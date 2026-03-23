@@ -325,8 +325,9 @@ class PQCKeystore:
                 except json.JSONDecodeError as e:
                     raise ValidationError(f"Invalid JSON in keystore data: {e}")
 
-            # Store the derived key for later use (cached)
-            self.master_key = bytes(derived_key)
+            # Store the derived key for later use (cached) as mutable bytearray
+            # so it can be securely zeroed when the cache expires
+            self.master_key = bytearray(derived_key)
             self.master_key_time = time.time()
 
             return True
@@ -427,7 +428,7 @@ class PQCKeystore:
 
                 # Cache the key for future operations
                 # Note: Clone the derived key securely
-                self.master_key = bytes(derived_key)
+                self.master_key = bytearray(derived_key)
                 self.master_key_time = time.time()
 
             # Encrypt the keystore data
