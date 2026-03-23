@@ -193,9 +193,15 @@ class SecurityAuditLogger:
                 # Check if log rotation is needed
                 self._rotate_log_if_needed()
 
-                # Write event as JSON line
-                with open(self.log_file, "a", encoding="utf-8") as f:
-                    f.write(json.dumps(event) + "\n")
+                # Write event as JSON line (secure permissions on creation)
+                if not self.log_file.exists():
+                    from .file_permissions import PermissionLevel, create_secure_file
+                    fd = create_secure_file(self.log_file, PermissionLevel.OWNER_ONLY)
+                    with os.fdopen(fd, "a", encoding="utf-8") as f:
+                        f.write(json.dumps(event) + "\n")
+                else:
+                    with open(self.log_file, "a", encoding="utf-8") as f:
+                        f.write(json.dumps(event) + "\n")
             except Exception as e:
                 logger.error(f"Failed to write to audit log: {e}")
 
