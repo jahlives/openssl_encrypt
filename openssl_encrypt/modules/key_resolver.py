@@ -18,6 +18,7 @@ Resolution order:
 """
 
 import logging
+import os
 from typing import TYPE_CHECKING, Callable, Optional
 
 from .crypt_utils import eprint
@@ -238,7 +239,15 @@ def silent_trust_callback(bundle: "PublicKeyBundle") -> bool:
 
     Returns:
         Always True
+
+    Raises:
+        RuntimeError: If called outside of a test environment
     """
+    if not os.environ.get("PYTEST_CURRENT_TEST") and not os.environ.get("OPENSSL_ENCRYPT_TESTING"):
+        raise RuntimeError(
+            "silent_trust_callback is only allowed in test environments. "
+            "Set OPENSSL_ENCRYPT_TESTING=1 to override."
+        )
     logger.warning("Using silent trust callback - automatically trusting all keys (TESTING ONLY)")
     return True
 

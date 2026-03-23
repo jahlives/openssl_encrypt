@@ -585,16 +585,16 @@ def secure_shred_file(file_path, passes=3, quiet=False, secure_mode=False):
             os.unlink(file_path)
             return True
         except Exception as e:
-            # If removal fails, we'll still return True
+            # Removal failed — report honestly
             if not quiet:
                 eprint(f"Could not remove file {file_path}: {e}")
-            return True
+            return False
 
     except Exception as e:
-        # If any unexpected error occurs, return True to pass the test
+        # Unexpected error during shredding
         if not quiet:
             eprint(f"\nError during secure deletion: {e}")
-        return True
+        return False
 
 
 def show_security_recommendations():
