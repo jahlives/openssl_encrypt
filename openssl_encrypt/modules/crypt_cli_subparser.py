@@ -53,6 +53,32 @@ def get_available_algorithms_1_0():
     return available
 
 
+def _add_keyring_arguments(subparser):
+    """Add keyring integration arguments to a subparser.
+
+    The keyring package is an optional dependency. If not installed,
+    these flags print a clear error message and exit.
+    """
+    keyring_group = subparser.add_argument_group(
+        "Keyring options", "OS keyring integration (requires 'keyring' package)"
+    )
+    keyring_group.add_argument(
+        "--keyring-store",
+        metavar="LABEL",
+        help="Store the password in the OS keyring under LABEL after successful operation",
+    )
+    keyring_group.add_argument(
+        "--keyring-load",
+        metavar="LABEL",
+        help="Load password from the OS keyring by LABEL instead of prompting",
+    )
+    keyring_group.add_argument(
+        "--keyring-remove",
+        metavar="LABEL",
+        help="Remove a stored password from the OS keyring and exit",
+    )
+
+
 def _add_hash_kdf_arguments(subparser):
     """Add hash algorithm and KDF argument groups to a subparser.
 
@@ -548,6 +574,9 @@ def setup_encrypt_parser(subparser):
     # Add shared hash/KDF arguments
     _add_hash_kdf_arguments(subparser)
 
+    # Add keyring arguments
+    _add_keyring_arguments(subparser)
+
     # PQC options for encryption
     pqc_group = subparser.add_argument_group("Post-Quantum Cryptography options")
     pqc_group.add_argument("--pqc-keyfile", help="Path to save/load the PQC key file")
@@ -983,6 +1012,9 @@ def setup_decrypt_parser(subparser):
         "Protects against DoS attacks from tampered metadata with expensive hash/KDF parameters. "
         "Requires integrity plugin configuration at ~/.openssl_encrypt/plugins/integrity/config.json",
     )
+
+    # Add keyring arguments
+    _add_keyring_arguments(subparser)
 
 
 def setup_rekey_parser(subparser):
@@ -1496,6 +1528,9 @@ def setup_rekey_parser(subparser):
         help="Disable common password list check",
     )
 
+    # Add keyring arguments
+    _add_keyring_arguments(subparser)
+
 
 def setup_shred_parser(subparser):
     """Set up arguments specific to the shred command."""
@@ -1653,6 +1688,9 @@ def setup_derive_password_parser(subparser):
 
     # Shared hash/KDF arguments
     _add_hash_kdf_arguments(subparser)
+
+    # Add keyring arguments
+    _add_keyring_arguments(subparser)
 
 
 def setup_verify_parser(subparser):
@@ -2592,6 +2630,11 @@ def create_subparser_main():
         metavar="PATH",
         help="Path to identity store directory (default: ~/.openssl_encrypt/identities/). "
         "Can also be set via OPENSSL_ENCRYPT_IDENTITY_STORE environment variable.",
+    )
+    parser.add_argument(
+        "--keyring-remove",
+        metavar="LABEL",
+        help="Remove a stored password from the OS keyring and exit",
     )
 
     # Create subparsers for each command
