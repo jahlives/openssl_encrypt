@@ -41,6 +41,9 @@ STDOUT_WHITELIST = [
     ("modules/crypt_core.py", "Successfully decrypted post-quantum private key", "DO NOT CHANGE block"),
     ("modules/crypt_core.py", "Failed to decrypt post-quantum private key", "DO NOT CHANGE block"),
     ("modules/crypt_core.py", "Error decrypting private key", "DO NOT CHANGE block"),
+    # crypt_cli.py — derive-password output to stdout
+    ("modules/crypt_cli.py", "print(derived.hex())", "derive-password hex output to stdout"),
+    ("modules/crypt_cli.py", "print(base64.b64encode(derived)", "derive-password base64 output to stdout"),
     # crypt_cli.py — JSON data output
     ("modules/crypt_cli.py", "print(json.dumps(", "JSON data output"),
     # crypt_cli.py — Decrypted plaintext output

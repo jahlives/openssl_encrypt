@@ -53,6 +53,308 @@ def get_available_algorithms_1_0():
     return available
 
 
+def _add_hash_kdf_arguments(subparser):
+    """Add hash algorithm and KDF argument groups to a subparser.
+
+    Shared by encrypt, decrypt, rekey, and derive-password parsers to avoid
+    duplicating ~280 lines of argument definitions.
+    """
+    # Hash options
+    hash_group = subparser.add_argument_group("Hash options")
+
+    # Add note about available algorithms if registry is available
+    if REGISTRY_AVAILABLE:
+        hash_group.description = "Hash algorithm configuration. Use 'list-algorithms --category=hashes' to see all available hash functions."
+
+    # Add global KDF rounds parameter
+    hash_group.add_argument(
+        "--kdf-rounds",
+        type=int,
+        default=0,
+        help="Default number of rounds for all KDFs when enabled without specific rounds (overrides the default of 10)",
+    )
+
+    # SHA family arguments
+    hash_group.add_argument(
+        "--sha512-rounds",
+        type=int,
+        nargs="?",
+        const=1,
+        default=0,
+        help="Number of SHA-512 iterations (default: 1,000,000 if flag provided without value)",
+    )
+    hash_group.add_argument(
+        "--sha384-rounds",
+        type=int,
+        nargs="?",
+        const=1,
+        default=0,
+        help="Number of SHA-384 iterations (default: 1,000,000 if flag provided without value)",
+    )
+    hash_group.add_argument(
+        "--sha256-rounds",
+        type=int,
+        nargs="?",
+        const=1,
+        default=0,
+        help="Number of SHA-256 iterations (default: 1,000,000 if flag provided without value)",
+    )
+    hash_group.add_argument(
+        "--sha224-rounds",
+        type=int,
+        nargs="?",
+        const=1,
+        default=0,
+        help="Number of SHA-224 iterations (default: 1,000,000 if flag provided without value)",
+    )
+    hash_group.add_argument(
+        "--sha3-256-rounds",
+        type=int,
+        nargs="?",
+        const=1,
+        default=0,
+        help="Number of SHA3-256 iterations (default: 1,000,000 if flag provided without value)",
+    )
+    hash_group.add_argument(
+        "--sha3-512-rounds",
+        type=int,
+        nargs="?",
+        const=1,
+        default=0,
+        help="Number of SHA3-512 iterations (default: 1,000,000 if flag provided without value)",
+    )
+    hash_group.add_argument(
+        "--sha3-384-rounds",
+        type=int,
+        nargs="?",
+        const=1,
+        default=0,
+        help="Number of SHA3-384 iterations (default: 1,000,000 if flag provided without value)",
+    )
+    hash_group.add_argument(
+        "--sha3-224-rounds",
+        type=int,
+        nargs="?",
+        const=1,
+        default=0,
+        help="Number of SHA3-224 iterations (default: 1,000,000 if flag provided without value)",
+    )
+    hash_group.add_argument(
+        "--blake2b-rounds",
+        type=int,
+        nargs="?",
+        const=1,
+        default=0,
+        help="Number of BLAKE2b iterations (default: 1,000,000 if flag provided without value)",
+    )
+    hash_group.add_argument(
+        "--blake3-rounds",
+        type=int,
+        nargs="?",
+        const=1,
+        default=0,
+        help="Number of BLAKE3 iterations (default: 1,000,000 if flag provided without value)",
+    )
+    hash_group.add_argument(
+        "--shake256-rounds",
+        type=int,
+        nargs="?",
+        const=1,
+        default=0,
+        help="Number of SHAKE-256 iterations (default: 1,000,000 if flag provided without value)",
+    )
+    hash_group.add_argument(
+        "--shake128-rounds",
+        type=int,
+        nargs="?",
+        const=1,
+        default=0,
+        help="Number of SHAKE-128 iterations (default: 1,000,000 if flag provided without value)",
+    )
+
+    # Scrypt options
+    scrypt_group = subparser.add_argument_group("Scrypt options")
+    scrypt_group.add_argument(
+        "--enable-scrypt", action="store_true", help="Use Scrypt password hashing"
+    )
+    scrypt_group.add_argument(
+        "--scrypt-rounds",
+        type=int,
+        default=0,
+        help="Use scrypt rounds for iterating (default when enabled: 10)",
+    )
+    scrypt_group.add_argument("--scrypt-n", type=int, help="Scrypt N parameter (CPU/memory cost)")
+    scrypt_group.add_argument(
+        "--scrypt-r", type=int, default=8, help="Scrypt r parameter (block size)"
+    )
+    scrypt_group.add_argument(
+        "--scrypt-p",
+        type=int,
+        default=1,
+        help="Scrypt p parameter (parallelization factor)",
+    )
+
+    # Argon2 options
+    argon2_description = "Configure Argon2 memory-hard function parameters"
+    if REGISTRY_AVAILABLE:
+        argon2_description += (
+            ". Use 'list-algorithms --category=kdfs' to see all available KDF algorithms."
+        )
+    argon2_group = subparser.add_argument_group("Argon2 Options", argon2_description)
+    argon2_group.add_argument(
+        "--enable-argon2",
+        action="store_true",
+        default=False,
+        help="Use Argon2 password hashing (requires argon2-cffi package)",
+    )
+    argon2_group.add_argument(
+        "--argon2-rounds",
+        type=int,
+        default=0,
+        help="Argon2 time cost parameter / rounds (default when enabled: 10)",
+    )
+    argon2_group.add_argument(
+        "--argon2-time",
+        type=int,
+        default=3,
+        help="Argon2 time cost parameter (default: 3)",
+    )
+    argon2_group.add_argument(
+        "--argon2-memory",
+        type=int,
+        default=65536,
+        help="Argon2 memory cost in KB (default: 65536 - 64MB)",
+    )
+    argon2_group.add_argument(
+        "--argon2-parallelism",
+        type=int,
+        default=4,
+        help="Argon2 parallelism factor (default: 4)",
+    )
+    argon2_group.add_argument(
+        "--argon2-hash-len",
+        type=int,
+        default=32,
+        help="Argon2 hash length in bytes (default: 32)",
+    )
+    argon2_group.add_argument(
+        "--argon2-type",
+        choices=["id", "i", "d"],
+        default="id",
+        help="Argon2 variant to use: id (recommended), i, or d",
+    )
+    argon2_group.add_argument(
+        "--argon2-preset",
+        choices=["low", "medium", "high", "paranoid"],
+        help="Use predefined Argon2 parameters (overrides other Argon2 settings)",
+    )
+
+    # RandomX options
+    randomx_group = subparser.add_argument_group("RandomX options")
+    randomx_group.add_argument(
+        "--enable-randomx",
+        action="store_true",
+        help="Enable RandomX key derivation (disabled by default, requires pyrx package)",
+        default=False,
+    )
+    randomx_group.add_argument(
+        "--randomx-rounds",
+        type=int,
+        default=0,
+        help="Number of RandomX rounds (default when enabled: 10)",
+    )
+    randomx_group.add_argument(
+        "--randomx-mode",
+        choices=["light", "fast"],
+        default="light",
+        help="RandomX mode: light (256MB RAM) or fast (2GB RAM, default: light)",
+    )
+    randomx_group.add_argument(
+        "--randomx-height",
+        type=int,
+        default=1,
+        help="RandomX block height parameter (default: 1)",
+    )
+    randomx_group.add_argument(
+        "--randomx-hash-len",
+        type=int,
+        default=32,
+        help="RandomX output hash length in bytes (default: 32)",
+    )
+
+    # Balloon Hashing options
+    balloon_group = subparser.add_argument_group("Balloon Hashing options")
+    balloon_group.add_argument(
+        "--enable-balloon",
+        action="store_true",
+        help="Enable Balloon Hashing KDF",
+    )
+    balloon_group.add_argument(
+        "--balloon-time-cost",
+        type=int,
+        default=3,
+        help="Time cost parameter for Balloon hashing - controls computational complexity. Higher values increase security but also processing time.",
+    )
+    balloon_group.add_argument(
+        "--balloon-space-cost",
+        type=int,
+        default=65536,
+        help="Space cost parameter for Balloon hashing in bytes - controls memory usage. Higher values increase security but require more memory.",
+    )
+    balloon_group.add_argument(
+        "--balloon-parallelism",
+        type=int,
+        default=4,
+        help="Parallelism parameter for Balloon hashing - controls number of parallel threads. Higher values can improve performance on multi-core systems.",
+    )
+    balloon_group.add_argument(
+        "--balloon-rounds",
+        type=int,
+        default=0,
+        help="Number of rounds for Balloon hashing (default when enabled: 10). More rounds increase security but also processing time.",
+    )
+    balloon_group.add_argument(
+        "--balloon-hash-len",
+        type=int,
+        default=32,
+        help="Length of the final hash output in bytes for Balloon hashing.",
+    )
+    balloon_group.add_argument(
+        "--use-balloon",
+        action="store_true",
+        help=argparse.SUPPRESS,  # Hidden legacy option
+    )
+
+    # HKDF options
+    hkdf_group = subparser.add_argument_group(
+        "HKDF Options", "Configure HMAC-based Key Derivation Function"
+    )
+    hkdf_group.add_argument(
+        "--enable-hkdf",
+        action="store_true",
+        help="Enable HKDF key derivation",
+        default=False,
+    )
+    hkdf_group.add_argument(
+        "--hkdf-rounds",
+        type=int,
+        default=1,
+        help="Number of HKDF chained rounds (default: 1)",
+    )
+    hkdf_group.add_argument(
+        "--hkdf-algorithm",
+        choices=["sha224", "sha256", "sha384", "sha512"],
+        default="sha256",
+        help="Hash algorithm for HKDF (default: sha256)",
+    )
+    hkdf_group.add_argument(
+        "--hkdf-info",
+        type=str,
+        default="openssl_encrypt_hkdf",
+        help="HKDF info string for context (default: openssl_encrypt_hkdf)",
+    )
+
+
 def setup_encrypt_parser(subparser):
     """Set up arguments specific to the encrypt command."""
     # Get only algorithms available in 1.0.0
@@ -243,300 +545,8 @@ def setup_encrypt_parser(subparser):
         help="Treat cipher diversity warnings as errors (abort on weak combinations)",
     )
 
-    # Advanced encryption options
-    hash_group = subparser.add_argument_group("Hash options")
-
-    # Add note about available algorithms if registry is available
-    if REGISTRY_AVAILABLE:
-        hash_group.description = "Hash algorithm configuration. Use 'list-algorithms --category=hashes' to see all available hash functions."
-
-    # Add global KDF rounds parameter
-    hash_group.add_argument(
-        "--kdf-rounds",
-        type=int,
-        default=0,
-        help="Default number of rounds for all KDFs when enabled without specific rounds (overrides the default of 10)",
-    )
-
-    # SHA family arguments - updated to match the main CLI
-    hash_group.add_argument(
-        "--sha512-rounds",
-        type=int,
-        nargs="?",
-        const=1,
-        default=0,
-        help="Number of SHA-512 iterations (default: 1,000,000 if flag provided without value)",
-    )
-    hash_group.add_argument(
-        "--sha384-rounds",
-        type=int,
-        nargs="?",
-        const=1,
-        default=0,
-        help="Number of SHA-384 iterations (default: 1,000,000 if flag provided without value)",
-    )
-    hash_group.add_argument(
-        "--sha256-rounds",
-        type=int,
-        nargs="?",
-        const=1,
-        default=0,
-        help="Number of SHA-256 iterations (default: 1,000,000 if flag provided without value)",
-    )
-    hash_group.add_argument(
-        "--sha224-rounds",
-        type=int,
-        nargs="?",
-        const=1,
-        default=0,
-        help="Number of SHA-224 iterations (default: 1,000,000 if flag provided without value)",
-    )
-    hash_group.add_argument(
-        "--sha3-256-rounds",
-        type=int,
-        nargs="?",
-        const=1,
-        default=0,
-        help="Number of SHA3-256 iterations (default: 1,000,000 if flag provided without value)",
-    )
-    hash_group.add_argument(
-        "--sha3-512-rounds",
-        type=int,
-        nargs="?",
-        const=1,
-        default=0,
-        help="Number of SHA3-512 iterations (default: 1,000,000 if flag provided without value)",
-    )
-    hash_group.add_argument(
-        "--sha3-384-rounds",
-        type=int,
-        nargs="?",
-        const=1,
-        default=0,
-        help="Number of SHA3-384 iterations (default: 1,000,000 if flag provided without value)",
-    )
-    hash_group.add_argument(
-        "--sha3-224-rounds",
-        type=int,
-        nargs="?",
-        const=1,
-        default=0,
-        help="Number of SHA3-224 iterations (default: 1,000,000 if flag provided without value)",
-    )
-    hash_group.add_argument(
-        "--blake2b-rounds",
-        type=int,
-        nargs="?",
-        const=1,
-        default=0,
-        help="Number of BLAKE2b iterations (default: 1,000,000 if flag provided without value)",
-    )
-    hash_group.add_argument(
-        "--blake3-rounds",
-        type=int,
-        nargs="?",
-        const=1,
-        default=0,
-        help="Number of BLAKE3 iterations (default: 1,000,000 if flag provided without value)",
-    )
-    hash_group.add_argument(
-        "--shake256-rounds",
-        type=int,
-        nargs="?",
-        const=1,
-        default=0,
-        help="Number of SHAKE-256 iterations (default: 1,000,000 if flag provided without value)",
-    )
-    hash_group.add_argument(
-        "--shake128-rounds",
-        type=int,
-        nargs="?",
-        const=1,
-        default=0,
-        help="Number of SHAKE-128 iterations (default: 1,000,000 if flag provided without value)",
-    )
-
-    # Scrypt options for encryption
-    scrypt_group = subparser.add_argument_group("Scrypt options")
-    scrypt_group.add_argument(
-        "--enable-scrypt", action="store_true", help="Use Scrypt password hashing"
-    )
-    scrypt_group.add_argument(
-        "--scrypt-rounds",
-        type=int,
-        default=0,
-        help="Use scrypt rounds for iterating (default when enabled: 10)",
-    )
-    scrypt_group.add_argument("--scrypt-n", type=int, help="Scrypt N parameter (CPU/memory cost)")
-    scrypt_group.add_argument(
-        "--scrypt-r", type=int, default=8, help="Scrypt r parameter (block size)"
-    )
-    scrypt_group.add_argument(
-        "--scrypt-p",
-        type=int,
-        default=1,
-        help="Scrypt p parameter (parallelization factor)",
-    )
-
-    # Argon2 options for encryption
-    argon2_description = "Configure Argon2 memory-hard function parameters"
-    if REGISTRY_AVAILABLE:
-        argon2_description += (
-            ". Use 'list-algorithms --category=kdfs' to see all available KDF algorithms."
-        )
-    argon2_group = subparser.add_argument_group("Argon2 Options", argon2_description)
-    argon2_group.add_argument(
-        "--enable-argon2",
-        action="store_true",
-        default=False,
-        help="Use Argon2 password hashing (requires argon2-cffi package)",
-    )
-    argon2_group.add_argument(
-        "--argon2-rounds",
-        type=int,
-        default=0,
-        help="Argon2 time cost parameter / rounds (default when enabled: 10)",
-    )
-    argon2_group.add_argument(
-        "--argon2-time",
-        type=int,
-        default=3,
-        help="Argon2 time cost parameter (default: 3)",
-    )
-    argon2_group.add_argument(
-        "--argon2-memory",
-        type=int,
-        default=65536,
-        help="Argon2 memory cost in KB (default: 65536 - 64MB)",
-    )
-    argon2_group.add_argument(
-        "--argon2-parallelism",
-        type=int,
-        default=4,
-        help="Argon2 parallelism factor (default: 4)",
-    )
-    argon2_group.add_argument(
-        "--argon2-hash-len",
-        type=int,
-        default=32,
-        help="Argon2 hash length in bytes (default: 32)",
-    )
-    argon2_group.add_argument(
-        "--argon2-type",
-        choices=["id", "i", "d"],
-        default="id",
-        help="Argon2 variant to use: id (recommended), i, or d",
-    )
-    argon2_group.add_argument(
-        "--argon2-preset",
-        choices=["low", "medium", "high", "paranoid"],
-        help="Use predefined Argon2 parameters (overrides other Argon2 settings)",
-    )
-
-    # RandomX options for encryption
-    randomx_group = subparser.add_argument_group("RandomX options")
-    randomx_group.add_argument(
-        "--enable-randomx",
-        action="store_true",
-        help="Enable RandomX key derivation (disabled by default, requires pyrx package)",
-        default=False,
-    )
-    randomx_group.add_argument(
-        "--randomx-rounds",
-        type=int,
-        default=0,
-        help="Number of RandomX rounds (default when enabled: 10)",
-    )
-    randomx_group.add_argument(
-        "--randomx-mode",
-        choices=["light", "fast"],
-        default="light",
-        help="RandomX mode: light (256MB RAM) or fast (2GB RAM, default: light)",
-    )
-    randomx_group.add_argument(
-        "--randomx-height",
-        type=int,
-        default=1,
-        help="RandomX block height parameter (default: 1)",
-    )
-    randomx_group.add_argument(
-        "--randomx-hash-len",
-        type=int,
-        default=32,
-        help="RandomX output hash length in bytes (default: 32)",
-    )
-
-    # Balloon Hashing options
-    balloon_group = subparser.add_argument_group("Balloon Hashing options")
-    balloon_group.add_argument(
-        "--enable-balloon",
-        action="store_true",
-        help="Enable Balloon Hashing KDF",
-    )
-    balloon_group.add_argument(
-        "--balloon-time-cost",
-        type=int,
-        default=3,
-        help="Time cost parameter for Balloon hashing - controls computational complexity. Higher values increase security but also processing time.",
-    )
-    balloon_group.add_argument(
-        "--balloon-space-cost",
-        type=int,
-        default=65536,
-        help="Space cost parameter for Balloon hashing in bytes - controls memory usage. Higher values increase security but require more memory.",
-    )
-    balloon_group.add_argument(
-        "--balloon-parallelism",
-        type=int,
-        default=4,
-        help="Parallelism parameter for Balloon hashing - controls number of parallel threads. Higher values can improve performance on multi-core systems.",
-    )
-    balloon_group.add_argument(
-        "--balloon-rounds",
-        type=int,
-        default=0,
-        help="Number of rounds for Balloon hashing (default when enabled: 10). More rounds increase security but also processing time.",
-    )
-    balloon_group.add_argument(
-        "--balloon-hash-len",
-        type=int,
-        default=32,
-        help="Length of the final hash output in bytes for Balloon hashing.",
-    )
-    balloon_group.add_argument(
-        "--use-balloon",
-        action="store_true",
-        help=argparse.SUPPRESS,  # Hidden legacy option
-    )
-
-    # HKDF options
-    hkdf_group = subparser.add_argument_group(
-        "HKDF Options", "Configure HMAC-based Key Derivation Function"
-    )
-    hkdf_group.add_argument(
-        "--enable-hkdf",
-        action="store_true",
-        help="Enable HKDF key derivation",
-        default=False,
-    )
-    hkdf_group.add_argument(
-        "--hkdf-rounds",
-        type=int,
-        default=1,
-        help="Number of HKDF chained rounds (default: 1)",
-    )
-    hkdf_group.add_argument(
-        "--hkdf-algorithm",
-        choices=["sha224", "sha256", "sha384", "sha512"],
-        default="sha256",
-        help="Hash algorithm for HKDF (default: sha256)",
-    )
-    hkdf_group.add_argument(
-        "--hkdf-info",
-        type=str,
-        default="openssl_encrypt_hkdf",
-        help="HKDF info string for context (default: openssl_encrypt_hkdf)",
-    )
+    # Add shared hash/KDF arguments
+    _add_hash_kdf_arguments(subparser)
 
     # PQC options for encryption
     pqc_group = subparser.add_argument_group("Post-Quantum Cryptography options")
@@ -1540,6 +1550,111 @@ def setup_generate_password_parser(subparser):
     )
 
 
+def setup_derive_password_parser(subparser):
+    """Set up arguments specific to the derive-password command.
+
+    This command derives a key from a password using configured hash/KDF
+    algorithms and prints only the derived key to stdout. It does NOT
+    register -i, -o, -a, or --cascade so argparse rejects them.
+    """
+    # Password options
+    subparser.add_argument(
+        "--password",
+        "-p",
+        help="Password (DEPRECATED: visible in process list. "
+        "Use --password-file or OPENSSL_ENCRYPT_PASSWORD env var instead)",
+    )
+    subparser.add_argument(
+        "--password-file",
+        metavar="FILE",
+        help="Read password from FILE (use '-' for stdin). "
+        "Recommended over --password to avoid process list exposure",
+    )
+    subparser.add_argument(
+        "--password-fd",
+        type=int,
+        metavar="FD",
+        help="Read password from file descriptor FD",
+    )
+    subparser.add_argument(
+        "--force-password",
+        action="store_true",
+        help="Force acceptance of weak passwords (use with caution)",
+    )
+
+    # Salt options
+    salt_group = subparser.add_argument_group("Salt options")
+    salt_group.add_argument(
+        "--salt",
+        type=str,
+        default=None,
+        metavar="HEX",
+        help="Hex-encoded salt for key derivation (for reproducibility). "
+        "If not provided, a random salt is generated and printed to stderr.",
+    )
+    salt_group.add_argument(
+        "--salt-length",
+        type=int,
+        default=16,
+        metavar="BYTES",
+        help="Length of random salt in bytes (default: 16). Only used when --salt is not provided.",
+    )
+    salt_group.add_argument(
+        "--show-salt",
+        action="store_true",
+        help="Print the salt (hex) to stderr",
+    )
+
+    # Output format options
+    output_group = subparser.add_argument_group("Output options")
+    output_group.add_argument(
+        "--output-format",
+        choices=["hex", "base64", "raw"],
+        default="hex",
+        help="Output format for derived key (default: hex)",
+    )
+    output_group.add_argument(
+        "--output-length",
+        type=int,
+        default=32,
+        metavar="BYTES",
+        help="Desired key length in bytes (default: 32)",
+    )
+
+    # Password policy options
+    subparser.add_argument(
+        "--password-policy",
+        choices=["none", "basic", "standard", "strict"],
+        default="none",
+        help="Password policy level (default: none for derive-password)",
+    )
+    subparser.add_argument(
+        "--min-password-length",
+        type=int,
+        default=None,
+        help=argparse.SUPPRESS,
+    )
+    subparser.add_argument(
+        "--min-password-entropy",
+        type=float,
+        default=None,
+        help=argparse.SUPPRESS,
+    )
+    subparser.add_argument(
+        "--disable-common-password-check",
+        action="store_true",
+        help=argparse.SUPPRESS,
+    )
+    subparser.add_argument(
+        "--custom-password-list",
+        default=None,
+        help=argparse.SUPPRESS,
+    )
+
+    # Shared hash/KDF arguments
+    _add_hash_kdf_arguments(subparser)
+
+
 def setup_verify_parser(subparser):
     """Set up arguments for the verify command."""
     subparser.add_argument(
@@ -2521,6 +2636,13 @@ def create_subparser_main():
         formatter_class=argparse.RawTextHelpFormatter,
     )
     setup_generate_password_parser(generate_password_parser)
+
+    derive_password_parser = subparsers.add_parser(
+        "derive-password",
+        help="Derive a key from a password using configured hash/KDF algorithms",
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
+    setup_derive_password_parser(derive_password_parser)
 
     security_info_parser = subparsers.add_parser(
         "security-info",
