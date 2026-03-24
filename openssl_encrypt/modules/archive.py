@@ -131,7 +131,7 @@ class DirectoryArchiver:
             dir_path: Path to the directory.
 
         Returns:
-            Dictionary with directory statistics.
+            Dictionary with directory statistics and file list.
         """
         validate_directory_input(dir_path)
 
@@ -139,6 +139,9 @@ class DirectoryArchiver:
         total_dirs = 0
         total_size = 0
         contains_symlinks = False
+        file_list = []
+
+        norm_dir = os.path.normpath(dir_path)
 
         for root, dirs, files in os.walk(dir_path, followlinks=self.follow_symlinks):
             total_dirs += len(dirs)
@@ -149,10 +152,27 @@ class DirectoryArchiver:
                     if not self.follow_symlinks:
                         continue
                 try:
-                    total_size += os.path.getsize(filepath)
+                    file_size = os.path.getsize(filepath)
+                    file_mtime = os.path.getmtime(filepath)
+                    total_size += file_size
                 except OSError:
-                    pass
+                    file_size = 0
+                    file_mtime = 0
                 total_files += 1
+
+                # Store relative path from the archived directory
+                rel_path = os.path.relpath(filepath, norm_dir)
+                entry = {
+                    "path": rel_path,
+                    "size": file_size,
+                }
+                if file_mtime:
+                    from datetime import datetime, timezone
+
+                    entry["mtime"] = datetime.fromtimestamp(
+                        file_mtime, tz=timezone.utc
+                    ).isoformat()
+                file_list.append(entry)
 
             # Check dirs for symlinks too
             for d in dirs:
@@ -162,12 +182,16 @@ class DirectoryArchiver:
 
         root_name = os.path.basename(os.path.normpath(dir_path))
 
+        # Sort file list by path for consistent output
+        file_list.sort(key=lambda e: e["path"])
+
         return {
             "total_files": total_files,
             "total_dirs": total_dirs,
             "total_size_bytes": total_size,
             "contains_symlinks": contains_symlinks,
             "root_name": root_name,
+            "files": file_list,
         }
 
 

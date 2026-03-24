@@ -20,6 +20,7 @@ from openssl_encrypt.modules.crypt_core import (
     EncryptionAlgorithm,
     decrypt_file,
     encrypt_file,
+    print_file_info,
 )
 from openssl_encrypt.modules.crypt_errors import ValidationError
 
@@ -435,6 +436,189 @@ class TestDirectoryEncryptDecrypt(unittest.TestCase):
 
         with open(os.path.join(output_dir, "special", "file with spaces.txt")) as f:
             self.assertEqual(f.read(), "spaces")
+
+
+class TestManifestFileList(unittest.TestCase):
+    """Test that manifest includes detailed file list."""
+
+    def setUp(self):
+        self.temp_dir = tempfile.mkdtemp()
+        self.test_dir = os.path.join(self.temp_dir, "mydir")
+        os.makedirs(os.path.join(self.test_dir, "sub"))
+        with open(os.path.join(self.test_dir, "file.txt"), "w") as f:
+            f.write("hello from file.txt")
+        with open(os.path.join(self.test_dir, "sub", "nested.txt"), "w") as f:
+            f.write("hello from nested.txt")
+
+    def tearDown(self):
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    def test_manifest_includes_file_list(self):
+        """Manifest contains a files list with paths and sizes."""
+        archiver = DirectoryArchiver()
+        manifest = archiver.get_manifest(self.test_dir)
+
+        self.assertIn("files", manifest)
+        self.assertEqual(len(manifest["files"]), 2)
+
+        paths = [e["path"] for e in manifest["files"]]
+        self.assertIn("file.txt", paths)
+        self.assertIn(os.path.join("sub", "nested.txt"), paths)
+
+        for entry in manifest["files"]:
+            self.assertIn("path", entry)
+            self.assertIn("size", entry)
+            self.assertIsInstance(entry["size"], int)
+            self.assertGreater(entry["size"], 0)
+
+    def test_manifest_file_list_has_mtime(self):
+        """File entries include modification time."""
+        archiver = DirectoryArchiver()
+        manifest = archiver.get_manifest(self.test_dir)
+
+        for entry in manifest["files"]:
+            self.assertIn("mtime", entry)
+            # ISO format string
+            self.assertIsInstance(entry["mtime"], str)
+            self.assertIn("T", entry["mtime"])
+
+    def test_manifest_file_list_sorted(self):
+        """File list is sorted by path."""
+        archiver = DirectoryArchiver()
+        manifest = archiver.get_manifest(self.test_dir)
+
+        paths = [e["path"] for e in manifest["files"]]
+        self.assertEqual(paths, sorted(paths))
+
+    def test_manifest_file_list_empty_dir(self):
+        """Empty directory produces empty file list."""
+        empty_dir = os.path.join(self.temp_dir, "empty")
+        os.makedirs(empty_dir)
+
+        archiver = DirectoryArchiver()
+        manifest = archiver.get_manifest(empty_dir)
+
+        self.assertIn("files", manifest)
+        self.assertEqual(len(manifest["files"]), 0)
+
+
+class TestInfoArchiveDisplay(unittest.TestCase):
+    """Test that info action displays archive metadata."""
+
+    def setUp(self):
+        self.temp_dir = tempfile.mkdtemp()
+        self.password = b"test_password_for_archive!"
+
+        self.test_dir = os.path.join(self.temp_dir, "mydir")
+        os.makedirs(os.path.join(self.test_dir, "sub"))
+        with open(os.path.join(self.test_dir, "file.txt"), "w") as f:
+            f.write("hello from file.txt")
+        with open(os.path.join(self.test_dir, "sub", "nested.txt"), "w") as f:
+            f.write("hello from nested.txt")
+
+        # Encrypt the directory
+        self.enc_file = os.path.join(self.temp_dir, "mydir.enc")
+        encrypt_file(
+            input_file=self.test_dir,
+            output_file=self.enc_file,
+            password=self.password,
+            algorithm=EncryptionAlgorithm.AES_GCM,
+            quiet=True,
+        )
+
+    def tearDown(self):
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    def test_info_shows_archive_section(self):
+        """print_file_info shows archive metadata for encrypted directories."""
+        import io
+        import sys
+
+        old_stderr = sys.stderr
+        stderr_capture = io.StringIO()
+        sys.stderr = stderr_capture
+
+        try:
+            print_file_info(self.enc_file)
+        finally:
+            sys.stderr = old_stderr
+
+        output = stderr_capture.getvalue()
+        self.assertIn("Archive:", output)
+        self.assertIn("Original Path:", output)
+        self.assertIn("mydir", output)
+        self.assertIn("Files:", output)
+        self.assertIn("2", output)  # 2 files
+        self.assertIn("Directories:", output)
+
+    def test_info_list_shows_files(self):
+        """print_file_info with list_files=True shows individual files."""
+        import io
+        import sys
+
+        old_stderr = sys.stderr
+        stderr_capture = io.StringIO()
+        sys.stderr = stderr_capture
+
+        try:
+            print_file_info(self.enc_file, list_files=True)
+        finally:
+            sys.stderr = old_stderr
+
+        output = stderr_capture.getvalue()
+        self.assertIn("Archive Contents:", output)
+        self.assertIn("file.txt", output)
+        self.assertIn("nested.txt", output)
+
+    def test_info_non_archive_no_archive_section(self):
+        """print_file_info for a regular file does not show archive section."""
+        import io
+        import sys
+
+        # Encrypt a regular file
+        regular_file = os.path.join(self.temp_dir, "regular.txt")
+        with open(regular_file, "w") as f:
+            f.write("just a regular file")
+
+        enc_regular = os.path.join(self.temp_dir, "regular.enc")
+        encrypt_file(
+            input_file=regular_file,
+            output_file=enc_regular,
+            password=self.password,
+            algorithm=EncryptionAlgorithm.AES_GCM,
+            quiet=True,
+        )
+
+        old_stderr = sys.stderr
+        stderr_capture = io.StringIO()
+        sys.stderr = stderr_capture
+
+        try:
+            print_file_info(enc_regular)
+        finally:
+            sys.stderr = old_stderr
+
+        output = stderr_capture.getvalue()
+        self.assertNotIn("Archive:", output)
+        self.assertNotIn("Archive Contents:", output)
+
+    def test_metadata_file_list_in_archive(self):
+        """Encrypted archive metadata includes file list."""
+        import base64
+        import json
+
+        with open(self.enc_file, "rb") as f:
+            content = f.read()
+        metadata_b64 = content.split(b":")[0]
+        metadata = json.loads(base64.b64decode(metadata_b64))
+
+        archive = metadata.get("archive", {})
+        manifest = archive.get("manifest", {})
+        self.assertIn("files", manifest)
+        self.assertEqual(len(manifest["files"]), 2)
+
+        paths = [e["path"] for e in manifest["files"]]
+        self.assertIn("file.txt", paths)
 
 
 if __name__ == "__main__":

@@ -3354,6 +3354,14 @@ def main_with_args(args=None):
         help="Output in JSON format (for info action)",
     )
     global_group.add_argument(
+        "--list",
+        "-l",
+        action="store_true",
+        default=False,
+        dest="list_files",
+        help="List individual files in encrypted directory archives (for info action)",
+    )
+    global_group.add_argument(
         "-t",
         "--template",
         help="Specify a template name (built-in or from ./template directory)",
@@ -8198,7 +8206,8 @@ def main_with_args(args=None):
                 from .crypt_core import print_file_info
 
                 json_output = getattr(args, "json", False)
-                print_file_info(args.input, json_output=json_output)
+                list_files = getattr(args, "list_files", False)
+                print_file_info(args.input, json_output=json_output, list_files=list_files)
                 sys.exit(0)
             except ValueError as e:
                 print(f"Error: {e}", file=sys.stderr)

@@ -7029,13 +7029,14 @@ def extract_file_metadata(input_file):
         raise ValueError(f"Invalid file format: {str(e)}")
 
 
-def print_file_info(input_file: str, json_output: bool = False) -> dict:
+def print_file_info(input_file: str, json_output: bool = False, list_files: bool = False) -> dict:
     """
     Display encrypted file metadata without decrypting.
 
     Args:
         input_file: Path to the encrypted file
         json_output: If True, print raw JSON instead of pretty-print
+        list_files: If True, show individual files in archive manifests
 
     Returns:
         dict: The full metadata dictionary
@@ -7175,7 +7176,41 @@ def print_file_info(input_file: str, json_output: bool = False) -> dict:
         if pepper_name:
             eprint(f"    Name:            {pepper_name}")
 
+    # Archive info
+    archive = metadata.get("archive")
+    if archive:
+        eprint()
+        eprint("  Archive:")
+        manifest = archive.get("manifest", {})
+        original_path = archive.get("original_path", "unknown")
+        eprint(f"    Original Path:   {original_path}")
+        eprint(f"    Files:           {manifest.get('total_files', 0)}")
+        eprint(f"    Directories:     {manifest.get('total_dirs', 0)}")
+        total_bytes = manifest.get("total_size_bytes", 0)
+        eprint(f"    Total Size:      {_format_size(total_bytes)}")
+        if manifest.get("contains_symlinks"):
+            eprint("    Symlinks:        yes (excluded)")
+
+        if list_files and manifest.get("files"):
+            eprint()
+            eprint("  Archive Contents:")
+            for entry in manifest["files"]:
+                size_str = _format_size(entry.get("size", 0))
+                eprint(f"    {size_str:>10s}  {entry['path']}")
+
     return metadata
+
+
+def _format_size(size_bytes: int) -> str:
+    """Format byte count as human-readable size string."""
+    if size_bytes < 1024:
+        return f"{size_bytes} B"
+    elif size_bytes < 1024 * 1024:
+        return f"{size_bytes / 1024:.1f} KB"
+    elif size_bytes < 1024 * 1024 * 1024:
+        return f"{size_bytes / (1024 * 1024):.1f} MB"
+    else:
+        return f"{size_bytes / (1024 * 1024 * 1024):.1f} GB"
 
 
 def _format_kdf_params(kdf_name: str, params: dict) -> str:
