@@ -24,11 +24,14 @@ STDOUT_WHITELIST = [
     ("crypt_cli.py", 2789, "JSON keyserver bundle"),
     ("crypt_cli.py", 3018, "JSON telemetry events"),
     # crypt_cli.py — decrypted plaintext outputs
-    ("crypt_cli.py", 8197, "asymmetric decrypted plaintext"),
-    ("crypt_cli.py", 8200, "asymmetric decrypted plaintext (quiet)"),
-    ("crypt_cli.py", 8382, "asymmetric decrypted plaintext path 2"),
-    ("crypt_cli.py", 8385, "asymmetric decrypted plaintext path 2 (quiet)"),
-    ("crypt_cli.py", 9157, "symmetric decrypted text content"),
+    ("crypt_cli.py", 8400, "asymmetric decrypted plaintext"),
+    ("crypt_cli.py", 8403, "asymmetric decrypted plaintext (quiet)"),
+    ("crypt_cli.py", 8585, "asymmetric decrypted plaintext path 2"),
+    ("crypt_cli.py", 8588, "asymmetric decrypted plaintext path 2 (quiet)"),
+    ("crypt_cli.py", 9360, "symmetric decrypted text content"),
+    # crypt_cli.py — derive-password output to stdout
+    ("crypt_cli.py", 5154, "derive-password hex output"),
+    ("crypt_cli.py", 5157, "derive-password base64 output"),
     # crypt_core.py — JSON data output
     ("crypt_core.py", 7727, "print_file_info JSON output"),
     # crypt_core.py — protected DO NOT CHANGE block
