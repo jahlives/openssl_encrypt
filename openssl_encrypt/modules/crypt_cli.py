@@ -3119,6 +3119,23 @@ def main():
     # Preprocess arguments to move global flags to the front
     import sys
 
+    # Handle --keyring-remove early (before argparse) since it's a standalone action
+    if "--keyring-remove" in sys.argv:
+        idx = sys.argv.index("--keyring-remove")
+        if idx + 1 < len(sys.argv):
+            label = sys.argv[idx + 1]
+            try:
+                import keyring as _keyring
+
+                _keyring.delete_password("openssl_encrypt", label)
+                eprint(f"Password removed from keyring: '{label}'")
+            except ImportError:
+                eprint("Error: keyring package not installed. Install with: pip install keyring")
+                sys.exit(1)
+            except Exception:
+                eprint(f"No password found in keyring for label '{label}'")
+            sys.exit(0)
+
     sys.argv = preprocess_global_args(sys.argv)
 
     # After preprocessing, global flags are moved to the front when they appear after the command.
@@ -3355,6 +3372,24 @@ def main_with_args(args=None):
         "-t",
         "--template",
         help="Specify a template name (built-in or from ./template directory)",
+    )
+
+    # Keyring integration (optional dependency)
+    keyring_group = parser.add_argument_group("Keyring options (requires 'keyring' package)")
+    keyring_group.add_argument(
+        "--keyring-store",
+        metavar="LABEL",
+        help="Store the password in the OS keyring under LABEL after successful operation",
+    )
+    keyring_group.add_argument(
+        "--keyring-load",
+        metavar="LABEL",
+        help="Load password from the OS keyring by LABEL instead of prompting",
+    )
+    keyring_group.add_argument(
+        "--keyring-remove",
+        metavar="LABEL",
+        help="Remove a stored password from the OS keyring and exit",
     )
 
     # Template selection group (global options)
@@ -5017,6 +5052,20 @@ def main_with_args(args=None):
                 except KeyError:
                     pass
 
+        # Try keyring if no password resolved yet
+        if not getattr(args, "password", None) and getattr(args, "keyring_load", None):
+            try:
+                import keyring as _keyring
+
+                stored_pw = _keyring.get_password("openssl_encrypt", args.keyring_load)
+                if stored_pw:
+                    args.password = stored_pw
+                else:
+                    eprint(f"No password found in keyring for label '{args.keyring_load}'")
+            except ImportError:
+                eprint("Error: keyring package not installed. Install with: pip install keyring")
+                sys.exit(1)
+
         if not getattr(args, "password", None):
             # Prompt for password
             args.password = getpass.getpass("Password for key derivation: ")
@@ -5324,10 +5373,25 @@ def main_with_args(args=None):
                     except KeyError:
                         pass
 
+            # Try keyring if no password resolved yet
+            if not args.password and getattr(args, "keyring_load", None):
+                try:
+                    import keyring as _keyring
+
+                    stored_pw = _keyring.get_password("openssl_encrypt", args.keyring_load)
+                    if stored_pw:
+                        args.password = stored_pw
+                    else:
+                        eprint(f"No password found in keyring for label '{args.keyring_load}'")
+                except ImportError:
+                    eprint("Error: keyring package not installed. Install with: pip install keyring")
+                    sys.exit(1)
+
             if (
                 args.password
                 and not getattr(args, "password_file", None)
                 and not getattr(args, "password_fd", None)
+                and not getattr(args, "keyring_load", None)
             ):
                 # Warn about --password being visible in process list
                 if not args.quiet:
@@ -5336,6 +5400,18 @@ def main_with_args(args=None):
                         "Use --password-file or OPENSSL_ENCRYPT_PASSWORD env var instead.",
                         file=sys.stderr,
                     )
+
+            # Store password in keyring if requested (before secure_string wipes it)
+            if args.password and getattr(args, "keyring_store", None):
+                try:
+                    import keyring as _keyring
+
+                    _keyring.set_password("openssl_encrypt", args.keyring_store, args.password)
+                    if not args.quiet:
+                        eprint(f"Password stored in keyring as '{args.keyring_store}'")
+                except ImportError:
+                    if not args.quiet:
+                        eprint("Warning: keyring package not installed, password not stored")
 
             # Initialize a secure string to hold the password
             with secure_string() as password_secure:

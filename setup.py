@@ -280,6 +280,9 @@ setup(
         "threefish": [
             "openssl-encrypt-threefish>=1.0.0",
         ],
+        "keyring": [
+            "keyring>=23.0.0",
+        ],
     },
     project_urls={
         "Homepage": "https://github.com/jahlives/openssl_encrypt/tree/releases/1.4.0",
