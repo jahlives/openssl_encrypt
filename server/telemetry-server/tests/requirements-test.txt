@@ -1,9 +1,0 @@
-# Server Test Dependencies
-pytest>=7.4.0
-pytest-cov>=4.1.0
-httpx>=0.25.0  # For TestClient
-
-# Same as main requirements for consistency
-fastapi==0.109.0
-sqlalchemy==2.0.25
-pydantic==2.6.0
