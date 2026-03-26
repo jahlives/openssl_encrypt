@@ -2416,6 +2416,16 @@ def setup_keyserver_parser(subparser):
         help="Register with email confirmation (sends verification link)",
     )
 
+    # Login subcommand (exchange client_id for JWT tokens)
+    login_parser = keyserver_subparsers.add_parser(
+        "login", help="Login with client ID to obtain API tokens"
+    )
+    login_parser.add_argument("client_id", help="Client ID from registration email")
+    login_parser.add_argument(
+        "--server",
+        help="Specific keyserver URL to login to (default: first configured server)",
+    )
+
     # Search subcommand (public, no auth)
     search_parser = keyserver_subparsers.add_parser(
         "search", help="Search for public key on keyserver"
