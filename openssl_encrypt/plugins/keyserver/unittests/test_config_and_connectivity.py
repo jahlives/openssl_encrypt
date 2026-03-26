@@ -24,6 +24,7 @@ from openssl_encrypt.plugins.keyserver.config import (
     KeyserverConfig,
 )
 from openssl_encrypt.plugins.keyserver.keyserver_plugin import (
+    AuthenticationError,
     KeyserverPlugin,
     NetworkError,
 )
@@ -243,6 +244,85 @@ class TestApiToken:
 
 
 # ===========================================================================
+# Refresh Token Tests
+# ===========================================================================
+
+class TestRefreshToken:
+    """Test refresh token loading and saving."""
+
+    def test_loads_refresh_token_from_file(self, tmp_path):
+        """Refresh token is read from the refresh token file."""
+        refresh_file = tmp_path / "refresh_token"
+        refresh_file.write_text("my_refresh_token")
+        refresh_file.chmod(0o600)
+        config = KeyserverConfig(
+            servers=["https://example.com"],
+            refresh_token_file=refresh_file,
+            cache_path=tmp_path / "cache.db",
+            api_token_file=tmp_path / "token",
+        )
+        assert config.load_refresh_token() == "my_refresh_token"
+
+    def test_returns_none_when_no_refresh_token_file(self, tmp_path):
+        """Returns None when refresh token file does not exist."""
+        config = KeyserverConfig(
+            servers=["https://example.com"],
+            refresh_token_file=tmp_path / "nonexistent",
+            cache_path=tmp_path / "cache.db",
+            api_token_file=tmp_path / "token",
+        )
+        assert config.load_refresh_token() is None
+
+    def test_save_and_load_roundtrip(self, tmp_path):
+        """Saved refresh token can be loaded back."""
+        refresh_file = tmp_path / "refresh_token"
+        config = KeyserverConfig(
+            servers=["https://example.com"],
+            refresh_token_file=refresh_file,
+            cache_path=tmp_path / "cache.db",
+            api_token_file=tmp_path / "token",
+        )
+        config.save_refresh_token("refresh_roundtrip_123")
+        assert config.load_refresh_token() == "refresh_roundtrip_123"
+
+    def test_save_sets_restrictive_permissions(self, tmp_path):
+        """Refresh token file is created with 0600 permissions."""
+        refresh_file = tmp_path / "refresh_token"
+        config = KeyserverConfig(
+            servers=["https://example.com"],
+            refresh_token_file=refresh_file,
+            cache_path=tmp_path / "cache.db",
+            api_token_file=tmp_path / "token",
+        )
+        config.save_refresh_token("secure_refresh")
+        mode = refresh_file.stat().st_mode & 0o777
+        assert mode == 0o600
+
+    def test_clear_refresh_token(self, tmp_path):
+        """Clear deletes the refresh token file."""
+        refresh_file = tmp_path / "refresh_token"
+        config = KeyserverConfig(
+            servers=["https://example.com"],
+            refresh_token_file=refresh_file,
+            cache_path=tmp_path / "cache.db",
+            api_token_file=tmp_path / "token",
+        )
+        config.save_refresh_token("to_be_deleted")
+        assert config.clear_refresh_token() is True
+        assert config.load_refresh_token() is None
+
+    def test_clear_nonexistent_returns_false(self, tmp_path):
+        """Clear returns False when no refresh token file exists."""
+        config = KeyserverConfig(
+            servers=["https://example.com"],
+            refresh_token_file=tmp_path / "nonexistent",
+            cache_path=tmp_path / "cache.db",
+            api_token_file=tmp_path / "token",
+        )
+        assert config.clear_refresh_token() is False
+
+
+# ===========================================================================
 # Config Save/Load Roundtrip
 # ===========================================================================
 
@@ -344,6 +424,136 @@ class TestServerConnectivity:
         call_args = plugin_with_mock_session.session.get.call_args
         assert call_args[0][0] == "https://keyserver.example.com/api/v1/keys/search"
         assert call_args[1]["params"] == {"q": "alice@example.com"}
+
+
+# ===========================================================================
+# Token Refresh Tests (mocked)
+# ===========================================================================
+
+class TestTokenRefresh:
+    """Test automatic token refresh on 401."""
+
+    @pytest.fixture
+    def plugin_with_tokens(self, tmp_path):
+        """Plugin with access and refresh tokens saved."""
+        token_file = tmp_path / "token"
+        token_file.write_text("expired_access_token")
+        token_file.chmod(0o600)
+        refresh_file = tmp_path / "refresh_token"
+        refresh_file.write_text("valid_refresh_token")
+        refresh_file.chmod(0o600)
+        config = KeyserverConfig(
+            enabled=True,
+            servers=["https://keyserver.example.com"],
+            cache_path=tmp_path / "cache.db",
+            api_token_file=token_file,
+            refresh_token_file=refresh_file,
+        )
+        plugin = KeyserverPlugin(config)
+        plugin.session = MagicMock()
+        return plugin
+
+    def test_auto_refresh_on_401(self, plugin_with_tokens):
+        """On 401, plugin refreshes token and retries the request."""
+        # First call returns 401, refresh succeeds, retry returns 200
+        response_401 = MagicMock()
+        response_401.status_code = 401
+        response_200 = MagicMock()
+        response_200.status_code = 200
+
+        # POST calls: 1) upload → 401, 2) refresh → 200, 3) upload retry → 200
+        refresh_response = MagicMock()
+        refresh_response.status_code = 200
+        refresh_response.json.return_value = {
+            "access_token": "new_access_token",
+            "refresh_token": "new_refresh_token",
+        }
+
+        plugin_with_tokens.session.post.side_effect = [
+            response_401,      # initial authenticated request
+            refresh_response,  # refresh call
+            response_200,      # retry after refresh
+        ]
+
+        response = plugin_with_tokens._authenticated_request(
+            "post", "https://keyserver.example.com/api/v1/keys", json={}
+        )
+        assert response.status_code == 200
+
+        # Verify new tokens were saved
+        assert plugin_with_tokens.config.load_api_token() == "new_access_token"
+        assert plugin_with_tokens.config.load_refresh_token() == "new_refresh_token"
+
+    def test_raises_auth_error_when_refresh_fails(self, plugin_with_tokens):
+        """Raises AuthenticationError when refresh also fails."""
+        response_401 = MagicMock()
+        response_401.status_code = 401
+
+        refresh_fail = MagicMock()
+        refresh_fail.status_code = 401
+
+        plugin_with_tokens.session.post.side_effect = [
+            response_401,   # initial request
+            refresh_fail,   # refresh fails
+        ]
+
+        with pytest.raises(AuthenticationError):
+            plugin_with_tokens._authenticated_request(
+                "post", "https://keyserver.example.com/api/v1/keys", json={}
+            )
+
+    def test_raises_auth_error_when_no_refresh_token(self, tmp_path):
+        """Raises AuthenticationError when no refresh token available."""
+        token_file = tmp_path / "token"
+        token_file.write_text("expired_token")
+        token_file.chmod(0o600)
+        config = KeyserverConfig(
+            enabled=True,
+            servers=["https://keyserver.example.com"],
+            cache_path=tmp_path / "cache.db",
+            api_token_file=token_file,
+            refresh_token_file=tmp_path / "no_refresh",
+        )
+        plugin = KeyserverPlugin(config)
+        plugin.session = MagicMock()
+
+        response_401 = MagicMock()
+        response_401.status_code = 401
+        plugin.session.post.return_value = response_401
+
+        with pytest.raises(AuthenticationError):
+            plugin._authenticated_request(
+                "post", "https://keyserver.example.com/api/v1/keys", json={}
+            )
+
+    def test_no_refresh_when_request_succeeds(self, plugin_with_tokens):
+        """No refresh attempt when initial request succeeds."""
+        response_200 = MagicMock()
+        response_200.status_code = 200
+        plugin_with_tokens.session.post.return_value = response_200
+
+        response = plugin_with_tokens._authenticated_request(
+            "post", "https://keyserver.example.com/api/v1/keys", json={}
+        )
+        assert response.status_code == 200
+        # Only one call — no refresh
+        assert plugin_with_tokens.session.post.call_count == 1
+
+    def test_raises_auth_error_when_no_token(self, tmp_path):
+        """Raises AuthenticationError when no access token at all."""
+        config = KeyserverConfig(
+            enabled=True,
+            servers=["https://keyserver.example.com"],
+            cache_path=tmp_path / "cache.db",
+            api_token_file=tmp_path / "no_token",
+            refresh_token_file=tmp_path / "no_refresh",
+        )
+        plugin = KeyserverPlugin(config)
+
+        with pytest.raises(AuthenticationError):
+            plugin._authenticated_request(
+                "post", "https://keyserver.example.com/api/v1/keys", json={}
+            )
 
 
 # ===========================================================================
