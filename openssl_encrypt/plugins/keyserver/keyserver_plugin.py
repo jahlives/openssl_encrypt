@@ -336,7 +336,7 @@ class KeyserverPlugin(BasePlugin):
             if response.status_code == 401:
                 raise AuthenticationError(
                     "Authentication failed. Token refresh unsuccessful. "
-                    "Please re-register with 'openssl-encrypt keyserver register'."
+                    "Please login again with 'openssl-encrypt keyserver login <client_id>'."
                 )
 
         return response
