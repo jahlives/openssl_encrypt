@@ -20,6 +20,7 @@ Features:
 - HTTPS-only communication
 """
 
+import base64
 import hashlib
 import logging
 import ssl
@@ -31,7 +32,7 @@ from urllib3.poolmanager import PoolManager
 
 from openssl_encrypt.modules.crypt_utils import eprint
 
-from ...modules.key_bundle import PublicKeyBundle
+from ...modules.key_bundle import PublicKeyBundle, create_pop_signature
 from ...modules.plugin_system.plugin_base import BasePlugin, PluginCapability, PluginResult, PluginSecurityContext, PluginType
 from .cache import KeyserverCache
 from .config import KeyserverConfig
@@ -692,7 +693,32 @@ class KeyserverPlugin(BasePlugin):
             # Still pending — wait and poll again
             time.sleep(poll_interval)
 
-    def upload_key(self, bundle: PublicKeyBundle) -> bool:
+    def _request_challenge(self, server_url: str, fingerprint_hint: Optional[str] = None) -> dict:
+        """
+        Request a PoP challenge nonce from the keyserver.
+
+        Args:
+            server_url: Keyserver base URL
+            fingerprint_hint: Optional fingerprint for logging/hint on the server
+
+        Returns:
+            dict with challenge_id, nonce, expires_at
+
+        Raises:
+            NetworkError: If challenge request fails
+        """
+        challenge_url = f"{server_url}/api/v1/keys/challenge"
+        body = {}
+        if fingerprint_hint:
+            body["fingerprint"] = fingerprint_hint
+        response = self._authenticated_request("post", challenge_url, json=body)
+        if response.status_code != 200:
+            raise NetworkError(
+                f"Challenge request failed with status {response.status_code}: {response.text}"
+            )
+        return response.json()
+
+    def upload_key(self, bundle: PublicKeyBundle, signing_private_key_bytes: bytes = None) -> bool:
         """
         Upload public key bundle to keyserver.
 
@@ -725,12 +751,28 @@ class KeyserverPlugin(BasePlugin):
             logger.error(f"Signature verification failed: {e}")
             return False
 
-        # Upload to all configured servers
+        # Upload to all configured servers with per-server PoP challenge
         success = False
         for server in self.config.servers:
             try:
+                # Request a fresh challenge for this server
+                challenge = self._request_challenge(server, bundle.fingerprint)
+                nonce_hex = challenge["nonce"]
+                challenge_id = challenge["challenge_id"]
+
+                # Sign the PoP message with the private key
+                pop_sig_bytes = create_pop_signature(
+                    nonce_hex=nonce_hex,
+                    fingerprint=bundle.fingerprint,
+                    signing_algorithm=bundle.signing_algorithm,
+                    private_key_bytes=signing_private_key_bytes,
+                )
+
+                # Build upload body with PoP fields
                 upload_url = f"{server}/api/v1/keys"
                 data = bundle.to_dict()
+                data["challenge_id"] = challenge_id
+                data["pop_signature"] = base64.b64encode(pop_sig_bytes).decode("ascii")
 
                 response = self._authenticated_request(
                     "post", upload_url, json=data,
