@@ -812,12 +812,16 @@ class RandomX(KDFBase):
     def is_available(cls) -> bool:
         if cls._available is None:
             # Use subprocess to test import - randomx may cause SIGILL on unsupported CPUs
+            # Pass PYTHONPATH and use reliable executable for sandboxed environments (Flatpak)
+            from ..randomx import _get_python_executable, _get_subprocess_env
+
             try:
                 result = subprocess.run(
-                    [sys.executable, "-c", "import randomx"],
+                    [_get_python_executable(), "-c", "import randomx"],
                     capture_output=True,
                     timeout=2,
                     check=False,
+                    env=_get_subprocess_env(),
                 )
                 cls._available = result.returncode == 0
             except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
