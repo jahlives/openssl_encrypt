@@ -466,6 +466,69 @@ class KeyserverPlugin(BasePlugin):
         except Exception as e:
             raise NetworkError(f"Unexpected error: {e}")
 
+    def login(self, client_id: str, server_url: Optional[str] = None) -> dict:
+        """
+        Login with client_id to obtain JWT access and refresh tokens.
+
+        Use this when you have a client_id (e.g., from the registration
+        welcome email) but need JWT tokens for authenticated operations.
+
+        Args:
+            client_id: The client identifier from registration
+            server_url: Optional specific server URL. If None, uses first configured server.
+
+        Returns:
+            dict with keys: client_id, access_token, refresh_token, expires_at, token_type
+
+        Raises:
+            AuthenticationError: If client_id is invalid
+            NetworkError: If network request fails
+            ValueError: If plugin disabled or no servers configured
+        """
+        if not self.config.enabled:
+            raise ValueError("Keyserver plugin disabled")
+
+        if server_url is None:
+            if not self.config.servers:
+                raise ValueError("No keyservers configured")
+            server_url = self.config.servers[0]
+
+        login_url = f"{server_url}/api/v1/keys/login"
+
+        try:
+            response = self.session.post(
+                login_url,
+                json={"client_id": client_id},
+                timeout=(self.config.connect_timeout_seconds, self.config.read_timeout_seconds),
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                # Save access token
+                access_token = data.get("access_token") or data.get("token")
+                if access_token:
+                    self.config.save_api_token(access_token)
+                # Save refresh token
+                if data.get("refresh_token"):
+                    self.config.save_refresh_token(data["refresh_token"])
+                logger.info(f"Logged in to keyserver, client_id={data['client_id']}")
+                return data
+            elif response.status_code == 401:
+                raise AuthenticationError("Invalid client ID")
+            else:
+                raise NetworkError(
+                    f"Login failed with status {response.status_code}: {response.text}"
+                )
+
+        except requests.exceptions.Timeout:
+            raise NetworkError("Request timeout")
+        except requests.exceptions.ConnectionError as e:
+            raise NetworkError(f"Connection failed: {e}")
+        except (AuthenticationError, NetworkError):
+            raise
+        except requests.exceptions.RequestException as e:
+            raise NetworkError(f"Request failed: {e}")
+
     def register(self, server_url: Optional[str] = None) -> dict:
         """
         Register with keyserver and obtain JWT token.
