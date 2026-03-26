@@ -220,6 +220,127 @@ class KeyserverPlugin(BasePlugin):
         """
         return PluginResult.success_result("Keyserver plugin active")
 
+    def _refresh_access_token(self) -> Optional[str]:
+        """
+        Refresh the access token using the stored refresh token.
+
+        Calls POST /api/v1/keys/refresh with the refresh token.
+        On success, saves the new access and refresh tokens.
+
+        Returns:
+            New access token string, or None if refresh failed
+        """
+        refresh_token = self.config.load_refresh_token()
+        if not refresh_token:
+            logger.debug("No refresh token available")
+            return None
+
+        for server in self.config.servers:
+            refresh_url = f"{server}/api/v1/keys/refresh"
+            try:
+                response = self.session.post(
+                    refresh_url,
+                    json={"refresh_token": refresh_token},
+                    timeout=(self.config.connect_timeout_seconds, self.config.read_timeout_seconds),
+                )
+
+                if response.status_code == 200:
+                    data = response.json()
+                    new_access = data.get("access_token") or data.get("token")
+                    new_refresh = data.get("refresh_token")
+
+                    if new_access:
+                        self.config.save_api_token(new_access)
+                        logger.info("Access token refreshed successfully")
+
+                    if new_refresh:
+                        self.config.save_refresh_token(new_refresh)
+                        logger.info("Refresh token updated")
+
+                    return new_access
+                else:
+                    logger.warning(
+                        f"Token refresh failed on {server}: status {response.status_code}"
+                    )
+
+            except requests.exceptions.RequestException as e:
+                logger.warning(f"Token refresh request failed on {server}: {e}")
+                continue
+
+        logger.error("Token refresh failed on all servers")
+        return None
+
+    def _authenticated_request(
+        self, method: str, url: str, **kwargs
+    ) -> requests.Response:
+        """
+        Make an authenticated HTTP request with automatic token refresh.
+
+        If the request returns 401, attempts to refresh the access token
+        and retries the request once.
+
+        Args:
+            method: HTTP method ("get", "post", "put", "delete")
+            url: Request URL
+            **kwargs: Additional arguments passed to requests (json, headers, etc.)
+
+        Returns:
+            requests.Response
+
+        Raises:
+            AuthenticationError: If authentication fails after refresh attempt
+            NetworkError: If network request fails
+        """
+        api_token = self.config.load_api_token()
+        if not api_token:
+            raise AuthenticationError(
+                "JWT token not set. Use 'openssl-encrypt keyserver register' to register and obtain token."
+            )
+
+        # Set auth header
+        headers = kwargs.pop("headers", {})
+        headers["Authorization"] = f"Bearer {api_token}"
+        kwargs["headers"] = headers
+
+        if "timeout" not in kwargs:
+            kwargs["timeout"] = (
+                self.config.connect_timeout_seconds,
+                self.config.read_timeout_seconds,
+            )
+
+        try:
+            response = getattr(self.session, method)(url, **kwargs)
+        except requests.exceptions.Timeout:
+            raise NetworkError("Request timeout")
+        except requests.exceptions.ConnectionError as e:
+            raise NetworkError(f"Connection failed: {e}")
+        except requests.exceptions.RequestException as e:
+            raise NetworkError(f"Request failed: {e}")
+
+        # If 401, try refreshing the token and retry once
+        if response.status_code == 401:
+            logger.info("Access token expired, attempting refresh...")
+            new_token = self._refresh_access_token()
+
+            if new_token:
+                kwargs["headers"]["Authorization"] = f"Bearer {new_token}"
+                try:
+                    response = getattr(self.session, method)(url, **kwargs)
+                except requests.exceptions.Timeout:
+                    raise NetworkError("Request timeout")
+                except requests.exceptions.ConnectionError as e:
+                    raise NetworkError(f"Connection failed: {e}")
+                except requests.exceptions.RequestException as e:
+                    raise NetworkError(f"Request failed: {e}")
+
+            if response.status_code == 401:
+                raise AuthenticationError(
+                    "Authentication failed. Token refresh unsuccessful. "
+                    "Please re-register with 'openssl-encrypt keyserver register'."
+                )
+
+        return response
+
     def fetch_key(self, identifier: str) -> Optional[PublicKeyBundle]:
         """
         Fetch public key bundle by identifier.
@@ -387,8 +508,13 @@ class KeyserverPlugin(BasePlugin):
 
             if response.status_code == 200:
                 data = response.json()
-                # Save JWT token to token file
-                self.config.save_api_token(data["token"])
+                # Save JWT access token
+                access_token = data.get("access_token") or data.get("token")
+                if access_token:
+                    self.config.save_api_token(access_token)
+                # Save refresh token if provided
+                if data.get("refresh_token"):
+                    self.config.save_refresh_token(data["refresh_token"])
                 logger.info(f"Registered with keyserver, client_id={data['client_id']}")
                 return data
             else:
@@ -495,8 +621,11 @@ class KeyserverPlugin(BasePlugin):
             status_data = status_response.json()
 
             if status_data["status"] == "confirmed":
-                # Save token
+                # Save access token
                 self.config.save_api_token(status_data["access_token"])
+                # Save refresh token if provided
+                if status_data.get("refresh_token"):
+                    self.config.save_refresh_token(status_data["refresh_token"])
                 logger.info(
                     f"Email registration confirmed, client_id={status_data['client_id']}"
                 )
@@ -529,13 +658,6 @@ class KeyserverPlugin(BasePlugin):
             logger.error("Uploads disabled in configuration")
             return False
 
-        # Get JWT token
-        api_token = self.config.load_api_token()
-        if not api_token:
-            raise AuthenticationError(
-                "JWT token not set. Use 'openssl-encrypt keyserver register' to register and obtain token."
-            )
-
         # Verify bundle signature before uploading
         try:
             if not bundle.verify_signature():
@@ -549,70 +671,27 @@ class KeyserverPlugin(BasePlugin):
         success = False
         for server in self.config.servers:
             try:
-                if self._upload_to_server(server, bundle, api_token):
+                upload_url = f"{server}/api/v1/keys"
+                data = bundle.to_dict()
+
+                response = self._authenticated_request(
+                    "post", upload_url, json=data,
+                )
+
+                if response.status_code == 200:
                     logger.info(f"Uploaded bundle to {server}")
                     success = True
+                elif response.status_code == 409:
+                    logger.warning("Key already exists on server")
                 else:
-                    logger.warning(f"Failed to upload to {server}")
+                    logger.warning(
+                        f"Upload failed on {server} with status {response.status_code}"
+                    )
 
             except Exception as e:
                 logger.error(f"Failed to upload to {server}: {e}")
 
         return success
-
-    def _upload_to_server(self, server_url: str, bundle: PublicKeyBundle, api_token: str) -> bool:
-        """
-        Upload bundle to specific keyserver.
-
-        Args:
-            server_url: Keyserver base URL
-            bundle: PublicKeyBundle to upload
-            api_token: API token for authentication
-
-        Returns:
-            True if uploaded successfully
-
-        Raises:
-            AuthenticationError: If authentication fails
-            NetworkError: If network request fails
-        """
-        upload_url = f"{server_url}/api/v1/keys"
-
-        # Serialize bundle
-        data = bundle.to_dict()
-
-        # Headers with Bearer token
-        headers = {"Authorization": f"Bearer {api_token}", "Content-Type": "application/json"}
-
-        try:
-            # HTTP POST (requires authentication)
-            response = self.session.post(
-                upload_url,
-                json=data,
-                headers=headers,
-                timeout=(self.config.connect_timeout_seconds, self.config.read_timeout_seconds),
-            )
-
-            if response.status_code == 200:
-                return True
-            elif response.status_code == 401:
-                raise AuthenticationError("Invalid API token")
-            elif response.status_code == 409:
-                logger.warning("Key already exists on server")
-                return False
-            else:
-                raise NetworkError(
-                    f"Upload failed with status {response.status_code}: {response.text}"
-                )
-
-        except requests.exceptions.Timeout:
-            raise NetworkError("Request timeout")
-        except requests.exceptions.ConnectionError as e:
-            raise NetworkError(f"Connection failed: {e}")
-        except AuthenticationError:
-            raise
-        except requests.exceptions.RequestException as e:
-            raise NetworkError(f"Request failed: {e}")
 
     def revoke_key(self, fingerprint: str, signature: bytes) -> bool:
         """
@@ -636,44 +715,20 @@ class KeyserverPlugin(BasePlugin):
             logger.error("Keyserver plugin disabled")
             return False
 
-        # Get JWT token
-        api_token = self.config.load_api_token()
-        if not api_token:
-            raise AuthenticationError(
-                "JWT token not set. Use 'openssl-encrypt keyserver register' to register and obtain token."
-            )
-
         # Revoke on all configured servers
         success = False
         for server in self.config.servers:
             try:
                 revoke_url = f"{server}/api/v1/keys/{fingerprint}/revoke"
-
-                # Headers with Bearer token
-                headers = {
-                    "Authorization": f"Bearer {api_token}",
-                    "Content-Type": "application/json",
-                }
-
-                # Data with revocation signature
                 data = {"signature": signature.hex()}
 
-                # HTTP POST (requires authentication)
-                response = self.session.post(
-                    revoke_url,
-                    json=data,
-                    headers=headers,
-                    timeout=(
-                        self.config.connect_timeout_seconds,
-                        self.config.read_timeout_seconds,
-                    ),
+                response = self._authenticated_request(
+                    "post", revoke_url, json=data,
                 )
 
                 if response.status_code == 200:
                     logger.info(f"Revoked key {fingerprint} on {server}")
                     success = True
-                elif response.status_code == 401:
-                    raise AuthenticationError("Invalid API token")
                 elif response.status_code == 404:
                     logger.warning(f"Key {fingerprint} not found on {server}")
                 else:
