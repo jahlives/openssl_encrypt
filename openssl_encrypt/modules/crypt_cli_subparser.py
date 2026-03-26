@@ -2488,6 +2488,10 @@ def setup_keyserver_parser(subparser):
         "--server",
         help="Specific keyserver URL to register with (default: first configured server)",
     )
+    register_parser.add_argument(
+        "--email",
+        help="Register with email confirmation (sends verification link)",
+    )
 
     # Search subcommand (public, no auth)
     search_parser = keyserver_subparsers.add_parser(

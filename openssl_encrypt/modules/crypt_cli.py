@@ -2750,23 +2750,44 @@ def handle_keyserver_command(args):
 
         # Use custom server if specified
         server_url = args.server if hasattr(args, "server") and args.server else None
+        email = args.email if hasattr(args, "email") and args.email else None
 
         try:
-            eprint("Registering with keyserver...")
-            result = plugin.register(server_url=server_url)
+            if email:
+                # Email-confirmed registration with polling
+                eprint(f"Registering with email: {email}")
+                eprint("A confirmation email will be sent to this address.")
+                eprint("Please click the link in the email to complete registration.\n")
+                eprint("Waiting for email confirmation... (press Ctrl+C to cancel)")
 
-            eprint("\n✓ Successfully registered with keyserver")
-            eprint("=" * 60)
-            eprint(f"Client ID:   {result['client_id']}")
-            eprint(f"Expires:     {result['expires_at']}")
-            eprint(f"Token Type:  {result['token_type']}")
-            eprint(f"Token File:  {config.api_token_file}")
-            eprint("=" * 60)
+                result = plugin.register_with_email(email, server_url=server_url)
+
+                eprint("\n✓ Email confirmed! Registration complete.")
+                eprint("=" * 60)
+                eprint(f"Client ID:   {result['client_id']}")
+                eprint(f"Token Type:  {result.get('token_type', 'Bearer')}")
+                eprint(f"Token File:  {config.api_token_file}")
+                eprint("=" * 60)
+            else:
+                # Anonymous registration (existing flow)
+                eprint("Registering with keyserver...")
+                result = plugin.register(server_url=server_url)
+
+                eprint("\n✓ Successfully registered with keyserver")
+                eprint("=" * 60)
+                eprint(f"Client ID:   {result['client_id']}")
+                eprint(f"Expires:     {result['expires_at']}")
+                eprint(f"Token Type:  {result['token_type']}")
+                eprint(f"Token File:  {config.api_token_file}")
+                eprint("=" * 60)
+
             eprint("\nAPI token has been securely saved.")
             eprint("You can now upload and revoke keys using:")
             eprint("  openssl-encrypt keyserver upload <identity>")
             eprint("  openssl-encrypt keyserver revoke <fingerprint>")
 
+        except KeyboardInterrupt:
+            eprint("\n\n✗ Registration cancelled.")
         except Exception as e:
             eprint(f"\n✗ Registration failed: {e}")
             eprint("\nTroubleshooting:")

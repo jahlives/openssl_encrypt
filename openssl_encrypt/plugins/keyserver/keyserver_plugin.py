@@ -32,7 +32,7 @@ from urllib3.poolmanager import PoolManager
 from openssl_encrypt.modules.crypt_utils import eprint
 
 from ...modules.key_bundle import PublicKeyBundle
-from ...modules.plugin_system.plugin_base import BasePlugin, PluginCapability, PluginType
+from ...modules.plugin_system.plugin_base import BasePlugin, PluginCapability, PluginResult, PluginSecurityContext, PluginType
 from .cache import KeyserverCache
 from .config import KeyserverConfig
 
@@ -397,6 +397,108 @@ class KeyserverPlugin(BasePlugin):
             raise NetworkError(f"Connection failed: {e}")
         except requests.exceptions.RequestException as e:
             raise NetworkError(f"Request failed: {e}")
+
+    def register_with_email(
+        self, email: str, server_url: Optional[str] = None, poll_interval: int = 5
+    ) -> dict:
+        """
+        Register with keyserver using email confirmation and polling.
+
+        Flow:
+        1. POST email to server → get registration_id
+        2. Poll status endpoint every poll_interval seconds
+        3. When confirmed, save JWT token and return result
+
+        Args:
+            email: Email address to register with
+            server_url: Optional specific server URL
+            poll_interval: Seconds between polls (default: 5)
+
+        Returns:
+            dict with: status, client_id, access_token, refresh_token, etc.
+
+        Raises:
+            NetworkError: On network failure, timeout, or server error
+            ValueError: If plugin disabled or no servers configured
+        """
+        if not self.config.enabled:
+            raise ValueError("Keyserver plugin disabled")
+
+        if server_url is None:
+            if not self.config.servers:
+                raise ValueError("No keyservers configured")
+            server_url = self.config.servers[0]
+
+        # Step 1: POST email registration request
+        register_url = f"{server_url}/api/v1/keys/register/email"
+
+        try:
+            response = self.session.post(
+                register_url,
+                json={"email": email},
+                timeout=(self.config.connect_timeout_seconds, self.config.read_timeout_seconds),
+            )
+        except requests.exceptions.Timeout:
+            raise NetworkError("Request timeout")
+        except requests.exceptions.ConnectionError as e:
+            raise NetworkError(f"Connection failed: {e}")
+        except requests.exceptions.RequestException as e:
+            raise NetworkError(f"Request failed: {e}")
+
+        if response.status_code != 202:
+            raise NetworkError(
+                f"Email registration failed with status {response.status_code}: {response.text}"
+            )
+
+        data = response.json()
+        registration_id = data["registration_id"]
+        status_url = f"{server_url}/api/v1/keys/register/status/{registration_id}"
+
+        # Step 2: Poll until confirmed or timeout (30 minutes)
+        import time
+
+        timeout_seconds = 1800  # 30 minutes
+        start = time.monotonic()
+
+        while True:
+            elapsed = time.monotonic() - start
+            if elapsed >= timeout_seconds:
+                raise NetworkError(
+                    "Email confirmation timed out after 30 minutes. Please try again."
+                )
+
+            try:
+                status_response = self.session.get(
+                    status_url,
+                    timeout=(self.config.connect_timeout_seconds, self.config.read_timeout_seconds),
+                )
+            except requests.exceptions.RequestException:
+                # Transient network error during polling — retry
+                time.sleep(poll_interval)
+                continue
+
+            if status_response.status_code == 410:
+                raise NetworkError("Registration expired. Please register again.")
+
+            if status_response.status_code == 404:
+                raise NetworkError("Registration not found.")
+
+            if status_response.status_code != 200:
+                time.sleep(poll_interval)
+                continue
+
+            status_data = status_response.json()
+
+            if status_data["status"] == "confirmed":
+                # Save token
+                self.config.save_api_token(status_data["access_token"])
+                logger.info(
+                    f"Email registration confirmed, client_id={status_data['client_id']}"
+                )
+                return status_data
+
+            # Still pending — wait and poll again
+            time.sleep(poll_interval)
 
     def upload_key(self, bundle: PublicKeyBundle) -> bool:
         """
