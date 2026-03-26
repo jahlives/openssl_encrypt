@@ -22,8 +22,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional
 
-from ...modules.plugin_system.plugin_config import ensure_plugin_data_dir
 from ...modules.crypt_utils import eprint
+from ...modules.file_permissions import (
+    PermissionLevel,
+    check_permissions,
+    get_posix_mode,
+    set_permissions,
+)
+from ...modules.plugin_system.plugin_config import ensure_plugin_data_dir
 
 logger = logging.getLogger(__name__)
 
