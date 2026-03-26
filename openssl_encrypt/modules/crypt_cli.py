@@ -2797,6 +2797,41 @@ def handle_keyserver_command(args):
                 f"  - Server: {server_url or config.servers[0] if config.servers else 'Not configured'}"
             )
 
+    elif action == "login":
+        # Login with client_id to obtain JWT tokens
+        if not config.enabled:
+            eprint("✗ Keyserver plugin is disabled. Enable with: openssl-encrypt keyserver enable")
+            return
+
+        plugin = KeyserverPlugin(config)
+        client_id = args.client_id
+        server_url = args.server if hasattr(args, "server") and args.server else None
+
+        try:
+            eprint(f"Logging in to keyserver...")
+            result = plugin.login(client_id, server_url=server_url)
+
+            eprint("\n✓ Login successful")
+            eprint("=" * 60)
+            eprint(f"Client ID:     {result['client_id']}")
+            eprint(f"Token Type:    {result.get('token_type', 'Bearer')}")
+            eprint(f"Token File:    {config.api_token_file}")
+            eprint(f"Refresh File:  {config.refresh_token_file}")
+            eprint("=" * 60)
+            eprint("\nAPI tokens have been securely saved.")
+            eprint("You can now upload and revoke keys using:")
+            eprint("  openssl-encrypt keyserver upload <identity>")
+            eprint("  openssl-encrypt keyserver revoke <fingerprint>")
+
+        except Exception as e:
+            eprint(f"\n✗ Login failed: {e}")
+            eprint("\nTroubleshooting:")
+            eprint("  - Verify your client ID is correct (from registration email)")
+            eprint("  - Check network connectivity")
+            eprint(
+                f"  - Server: {server_url or config.servers[0] if config.servers else 'Not configured'}"
+            )
+
     elif action == "search":
         # Search for key on keyserver
         if not config.enabled:
