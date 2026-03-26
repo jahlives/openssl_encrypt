@@ -23,8 +23,9 @@ Features:
 import base64
 import hashlib
 import logging
+import re
 import ssl
-from typing import Optional, Set
+from typing import List, Optional, Set
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -387,19 +388,25 @@ class KeyserverPlugin(BasePlugin):
                 if bundle:
                     # CRITICAL: Verify signature before caching or returning
                     try:
-                        if bundle.verify_signature():
-                            # Cache for future use
-                            self.cache.put(bundle)
-                            logger.info(
-                                f"Fetched and verified bundle for '{identifier}' from {server}"
-                            )
-                            return bundle
-                        else:
-                            logger.warning(
-                                f"Signature verification failed for bundle from {server}"
-                            )
+                        verified = bundle.verify_signature()
                     except Exception as e:
                         logger.error(f"Signature verification failed: {e}")
+                        verified = False
+
+                    if verified:
+                        # Cache for future use (best-effort)
+                        try:
+                            self.cache.put(bundle)
+                        except Exception as e:
+                            logger.warning(f"Failed to cache bundle: {e}")
+                        logger.info(
+                            f"Fetched and verified bundle for '{identifier}' from {server}"
+                        )
+                        return bundle
+                    else:
+                        logger.warning(
+                            f"Signature verification failed for bundle from {server}"
+                        )
 
             except NetworkError as e:
                 logger.warning(f"Failed to fetch from {server}: {e}")
@@ -410,6 +417,8 @@ class KeyserverPlugin(BasePlugin):
 
         logger.info(f"Key not found for '{identifier}' on any keyserver")
         return None
+
+    _FINGERPRINT_PATTERN = re.compile(r'^[0-9a-f]{2}(:[0-9a-f]{2})+$')
 
     def _fetch_from_server(self, server_url: str, identifier: str) -> Optional[PublicKeyBundle]:
         """
@@ -425,38 +434,57 @@ class KeyserverPlugin(BasePlugin):
         Raises:
             NetworkError: If network request fails
         """
-        # Build search URL
-        search_url = f"{server_url}/api/v1/keys/search"
-        params = {"q": identifier}
+        is_fingerprint = bool(self._FINGERPRINT_PATTERN.match(identifier))
 
         try:
-            # HTTP GET (public, no authentication)
-            response = self.session.get(
-                search_url,
-                params=params,
-                timeout=(self.config.connect_timeout_seconds, self.config.read_timeout_seconds),
-            )
+            if is_fingerprint:
+                # Use exact fingerprint endpoint
+                url = f"{server_url}/api/v1/keys/{identifier}"
+                response = self.session.get(
+                    url,
+                    timeout=(self.config.connect_timeout_seconds, self.config.read_timeout_seconds),
+                )
 
-            # Handle response
-            if response.status_code == 200:
-                data = response.json()
-
-                if "key" in data and data["key"]:
-                    # Deserialize bundle
-                    bundle = PublicKeyBundle.from_dict(data["key"])
-                    return bundle
+                if response.status_code == 200:
+                    data = response.json()
+                    if "key" in data and data["key"]:
+                        return PublicKeyBundle.from_dict(data["key"])
+                    return None
+                elif response.status_code == 404:
+                    return None
                 else:
-                    # Key not found
+                    raise NetworkError(
+                        f"Keyserver returned status {response.status_code}: {response.text}"
+                    )
+            else:
+                # Use search endpoint
+                search_url = f"{server_url}/api/v1/keys/search"
+                params = {"q": identifier}
+                response = self.session.get(
+                    search_url,
+                    params=params,
+                    timeout=(self.config.connect_timeout_seconds, self.config.read_timeout_seconds),
+                )
+
+                if response.status_code == 200:
+                    data = response.json()
+
+                    if "keys" in data and data["keys"]:
+                        # New list response — return first result
+                        return PublicKeyBundle.from_dict(data["keys"][0])
+                    elif "key" in data and data["key"]:
+                        # Legacy single-key response
+                        return PublicKeyBundle.from_dict(data["key"])
+                    else:
+                        return None
+
+                elif response.status_code == 404:
                     return None
 
-            elif response.status_code == 404:
-                # Key not found
-                return None
-
-            else:
-                raise NetworkError(
-                    f"Keyserver returned status {response.status_code}: {response.text}"
-                )
+                else:
+                    raise NetworkError(
+                        f"Keyserver returned status {response.status_code}: {response.text}"
+                    )
 
         except requests.exceptions.Timeout:
             raise NetworkError("Request timeout")
@@ -464,8 +492,85 @@ class KeyserverPlugin(BasePlugin):
             raise NetworkError(f"Connection failed: {e}")
         except requests.exceptions.RequestException as e:
             raise NetworkError(f"Request failed: {e}")
+        except NetworkError:
+            raise
         except Exception as e:
             raise NetworkError(f"Unexpected error: {e}")
+
+    def search_keys(self, query: str) -> List[PublicKeyBundle]:
+        """
+        Search for public key bundles by email, name, or fingerprint prefix.
+
+        Queries all configured servers and returns all verified, deduplicated results.
+        Does NOT cache results (use fetch_key for cached single-key retrieval).
+
+        Args:
+            query: Search string (email, name, or fingerprint prefix)
+
+        Returns:
+            List of verified PublicKeyBundle objects. Empty list if plugin disabled,
+            on 404, on network error, or if response is missing `keys` field.
+        """
+        if not self.config.enabled:
+            logger.debug("Keyserver plugin disabled, returning []")
+            return []
+
+        seen: dict = {}  # fingerprint -> bundle (deduplication)
+
+        for server in self.config.servers:
+            search_url = f"{server}/api/v1/keys/search"
+            params = {"q": query}
+
+            try:
+                response = self.session.get(
+                    search_url,
+                    params=params,
+                    timeout=(self.config.connect_timeout_seconds, self.config.read_timeout_seconds),
+                )
+
+                if response.status_code == 404:
+                    continue
+
+                if response.status_code != 200:
+                    logger.warning(
+                        f"search_keys: server {server} returned status {response.status_code}"
+                    )
+                    continue
+
+                data = response.json()
+                key_list = data.get("keys")
+                if not key_list:
+                    continue
+
+                for key_dict in key_list:
+                    try:
+                        bundle = PublicKeyBundle.from_dict(key_dict)
+                        if bundle.verify_signature():
+                            # Deduplicate by fingerprint
+                            if bundle.fingerprint not in seen:
+                                seen[bundle.fingerprint] = bundle
+                        else:
+                            logger.warning(
+                                f"search_keys: signature verification failed for bundle "
+                                f"from {server}"
+                            )
+                    except Exception as e:
+                        logger.error(f"search_keys: error processing bundle from {server}: {e}")
+
+            except requests.exceptions.Timeout:
+                logger.warning(f"search_keys: timeout on {server}")
+                continue
+            except requests.exceptions.ConnectionError as e:
+                logger.warning(f"search_keys: connection error on {server}: {e}")
+                continue
+            except requests.exceptions.RequestException as e:
+                logger.warning(f"search_keys: request error on {server}: {e}")
+                continue
+            except Exception as e:
+                logger.error(f"search_keys: unexpected error on {server}: {e}")
+                continue
+
+        return list(seen.values())
 
     def login(self, client_id: str, server_url: Optional[str] = None) -> dict:
         """
