@@ -78,7 +78,7 @@ def test_keyserver_complete():
     print_subsection("Step 2: Creating Test Identity")
     try:
         identity = Identity.generate(
-            name="Keyserver Test Identity",
+            name="Keyserver_Test_Identity",
             email="keyserver-test@example.com",
             passphrase="test123",  # Simple passphrase for testing
             kem_algorithm="ML-KEM-768",
@@ -124,7 +124,8 @@ def test_keyserver_complete():
     print_subsection("Step 5: Initializing Keyserver Plugin")
     try:
         plugin = KeyserverPlugin(config)
-        print("✓ Plugin initialized")
+        plugin.clear_cache()
+        print("✓ Plugin initialized (cache cleared)")
 
     except Exception as e:
         print(f"✗ Failed to initialize plugin: {e}")
@@ -134,7 +135,8 @@ def test_keyserver_complete():
     print_subsection("Step 6: Uploading to Keyserver")
     try:
         print(f"Uploading '{bundle.name}' to {config.servers[0]}...")
-        success = plugin.upload_key(bundle)
+        signing_private_key_bytes = identity.signing_private_key.get_bytes()
+        success = plugin.upload_key(bundle, signing_private_key_bytes=signing_private_key_bytes)
 
         if success:
             print("✓ Upload successful")
