@@ -391,6 +391,34 @@ class TestLiveConnectivity:
         result = plugin.fetch_key("nonexistent_test_key_12345")
         assert result is None
 
+    def test_auth_with_valid_token(self, live_server):
+        """Valid JWT token is accepted by an authenticated endpoint."""
+        config = KeyserverConfig.from_file()
+        token = config.load_api_token()
+        if not token:
+            pytest.skip("No API token configured")
+
+        # POST to upload endpoint with valid token but empty body.
+        # Expected: 422 (validation error) — NOT 401/403, proving auth passed.
+        response = requests.post(
+            f"{live_server}/api/v1/keys",
+            headers={"Authorization": f"Bearer {token}"},
+            json={},
+            timeout=10,
+        )
+        assert response.status_code != 401, "Valid token was rejected"
+        assert response.status_code != 403, "Valid token was forbidden"
+
+    def test_auth_with_invalid_token(self, live_server):
+        """Invalid token is rejected by an authenticated endpoint."""
+        response = requests.post(
+            f"{live_server}/api/v1/keys",
+            headers={"Authorization": "Bearer invalid_token_12345"},
+            json={},
+            timeout=10,
+        )
+        assert response.status_code in (401, 403)
+
     def test_plugin_config_from_default_location(self):
         """Plugin loads config from default location if it exists."""
         config = KeyserverConfig.from_file()
