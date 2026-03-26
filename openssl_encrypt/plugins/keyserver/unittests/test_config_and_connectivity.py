@@ -367,8 +367,8 @@ class TestLiveConnectivity:
         assert response.status_code == 200
         data = response.json()
         assert "modules" in data
-        module_names = [m["name"] for m in data["modules"]]
-        assert "keyserver" in module_names
+        assert "keyserver" in data["modules"]
+        assert data["modules"]["keyserver"]["enabled"] is True
 
     def test_search_nonexistent_key(self, live_server):
         """Search for a non-existent key returns 404."""
