@@ -557,6 +557,103 @@ class TestTokenRefresh:
 
 
 # ===========================================================================
+# Login Tests (mocked)
+# ===========================================================================
+
+class TestLogin:
+    """Test login with client_id."""
+
+    def test_login_saves_tokens(self, tmp_path):
+        """Successful login saves access and refresh tokens."""
+        config = KeyserverConfig(
+            enabled=True,
+            servers=["https://keyserver.example.com"],
+            cache_path=tmp_path / "cache.db",
+            api_token_file=tmp_path / "token",
+            refresh_token_file=tmp_path / "refresh_token",
+        )
+        plugin = KeyserverPlugin(config)
+        plugin.session = MagicMock()
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "client_id": "test_client_123",
+            "access_token": "jwt_access_token",
+            "refresh_token": "jwt_refresh_token",
+            "expires_at": "2026-03-26T12:00:00Z",
+            "token_type": "Bearer",
+        }
+        plugin.session.post.return_value = mock_response
+
+        result = plugin.login("test_client_123")
+
+        assert result["client_id"] == "test_client_123"
+        assert config.load_api_token() == "jwt_access_token"
+        assert config.load_refresh_token() == "jwt_refresh_token"
+
+    def test_login_calls_correct_url(self, tmp_path):
+        """Login POSTs to /api/v1/keys/login."""
+        config = KeyserverConfig(
+            enabled=True,
+            servers=["https://keyserver.example.com"],
+            cache_path=tmp_path / "cache.db",
+            api_token_file=tmp_path / "token",
+            refresh_token_file=tmp_path / "refresh_token",
+        )
+        plugin = KeyserverPlugin(config)
+        plugin.session = MagicMock()
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "client_id": "abc",
+            "access_token": "tok",
+            "token_type": "Bearer",
+        }
+        plugin.session.post.return_value = mock_response
+
+        plugin.login("abc")
+
+        call_args = plugin.session.post.call_args
+        assert call_args[0][0] == "https://keyserver.example.com/api/v1/keys/login"
+        assert call_args[1]["json"] == {"client_id": "abc"}
+
+    def test_login_raises_on_invalid_client_id(self, tmp_path):
+        """Login raises AuthenticationError on 401."""
+        config = KeyserverConfig(
+            enabled=True,
+            servers=["https://keyserver.example.com"],
+            cache_path=tmp_path / "cache.db",
+            api_token_file=tmp_path / "token",
+            refresh_token_file=tmp_path / "refresh_token",
+        )
+        plugin = KeyserverPlugin(config)
+        plugin.session = MagicMock()
+
+        mock_response = MagicMock()
+        mock_response.status_code = 401
+        plugin.session.post.return_value = mock_response
+
+        with pytest.raises(AuthenticationError):
+            plugin.login("invalid_client_id")
+
+    def test_login_raises_when_disabled(self, tmp_path):
+        """Login raises ValueError when plugin is disabled."""
+        config = KeyserverConfig(
+            enabled=False,
+            servers=["https://keyserver.example.com"],
+            cache_path=tmp_path / "cache.db",
+            api_token_file=tmp_path / "token",
+            refresh_token_file=tmp_path / "refresh_token",
+        )
+        plugin = KeyserverPlugin(config)
+
+        with pytest.raises(ValueError):
+            plugin.login("some_client_id")
+
+
+# ===========================================================================
 # Live Connectivity Tests (require --live-server)
 # ===========================================================================
 
