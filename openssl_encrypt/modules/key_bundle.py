@@ -407,6 +407,32 @@ class PublicKeyBundle:
         )
 
 
+def create_pop_signature(
+    nonce_hex: str,
+    fingerprint: str,
+    signing_algorithm: str,
+    private_key_bytes: bytes,
+) -> bytes:
+    """
+    Create a Proof-of-Possession signature for a keyserver challenge.
+
+    Canonical message: b"POP:" + nonce_hex.encode("ascii") + b":" + fingerprint.encode("utf-8")
+    The nonce is used as its hex-string representation (NOT raw bytes).
+
+    Args:
+        nonce_hex: Server-issued nonce as a hex string (64 hex chars = 32 bytes)
+        fingerprint: Public key fingerprint (e.g. "3a:4b:5c:...")
+        signing_algorithm: ML-DSA algorithm name ("ML-DSA-44", "ML-DSA-65", "ML-DSA-87")
+        private_key_bytes: Raw ML-DSA private key bytes
+
+    Returns:
+        Signature bytes
+    """
+    message = b"POP:" + nonce_hex.encode("ascii") + b":" + fingerprint.encode("utf-8")
+    signer = PQCSigner(signing_algorithm, quiet=True)
+    return signer.sign(message, private_key_bytes)
+
+
 if __name__ == "__main__":
     # Simple test
     eprint("PublicKeyBundle module loaded successfully")
