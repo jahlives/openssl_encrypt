@@ -80,6 +80,9 @@ class KeyserverConfig:
     api_token_file: Path = field(default_factory=lambda: _get_default_token_path())
     refresh_token_file: Path = field(default_factory=lambda: _get_default_refresh_token_path())
 
+    # Password storage for authenticated login
+    password_file: Path = field(default_factory=lambda: _get_default_password_path())
+
     # Certificate pinning (SHA-256 fingerprints)
     cert_fingerprints: Optional[List[str]] = None  # Expected cert fingerprints for pinning
     enable_cert_pinning: bool = False  # Enable certificate pinning validation
@@ -365,6 +368,86 @@ class KeyserverConfig:
             logger.error(f"Failed to delete refresh token: {e}")
             raise ConfigError(f"Failed to delete refresh token: {e}")
 
+    def load_password(self) -> Optional[str]:
+        """
+        Load stored password from secure file.
+
+        Returns:
+            Password string or None if not set
+        """
+        pw_file = self.password_file.expanduser()
+
+        if not pw_file.exists():
+            return None
+
+        try:
+            if not check_permissions(pw_file, PermissionLevel.OWNER_ONLY):
+                logger.warning(
+                    f"Password file has insecure permissions: {oct(get_posix_mode(pw_file))}. "
+                    f"Should be 0600 (owner read/write only)"
+                )
+
+            with open(pw_file, "r") as f:
+                password = f.read().strip()
+
+            if password:
+                logger.debug("Loaded password from file")
+                return password
+            else:
+                logger.warning("Password file is empty")
+                return None
+
+        except Exception as e:
+            logger.error(f"Failed to load password: {e}")
+            return None
+
+    def save_password(self, password: str) -> None:
+        """
+        Save password to secure file.
+
+        Args:
+            password: Password string
+
+        Note:
+            File is created with restrictive permissions (0600).
+        """
+        pw_file = self.password_file.expanduser()
+
+        try:
+            pw_file.parent.mkdir(parents=True, exist_ok=True)
+
+            with open(pw_file, "w") as f:
+                f.write(password)
+
+            set_permissions(pw_file, PermissionLevel.OWNER_ONLY)
+
+            logger.info(f"Saved password to {pw_file} with secure permissions")
+
+        except Exception as e:
+            logger.error(f"Failed to save password: {e}")
+            raise ConfigError(f"Failed to save password: {e}")
+
+    def clear_password(self) -> bool:
+        """
+        Delete password file.
+
+        Returns:
+            True if password was deleted, False if it didn't exist
+        """
+        pw_file = self.password_file.expanduser()
+
+        if not pw_file.exists():
+            return False
+
+        try:
+            pw_file.unlink()
+            logger.info(f"Deleted password file: {pw_file}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to delete password: {e}")
+            raise ConfigError(f"Failed to delete password: {e}")
+
 
 def _get_default_config_path() -> Path:
     """Get default configuration file path."""
@@ -399,6 +482,15 @@ def _get_default_refresh_token_path() -> Optional[Path]:
         logger.error("Failed to create secure keyserver directory")
         return None
     return keyserver_dir / "refresh_token"
+
+
+def _get_default_password_path() -> Optional[Path]:
+    """Get default password file path with secure permissions."""
+    keyserver_dir = ensure_plugin_data_dir("keyserver", "")
+    if keyserver_dir is None:
+        logger.error("Failed to create secure keyserver directory")
+        return None
+    return keyserver_dir / "password"
 
 
 if __name__ == "__main__":
