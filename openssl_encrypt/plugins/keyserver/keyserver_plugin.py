@@ -119,6 +119,12 @@ class AuthenticationError(KeyserverError):
     pass
 
 
+class PasswordRequiredError(AuthenticationError):
+    """Raised when server requires password setup (403 password_required)."""
+
+    pass
+
+
 class KeyserverPlugin(BasePlugin):
     """
     Main keyserver plugin implementation.
@@ -571,22 +577,28 @@ class KeyserverPlugin(BasePlugin):
 
         return list(seen.values())
 
-    def login(self, client_id: str, server_url: Optional[str] = None) -> dict:
+    def login(self, client_id: str, password: Optional[str] = None, server_url: Optional[str] = None) -> dict:
         """
-        Login with client_id to obtain JWT access and refresh tokens.
+        Login with client_id and password to obtain JWT access and refresh tokens.
 
         Use this when you have a client_id (e.g., from the registration
         welcome email) but need JWT tokens for authenticated operations.
 
+        If no password is provided, attempts to load a stored password.
+        If the server returns 403 "password_required", raises PasswordRequiredError
+        so the caller can prompt the user and retry with a password.
+
         Args:
             client_id: The client identifier from registration
+            password: Account password. If None, uses stored password (if any).
             server_url: Optional specific server URL. If None, uses first configured server.
 
         Returns:
             dict with keys: client_id, access_token, refresh_token, expires_at, token_type
 
         Raises:
-            AuthenticationError: If client_id is invalid
+            AuthenticationError: If credentials are invalid
+            PasswordRequiredError: If server requires password setup (403)
             NetworkError: If network request fails
             ValueError: If plugin disabled or no servers configured
         """
@@ -600,10 +612,16 @@ class KeyserverPlugin(BasePlugin):
 
         login_url = f"{server_url}/api/v1/keys/login"
 
+        # Build request body
+        body: dict = {"client_id": client_id}
+        effective_password = password or self.config.load_password()
+        if effective_password:
+            body["password"] = effective_password
+
         try:
             response = self.session.post(
                 login_url,
-                json={"client_id": client_id},
+                json=body,
                 timeout=(self.config.connect_timeout_seconds, self.config.read_timeout_seconds),
             )
 
@@ -616,10 +634,26 @@ class KeyserverPlugin(BasePlugin):
                 # Save refresh token
                 if data.get("refresh_token"):
                     self.config.save_refresh_token(data["refresh_token"])
+                # Save password for future logins
+                if effective_password:
+                    self.config.save_password(effective_password)
                 logger.info(f"Logged in to keyserver, client_id={data['client_id']}")
                 return data
+            elif response.status_code == 403:
+                # Server requires password setup (legacy client)
+                try:
+                    data = response.json()
+                    if data.get("status") == "password_required":
+                        raise PasswordRequiredError(
+                            data.get("message", "Password setup required.")
+                        )
+                except (ValueError, KeyError):
+                    pass
+                raise AuthenticationError(
+                    f"Login forbidden: {response.text}"
+                )
             elif response.status_code == 401:
-                raise AuthenticationError("Invalid client ID")
+                raise AuthenticationError("Invalid credentials")
             else:
                 raise NetworkError(
                     f"Login failed with status {response.status_code}: {response.text}"
@@ -629,7 +663,7 @@ class KeyserverPlugin(BasePlugin):
             raise NetworkError("Request timeout")
         except requests.exceptions.ConnectionError as e:
             raise NetworkError(f"Connection failed: {e}")
-        except (AuthenticationError, NetworkError):
+        except (AuthenticationError, PasswordRequiredError, NetworkError):
             raise
         except requests.exceptions.RequestException as e:
             raise NetworkError(f"Request failed: {e}")
