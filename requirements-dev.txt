@@ -19,7 +19,9 @@ attrs==25.4.0
     #   jsonschema
     #   referencing
 authlib==1.6.9
-    # via safety
+    # via
+    #   -r requirements-dev.in
+    #   safety
 bandit==1.7.10
     # via -r requirements-dev.in
 black==24.10.0
@@ -104,8 +106,10 @@ mdurl==0.1.2
     # via markdown-it-py
 mypy-extensions==1.1.0
     # via black
-nltk==3.9.3
-    # via safety
+nltk==3.9.4
+    # via
+    #   -r requirements-dev.in
+    #   safety
 nodeenv==1.10.0
     # via pre-commit
 numpy==2.4.1
