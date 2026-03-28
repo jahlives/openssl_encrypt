@@ -50,7 +50,7 @@ referencing==0.37.0
     # via
     #   jsonschema
     #   jsonschema-specifications
-requests==2.32.5
+requests==2.33.0
     # via -r requirements-prod.in
 rpds-py==0.30.0
     # via
@@ -58,9 +58,5 @@ rpds-py==0.30.0
     #   referencing
 urllib3==2.6.3
     # via requests
-pywin32==310 ; sys_platform == "win32"
-    # via -r requirements-prod.in (Windows: NTFS ACL permission management)
-whirlpool-py311==1 ; python_version >= "3.11" and sys_platform != "win32"
+whirlpool-py311==1 ; python_version >= "3.11"
     # via -r requirements-prod.in
-whirlpool==1.0.0 ; sys_platform == "win32"
-    # via -r requirements-prod.in (Windows: patched by build_local_deps.ps1)
