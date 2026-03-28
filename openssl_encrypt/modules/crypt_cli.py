@@ -601,13 +601,13 @@ def get_template_config(template: str or SecurityTemplate) -> Dict[str, Any]:
         },
         SecurityTemplate.STANDARD: {
             "hash_config": {
-                "sha512": 10000,
+                "sha512": 0,
                 "sha256": 0,
                 "sha3_256": 10000,
-                "sha3_512": 0,
+                "sha3_512": 10000,
                 "blake2b": 0,
                 "shake256": 0,
-                "scrypt": {"enabled": True, "n": 128, "r": 8, "p": 1, "rounds": 5},
+                "scrypt": {"enabled": True, "n": 128, "r": 8, "p": 1, "rounds": 10},
                 "argon2": {
                     "enabled": True,
                     "time_cost": 3,
@@ -615,10 +615,10 @@ def get_template_config(template: str or SecurityTemplate) -> Dict[str, Any]:
                     "parallelism": 4,
                     "hash_len": 32,
                     "type": 2,
-                    "rounds": 5,
+                    "rounds": 10,
                 },
                 "type": "id",
-                "algorithm": "aes-gcm-siv",
+                "algorithm": "aes-gcm",
             }
         },
         SecurityTemplate.PARANOID: {
