@@ -316,6 +316,29 @@ def _kdf_worker(
 
             result = hkdf.derive(password_bytes)
 
+        elif kdf_type == "randomx":
+            from .randomx import randomx_kdf
+
+            rounds = kdf_config.get("rounds", 1)
+            mode = kdf_config.get("mode", "light")
+            height = kdf_config.get("height", 1)
+            hash_len = kdf_config.get("hash_len", key_length)
+
+            result = password_bytes
+            for i in range(rounds):
+                if i == 0:
+                    round_salt = salt
+                else:
+                    round_salt = result[:32] if len(result) >= 32 else result
+                result = randomx_kdf(
+                    password=result,
+                    salt=round_salt,
+                    rounds=1,
+                    mode=mode,
+                    height=height,
+                    hash_len=hash_len,
+                )
+
         else:
             raise ValueError(f"Unsupported KDF type: {kdf_type}")
 
@@ -574,7 +597,7 @@ def generate_key_independent_xor_parallel(
     else:
         kdf_config_section = hash_config if hash_config else {}
 
-    for kdf_type in ["argon2", "scrypt", "balloon", "hkdf"]:
+    for kdf_type in ["argon2", "scrypt", "balloon", "hkdf", "randomx"]:
         if kdf_config_section.get(kdf_type, {}).get("enabled", False):
             tasks.append(
                 {
