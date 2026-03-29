@@ -1893,6 +1893,7 @@ def compute_kdf_independent(
         memory_cost = kdf_config.get("memory_cost", 102400)
         parallelism = kdf_config.get("parallelism", 8)
         argon2_type_str = kdf_config.get("type", "id")
+        rounds = kdf_config.get("rounds", 1)
 
         # Map type string to Argon2 Type enum
         if argon2_type_str == "i":
@@ -1904,19 +1905,34 @@ def compute_kdf_independent(
 
         if debug:
             logger.debug(
-                f"INDEPENDENT-XOR: Argon2 params - time={time_cost}, memory={memory_cost}, parallelism={parallelism}, type={argon2_type_str}"
+                f"INDEPENDENT-XOR: Argon2 params - time={time_cost}, memory={memory_cost}, parallelism={parallelism}, type={argon2_type_str}, rounds={rounds}"
             )
 
-        # Run Argon2 on initial hash
-        result = argon2.low_level.hash_secret_raw(
-            secret=password_bytes,
-            salt=salt,
-            time_cost=time_cost,
-            memory_cost=memory_cost,
-            parallelism=parallelism,
-            hash_len=key_length,
-            type=argon2_type,
-        )
+        # Run Argon2 for multiple rounds
+        current_input = password_bytes
+        for i in range(rounds):
+            if i == 0:
+                round_salt = salt
+            else:
+                round_salt = result[:32] if len(result) >= 32 else result
+            result = argon2.low_level.hash_secret_raw(
+                secret=current_input,
+                salt=round_salt,
+                time_cost=time_cost,
+                memory_cost=memory_cost,
+                parallelism=parallelism,
+                hash_len=key_length,
+                type=argon2_type,
+            )
+            current_input = result
+            if progress and not quiet:
+                percent = ((i + 1) / rounds) * 100
+                bar_len = 30
+                filled = int(bar_len * (i + 1) // rounds)
+                bar = "█" * filled + "░" * (bar_len - filled)
+                eprint(f"\rArgon2 KDF: [{bar}] {percent:.1f}% ({i+1}/{rounds})", end="", flush=True)
+        if progress and not quiet:
+            eprint()
 
         return SecureBytes(result)
 
@@ -2049,6 +2065,14 @@ def compute_kdf_independent(
                 height=height,
                 hash_len=hash_len,
             )
+            if progress and not quiet:
+                percent = ((i + 1) / rounds) * 100
+                bar_len = 30
+                filled = int(bar_len * (i + 1) // rounds)
+                bar = "█" * filled + "░" * (bar_len - filled)
+                eprint(f"\rRandomX KDF: [{bar}] {percent:.1f}% ({i+1}/{rounds})", end="", flush=True)
+        if progress and not quiet:
+            eprint()
 
         return SecureBytes(result)
 
@@ -2242,7 +2266,7 @@ def generate_key_independent_xor(
                 kdf_config=argon2_config,
                 key_length=key_length,
                 quiet=quiet,
-                progress=False,  # Don't show progress in the function itself
+                progress=progress,
                 debug=debug,
             )
             xor_components.append(result)
@@ -2347,7 +2371,7 @@ def generate_key_independent_xor(
                 kdf_config=randomx_config,
                 key_length=key_length,
                 quiet=quiet,
-                progress=False,
+                progress=progress,
                 debug=debug,
             )
             xor_components.append(result)
