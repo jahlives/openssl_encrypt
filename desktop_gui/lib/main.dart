@@ -151,6 +151,17 @@ class _MainScreenState extends State<MainScreen> {
   int _selectedIndex = 0;
   bool _isDragOver = false;
   bool _debugWindowVisible = false;
+  bool _isProMode = SettingsService.isProMode();
+
+  void _onModeChanged() {
+    setState(() {
+      _isProMode = SettingsService.isProMode();
+      // Reset to Encrypt tab if current index is out of bounds for Simple mode
+      if (!_isProMode && _selectedIndex > 2) {
+        _selectedIndex = 0;
+      }
+    });
+  }
   OverlayEntry? _debugOverlayEntry;
 
   @override
@@ -434,23 +445,37 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   Widget _getSelectedPage() {
-    switch (_selectedIndex) {
-      case 0:
-        return EncryptTab(fileManager: _fileManager);
-      case 1:
-        return DecryptTab(fileManager: _fileManager);
-      case 2:
-        return BatchOperationsTab(key: _batchOperationsTabKey, fileManager: _fileManager, onDebugChanged: widget.onDebugChanged);
-      case 3:
-        return const InfoTab();
-      case 4:
-        return SettingsTab(onThemeChanged: widget.onThemeChanged);
-      case 5:
-        return const IdentityManagementScreen();
-      case 6:
-        return const Fido2ManagementScreen();
-      default:
-        return EncryptTab(fileManager: _fileManager);
+    if (_isProMode) {
+      switch (_selectedIndex) {
+        case 0:
+          return EncryptTab(fileManager: _fileManager, isProMode: true);
+        case 1:
+          return DecryptTab(fileManager: _fileManager, isProMode: true);
+        case 2:
+          return BatchOperationsTab(key: _batchOperationsTabKey, fileManager: _fileManager, onDebugChanged: widget.onDebugChanged);
+        case 3:
+          return const InfoTab();
+        case 4:
+          return SettingsTab(onThemeChanged: widget.onThemeChanged, onModeChanged: _onModeChanged);
+        case 5:
+          return const IdentityManagementScreen();
+        case 6:
+          return const Fido2ManagementScreen();
+        default:
+          return EncryptTab(fileManager: _fileManager, isProMode: true);
+      }
+    } else {
+      // Simple mode: only Encrypt, Decrypt, Settings
+      switch (_selectedIndex) {
+        case 0:
+          return EncryptTab(fileManager: _fileManager, isProMode: false);
+        case 1:
+          return DecryptTab(fileManager: _fileManager, isProMode: false);
+        case 2:
+          return SettingsTab(onThemeChanged: widget.onThemeChanged, onModeChanged: _onModeChanged);
+        default:
+          return EncryptTab(fileManager: _fileManager, isProMode: false);
+      }
     }
   }
 
@@ -522,28 +547,29 @@ class _MainScreenState extends State<MainScreen> {
                 ],
                 child: const Text('Edit'),
               ),
-              SubmenuButton(
-                menuChildren: [
-                  MenuItemButton(
-                    child: const Text('Apply Profile Settings'),
-                    onPressed: () => _showConfigurationProfiles(context),
-                  ),
-                  MenuItemButton(
-                    child: const Text('Manage Profiles'),
-                    onPressed: () => _showManageProfiles(context),
-                  ),
-                  const Divider(),
-                  MenuItemButton(
-                    child: const Text('Algorithm Info'),
-                    onPressed: () => _showAlgorithmInfo(context),
-                  ),
-                  MenuItemButton(
-                    child: const Text('Security Settings'),
-                    onPressed: () => _showSecuritySettings(context),
-                  ),
-                ],
-                child: const Text('Tools'),
-              ),
+              if (_isProMode)
+                SubmenuButton(
+                  menuChildren: [
+                    MenuItemButton(
+                      child: const Text('Apply Profile Settings'),
+                      onPressed: () => _showConfigurationProfiles(context),
+                    ),
+                    MenuItemButton(
+                      child: const Text('Manage Profiles'),
+                      onPressed: () => _showManageProfiles(context),
+                    ),
+                    const Divider(),
+                    MenuItemButton(
+                      child: const Text('Algorithm Info'),
+                      onPressed: () => _showAlgorithmInfo(context),
+                    ),
+                    MenuItemButton(
+                      child: const Text('Security Settings'),
+                      onPressed: () => _showSecuritySettings(context),
+                    ),
+                  ],
+                  child: const Text('Tools'),
+                ),
               SubmenuButton(
                 menuChildren: [
                   MenuItemButton(
@@ -573,43 +599,61 @@ class _MainScreenState extends State<MainScreen> {
             },
             labelType: NavigationRailLabelType.all,
             backgroundColor: Theme.of(context).colorScheme.surface,
-            destinations: const [
-              NavigationRailDestination(
-                icon: Icon(Icons.lock_outline),
-                selectedIcon: Icon(Icons.lock),
-                label: Text('Encrypt'),
-              ),
-              NavigationRailDestination(
-                icon: Icon(Icons.lock_open_outlined),
-                selectedIcon: Icon(Icons.lock_open),
-                label: Text('Decrypt'),
-              ),
-              NavigationRailDestination(
-                icon: Icon(Icons.file_copy_outlined),
-                selectedIcon: Icon(Icons.file_copy),
-                label: Text('Batch Operations'),
-              ),
-              NavigationRailDestination(
-                icon: Icon(Icons.info_outline),
-                selectedIcon: Icon(Icons.info),
-                label: Text('Information'),
-              ),
-              NavigationRailDestination(
-                icon: Icon(Icons.settings_outlined),
-                selectedIcon: Icon(Icons.settings),
-                label: Text('Settings'),
-              ),
-              NavigationRailDestination(
-                icon: Icon(Icons.badge_outlined),
-                selectedIcon: Icon(Icons.badge),
-                label: Text('Identities'),
-              ),
-              NavigationRailDestination(
-                icon: Icon(Icons.fingerprint),
-                selectedIcon: Icon(Icons.fingerprint),
-                label: Text('FIDO2 Keys'),
-              ),
-            ],
+            destinations: _isProMode
+              ? const [
+                  NavigationRailDestination(
+                    icon: Icon(Icons.lock_outline),
+                    selectedIcon: Icon(Icons.lock),
+                    label: Text('Encrypt'),
+                  ),
+                  NavigationRailDestination(
+                    icon: Icon(Icons.lock_open_outlined),
+                    selectedIcon: Icon(Icons.lock_open),
+                    label: Text('Decrypt'),
+                  ),
+                  NavigationRailDestination(
+                    icon: Icon(Icons.file_copy_outlined),
+                    selectedIcon: Icon(Icons.file_copy),
+                    label: Text('Batch Operations'),
+                  ),
+                  NavigationRailDestination(
+                    icon: Icon(Icons.info_outline),
+                    selectedIcon: Icon(Icons.info),
+                    label: Text('Information'),
+                  ),
+                  NavigationRailDestination(
+                    icon: Icon(Icons.settings_outlined),
+                    selectedIcon: Icon(Icons.settings),
+                    label: Text('Settings'),
+                  ),
+                  NavigationRailDestination(
+                    icon: Icon(Icons.badge_outlined),
+                    selectedIcon: Icon(Icons.badge),
+                    label: Text('Identities'),
+                  ),
+                  NavigationRailDestination(
+                    icon: Icon(Icons.fingerprint),
+                    selectedIcon: Icon(Icons.fingerprint),
+                    label: Text('FIDO2 Keys'),
+                  ),
+                ]
+              : const [
+                  NavigationRailDestination(
+                    icon: Icon(Icons.lock_outline),
+                    selectedIcon: Icon(Icons.lock),
+                    label: Text('Encrypt'),
+                  ),
+                  NavigationRailDestination(
+                    icon: Icon(Icons.lock_open_outlined),
+                    selectedIcon: Icon(Icons.lock_open),
+                    label: Text('Decrypt'),
+                  ),
+                  NavigationRailDestination(
+                    icon: Icon(Icons.settings_outlined),
+                    selectedIcon: Icon(Icons.settings),
+                    label: Text('Settings'),
+                  ),
+                ],
           ),
           const VerticalDivider(thickness: 1, width: 1),
           // Main Content Area with Drag & Drop
@@ -2179,14 +2223,15 @@ class _AutoRepeatButtonState extends State<AutoRepeatButton> {
 /// Settings tab wrapper that integrates the SettingsScreen
 class SettingsTab extends StatelessWidget {
   final VoidCallback onThemeChanged;
+  final VoidCallback? onModeChanged;
 
-  const SettingsTab({super.key, required this.onThemeChanged});
+  const SettingsTab({super.key, required this.onThemeChanged, this.onModeChanged});
 
   @override
   Widget build(BuildContext context) {
     return Navigator(
       onGenerateRoute: (settings) => MaterialPageRoute(
-        builder: (context) => SettingsScreenWrapper(onThemeChanged: onThemeChanged),
+        builder: (context) => SettingsScreenWrapper(onThemeChanged: onThemeChanged, onModeChanged: onModeChanged),
       ),
     );
   }
@@ -2195,8 +2240,9 @@ class SettingsTab extends StatelessWidget {
 /// Wrapper for SettingsScreen that handles theme change notifications
 class SettingsScreenWrapper extends StatefulWidget {
   final VoidCallback onThemeChanged;
+  final VoidCallback? onModeChanged;
 
-  const SettingsScreenWrapper({super.key, required this.onThemeChanged});
+  const SettingsScreenWrapper({super.key, required this.onThemeChanged, this.onModeChanged});
 
   @override
   State<SettingsScreenWrapper> createState() => _SettingsScreenWrapperState();
@@ -2211,6 +2257,9 @@ class _SettingsScreenWrapperState extends State<SettingsScreenWrapper> {
         if (key == 'theme_mode') {
           // Notify parent to refresh theme
           widget.onThemeChanged();
+        } else if (key == 'ui_mode') {
+          // Notify parent to rebuild navigation
+          widget.onModeChanged?.call();
         }
       },
     );
