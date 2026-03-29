@@ -606,14 +606,15 @@ def get_template_config(template: str or SecurityTemplate) -> Dict[str, Any]:
         },
         SecurityTemplate.STANDARD: {
             "hash_config": {
-                "sha512": 10000,
+                "sha512": 0,
                 "sha256": 0,
-                "sha3_256": 10000,
-                "sha3_512": 0,
+                "sha3_256": 0,
+                "sha3_512": 10000,
                 "blake2b": 0,
+                "blake3": 10000,
                 "shake256": 0,
                 "whirlpool": 0,
-                "scrypt": {"enabled": True, "n": 128, "r": 8, "p": 1, "rounds": 5},
+                "scrypt": {"enabled": False},
                 "argon2": {
                     "enabled": True,
                     "time_cost": 3,
@@ -621,12 +622,20 @@ def get_template_config(template: str or SecurityTemplate) -> Dict[str, Any]:
                     "parallelism": 4,
                     "hash_len": 32,
                     "type": 2,
-                    "rounds": 5,
+                    "rounds": 10,
+                },
+                "randomx": {
+                    "enabled": True,
+                    "rounds": 10,
+                    "mode": "light",
+                    "height": 1,
+                    "hash_len": 32,
                 },
                 "pbkdf2_iterations": 0,
                 "type": "id",
                 "algorithm": "aes-gcm-siv",
-            }
+            },
+            "cascade": "standard",
         },
         SecurityTemplate.PARANOID: {
             "hash_config": {
@@ -705,6 +714,7 @@ def preprocess_global_args(argv):
         "rekey",
         "shred",
         "generate-password",
+        "derive-password",
         "security-info",
         "analyze-security",
         "config-wizard",
@@ -2747,28 +2757,84 @@ def handle_keyserver_command(args):
 
         # Use custom server if specified
         server_url = args.server if hasattr(args, "server") and args.server else None
+        email = args.email if hasattr(args, "email") and args.email else None
 
         try:
-            eprint("Registering with keyserver...")
-            result = plugin.register(server_url=server_url)
+            if email:
+                # Email-confirmed registration with polling
+                eprint(f"Registering with email: {email}")
+                eprint("A confirmation email will be sent to this address.")
+                eprint("Please click the link in the email to complete registration.\n")
+                eprint("Waiting for email confirmation... (press Ctrl+C to cancel)")
 
-            eprint("\n✓ Successfully registered with keyserver")
-            eprint("=" * 60)
-            eprint(f"Client ID:   {result['client_id']}")
-            eprint(f"Expires:     {result['expires_at']}")
-            eprint(f"Token Type:  {result['token_type']}")
-            eprint(f"Token File:  {config.api_token_file}")
-            eprint("=" * 60)
+                result = plugin.register_with_email(email, server_url=server_url)
+
+                eprint("\n✓ Email confirmed! Registration complete.")
+                eprint("=" * 60)
+                eprint(f"Client ID:   {result['client_id']}")
+                eprint(f"Token Type:  {result.get('token_type', 'Bearer')}")
+                eprint(f"Token File:  {config.api_token_file}")
+                eprint("=" * 60)
+            else:
+                # Anonymous registration (existing flow)
+                eprint("Registering with keyserver...")
+                result = plugin.register(server_url=server_url)
+
+                eprint("\n✓ Successfully registered with keyserver")
+                eprint("=" * 60)
+                eprint(f"Client ID:   {result['client_id']}")
+                eprint(f"Expires:     {result['expires_at']}")
+                eprint(f"Token Type:  {result['token_type']}")
+                eprint(f"Token File:  {config.api_token_file}")
+                eprint("=" * 60)
+
             eprint("\nAPI token has been securely saved.")
             eprint("You can now upload and revoke keys using:")
             eprint("  openssl-encrypt keyserver upload <identity>")
             eprint("  openssl-encrypt keyserver revoke <fingerprint>")
 
+        except KeyboardInterrupt:
+            eprint("\n\n✗ Registration cancelled.")
         except Exception as e:
             eprint(f"\n✗ Registration failed: {e}")
             eprint("\nTroubleshooting:")
             eprint("  - Check network connectivity")
             eprint("  - Verify keyserver URL is correct")
+            eprint(
+                f"  - Server: {server_url or config.servers[0] if config.servers else 'Not configured'}"
+            )
+
+    elif action == "login":
+        # Login with client_id to obtain JWT tokens
+        if not config.enabled:
+            eprint("✗ Keyserver plugin is disabled. Enable with: openssl-encrypt keyserver enable")
+            return
+
+        plugin = KeyserverPlugin(config)
+        client_id = args.client_id
+        server_url = args.server if hasattr(args, "server") and args.server else None
+
+        try:
+            eprint(f"Logging in to keyserver...")
+            result = plugin.login(client_id, server_url=server_url)
+
+            eprint("\n✓ Login successful")
+            eprint("=" * 60)
+            eprint(f"Client ID:     {result['client_id']}")
+            eprint(f"Token Type:    {result.get('token_type', 'Bearer')}")
+            eprint(f"Token File:    {config.api_token_file}")
+            eprint(f"Refresh File:  {config.refresh_token_file}")
+            eprint("=" * 60)
+            eprint("\nAPI tokens have been securely saved.")
+            eprint("You can now upload and revoke keys using:")
+            eprint("  openssl-encrypt keyserver upload <identity>")
+            eprint("  openssl-encrypt keyserver revoke <fingerprint>")
+
+        except Exception as e:
+            eprint(f"\n✗ Login failed: {e}")
+            eprint("\nTroubleshooting:")
+            eprint("  - Verify your client ID is correct (from registration email)")
+            eprint("  - Check network connectivity")
             eprint(
                 f"  - Server: {server_url or config.servers[0] if config.servers else 'Not configured'}"
             )
@@ -3118,6 +3184,23 @@ def main():
     # Preprocess arguments to move global flags to the front
     import sys
 
+    # Handle --keyring-remove early (before argparse) since it's a standalone action
+    if "--keyring-remove" in sys.argv:
+        idx = sys.argv.index("--keyring-remove")
+        if idx + 1 < len(sys.argv):
+            label = sys.argv[idx + 1]
+            try:
+                import keyring as _keyring
+
+                _keyring.delete_password("openssl_encrypt", label)
+                eprint(f"Password removed from keyring: '{label}'")
+            except ImportError:
+                eprint("Error: keyring package not installed. Install with: pip install keyring")
+                sys.exit(1)
+            except Exception:
+                eprint(f"No password found in keyring for label '{label}'")
+            sys.exit(0)
+
     sys.argv = preprocess_global_args(sys.argv)
 
     # After preprocessing, global flags are moved to the front when they appear after the command.
@@ -3130,6 +3213,7 @@ def main():
         "rekey",
         "shred",
         "generate-password",
+        "derive-password",
         "list-algorithms",
         "list-available-algorithms",
         "install-dependencies",
@@ -3355,6 +3439,24 @@ def main_with_args(args=None):
         help="Specify a template name (built-in or from ./template directory)",
     )
 
+    # Keyring integration (optional dependency)
+    keyring_group = parser.add_argument_group("Keyring options (requires 'keyring' package)")
+    keyring_group.add_argument(
+        "--keyring-store",
+        metavar="LABEL",
+        help="Store the password in the OS keyring under LABEL after successful operation",
+    )
+    keyring_group.add_argument(
+        "--keyring-load",
+        metavar="LABEL",
+        help="Load password from the OS keyring by LABEL instead of prompting",
+    )
+    keyring_group.add_argument(
+        "--keyring-remove",
+        metavar="LABEL",
+        help="Remove a stored password from the OS keyring and exit",
+    )
+
     # Template selection group (global options)
     template_group = global_group.add_mutually_exclusive_group()
     template_group.add_argument(
@@ -3379,6 +3481,7 @@ def main_with_args(args=None):
             "rekey",
             "shred",
             "generate-password",
+            "derive-password",
             "security-info",
             "analyze-security",
             "config-wizard",
@@ -3394,7 +3497,7 @@ def main_with_args(args=None):
             "disable-plugin",
             "reload-plugin",
         ],
-        help="Action to perform: encrypt/decrypt/info files, shred data, generate passwords, "
+        help="Action to perform: encrypt/decrypt/info files, shred data, generate/derive passwords, "
         "show security recommendations, analyze security configuration, configuration wizard, analyze configuration details, check Argon2 support, check post-quantum cryptography support, "
         "create/verify portable USB drives, manage plugins",
     )
@@ -4969,9 +5072,222 @@ def main_with_args(args=None):
         # Exit after generating password
         sys.exit(0)
 
+    elif args.action == "derive-password":
+        # Belt-and-suspenders: reject forbidden args even via monolithic parser
+        forbidden_attrs = {
+            "input": "--input/-i",
+            "output": "--output/-o",
+            "algorithm": "--algorithm/-a",
+            "cascade": "--cascade",
+        }
+        for attr, flag_name in forbidden_attrs.items():
+            val = getattr(args, attr, None)
+            if val is not None:
+                eprint(f"Error: {flag_name} is not allowed with derive-password")
+                sys.exit(1)
+
+        # Resolve password
+        derive_password = None
+        if not getattr(args, "password", None):
+            password_file = getattr(args, "password_file", None)
+            password_fd = getattr(args, "password_fd", None)
+            env_pw = os.environ.get("OPENSSL_ENCRYPT_PASSWORD")
+
+            if password_file:
+                try:
+                    if password_file == "-":
+                        args.password = sys.stdin.readline().rstrip("\n")
+                    else:
+                        with open(password_file, "r") as f:
+                            args.password = f.readline().rstrip("\n")
+                except (IOError, OSError) as e:
+                    eprint(f"Error reading password file: {e}")
+                    sys.exit(1)
+            elif password_fd is not None:
+                try:
+                    with os.fdopen(password_fd, "r", closefd=False) as f:
+                        args.password = f.readline().rstrip("\n")
+                except (IOError, OSError) as e:
+                    eprint(f"Error reading from fd {password_fd}: {e}")
+                    sys.exit(1)
+            elif env_pw:
+                args.password = env_pw
+                try:
+                    del os.environ["OPENSSL_ENCRYPT_PASSWORD"]
+                except KeyError:
+                    pass
+
+        # Try keyring if no password resolved yet
+        if not getattr(args, "password", None) and getattr(args, "keyring_load", None):
+            try:
+                import keyring as _keyring
+
+                stored_pw = _keyring.get_password("openssl_encrypt", args.keyring_load)
+                if stored_pw:
+                    args.password = stored_pw
+                else:
+                    eprint(f"No password found in keyring for label '{args.keyring_load}'")
+            except ImportError:
+                eprint("Error: keyring package not installed. Install with: pip install keyring")
+                sys.exit(1)
+
+        if not getattr(args, "password", None):
+            # Prompt for password
+            args.password = getpass.getpass("Password for key derivation: ")
+
+        if not args.password:
+            eprint("Error: password is required for derive-password")
+            sys.exit(1)
+
+        derive_password = args.password
+
+        # Resolve salt
+        salt_hex = getattr(args, "salt", None)
+        if salt_hex:
+            try:
+                salt = bytes.fromhex(salt_hex)
+            except ValueError:
+                eprint(f"Error: invalid hex salt: {salt_hex}")
+                sys.exit(1)
+        else:
+            salt_length = getattr(args, "salt_length", 16) or 16
+            salt = secrets.token_bytes(salt_length)
+            # Always show auto-generated salt so user can reproduce
+            eprint(f"Salt (hex): {salt.hex()}")
+
+        if getattr(args, "show_salt", False):
+            eprint(f"Salt (hex): {salt.hex()}")
+
+        # Build hash_config from args
+        hash_config = {}
+        if hasattr(args, "sha512_rounds") and args.sha512_rounds:
+            hash_config["sha512"] = args.sha512_rounds
+        if hasattr(args, "sha384_rounds") and args.sha384_rounds:
+            hash_config["sha384"] = args.sha384_rounds
+        if hasattr(args, "sha256_rounds") and args.sha256_rounds:
+            hash_config["sha256"] = args.sha256_rounds
+        if hasattr(args, "sha224_rounds") and args.sha224_rounds:
+            hash_config["sha224"] = args.sha224_rounds
+        if hasattr(args, "sha3_512_rounds") and args.sha3_512_rounds:
+            hash_config["sha3_512"] = args.sha3_512_rounds
+        if hasattr(args, "sha3_384_rounds") and args.sha3_384_rounds:
+            hash_config["sha3_384"] = args.sha3_384_rounds
+        if hasattr(args, "sha3_256_rounds") and args.sha3_256_rounds:
+            hash_config["sha3_256"] = args.sha3_256_rounds
+        if hasattr(args, "sha3_224_rounds") and args.sha3_224_rounds:
+            hash_config["sha3_224"] = args.sha3_224_rounds
+        if hasattr(args, "blake2b_rounds") and args.blake2b_rounds:
+            hash_config["blake2b"] = args.blake2b_rounds
+        if hasattr(args, "blake3_rounds") and args.blake3_rounds:
+            hash_config["blake3"] = args.blake3_rounds
+        if hasattr(args, "shake256_rounds") and args.shake256_rounds:
+            hash_config["shake256"] = args.shake256_rounds
+        if hasattr(args, "shake128_rounds") and args.shake128_rounds:
+            hash_config["shake128"] = args.shake128_rounds
+
+        # Add KDF parameters to hash_config
+        if getattr(args, "enable_argon2", False):
+            hash_config["argon2"] = {
+                "enabled": True,
+                "rounds": getattr(args, "argon2_rounds", 0) or 0,
+                "time": getattr(args, "argon2_time", 3),
+                "memory": getattr(args, "argon2_memory", 65536),
+                "parallelism": getattr(args, "argon2_parallelism", 4),
+                "hash_len": getattr(args, "argon2_hash_len", 32),
+                "type": getattr(args, "argon2_type", "id"),
+            }
+        if getattr(args, "enable_scrypt", False):
+            hash_config["scrypt"] = {
+                "enabled": True,
+                "rounds": getattr(args, "scrypt_rounds", 0) or 0,
+                "n": getattr(args, "scrypt_n", None),
+                "r": getattr(args, "scrypt_r", 8),
+                "p": getattr(args, "scrypt_p", 1),
+            }
+        if getattr(args, "enable_balloon", False):
+            hash_config["balloon"] = {
+                "enabled": True,
+                "rounds": getattr(args, "balloon_rounds", 0) or 0,
+                "time_cost": getattr(args, "balloon_time_cost", 3),
+                "space_cost": getattr(args, "balloon_space_cost", 65536),
+                "parallelism": getattr(args, "balloon_parallelism", 4),
+            }
+        if getattr(args, "enable_hkdf", False):
+            hash_config["hkdf"] = {
+                "enabled": True,
+                "rounds": getattr(args, "hkdf_rounds", 1),
+                "algorithm": getattr(args, "hkdf_algorithm", "sha256"),
+                "info": getattr(args, "hkdf_info", "openssl_encrypt_hkdf"),
+            }
+        if getattr(args, "enable_randomx", False):
+            hash_config["randomx"] = {
+                "enabled": True,
+                "rounds": getattr(args, "randomx_rounds", 0) or 0,
+                "mode": getattr(args, "randomx_mode", "light"),
+                "height": getattr(args, "randomx_height", 1),
+                "hash_len": getattr(args, "randomx_hash_len", 32),
+            }
+
+        # Call generate_key to derive the key
+        from .crypt_core import generate_key
+
+        output_length = getattr(args, "output_length", 32) or 32
+
+        # Choose a synthetic algorithm that produces enough key material
+        if output_length <= 32:
+            synth_algorithm = "aes-gcm"  # 32 bytes
+        elif output_length <= 64:
+            synth_algorithm = "threefish-512"  # 64 bytes
+        else:
+            synth_algorithm = "threefish-1024"  # 128 bytes
+
+        pbkdf2_iters = getattr(args, "pbkdf2_iterations", 0) or 0
+
+        try:
+            key, _, _ = generate_key(
+                password=derive_password.encode("utf-8") if isinstance(derive_password, str) else derive_password,
+                salt=salt,
+                hash_config=hash_config,
+                pbkdf2_iterations=pbkdf2_iters,
+                quiet=True,
+                algorithm=synth_algorithm,
+                progress=getattr(args, "progress", False),
+                debug=getattr(args, "debug", False),
+                format_version=9,
+            )
+        except Exception as e:
+            eprint(f"Error during key derivation: {e}")
+            sys.exit(1)
+
+        # Truncate to requested length
+        derived = key[:output_length]
+
+        # Output the derived key
+        output_format = getattr(args, "output_format", "hex") or "hex"
+        if output_format == "hex":
+            print(derived.hex())
+        elif output_format == "base64":
+            import base64 as _b64
+            print(_b64.b64encode(derived).decode("ascii"))
+        elif output_format == "raw":
+            sys.stdout.buffer.write(derived)
+
+        # Secure cleanup
+        try:
+            from .secure_memory import secure_memzero
+
+            if isinstance(key, (bytes, bytearray)):
+                key_ba = bytearray(key)
+                secure_memzero(key_ba)
+        except (ImportError, TypeError):
+            pass
+
+        sys.exit(0)
+
     # For other actions, input file is required
     if getattr(args, "input", None) is None and args.action not in [
         "generate-password",
+        "derive-password",
         "security-info",
         "analyze-security",
         "config-wizard",
@@ -5122,10 +5438,25 @@ def main_with_args(args=None):
                     except KeyError:
                         pass
 
+            # Try keyring if no password resolved yet
+            if not args.password and getattr(args, "keyring_load", None):
+                try:
+                    import keyring as _keyring
+
+                    stored_pw = _keyring.get_password("openssl_encrypt", args.keyring_load)
+                    if stored_pw:
+                        args.password = stored_pw
+                    else:
+                        eprint(f"No password found in keyring for label '{args.keyring_load}'")
+                except ImportError:
+                    eprint("Error: keyring package not installed. Install with: pip install keyring")
+                    sys.exit(1)
+
             if (
                 args.password
                 and not getattr(args, "password_file", None)
                 and not getattr(args, "password_fd", None)
+                and not getattr(args, "keyring_load", None)
             ):
                 # Warn about --password being visible in process list
                 if not args.quiet:
@@ -5134,6 +5465,18 @@ def main_with_args(args=None):
                         "Use --password-file or OPENSSL_ENCRYPT_PASSWORD env var instead.",
                         file=sys.stderr,
                     )
+
+            # Store password in keyring if requested (before secure_string wipes it)
+            if args.password and getattr(args, "keyring_store", None):
+                try:
+                    import keyring as _keyring
+
+                    _keyring.set_password("openssl_encrypt", args.keyring_store, args.password)
+                    if not args.quiet:
+                        eprint(f"Password stored in keyring as '{args.keyring_store}'")
+                except ImportError:
+                    if not args.quiet:
+                        eprint("Warning: keyring package not installed, password not stored")
 
             # Initialize a secure string to hold the password
             with secure_string() as password_secure:
@@ -5732,7 +6075,14 @@ def main_with_args(args=None):
         # Only apply template's algorithm if user didn't explicitly provide one
         if args.algorithm == "fernet":  # Default value, user didn't provide --algorithm
             setattr(args, "algorithm", hash_config["hash_config"]["algorithm"])
+        # Apply cascade mode from template if present
+        if "cascade" in hash_config and not getattr(args, "cascade", None):
+            setattr(args, "cascade", hash_config["cascade"])
         hash_config = hash_config["hash_config"]
+        # Enable independent XOR (v11) for standard and paranoid templates
+        # unless user explicitly chose --use-xor-composition
+        if (args.standard or args.paranoid) and not getattr(args, "use_xor_composition", False):
+            setattr(args, "independent_xor", True)
     elif args.template:
         hash_config = get_template_config(args.template)
         # Only apply template's algorithm if user didn't explicitly provide one
@@ -5776,7 +6126,13 @@ def main_with_args(args=None):
             # Only apply template's algorithm if user didn't explicitly provide one
             if args.algorithm == "fernet":  # Default value, user didn't provide --algorithm
                 setattr(args, "algorithm", hash_config["hash_config"]["algorithm"])
+            # Apply cascade mode from template if present
+            if "cascade" in hash_config and not getattr(args, "cascade", None):
+                setattr(args, "cascade", hash_config["cascade"])
             hash_config = hash_config["hash_config"]
+            # Enable independent XOR (v11) by default with standard template
+            if not getattr(args, "use_xor_composition", False):
+                setattr(args, "independent_xor", True)
         else:
             # User provided specific arguments, build custom configuration
             hash_config = {

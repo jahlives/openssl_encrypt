@@ -6,8 +6,9 @@ import '../widgets/crypto_widgets.dart';
 
 class EncryptTab extends StatefulWidget {
   final FileManager fileManager;
+  final bool isProMode;
 
-  const EncryptTab({super.key, required this.fileManager});
+  const EncryptTab({super.key, required this.fileManager, this.isProMode = false});
 
   @override
   State<EncryptTab> createState() => _EncryptTabState();
@@ -324,6 +325,7 @@ class _EncryptTabState extends State<EncryptTab> {
         _selectedAlgorithm,
         _encryptionMode == EncryptionMode.symmetric ? _buildHashConfigMap() : null,
         _encryptionMode == EncryptionMode.symmetric ? _buildKdfConfigMap() : null,
+        template: widget.isProMode ? null : 'standard',
         hsmPlugin: _hsmType != 'none' ? _hsmType : null,
         hsmSlot: _hsmType == 'yubikey' ? _yubikeySlot : null,
         enableIntegrity: _enableIntegrity,
@@ -503,6 +505,7 @@ class _EncryptTabState extends State<EncryptTab> {
         _selectedAlgorithm,
         _encryptionMode == EncryptionMode.symmetric ? _buildHashConfigMap() : null,
         _encryptionMode == EncryptionMode.symmetric ? _buildKdfConfigMap() : null,
+        template: widget.isProMode ? null : 'standard',
         hsmPlugin: _hsmType != 'none' ? _hsmType : null,
         hsmSlot: _hsmType == 'yubikey' ? _yubikeySlot : null,
         enableIntegrity: _enableIntegrity,
@@ -2507,144 +2510,169 @@ class _EncryptTabState extends State<EncryptTab> {
                       obscureText: true,
                       enabled: !_isLoading,
                     ),
-                    const SizedBox(height: 8),
-                    CheckboxListTile(
-                      value: _forcePassword,
-                      onChanged: _isLoading ? null : (value) {
-                        setState(() {
-                          _forcePassword = value ?? false;
-                        });
-                      },
-                      title: const Text('Force password'),
-                      subtitle: const Text('Accept weak passwords (use with caution)'),
-                      contentPadding: EdgeInsets.zero,
-                      controlAffinity: ListTileControlAffinity.leading,
-                      dense: true,
-                    ),
+                    if (widget.isProMode) ...[
+                      const SizedBox(height: 8),
+                      CheckboxListTile(
+                        value: _forcePassword,
+                        onChanged: _isLoading ? null : (value) {
+                          setState(() {
+                            _forcePassword = value ?? false;
+                          });
+                        },
+                        title: const Text('Force password'),
+                        subtitle: const Text('Accept weak passwords (use with caution)'),
+                        contentPadding: EdgeInsets.zero,
+                        controlAffinity: ListTileControlAffinity.leading,
+                        dense: true,
+                      ),
+                    ],
                   ],
                 ),
               ),
             ),
             const SizedBox(height: 16),
 
-            // Encryption Mode Selector
-            EncryptionModeSelector(
-              selectedMode: _encryptionMode,
-              onModeChanged: (mode) {
-                setState(() {
-                  _encryptionMode = mode;
-                });
-              },
-            ),
-            const SizedBox(height: 16),
+            // Simple mode info banner
+            if (!widget.isProMode)
+              Card(
+                color: Theme.of(context).colorScheme.primaryContainer,
+                child: Padding(
+                  padding: const EdgeInsets.all(12.0),
+                  child: Row(
+                    children: [
+                      Icon(Icons.info_outline, color: Theme.of(context).colorScheme.onPrimaryContainer),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Using standard security template. Switch to Pro mode in Settings for advanced options.',
+                          style: TextStyle(color: Theme.of(context).colorScheme.onPrimaryContainer),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
 
-            // Algorithm Selection (for symmetric mode)
-            if (_encryptionMode == EncryptionMode.symmetric)
-              AlgorithmSelector(
-                selectedAlgorithm: _selectedAlgorithm,
-                onAlgorithmChanged: (algorithm) {
+            if (widget.isProMode) ...[
+              // Encryption Mode Selector
+              EncryptionModeSelector(
+                selectedMode: _encryptionMode,
+                onModeChanged: (mode) {
                   setState(() {
-                    _selectedAlgorithm = algorithm;
+                    _encryptionMode = mode;
                   });
                 },
-                enabled: !_isLoading,
+              ),
+              const SizedBox(height: 16),
+
+              // Algorithm Selection (for symmetric mode)
+              if (_encryptionMode == EncryptionMode.symmetric)
+                AlgorithmSelector(
+                  selectedAlgorithm: _selectedAlgorithm,
+                  onAlgorithmChanged: (algorithm) {
+                    setState(() {
+                      _selectedAlgorithm = algorithm;
+                    });
+                  },
+                  enabled: !_isLoading,
+                ),
+
+              // Asymmetric Encryption Configuration (for asymmetric mode)
+              if (_encryptionMode == EncryptionMode.asymmetric)
+                _buildAsymmetricConfig(),
+
+              // Cascade Encryption Configuration (for cascade mode)
+              if (_encryptionMode == EncryptionMode.cascade)
+                _buildCascadeConfig(),
+
+              const SizedBox(height: 16),
+
+              // Key Stretching Section (only for symmetric mode)
+              if (_encryptionMode == EncryptionMode.symmetric)
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(12.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.vpn_key),
+                          const SizedBox(width: 8),
+                          const Text('Key Stretching', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+
+                      // Hash Chain Configuration
+                      _buildHashChainSection(),
+
+                      const SizedBox(height: 12),
+
+                      // KDF Chain Configuration
+                      _buildKdfChainSection(),
+                    ],
+                  ),
+                ),
               ),
 
-            // Asymmetric Encryption Configuration (for asymmetric mode)
-            if (_encryptionMode == EncryptionMode.asymmetric)
-              _buildAsymmetricConfig(),
+              const SizedBox(height: 16),
 
-            // Cascade Encryption Configuration (for cascade mode)
-            if (_encryptionMode == EncryptionMode.cascade)
-              _buildCascadeConfig(),
+              // Advanced Options (Collapsible)
+              ExpansionTile(
+                title: const Text('Advanced Options'),
+                leading: const Icon(Icons.settings),
+                children: [
+                  // HSM Configuration
+                  HsmConfigSection(
+                    hsmType: _hsmType,
+                    yubikeySlot: _yubikeySlot,
+                    onHsmTypeChanged: (type) => setState(() => _hsmType = type),
+                    onYubikeySlotChanged: (slot) => setState(() => _yubikeySlot = slot),
+                  ),
+                  const SizedBox(height: 12),
 
-            const SizedBox(height: 16),
+                  // Integrity Configuration
+                  IntegrityConfigSection(
+                    enableIntegrity: _enableIntegrity,
+                    verifyIntegrity: false,
+                    isEncryptMode: true,
+                    onEnableIntegrityChanged: (value) => setState(() => _enableIntegrity = value),
+                    onVerifyIntegrityChanged: (_) {},
+                  ),
+                  const SizedBox(height: 12),
 
-            // Key Stretching Section (only for symmetric mode)
-            if (_encryptionMode == EncryptionMode.symmetric)
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(12.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.vpn_key),
-                        const SizedBox(width: 8),
-                        const Text('Key Stretching', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
+                  // Pepper Configuration
+                  PepperConfigSection(
+                    enablePepper: _enablePepper,
+                    pepperMode: _pepperMode,
+                    pepperNameController: _pepperNameController,
+                    onEnablePepperChanged: (value) => setState(() => _enablePepper = value),
+                    onPepperModeChanged: (mode) => setState(() => _pepperMode = mode),
+                  ),
+                  const SizedBox(height: 12),
 
-                    // Hash Chain Configuration
-                    _buildHashChainSection(),
+                  // Steganography Configuration
+                  _buildSteganographyConfig(),
+                  const SizedBox(height: 12),
 
-                    const SizedBox(height: 12),
-
-                    // KDF Chain Configuration
-                    _buildKdfChainSection(),
-                  ],
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 16),
-
-            // Advanced Options (Collapsible)
-            ExpansionTile(
-              title: const Text('Advanced Options'),
-              leading: const Icon(Icons.settings),
-              children: [
-                // HSM Configuration
-                HsmConfigSection(
-                  hsmType: _hsmType,
-                  yubikeySlot: _yubikeySlot,
-                  onHsmTypeChanged: (type) => setState(() => _hsmType = type),
-                  onYubikeySlotChanged: (slot) => setState(() => _yubikeySlot = slot),
-                ),
-                const SizedBox(height: 12),
-
-                // Integrity Configuration
-                IntegrityConfigSection(
-                  enableIntegrity: _enableIntegrity,
-                  verifyIntegrity: false,
-                  isEncryptMode: true,
-                  onEnableIntegrityChanged: (value) => setState(() => _enableIntegrity = value),
-                  onVerifyIntegrityChanged: (_) {},
-                ),
-                const SizedBox(height: 12),
-
-                // Pepper Configuration
-                PepperConfigSection(
-                  enablePepper: _enablePepper,
-                  pepperMode: _pepperMode,
-                  pepperNameController: _pepperNameController,
-                  onEnablePepperChanged: (value) => setState(() => _enablePepper = value),
-                  onPepperModeChanged: (mode) => setState(() => _pepperMode = mode),
-                ),
-                const SizedBox(height: 12),
-
-                // Steganography Configuration
-                _buildSteganographyConfig(),
-                const SizedBox(height: 12),
-
-                // File-specific options
-                if (_isFileMode)
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(12.0),
-                      child: CheckboxListTile(
-                        title: const Text('Force Overwrite'),
-                        subtitle: const Text('Replace source file with encrypted version'),
-                        value: _forceOverwrite,
-                        onChanged: (value) => setState(() => _forceOverwrite = value ?? false),
-                        contentPadding: EdgeInsets.zero,
+                  // File-specific options
+                  if (_isFileMode)
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(12.0),
+                        child: CheckboxListTile(
+                          title: const Text('Force Overwrite'),
+                          subtitle: const Text('Replace source file with encrypted version'),
+                          value: _forceOverwrite,
+                          onChanged: (value) => setState(() => _forceOverwrite = value ?? false),
+                          contentPadding: EdgeInsets.zero,
+                        ),
                       ),
                     ),
-                  ),
-              ],
-            ),
+                ],
+              ),
+            ],
             const SizedBox(height: 24),
 
             // Encrypt Button

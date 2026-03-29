@@ -36,6 +36,41 @@ except ImportError:
     ARGON2_AVAILABLE = False
 
 
+def _argon2_derive_key(password: str, salt: bytes, argon2_params: dict, kdf_version: int = 2) -> bytes:
+    """Derive a 32-byte key using Argon2id.
+
+    Args:
+        password: The master password.
+        salt: Raw salt bytes.
+        argon2_params: Dict with time_cost, memory_cost, parallelism.
+        kdf_version: 1 = legacy (PasswordHasher + SHA-256), 2 = hash_secret_raw.
+
+    Returns:
+        32-byte derived key.
+    """
+    if kdf_version >= 2:
+        return argon2.low_level.hash_secret_raw(
+            secret=password.encode("utf-8"),
+            salt=salt,
+            time_cost=argon2_params["time_cost"],
+            memory_cost=argon2_params["memory_cost"],
+            parallelism=argon2_params["parallelism"],
+            hash_len=32,
+            type=argon2.low_level.Type.ID,
+        )
+    else:
+        # Legacy path: PasswordHasher.hash() + SHA-256 truncation
+        ph = PasswordHasher(
+            time_cost=argon2_params["time_cost"],
+            memory_cost=argon2_params["memory_cost"],
+            parallelism=argon2_params["parallelism"],
+            hash_len=32,
+        )
+        salt_b64 = base64.b64encode(salt).decode("utf-8")
+        hash_result = ph.hash(password + salt_b64)
+        return hashlib.sha256(hash_result.encode("utf-8")).digest()
+
+
 class KeystoreSecurityLevel(Enum):
     """Security levels for keystore protection"""
 
@@ -196,20 +231,10 @@ class PQCKeystore:
 
                 # Derive key with Argon2
                 argon2_params = params["argon2_params"]
-                ph = PasswordHasher(
-                    time_cost=argon2_params["time_cost"],
-                    memory_cost=argon2_params["memory_cost"],
-                    parallelism=argon2_params["parallelism"],
-                    hash_len=32,
-                )
+                salt = base64.b64decode(params["salt"])
+                kdf_version = params.get("kdf_version", 1)
 
-                # Encode salt as required by argon2-cffi
-                salt_b64 = params["salt"]
-                salt = base64.b64decode(salt_b64)
-
-                # Hash the password with Argon2id
-                hash_result = ph.hash(master_password + salt_b64)
-                derived_key = hashlib.sha256(hash_result.encode("utf-8")).digest()
+                derived_key = _argon2_derive_key(master_password, salt, argon2_params, kdf_version)
 
             elif method == KeystoreProtectionMethod.SCRYPT_CHACHA20.value:
                 # Derive key with Scrypt
@@ -242,53 +267,43 @@ class PQCKeystore:
                 raise ValidationError(f"Unsupported protection method: {method}")
 
             # Decrypt the keystore data
+            kdf_version = params.get("kdf_version", 1)
+
             if method == KeystoreProtectionMethod.SCRYPT_CHACHA20.value:
                 # Use ChaCha20Poly1305
                 cipher = ChaCha20Poly1305(derived_key)
                 nonce = base64.b64decode(params["nonce"])
+                header_aad = json.dumps(header).encode("utf-8")
 
-                # Try multiple approaches for robustness - order matters for backward compatibility
-                try:
-                    # First try with header as associated_data (recommended approach)
-                    plaintext = cipher.decrypt(
-                        nonce, ciphertext, associated_data=json.dumps(header).encode("utf-8")
-                    )
-                except Exception as e1:
+                if kdf_version >= 2:
+                    # v2+: strict AAD — no fallback
+                    plaintext = cipher.decrypt(nonce, ciphertext, associated_data=header_aad)
+                else:
+                    # Legacy: try with header AAD, fall back for old keystores
                     try:
-                        # Then try without associated_data (older versions)
-                        plaintext = cipher.decrypt(nonce, ciphertext, associated_data=None)
-                    except Exception as e2:
+                        plaintext = cipher.decrypt(nonce, ciphertext, associated_data=header_aad)
+                    except Exception as e1:
                         try:
-                            # Finally try with empty string
-                            plaintext = cipher.decrypt(nonce, ciphertext, associated_data=b"")
-                        except Exception as e3:
-                            # Raise the original error
+                            plaintext = cipher.decrypt(nonce, ciphertext, associated_data=None)
+                        except Exception:
                             raise e1
             else:
                 # Use AES-GCM
                 cipher = AESGCM(derived_key)
                 nonce = base64.b64decode(params["nonce"])
+                header_aad = json.dumps(header).encode("utf-8")
 
-                # For AES-GCM, associated_data must match exactly between encryption and decryption
-                # Try multiple approaches for backward compatibility - order matters
-                try:
-                    # First try with header JSON as associated_data (matches our save_keystore)
-                    header_json = json.dumps(header).encode("utf-8")
-                    plaintext = cipher.decrypt(nonce, ciphertext, associated_data=header_json)
-                except Exception as e1:
+                if kdf_version >= 2:
+                    # v2+: strict AAD — no fallback
+                    plaintext = cipher.decrypt(nonce, ciphertext, associated_data=header_aad)
+                else:
+                    # Legacy: try with header AAD, fall back for old keystores
                     try:
-                        # Then try with None as associated_data (for older keystores)
-                        plaintext = cipher.decrypt(nonce, ciphertext, associated_data=None)
-                    except Exception as e2:
+                        plaintext = cipher.decrypt(nonce, ciphertext, associated_data=header_aad)
+                    except Exception as e1:
                         try:
-                            # Finally try with empty bytes (another possible approach)
-                            plaintext = cipher.decrypt(nonce, ciphertext, associated_data=b"")
-                        except Exception as e3:
-                            # Log more details about the error for debugging
-                            import traceback
-
-                            traceback.print_exc()
-                            # Raise the original error
+                            plaintext = cipher.decrypt(nonce, ciphertext, associated_data=None)
+                        except Exception:
                             raise e1
 
             # Parse the decrypted data with secure validation (MED-8 fix)
@@ -310,8 +325,9 @@ class PQCKeystore:
                 except json.JSONDecodeError as e:
                     raise ValidationError(f"Invalid JSON in keystore data: {e}")
 
-            # Store the derived key for later use (cached)
-            self.master_key = bytes(derived_key)
+            # Store the derived key for later use (cached) as mutable bytearray
+            # so it can be securely zeroed when the cache expires
+            self.master_key = bytearray(derived_key)
             self.master_key_time = time.time()
 
             return True
@@ -373,22 +389,12 @@ class PQCKeystore:
                             "Argon2 is required for this keystore but not available"
                         )
 
-                    # Derive key with Argon2
+                    # Derive key with Argon2 (always use v2 for new saves)
                     argon2_params = params["argon2_params"]
-                    ph = PasswordHasher(
-                        time_cost=argon2_params["time_cost"],
-                        memory_cost=argon2_params["memory_cost"],
-                        parallelism=argon2_params["parallelism"],
-                        hash_len=32,
-                    )
+                    salt = base64.b64decode(params["salt"])
 
-                    # Encode salt as required by argon2-cffi
-                    salt_b64 = params["salt"]
-                    salt = base64.b64decode(salt_b64)
-
-                    # Hash the password with Argon2id
-                    hash_result = ph.hash(master_password + salt_b64)
-                    derived_key = hashlib.sha256(hash_result.encode("utf-8")).digest()
+                    derived_key = _argon2_derive_key(master_password, salt, argon2_params, kdf_version=2)
+                    params["kdf_version"] = 2
 
                 elif method == KeystoreProtectionMethod.SCRYPT_CHACHA20.value:
                     # Derive key with Scrypt
@@ -422,7 +428,7 @@ class PQCKeystore:
 
                 # Cache the key for future operations
                 # Note: Clone the derived key securely
-                self.master_key = bytes(derived_key)
+                self.master_key = bytearray(derived_key)
                 self.master_key_time = time.time()
 
             # Encrypt the keystore data
@@ -1094,124 +1100,126 @@ class PQCKeystore:
         # Generate salt and nonce
         salt = secrets.token_bytes(16)
         nonce = secrets.token_bytes(12)
+        derived_key = None
 
-        # Choose protection parameters based on the method
-        if protection_method == KeystoreProtectionMethod.ARGON2ID_AES_GCM:
-            if not ARGON2_AVAILABLE:
-                raise ValidationError("Argon2 is not available")
+        try:
+            # Choose protection parameters based on the method
+            if protection_method == KeystoreProtectionMethod.ARGON2ID_AES_GCM:
+                if not ARGON2_AVAILABLE:
+                    raise ValidationError("Argon2 is not available")
 
-            # Parameters for Argon2
-            time_cost = 3
-            memory_cost = 65536  # 64 MB
-            parallelism = 4
+                # Parameters for Argon2
+                time_cost = 3
+                memory_cost = 65536  # 64 MB
+                parallelism = 4
 
-            # Derive key with Argon2
-            ph = PasswordHasher(
-                time_cost=time_cost, memory_cost=memory_cost, parallelism=parallelism, hash_len=32
-            )
+                # Derive key with Argon2 (always v2 for new encryptions)
+                argon2_params = {
+                    "time_cost": time_cost,
+                    "memory_cost": memory_cost,
+                    "parallelism": parallelism,
+                }
+                derived_key = bytearray(_argon2_derive_key(password, salt, argon2_params, kdf_version=2))
 
-            # Encode salt as required by argon2-cffi
-            salt_b64 = base64.b64encode(salt).decode("utf-8")
+                salt_b64 = base64.b64encode(salt).decode("utf-8")
 
-            # Hash the password with Argon2id
-            hash_result = ph.hash(password + salt_b64)
-            derived_key = hashlib.sha256(hash_result.encode("utf-8")).digest()
+                # Encrypt with AES-GCM
+                cipher = AESGCM(bytes(derived_key))
+                # Create a consistent header for associated data
+                header = {
+                    "method": protection_method.value,
+                    "params": {"salt": salt_b64, "nonce": base64.b64encode(nonce).decode("utf-8")},
+                }
+                ciphertext = cipher.encrypt(
+                    nonce, private_key, associated_data=json.dumps(header).encode("utf-8")
+                )
 
-            # Encrypt with AES-GCM
-            cipher = AESGCM(derived_key)
-            # Create a consistent header for associated data
-            header = {
-                "method": protection_method.value,
-                "params": {"salt": salt_b64, "nonce": base64.b64encode(nonce).decode("utf-8")},
-            }
-            ciphertext = cipher.encrypt(
-                nonce, private_key, associated_data=json.dumps(header).encode("utf-8")
-            )
-
-            # Prepare result
-            result = {
-                "method": protection_method.value,
-                "params": {
-                    "salt": salt_b64,
-                    "nonce": base64.b64encode(nonce).decode("utf-8"),
-                    "argon2_params": {
-                        "time_cost": time_cost,
-                        "memory_cost": memory_cost,
-                        "parallelism": parallelism,
+                # Prepare result
+                result = {
+                    "method": protection_method.value,
+                    "params": {
+                        "salt": salt_b64,
+                        "nonce": base64.b64encode(nonce).decode("utf-8"),
+                        "argon2_params": argon2_params,
+                        "kdf_version": 2,
                     },
-                },
-                "ciphertext": base64.b64encode(ciphertext).decode("utf-8"),
-            }
+                    "ciphertext": base64.b64encode(ciphertext).decode("utf-8"),
+                }
 
-        elif protection_method == KeystoreProtectionMethod.SCRYPT_CHACHA20:
-            # Parameters for Scrypt
-            n = 32768  # 2^15
-            r = 8
-            p = 1
+            elif protection_method == KeystoreProtectionMethod.SCRYPT_CHACHA20:
+                # Parameters for Scrypt
+                n = 32768  # 2^15
+                r = 8
+                p = 1
 
-            # Derive key with Scrypt
-            kdf = Scrypt(salt=salt, length=32, n=n, r=r, p=p)
-            derived_key = kdf.derive(password.encode("utf-8"))
+                # Derive key with Scrypt
+                kdf = Scrypt(salt=salt, length=32, n=n, r=r, p=p)
+                derived_key = bytearray(kdf.derive(password.encode("utf-8")))
 
-            # Encrypt with ChaCha20Poly1305
-            cipher = ChaCha20Poly1305(derived_key)
-            # Create a consistent header for associated data
-            header = {
-                "method": protection_method.value,
-                "params": {
-                    "salt": base64.b64encode(salt).decode("utf-8"),
-                    "nonce": base64.b64encode(nonce).decode("utf-8"),
-                },
-            }
-            ciphertext = cipher.encrypt(
-                nonce, private_key, associated_data=json.dumps(header).encode("utf-8")
-            )
+                # Encrypt with ChaCha20Poly1305
+                cipher = ChaCha20Poly1305(bytes(derived_key))
+                # Create a consistent header for associated data
+                header = {
+                    "method": protection_method.value,
+                    "params": {
+                        "salt": base64.b64encode(salt).decode("utf-8"),
+                        "nonce": base64.b64encode(nonce).decode("utf-8"),
+                    },
+                }
+                ciphertext = cipher.encrypt(
+                    nonce, private_key, associated_data=json.dumps(header).encode("utf-8")
+                )
 
-            # Prepare result
-            result = {
-                "method": protection_method.value,
-                "params": {
-                    "salt": base64.b64encode(salt).decode("utf-8"),
-                    "nonce": base64.b64encode(nonce).decode("utf-8"),
-                    "scrypt_params": {"n": n, "r": r, "p": p},
-                },
-                "ciphertext": base64.b64encode(ciphertext).decode("utf-8"),
-            }
+                # Prepare result
+                result = {
+                    "method": protection_method.value,
+                    "params": {
+                        "salt": base64.b64encode(salt).decode("utf-8"),
+                        "nonce": base64.b64encode(nonce).decode("utf-8"),
+                        "scrypt_params": {"n": n, "r": r, "p": p},
+                        "kdf_version": 2,
+                    },
+                    "ciphertext": base64.b64encode(ciphertext).decode("utf-8"),
+                }
 
-        elif protection_method == KeystoreProtectionMethod.PBKDF2_AES_GCM:
-            # Parameters for PBKDF2
-            iterations = 500000
+            elif protection_method == KeystoreProtectionMethod.PBKDF2_AES_GCM:
+                # Parameters for PBKDF2
+                iterations = 500000
 
-            # Derive key with PBKDF2
-            kdf = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=salt, iterations=iterations)
-            derived_key = kdf.derive(password.encode("utf-8"))
+                # Derive key with PBKDF2
+                kdf = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=salt, iterations=iterations)
+                derived_key = bytearray(kdf.derive(password.encode("utf-8")))
 
-            # Encrypt with AES-GCM
-            cipher = AESGCM(derived_key)
-            # Create a consistent header for associated data
-            header = {
-                "method": protection_method.value,
-                "params": {"salt": salt_b64, "nonce": base64.b64encode(nonce).decode("utf-8")},
-            }
-            ciphertext = cipher.encrypt(
-                nonce, private_key, associated_data=json.dumps(header).encode("utf-8")
-            )
+                # Encrypt with AES-GCM
+                cipher = AESGCM(bytes(derived_key))
+                # Create a consistent header for associated data
+                header = {
+                    "method": protection_method.value,
+                    "params": {"salt": salt_b64, "nonce": base64.b64encode(nonce).decode("utf-8")},
+                }
+                ciphertext = cipher.encrypt(
+                    nonce, private_key, associated_data=json.dumps(header).encode("utf-8")
+                )
 
-            # Prepare result
-            result = {
-                "method": protection_method.value,
-                "params": {
-                    "salt": base64.b64encode(salt).decode("utf-8"),
-                    "nonce": base64.b64encode(nonce).decode("utf-8"),
-                    "pbkdf2_params": {"iterations": iterations},
-                },
-                "ciphertext": base64.b64encode(ciphertext).decode("utf-8"),
-            }
+                # Prepare result
+                result = {
+                    "method": protection_method.value,
+                    "params": {
+                        "salt": base64.b64encode(salt).decode("utf-8"),
+                        "nonce": base64.b64encode(nonce).decode("utf-8"),
+                        "pbkdf2_params": {"iterations": iterations},
+                        "kdf_version": 2,
+                    },
+                    "ciphertext": base64.b64encode(ciphertext).decode("utf-8"),
+                }
 
-        else:
-            raise ValidationError(f"Unsupported protection method: {protection_method}")
+            else:
+                raise ValidationError(f"Unsupported protection method: {protection_method}")
 
-        return result
+            return result
+        finally:
+            if derived_key is not None:
+                secure_memzero(derived_key)
 
     def _decrypt_private_key(self, encrypted_data: Dict, password: str) -> bytes:
         """
@@ -1228,6 +1236,7 @@ class PQCKeystore:
             AuthenticationError: If the password is incorrect
             ValidationError: If the encryption method is not supported
         """
+        derived_key = None
         try:
             method = encrypted_data["method"]
             params = encrypted_data["params"]
@@ -1239,36 +1248,29 @@ class PQCKeystore:
 
                 # Extract parameters
                 salt_b64 = params["salt"]
+                salt = base64.b64decode(salt_b64)
                 nonce = base64.b64decode(params["nonce"])
                 argon2_params = params["argon2_params"]
+                kdf_version = params.get("kdf_version", 1)
 
-                # Derive key with Argon2
-                ph = PasswordHasher(
-                    time_cost=argon2_params["time_cost"],
-                    memory_cost=argon2_params["memory_cost"],
-                    parallelism=argon2_params["parallelism"],
-                    hash_len=32,
-                )
-
-                # Hash the password with Argon2id
-                hash_result = ph.hash(password + salt_b64)
-                derived_key = hashlib.sha256(hash_result.encode("utf-8")).digest()
+                derived_key = bytearray(_argon2_derive_key(password, salt, argon2_params, kdf_version))
 
                 # Decrypt with AES-GCM
-                cipher = AESGCM(derived_key)
+                cipher = AESGCM(bytes(derived_key))
                 # Recreate the header to match encryption
                 header = {
                     "method": method,
                     "params": {"salt": salt_b64, "nonce": base64.b64encode(nonce).decode("utf-8")},
                 }
-                # Try both methods for backward compatibility
-                try:
-                    plaintext = cipher.decrypt(
-                        nonce, ciphertext, associated_data=json.dumps(header).encode("utf-8")
-                    )
-                except Exception:
-                    # Fallback for old encrypted data
-                    plaintext = cipher.decrypt(nonce, ciphertext, associated_data=None)
+                header_aad = json.dumps(header).encode("utf-8")
+
+                if kdf_version >= 2:
+                    plaintext = cipher.decrypt(nonce, ciphertext, associated_data=header_aad)
+                else:
+                    try:
+                        plaintext = cipher.decrypt(nonce, ciphertext, associated_data=header_aad)
+                    except Exception:
+                        plaintext = cipher.decrypt(nonce, ciphertext, associated_data=None)
 
             elif method == KeystoreProtectionMethod.SCRYPT_CHACHA20.value:
                 # Extract parameters
@@ -1284,10 +1286,10 @@ class PQCKeystore:
                     r=scrypt_params["r"],
                     p=scrypt_params["p"],
                 )
-                derived_key = kdf.derive(password.encode("utf-8"))
+                derived_key = bytearray(kdf.derive(password.encode("utf-8")))
 
                 # Decrypt with ChaCha20Poly1305
-                cipher = ChaCha20Poly1305(derived_key)
+                cipher = ChaCha20Poly1305(bytes(derived_key))
                 # Recreate the header to match encryption
                 header = {
                     "method": method,
@@ -1296,14 +1298,16 @@ class PQCKeystore:
                         "nonce": base64.b64encode(nonce).decode("utf-8"),
                     },
                 }
-                # Try both methods for backward compatibility
-                try:
-                    plaintext = cipher.decrypt(
-                        nonce, ciphertext, associated_data=json.dumps(header).encode("utf-8")
-                    )
-                except Exception:
-                    # Fallback for old encrypted data
-                    plaintext = cipher.decrypt(nonce, ciphertext, associated_data=None)
+                header_aad = json.dumps(header).encode("utf-8")
+                kdf_version = params.get("kdf_version", 1)
+
+                if kdf_version >= 2:
+                    plaintext = cipher.decrypt(nonce, ciphertext, associated_data=header_aad)
+                else:
+                    try:
+                        plaintext = cipher.decrypt(nonce, ciphertext, associated_data=header_aad)
+                    except Exception:
+                        plaintext = cipher.decrypt(nonce, ciphertext, associated_data=None)
 
             elif method == KeystoreProtectionMethod.PBKDF2_AES_GCM.value:
                 # Extract parameters
@@ -1318,23 +1322,25 @@ class PQCKeystore:
                     salt=salt,
                     iterations=pbkdf2_params["iterations"],
                 )
-                derived_key = kdf.derive(password.encode("utf-8"))
+                derived_key = bytearray(kdf.derive(password.encode("utf-8")))
 
                 # Decrypt with AES-GCM
-                cipher = AESGCM(derived_key)
+                cipher = AESGCM(bytes(derived_key))
                 # Recreate the header to match encryption
                 header = {
                     "method": method,
                     "params": {"salt": salt_b64, "nonce": base64.b64encode(nonce).decode("utf-8")},
                 }
-                # Try both methods for backward compatibility
-                try:
-                    plaintext = cipher.decrypt(
-                        nonce, ciphertext, associated_data=json.dumps(header).encode("utf-8")
-                    )
-                except Exception:
-                    # Fallback for old encrypted data
-                    plaintext = cipher.decrypt(nonce, ciphertext, associated_data=None)
+                header_aad = json.dumps(header).encode("utf-8")
+                kdf_version = params.get("kdf_version", 1)
+
+                if kdf_version >= 2:
+                    plaintext = cipher.decrypt(nonce, ciphertext, associated_data=header_aad)
+                else:
+                    try:
+                        plaintext = cipher.decrypt(nonce, ciphertext, associated_data=header_aad)
+                    except Exception:
+                        plaintext = cipher.decrypt(nonce, ciphertext, associated_data=None)
 
             else:
                 raise ValidationError(f"Unsupported protection method: {method}")
@@ -1346,6 +1352,9 @@ class PQCKeystore:
                 raise AuthenticationError("Invalid password or corrupted data")
             else:
                 raise InternalError(f"Decryption failed: {str(e)}")
+        finally:
+            if derived_key is not None:
+                secure_memzero(derived_key)
 
     def _encrypt_with_derived_key(
         self, data: bytes, derived_key: bytes, protection_method: KeystoreProtectionMethod

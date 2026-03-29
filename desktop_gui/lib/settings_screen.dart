@@ -107,6 +107,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: ListView(
               padding: const EdgeInsets.all(16.0),
               children: [
+                // UI Mode Toggle - always visible
+                if (_matchesSearch('mode simple pro'))
+                  _buildCategoryCard(
+                    'Interface Mode',
+                    Icons.tune,
+                    Colors.indigo,
+                    [
+                      _buildUiModeSelector(),
+                    ],
+                  ),
+                const SizedBox(height: 16),
                 if (_matchesSearch('theme appearance'))
                   _buildCategoryCard(
                     'Theme & Appearance',
@@ -116,6 +127,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       _buildThemeSelector(),
                     ],
                   ),
+                if (SettingsService.isProMode()) ...[
                 const SizedBox(height: 16),
                 if (_matchesSearch('cryptographic defaults security algorithm'))
                   _buildCategoryCard(
@@ -232,6 +244,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       _buildIntegritySection(),
                     ],
                   ),
+                ], // end of Pro mode settings
                 const SizedBox(height: 16),
                 if (_matchesSearch('system information'))
                   _buildCategoryCard(
@@ -376,6 +389,62 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildUiModeSelector() {
+    final isProMode = SettingsService.isProMode();
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SwitchListTile(
+            title: const Text(
+              'Pro Mode',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            subtitle: Text(
+              isProMode
+                  ? 'All encryption options, algorithms, and advanced features are visible'
+                  : 'Using standard security template with simplified interface',
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.grey.shade600,
+              ),
+            ),
+            value: isProMode,
+            onChanged: (value) async {
+              await SettingsService.setUiMode(value ? 'pro' : 'simple');
+              widget.onSettingChanged?.call('ui_mode', value ? 'pro' : 'simple');
+              setState(() {});
+            },
+            secondary: Icon(
+              isProMode ? Icons.science : Icons.shield,
+              color: isProMode ? Colors.orange : Colors.green,
+            ),
+            contentPadding: EdgeInsets.zero,
+          ),
+          if (!isProMode)
+            Padding(
+              padding: const EdgeInsets.only(left: 56.0, top: 4.0),
+              child: Text(
+                'Simple mode uses the standard security template for encryption. '
+                'Enable Pro mode to access algorithm selection, key stretching, '
+                'cascade encryption, steganography, and other advanced features.',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey.shade500,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ),
         ],
       ),
     );

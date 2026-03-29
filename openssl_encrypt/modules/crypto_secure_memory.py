@@ -26,6 +26,7 @@ from .secure_allocator import (
     check_all_crypto_buffer_integrity,
     free_secure_crypto_buffer,
 )
+from .secure_memory import secure_memzero
 
 
 class CryptoSecureBuffer:
@@ -189,12 +190,11 @@ class CryptoKey(CryptoSecureBuffer):
 
     def _fill_random(self):
         """Fill the buffer with cryptographically secure random bytes."""
-        random_data = secrets.token_bytes(len(self.buffer))
-        for i in range(len(self.buffer)):
-            self.buffer[i] = random_data[i]
-
-        # Clear the temporary random data to avoid leaving traces
-        random_data = None
+        random_data = bytearray(secrets.token_bytes(len(self.buffer)))
+        try:
+            self.buffer[:] = random_data
+        finally:
+            secure_memzero(random_data)
 
     def derive_subkey(self, info: bytes, length: int, salt: bytes = None) -> "CryptoKey":
         """
@@ -209,6 +209,8 @@ class CryptoKey(CryptoSecureBuffer):
         Returns:
             CryptoKey: A new key derived from this key
         """
+        key_material = None
+        derived_key = None
         try:
             import os
 
@@ -219,41 +221,23 @@ class CryptoKey(CryptoSecureBuffer):
             if salt is None:
                 salt = os.urandom(32)
 
-            # Get the current key material (temporarily)
-            key_material = self.get_bytes()
+            # Get the current key material as mutable bytearray
+            key_material = self.get_bytearray()
 
             # Derive the new key
             hkdf = HKDF(algorithm=hashes.SHA256(), length=length, salt=salt, info=info)
-            derived_key = hkdf.derive(key_material)
-
-            # Clear the temporary copy of the key material
-            key_material = None
+            derived_key = bytearray(hkdf.derive(key_material))
 
             # Create a new key with the derived material
             result = CryptoKey(key_data=derived_key)
 
-            # Clear the derived key bytes (which are immutable)
-            derived_key = None
-
             return result
 
         finally:
-            # Ensure cleanup in case of exception
-            if "key_material" in locals() and key_material is not None:
-                # Try to clear if still exists - use secure_memzero if possible
-                try:
-                    from ..modules.secure_memory import secure_memzero
-
-                    if isinstance(key_material, bytearray):
-                        secure_memzero(key_material)
-                except:
-                    key_material = None
-                finally:
-                    key_material = None
-
-            if "derived_key" in locals() and derived_key is not None:
-                # Since bytes are immutable, we just remove the reference
-                derived_key = None
+            if key_material is not None:
+                secure_memzero(key_material)
+            if derived_key is not None:
+                secure_memzero(derived_key)
 
 
 class CryptoIV(CryptoSecureBuffer):
@@ -278,12 +262,11 @@ class CryptoIV(CryptoSecureBuffer):
 
     def _fill_random(self):
         """Fill the buffer with cryptographically secure random bytes."""
-        random_data = secrets.token_bytes(len(self.buffer))
-        for i in range(len(self.buffer)):
-            self.buffer[i] = random_data[i]
-
-        # Clear the temporary random data
-        random_data = None
+        random_data = bytearray(secrets.token_bytes(len(self.buffer)))
+        try:
+            self.buffer[:] = random_data
+        finally:
+            secure_memzero(random_data)
 
 
 @contextlib.contextmanager
@@ -363,7 +346,7 @@ def create_key_from_password(
     password: Union[str, bytes, bytearray],
     salt: bytes,
     key_size: int,
-    hash_iterations: int = 100000,
+    hash_iterations: int = 600000,
 ) -> CryptoKey:
     """
     Create a secure key from a password using a key derivation function.
@@ -387,16 +370,18 @@ def create_key_from_password(
     if not isinstance(hash_iterations, int) or hash_iterations <= 0:
         raise KeyDerivationError("Hash iterations must be a positive integer")
 
+    password_bytes = None
+    derived_key = None
     try:
         # Import key derivation function
         from cryptography.hazmat.primitives import hashes
         from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
-        # Convert password to bytes if needed
+        # Convert password to mutable bytearray
         if isinstance(password, str):
-            password_bytes = password.encode("utf-8")
+            password_bytes = bytearray(password.encode("utf-8"))
         else:
-            password_bytes = password
+            password_bytes = bytearray(password)
 
         # Derive the key
         kdf = PBKDF2HMAC(
@@ -405,25 +390,18 @@ def create_key_from_password(
             salt=salt,
             iterations=hash_iterations,
         )
-        derived_key = kdf.derive(password_bytes)
+        derived_key = bytearray(kdf.derive(password_bytes))
 
         # Create a secure key from the derived material
         result = CryptoKey(key_data=derived_key)
 
-        # Clear the derived key bytes (which are immutable)
-        derived_key = None
-
         return result
 
     finally:
-        # Clean up sensitive data
-        if "password_bytes" in locals() and password_bytes is not None:
-            # For strings, just remove the reference
-            password_bytes = None
-
-        if "derived_key" in locals() and derived_key is not None:
-            # Since bytes are immutable, we just remove the reference
-            derived_key = None
+        if password_bytes is not None:
+            secure_memzero(password_bytes)
+        if derived_key is not None:
+            secure_memzero(derived_key)
 
 
 @secure_memory_error_handler

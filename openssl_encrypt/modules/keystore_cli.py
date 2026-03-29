@@ -279,15 +279,12 @@ class PQCKeystore:
             encrypted = self._encrypt_data(test_data)
             self.keystore_data["test_key"] = base64.b64encode(encrypted).decode("utf-8")
 
-        # Create a temporary file with restrictive permissions
+        # Create a temporary file with secure permissions first
+        from .file_permissions import PermissionLevel, create_secure_file
         temp_path = self.keystore_path + ".tmp"
-        fd = os.open(temp_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        try:
-            with os.fdopen(fd, "w") as f:
-                json.dump(self.keystore_data, f, indent=2)
-        except Exception:
-            os.close(fd)
-            raise
+        fd = create_secure_file(temp_path, PermissionLevel.OWNER_ONLY)
+        with os.fdopen(fd, "w") as f:
+            json.dump(self.keystore_data, f, indent=2)
 
         # Atomically replace the original file
         # os.replace() works on both POSIX and Windows (os.rename fails on Windows if target exists)

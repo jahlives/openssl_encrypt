@@ -1269,18 +1269,7 @@ def calculate_hash(data):
         raise ValidationError(f"Data must be bytes-like object, got {type(data).__name__}")
 
     try:
-        # Add a small timing jitter to prevent timing analysis
-        jitter_ms = secrets.randbelow(5) + 1  # 1-5ms
-        time.sleep(jitter_ms / 1000.0)
-
-        # Calculate the hash
-        hash_result = hashlib.sha256(data).hexdigest()
-
-        # Add another small jitter after calculation
-        jitter_ms = secrets.randbelow(5) + 1  # 1-5ms
-        time.sleep(jitter_ms / 1000.0)
-
-        return hash_result
+        return hashlib.sha256(data).hexdigest()
     except Exception as e:
         raise InternalError("Hash calculation failed", original_exception=e)
 
@@ -2288,6 +2277,7 @@ def compute_kdf_independent(
         memory_cost = kdf_config.get("memory_cost", 102400)
         parallelism = kdf_config.get("parallelism", 8)
         argon2_type_str = kdf_config.get("type", "id")
+        rounds = kdf_config.get("rounds", 1)
 
         # Map type string to Argon2 Type enum
         if argon2_type_str == "i":
@@ -2299,19 +2289,34 @@ def compute_kdf_independent(
 
         if debug:
             logger.debug(
-                f"INDEPENDENT-XOR: Argon2 params - time={time_cost}, memory={memory_cost}, parallelism={parallelism}, type={argon2_type_str}"
+                f"INDEPENDENT-XOR: Argon2 params - time={time_cost}, memory={memory_cost}, parallelism={parallelism}, type={argon2_type_str}, rounds={rounds}"
             )
 
-        # Run Argon2 on initial hash
-        result = argon2.low_level.hash_secret_raw(
-            secret=password_bytes,
-            salt=salt,
-            time_cost=time_cost,
-            memory_cost=memory_cost,
-            parallelism=parallelism,
-            hash_len=key_length,
-            type=argon2_type,
-        )
+        # Run Argon2 for multiple rounds
+        current_input = password_bytes
+        for i in range(rounds):
+            if i == 0:
+                round_salt = salt
+            else:
+                round_salt = result[:32] if len(result) >= 32 else result
+            result = argon2.low_level.hash_secret_raw(
+                secret=current_input,
+                salt=round_salt,
+                time_cost=time_cost,
+                memory_cost=memory_cost,
+                parallelism=parallelism,
+                hash_len=key_length,
+                type=argon2_type,
+            )
+            current_input = result
+            if progress and not quiet:
+                percent = ((i + 1) / rounds) * 100
+                bar_len = 30
+                filled = int(bar_len * (i + 1) // rounds)
+                bar = "█" * filled + "░" * (bar_len - filled)
+                eprint(f"\rArgon2 KDF: [{bar}] {percent:.1f}% ({i+1}/{rounds})", end="", flush=True)
+        if progress and not quiet:
+            eprint()
 
         return SecureBytes(result)
 
@@ -2437,6 +2442,44 @@ def compute_kdf_independent(
             iterations=iterations,
             dklen=key_length,
         )
+
+        return SecureBytes(result)
+
+    elif kdf_type == "randomx":
+        from .randomx import randomx_kdf
+
+        rounds = kdf_config.get("rounds", 1)
+        mode = kdf_config.get("mode", "light")
+        height = kdf_config.get("height", 1)
+        hash_len = kdf_config.get("hash_len", key_length)
+
+        if debug:
+            logger.debug(
+                f"INDEPENDENT-XOR: RandomX params - rounds={rounds}, mode={mode}, height={height}"
+            )
+
+        result = password_bytes
+        for i in range(rounds):
+            if i == 0:
+                round_salt = salt
+            else:
+                round_salt = result[:32] if len(result) >= 32 else result
+            result = randomx_kdf(
+                password=result,
+                salt=round_salt,
+                rounds=1,
+                mode=mode,
+                height=height,
+                hash_len=hash_len,
+            )
+            if progress and not quiet:
+                percent = ((i + 1) / rounds) * 100
+                bar_len = 30
+                filled = int(bar_len * (i + 1) // rounds)
+                bar = "█" * filled + "░" * (bar_len - filled)
+                eprint(f"\rRandomX KDF: [{bar}] {percent:.1f}% ({i+1}/{rounds})", end="", flush=True)
+        if progress and not quiet:
+            eprint()
 
         return SecureBytes(result)
 
@@ -2636,7 +2679,7 @@ def generate_key_independent_xor(
                 kdf_config=argon2_config,
                 key_length=key_length,
                 quiet=quiet,
-                progress=False,  # Don't show progress in the function itself
+                progress=progress,
                 debug=debug,
             )
             xor_components.append(result)
@@ -2725,9 +2768,40 @@ def generate_key_independent_xor(
             if debug:
                 logger.debug(f"INDEPENDENT-XOR: Added HKDF component #{len(xor_components)}")
 
+        # Check and process RandomX
+        if kdf_config_section.get("randomx", {}).get("enabled", False):
+            randomx_config = kdf_config_section["randomx"]
+
+            try:
+                if not quiet and not progress:
+                    eprint("Computing RandomX KDF...", end=" ", flush=True)
+                elif not quiet and progress:
+                    eprint("Using RandomX for key derivation")
+
+                result = compute_kdf_independent(
+                    password=algorithm_input,
+                    salt=salt,
+                    kdf_type="randomx",
+                    kdf_config=randomx_config,
+                    key_length=key_length,
+                    quiet=quiet,
+                    progress=progress,
+                    debug=debug,
+                )
+                xor_components.append(result)
+
+                if not quiet and not progress:
+                    eprint("✅")
+
+                if debug:
+                    logger.debug(f"INDEPENDENT-XOR: Added RandomX component #{len(xor_components)}")
+            except (ImportError, OSError) as e:
+                if not quiet:
+                    eprint(f"⚠️ RandomX not available, skipping ({e})")
+                logger.warning(f"RandomX KDF skipped in independent XOR: {e}")
+
         # NOTE: PBKDF2 is deprecated and NOT used for v11 encryption
         # It's only supported for decryption of legacy files (v1-v9)
-        # For v11, only modern KDFs (Argon2, Scrypt, Balloon, HKDF) and hashes are used
 
         # Verify we have at least one component
         if len(xor_components) == 0:
@@ -5987,14 +6061,14 @@ def encrypt_file(
         except ImportError:
             # Fallback to basic configuration if template system not available
             hash_config = {
-                "sha512": 10000,
+                "sha512": 0,
                 "sha256": 0,
                 "sha3_256": 10000,
-                "sha3_512": 0,
+                "sha3_512": 10000,
                 "blake2b": 0,
                 "shake256": 0,
                 "whirlpool": 0,
-                "scrypt": {"enabled": True, "n": 128, "r": 8, "p": 1, "rounds": 5},
+                "scrypt": {"enabled": True, "n": 128, "r": 8, "p": 1, "rounds": 10},
                 "argon2": {
                     "enabled": True,
                     "time_cost": 3,
@@ -6002,7 +6076,7 @@ def encrypt_file(
                     "parallelism": 4,
                     "hash_len": 32,
                     "type": 2,
-                    "rounds": 5,
+                    "rounds": 10,
                 },
                 "pbkdf2_iterations": 0,
             }

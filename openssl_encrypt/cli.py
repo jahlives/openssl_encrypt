@@ -8,7 +8,7 @@ delegating to the actual CLI implementation in modules.crypt_cli or launching GU
 
 import argparse
 import sys
-from .crypt_utils import eprint
+from .modules.crypt_utils import eprint
 
 
 def main():

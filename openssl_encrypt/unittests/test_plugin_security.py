@@ -1111,6 +1111,68 @@ class TestUnifiedConfigPaths(unittest.TestCase):
         )
 
 
+class TestPluginSetStateWhitelist(unittest.TestCase):
+    """Test that __setstate__ rejects unexpected attributes."""
+
+    def _make_concrete_plugin(self):
+        """Create a concrete subclass of BasePlugin for testing."""
+
+        class ConcretePlugin(BasePlugin):
+            def get_plugin_type(self):
+                return PluginType.PRE_PROCESSOR
+
+            def get_description(self):
+                return "Test plugin"
+
+            def get_required_capabilities(self):
+                return set()
+
+            def execute(self, context):
+                return PluginResult(success=True)
+
+        return ConcretePlugin(plugin_id="test", name="Test", version="1.0")
+
+    def test_setstate_restores_expected_attrs(self):
+        """Test that expected attributes survive pickle round-trip."""
+        plugin = self._make_concrete_plugin()
+        state = plugin.__getstate__()
+        state["enabled"] = False
+
+        plugin2 = self._make_concrete_plugin()
+        plugin2.__setstate__(state)
+
+        self.assertEqual(plugin2.plugin_id, "test")
+        self.assertEqual(plugin2.name, "Test")
+        self.assertEqual(plugin2.version, "1.0")
+        self.assertFalse(plugin2.enabled)
+
+    def test_setstate_rejects_injected_attrs(self):
+        """Test that injected attributes are stripped during unpickling."""
+        plugin = self._make_concrete_plugin()
+        state = plugin.__getstate__()
+
+        # Inject malicious attributes
+        state["_secret_key"] = b"stolen"
+        state["is_admin"] = True
+        state["__class__"] = object
+
+        plugin2 = self._make_concrete_plugin()
+        plugin2.__setstate__(state)
+
+        # Injected attributes should NOT be present
+        self.assertFalse(hasattr(plugin2, "_secret_key"))
+        self.assertFalse(hasattr(plugin2, "is_admin"))
+        # __class__ should still be the original
+        self.assertIsInstance(plugin2, BasePlugin)
+
+    def test_setstate_with_empty_state(self):
+        """Test that __setstate__ handles empty state gracefully."""
+        plugin = self._make_concrete_plugin()
+        plugin.__setstate__({})
+        # Logger should still be recreated (plugin_id from __init__)
+        self.assertIsNotNone(plugin.logger)
+
+
 if __name__ == "__main__":
     # Run tests
     unittest.main(verbosity=2)
