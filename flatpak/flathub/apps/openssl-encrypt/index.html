@@ -13,10 +13,11 @@
 
           <div class="stats">
               <h3>&#128196; Application Info</h3>
-              <p><strong>Version:</strong> 1.3.1-stable (Latest Stable) | <strong>Size:</strong> ~140 MB | <strong>License:</strong> MIT | <strong>Platform:</strong> Linux Flatpak</p>
-              <p><strong>Version:</strong> 1.3.0-stable (Stable) | <strong>Size:</strong> ~140 MB | <strong>License:</strong> MIT | <strong>Platform:</strong> Linux Flatpak</p>
-              <p><strong>Version:</strong> 1.2.1-stable | <strong>Size:</strong> 36.8 MB | <strong>License:</strong> MIT | <strong>Platform:</strong> Linux Flatpak</p>
-              <p><strong>Version:</strong> 1.1.0-stable | <strong>Size:</strong> 36.8 MB | <strong>License:</strong> MIT | <strong>Platform:</strong> Linux Flatpak</p>
+              <p><strong>Version:</strong> 1.4.2 (Latest Stable) | <strong>Size:</strong> ~140 MB | <strong>License:</strong> Hippocratic-3.0 | <strong>Platform:</strong> Linux Flatpak</p>
+              <p><strong>Version:</strong> 1.4.0-stable | <strong>Size:</strong> ~140 MB | <strong>License:</strong> Hippocratic-3.0 | <strong>Platform:</strong> Linux Flatpak</p>
+              <p><strong>Version:</strong> 1.3.5-stable | <strong>Size:</strong> ~140 MB | <strong>License:</strong> Hippocratic-3.0 | <strong>Platform:</strong> Linux Flatpak</p>
+              <p><strong>Version:</strong> 1.3.4-stable | <strong>Size:</strong> ~140 MB | <strong>License:</strong> Hippocratic-3.0 | <strong>Platform:</strong> Linux Flatpak</p>
+              <p><strong>Version:</strong> 1.3.3-stable | <strong>Size:</strong> ~140 MB | <strong>License:</strong> Hippocratic-3.0 | <strong>Platform:</strong> Linux Flatpak</p>
           </div>
 
           <div class="app-header">
@@ -114,45 +115,89 @@
 
               <div class="changelog-item">
                   <div class="version">
-                      1.3.1-stable
+                      1.4.2
+                      <span class="release-type stable">STABLE RELEASE</span>
+                      <span class="release-type minor">FEATURE</span>
+                  </div>
+                  <div class="description">
+                      Desktop GUI Simple/Pro mode toggle — Simple mode (default) hides all advanced crypto options and uses the STANDARD template automatically. Modernized STANDARD template: SHA3-512 + BLAKE3 hashes (10k rounds each), RandomX + Argon2 KDFs (10 rounds each), cascade encryption (AES-256-GCM + ChaCha20-Poly1305), Independent XOR v11 key derivation. Added RandomX support to independent XOR path. Progress bars for Argon2/RandomX in XOR mode. Dependency bumps: cryptography 46.0.6, requests 2.33.0, black 26.3.1, nltk 3.9.4.
+                  </div>
+              </div>
+
+              <div class="changelog-item">
+                  <div class="version">
+                      1.4.1
+                      <span class="release-type stable">STABLE RELEASE</span>
+                      <span class="release-type security">SECURITY</span>
+                  </div>
+                  <div class="description">
+                      Streaming chunked AEAD encryption (format v12) for constant-memory large file handling. Added --info CLI action with encrypted_at timestamp. Full Windows compatibility (NTFS ACLs, UTF-8 fixes, Whirlpool build). Stderr output separation via eprint(). Security hardening: key zeroization, HKDF for all derived keys (v12+), per-layer cascade salts and AAD, plugin sandbox hardening, restrictive file permissions, identity import fingerprint verification. Dependency bumps: authlib 1.6.9, python-jose 3.4.0, cryptography ≥46.0.5, nltk 3.9.3.
+                  </div>
+              </div>
+
+              <div class="changelog-item">
+                  <div class="version">
+                      1.4.1rc1
+                      <span class="release-type rc">RELEASE CANDIDATE</span>
+                      <span class="release-type security">SECURITY</span>
+                  </div>
+                  <div class="description">
+                      Streaming chunked AEAD encryption (format v12) for constant-memory large file handling. Added --info CLI action with encrypted_at timestamp. Full Windows compatibility backport (NTFS ACLs, UTF-8 fixes, Whirlpool build). All non-data output redirected to stderr via eprint() — 2>/dev/null now correctly suppresses progress/status. Cross-platform tty_write/tty_clear_line for terminal prompts. Security hardening: key zeroization, HKDF for all derived keys (v12+), per-layer cascade salts and AAD, plugin sandbox hardening, restrictive file permissions, identity import fingerprint verification. Dependency bumps: authlib 1.6.9, python-jose 3.4.0, cryptography ≥46.0.5.
+                  </div>
+              </div>
+
+              <div class="changelog-item">
+                  <div class="version">
+                      1.4.0-stable
+                      <span class="release-type stable">STABLE RELEASE</span>
+                      <span class="release-type security">SECURITY</span>
+                  </div>
+                  <div class="description">
+                      Stable release with comprehensive security hardening addressing 14 Dependabot advisories, in-memory rekey (plaintext never touches disk), forward-ported --rekey action, Flatpak backward-compatibility test infrastructure, and isort 8.0.0 formatting. Production-ready and security-audited.
+                  </div>
+              </div>
+
+              <div class="changelog-item">
+                  <div class="version">
+                      1.4.0rc1
+                      <span class="release-type rc">RELEASE CANDIDATE</span>
+                      <span class="release-type security">SECURITY</span>
+                  </div>
+                  <div class="description">
+                      First release candidate for v1.4.0. Comprehensive security hardening addressing 14 Dependabot advisories including CSPRNG for steganography, HKDF salt parameter, sandbox bypass prevention, path traversal sanitization, CORS hardening, and credential handling improvements. Bumped dependencies to resolve 8 additional alerts. Feature-complete and security-audited.
+                  </div>
+              </div>
+
+              <div class="changelog-item">
+                  <div class="version">
+                      1.3.5-stable
+                      <span class="release-type stable">STABLE RELEASE</span>
+                      <span class="release-type minor">MINOR</span>
+                  </div>
+                  <div class="description">
+                      BLAKE3 keyed hashing support with 32-byte keys for format_version 7. BLAKE3-aware buffer sizing, enhanced format detection, build scripts for liboqs dependencies. Cross-version compatible with v1.4.x.
+                  </div>
+              </div>
+
+              <div class="changelog-item">
+                  <div class="version">
+                      1.3.4-stable
+                      <span class="release-type stable">STABLE RELEASE</span>
+                      <span class="release-type security">CRITICAL SECURITY FIX</span>
+                  </div>
+                  <div class="description">
+                      Critical security fix (CVSSv3 8.1 HIGH): Fixed predictable salt derivation vulnerability (CWE-330) in multi-round KDF operations. Implemented Format Version 7 with secure chained salt derivation preventing precomputation attacks.
+                  </div>
+              </div>
+
+              <div class="changelog-item">
+                  <div class="version">
+                      1.3.3-stable
                       <span class="release-type stable">STABLE RELEASE</span>
                       <span class="release-type minor">PATCH</span>
                   </div>
                   <div class="description">
-                      Version bump release for PyPI deployment. This is a maintenance release that increments the version number to enable redeployment on PyPI. All functionality remains the same as 1.3.0.
-                  </div>
-              </div>
-
-              <div class="changelog-item">
-                  <div class="version">
-                      1.3.0-stable
-                      <span class="release-type stable">STABLE RELEASE</span>
-                      <span class="release-type minor">MINOR</span>
-                  </div>
-                  <div class="description">
-                      Stable release with advanced features: Steganography support (hide encrypted data in images using LSB encoding), QR code key distribution (generate/scan QR codes for secure key exchange), enhanced debug mode with raw exception passthrough, Pillow 11.3.0 support, backward compatibility fixes for format transitions, RandomX proof-of-work KDF (light/fast modes), Docker optimization (140MB image size). Production-ready for secure file encryption.
-                  </div>
-              </div>
-
-              <div class="changelog-item">
-                  <div class="version">
-                      1.2.1
-                      <span class="release-type stable">STABLE RELEASE</span>
-                      <span class="release-type minor">CURRENT PRODUCTION VERSION</span>
-                  </div>
-                  <div class="description">
-                      Documentation maintenance release: Updated documentation and fixed minor issues. This is the current stable production version recommended for all users requiring reliability and tested features. All features thoroughly tested and production-ready.
-                  </div>
-              </div>
-
-              <div class="changelog-item">
-                  <div class="version">
-                      1.1.0-stable
-                      <span class="release-type stable">STABLE RELEASE</span>
-                      <span class="release-type minor">MINOR</span>
-                  </div>
-                  <div class="description">
-                      Major stable release with comprehensive debug system: All features from 1.1.0-dev now production-ready including extended hash support (SHA-224/384, SHA3-224/384, BLAKE3, SHAKE-128), HKDF key derivation, and MAYO/CROSS post-quantum signature algorithms with LibOQS integration. NEW: Complete debug system with comprehensive output for all encryption algorithms using structured prefixes (ENCRYPT:, DECRYPT:, HASH-TYPE:INPUT/OUTPUT/FINAL) providing detailed cryptographic operation visibility. Enhanced professional GUI with restructured settings and hash family groupings. Production-ready with complete backward compatibility.
+                      License compliance: Updated license declaration from MIT to Hippocratic License 3.0 across all distribution channels (PyPI, Flatpak). No functional changes.
                   </div>
               </div>
 

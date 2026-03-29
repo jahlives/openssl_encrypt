@@ -13,13 +13,24 @@
 
           <div class="stats">
               <h3>&#128202; Release Statistics</h3>
-              <p><strong>Total Releases:</strong> 23 versions | <strong>Development Period:</strong> v0.1.0 &rarr; v1.3.1-stable | <strong>Latest:</strong> 1.3.1-stable (Stable)</p>
-              <p><strong>Major Milestones:</strong> Initial Release (0.1.0), Post-Quantum Support (0.5.2), Feature Complete (0.6.0), Stable Release (1.0.0), Extended PQC (1.1.0), Steganography & QR Codes (1.3.0-stable), PyPI Redeployment (1.3.1-stable)</p>
+              <p><strong>Total Releases:</strong> 34 versions | <strong>Development Period:</strong> v0.1.0 &rarr; v1.4.2 | <strong>Latest:</strong> 1.4.2 (Stable)</p>
+              <p><strong>Major Milestones:</strong> Initial Release (0.1.0), Post-Quantum Support (0.5.2), Feature Complete (0.6.0), Stable Release (1.0.0), Extended PQC (1.1.0), Steganography & QR Codes (1.3.0), Critical Security Fix (1.3.4), Stable Release (1.4.0), Streaming Encryption (1.4.1), Simple/Pro GUI & Modernized Defaults (1.4.2)</p>
           </div>
 
           <div class="toc">
               <h3>&#128203; Table of Contents</h3>
               <ul>
+                  <li><a href="#v1-4-2">1.4.2 - Simple/Pro GUI & Modernized Defaults</a></li>
+                  <li><a href="#v1-4-1">1.4.1 - Stable Release</a></li>
+                  <li><a href="#v1-4-1-rc2">1.4.1rc2 - Security Dependency Update</a></li>
+                  <li><a href="#v1-4-1-rc1">1.4.1rc1 - Streaming Encryption &amp; Security Hardening</a></li>
+                  <li><a href="#v1-4-0">1.4.0 - Stable Release</a></li>
+                  <li><a href="#v1-4-0-rc2">1.4.0rc2 - Release Candidate</a></li>
+                  <li><a href="#v1-4-0-rc1">1.4.0rc1 - Release Candidate</a></li>
+                  <li><a href="#v1-3-5-stable">1.3.5-stable - BLAKE3 Hash Integration</a></li>
+                  <li><a href="#v1-3-4-stable">1.3.4-stable - Critical Security Fix</a></li>
+                  <li><a href="#v1-3-3-stable">1.3.3-stable - License Compliance</a></li>
+                  <li><a href="#v1-3-2-stable">1.3.2-stable - Security & Performance Monitoring</a></li>
                   <li><a href="#v1-3-1-stable">1.3.1-stable - PyPI Redeployment Release</a></li>
                   <li><a href="#v1-3-0-stable">1.3.0-stable - Stable Release</a></li>
                   <li><a href="#v1-2-1">1.2.1 - Stable Release</a></li>
@@ -51,8 +62,141 @@
               </ul>
           </div>
 
-          <!-- Development Release Series -->
-          <h2>&#128640; Development Release Series (1.3.x)</h2>
+          <!-- Stable Release Series (1.4.x) -->
+          <h2>&#128640; Stable Release Series (1.4.x)</h2>
+
+          <div class="changelog-item" id="v1-4-2">
+              <div class="version">
+                  1.4.2
+                  <span class="release-type stable">STABLE RELEASE</span>
+                  <span class="release-type minor">FEATURE</span>
+              </div>
+              <div class="description">
+                  <h4>Desktop GUI Simple/Pro Mode &amp; Modernized Security Defaults</h4>
+                  <ul>
+                      <li><strong>Simple/Pro mode toggle</strong> for desktop GUI — Simple mode (default) shows only Encrypt, Decrypt, and Settings tabs with a clean interface. Pro mode restores all tabs and advanced crypto options.</li>
+                      <li><strong>Modernized STANDARD template:</strong> SHA3-512 + BLAKE3 hashes (10k rounds), RandomX + Argon2 KDFs (10 rounds), cascade encryption (AES-256-GCM + ChaCha20-Poly1305), Independent XOR v11 (Massey) key derivation.</li>
+                      <li><strong>RandomX support in independent XOR path</strong> — now works correctly in both parallel and non-parallel v11 key derivation.</li>
+                      <li><strong>Progress bars for Argon2 and RandomX</strong> in XOR mode when using --progress flag.</li>
+                      <li><strong>Keyserver plugin enhancements:</strong> password-based login, JWT token refresh, Proof-of-Possession uploads, key search API, system keyring integration.</li>
+                      <li><strong>Security hardening:</strong> CSPRNG for shredding, Argon2 hash_secret_raw, strict AAD for v2 keystores, MD5/SHA-1 removed from Balloon KDF, PBKDF2 defaults raised to 600k.</li>
+                      <li><strong>Dependency bumps:</strong> cryptography 46.0.6, requests 2.33.0, black 26.3.1, nltk 3.9.4.</li>
+                  </ul>
+              </div>
+          </div>
+
+          <div class="changelog-item" id="v1-4-1">
+              <div class="version">
+                  1.4.1
+                  <span class="release-type stable">STABLE RELEASE</span>
+                  <span class="release-type security">SECURITY</span>
+              </div>
+              <div class="description">
+                  <strong>Streaming chunked AEAD encryption (format v12)</strong> for constant-memory large file handling. Added <strong>--info CLI action</strong> with encrypted_at timestamp. <strong>Full Windows compatibility</strong>: NTFS ACL-based file permissions, UTF-8 encoding fixes, automated Whirlpool build. <strong>Stderr output separation</strong> via eprint() — <code>2&gt;/dev/null</code> correctly suppresses all non-data output. <strong>Security hardening:</strong> key zeroization, HKDF for all derived keys (v12+), per-layer cascade salts and AAD, plugin sandbox hardening, restrictive file permissions, identity import fingerprint verification. <strong>Dependency bumps:</strong> authlib 1.6.9, python-jose 3.4.0, cryptography ≥46.0.5, nltk 3.9.3 (CVE-2026-33236, CVE-2026-33231, CVE-2026-33230, GHSA-rf74-v2fm-23pw).
+              </div>
+          </div>
+
+          <div class="changelog-item" id="v1-4-1-rc2">
+              <div class="version">
+                  1.4.1rc2
+                  <span class="release-type rc">RELEASE CANDIDATE</span>
+                  <span class="release-type security">SECURITY</span>
+              </div>
+              <div class="description">
+                  <strong>Security dependency update.</strong> Bumped nltk to 3.9.3 resolving CVE-2026-33236, CVE-2026-33231, CVE-2026-33230, and GHSA-rf74-v2fm-23pw.
+              </div>
+          </div>
+
+          <div class="changelog-item" id="v1-4-1-rc1">
+              <div class="version">
+                  1.4.1rc1
+                  <span class="release-type rc">RELEASE CANDIDATE</span>
+                  <span class="release-type security">SECURITY</span>
+              </div>
+              <div class="description">
+                  <strong>Streaming chunked AEAD encryption (format v12)</strong> for constant-memory large file handling — memory usage is proportional to chunk size regardless of file size. Added <strong>--info CLI action</strong> displaying format version, algorithms, and encrypted_at timestamp without decrypting. <strong>Full Windows compatibility</strong> backport: NTFS ACL-based file permissions, UTF-8 encoding fixes, automated Whirlpool build step, emoji-safe fallback for Windows consoles. <strong>Stderr output separation:</strong> all non-data output (progress, status, diagnostics) now goes to stderr via eprint() — <code>2&gt;/dev/null</code> correctly suppresses everything except decrypted content. Cross-platform tty_write/tty_clear_line helpers write directly to the controlling terminal, surviving both stdout and stderr redirection. <strong>Security hardening:</strong> key zeroization in cascade/streaming/crypt_core, HKDF for keystore password wrap key, streaming HMAC key, pepper, and PQC signature keys (v12+), per-layer independently derived salts and all-layer AAD for cascade (v12+), per-chunk nonce binding, chunk count validation against payload, plugin sandbox hardening (PL-4/5/6/H8/H9/H10), algorithm registries frozen after init, restrictive file permissions on keystore/pepper config (M1/M20), identity import fingerprint verification and path traversal validation (M5/H1/H2), PQCKeystore context manager, HSM pepper cache as bytearray. <strong>Dependency bumps:</strong> authlib 1.6.9, python-jose 3.4.0, cryptography ≥46.0.5.
+              </div>
+          </div>
+
+          <div class="changelog-item" id="v1-4-0">
+              <div class="version">
+                  1.4.0
+                  <span class="release-type stable">STABLE RELEASE</span>
+                  <span class="release-type security">SECURITY</span>
+              </div>
+              <div class="description">
+                  <strong>Stable release with comprehensive security hardening.</strong> Addresses 14 Dependabot security advisories with CSPRNG for steganography, HKDF salt parameter fixes, sandbox bypass prevention, path traversal sanitization, CORS hardening, and credential handling improvements. <strong>In-memory rekey:</strong> encrypt_file() now accepts bytes/bytearray input and can return bytes output, eliminating the need for plaintext temp files during rekey operations — plaintext never touches disk. Forward-ported --rekey action from v1.4.0rc1. Added Flatpak backward-compatibility test infrastructure with test files for v1.0.0, v1.0.3, and v1.1.0 formats. Applied isort 8.0.0 formatting across test files. Bumped dependencies to resolve 8 additional Dependabot alerts. Production-ready and security-audited.
+              </div>
+          </div>
+
+          <div class="changelog-item" id="v1-4-0-rc2">
+              <div class="version">
+                  1.4.0rc2
+                  <span class="release-type rc">RELEASE CANDIDATE</span>
+                  <span class="release-type security">SECURITY</span>
+              </div>
+              <div class="description">
+                  <strong>Second release candidate for v1.4.0.</strong> Forward-ported --rekey action from v1.4.0rc1, added Flatpak backward-compatibility test files and fixed key derivation bugs for legacy format versions. Applied isort 8.0.0 formatting to test files. Skipped AST security scan for built-in plugins (GHSA-9pgj-v69p-q586 follow-up).
+              </div>
+          </div>
+
+          <div class="changelog-item" id="v1-4-0-rc1">
+              <div class="version">
+                  1.4.0rc1
+                  <span class="release-type rc">RELEASE CANDIDATE</span>
+                  <span class="release-type security">SECURITY</span>
+              </div>
+              <div class="description">
+                  <strong>First release candidate for v1.4.0.</strong> Comprehensive security hardening addressing 14 Dependabot security advisories: CSPRNG for steganography (GHSA-vfgx-5q85-58q3), HKDF salt parameter (GHSA-j9mh-57cc-665x), standard PBKDF2 fallback (GHSA-743f-89fg-x288), sandbox bypass prevention (GHSA-mcjj-qw7m-j3cp), import guard synchronization (GHSA-9pgj-v69p-q586), path traversal sanitization (GHSA-8jpj-w975-rwv5), thread-safe module hiding (GHSA-43r4-3hf9-m84q), CORS default hardening (GHSA-c65f-x25w-62jv), trusted proxy restriction (GHSA-2592-7m3g-7fq6), DB error masking (GHSA-2vhw-q7vh-7xv2), refresh token security (GHSA-4rh7-jwg9-m28m), key bundle signature verification (GHSA-8h88-gxp3-j7pg), TOTP rate limiter backend (GHSA-h45m-mgcp-q388), .so path validation (GHSA-j48q-4c78-rhf9), password-file/fd support (GHSA-h3m5-p59h-x88p), jsonschema validation enforcement (GHSA-425g-fjhq-5h92). Bumped dependencies to resolve 8 additional Dependabot alerts. Feature-complete and security-audited.
+              </div>
+          </div>
+
+          <!-- Stable Release Series (1.3.x) -->
+          <h2>&#128640; Stable Release Series (1.3.x)</h2>
+
+          <div class="changelog-item" id="v1-3-5-stable">
+              <div class="version">
+                  1.3.5-stable
+                  <span class="release-type stable">STABLE RELEASE</span>
+                  <span class="release-type minor">MINOR</span>
+              </div>
+              <div class="description">
+                  <strong>BLAKE3 Hash Integration:</strong> Added BLAKE3 keyed hashing support with 32-byte keys for format_version 7. Implemented BLAKE3-aware buffer sizing (64 bytes minimum) for proper key derivation with zero-initialization for deterministic hashing. Enhanced BLAKE3 detection in both flat (v3) and nested (v4+) hash config formats. Added comprehensive debug logging for BLAKE3 operations. Included build scripts for liboqs dependencies and Flatpak CI jobs. Fully backward compatible with v1.3.0-1.3.4 encrypted files and cross-version compatible with v1.4.x.
+              </div>
+          </div>
+
+          <div class="changelog-item" id="v1-3-4-stable">
+              <div class="version">
+                  1.3.4-stable
+                  <span class="release-type stable">STABLE RELEASE</span>
+                  <span class="release-type security">CRITICAL SECURITY FIX</span>
+              </div>
+              <div class="description">
+                  <strong>CRITICAL SECURITY FIX (CVSSv3 8.1 HIGH):</strong> Fixed predictable salt derivation vulnerability (CWE-330) in multi-round KDF operations. Implemented Format Version 7 with secure chained salt derivation where each round uses previous round output as salt, preventing precomputation attacks. Affects all multi-round operations: BLAKE2b, BLAKE3, SHAKE-256, Argon2, Scrypt, Balloon, PBKDF2, HKDF. Full backward compatibility for decrypting Format Versions 3-6. Files encrypted with v1.3.4+ require v1.3.4 or newer to decrypt.
+              </div>
+          </div>
+
+          <div class="changelog-item" id="v1-3-3-stable">
+              <div class="version">
+                  1.3.3-stable
+                  <span class="release-type stable">STABLE RELEASE</span>
+                  <span class="release-type minor">PATCH</span>
+              </div>
+              <div class="description">
+                  <strong>LICENSE COMPLIANCE:</strong> Updated license declaration from MIT to Hippocratic License 3.0 across all distribution channels (PyPI, Flatpak). Fixed Flatpak metainfo.xml project_license field and added explicit license field to setup.py. No functional changes to cryptographic operations or features. Repository-wide license standardization for proper compliance.
+              </div>
+          </div>
+
+          <div class="changelog-item" id="v1-3-2-stable">
+              <div class="version">
+                  1.3.2-stable
+                  <span class="release-type stable">STABLE RELEASE</span>
+                  <span class="release-type security">SECURITY</span>
+              </div>
+              <div class="description">
+                  <strong>SECURITY & PERFORMANCE MONITORING:</strong> Implemented comprehensive decryption time/memory estimation system to prevent DoS attacks via inflated metadata parameters. Added static benchmark data for all hash algorithms and KDF operations. Pre-decryption cost display shows operation breakdown with conservative estimates, warns when thresholds exceeded (&gt;10 seconds or &gt;1GB memory), and provides 2-second cancellation window. Added --no-estimate CLI flag to suppress display for trusted files. Fixed critical argument parsing bug. Enhanced CLI robustness with improved subcommand detection after global flag preprocessing.
+              </div>
+          </div>
 
           <div class="changelog-item" id="v1-3-1-stable">
               <div class="version">
