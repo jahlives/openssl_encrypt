@@ -603,11 +603,13 @@ def get_template_config(template: str or SecurityTemplate) -> Dict[str, Any]:
             "hash_config": {
                 "sha512": 0,
                 "sha256": 0,
-                "sha3_256": 10000,
+                "sha3_256": 0,
                 "sha3_512": 10000,
                 "blake2b": 0,
+                "blake3": 10000,
                 "shake256": 0,
-                "scrypt": {"enabled": True, "n": 128, "r": 8, "p": 1, "rounds": 10},
+                "whirlpool": 0,
+                "scrypt": {"enabled": False},
                 "argon2": {
                     "enabled": True,
                     "time_cost": 3,
@@ -617,9 +619,18 @@ def get_template_config(template: str or SecurityTemplate) -> Dict[str, Any]:
                     "type": 2,
                     "rounds": 10,
                 },
+                "randomx": {
+                    "enabled": True,
+                    "rounds": 10,
+                    "mode": "light",
+                    "height": 1,
+                    "hash_len": 32,
+                },
+                "pbkdf2_iterations": 0,
                 "type": "id",
-                "algorithm": "aes-gcm",
-            }
+                "algorithm": "aes-gcm-siv",
+            },
+            "cascade": "standard",
         },
         SecurityTemplate.PARANOID: {
             "hash_config": {
@@ -6045,7 +6056,14 @@ def main_with_args(args=None):
         # Only apply template's algorithm if user didn't explicitly provide one
         if args.algorithm == "fernet":  # Default value, user didn't provide --algorithm
             setattr(args, "algorithm", hash_config["hash_config"]["algorithm"])
+        # Apply cascade mode from template if present
+        if "cascade" in hash_config and not getattr(args, "cascade", None):
+            setattr(args, "cascade", hash_config["cascade"])
         hash_config = hash_config["hash_config"]
+        # Enable independent XOR (v11) for standard and paranoid templates
+        # unless user explicitly chose --use-xor-composition
+        if (args.standard or args.paranoid) and not getattr(args, "use_xor_composition", False):
+            setattr(args, "independent_xor", True)
     elif args.template:
         hash_config = get_template_config(args.template)
         # Only apply template's algorithm if user didn't explicitly provide one
@@ -6088,7 +6106,13 @@ def main_with_args(args=None):
             # Only apply template's algorithm if user didn't explicitly provide one
             if args.algorithm == "fernet":  # Default value, user didn't provide --algorithm
                 setattr(args, "algorithm", hash_config["hash_config"]["algorithm"])
+            # Apply cascade mode from template if present
+            if "cascade" in hash_config and not getattr(args, "cascade", None):
+                setattr(args, "cascade", hash_config["cascade"])
             hash_config = hash_config["hash_config"]
+            # Enable independent XOR (v11) by default with standard template
+            if not getattr(args, "use_xor_composition", False):
+                setattr(args, "independent_xor", True)
         else:
             # User provided specific arguments, build custom configuration
             hash_config = {
