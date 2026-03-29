@@ -951,7 +951,7 @@ class TestRekeyCLI(unittest.TestCase):
         rekeyed_file = os.path.join(self.temp_dir, "rekeyed.encrypted")
         decrypted_file = os.path.join(self.temp_dir, "decrypted.txt")
 
-        # Encrypt with fernet
+        # Encrypt with fernet (use explicit hash arg to prevent STANDARD template override)
         result = subprocess.run(
             [
                 sys.executable,
@@ -967,6 +967,8 @@ class TestRekeyCLI(unittest.TestCase):
                 "--force-password",
                 "--algorithm",
                 "fernet",
+                "--sha3-512-rounds",
+                "1",
                 "--quiet",
             ],
             capture_output=True,
