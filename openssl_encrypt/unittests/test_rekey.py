@@ -977,7 +977,7 @@ class TestRekeyCLI(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, f"Encrypt failed: {result.stderr}")
 
-        # Rekey to aes-gcm
+        # Rekey to aes-gcm (use explicit hash arg to prevent STANDARD template override)
         result = subprocess.run(
             [
                 sys.executable,
@@ -995,6 +995,8 @@ class TestRekeyCLI(unittest.TestCase):
                 "--force-password",
                 "--algorithm",
                 "aes-gcm",
+                "--sha3-512-rounds",
+                "1",
                 "--quiet",
             ],
             capture_output=True,
