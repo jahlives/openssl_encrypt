@@ -5,8 +5,9 @@ import '../widgets/crypto_widgets.dart';
 
 class DecryptTab extends StatefulWidget {
   final FileManager fileManager;
+  final bool isProMode;
 
-  const DecryptTab({super.key, required this.fileManager});
+  const DecryptTab({super.key, required this.fileManager, this.isProMode = false});
 
   @override
   State<DecryptTab> createState() => _DecryptTabState();
@@ -394,42 +395,46 @@ class _DecryptTabState extends State<DecryptTab> {
                       obscureText: true,
                       enabled: !_isLoading,
                     ),
-                    const SizedBox(height: 8),
-                    CheckboxListTile(
-                      value: _forcePassword,
-                      onChanged: _isLoading ? null : (value) {
-                        setState(() {
-                          _forcePassword = value ?? false;
-                        });
-                      },
-                      title: const Text('Force password'),
-                      subtitle: const Text('Accept weak passwords (use with caution)'),
-                      contentPadding: EdgeInsets.zero,
-                      controlAffinity: ListTileControlAffinity.leading,
-                      dense: true,
-                    ),
+                    if (widget.isProMode) ...[
+                      const SizedBox(height: 8),
+                      CheckboxListTile(
+                        value: _forcePassword,
+                        onChanged: _isLoading ? null : (value) {
+                          setState(() {
+                            _forcePassword = value ?? false;
+                          });
+                        },
+                        title: const Text('Force password'),
+                        subtitle: const Text('Accept weak passwords (use with caution)'),
+                        contentPadding: EdgeInsets.zero,
+                        controlAffinity: ListTileControlAffinity.leading,
+                        dense: true,
+                      ),
+                    ],
                   ],
                 ),
               ),
             ),
             const SizedBox(height: 16),
 
-            // Advanced Options (Rarely needed - collapsed by default)
-            ExpansionTile(
-              title: const Text('Advanced Options'),
-              subtitle: const Text('Integrity verification settings'),
-              leading: const Icon(Icons.settings),
-              children: [
-                // Integrity Verification
-                IntegrityConfigSection(
-                  enableIntegrity: false,
-                  verifyIntegrity: _verifyIntegrity,
-                  isEncryptMode: false,
-                  onEnableIntegrityChanged: (_) {},
-                  onVerifyIntegrityChanged: (value) => setState(() => _verifyIntegrity = value),
-                ),
-              ],
-            ),
+            if (widget.isProMode) ...[
+              // Advanced Options (Rarely needed - collapsed by default)
+              ExpansionTile(
+                title: const Text('Advanced Options'),
+                subtitle: const Text('Integrity verification settings'),
+                leading: const Icon(Icons.settings),
+                children: [
+                  // Integrity Verification
+                  IntegrityConfigSection(
+                    enableIntegrity: false,
+                    verifyIntegrity: _verifyIntegrity,
+                    isEncryptMode: false,
+                    onEnableIntegrityChanged: (_) {},
+                    onVerifyIntegrityChanged: (value) => setState(() => _verifyIntegrity = value),
+                  ),
+                ],
+              ),
+            ],
             const SizedBox(height: 24),
 
             // Decrypt Button

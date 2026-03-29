@@ -46,6 +46,9 @@ class SettingsService {
   static const String _integrityCaCertPemKey = 'integrity_ca_cert_pem';
   static const String _integrityCertModeKey = 'integrity_cert_mode'; // 'file' or 'pem'
 
+  // UI Mode (simple/pro)
+  static const String _uiModeKey = 'ui_mode';
+
   // Encryption mode defaults (V7/V8)
   static const String _defaultEncryptionModeKey = 'default_encryption_mode';
   static const String _defaultCascadePresetKey = 'default_cascade_preset';
@@ -77,6 +80,25 @@ class SettingsService {
   /// Set theme mode
   static Future<bool> setThemeMode(String themeMode) {
     return prefs.setString(_themeKey, themeMode);
+  }
+
+  // =============================================================================
+  // UI Mode
+  // =============================================================================
+
+  /// Get UI mode ('simple' or 'pro')
+  static String getUiMode() {
+    return prefs.getString(_uiModeKey) ?? 'simple';
+  }
+
+  /// Set UI mode
+  static Future<bool> setUiMode(String mode) {
+    return prefs.setString(_uiModeKey, mode);
+  }
+
+  /// Convenience: check if Pro mode is active
+  static bool isProMode() {
+    return getUiMode() == 'pro';
   }
 
   // =============================================================================
@@ -536,6 +558,7 @@ class SettingsService {
     try {
       // Security: Define allowed settings keys to prevent configuration injection
       final allowedKeys = {
+        _uiModeKey,
         _themeKey,
         _defaultAlgorithmKey,
         _defaultSecurityLevelKey,
@@ -583,7 +606,12 @@ class SettingsService {
         }
 
         // Security: Validate value types and constraints
-        if (key == _themeKey) {
+        if (key == _uiModeKey) {
+          if (value is! String || !['simple', 'pro'].contains(value)) {
+            throw ArgumentError('Invalid UI mode: $value');
+          }
+          await prefs.setString(key, value);
+        } else if (key == _themeKey) {
           if (value is! String || !['light', 'dark', 'system'].contains(value)) {
             throw ArgumentError('Invalid theme mode: $value');
           }
