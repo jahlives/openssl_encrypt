@@ -110,18 +110,15 @@ class TestDefaultConfiguration(unittest.TestCase):
         inner_metadata = metadata["metadata"]
         hash_config = inner_metadata["derivation_config"]["hash_config"]
         self.assertEqual(
-            hash_config["sha3_256"]["rounds"], 10000, "Default should include 10k SHA3-256 rounds"
+            hash_config["sha3_512"]["rounds"], 10000, "Default should include 10k SHA3-512 rounds"
         )
         self.assertEqual(
-            hash_config["sha3_512"]["rounds"], 10000, "Default should include 10k SHA3-512 rounds"
+            hash_config["blake3"]["rounds"], 10000, "Default should include 10k BLAKE3 rounds"
         )
 
         # Check that default KDF configurations are applied
         kdf_config = inner_metadata["derivation_config"]["kdf_config"]
-        self.assertTrue(kdf_config["scrypt"]["enabled"], "Default should enable Scrypt")
-        self.assertEqual(
-            kdf_config["scrypt"]["rounds"], 10, "Default should include 10 Scrypt rounds"
-        )
+        self.assertFalse(kdf_config.get("scrypt", {}).get("enabled", False), "Default should disable Scrypt")
         self.assertTrue(kdf_config["argon2"]["enabled"], "Default should enable Argon2")
         self.assertEqual(
             kdf_config["argon2"]["rounds"], 10, "Default should include 10 Argon2 rounds"

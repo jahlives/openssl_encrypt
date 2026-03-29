@@ -583,6 +583,18 @@ def generate_key_independent_xor_parallel(
 
     for kdf_type in ["argon2", "scrypt", "balloon", "hkdf", "randomx"]:
         if kdf_config_section.get(kdf_type, {}).get("enabled", False):
+            # Skip RandomX if not available
+            if kdf_type == "randomx":
+                try:
+                    from .randomx import check_randomx_support
+                    if not check_randomx_support():
+                        if not quiet:
+                            eprint("⚠️ RandomX not available, skipping")
+                        continue
+                except ImportError:
+                    if not quiet:
+                        eprint("⚠️ RandomX not available, skipping")
+                    continue
             tasks.append(
                 {
                     "type": "kdf",

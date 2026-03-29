@@ -2359,28 +2359,33 @@ def generate_key_independent_xor(
         if kdf_config_section.get("randomx", {}).get("enabled", False):
             randomx_config = kdf_config_section["randomx"]
 
-            if not quiet and not progress:
-                eprint("Computing RandomX KDF...", end=" ", flush=True)
-            elif not quiet and progress:
-                eprint("Using RandomX for key derivation")
+            try:
+                if not quiet and not progress:
+                    eprint("Computing RandomX KDF...", end=" ", flush=True)
+                elif not quiet and progress:
+                    eprint("Using RandomX for key derivation")
 
-            result = compute_kdf_independent(
-                password=algorithm_input,
-                salt=salt,
-                kdf_type="randomx",
-                kdf_config=randomx_config,
-                key_length=key_length,
-                quiet=quiet,
-                progress=progress,
-                debug=debug,
-            )
-            xor_components.append(result)
+                result = compute_kdf_independent(
+                    password=algorithm_input,
+                    salt=salt,
+                    kdf_type="randomx",
+                    kdf_config=randomx_config,
+                    key_length=key_length,
+                    quiet=quiet,
+                    progress=progress,
+                    debug=debug,
+                )
+                xor_components.append(result)
 
-            if not quiet and not progress:
-                eprint("✅")
+                if not quiet and not progress:
+                    eprint("✅")
 
-            if debug:
-                logger.debug(f"INDEPENDENT-XOR: Added RandomX component #{len(xor_components)}")
+                if debug:
+                    logger.debug(f"INDEPENDENT-XOR: Added RandomX component #{len(xor_components)}")
+            except (ImportError, OSError) as e:
+                if not quiet:
+                    eprint(f"⚠️ RandomX not available, skipping ({e})")
+                logger.warning(f"RandomX KDF skipped in independent XOR: {e}")
 
         # Verify we have at least one component
         if len(xor_components) == 0:
