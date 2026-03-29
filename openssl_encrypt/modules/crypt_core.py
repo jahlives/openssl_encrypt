@@ -2022,6 +2022,36 @@ def compute_kdf_independent(
         result = hkdf.derive(password_bytes)
         return SecureBytes(result)
 
+    elif kdf_type == "randomx":
+        from .randomx import randomx_kdf
+
+        rounds = kdf_config.get("rounds", 1)
+        mode = kdf_config.get("mode", "light")
+        height = kdf_config.get("height", 1)
+        hash_len = kdf_config.get("hash_len", key_length)
+
+        if debug:
+            logger.debug(
+                f"INDEPENDENT-XOR: RandomX params - rounds={rounds}, mode={mode}, height={height}"
+            )
+
+        result = password_bytes
+        for i in range(rounds):
+            if i == 0:
+                round_salt = salt
+            else:
+                round_salt = result[:32] if len(result) >= 32 else result
+            result = randomx_kdf(
+                password=result,
+                salt=round_salt,
+                rounds=1,
+                mode=mode,
+                height=height,
+                hash_len=hash_len,
+            )
+
+        return SecureBytes(result)
+
     else:
         raise ValueError(f"Unsupported KDF type: {kdf_type}")
 
@@ -2300,6 +2330,33 @@ def generate_key_independent_xor(
 
             if debug:
                 logger.debug(f"INDEPENDENT-XOR: Added HKDF component #{len(xor_components)}")
+
+        # Check and process RandomX
+        if kdf_config_section.get("randomx", {}).get("enabled", False):
+            randomx_config = kdf_config_section["randomx"]
+
+            if not quiet and not progress:
+                eprint("Computing RandomX KDF...", end=" ", flush=True)
+            elif not quiet and progress:
+                eprint("Using RandomX for key derivation")
+
+            result = compute_kdf_independent(
+                password=algorithm_input,
+                salt=salt,
+                kdf_type="randomx",
+                kdf_config=randomx_config,
+                key_length=key_length,
+                quiet=quiet,
+                progress=False,
+                debug=debug,
+            )
+            xor_components.append(result)
+
+            if not quiet and not progress:
+                eprint("✅")
+
+            if debug:
+                logger.debug(f"INDEPENDENT-XOR: Added RandomX component #{len(xor_components)}")
 
         # Verify we have at least one component
         if len(xor_components) == 0:
