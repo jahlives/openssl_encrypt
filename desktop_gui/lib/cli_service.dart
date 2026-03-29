@@ -343,6 +343,7 @@ class CLIService {
      bool enablePepper = false,         // Remote pepper: enable pepper plugin
      String? pepperName,                // Remote pepper: named pepper to use
      bool showProgress = false,         // CLI --progress flag
+     String? template,                  // Security template: 'standard', 'quick', 'paranoid'
      Function(String)? onProgress,
      Function(String)? onStatus}
   ) async {
@@ -391,8 +392,15 @@ class CLIService {
         'encrypt',
         '-i', inputFile.path,
         '-o', outputFile.path,
-        '--algorithm', algorithm,
       ];
+
+      // When a template is specified, use --standard/--quick/--paranoid flag
+      // and skip individual algorithm/hash/kdf arguments
+      if (template != null) {
+        args.add('--$template');
+      } else {
+        args.addAll(['--algorithm', algorithm]);
+      }
 
       // Add HSM configuration if provided
       if (hsmPlugin != null && hsmPlugin != 'none') {
@@ -402,8 +410,8 @@ class CLIService {
         }
       }
 
-      // Add hash configuration if provided
-      if (hashConfig != null) {
+      // Add hash configuration if provided (skip when using template)
+      if (hashConfig != null && template == null) {
         for (final entry in hashConfig.entries) {
           final hashName = entry.key;
           final config = entry.value;
@@ -453,8 +461,8 @@ class CLIService {
         }
       }
 
-      // Add KDF configuration if provided
-      if (kdfConfig != null) {
+      // Add KDF configuration if provided (skip when using template)
+      if (kdfConfig != null && template == null) {
         for (final entry in kdfConfig.entries) {
           final kdfName = entry.key;
           final config = entry.value;
