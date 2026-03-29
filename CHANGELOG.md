@@ -5,6 +5,24 @@ All notable changes to the openssl_encrypt project will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.2] - 2026-03-29
+
+### Added
+
+- **Simple/Pro mode for desktop GUI**: New default "Simple" mode hides all advanced crypto options, showing only Encrypt, Decrypt, and Settings tabs. Uses CLI `--standard` template automatically. Pro mode toggle in Settings restores full UI with all algorithms, KDFs, cascade, steganography, and identity management
+- **Independent XOR (v11) as default key derivation**: STANDARD and PARANOID templates now automatically enable Massey's Independent XOR composition for stronger key derivation security guarantees
+- **RandomX support in independent XOR path**: RandomX KDF now works correctly in both parallel and non-parallel v11 key derivation paths
+- **Progress bars for Argon2 and RandomX in XOR mode**: Multi-round KDF operations now display progress bars when using `--progress` flag in independent XOR (v11) mode
+
+### Changed
+
+- **STANDARD template modernized**: Hashes changed from sha3-256+sha3-512 to sha3-512+blake3 (10k rounds each). KDFs changed from scrypt+argon2 to randomx (10 rounds)+argon2 (10 rounds). Encryption upgraded from single-layer aes-gcm to cascade (aes-256-gcm + chacha20-poly1305)
+- **Cascade encryption enabled by default**: STANDARD template now uses 2-layer cascade encryption (AES-256-GCM + ChaCha20-Poly1305) for defense-in-depth
+
+### Security
+
+- **Dependency bumps**: cryptography 46.0.5→46.0.6, requests 2.32.5→2.33.0, black 24.10.0→26.3.1, nltk 3.9.3→3.9.4
+
 ## [1.4.1rc2] - 2026-03-22
 
 ### Security

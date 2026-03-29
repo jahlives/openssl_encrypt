@@ -1,10 +1,38 @@
 # OpenSSL Encrypt - Complete Release Notes
 
-## Current Release: Version 1.4.1rc1 (March 2026)
+## Current Release: Version 1.4.2 (March 2026)
+
+**Status:** Stable Release
+**Development Status:** Production
+
+### Desktop GUI Simple/Pro Mode & Modernized Security Defaults
+
+Version 1.4.2 introduces a **Simple/Pro mode toggle** for the desktop GUI, making encryption accessible to non-technical users while preserving full control for power users. The **STANDARD security template** has been significantly strengthened with modern hash algorithms, RandomX key derivation, cascade encryption, and Independent XOR (v11) composition as the default.
+
+#### Simple/Pro Mode (Desktop GUI)
+
+The desktop GUI now launches in **Simple mode** by default, showing only three tabs (Encrypt, Decrypt, Settings) with a clean interface: file/text input, password, and an encrypt/decrypt button. All cryptographic options are hidden — the CLI `--standard` template handles everything automatically. A **Pro mode** toggle in Settings restores the full UI with algorithm selection, hash/KDF chain configuration, cascade/asymmetric modes, HSM, steganography, and identity management.
+
+#### Modernized STANDARD Template
+
+The default encryption profile used by Simple mode and `--standard` has been upgraded:
+
+- **Hashes**: SHA3-512 (10k rounds) + BLAKE3 (10k rounds) — two algorithms from different families
+- **KDFs**: Argon2 (10 rounds) + RandomX light (10 rounds) — memory-hard + proof-of-work
+- **Key derivation**: Independent XOR v11 (Massey's composition) — key is at least as strong as the strongest component
+- **Encryption**: Cascade (AES-256-GCM + ChaCha20-Poly1305) — two cipher families for defense-in-depth
+
+#### Bug Fixes & Improvements
+
+- RandomX now works correctly in the independent XOR (v11) key derivation path (both parallel and non-parallel)
+- Argon2 and RandomX display progress bars in XOR mode when `--progress` is enabled
+- Dependency bumps: cryptography 46.0.6, requests 2.33.0, black 26.3.1, nltk 3.9.4
+
+---
+
+## Previous Release: Version 1.4.1rc1 (March 2026)
 
 **Status:** Release Candidate 1
-**Development Status:** Release Candidate Testing
-**Target Final Release:** Q2 2026
 
 ### Streaming Encryption, Windows Compatibility & Security Hardening
 
