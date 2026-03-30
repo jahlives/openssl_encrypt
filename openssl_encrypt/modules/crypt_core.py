@@ -2615,7 +2615,7 @@ def generate_key_independent_xor(
         xor_components.append(initial_normalized)  # SecureBytes object
 
         if debug:
-            logger.debug(f"INDEPENDENT-XOR: Added initial password+salt hash to XOR")
+            logger.debug("INDEPENDENT-XOR: Added initial password+salt hash to XOR")
 
         # Each algorithm will process this initial hash instead of raw password+salt
         # This ensures all algorithms work with normalized 256-bit input
@@ -4115,7 +4115,7 @@ def generate_key(
         xor_accumulator.append(sequential_result)  # SecureBytes object
 
         if debug:
-            logger.debug(f"V10-XOR: Added sequential chain final result")
+            logger.debug("V10-XOR: Added sequential chain final result")
             for idx, val in enumerate(xor_accumulator):
                 logger.debug(f"V10-XOR:   [{idx}] {val.hex()}")
 
@@ -4157,14 +4157,14 @@ def generate_key(
                 except Exception:
                     # Log but don't fail on cleanup errors
                     if debug:
-                        logger.debug(f"V10-XOR: Warning - failed to zero intermediate")
+                        logger.debug("V10-XOR: Warning - failed to zero intermediate")
                     pass
 
             # Clear the list
             xor_accumulator.clear()
 
             if debug:
-                logger.debug(f"V10-XOR: All intermediates zeroed and cleaned up")
+                logger.debug("V10-XOR: All intermediates zeroed and cleaned up")
 
     if not KeyStretch.key_stretch and not KeyStretch.hash_stretch:
         if algorithm in [
@@ -7351,20 +7351,20 @@ def encrypt_file(
                                 description=f"Encrypted: {PathLib(output_file).name}",
                             )
                             if not quiet:
-                                eprint(f"✓ Metadata hash uploaded to integrity server")
+                                eprint("✓ Metadata hash uploaded to integrity server")
                         except Exception as store_e:
                             # If hash already exists (409 Conflict), try to update it
                             if "409" in str(store_e) or "Conflict" in str(store_e):
                                 try:
                                     if not quiet:
-                                        eprint(f"Integrity hash already exists, updating...")
+                                        eprint("Integrity hash already exists, updating...")
                                     plugin.update_hash(
                                         file_id=file_id,
                                         metadata_hash=metadata_hash,
                                         description=f"Encrypted: {PathLib(output_file).name} (updated)",
                                     )
                                     if not quiet:
-                                        eprint(f"✓ Metadata hash updated on integrity server")
+                                        eprint("✓ Metadata hash updated on integrity server")
                                 except Exception as update_e:
                                     if not quiet:
                                         eprint(
@@ -7614,20 +7614,20 @@ def encrypt_file(
                                 description=f"Encrypted: {PathLib(output_file).name}",
                             )
                             if not quiet:
-                                eprint(f"✓ Metadata hash uploaded to integrity server")
+                                eprint("✓ Metadata hash uploaded to integrity server")
                         except Exception as store_e:
                             # If hash already exists (409 Conflict), try to update it
                             if "409" in str(store_e) or "Conflict" in str(store_e):
                                 try:
                                     if not quiet:
-                                        eprint(f"Integrity hash already exists, updating...")
+                                        eprint("Integrity hash already exists, updating...")
                                     plugin.update_hash(
                                         file_id=file_id,
                                         metadata_hash=metadata_hash,
                                         description=f"Encrypted: {PathLib(output_file).name} (updated)",
                                     )
                                     if not quiet:
-                                        eprint(f"✓ Metadata hash updated on integrity server")
+                                        eprint("✓ Metadata hash updated on integrity server")
                                 except Exception as update_e:
                                     if not quiet:
                                         eprint(
@@ -8478,14 +8478,14 @@ def decrypt_file(
 
                     if match:
                         if not quiet:
-                            eprint(f"✓ Integrity verification passed")
+                            eprint("✓ Integrity verification passed")
                     else:
                         warning_msg = details.get("warning", "Hash mismatch or not found")
-                        eprint(f"\n⚠️  INTEGRITY VERIFICATION FAILED!")
+                        eprint("\n⚠️  INTEGRITY VERIFICATION FAILED!")
                         eprint(f"    Reason: {warning_msg}")
-                        eprint(f"\n    This file's metadata may have been tampered with.")
-                        eprint(f"    Proceeding could expose you to a DoS attack via")
-                        eprint(f"    malicious hash/KDF parameters.\n")
+                        eprint("\n    This file's metadata may have been tampered with.")
+                        eprint("    Proceeding could expose you to a DoS attack via")
+                        eprint("    malicious hash/KDF parameters.\n")
 
                         # Ask user if they want to proceed
                         try:

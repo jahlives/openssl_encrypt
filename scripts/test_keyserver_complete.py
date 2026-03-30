@@ -51,7 +51,7 @@ def test_keyserver_complete():
     print_subsection("Step 1: Loading Keyserver Configuration")
     try:
         config = KeyserverConfig.from_file()
-        print(f"✓ Configuration loaded")
+        print("✓ Configuration loaded")
         print(f"  Enabled: {config.enabled}")
         print(f"  Server: {config.servers[0] if config.servers else 'None'}")
         print(f"  Upload enabled: {config.upload_enabled}")
@@ -84,7 +84,7 @@ def test_keyserver_complete():
             kem_algorithm="ML-KEM-768",
             sig_algorithm="ML-DSA-65",
         )
-        print(f"✓ Identity created")
+        print("✓ Identity created")
         print(f"  Name: {identity.name}")
         print(f"  Email: {identity.email}")
         print(f"  Fingerprint: {identity.fingerprint}")
@@ -99,7 +99,7 @@ def test_keyserver_complete():
     print_subsection("Step 3: Creating PublicKeyBundle")
     try:
         bundle = PublicKeyBundle.from_identity(identity)
-        print(f"✓ Bundle created")
+        print("✓ Bundle created")
         print(f"  Fingerprint: {bundle.fingerprint}")
         print(f"  Algorithms: {bundle.encryption_algorithm} / {bundle.signing_algorithm}")
 
@@ -249,7 +249,7 @@ def test_keyserver_complete():
     print_subsection("Step 11: Cache Statistics")
     try:
         stats = plugin.get_cache_stats()
-        print(f"✓ Cache statistics retrieved")
+        print("✓ Cache statistics retrieved")
         print(f"  Total entries: {stats['total_entries']}")
         print(f"  Valid entries: {stats['valid_entries']}")
         print(f"  Expired entries: {stats['expired_entries']}")

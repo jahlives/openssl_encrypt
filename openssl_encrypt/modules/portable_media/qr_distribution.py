@@ -327,7 +327,7 @@ class QRKeyDistribution:
                 raise QRKeyError("No QR code found in image")
 
             if len(decoded_objects) > 1:
-                logger.warning(f"Multiple QR codes found in image, using first one")
+                logger.warning("Multiple QR codes found in image, using first one")
 
             # Get QR data
             qr_data = decoded_objects[0].data.decode("utf-8")

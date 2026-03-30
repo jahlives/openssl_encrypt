@@ -43,7 +43,7 @@ def test_keyserver_registration():
             return False
 
         result = response.json()
-        print(f"✓ Registration successful!")
+        print("✓ Registration successful!")
         print(f"  Client ID: {result['client_id']}")
         print(f"  Token: {result['token'][:50]}...")
         print(f"  Expires: {result['expires_at']}")
@@ -81,7 +81,7 @@ def test_telemetry_registration():
             print("✗ Registration returned False")
             return False
 
-        print(f"✓ Registration successful!")
+        print("✓ Registration successful!")
 
         # Load saved data
         data = manager._load_key_data()
@@ -91,7 +91,7 @@ def test_telemetry_registration():
 
         # Test get_api_key
         token = manager.get_api_key()
-        print(f"✓ get_api_key() works")
+        print("✓ get_api_key() works")
         print(f"  Token matches: {token == data['token']}")
 
         return True

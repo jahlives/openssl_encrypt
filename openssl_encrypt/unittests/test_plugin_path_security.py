@@ -86,7 +86,7 @@ class TestPlugin(PreProcessorPlugin):
         os.symlink(sensitive_file, symlink_path)
 
         # Plugin attempts to read via symlink
-        file_operation = f"""
+        file_operation = """
             target_file = os.path.join(context.plugin_file_directory, "symlink_to_sensitive")
             with open(target_file, 'r') as f:
                 content = f.read()
@@ -141,7 +141,7 @@ class TestPlugin(PreProcessorPlugin):
         assert os.path.islink(symlink_path)
 
         # Plugin attempts to read via symlink
-        file_operation = f"""
+        file_operation = """
             target_file = os.path.join(context.plugin_file_directory, "passwd_link")
 
             # Check if file is symlink (should be detected)

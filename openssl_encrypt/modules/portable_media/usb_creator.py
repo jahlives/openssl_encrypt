@@ -775,7 +775,7 @@ fi
             crypt_script = portable_root / "crypt.py"
 
             # Python script - unified CLI wrapper
-            crypt_code = f'''#!/usr/bin/env python3
+            crypt_code = '''#!/usr/bin/env python3
 """
 Portable USB Crypto Helper
 Unified wrapper around the main CLI with USB workspace integration
@@ -999,8 +999,8 @@ if __name__ == "__main__":
 
             logger.debug("Created transparent encryption helper scripts")
 
-        except Exception:
-            logger.warning(f"Failed to create encryption helpers: {{e}}")
+        except Exception as e:
+            logger.warning(f"Failed to create encryption helpers: {e}")
 
     def _cleanup_temp_files(self):
         """Clean up temporary files"""

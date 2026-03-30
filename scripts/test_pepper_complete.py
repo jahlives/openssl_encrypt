@@ -91,7 +91,7 @@ def test_get_profile(base_url: str, cert: tuple) -> Dict:
 
         if response.status_code == 200:
             data = response.json()
-            print(f"✓ Profile retrieved")
+            print("✓ Profile retrieved")
             print(f"  Certificate fingerprint: {data.get('cert_fingerprint', 'N/A')[:40]}...")
             print(f"  Name: {data.get('name', 'N/A')}")
             print(f"  Pepper count: {data.get('pepper_count', 0)}")
@@ -129,13 +129,13 @@ def test_create_pepper(base_url: str, cert: tuple) -> Dict:
 
         if response.status_code == 200:
             data = response.json()
-            print(f"✓ Pepper created")
+            print("✓ Pepper created")
             print(f"  Name: {data.get('name')}")
             print(f"  Description: {data.get('description')}")
             print(f"  Created: {data.get('created_at')}")
             return data
         elif response.status_code == 409:
-            print(f"⚠ Pepper already exists (continuing...)")
+            print("⚠ Pepper already exists (continuing...)")
             return {"name": "test-pepper", "exists": True}
         else:
             print(f"✗ Failed: {response.status_code}")
@@ -159,11 +159,11 @@ def test_list_peppers(base_url: str, cert: tuple) -> Dict:
 
         if response.status_code == 200:
             data = response.json()
-            print(f"✓ Peppers listed")
+            print("✓ Peppers listed")
             print(f"  Total count: {data.get('total', 0)}")
 
             if data.get("peppers"):
-                print(f"  Peppers:")
+                print("  Peppers:")
                 for p in data["peppers"][:5]:  # Show first 5
                     print(f"    - {p['name']}: {p.get('description', 'No description')}")
 
@@ -190,7 +190,7 @@ def test_get_pepper(base_url: str, cert: tuple, name: str) -> Dict:
 
         if response.status_code == 200:
             data = response.json()
-            print(f"✓ Pepper retrieved")
+            print("✓ Pepper retrieved")
             print(f"  Name: {data.get('name')}")
             print(f"  Description: {data.get('description')}")
             print(f"  Access count: {data.get('access_count', 0)}")
@@ -228,7 +228,7 @@ def test_update_pepper(base_url: str, cert: tuple, name: str) -> Dict:
 
         if response.status_code == 200:
             data = response.json()
-            print(f"✓ Pepper updated")
+            print("✓ Pepper updated")
             print(f"  Name: {data.get('name')}")
             print(f"  Description: {data.get('description')}")
             return data
@@ -254,7 +254,7 @@ def test_delete_pepper(base_url: str, cert: tuple, name: str) -> bool:
 
         if response.status_code == 200:
             data = response.json()
-            print(f"✓ Pepper deleted")
+            print("✓ Pepper deleted")
             print(f"  Message: {data.get('message', 'Deleted successfully')}")
             return True
         else:

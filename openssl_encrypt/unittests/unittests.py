@@ -993,7 +993,7 @@ class TestCryptUtils(unittest.TestCase):
         for i in range(2):
             file_path = os.path.join(self.sub_dir, f"sub_file_{i}.txt")
             with open(file_path, "w", encoding="utf-8") as f:
-                f.write(f"This is a file in the subdirectory for recursive shredding test.")
+                f.write("This is a file in the subdirectory for recursive shredding test.")
 
     def tearDown(self):
         """Clean up after tests."""

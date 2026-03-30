@@ -522,7 +522,7 @@ class KATTestSuite(BaseSecurityTest):
                 return TestResult(
                     f"file_encrypt_{vector.test_name}",
                     TestResultLevel.ERROR,
-                    f"Encryption failed - no output file created",
+                    "Encryption failed - no output file created",
                 )
 
             # Decrypt file
@@ -532,7 +532,7 @@ class KATTestSuite(BaseSecurityTest):
                 return TestResult(
                     f"file_encrypt_{vector.test_name}",
                     TestResultLevel.ERROR,
-                    f"Decryption failed - no output file created",
+                    "Decryption failed - no output file created",
                 )
 
             # Verify data integrity
@@ -555,7 +555,7 @@ class KATTestSuite(BaseSecurityTest):
                 return TestResult(
                     f"file_encrypt_{vector.test_name}",
                     TestResultLevel.ERROR,
-                    f"File encryption test failed: data corruption detected",
+                    "File encryption test failed: data corruption detected",
                     details={
                         "expected_size": len(vector.input_data),
                         "actual_size": len(decrypted_data),

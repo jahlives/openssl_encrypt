@@ -481,7 +481,7 @@ class SmartRecommendationEngine:
                             action=rec.action,
                             reasoning=rec.rationale,
                             evidence=[
-                                f"Configuration issue detected by analyzer",
+                                "Configuration issue detected by analyzer",
                                 f"Applies to: {', '.join(rec.applies_to)}",
                                 f"Impact: {rec.impact}",
                             ],

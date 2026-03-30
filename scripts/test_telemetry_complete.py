@@ -83,7 +83,7 @@ def test_telemetry_register(base_url: str) -> Dict:
 
         if response.status_code == 200:
             data = response.json()
-            print(f"✓ Registration successful")
+            print("✓ Registration successful")
             print(f"  Client ID: {data['client_id']}")
             print(f"  Token type: {data['token_type']}")
             print(f"  Expires at: {data['expires_at']}")
@@ -196,7 +196,7 @@ def test_telemetry_submit(base_url: str, token: str, events: List[Dict]) -> bool
 
         if response.status_code == 200:
             data = response.json()
-            print(f"✓ Events submitted successfully")
+            print("✓ Events submitted successfully")
             print(f"  Received: {data['received']}")
             print(f"  Processed: {data['processed']}")
 
@@ -204,7 +204,7 @@ def test_telemetry_submit(base_url: str, token: str, events: List[Dict]) -> bool
                 print(f"  ⚠ Warning: Expected {len(events)} received, got {data['received']}")
 
             if data["processed"] != data["received"]:
-                print(f"  ⚠ Warning: Not all events were processed")
+                print("  ⚠ Warning: Not all events were processed")
                 return False
 
             return True
@@ -230,7 +230,7 @@ def test_telemetry_stats(base_url: str) -> Dict:
 
         if response.status_code == 200:
             data = response.json()
-            print(f"✓ Statistics retrieved")
+            print("✓ Statistics retrieved")
             print(f"  Total operations: {data['total_operations']}")
             print(f"  Total clients: {data['total_clients']}")
             # Success rate can be 0-1 (fraction) or 0-100 (percentage)
@@ -241,12 +241,12 @@ def test_telemetry_stats(base_url: str) -> Dict:
                 print(f"  Success rate: {success_rate:.2%}")
 
             if data.get("algorithms"):
-                print(f"  Algorithms:")
+                print("  Algorithms:")
                 for algo, count in sorted(data["algorithms"].items(), key=lambda x: -x[1])[:5]:
                     print(f"    {algo}: {count}")
 
             if data.get("operations"):
-                print(f"  Operations:")
+                print("  Operations:")
                 for op, count in data["operations"].items():
                     print(f"    {op}: {count}")
 
@@ -282,7 +282,7 @@ def verify_test_results(stats: Dict, submitted_events: int) -> bool:
     if stats["total_clients"] >= 1:
         print(f"✓ Client registration verified ({stats['total_clients']} clients)")
     else:
-        print(f"✗ No clients registered")
+        print("✗ No clients registered")
         return False
 
     # Check success rate (can be 0-1 fraction or 0-100 percentage)

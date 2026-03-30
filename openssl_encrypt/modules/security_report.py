@@ -181,12 +181,12 @@ class SecurityReportGenerator:
         decryption_failed = len([e for e in events if e["event_type"] == "decryption_failed"])
         auth_failed = len([e for e in events if e["event_type"] == "decryption_auth_failed"])
 
-        lines.append(f"\nSuccessful Operations:")
+        lines.append("\nSuccessful Operations:")
         lines.append(f"  Encryptions: {encryption_completed}")
         lines.append(f"  Decryptions: {decryption_completed}")
 
         if encryption_failed or decryption_failed:
-            lines.append(f"\nFailed Operations:")
+            lines.append("\nFailed Operations:")
             if encryption_failed:
                 lines.append(f"  Encryptions: {encryption_failed}")
             if decryption_failed:
@@ -199,7 +199,7 @@ class SecurityReportGenerator:
         # Plugin events
         plugin_events = [e for e in events if "plugin" in e["event_type"]]
         if plugin_events:
-            lines.append(f"\nPlugin Activity:")
+            lines.append("\nPlugin Activity:")
             plugin_loaded = len([e for e in plugin_events if e["event_type"] == "plugin_loaded"])
             plugin_blocked = len([e for e in plugin_events if e["event_type"] == "plugin_blocked"])
             if plugin_loaded:
@@ -212,7 +212,7 @@ class SecurityReportGenerator:
             e for e in events if "path" in e["event_type"] or "blocked" in e["event_type"]
         ]
         if path_events:
-            lines.append(f"\nPath Security Events:")
+            lines.append("\nPath Security Events:")
             lines.append(f"  Total: {len(path_events)}")
             for event in path_events[:5]:
                 lines.append(
@@ -222,7 +222,7 @@ class SecurityReportGenerator:
         # Rate limiting
         rate_limit_events = [e for e in events if e["event_type"] == "rate_limit_exceeded"]
         if rate_limit_events:
-            lines.append(f"\nRate Limiting:")
+            lines.append("\nRate Limiting:")
             lines.append(f"  Events: {len(rate_limit_events)}")
             lines.append("  (D-Bus service may be under heavy load)")
 

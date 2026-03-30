@@ -257,7 +257,7 @@ class TestRealYubikey:
 
         assert result1.success and result2.success
         assert result1.data["hsm_pepper"] == result2.data["hsm_pepper"]
-        print(f"\n✅ Deterministic test passed: same salt → same pepper")
+        print("\n✅ Deterministic test passed: same salt → same pepper")
 
 
 if __name__ == "__main__":

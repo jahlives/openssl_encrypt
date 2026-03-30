@@ -82,7 +82,7 @@ class TextFormatConverter(FormatConverterPlugin):
                 import shutil
 
                 shutil.copy2(input_path, output_path)
-                return PluginResult.success_result(f"File copied (no conversion needed)")
+                return PluginResult.success_result("File copied (no conversion needed)")
 
             # Load data based on input format
             data = self._load_data(input_path, input_format)

@@ -92,7 +92,7 @@ def test_get_profile(base_url: str, cert: tuple) -> Dict:
 
         if response.status_code == 200:
             data = response.json()
-            print(f"✓ Profile retrieved")
+            print("✓ Profile retrieved")
             print(f"  Certificate fingerprint: {data.get('cert_fingerprint', 'N/A')[:40]}...")
             print(f"  Name: {data.get('name', 'N/A')}")
             print(f"  Hash count: {data.get('hash_count', 0)}")
@@ -130,13 +130,13 @@ def test_store_hash(base_url: str, cert: tuple) -> Dict:
 
         if response.status_code in [200, 201]:
             data = response.json()
-            print(f"✓ Hash stored")
+            print("✓ Hash stored")
             print(f"  File ID: {data.get('file_id')[:40]}...")
             print(f"  Metadata hash: {data.get('metadata_hash')[:40]}...")
             print(f"  Description: {data.get('description')}")
             return data
         elif response.status_code == 409:
-            print(f"⚠ Hash already exists (continuing...)")
+            print("⚠ Hash already exists (continuing...)")
             return {
                 "file_id": test_file_id,
                 "metadata_hash": test_metadata_hash,
@@ -164,11 +164,11 @@ def test_list_hashes(base_url: str, cert: tuple) -> Dict:
 
         if response.status_code == 200:
             data = response.json()
-            print(f"✓ Hashes listed")
+            print("✓ Hashes listed")
             print(f"  Total count: {data.get('total', 0)}")
 
             if data.get("hashes"):
-                print(f"  Hashes:")
+                print("  Hashes:")
                 for h in data["hashes"][:5]:  # Show first 5
                     file_id_short = h["file_id"][:20] + "..."
                     print(f"    - {file_id_short}: {h.get('description', 'No description')}")
@@ -186,7 +186,7 @@ def test_list_hashes(base_url: str, cert: tuple) -> Dict:
 
 def test_get_hash(base_url: str, cert: tuple, file_id: str) -> Dict:
     """Test: Get specific hash."""
-    print_subsection(f"Step 4: Get Hash for File")
+    print_subsection("Step 4: Get Hash for File")
 
     url = f"{base_url}/api/v1/integrity/hashes/{file_id}"
     print(f"GET {url}")
@@ -197,7 +197,7 @@ def test_get_hash(base_url: str, cert: tuple, file_id: str) -> Dict:
 
         if response.status_code == 200:
             data = response.json()
-            print(f"✓ Hash retrieved")
+            print("✓ Hash retrieved")
             print(f"  File ID: {data.get('file_id')[:40]}...")
             print(f"  Metadata hash: {data.get('metadata_hash')[:40]}...")
             print(f"  Description: {data.get('description')}")
@@ -215,7 +215,7 @@ def test_get_hash(base_url: str, cert: tuple, file_id: str) -> Dict:
 
 def test_verify_hash(base_url: str, cert: tuple, file_id: str, metadata_hash: str) -> Dict:
     """Test: Verify hash."""
-    print_subsection(f"Step 5: Verify Metadata Hash")
+    print_subsection("Step 5: Verify Metadata Hash")
 
     url = f"{base_url}/api/v1/integrity/verify"
     print(f"POST {url}")
@@ -227,7 +227,7 @@ def test_verify_hash(base_url: str, cert: tuple, file_id: str, metadata_hash: st
 
         if response.status_code == 200:
             data = response.json()
-            print(f"✓ Verification result")
+            print("✓ Verification result")
             print(f"  Valid: {data.get('valid')}")
             print(f"  Message: {data.get('message')}")
             return data
@@ -243,7 +243,7 @@ def test_verify_hash(base_url: str, cert: tuple, file_id: str, metadata_hash: st
 
 def test_update_hash(base_url: str, cert: tuple, file_id: str) -> Dict:
     """Test: Update hash."""
-    print_subsection(f"Step 6: Update Metadata Hash")
+    print_subsection("Step 6: Update Metadata Hash")
 
     url = f"{base_url}/api/v1/integrity/hashes/{file_id}"
     print(f"PUT {url}")
@@ -261,7 +261,7 @@ def test_update_hash(base_url: str, cert: tuple, file_id: str) -> Dict:
 
         if response.status_code == 200:
             data = response.json()
-            print(f"✓ Hash updated")
+            print("✓ Hash updated")
             print(f"  File ID: {data.get('file_id')[:40]}...")
             print(f"  New metadata hash: {data.get('metadata_hash')[:40]}...")
             print(f"  Description: {data.get('description')}")
@@ -278,7 +278,7 @@ def test_update_hash(base_url: str, cert: tuple, file_id: str) -> Dict:
 
 def test_delete_hash(base_url: str, cert: tuple, file_id: str) -> bool:
     """Test: Delete hash."""
-    print_subsection(f"Step 7: Delete Metadata Hash")
+    print_subsection("Step 7: Delete Metadata Hash")
 
     url = f"{base_url}/api/v1/integrity/hashes/{file_id}"
     print(f"DELETE {url}")
@@ -288,7 +288,7 @@ def test_delete_hash(base_url: str, cert: tuple, file_id: str) -> bool:
 
         if response.status_code == 200:
             data = response.json()
-            print(f"✓ Hash deleted")
+            print("✓ Hash deleted")
             print(f"  Message: {data.get('message', 'Deleted successfully')}")
             return True
         else:

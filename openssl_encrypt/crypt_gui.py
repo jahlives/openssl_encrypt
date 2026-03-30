@@ -1629,7 +1629,7 @@ class CryptGUI:
             cmd.append("--force-password")
 
         # Run the command
-        self.output_text.insert(tk.END, f" ".join(cmd) + "\n")
+        self.output_text.insert(tk.END, " ".join(cmd) + "\n")
         self.output_text.see(tk.END)  # Scroll to the bottom
         self.root.update_idletasks()
         try:
@@ -1735,7 +1735,7 @@ class CryptGUI:
             cmd.append("--force-password")
 
         # Run the command
-        self.output_text.insert(tk.END, f" ".join(cmd) + "\n")
+        self.output_text.insert(tk.END, " ".join(cmd) + "\n")
         self.output_text.see(tk.END)  # Scroll to the bottom
         self.root.update_idletasks()
         try:

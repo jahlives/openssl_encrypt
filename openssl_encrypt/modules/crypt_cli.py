@@ -2610,7 +2610,7 @@ def handle_hsm_command(args):
 
         if result.success:
             pepper = result.data.get("hsm_pepper")
-            eprint(f"\n✅ Test successful!")
+            eprint("\n✅ Test successful!")
             eprint(f"Pepper length: {len(pepper)} bytes")
             eprint(f"Pepper (hex): {pepper.hex()}")
             eprint("\nYour FIDO2 credential is working correctly.")
@@ -2647,9 +2647,9 @@ def handle_hsm_command(args):
             # Highlight hmac-secret support
             hmac_support = device.get("hmac_secret_support", False)
             if hmac_support:
-                eprint(f"  hmac-secret: ✅ Supported")
+                eprint("  hmac-secret: ✅ Supported")
             else:
-                eprint(f"  hmac-secret: ❌ Not supported")
+                eprint("  hmac-secret: ❌ Not supported")
 
             eprint()
 
@@ -2841,7 +2841,7 @@ def handle_keyserver_command(args):
         server_url = args.server if hasattr(args, "server") and args.server else None
 
         try:
-            eprint(f"Logging in to keyserver...")
+            eprint("Logging in to keyserver...")
             result = plugin.login(client_id, server_url=server_url)
 
             eprint("\n✓ Login successful")
@@ -6360,7 +6360,7 @@ def main_with_args(args=None):
                 pepper_name_to_use = None
 
                 if not args.quiet:
-                    eprint(f"Pepper plugin enabled (auto-generate mode)")
+                    eprint("Pepper plugin enabled (auto-generate mode)")
 
             except ImportError as e:
                 eprint(f"ERROR: Could not import pepper plugin: {e}")
