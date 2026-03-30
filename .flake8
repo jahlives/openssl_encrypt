@@ -13,7 +13,7 @@ extend-ignore =
     D100,D101,D102,D103,D104,D105,D107,D200,D202,D205,D212,D400,D401,D403,D415,
     I100,I101,I202,
     B007,B010,B017,B028,B036,
-    E402,F401,F841
+    E402,F401,F811,F841
 
 exclude =
     build,dist,.git,__pycache__,.pytest_cache,.venv,
