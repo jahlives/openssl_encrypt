@@ -77,7 +77,6 @@ __author__ = "OpenSSL Encrypt Team"
 # Standard library imports
 import logging
 
-
 # Core plugin system components
 from .plugin_base import (
     AnalyzerPlugin,

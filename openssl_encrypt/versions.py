@@ -11,6 +11,7 @@ except ImportError:
     def eprint(*args, **kwargs):
         print(*args, file=sys.stderr, **kwargs)
 
+
 LIBOQS_VERSION = "0.12.0"
 LIBOQS_PYTHON_VERSION = "0.12.0"
 
