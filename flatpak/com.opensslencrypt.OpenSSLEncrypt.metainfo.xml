@@ -39,7 +39,32 @@
   </screenshots>
   <content_rating type="oars-1.1"/>
   <releases>
-    <release version="1.4.0" date="2026-03-30" type="stable">
+    <release version="1.4.3" date="2026-03-30" type="stable">
+      <description>
+        <p>Fix Flutter GUI launcher in Flatpak: corrected binary name so --gui flag works correctly.</p>
+      </description>
+    </release>
+    <release version="1.4.2" date="2026-03-29" type="stable">
+      <description>
+        <p>Desktop GUI Simple/Pro mode toggle — Simple mode (default) hides all advanced options and uses the modernized STANDARD template. New defaults: SHA3-512 + BLAKE3 hashes, RandomX + Argon2 KDFs, cascade encryption (AES-256-GCM + ChaCha20-Poly1305), Independent XOR (v11) key derivation. Dependency bumps: cryptography 46.0.6, requests 2.33.0, black 26.3.1, nltk 3.9.4.</p>
+      </description>
+    </release>
+    <release version="1.4.1" date="2026-03-22" type="stable">
+      <description>
+        <p>Streaming chunked AEAD encryption (format v12) for constant-memory large file handling, full Windows compatibility, stderr output separation, comprehensive security hardening, and dependency security updates.</p>
+      </description>
+    </release>
+    <release version="1.4.1rc2" date="2026-03-22" type="development">
+      <description>
+        <p>Security dependency update: bumped nltk to 3.9.3 (CVE-2026-33236, CVE-2026-33231, CVE-2026-33230, GHSA-rf74-v2fm-23pw).</p>
+      </description>
+    </release>
+    <release version="1.4.1rc1" date="2026-03-21" type="development">
+      <description>
+        <p>Streaming chunked encryption (format v12), Windows compatibility, stderr output separation, and security hardening.</p>
+      </description>
+    </release>
+    <release version="1.4.0" date="2026-03-04" type="stable">
       <description>
         <p>Version 1.4.0 build</p>
       </description>
