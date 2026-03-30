@@ -5,6 +5,13 @@ All notable changes to the openssl_encrypt project will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.3] - 2026-03-30
+
+### Fixed
+
+- **Flutter GUI launcher in Flatpak**: Corrected binary name in wrapper script (`openssl_encrypt_mobile` → `openssl_encrypt`) so `--gui` flag works correctly
+- **GTK window title**: Changed window title from `openssl_encrypt_mobile` to `OpenSSL Encrypt`
+
 ## [1.4.2] - 2026-03-29
 
 ### Added

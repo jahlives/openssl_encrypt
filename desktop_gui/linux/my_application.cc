@@ -40,11 +40,11 @@ static void my_application_activate(GApplication* application) {
   if (use_header_bar) {
     GtkHeaderBar* header_bar = GTK_HEADER_BAR(gtk_header_bar_new());
     gtk_widget_show(GTK_WIDGET(header_bar));
-    gtk_header_bar_set_title(header_bar, "openssl_encrypt_mobile");
+    gtk_header_bar_set_title(header_bar, "OpenSSL Encrypt");
     gtk_header_bar_set_show_close_button(header_bar, TRUE);
     gtk_window_set_titlebar(window, GTK_WIDGET(header_bar));
   } else {
-    gtk_window_set_title(window, "openssl_encrypt_mobile");
+    gtk_window_set_title(window, "OpenSSL Encrypt");
   }
 
   gtk_window_set_default_size(window, 1280, 720);
