@@ -226,7 +226,7 @@ class PQCKeystore:
             "version" not in self.keystore_data
             or self.keystore_data["version"] != self.KEYSTORE_VERSION
         ):
-            raise KeystoreVersionError(f"Unsupported keystore version")
+            raise KeystoreVersionError("Unsupported keystore version")
 
         # Get encryption parameters
         if "encryption" not in self.keystore_data:
@@ -2334,7 +2334,7 @@ def handle_verify_usb_command(args):
         # Verify USB integrity
         result = verify_usb_integrity(args.usb_path, usb_password, hash_config=hash_config)
 
-        eprint(f"📊 Verification Results:")
+        eprint("📊 Verification Results:")
         eprint(f"   Overall integrity: {'✅ PASSED' if result['integrity_ok'] else '❌ FAILED'}")
         eprint(f"   Files verified: {result['verified_files']}")
         eprint(f"   Files failed: {result['failed_files']}")
@@ -2342,22 +2342,22 @@ def handle_verify_usb_command(args):
         eprint(f"   Original file count: {result['original_file_count']}")
 
         if result["tampered_files"]:
-            eprint(f"\n⚠️  Tampered files detected:")
+            eprint("\n⚠️  Tampered files detected:")
             for file_path in result["tampered_files"]:
                 eprint(f"      - {file_path}")
 
         if result["missing_file_list"]:
-            eprint(f"\n⚠️  Missing files:")
+            eprint("\n⚠️  Missing files:")
             for file_path in result["missing_file_list"]:
                 eprint(f"      - {file_path}")
 
         if result["integrity_ok"]:
-            eprint(f"\n✅ USB drive integrity verified successfully!")
+            eprint("\n✅ USB drive integrity verified successfully!")
             eprint(f"   Created: {time.ctime(result['created_at'])}")
             return 0
         else:
-            eprint(f"\n❌ USB drive integrity check FAILED!")
-            eprint(f"   The drive may have been tampered with or corrupted.")
+            eprint("\n❌ USB drive integrity check FAILED!")
+            eprint("   The drive may have been tampered with or corrupted.")
             return 1
 
     except USBCreationError as e:

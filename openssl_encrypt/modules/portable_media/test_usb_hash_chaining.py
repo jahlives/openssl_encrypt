@@ -185,7 +185,7 @@ def test_hash_config_consistency():
 
                 results.append(result["success"])
 
-        print(f"✅ Consistency test: Both USBs created successfully")
+        print("✅ Consistency test: Both USBs created successfully")
         print(f"   Results: {results}")
 
         return all(results)

@@ -311,9 +311,9 @@ def secure_memzero(data, full_verification=True):
                                     ctypes.c_size_t(page_len),
                                     MS_SYNC,
                                 )
-                            except:
+                            except Exception:
                                 pass
-                    except:
+                    except Exception:
                         pass
 
             except BaseException:
@@ -429,7 +429,7 @@ class SecureMemoryAllocator:
                             # Try to get MADV_DONTDUMP constant (value 16 on most systems)
                             # We'll use the value directly if we can't get it from headers
                             self.supports_madv_dontdump = True
-                        except:
+                        except Exception:
                             pass
                 except Exception:
                     pass
@@ -472,7 +472,7 @@ class SecureMemoryAllocator:
                             if self.debug_mode:
                                 eprint("Warning: Possible debugger detected")
                             return False
-                except:
+                except Exception:
                     pass
 
             elif self.system == "windows":
@@ -484,7 +484,7 @@ class SecureMemoryAllocator:
                             if self.debug_mode:
                                 eprint("Warning: Debugger detected")
                             return False
-                except:
+                except Exception:
                     pass
 
             # Memory scanning countermeasures
@@ -498,7 +498,7 @@ class SecureMemoryAllocator:
                     dummy[i] = secrets.randbelow(256)
                 # Immediately clear to avoid leaving traces
                 dummy[:] = bytearray(dummy_size)
-            except:
+            except Exception:
                 pass
 
             return True
@@ -589,7 +589,7 @@ class SecureMemoryAllocator:
             if "secure_container" in locals():
                 try:
                     secure_memzero(secure_container)
-                except:
+                except Exception:
                     pass
             raise RuntimeError(f"Secure memory allocation failed: {str(e)}")
 
@@ -632,9 +632,9 @@ class SecureMemoryAllocator:
                                 ctypes.c_size_t(size),
                                 MADV_DONTFORK,
                             )
-                        except:
+                        except Exception:
                             pass
-                except:
+                except Exception:
                     pass
 
             # For BSD platforms (including macOS), use minherit
@@ -652,7 +652,7 @@ class SecureMemoryAllocator:
                             ctypes.c_size_t(size),
                             VM_INHERIT_NONE,
                         )
-                except:
+                except Exception:
                     pass
 
             # For Windows, additional protection is applied during memory locking
@@ -1003,7 +1003,7 @@ def free_secure_buffer(buffer, full_verification=True):
             # Last resort zeroing attempt if allocator's free method fails
             zeroing_success = secure_memzero(buffer, full_verification=full_verification)
             return zeroing_success
-        except:
+        except Exception:
             return False
 
 
@@ -1313,7 +1313,7 @@ def secure_erase_system_memory(trigger_gc=True, full_sweep=False):
                 try:
                     with open("/proc/sys/vm/drop_caches", "w") as f:
                         f.write("3")
-                except:
+                except Exception:
                     pass
 
                 # Try to disable core dumps
@@ -1321,12 +1321,12 @@ def secure_erase_system_memory(trigger_gc=True, full_sweep=False):
                     import resource
 
                     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
-                except:
+                except Exception:
                     pass
 
                 # Request garbage collection again after memory operations
                 gc.collect()
-            except:
+            except Exception:
                 pass
 
         # For a more thorough cleanup when requested
@@ -1360,13 +1360,13 @@ def secure_erase_system_memory(trigger_gc=True, full_sweep=False):
 
                         # Explicit delete
                         del buf
-                    except:
+                    except Exception:
                         # If we run out of memory, just continue
                         break
 
                 # One more garbage collection
                 gc.collect()
-            except:
+            except Exception:
                 pass
 
         return True

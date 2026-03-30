@@ -779,7 +779,7 @@ fi
             crypt_script = portable_root / "crypt.py"
 
             # Python script - unified CLI wrapper
-            crypt_code = f'''#!/usr/bin/env python3
+            crypt_code = '''#!/usr/bin/env python3
 """
 Portable USB Crypto Helper
 Unified wrapper around the main CLI with USB workspace integration

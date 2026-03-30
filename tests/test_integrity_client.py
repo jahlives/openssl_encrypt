@@ -98,7 +98,7 @@ def test_integrity_client():
         try:
             # This will fail without proper mTLS setup, but demonstrates the API
             profile = plugin.get_profile()
-            print(f"✓ Profile retrieved:")
+            print("✓ Profile retrieved:")
             print(f"  Fingerprint: {profile['cert_fingerprint']}")
             print(f"  Name: {profile.get('name', 'Not set')}")
             print(f"  Hash Count: {profile['hash_count']}")
@@ -189,7 +189,7 @@ def test_integrity_client():
         # Test compute_metadata_hash
         test_metadata = b"test encrypted metadata"
         metadata_hash = IntegrityPlugin.compute_metadata_hash(test_metadata)
-        print(f"✓ compute_metadata_hash():")
+        print("✓ compute_metadata_hash():")
         print(f"  Input: {test_metadata}")
         print(f"  Hash: {metadata_hash}")
         print(f"  Length: {len(metadata_hash)} chars (expected: 64)")
@@ -198,7 +198,7 @@ def test_integrity_client():
         # Test compute_file_id
         test_file = Path("/path/to/test/file.enc")
         file_id = IntegrityPlugin.compute_file_id(test_file)
-        print(f"✓ compute_file_id():")
+        print("✓ compute_file_id():")
         print(f"  Input: {test_file}")
         print(f"  File ID: {file_id}")
         print(f"  Length: {len(file_id)} chars (expected: 64)")

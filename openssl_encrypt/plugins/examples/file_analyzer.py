@@ -149,7 +149,7 @@ class FileMetadataAnalyzer(AnalyzerPlugin):
                     first_part = header_str.split(":")[0].strip()
                     base64.b64decode(first_part + "==")  # Add padding just in case
                     return True
-            except (UnicodeDecodeError, ValueError):
+            except ValueError:
                 pass
 
             return False

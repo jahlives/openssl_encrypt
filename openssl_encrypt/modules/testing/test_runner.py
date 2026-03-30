@@ -340,7 +340,7 @@ class ReportGenerator:
             """
 
         # Add system information
-        html_content += f"""
+        html_content += """
         <div class="system-info">
             <h3>System Information</h3>
             <div class="info-grid">
