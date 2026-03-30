@@ -19,7 +19,9 @@ attrs==25.4.0
     #   jsonschema
     #   referencing
 authlib==1.6.9
-    # via safety
+    # via
+    #   -r requirements-dev.in
+    #   safety
 bandit==1.7.10
     # via -r requirements-dev.in
 black==26.3.1
@@ -105,7 +107,9 @@ mdurl==0.1.2
 mypy-extensions==1.1.0
     # via black
 nltk==3.9.4
-    # via safety
+    # via
+    #   -r requirements-dev.in
+    #   safety
 nodeenv==1.10.0
     # via pre-commit
 numpy==2.4.1
@@ -144,7 +148,7 @@ pydantic==2.12.5
     #   safety-schemas
 pydantic-core==2.41.5
     # via pydantic
-pygments==2.19.2
+pygments==2.20.0
     # via
     #   pytest
     #   rich
@@ -160,6 +164,8 @@ pytest==8.4.2
     #   pytest-cov
 pytest-cov==4.1.0
     # via -r requirements-dev.in
+pytokens==0.4.1
+    # via black
 pyyaml==6.0.3
     # via
     #   -r requirements-prod.in
