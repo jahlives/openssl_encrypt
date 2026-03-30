@@ -9,20 +9,15 @@ This module contains comprehensive tests for:
 - Secure password handling and memory management
 """
 
-import os
 import secrets
 import string
-import sys
-import tempfile
 import unittest
-from unittest.mock import MagicMock, patch
 
-import pytest
 
 # Import the modules to test
 from openssl_encrypt.modules.asymmetric_core import PasswordWrapper, PasswordWrapperError
 from openssl_encrypt.modules.crypt_utils import generate_strong_password
-from openssl_encrypt.modules.pqc import LIBOQS_AVAILABLE, PQCipher
+from openssl_encrypt.modules.pqc import PQCipher
 
 # Check if PQC is available
 try:

@@ -5,14 +5,11 @@ These tests verify the FIDO2 plugin functionality without requiring actual
 FIDO2 hardware. Tests use mocks for hardware interactions to enable CI/CD testing.
 """
 
-import json
-import os
 import secrets
 
 # Mock FIDO2 availability before import
 import sys
 import unittest
-from datetime import datetime
 from pathlib import Path
 from unittest.mock import MagicMock, Mock, patch
 
@@ -25,7 +22,6 @@ sys.modules["fido2.ctap2.extensions"] = MagicMock()
 
 from openssl_encrypt.modules.plugin_system.plugin_base import (
     PluginCapability,
-    PluginResult,
     PluginSecurityContext,
 )
 from openssl_encrypt.plugins.hsm.fido2_pepper import FIDO2HSMPlugin

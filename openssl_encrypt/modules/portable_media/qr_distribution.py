@@ -23,7 +23,7 @@ import logging
 import os
 import zlib
 from enum import Enum
-from typing import Dict, List, Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union
 
 try:
     import qrcode
@@ -58,7 +58,6 @@ logger = logging.getLogger(__name__)
 class QRKeyError(KeystoreError):
     """QR code key distribution specific errors"""
 
-    pass
 
 
 class QRKeyFormat(Enum):

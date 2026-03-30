@@ -14,7 +14,7 @@ import sys
 import time
 import uuid
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 from .crypt_errors import (
     KeyNotFoundError,
@@ -41,7 +41,7 @@ except ImportError:
             return False
 
 
-from .secure_memory import SecureBytes, secure_memzero
+from .secure_memory import secure_memzero
 
 # Import portable media modules
 try:
@@ -50,8 +50,6 @@ try:
         QRKeyError,
         QRKeyFormat,
         USBCreationError,
-        USBDriveCreator,
-        USBSecurityProfile,
         create_portable_usb,
         verify_usb_integrity,
     )
@@ -506,12 +504,11 @@ class PQCKeystore:
         )
 
         # Prepare file_password if it's provided
-        file_password_bytes = None
         if file_password is not None:
             if isinstance(file_password, str):
-                file_password_bytes = file_password.encode("utf-8")
+                file_password.encode("utf-8")
             else:
-                file_password_bytes = file_password
+                pass
 
         # Validate file_password if dual encryption is enabled
         if dual_encryption and file_password is None:
@@ -2005,7 +2002,7 @@ def handle_import_qr_command(args, keystore_password):
         # Deserialize key data from JSON
         import json
 
-        key_data = json.loads(key_data_bytes.decode("utf-8"))
+        json.loads(key_data_bytes.decode("utf-8"))
 
         # Get key password if needed
         key_password = None
@@ -2013,7 +2010,7 @@ def handle_import_qr_command(args, keystore_password):
             key_password = getpass.getpass(f"Enter password for key '{original_key_name}': ")
         elif args.key_password_file:
             with open(args.key_password_file, "r") as f:
-                key_password = f.read().strip()
+                f.read().strip()
 
         # Parse tags
         tags = []

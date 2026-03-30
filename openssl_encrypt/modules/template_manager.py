@@ -21,13 +21,12 @@ import time
 import uuid
 from dataclasses import asdict, dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import yaml
 
 from .config_analyzer import ConfigurationAnalyzer, analyze_configuration_from_args
 from .crypt_utils import eprint
-from .security_scorer import SecurityLevel
 
 
 class TemplateCategory(Enum):
@@ -695,7 +694,7 @@ class TemplateManager:
             return analyzer.analyze_configuration(
                 template.config, use_case, compliance_requirements
             )
-        except Exception as e:
+        except Exception:
             # Return a minimal analysis object in case of error
             from .config_analyzer import ConfigurationAnalysis
 

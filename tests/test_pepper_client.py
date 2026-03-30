@@ -15,7 +15,6 @@ from openssl_encrypt.plugins.pepper import (
     AuthenticationError,
     NetworkError,
     PepperConfig,
-    PepperError,
     PepperPlugin,
 )
 

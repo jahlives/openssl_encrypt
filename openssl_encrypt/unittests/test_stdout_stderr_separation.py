@@ -7,10 +7,8 @@ All code in English as per project requirements.
 """
 
 import io
-import sys
 from unittest import mock
 
-import pytest
 
 from openssl_encrypt.modules.crypt_utils import eprint
 

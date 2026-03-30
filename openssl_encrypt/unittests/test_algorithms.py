@@ -15,17 +15,12 @@ import logging
 import os
 import shutil
 import statistics
-import subprocess
-import sys
 import tempfile
 import time
 import unittest
 import warnings
 from io import StringIO
-from unittest import mock
-from unittest.mock import MagicMock, patch
 
-import pytest
 
 # Import the modules to test
 from openssl_encrypt.modules.crypt_core import (
@@ -33,13 +28,7 @@ from openssl_encrypt.modules.crypt_core import (
     EncryptionAlgorithm,
     decrypt_file,
     encrypt_file,
-    extract_file_metadata,
     is_aead_algorithm,
-)
-from openssl_encrypt.modules.crypt_errors import (
-    AuthenticationError,
-    DecryptionError,
-    ValidationError,
 )
 from openssl_encrypt.modules.secure_ops import constant_time_pkcs7_unpad
 
@@ -48,9 +37,6 @@ try:
     from openssl_encrypt.modules.crypt_core import PQC_AVAILABLE
     from openssl_encrypt.modules.pqc import (
         LIBOQS_AVAILABLE,
-        PQCAlgorithm,
-        PQCipher,
-        check_pqc_support,
     )
 except ImportError:
     LIBOQS_AVAILABLE = False

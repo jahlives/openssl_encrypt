@@ -16,18 +16,16 @@ Security Features:
 - Pre-loaded encrypted keystores
 """
 
-import base64
 import hashlib
 import json
 import logging
 import os
 import platform
 import shutil
-import tempfile
 import time
 from enum import Enum
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, Optional, Union
 
 try:
     from cryptography.hazmat.primitives import hashes
@@ -54,7 +52,6 @@ logger = logging.getLogger(__name__)
 class USBCreationError(KeystoreError):
     """USB drive creation specific errors"""
 
-    pass
 
 
 class USBSecurityProfile(Enum):
@@ -1003,7 +1000,7 @@ if __name__ == "__main__":
 
             logger.debug("Created transparent encryption helper scripts")
 
-        except Exception as e:
+        except Exception:
             logger.warning(f"Failed to create encryption helpers: {{e}}")
 
     def _cleanup_temp_files(self):
@@ -1035,7 +1032,6 @@ if __name__ == "__main__":
         file integrity without relying on potentially tampered verification code.
         """
         try:
-            import base64
             import hashlib
             import json
             import secrets

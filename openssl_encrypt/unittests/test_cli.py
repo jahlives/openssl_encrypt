@@ -10,17 +10,13 @@ This module contains comprehensive tests for:
 
 import logging
 import os
-import re
-import subprocess
 import sys
 import tempfile
 import unittest
-import warnings
 from io import StringIO
 from unittest import mock
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-import pytest
 
 # Import CLI main function
 from openssl_encrypt.modules.crypt_cli import main as cli_main
@@ -349,7 +345,7 @@ def generate_cli_argument_tests():
             # Try to locate crypt.py
             script_dir = os.path.dirname(os.path.abspath(__file__))
             project_root = os.path.dirname(script_dir)
-            cli_script = os.path.join(project_root, "crypt.py")
+            os.path.join(project_root, "crypt.py")
 
             # Use the module path since crypt.py might not exist
             result = subprocess.run(
@@ -1119,7 +1115,6 @@ class TestEnvironmentPasswordHandling(unittest.TestCase):
         self.assertEqual(os.environ.get("CRYPT_PASSWORD"), self.test_password)
 
         # Import and test the password retrieval logic
-        from openssl_encrypt.modules.crypt_cli import clear_password_environment
 
         # Verify the password is accessible
         self.assertEqual(os.environ.get("CRYPT_PASSWORD"), self.test_password)
@@ -1151,7 +1146,7 @@ class TestEnvironmentPasswordHandling(unittest.TestCase):
         os.environ["CRYPT_PASSWORD"] = test_password
 
         # Store the original length to verify proper overwriting
-        original_length = len(test_password)
+        len(test_password)
 
         # Verify password is set
         self.assertEqual(os.environ.get("CRYPT_PASSWORD"), test_password)

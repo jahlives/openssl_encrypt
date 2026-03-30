@@ -5,14 +5,12 @@ Provides comprehensive fuzzing capabilities to test input boundary conditions,
 edge cases, and resilience against malformed inputs.
 """
 
-import json
 import os
 import random
 import string
-import struct
 import tempfile
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from ..crypt_core import decrypt_file, encrypt_file
 from .base_test import BaseSecurityTest, TestConfig, TestResult, TestResultLevel
@@ -514,7 +512,6 @@ class FuzzTestSuite(BaseSecurityTest):
     def _test_concurrent_access(self, config: TestConfig) -> None:
         """Test concurrent file access scenarios."""
         import threading
-        import time
 
         def encrypt_worker(worker_id: int, results: List):
             try:

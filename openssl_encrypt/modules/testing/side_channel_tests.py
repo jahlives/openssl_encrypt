@@ -9,10 +9,9 @@ import gc
 import os
 import statistics
 import tempfile
-import threading
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List
 
 from ..crypt_core import decrypt_file, encrypt_file
 from .base_test import BaseSecurityTest, TestConfig, TestResult, TestResultLevel
@@ -160,7 +159,7 @@ class SideChannelTestSuite(BaseSecurityTest):
             operation_func(*args, **kwargs)
             end_time = time.perf_counter()
             return end_time - start_time
-        except Exception as e:
+        except Exception:
             # Return a sentinel value for failed operations
             return -1.0
 
@@ -420,7 +419,7 @@ class SideChannelTestSuite(BaseSecurityTest):
             )
             memory_after = process.memory_info().rss
 
-            memory_used = memory_after - memory_before
+            memory_after - memory_before
 
             # Test multiple iterations to check consistency
             memory_measurements = []

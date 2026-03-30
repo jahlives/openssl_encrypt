@@ -5,11 +5,6 @@ End-to-end integration tests for complete telemetry system.
 Tests the full flow from client plugin to server and back.
 """
 
-import tempfile
-import time
-from datetime import datetime, timezone
-from pathlib import Path
-from unittest.mock import Mock, patch
 
 import pytest
 import requests_mock

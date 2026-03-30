@@ -9,14 +9,13 @@ import concurrent.futures
 import json
 import logging
 import os
-import threading
 import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional, Set, Union
+from typing import Any, Dict, List, Optional
 
-from .base_test import BaseSecurityTest, TestConfig, TestResult, TestResultLevel
+from .base_test import TestResult, TestResultLevel
 from .benchmark_suite import BenchmarkTestSuite
 from .fuzz_testing import FuzzTestSuite
 from .kat_tests import KATTestSuite

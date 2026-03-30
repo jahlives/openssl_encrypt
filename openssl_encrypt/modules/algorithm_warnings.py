@@ -11,7 +11,7 @@ import datetime
 import logging
 import warnings
 from enum import Enum
-from typing import Dict, List, Optional, Set, Tuple, Union
+from typing import Dict, List, Optional, Set, Tuple
 
 # Configure logger
 logger = logging.getLogger(__name__)

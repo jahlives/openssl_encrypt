@@ -17,11 +17,9 @@ Security Features:
 import json
 import logging
 import os
-import stat
-import sys
 import threading
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Union
+from typing import Any, Dict, List, Optional, Set
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +27,6 @@ logger = logging.getLogger(__name__)
 class ConfigValidationError(Exception):
     """Raised when plugin configuration validation fails."""
 
-    pass
 
 
 class PluginConfigSchema:

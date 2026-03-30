@@ -7,14 +7,11 @@ Verifies that each algorithm processes the original input independently (no chai
 All code in English as per project requirements.
 """
 
-import hashlib
-import json
 import os
 import tempfile
 import unittest
 
 from openssl_encrypt.modules.crypt_core import (
-    EncryptionAlgorithm,
     decrypt_file,
     encrypt_file,
     extract_file_metadata,

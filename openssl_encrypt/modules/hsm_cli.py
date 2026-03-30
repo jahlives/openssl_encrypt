@@ -13,7 +13,6 @@ Usage:
 
 import secrets
 import sys
-from pathlib import Path
 from typing import Optional
 
 import click
@@ -29,7 +28,6 @@ except ImportError:
 @click.group(name="hsm")
 def hsm_group():
     """Hardware Security Module management commands."""
-    pass
 
 
 @hsm_group.command(name="fido2-register")
@@ -213,7 +211,7 @@ def fido2_test(rp_id: Optional[str]):
     click.echo("  2. Touch your security key\n")
 
     # Create dummy security context
-    from ..modules.plugin_system.plugin_base import PluginCapability, PluginSecurityContext
+    from ..modules.plugin_system.plugin_base import PluginSecurityContext
 
     context = PluginSecurityContext(
         plugin_id=plugin.plugin_id, capabilities=plugin.get_required_capabilities()

@@ -6,14 +6,12 @@ This module provides functions for secure memory handling, ensuring that
 sensitive data is properly wiped from memory when no longer needed.
 """
 
-import array
 import contextlib
 import ctypes
 import gc
 import mmap
 import os
 import platform
-import random
 import secrets
 import sys
 import time
@@ -690,7 +688,6 @@ class SecureMemoryAllocator:
             if self.system in ("linux", "darwin", "freebsd"):
                 # Try to import the appropriate modules
                 try:
-                    import fcntl
                     import resource
 
                     # Attempt to disable core dumps
@@ -1090,7 +1087,7 @@ def secure_memcpy(dest, src, length=None):
             else:
                 # We've reached the end of at least one buffer
                 return i
-    except (TypeError, IndexError, ValueError) as e:
+    except (TypeError, IndexError, ValueError):
         # Strategy 2: Try with explicit type conversions
         try:
             # Convert to bytearrays/bytes if needed
@@ -1101,7 +1098,7 @@ def secure_memcpy(dest, src, length=None):
                     dest[i] = src_bytes[i]
                 else:
                     return i
-        except Exception as e:
+        except Exception:
             # Strategy 3: Try using memory views if possible
             try:
                 # Create memory views with explicit bounds checking
@@ -1124,7 +1121,7 @@ def secure_memcpy(dest, src, length=None):
                 else:
                     # Memory views aren't compatible for copying
                     return 0
-            except Exception as final_error:
+            except Exception:
                 # Last resort: log the error and return 0
                 # This prevents breaking old files completely
                 return 0

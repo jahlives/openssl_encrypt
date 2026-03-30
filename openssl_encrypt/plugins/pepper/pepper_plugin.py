@@ -34,25 +34,21 @@ logger = logging.getLogger(__name__)
 class PepperError(Exception):
     """Base exception for pepper operations"""
 
-    pass
 
 
 class NetworkError(PepperError):
     """Raised when network request fails"""
 
-    pass
 
 
 class AuthenticationError(PepperError):
     """Raised when mTLS authentication fails"""
 
-    pass
 
 
 class TOTPRequiredError(PepperError):
     """Raised when TOTP code is required but not provided"""
 
-    pass
 
 
 class PepperPlugin(BasePlugin):

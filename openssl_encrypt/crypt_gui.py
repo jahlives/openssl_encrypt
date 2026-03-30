@@ -10,9 +10,7 @@ import string
 import subprocess
 import sys
 import threading
-import time
 import tkinter as tk
-from time import sleep
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
 from openssl_encrypt.modules.crypt_utils import eprint
@@ -20,7 +18,6 @@ from openssl_encrypt.modules.crypt_utils import eprint
 # Import secure memory functions
 try:
     from .modules.crypto_secure_memory import SecureString
-    from .modules.secure_memory import SecureBytes, secure_memzero
 
     SECURE_MEMORY_AVAILABLE = True
 except ImportError:
@@ -1706,7 +1703,7 @@ class CryptGUI:
             return
 
         # Get current hash configuration
-        hash_config = self.settings_tab.get_current_config()
+        self.settings_tab.get_current_config()
 
         # Build the command - use full path to crypt.py
         cmd = [
@@ -1797,7 +1794,7 @@ class CryptGUI:
 def main():
     """Main entry point for the application"""
     root = tk.Tk()
-    app = CryptGUI(root)
+    CryptGUI(root)
     root.mainloop()
 
 

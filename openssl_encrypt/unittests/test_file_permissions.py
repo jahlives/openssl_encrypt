@@ -327,7 +327,6 @@ class TestWindowsSpecific(unittest.TestCase):
     def test_dacl_owner_only_aces(self):
         """OWNER_ONLY DACL has exactly owner + SYSTEM ACEs."""
         self._skip_if_no_pywin32()
-        import ntsecuritycon as con
         import win32security
 
         from openssl_encrypt.modules.file_permissions import _get_system_sid, _get_windows_owner_sid

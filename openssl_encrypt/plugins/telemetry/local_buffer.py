@@ -19,7 +19,7 @@ import json
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 
 from ...modules.telemetry_filter import TelemetryDataFilter, TelemetryEvent
 
@@ -107,7 +107,7 @@ class LocalBuffer:
         self._cleanup_if_full()
 
         # Convert event to dictionary for storage
-        event_dict = TelemetryDataFilter.to_dict(event)
+        TelemetryDataFilter.to_dict(event)
 
         with sqlite3.connect(self.buffer_path) as conn:
             cursor = conn.cursor()

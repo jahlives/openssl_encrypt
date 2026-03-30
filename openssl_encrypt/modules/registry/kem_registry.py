@@ -10,7 +10,6 @@ All code in English as per project requirements.
 """
 
 from abc import abstractmethod
-from dataclasses import dataclass
 from typing import Optional, Tuple, Union
 
 from .base import (
@@ -33,7 +32,6 @@ except ImportError:
 
     def secure_memzero(data):
         """Fallback no-op."""
-        pass
 
 
 # Import existing PQC implementation
@@ -71,7 +69,6 @@ class KEMBase(AlgorithmBase):
             - Returns secret key as SecureBytes for automatic cleanup
             - Caller MUST explicitly zero the secret key after use
         """
-        pass
 
     @abstractmethod
     def encapsulate(self, public_key: bytes) -> Tuple[bytes, "SecureBytes"]:
@@ -90,7 +87,6 @@ class KEMBase(AlgorithmBase):
             - Returns shared secret as SecureBytes for automatic cleanup
             - Caller MUST explicitly zero the shared secret after use
         """
-        pass
 
     @abstractmethod
     def decapsulate(
@@ -111,7 +107,6 @@ class KEMBase(AlgorithmBase):
             - Returns shared secret as SecureBytes for automatic cleanup
             - Secret key copy is zeroed after use
         """
-        pass
 
     def get_public_key_size(self) -> int:
         """Get the KEM public key size in bytes."""

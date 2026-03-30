@@ -14,7 +14,6 @@ RandomX operates in two modes:
 import hashlib
 import logging
 import secrets
-from typing import Optional
 
 from .crypt_utils import eprint
 

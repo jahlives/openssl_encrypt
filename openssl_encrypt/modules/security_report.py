@@ -23,8 +23,7 @@ import argparse
 import json
 import sys
 from collections import Counter, defaultdict
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
+from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
 from .crypt_utils import eprint

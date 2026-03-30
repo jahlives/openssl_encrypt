@@ -20,7 +20,7 @@ If ANY of these tests fail, the telemetry system is NOT safe to deploy.
 
 import pytest
 
-from openssl_encrypt.modules.telemetry_filter import TelemetryDataFilter, TelemetryEvent
+from openssl_encrypt.modules.telemetry_filter import TelemetryDataFilter
 
 
 class TestTelemetrySecurityGuarantees:

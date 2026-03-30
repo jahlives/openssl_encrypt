@@ -6,15 +6,11 @@ This module provides password policy validation and enforcement mechanisms
 to ensure that passwords meet security requirements.
 """
 
-import base64
 import hashlib
 import importlib.resources
-import math
 import os
 import re
-import zlib
-from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 from .crypt_utils import eprint
 

@@ -3,7 +3,6 @@
 Test script for encryption/decryption with PQC keystore
 """
 
-import argparse
 import os
 import sys
 
@@ -16,7 +15,6 @@ def test_keystore_encrypt_decrypt():
     """Test encryption and decryption with keystore key"""
     # Create a test keystore
     keystore_path = "test_keystore.pqc"
-    keystore_password = "1234"
     input_file = "keystore_test_input.txt"
     encrypted_file = "keystore_test_encrypted.enc"
     decrypted_file = "keystore_test_decrypted.txt"

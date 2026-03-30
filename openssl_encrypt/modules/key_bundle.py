@@ -39,25 +39,21 @@ logger = logging.getLogger(__name__)
 class KeyBundleError(Exception):
     """Base exception for key bundle operations"""
 
-    pass
 
 
 class InvalidSignatureError(KeyBundleError):
     """Raised when bundle signature verification fails"""
 
-    pass
 
 
 class InvalidAlgorithmError(KeyBundleError):
     """Raised when unsupported algorithm is used"""
 
-    pass
 
 
 class InvalidFingerprintError(KeyBundleError):
     """Raised when fingerprint doesn't match keys"""
 
-    pass
 
 
 @dataclass(frozen=True)

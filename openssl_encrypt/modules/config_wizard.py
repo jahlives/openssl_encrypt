@@ -15,19 +15,15 @@ Security Design:
 
 import sys
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List
 
 from .crypt_utils import eprint
-from .security_scorer import SecurityLevel, SecurityScorer
+from .security_scorer import SecurityScorer
 
 # Import registry helper functions for algorithm discovery
 try:
     from .registry import (
         get_available_ciphers,
-        get_available_hashes,
-        get_available_kdfs,
-        get_cipher_info_dict,
-        get_kdf_info_dict,
     )
 
     REGISTRY_AVAILABLE = True

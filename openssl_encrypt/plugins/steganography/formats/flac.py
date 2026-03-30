@@ -27,10 +27,9 @@ Supported FLAC Features:
 - Lossless compression with steganographic preservation
 """
 
-import io
 import logging
 import struct
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -971,7 +970,7 @@ class FLACAnalyzer:
 
             # Capacity analysis
             total_samples = audio.get("total_samples", 0)
-            channels = audio.get("channels", 1)
+            audio.get("channels", 1)
 
             if total_samples > 2000000:  # > ~45 seconds at 44.1kHz
                 suitability["capacity_score"] = 1.0
@@ -1135,7 +1134,6 @@ def is_flac_steganography_available() -> bool:
 
         # Test basic functionality needed for FLAC steganography
         test_array = np.array([1, 2, 3, 4], dtype=np.int16)
-        test_binary = "10101010"
 
         return True
     except Exception as e:

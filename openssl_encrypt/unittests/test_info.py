@@ -11,7 +11,6 @@ Tests that:
 - encrypted_at is displayed when present
 """
 
-import base64
 import json
 import os
 import shutil
@@ -24,7 +23,6 @@ from unittest import mock
 from openssl_encrypt.modules.crypt_core import (
     EncryptionAlgorithm,
     encrypt_file,
-    extract_file_metadata,
     print_file_info,
 )
 

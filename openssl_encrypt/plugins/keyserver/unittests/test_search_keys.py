@@ -11,13 +11,13 @@ Fingerprint pattern: ^[0-9a-f]{2}(:[0-9a-f]{2})+$ (lowercase hex pairs joined by
 """
 
 import re
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
 
 from openssl_encrypt.plugins.keyserver.config import KeyserverConfig
-from openssl_encrypt.plugins.keyserver.keyserver_plugin import KeyserverPlugin, NetworkError
+from openssl_encrypt.plugins.keyserver.keyserver_plugin import KeyserverPlugin
 
 # ---------------------------------------------------------------------------
 # Shared fixtures and helpers

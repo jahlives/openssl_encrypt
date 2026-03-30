@@ -11,7 +11,7 @@ All code in English as per project requirements.
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Any, Callable, ClassVar, Dict, Generic, List, Optional, Tuple, Type, TypeVar
+from typing import ClassVar, Dict, Generic, List, Optional, Tuple, Type, TypeVar
 
 
 class AlgorithmCategory(Enum):
@@ -139,31 +139,26 @@ class AlgorithmInfo:
 class AlgorithmError(Exception):
     """Base exception for algorithm errors."""
 
-    pass
 
 
 class AlgorithmNotAvailableError(AlgorithmError):
     """Algorithm is not available (missing dependency)."""
 
-    pass
 
 
 class AlgorithmNotFoundError(AlgorithmError):
     """Algorithm was not found in registry."""
 
-    pass
 
 
 class ValidationError(AlgorithmError):
     """Parameter validation failed."""
 
-    pass
 
 
 class AuthenticationError(AlgorithmError):
     """Authentication failed (for AEAD ciphers)."""
 
-    pass
 
 
 class AlgorithmBase(ABC):
@@ -187,7 +182,6 @@ class AlgorithmBase(ABC):
         Returns:
             AlgorithmInfo with all relevant information about this algorithm
         """
-        pass
 
     @classmethod
     def is_available(cls) -> bool:

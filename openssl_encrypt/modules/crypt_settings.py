@@ -6,14 +6,8 @@ This version adds a settings tab to configure hash parameters.
 
 import json
 import os
-import random
-import string
-import subprocess
-import sys
-import threading
-import time
 import tkinter as tk
-from tkinter import filedialog, messagebox, simpledialog, ttk
+from tkinter import messagebox, ttk
 
 from .crypt_utils import eprint
 

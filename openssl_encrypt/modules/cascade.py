@@ -53,19 +53,16 @@ CHAIN_PREFIX_LENGTH = 16  # 128 bits from previous layer
 class CascadeError(Exception):
     """Base exception for cascade encryption errors."""
 
-    pass
 
 
 class CascadeConfigError(CascadeError):
     """Exception raised for invalid cascade configuration."""
 
-    pass
 
 
 class AuthenticationError(CascadeError):
     """Exception raised when authentication fails during decryption."""
 
-    pass
 
 
 @dataclass

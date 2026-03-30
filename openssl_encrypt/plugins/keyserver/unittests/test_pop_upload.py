@@ -16,14 +16,13 @@ Upload flow with PoP (per server):
 
 import base64
 import inspect
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
 
 from openssl_encrypt.plugins.keyserver.config import KeyserverConfig
 from openssl_encrypt.plugins.keyserver.keyserver_plugin import (
-    AuthenticationError,
     KeyserverPlugin,
     NetworkError,
 )

@@ -6,7 +6,6 @@ sandboxed environments like Flatpak and virtualenvs.
 """
 
 import os
-import subprocess
 import sys
 import unittest
 from unittest.mock import MagicMock, patch

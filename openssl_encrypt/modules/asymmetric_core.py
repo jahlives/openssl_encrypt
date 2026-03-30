@@ -34,7 +34,6 @@ logger = logging.getLogger(__name__)
 class PasswordWrapperError(Exception):
     """Base exception for password wrapping operations"""
 
-    pass
 
 
 class PasswordWrapper:

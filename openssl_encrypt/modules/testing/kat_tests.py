@@ -7,11 +7,10 @@ cryptographic algorithms produce expected results.
 
 import hashlib
 import hmac
-import json
 import os
 import tempfile
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List
 
 from ..crypt_core import decrypt_file, encrypt_file
 from .base_test import BaseSecurityTest, TestConfig, TestResult, TestResultLevel

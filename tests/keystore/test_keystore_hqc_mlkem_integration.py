@@ -13,7 +13,6 @@ import sys
 import tempfile
 import time
 import unittest
-from unittest.mock import Mock, patch
 
 # Add parent directory to path for importing
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
@@ -21,15 +20,8 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../.
 from openssl_encrypt.modules.crypt_core import (
     LIBOQS_AVAILABLE,
     PQC_AVAILABLE,
-    decrypt_file,
-    encrypt_file,
 )
 from openssl_encrypt.modules.keystore_cli import KeystoreSecurityLevel, PQCKeystore
-from openssl_encrypt.modules.keystore_utils import (
-    extract_key_id_from_metadata,
-    get_pqc_key_for_decryption,
-)
-from openssl_encrypt.modules.pqc import PQCipher
 
 
 class TestHQCMLKEMKeystoreIntegration(unittest.TestCase):
@@ -296,8 +288,7 @@ class TestHQCMLKEMKeystoreIntegration(unittest.TestCase):
         self.assertEqual(len(ml_kem_keys), 2, "Should find 2 ML-KEM keys")
 
         # Test key update operations
-        first_key_id = added_keys[0][0]
-        updated_description = "Updated description for integration test"
+        added_keys[0][0]
 
         # Update key description (if supported)
         try:
@@ -397,7 +388,6 @@ class TestHQCMLKEMKeystoreIntegration(unittest.TestCase):
     def test_concurrent_keystore_operations(self):
         """Test thread safety of keystore operations with multiple PQC algorithms."""
         import concurrent.futures
-        import threading
 
         def add_and_remove_key(algorithm, thread_id):
             """Add and remove a key in a separate thread."""

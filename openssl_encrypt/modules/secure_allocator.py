@@ -18,18 +18,12 @@ implements platform-specific memory protections where available.
 
 import atexit
 import ctypes
-import gc
-import logging
-import mmap
 import os
 import platform
-import random
 import secrets
-import sys
 import threading
 import time
-import weakref
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, Tuple
 
 # Import secure error handling
 from .crypt_errors import MemoryError as SecureMemoryError
@@ -38,7 +32,7 @@ from .crypt_utils import eprint
 
 # Import secure memory utility functions
 from .secure_memory import SecureBytes as BaseSecureBytes
-from .secure_memory import get_memory_page_size, secure_memzero, verify_memory_zeroed
+from .secure_memory import get_memory_page_size, secure_memzero
 
 
 class SecureHeapBlock:

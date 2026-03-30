@@ -12,11 +12,8 @@ Tests the interaction between:
 
 import json
 import os
-import tempfile
-import time
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import Mock, patch
 
 import pytest
 

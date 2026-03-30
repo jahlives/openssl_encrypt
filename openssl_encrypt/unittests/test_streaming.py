@@ -36,10 +36,7 @@ from openssl_encrypt.modules.crypt_errors import (
     ValidationError,
 )
 from openssl_encrypt.modules.streaming import (
-    DEFAULT_CHUNK_SIZE,
     DEFAULT_STREAMING_THRESHOLD,
-    STREAMING_MAGIC,
-    STREAMING_SUPPORTED_ALGORITHMS,
     STREAMING_UNSUPPORTED_ALGORITHMS,
     StreamingDecryptor,
     StreamingEncryptor,
@@ -255,7 +252,7 @@ class TestThreefishChunks(unittest.TestCase):
     def test_threefish_512_roundtrip(self):
         """Threefish-512 chunk roundtrip."""
         try:
-            import threefish_native
+            pass
         except ImportError:
             pytest.skip("threefish_native not available")
 
@@ -271,7 +268,7 @@ class TestThreefishChunks(unittest.TestCase):
     def test_threefish_1024_roundtrip(self):
         """Threefish-1024 chunk roundtrip."""
         try:
-            import threefish_native
+            pass
         except ImportError:
             pytest.skip("threefish_native not available")
 

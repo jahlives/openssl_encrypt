@@ -35,7 +35,6 @@ from .crypt_utils import eprint
 try:
     import dbus
     from dbus.mainloop.glib import DBusGMainLoop
-    from gi.repository import GLib
 except ImportError as e:
     print(f"Error: D-Bus dependencies not installed: {e}", file=sys.stderr)
     print("Install with: pip install dbus-python PyGObject", file=sys.stderr)
@@ -535,7 +534,6 @@ class CryptoClient:
 
 def main():
     """Example usage of the D-Bus client"""
-    import tempfile
 
     # Set up logging
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")

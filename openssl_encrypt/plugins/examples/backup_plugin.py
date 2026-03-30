@@ -22,7 +22,6 @@ Security Notes:
 
 import os
 import shutil
-import tempfile
 import time
 from datetime import datetime
 from pathlib import Path

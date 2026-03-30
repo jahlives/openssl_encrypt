@@ -5,7 +5,6 @@ Tests for memory leaks, buffer overflows, use-after-free,
 secure memory zeroing, and other memory-related security issues.
 """
 
-import ctypes
 import gc
 import os
 import sys
@@ -14,7 +13,7 @@ import threading
 import time
 import weakref
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from ..crypt_core import decrypt_file, encrypt_file
 from .base_test import BaseSecurityTest, TestConfig, TestResult, TestResultLevel

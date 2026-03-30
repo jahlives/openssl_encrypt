@@ -17,14 +17,13 @@ Security properties:
     - Metadata tampering detection: metadata is AAD for every chunk's AEAD
 """
 
-import base64
 import hashlib
 import hmac as hmac_module
 import logging
 import os
 import secrets
 import struct
-from typing import Callable, List, Optional, Tuple, Union
+from typing import Callable, List, Optional, Union
 
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import (

@@ -345,12 +345,12 @@ class SteganographyPlugin(BasePlugin):
             missing_deps = []
 
             try:
-                import PIL
+                pass
             except ImportError:
                 missing_deps.append("PIL/Pillow")
 
             try:
-                import numpy
+                pass
             except ImportError:
                 missing_deps.append("numpy")
 

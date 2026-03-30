@@ -5,7 +5,6 @@ Integration test for Integrity Plugin with live server.
 This tests the client plugin against the running integrity server.
 """
 
-import hashlib
 import sys
 from pathlib import Path
 
@@ -16,7 +15,6 @@ from openssl_encrypt.plugins.integrity import (
     IntegrityConfig,
     IntegrityPlugin,
     IntegrityPluginError,
-    IntegrityVerificationError,
 )
 
 

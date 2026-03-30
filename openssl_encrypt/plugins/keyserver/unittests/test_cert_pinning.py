@@ -7,7 +7,7 @@ Tests the CertPinningAdapter to ensure certificate validation works correctly.
 
 import hashlib
 import ssl
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import Mock, patch
 
 import pytest
 

@@ -10,7 +10,6 @@ import errno
 import glob
 import json
 import os
-import random
 import secrets
 import signal
 import stat

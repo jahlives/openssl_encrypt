@@ -996,12 +996,10 @@ class CryptoService(dbus.service.Object):
     @dbus.service.signal(INTERFACE_NAME, signature="sds")
     def Progress(self, operation_id: str, percent: float, message: str):
         """Signal: Progress update for an operation"""
-        pass
 
     @dbus.service.signal(INTERFACE_NAME, signature="sbs")
     def OperationComplete(self, operation_id: str, success: bool, error_msg: str):
         """Signal: Operation has completed"""
-        pass
 
     # ========================================
     # D-Bus Properties

@@ -14,7 +14,6 @@ from pathlib import Path
 # Add project to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from openssl_encrypt.plugins.keyserver import KeyserverConfig
 from openssl_encrypt.plugins.telemetry.api_key_manager import APIKeyManager
 
 

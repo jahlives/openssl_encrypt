@@ -7,13 +7,10 @@ calculating capacities, assessing security properties, and evaluating
 resistance to steganalysis attacks.
 """
 
-import hashlib
 import logging
-import math
 import statistics
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List
 
-import numpy as np
 
 # Import core steganography modules
 from .exceptions import SteganographyError

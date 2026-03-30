@@ -27,7 +27,6 @@ Usage:
 """
 
 import logging
-import sys
 from typing import Any, Dict, Set
 
 from ....modules.crypt_utils import tty_clear_line, tty_write
@@ -70,7 +69,7 @@ class YubikeyHSMPlugin(HSMPlugin):
         """Check if yubikey-manager is available."""
         if self._ykman_available is None:
             try:
-                import ykman
+                pass
 
                 self._ykman_available = True
             except ImportError:

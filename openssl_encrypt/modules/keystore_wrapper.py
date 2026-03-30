@@ -14,7 +14,7 @@ from typing import Any, Dict, Optional, Tuple, Union
 from .crypt_core import decrypt_file as original_decrypt_file
 from .crypt_core import encrypt_file as original_encrypt_file
 from .crypt_utils import eprint
-from .keystore_utils import extract_key_id_from_metadata, get_pqc_key_for_decryption
+from .keystore_utils import extract_key_id_from_metadata
 
 
 def encrypt_file_with_keystore(
@@ -747,7 +747,7 @@ def decrypt_file_with_keystore(
     if pqc_private_key is None and key_id is not None and keystore_file is not None:
         import getpass
 
-        from .keystore_cli import KeyNotFoundError, PQCKeystore
+        from .keystore_cli import PQCKeystore
 
         # Check if keystore file exists
         if not os.path.exists(keystore_file):

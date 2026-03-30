@@ -11,8 +11,6 @@ import hashlib
 import json
 import os
 import sys
-import tempfile
-from io import BytesIO
 
 # Add the parent directory to Python path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
@@ -23,7 +21,7 @@ def test_qr_payload_creation():
     print("Testing QR payload creation...")
 
     try:
-        from qr_distribution import QRKeyDistribution, QRKeyError
+        from qr_distribution import QRKeyDistribution
 
         # Create test key data
         test_key = b"this is a test encryption key for QR code distribution"

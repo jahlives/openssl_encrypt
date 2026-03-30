@@ -35,13 +35,11 @@ logger = logging.getLogger(__name__)
 class KeyNotFoundError(Exception):
     """Raised when key not found in any source"""
 
-    pass
 
 
 class TrustDeclinedError(Exception):
     """Raised when user declines to trust keyserver key"""
 
-    pass
 
 
 class KeyResolver:

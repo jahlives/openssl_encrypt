@@ -9,10 +9,8 @@ cryptographic memory operations with enhanced security protections.
 """
 
 import contextlib
-import os
 import secrets
-import sys
-from typing import Any, BinaryIO, Callable, Dict, List, Optional, Tuple, Union
+from typing import Optional, Union
 
 # Import secure error handling
 from .crypt_errors import KeyDerivationError
@@ -21,7 +19,6 @@ from .crypt_errors import secure_key_derivation_error_handler, secure_memory_err
 
 # Import from secure_allocator module
 from .secure_allocator import (
-    SecureBytes,
     allocate_secure_crypto_buffer,
     check_all_crypto_buffer_integrity,
     free_secure_crypto_buffer,
