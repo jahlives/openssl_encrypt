@@ -11,13 +11,13 @@ Fingerprint pattern: ^[0-9a-f]{2}(:[0-9a-f]{2})+$ (lowercase hex pairs joined by
 """
 
 import re
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 import requests
 
 from openssl_encrypt.plugins.keyserver.config import KeyserverConfig
-from openssl_encrypt.plugins.keyserver.keyserver_plugin import KeyserverPlugin
+from openssl_encrypt.plugins.keyserver.keyserver_plugin import KeyserverPlugin, NetworkError
 
 # ---------------------------------------------------------------------------
 # Shared fixtures and helpers
@@ -305,7 +305,7 @@ class TestSearchKeysMethod:
             plugin.search_keys("Alice")
 
         # Cache.put should not have been called
-        with patch.object(plugin.cache, "put") as _mock_put:
+        with patch.object(plugin.cache, "put") as mock_put:
             plugin.search_keys("Alice")
 
         # Calling again should still hit the network (not cache)

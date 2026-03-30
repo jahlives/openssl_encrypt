@@ -23,7 +23,7 @@ import logging
 import os
 import zlib
 from enum import Enum
-from typing import List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 try:
     import qrcode
@@ -57,6 +57,8 @@ logger = logging.getLogger(__name__)
 
 class QRKeyError(KeystoreError):
     """QR code key distribution specific errors"""
+
+    pass
 
 
 class QRKeyFormat(Enum):
@@ -327,7 +329,7 @@ class QRKeyDistribution:
                 raise QRKeyError("No QR code found in image")
 
             if len(decoded_objects) > 1:
-                logger.warning("Multiple QR codes found in image, using first one")
+                logger.warning(f"Multiple QR codes found in image, using first one")
 
             # Get QR data
             qr_data = decoded_objects[0].data.decode("utf-8")

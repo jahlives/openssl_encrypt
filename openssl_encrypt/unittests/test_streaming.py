@@ -36,7 +36,10 @@ from openssl_encrypt.modules.crypt_errors import (
     ValidationError,
 )
 from openssl_encrypt.modules.streaming import (
+    DEFAULT_CHUNK_SIZE,
     DEFAULT_STREAMING_THRESHOLD,
+    STREAMING_MAGIC,
+    STREAMING_SUPPORTED_ALGORITHMS,
     STREAMING_UNSUPPORTED_ALGORITHMS,
     StreamingDecryptor,
     StreamingEncryptor,
@@ -252,7 +255,7 @@ class TestThreefishChunks(unittest.TestCase):
     def test_threefish_512_roundtrip(self):
         """Threefish-512 chunk roundtrip."""
         try:
-            pass
+            import threefish_native
         except ImportError:
             pytest.skip("threefish_native not available")
 
@@ -268,7 +271,7 @@ class TestThreefishChunks(unittest.TestCase):
     def test_threefish_1024_roundtrip(self):
         """Threefish-1024 chunk roundtrip."""
         try:
-            pass
+            import threefish_native
         except ImportError:
             pytest.skip("threefish_native not available")
 
@@ -706,7 +709,7 @@ class TestStreamingAdversarial(unittest.TestCase):
 
             # Find payload and remove last chunk by truncating before trailer
             colon_pos = content.index(b":")
-            _payload = content[colon_pos + 1 :]
+            payload = content[colon_pos + 1 :]
 
             # Read the payload structure to find chunk boundaries
             # We know the trailer is the last 36 bytes

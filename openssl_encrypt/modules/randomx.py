@@ -14,6 +14,7 @@ RandomX operates in two modes:
 import hashlib
 import logging
 import secrets
+from typing import Optional
 
 from .crypt_utils import eprint
 
@@ -106,7 +107,7 @@ try:
         logger.info("RandomX library loaded successfully")
     else:
         raise ImportError("RandomX import test failed - likely CPU incompatibility")
-except Exception as e:
+except (ImportError, SystemError, OSError, Exception) as e:
     logger.warning(f"RandomX import failed: {e}")
     try:
         # Test if pyrx import is safe before attempting it
@@ -129,7 +130,7 @@ except Exception as e:
                 )
         else:
             raise ImportError("pyrx import test failed - likely CPU incompatibility")
-    except Exception as e:
+    except (ImportError, SystemError, OSError, Exception) as e:
         RANDOMX_AVAILABLE = False
         RANDOMX_LIBRARY = None
         randomx = None

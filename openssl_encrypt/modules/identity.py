@@ -37,6 +37,7 @@ from .crypto_secure_memory import CryptoKey
 
 # Import protection classes
 from .identity_protection import (
+    HSMNotAvailableError,
     IdentityKeyProtectionService,
     IdentityProtection,
     InvalidCredentialsError,
@@ -61,13 +62,19 @@ except ImportError:
 class IdentityError(Exception):
     """Base exception for identity operations"""
 
+    pass
+
 
 class IdentityNotFoundError(IdentityError):
     """Raised when identity not found"""
 
+    pass
+
 
 class IdentityExistsError(IdentityError):
     """Raised when identity already exists"""
+
+    pass
 
 
 import re

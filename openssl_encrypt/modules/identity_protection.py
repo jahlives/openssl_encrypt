@@ -22,8 +22,8 @@ from typing import Any, Dict, Optional
 from argon2.low_level import Type, hash_secret_raw
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-from .crypt_utils import tty_write
-from .secure_memory import secure_memzero
+from .crypt_utils import eprint, tty_write
+from .secure_memory import SecureBytes, secure_memzero
 
 
 class ProtectionLevel(Enum):
@@ -154,17 +154,25 @@ class IdentityProtection:
 class IdentityProtectionError(Exception):
     """Base exception for identity protection errors."""
 
+    pass
+
 
 class HSMNotAvailableError(IdentityProtectionError):
     """HSM is not available or not configured."""
+
+    pass
 
 
 class HSMTouchTimeoutError(IdentityProtectionError):
     """Timeout waiting for HSM touch."""
 
+    pass
+
 
 class InvalidCredentialsError(IdentityProtectionError):
     """Invalid password or HSM response."""
+
+    pass
 
 
 class IdentityKeyProtectionService:

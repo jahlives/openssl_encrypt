@@ -16,6 +16,7 @@ from openssl_encrypt.modules.crypt_core import (
     encrypt_file,
     extract_file_metadata,
     generate_key,
+    multi_hash_password,
 )
 
 

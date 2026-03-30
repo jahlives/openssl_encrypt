@@ -14,7 +14,7 @@ from typing import Any, Dict, Optional, Tuple, Union
 from .crypt_core import decrypt_file as original_decrypt_file
 from .crypt_core import encrypt_file as original_encrypt_file
 from .crypt_utils import eprint
-from .keystore_utils import extract_key_id_from_metadata
+from .keystore_utils import extract_key_id_from_metadata, get_pqc_key_for_decryption
 
 
 def encrypt_file_with_keystore(
@@ -734,20 +734,20 @@ def decrypt_file_with_keystore(
         # Only update the private key if we got one
         if retrieved_private_key:
             if not quiet:
-                eprint("Successfully retrieved PQC key for decryption using helper function")
+                eprint(f"Successfully retrieved PQC key for decryption using helper function")
             pqc_private_key = retrieved_private_key
 
             # Update the key_id in case it was found by the helper
             if extracted_key_id and not key_id:
                 key_id = extracted_key_id
         elif not quiet:
-            eprint("Trying alternative approach to retrieve private key")
+            eprint(f"Trying alternative approach to retrieve private key")
 
     # If we don't have a private key yet, try the classic keystore approach
     if pqc_private_key is None and key_id is not None and keystore_file is not None:
         import getpass
 
-        from .keystore_cli import PQCKeystore
+        from .keystore_cli import KeyNotFoundError, PQCKeystore
 
         # Check if keystore file exists
         if not os.path.exists(keystore_file):
@@ -797,7 +797,7 @@ def decrypt_file_with_keystore(
                         file_password_for_key = password
 
                     if not quiet:
-                        eprint("Using file password for dual-encrypted key")
+                        eprint(f"Using file password for dual-encrypted key")
 
                     # Verify the file password format
                     if not file_password_for_key:
@@ -819,7 +819,7 @@ def decrypt_file_with_keystore(
                         if not quiet:
                             eprint(f"Dual encryption verification failed: {e}")
                         raise ValueError(
-                            "Invalid password for dual-encrypted key - password authentication failed"
+                            f"Invalid password for dual-encrypted key - password authentication failed"
                         )
                     else:
                         # Pass through other errors
@@ -919,7 +919,7 @@ def decrypt_file_with_keystore(
         ):
             if not quiet:
                 eprint(f"Decryption failed - possible invalid file password: {e}")
-            raise ValueError("Password verification failed for decryption - invalid password")
+            raise ValueError(f"Password verification failed for decryption - invalid password")
         else:
             # Re-raise the original error
             raise

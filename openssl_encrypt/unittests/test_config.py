@@ -20,6 +20,8 @@ import tempfile
 import time
 import unittest
 from io import StringIO
+from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -31,6 +33,7 @@ from openssl_encrypt.modules.config_wizard import (
     generate_cli_arguments,
     run_configuration_wizard,
 )
+from openssl_encrypt.modules.keystore_cli import KeystoreSecurityLevel, PQCKeystore
 from openssl_encrypt.modules.security_scorer import SecurityLevel, SecurityScorer
 
 # Import PQC modules if available
@@ -200,6 +203,8 @@ try:
     if tests_path not in sys.path:
         sys.path.insert(0, tests_path)
 
+    from keystore.test_keystore_hqc_mlkem_integration import TestHQCMLKEMKeystoreIntegration
+
     print("✅ HQC and ML-KEM keystore integration tests imported successfully")
 except ImportError as e:
     print(f"⚠️  Could not import HQC/ML-KEM keystore integration tests: {e}")
@@ -217,6 +222,7 @@ try:
     from openssl_encrypt.modules.plugin_system import (
         PluginCapability,
         PluginResult,
+        PluginSecurityContext,
         PreProcessorPlugin,
     )
 
@@ -383,6 +389,9 @@ class TestPluginSystem(unittest.TestCase):
             from ..modules.plugin_system import (
                 ConfigValidationError,
                 PluginConfigSchema,
+                create_boolean_field,
+                create_integer_field,
+                create_string_field,
             )
 
             # Create test schema
@@ -410,7 +419,7 @@ class TestPluginSystem(unittest.TestCase):
     def test_plugin_config_manager_basic_operations(self):
         """Test basic plugin configuration manager operations."""
         try:
-            from ..modules.plugin_system import PluginConfigManager
+            from ..modules.plugin_system import ConfigValidationError, PluginConfigManager
 
             config_manager = PluginConfigManager(self.config_dir)
 
@@ -461,7 +470,12 @@ class TestPluginSystem(unittest.TestCase):
     def test_create_simple_test_plugin(self):
         """Test creating and loading a simple test plugin."""
         try:
-            pass
+            from ..modules.plugin_system import (
+                PluginCapability,
+                PluginResult,
+                PluginSecurityContext,
+                PreProcessorPlugin,
+            )
 
             # Create a simple test plugin file
             plugin_code = """
@@ -751,8 +765,10 @@ class SimpleTestPlugin(PreProcessorPlugin):
         """Test plugin manager audit logging functionality."""
         try:
             from ..modules.plugin_system import (
+                PluginCapability,
                 PluginConfigManager,
                 PluginManager,
+                PluginSecurityContext,
             )
 
             config_manager = PluginConfigManager(self.config_dir)
@@ -1973,7 +1989,9 @@ class TestConfigurationAnalyzer(unittest.TestCase):
     def setUp(self):
         """Set up test environment."""
         from ..modules.config_analyzer import (
+            AnalysisCategory,
             ConfigurationAnalyzer,
+            RecommendationPriority,
         )
 
         self.analyzer = ConfigurationAnalyzer()
@@ -2514,9 +2532,10 @@ class TestTemplateManager(unittest.TestCase):
 
     def setUp(self):
         """Set up test environment."""
+        import os
         import tempfile
 
-        from ..modules.template_manager import TemplateManager
+        from ..modules.template_manager import EnhancedTemplate, TemplateManager, TemplateMetadata
 
         self.manager = TemplateManager()
         # Create temporary directory for test templates
@@ -2560,6 +2579,7 @@ class TestTemplateManager(unittest.TestCase):
 
     def test_template_saving_and_loading(self):
         """Test template saving and loading functionality."""
+        import json
 
         from ..modules.template_manager import EnhancedTemplate, TemplateFormat, TemplateMetadata
 
@@ -2628,6 +2648,7 @@ class TestTemplateManager(unittest.TestCase):
 
     def test_template_recommendations(self):
         """Test template recommendation system."""
+        import os
 
         from ..modules.template_manager import EnhancedTemplate, TemplateMetadata
 
@@ -2677,6 +2698,7 @@ class TestTemplateManager(unittest.TestCase):
 
     def test_template_analysis_integration(self):
         """Test template analysis integration with configuration analyzer."""
+        from ..modules.config_analyzer import ConfigurationAnalyzer
         from ..modules.template_manager import EnhancedTemplate, TemplateMetadata
 
         # Create template with analyzable configuration
@@ -2831,9 +2853,10 @@ class TestSmartRecommendations(unittest.TestCase):
 
     def setUp(self):
         """Set up test environment."""
+        import os
         import tempfile
 
-        from ..modules.smart_recommendations import SmartRecommendationEngine
+        from ..modules.smart_recommendations import SmartRecommendationEngine, UserContext
 
         # Create temporary directory for test data
         self.test_dir = tempfile.mkdtemp()
@@ -3057,6 +3080,7 @@ class TestSmartRecommendations(unittest.TestCase):
 
     def test_feedback_recording(self):
         """Test feedback recording and learning."""
+        from ..modules.smart_recommendations import UserContext
 
         user_id = "test_user"
         rec_id = "test_rec_001"

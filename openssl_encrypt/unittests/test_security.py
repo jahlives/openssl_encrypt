@@ -19,26 +19,38 @@ import random
 import secrets
 import shutil
 import statistics
+import sys
 import tempfile
 import threading
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
+from unittest.mock import MagicMock, patch
 
+import pytest
 
 # Import the modules to test
 from openssl_encrypt.modules.crypt_core import (
+    calculate_hash,
     decrypt_file,
     encrypt_file,
     generate_key,
 )
 from openssl_encrypt.modules.crypt_errors import (
+    AuthenticationError,
     DecryptionError,
     EncryptionError,
     ErrorCategory,
+    InternalError,
     KeyDerivationError,
+    KeystoreError,
 )
+from openssl_encrypt.modules.crypt_errors import MemoryError as SecureMemoryError
 from openssl_encrypt.modules.crypt_errors import (
+    PermissionError,
+    PlatformError,
+    SecureError,
     ValidationError,
     add_timing_jitter,
     get_jitter_stats,
@@ -46,9 +58,34 @@ from openssl_encrypt.modules.crypt_errors import (
     secure_encrypt_error_handler,
     secure_error_handler,
     secure_key_derivation_error_handler,
+    secure_memory_error_handler,
     set_debug_mode,
 )
+from openssl_encrypt.modules.crypto_secure_memory import (
+    CryptoIV,
+    CryptoKey,
+    CryptoSecureBuffer,
+    create_key_from_password,
+    generate_secure_key,
+    secure_crypto_buffer,
+    secure_crypto_iv,
+    secure_crypto_key,
+    validate_crypto_memory_integrity,
+)
+from openssl_encrypt.modules.secure_allocator import (
+    SecureBytes,
+    SecureHeap,
+    SecureHeapBlock,
+    allocate_secure_crypto_buffer,
+    allocate_secure_memory,
+    check_all_crypto_buffer_integrity,
+    cleanup_secure_heap,
+    free_secure_crypto_buffer,
+    get_crypto_heap_stats,
+)
 from openssl_encrypt.modules.secure_memory import (
+    SecureBytes,
+    SecureMemoryAllocator,
     allocate_secure_buffer,
     free_secure_buffer,
 )
@@ -59,6 +96,7 @@ from openssl_encrypt.modules.secure_ops import (
     constant_time_compare,
     constant_time_pkcs7_unpad,
     secure_memzero,
+    verify_mac,
 )
 
 # Try to import PQC modules
@@ -68,6 +106,7 @@ try:
         LIBOQS_AVAILABLE,
         PQCAlgorithm,
         PQCipher,
+        check_pqc_support,
     )
 except ImportError:
     LIBOQS_AVAILABLE = False
@@ -153,7 +192,7 @@ class TestSecureErrorHandling(unittest.TestCase):
                 quiet=True,
             )
             self.fail("Expected exception was not raised")
-        except (ValidationError, FileNotFoundError):
+        except (ValidationError, FileNotFoundError) as e:
             # Either exception type is acceptable for this test
             pass
 
@@ -553,6 +592,7 @@ try:
         LIBOQS_AVAILABLE,
         PQCAlgorithm,
         PQCipher,
+        check_pqc_support,
     )
 except ImportError:
     # Mock the PQC classes if not available
@@ -1133,18 +1173,49 @@ class TestVerifyMAC(unittest.TestCase):
 
 
 from openssl_encrypt.modules.crypt_errors import (
+    AuthenticationError,
+    ConfigurationError,
     DecryptionError,
     EncryptionError,
     ErrorCategory,
+    InternalError,
     KeyDerivationError,
+    KeystoreError,
 )
+from openssl_encrypt.modules.crypt_errors import MemoryError as SecureMemoryError
 from openssl_encrypt.modules.crypt_errors import (
+    PermissionError,
+    PlatformError,
+    SecureError,
     ValidationError,
     secure_error_handler,
     secure_key_derivation_error_handler,
+    secure_memory_error_handler,
+)
+from openssl_encrypt.modules.crypto_secure_memory import (
+    CryptoIV,
+    CryptoKey,
+    CryptoSecureBuffer,
+    create_key_from_password,
+    generate_secure_key,
+    secure_crypto_buffer,
+    secure_crypto_iv,
+    secure_crypto_key,
+    validate_crypto_memory_integrity,
 )
 
 # Import secure memory and error handling modules for the tests
+from openssl_encrypt.modules.secure_allocator import (
+    SecureBytes,
+    SecureHeap,
+    SecureHeapBlock,
+    allocate_secure_crypto_buffer,
+    allocate_secure_memory,
+    check_all_crypto_buffer_integrity,
+    cleanup_secure_heap,
+    free_secure_crypto_buffer,
+    get_crypto_heap_stats,
+)
 from openssl_encrypt.modules.secure_memory import secure_memzero, verify_memory_zeroed
 
 
@@ -1402,7 +1473,7 @@ class TestSecurityLogger(unittest.TestCase):
             self.logger.log_event(f"event_{i}", "info", large_detail)
 
         # Check that log rotation occurred
-        Path(self.test_log_dir) / "security-audit.log.1"
+        rotated_log = Path(self.test_log_dir) / "security-audit.log.1"
         # Note: Rotation may not occur in this test due to timing, so we just check
         # that the logger doesn't crash when writing large amounts of data
         self.assertTrue(self.logger.log_file.exists())

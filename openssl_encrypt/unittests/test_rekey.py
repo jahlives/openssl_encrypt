@@ -28,6 +28,7 @@ from openssl_encrypt.modules.crypt_core import (
     extract_file_metadata,
     rekey_file,
 )
+from openssl_encrypt.modules.crypt_errors import DecryptionError, RekeyError
 
 
 class TestRekeyBasic(unittest.TestCase):

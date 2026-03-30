@@ -8,13 +8,18 @@ the codebase. These include constant-time comparison, secure memory handling, an
 other operations that need to be resilient against side-channel attacks.
 """
 
-from typing import Optional, Union
+import secrets
+import threading
+import time
+from typing import Any, Optional, Union
 
 # Import from local modules
 from .crypt_errors import add_timing_jitter
 from .secure_ops_core import (
+    constant_time_bytes_eq,
     constant_time_compare_core,
     constant_time_mac_verify,
+    is_zeroed_constant_time,
     secure_value_wipe,
 )
 

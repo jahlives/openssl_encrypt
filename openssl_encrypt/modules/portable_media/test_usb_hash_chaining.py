@@ -6,6 +6,7 @@ This test verifies that the USB system correctly uses the same hash chaining
 approach as the main CLI for password derivation.
 """
 
+import json
 import os
 import sys
 import tempfile
@@ -96,7 +97,7 @@ def test_usb_with_hash_chaining():
             different_hash_config["sha512"] = 3  # Different configuration
 
             try:
-                _bad_verification = creator.verify_usb_integrity(
+                bad_verification = creator.verify_usb_integrity(
                     usb_path, password, hash_config=different_hash_config
                 )
                 # This should fail or give different results
@@ -184,7 +185,7 @@ def test_hash_config_consistency():
 
                 results.append(result["success"])
 
-        print("✅ Consistency test: Both USBs created successfully")
+        print(f"✅ Consistency test: Both USBs created successfully")
         print(f"   Results: {results}")
 
         return all(results)

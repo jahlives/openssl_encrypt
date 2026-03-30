@@ -13,7 +13,8 @@ Run with: pytest -m live --live-server=https://keyserver.rm-rf.ch
 """
 
 import json
-from unittest.mock import MagicMock
+from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
@@ -22,6 +23,7 @@ from openssl_encrypt.plugins.keyserver.config import ConfigError, KeyserverConfi
 from openssl_encrypt.plugins.keyserver.keyserver_plugin import (
     AuthenticationError,
     KeyserverPlugin,
+    NetworkError,
 )
 
 # ---------------------------------------------------------------------------

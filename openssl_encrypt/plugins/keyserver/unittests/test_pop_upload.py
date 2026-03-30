@@ -16,13 +16,14 @@ Upload flow with PoP (per server):
 
 import base64
 import inspect
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 import requests
 
 from openssl_encrypt.plugins.keyserver.config import KeyserverConfig
 from openssl_encrypt.plugins.keyserver.keyserver_plugin import (
+    AuthenticationError,
     KeyserverPlugin,
     NetworkError,
 )
@@ -228,7 +229,7 @@ class TestRequestChallenge:
             "_authenticated_request",
             wraps=lambda method, url, **kw: plugin.session.post(url, **kw),
         ):
-            _result = plugin._request_challenge("https://keyserver.example.com", "3a:4b")
+            result = plugin._request_challenge("https://keyserver.example.com", "3a:4b")
 
         called_url = plugin.session.post.call_args[0][0]
         assert called_url == "https://keyserver.example.com/api/v1/keys/challenge"

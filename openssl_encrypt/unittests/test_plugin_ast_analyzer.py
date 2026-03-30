@@ -6,8 +6,11 @@ Tests the DangerousPatternVisitor and analyze_plugin_code function
 to ensure dangerous patterns are detected and bypass attempts blocked.
 """
 
+import pytest
 
 from openssl_encrypt.modules.plugin_system.plugin_ast_analyzer import (
+    DangerousPatternVisitor,
+    SecurityViolation,
     analyze_plugin_code,
 )
 

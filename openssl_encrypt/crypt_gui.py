@@ -10,7 +10,9 @@ import string
 import subprocess
 import sys
 import threading
+import time
 import tkinter as tk
+from time import sleep
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
 from openssl_encrypt.modules.crypt_utils import eprint
@@ -18,6 +20,7 @@ from openssl_encrypt.modules.crypt_utils import eprint
 # Import secure memory functions
 try:
     from .modules.crypto_secure_memory import SecureString
+    from .modules.secure_memory import SecureBytes, secure_memzero
 
     SECURE_MEMORY_AVAILABLE = True
 except ImportError:
@@ -119,7 +122,7 @@ class SecurePasswordVar:
                 try:
                     # Store in secure memory if available
                     self._password = SecureString(value)
-                except Exception:
+                except:
                     # Fallback to regular string
                     self._password = value
             else:
@@ -129,7 +132,7 @@ class SecurePasswordVar:
         for callback in self._callbacks:
             try:
                 callback()
-            except Exception:
+            except:
                 pass
 
     def get(self):
@@ -140,7 +143,7 @@ class SecurePasswordVar:
         if SECURE_MEMORY_AVAILABLE and hasattr(self._password, "get_string"):
             try:
                 return self._password.get_string()
-            except Exception:
+            except:
                 return str(self._password) if self._password else ""
         else:
             return str(self._password) if self._password else ""
@@ -151,14 +154,14 @@ class SecurePasswordVar:
             if SECURE_MEMORY_AVAILABLE and hasattr(self._password, "clear"):
                 try:
                     self._password.clear()
-                except Exception:
+                except:
                     pass
             # For regular strings, overwrite with random data then clear
             elif isinstance(self._password, str):
                 try:
                     # Overwrite with random data (best effort for strings)
                     pass
-                except Exception:
+                except:
                     pass
             self._password = None
 
@@ -1036,7 +1039,7 @@ class CryptGUI:
         # Clear clipboard if it contains sensitive data
         try:
             self.root.clipboard_clear()
-        except Exception:
+        except:
             pass
         # Destroy the window
         self.root.destroy()
@@ -1318,7 +1321,7 @@ class CryptGUI:
                         remaining_stderr = process.stderr.read()
                         if remaining_stderr:
                             stderr_lines.append(remaining_stderr)
-                    except Exception:
+                    except:
                         pass
 
                 # Process the result
@@ -1629,7 +1632,7 @@ class CryptGUI:
             cmd.append("--force-password")
 
         # Run the command
-        self.output_text.insert(tk.END, " ".join(cmd) + "\n")
+        self.output_text.insert(tk.END, f" ".join(cmd) + "\n")
         self.output_text.see(tk.END)  # Scroll to the bottom
         self.root.update_idletasks()
         try:
@@ -1703,7 +1706,7 @@ class CryptGUI:
             return
 
         # Get current hash configuration
-        self.settings_tab.get_current_config()
+        hash_config = self.settings_tab.get_current_config()
 
         # Build the command - use full path to crypt.py
         cmd = [
@@ -1735,7 +1738,7 @@ class CryptGUI:
             cmd.append("--force-password")
 
         # Run the command
-        self.output_text.insert(tk.END, " ".join(cmd) + "\n")
+        self.output_text.insert(tk.END, f" ".join(cmd) + "\n")
         self.output_text.see(tk.END)  # Scroll to the bottom
         self.root.update_idletasks()
         try:
@@ -1794,7 +1797,7 @@ class CryptGUI:
 def main():
     """Main entry point for the application"""
     root = tk.Tk()
-    CryptGUI(root)
+    app = CryptGUI(root)
     root.mainloop()
 
 

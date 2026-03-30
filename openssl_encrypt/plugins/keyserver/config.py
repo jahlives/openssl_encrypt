@@ -37,6 +37,8 @@ logger = logging.getLogger(__name__)
 class ConfigError(Exception):
     """Base exception for configuration errors"""
 
+    pass
+
 
 @dataclass
 class KeyserverConfig:

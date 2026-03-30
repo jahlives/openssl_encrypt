@@ -13,6 +13,7 @@ Usage:
 
 import secrets
 import sys
+from pathlib import Path
 from typing import Optional
 
 import click
@@ -28,6 +29,7 @@ except ImportError:
 @click.group(name="hsm")
 def hsm_group():
     """Hardware Security Module management commands."""
+    pass
 
 
 @hsm_group.command(name="fido2-register")
@@ -211,7 +213,7 @@ def fido2_test(rp_id: Optional[str]):
     click.echo("  2. Touch your security key\n")
 
     # Create dummy security context
-    from ..modules.plugin_system.plugin_base import PluginSecurityContext
+    from ..modules.plugin_system.plugin_base import PluginCapability, PluginSecurityContext
 
     context = PluginSecurityContext(
         plugin_id=plugin.plugin_id, capabilities=plugin.get_required_capabilities()
@@ -222,7 +224,7 @@ def fido2_test(rp_id: Optional[str]):
 
     if result.success:
         pepper = result.data.get("hsm_pepper")
-        click.echo("\n✅ Test successful!")
+        click.echo(f"\n✅ Test successful!")
         click.echo(f"Pepper length: {len(pepper)} bytes")
         click.echo(f"Pepper (hex): {pepper.hex()}")
         click.echo("\nYour FIDO2 credential is working correctly.")
@@ -279,9 +281,9 @@ def fido2_list():
         # Highlight hmac-secret support
         hmac_support = device.get("hmac_secret_support", False)
         if hmac_support:
-            click.echo("  hmac-secret: ✅ Supported")
+            click.echo(f"  hmac-secret: ✅ Supported")
         else:
-            click.echo("  hmac-secret: ❌ Not supported")
+            click.echo(f"  hmac-secret: ❌ Not supported")
 
         click.echo()
 

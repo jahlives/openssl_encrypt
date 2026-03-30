@@ -36,6 +36,7 @@ except ImportError:
 
     def secure_memzero(data):
         """Fallback no-op if secure_memory not available."""
+        pass
 
 
 # Import existing PQC implementation
@@ -72,6 +73,7 @@ class SignatureBase(AlgorithmBase):
             - Secret key is returned as SecureBytes for automatic cleanup
             - Caller must ensure secret key is zeroed when no longer needed
         """
+        pass
 
     @abstractmethod
     def sign(self, message: bytes, secret_key: Union[bytes, "SecureBytes"]) -> bytes:
@@ -89,6 +91,7 @@ class SignatureBase(AlgorithmBase):
             - If secret_key is SecureBytes, a temporary copy is made and zeroed
             - The original secret_key is never modified
         """
+        pass
 
     @abstractmethod
     def verify(self, message: bytes, signature: bytes, public_key: bytes) -> bool:
@@ -103,6 +106,7 @@ class SignatureBase(AlgorithmBase):
         Returns:
             bool: True if signature is valid, False otherwise
         """
+        pass
 
     def get_public_key_size(self) -> int:
         """Get the signature public key size in bytes."""

@@ -11,26 +11,38 @@ This module contains comprehensive tests for:
 - Error handling
 """
 
+import os
 import random
+import secrets
+import shutil
+import sys
+import tempfile
 import threading
 import unittest
+from unittest.mock import MagicMock, patch
 
+import pytest
 
 # Import secure memory modules
 from openssl_encrypt.modules.crypt_errors import ErrorCategory
 from openssl_encrypt.modules.crypt_errors import MemoryError as SecureMemoryError
 from openssl_encrypt.modules.crypt_errors import SecureError
 from openssl_encrypt.modules.crypto_secure_memory import (
+    CryptoKey,
     CryptoSecureBuffer,
     create_key_from_password,
+    generate_secure_key,
+    validate_crypto_memory_integrity,
 )
 from openssl_encrypt.modules.secure_allocator import (
+    SecureBytes,
     SecureHeap,
     SecureHeapBlock,
     allocate_secure_crypto_buffer,
     allocate_secure_memory,
     free_secure_crypto_buffer,
 )
+from openssl_encrypt.modules.secure_memory import secure_memzero, verify_memory_zeroed
 
 
 class TestSecureHeapBlock(unittest.TestCase):
@@ -163,6 +175,7 @@ class TestSecureBytes(unittest.TestCase):
         """Test creating a SecureBytes object."""
         # Import necessary functions
         from openssl_encrypt.modules.secure_allocator import (
+            SecureBytes,
             allocate_secure_crypto_buffer,
             free_secure_crypto_buffer,
         )

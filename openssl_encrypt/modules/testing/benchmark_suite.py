@@ -13,7 +13,7 @@ import tempfile
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Callable, Dict, List, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from ..crypt_core import decrypt_file, encrypt_file
 from .base_test import BaseSecurityTest, TestConfig, TestResult, TestResultLevel
@@ -408,7 +408,7 @@ class BenchmarkTestSuite(BaseSecurityTest):
 
             for algorithm in algorithms:
                 encrypted_file = os.path.join(self.temp_dir, f"comparison_{algorithm}_enc.bin")
-                os.path.join(self.temp_dir, f"comparison_{algorithm}_dec.bin")
+                decrypted_file = os.path.join(self.temp_dir, f"comparison_{algorithm}_dec.bin")
 
                 config_dict = {
                     "algorithm": algorithm,

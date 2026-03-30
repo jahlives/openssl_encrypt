@@ -10,10 +10,13 @@ Dependencies:
 - liboqs-python (pip install liboqs)
 """
 
+import hashlib
 import logging
 import os
+import secrets
+import sys
 from enum import Enum
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union, cast
 
 from .crypt_utils import eprint
 
@@ -264,13 +267,13 @@ class PQEncapsulator:
             except Exception as original_error:
                 # Clean up and raise a completely new exception without any references
                 # to the original oqs objects that might cause segfaults
-                str(original_error)
+                error_msg = str(original_error)
                 try:
                     kem_with_secret.free()
-                except Exception:
+                except:
                     pass
                 # Create a clean RuntimeError without chaining to avoid oqs object references
-                raise RuntimeError("Can not decapsulate secret")
+                raise RuntimeError(f"Can not decapsulate secret")
         else:
             # Use the existing KEM instance (secret key should already be set)
             shared_secret = self.kem.decap_secret(ciphertext)

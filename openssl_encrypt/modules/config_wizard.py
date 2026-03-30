@@ -15,15 +15,19 @@ Security Design:
 
 import sys
 from enum import Enum
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Tuple
 
 from .crypt_utils import eprint
-from .security_scorer import SecurityScorer
+from .security_scorer import SecurityLevel, SecurityScorer
 
 # Import registry helper functions for algorithm discovery
 try:
     from .registry import (
         get_available_ciphers,
+        get_available_hashes,
+        get_available_kdfs,
+        get_cipher_info_dict,
+        get_kdf_info_dict,
     )
 
     REGISTRY_AVAILABLE = True
@@ -265,7 +269,7 @@ class ConfigurationWizard:
             # Skip for beginners - use defaults
             return
 
-        eprint("\nSTEP 3: Hash Algorithm Configuration")
+        eprint(f"\nSTEP 3: Hash Algorithm Configuration")
         eprint("-" * 40)
         eprint("Current hash configuration:")
 
@@ -380,7 +384,7 @@ class ConfigurationWizard:
         if self.user_expertise == UserExpertise.BEGINNER:
             return
 
-        eprint("\nSTEP 4: Key Derivation Function (KDF) Configuration")
+        eprint(f"\nSTEP 4: Key Derivation Function (KDF) Configuration")
         eprint("-" * 55)
         eprint("Current KDF configuration:")
 
@@ -450,7 +454,7 @@ class ConfigurationWizard:
         if self.user_expertise in [UserExpertise.BEGINNER, UserExpertise.INTERMEDIATE]:
             return
 
-        eprint("\nSTEP 5: Encryption Algorithm")
+        eprint(f"\nSTEP 5: Encryption Algorithm")
         eprint("-" * 30)
         current_alg = self.config["encryption"]["algorithm"]
         eprint(f"Current algorithm: {current_alg.upper()}")
@@ -509,7 +513,7 @@ class ConfigurationWizard:
         if self.user_expertise == UserExpertise.BEGINNER:
             return
 
-        eprint("\nSTEP 6: Post-Quantum Cryptography")
+        eprint(f"\nSTEP 6: Post-Quantum Cryptography")
         eprint("-" * 35)
 
         pqc_enabled = self.config["post_quantum"].get("enabled", False)
@@ -587,8 +591,8 @@ class ConfigurationWizard:
         eprint(f"Security Level: {analysis['overall']['level'].name}")
         eprint(f"Assessment: {analysis['overall']['description']}")
 
-        eprint("\nCONFIGURATION DETAILS:")
-        eprint("─────────────────────")
+        eprint(f"\nCONFIGURATION DETAILS:")
+        eprint(f"─────────────────────")
 
         # Hash algorithms
         eprint("Hash Algorithms:")
@@ -607,20 +611,20 @@ class ConfigurationWizard:
                     eprint(f"  • Scrypt: N={settings['n']}, r={settings['r']}, p={settings['p']}")
 
         # Encryption
-        eprint("Encryption Algorithm:")
+        eprint(f"Encryption Algorithm:")
         eprint(f"  • {self.config['encryption']['algorithm'].upper()}")
 
         # Post-quantum
         if self.config["post_quantum"].get("enabled"):
-            eprint("Post-Quantum Cryptography:")
+            eprint(f"Post-Quantum Cryptography:")
             eprint(f"  • {self.config['post_quantum']['algorithm'].upper()}")
         else:
             eprint("Post-Quantum Cryptography: Disabled")
 
         # Show recommendations
         if analysis["suggestions"]:
-            eprint("\nRECOMMENDATIONS:")
-            eprint("─────────────────")
+            eprint(f"\nRECOMMENDATIONS:")
+            eprint(f"─────────────────")
             for i, suggestion in enumerate(analysis["suggestions"], 1):
                 eprint(f"{i}. {suggestion}")
 

@@ -37,9 +37,13 @@ except ImportError:
 class SignatureError(Exception):
     """Base exception for signature operations"""
 
+    pass
+
 
 class SignatureVerificationError(SignatureError):
     """Raised when signature verification fails"""
+
+    pass
 
 
 class SignatureAlgorithm:

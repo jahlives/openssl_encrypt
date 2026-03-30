@@ -10,13 +10,17 @@ This module contains comprehensive tests for:
 
 import logging
 import os
+import re
+import subprocess
 import sys
 import tempfile
 import unittest
+import warnings
 from io import StringIO
 from unittest import mock
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
+import pytest
 
 # Import CLI main function
 from openssl_encrypt.modules.crypt_cli import main as cli_main
@@ -345,7 +349,7 @@ def generate_cli_argument_tests():
             # Try to locate crypt.py
             script_dir = os.path.dirname(os.path.abspath(__file__))
             project_root = os.path.dirname(script_dir)
-            os.path.join(project_root, "crypt.py")
+            cli_script = os.path.join(project_root, "crypt.py")
 
             # Use the module path since crypt.py might not exist
             result = subprocess.run(
@@ -943,7 +947,7 @@ class TestCLIAdvancedOperations(CLITestBase):
             self.assertGreater(len(stdout), 0, "No decrypted output received from stdin")
 
             # Verify that metadata extraction worked (this test proves our new implementation works)
-            _combined_output = stdout.decode("utf-8", errors="ignore") + stderr.decode(
+            combined_output = stdout.decode("utf-8", errors="ignore") + stderr.decode(
                 "utf-8", errors="ignore"
             )
 
@@ -1115,6 +1119,7 @@ class TestEnvironmentPasswordHandling(unittest.TestCase):
         self.assertEqual(os.environ.get("CRYPT_PASSWORD"), self.test_password)
 
         # Import and test the password retrieval logic
+        from openssl_encrypt.modules.crypt_cli import clear_password_environment
 
         # Verify the password is accessible
         self.assertEqual(os.environ.get("CRYPT_PASSWORD"), self.test_password)
@@ -1146,7 +1151,7 @@ class TestEnvironmentPasswordHandling(unittest.TestCase):
         os.environ["CRYPT_PASSWORD"] = test_password
 
         # Store the original length to verify proper overwriting
-        len(test_password)
+        original_length = len(test_password)
 
         # Verify password is set
         self.assertEqual(os.environ.get("CRYPT_PASSWORD"), test_password)

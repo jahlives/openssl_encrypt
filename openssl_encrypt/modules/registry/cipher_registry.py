@@ -11,12 +11,13 @@ All code in English as per project requirements.
 
 from abc import abstractmethod
 from dataclasses import dataclass
-from typing import ClassVar, Optional, Union
+from typing import ClassVar, Dict, Optional, Union
 
 from .base import (
     AlgorithmBase,
     AlgorithmCategory,
     AlgorithmInfo,
+    AlgorithmNotAvailableError,
     AuthenticationError,
     RegistryBase,
     SecurityLevel,
@@ -36,6 +37,7 @@ except ImportError:
 
     def secure_memzero(data):
         """Fallback no-op."""
+        pass
 
 
 # Helper functions for secure memory handling
@@ -104,6 +106,7 @@ class CipherBase(AlgorithmBase):
             - Key and plaintext copies are zeroed after use
             - Ciphertext is NOT SecureBytes (meant for storage)
         """
+        pass
 
     @abstractmethod
     def decrypt(
@@ -133,6 +136,7 @@ class CipherBase(AlgorithmBase):
             - Returns SecureBytes which will be zeroed when deleted
             - Caller MUST explicitly zero the returned plaintext after use
         """
+        pass
 
     @abstractmethod
     def generate_nonce(self) -> bytes:
@@ -142,6 +146,7 @@ class CipherBase(AlgorithmBase):
         Returns:
             Random nonce bytes
         """
+        pass
 
     @classmethod
     @abstractmethod
@@ -152,6 +157,7 @@ class CipherBase(AlgorithmBase):
         Returns:
             Key size in bytes
         """
+        pass
 
 
 # ============================================================================
@@ -869,7 +875,7 @@ class Threefish512(CipherBase):
         """Checks if threefish_native extension is installed."""
         if cls._available is None:
             try:
-                pass
+                import threefish_native
 
                 cls._available = True
             except ImportError:
@@ -1032,7 +1038,7 @@ class Threefish1024(CipherBase):
         """Checks if threefish_native extension is installed."""
         if cls._available is None:
             try:
-                pass
+                import threefish_native
 
                 cls._available = True
             except ImportError:

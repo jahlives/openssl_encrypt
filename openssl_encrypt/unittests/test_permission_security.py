@@ -9,10 +9,11 @@ Uses file_permissions helper for cross-platform permission checks.
 """
 
 import os
+import stat
 import sys
 import tempfile
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -149,7 +150,7 @@ class TestPluginConfigFileSecurity:
         """Root config directory should be secured"""
         with tempfile.TemporaryDirectory() as tmpdir:
             config_dir = Path(tmpdir) / "config"
-            _manager = PluginConfigManager(config_dir=str(config_dir))
+            manager = PluginConfigManager(config_dir=str(config_dir))
 
             # Check root directory permissions
             assert config_dir.exists()

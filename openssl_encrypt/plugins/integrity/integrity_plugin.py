@@ -23,6 +23,7 @@ SECURITY:
 import hashlib
 import json
 import logging
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -37,9 +38,13 @@ logger = logging.getLogger(__name__)
 class IntegrityPluginError(Exception):
     """Base exception for integrity plugin errors"""
 
+    pass
+
 
 class IntegrityVerificationError(Exception):
     """Raised when integrity verification fails"""
+
+    pass
 
 
 class IntegrityPlugin:

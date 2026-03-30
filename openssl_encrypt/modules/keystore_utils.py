@@ -8,7 +8,7 @@ import getpass
 import json
 import logging
 import os
-from typing import Optional
+from typing import Any, Dict, Optional, Tuple
 
 from .crypt_utils import eprint
 
@@ -494,7 +494,7 @@ def get_pqc_key_for_decryption(args, hash_config=None, metadata=None):
                 # For dual encryption, we need both the keystore password and the file password
                 file_password = args.password
                 if not getattr(args, "quiet", False):
-                    eprint("Using file password for dual-encrypted key")
+                    eprint(f"Using file password for dual-encrypted key")
 
             # Get key from keystore
             public_key, private_key = get_key_from_keystore(
@@ -510,7 +510,7 @@ def get_pqc_key_for_decryption(args, hash_config=None, metadata=None):
             pqc_private_key = private_key
 
             if not getattr(args, "quiet", False):
-                eprint("Successfully retrieved key from keystore using ID from metadata")
+                eprint(f"Successfully retrieved key from keystore using ID from metadata")
                 if dual_encryption:
                     eprint("Key was dual-encrypted with both keystore and file passwords")
 
@@ -808,11 +808,11 @@ def store_pqc_key_in_keystore(metadata, keystore_path, keystore_password, key_id
                 try:
                     # Use secure_memzero for byte arrays
                     secure_memzero(encrypted_private_key)
-                except Exception:
+                except:
                     # Fallback if secure_memzero fails
                     encrypted_private_key = b"\x00" * len(encrypted_private_key)
                 encrypted_private_key = None
-        except Exception:
+        except:
             # Last resort cleanup - just remove the reference
             encrypted_private_key = None
 
@@ -880,7 +880,7 @@ def auto_generate_pqc_key(args, hash_config, format_version=3):
             from .pqc import PQCipher, check_pqc_support
 
             # Get algorithm mapping
-            _pqc_algorithms = check_pqc_support(quiet=getattr(args, "quiet", False))[2]
+            pqc_algorithms = check_pqc_support(quiet=getattr(args, "quiet", False))[2]
 
             # Create the underlying algorithm name without -hybrid
             pqc_algorithm = args.algorithm.replace("-hybrid", "")

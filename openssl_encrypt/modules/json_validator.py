@@ -16,13 +16,15 @@ Security Features:
 import json
 import logging
 import os
-from typing import Any, Dict, Optional
+import sys
+from typing import Any, Dict, Optional, Union
 
 from .crypt_utils import eprint
 
 _logger = logging.getLogger(__name__)
 
 try:
+    import jsonschema
     from jsonschema import Draft202012Validator, ValidationError, validate
 
     JSONSCHEMA_AVAILABLE = True
@@ -34,9 +36,13 @@ except ImportError:
 class JSONSecurityError(Exception):
     """Raised when JSON content violates security constraints."""
 
+    pass
+
 
 class JSONValidationError(Exception):
     """Raised when JSON content fails schema validation."""
+
+    pass
 
 
 class SecureJSONValidator:

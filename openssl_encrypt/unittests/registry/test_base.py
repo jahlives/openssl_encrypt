@@ -11,11 +11,13 @@ import pytest
 from openssl_encrypt.modules.registry.base import (
     AlgorithmBase,
     AlgorithmCategory,
+    AlgorithmError,
     AlgorithmInfo,
     AlgorithmNotAvailableError,
     AlgorithmNotFoundError,
     RegistryBase,
     SecurityLevel,
+    ValidationError,
 )
 
 

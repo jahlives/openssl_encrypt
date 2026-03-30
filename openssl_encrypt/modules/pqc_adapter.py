@@ -10,8 +10,13 @@ native implementations and liboqs-supported algorithms.
 import hashlib
 import logging
 import secrets
-from typing import List, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
+from .algorithm_warnings import (
+    get_recommended_replacement,
+    is_deprecated,
+    warn_deprecated_algorithm,
+)
 from .crypt_utils import eprint
 from .pqc import PQCAlgorithm as CorePQCAlgorithm
 from .pqc import PQCipher, normalize_algorithm_name

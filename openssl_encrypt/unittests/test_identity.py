@@ -15,6 +15,7 @@ import json
 import os
 import secrets
 import shutil
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -23,6 +24,7 @@ from unittest.mock import MagicMock, patch
 # Import the modules to test
 from openssl_encrypt.modules.crypt_core import (
     create_metadata_v7,
+    decrypt_file_asymmetric,
     encrypt_file_asymmetric,
 )
 from openssl_encrypt.modules.crypto_secure_memory import CryptoKey

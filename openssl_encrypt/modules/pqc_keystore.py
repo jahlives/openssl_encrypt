@@ -15,20 +15,21 @@ import secrets
 import time
 import uuid
 from enum import Enum
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM, ChaCha20Poly1305
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
 
-from .crypt_errors import AuthenticationError, InternalError, ValidationError
-from .secure_memory import secure_memzero
+from .crypt_errors import AuthenticationError, InternalError, KeyDerivationError, ValidationError
+from .secure_memory import SecureBytes, secure_memzero
 
 # Check for Argon2 support
 try:
     import argon2
     from argon2 import PasswordHasher
+    from argon2.exceptions import VerifyMismatchError
 
     ARGON2_AVAILABLE = True
 except ImportError:
@@ -917,7 +918,7 @@ class PQCKeystore:
 
         # Get the protection method
         protection = self.keystore_data["protection"]
-        protection["method"]
+        method = protection["method"]
 
         # Generate new salt and nonce
         salt = secrets.token_bytes(16)
@@ -931,7 +932,7 @@ class PQCKeystore:
         for key in self.keystore_data["keys"]:
             if key.get("use_master_password", False):
                 # Get the key pair
-                base64.b64decode(key["public_key"])
+                public_key = base64.b64decode(key["public_key"])
                 encrypted_private_key = key["private_key"]
 
                 # Decrypt with the old master key

@@ -20,6 +20,10 @@ import os
 import shutil
 import tempfile
 import unittest
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 
 class TestSteganographyCore(unittest.TestCase):
@@ -33,7 +37,20 @@ class TestSteganographyCore(unittest.TestCase):
 
         # Import steganography modules
         try:
-            pass
+            from openssl_encrypt.plugins.steganography.core import (
+                SteganographyConfig,
+                SteganographyUtils,
+            )
+            from openssl_encrypt.plugins.steganography.formats import (
+                JPEGSteganography,
+                LSBImageStego,
+            )
+            from openssl_encrypt.plugins.steganography.formats.jpeg_utils import (
+                create_jpeg_test_image,
+            )
+            from openssl_encrypt.plugins.steganography.transport import (
+                create_steganography_transport,
+            )
 
             self.stego_available = True
         except ImportError:
@@ -202,7 +219,10 @@ class TestJPEGSteganography(unittest.TestCase):
 
         # Import JPEG steganography modules
         try:
+            from openssl_encrypt.plugins.steganography.formats import JPEGSteganography
             from openssl_encrypt.plugins.steganography.formats.jpeg_utils import (
+                JPEGAnalyzer,
+                create_jpeg_test_image,
                 is_jpeg_steganography_available,
             )
 
@@ -324,7 +344,16 @@ class TestSteganographyTransport(unittest.TestCase):
 
         # Import transport modules
         try:
-            pass
+            import numpy as np
+            from PIL import Image
+
+            from openssl_encrypt.plugins.steganography import (
+                SteganographyTransport,
+                create_steganography_transport,
+            )
+            from openssl_encrypt.plugins.steganography.formats.jpeg_utils import (
+                create_jpeg_test_image,
+            )
 
             self.transport_available = True
         except ImportError:
@@ -427,7 +456,12 @@ class TestSteganographyCLIIntegration(unittest.TestCase):
 
         # Import CLI modules
         try:
-            pass
+            import numpy as np
+            from PIL import Image
+
+            from openssl_encrypt.plugins.steganography.formats.jpeg_utils import (
+                create_jpeg_test_image,
+            )
 
             self.cli_available = True
         except ImportError:
@@ -532,7 +566,8 @@ class TestSteganographySecureMemory(unittest.TestCase):
         """Set up test fixtures."""
         # Import secure memory modules
         try:
-            pass
+            from openssl_encrypt.modules.secure_memory import SecureBytes, secure_memzero
+            from openssl_encrypt.plugins.steganography.core import SteganographyUtils
 
             self.secure_available = True
         except ImportError:
@@ -585,7 +620,14 @@ class TestSteganographyErrorHandling(unittest.TestCase):
 
         # Import steganography modules
         try:
-            pass
+            from openssl_encrypt.plugins.steganography import (
+                CapacityError,
+                CoverMediaError,
+                JPEGSteganography,
+                LSBImageStego,
+                SteganographyError,
+                SteganographyTransport,
+            )
 
             self.error_available = True
         except ImportError:
@@ -677,6 +719,7 @@ class TestTIFFSteganography(unittest.TestCase):
         # Check if TIFF steganography is available
         try:
             from openssl_encrypt.plugins.steganography import (
+                TIFFSteganography,
                 is_tiff_steganography_available,
             )
 
@@ -704,6 +747,7 @@ class TestTIFFSteganography(unittest.TestCase):
         from openssl_encrypt.plugins.steganography import (
             TIFFAnalyzer,
             TIFFSteganography,
+            create_tiff_test_image,
         )
 
         # Test creating TIFFSteganography instance
@@ -914,6 +958,7 @@ class TestWEBPSteganography(unittest.TestCase):
         # Check if WEBP steganography is available
         try:
             from openssl_encrypt.plugins.steganography import (
+                WEBPSteganography,
                 is_webp_steganography_available,
             )
 
@@ -941,6 +986,7 @@ class TestWEBPSteganography(unittest.TestCase):
         from openssl_encrypt.plugins.steganography import (
             WEBPAnalyzer,
             WEBPSteganography,
+            create_webp_test_image,
         )
 
         # Test creating WEBPSteganography instance
@@ -1182,6 +1228,7 @@ class TestWAVSteganography(unittest.TestCase):
         # Check if WAV steganography is available
         try:
             from openssl_encrypt.plugins.steganography import (
+                WAVSteganography,
                 is_wav_steganography_available,
             )
 
@@ -1209,6 +1256,7 @@ class TestWAVSteganography(unittest.TestCase):
         from openssl_encrypt.plugins.steganography import (
             WAVAnalyzer,
             WAVSteganography,
+            create_wav_test_audio,
         )
 
         # Test creating WAVSteganography instance
@@ -1439,6 +1487,7 @@ class TestFLACSteganography(unittest.TestCase):
         # Check if FLAC steganography is available
         try:
             from openssl_encrypt.plugins.steganography import (
+                FLACSteganography,
                 is_flac_steganography_available,
             )
 
@@ -1466,6 +1515,7 @@ class TestFLACSteganography(unittest.TestCase):
         from openssl_encrypt.plugins.steganography import (
             FLACAnalyzer,
             FLACSteganography,
+            create_flac_test_audio,
         )
 
         # Test creating FLACSteganography instance
@@ -1723,6 +1773,7 @@ class TestMP3Steganography(unittest.TestCase):
         # Check if MP3 steganography is available
         try:
             from openssl_encrypt.plugins.steganography import (
+                MP3Steganography,
                 is_mp3_steganography_available,
             )
 
@@ -1750,6 +1801,7 @@ class TestMP3Steganography(unittest.TestCase):
         from openssl_encrypt.plugins.steganography import (
             MP3Analyzer,
             MP3Steganography,
+            create_mp3_test_audio,
         )
 
         # Test creating MP3Steganography instance

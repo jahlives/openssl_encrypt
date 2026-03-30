@@ -27,7 +27,7 @@ Supported WEBP Features:
 import io
 import logging
 import struct
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 from PIL import Image
@@ -823,6 +823,7 @@ def create_webp_test_image(
 def is_webp_steganography_available() -> bool:
     """Check if WEBP steganography dependencies are available"""
     try:
+        import numpy as np
         from PIL import Image
 
         # Check if PIL supports WEBP

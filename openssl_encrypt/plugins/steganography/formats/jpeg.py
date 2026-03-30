@@ -9,7 +9,8 @@ steganalysis resistance.
 
 import io
 import logging
-from typing import Any, Dict, List, Optional
+import math
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 

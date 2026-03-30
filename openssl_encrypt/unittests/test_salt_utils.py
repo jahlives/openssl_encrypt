@@ -181,9 +181,9 @@ class TestSaltDerivationComparison:
         # In v8, all salts can be derived from base_salt independently
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            derive_salt_for_round(base_salt, 1)
-            derive_salt_for_round(base_salt, 2)
-            derive_salt_for_round(base_salt, 3)
+            v8_salt_1 = derive_salt_for_round(base_salt, 1)
+            v8_salt_2 = derive_salt_for_round(base_salt, 2)
+            v8_salt_3 = derive_salt_for_round(base_salt, 3)
 
         # All v8 salts are independent (precomputable from base_salt alone)
         # This is the security vulnerability
