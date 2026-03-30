@@ -119,7 +119,7 @@ class SecurePasswordVar:
                 try:
                     # Store in secure memory if available
                     self._password = SecureString(value)
-                except:
+                except Exception:
                     # Fallback to regular string
                     self._password = value
             else:
@@ -129,7 +129,7 @@ class SecurePasswordVar:
         for callback in self._callbacks:
             try:
                 callback()
-            except:
+            except Exception:
                 pass
 
     def get(self):
@@ -140,7 +140,7 @@ class SecurePasswordVar:
         if SECURE_MEMORY_AVAILABLE and hasattr(self._password, "get_string"):
             try:
                 return self._password.get_string()
-            except:
+            except Exception:
                 return str(self._password) if self._password else ""
         else:
             return str(self._password) if self._password else ""
@@ -151,14 +151,14 @@ class SecurePasswordVar:
             if SECURE_MEMORY_AVAILABLE and hasattr(self._password, "clear"):
                 try:
                     self._password.clear()
-                except:
+                except Exception:
                     pass
             # For regular strings, overwrite with random data then clear
             elif isinstance(self._password, str):
                 try:
                     # Overwrite with random data (best effort for strings)
                     pass
-                except:
+                except Exception:
                     pass
             self._password = None
 
@@ -1036,7 +1036,7 @@ class CryptGUI:
         # Clear clipboard if it contains sensitive data
         try:
             self.root.clipboard_clear()
-        except:
+        except Exception:
             pass
         # Destroy the window
         self.root.destroy()
@@ -1318,7 +1318,7 @@ class CryptGUI:
                         remaining_stderr = process.stderr.read()
                         if remaining_stderr:
                             stderr_lines.append(remaining_stderr)
-                    except:
+                    except Exception:
                         pass
 
                 # Process the result

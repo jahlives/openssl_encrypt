@@ -267,7 +267,7 @@ class PQEncapsulator:
                 str(original_error)
                 try:
                     kem_with_secret.free()
-                except:
+                except Exception:
                     pass
                 # Create a clean RuntimeError without chaining to avoid oqs object references
                 raise RuntimeError("Can not decapsulate secret")

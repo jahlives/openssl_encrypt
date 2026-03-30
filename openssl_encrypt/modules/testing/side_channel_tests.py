@@ -148,7 +148,7 @@ class SideChannelTestSuite(BaseSecurityTest):
         # Warm up the operation (to reduce JIT compilation effects)
         try:
             operation_func(*args, **kwargs)
-        except:
+        except Exception:
             pass  # Ignore errors during warmup
 
         gc.collect()
@@ -222,7 +222,7 @@ class SideChannelTestSuite(BaseSecurityTest):
                         )
                         if timing > 0:  # Only count successful timing measurements
                             incorrect_timings.append(timing)
-                    except:
+                    except Exception:
                         # Expected to fail, but we want to measure the timing of the failure
                         pass
                     # Clean up

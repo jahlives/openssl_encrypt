@@ -808,11 +808,11 @@ def store_pqc_key_in_keystore(metadata, keystore_path, keystore_password, key_id
                 try:
                     # Use secure_memzero for byte arrays
                     secure_memzero(encrypted_private_key)
-                except:
+                except Exception:
                     # Fallback if secure_memzero fails
                     encrypted_private_key = b"\x00" * len(encrypted_private_key)
                 encrypted_private_key = None
-        except:
+        except Exception:
             # Last resort cleanup - just remove the reference
             encrypted_private_key = None
 
