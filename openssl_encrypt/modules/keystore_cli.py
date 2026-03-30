@@ -9,12 +9,15 @@ import datetime
 import getpass
 import hashlib
 import json
+import logging
 import os
 import sys
 import time
 import uuid
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
+
+logger = logging.getLogger(__name__)
 
 from .crypt_errors import (
     KeyNotFoundError,

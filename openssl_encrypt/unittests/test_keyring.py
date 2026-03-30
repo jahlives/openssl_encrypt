@@ -198,6 +198,9 @@ class TestKeyringNotInstalled(unittest.TestCase):
 
     def test_keyring_load_not_installed(self):
         """--keyring-load without keyring package prints clear error."""
+        import builtins
+
+        original_import = builtins.__import__
         # Temporarily remove keyring from sys.modules if present
         with mock.patch.dict("sys.modules", {"keyring": None}):
             with mock.patch(

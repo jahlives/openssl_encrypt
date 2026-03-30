@@ -2,6 +2,15 @@
 Version requirements and verification for external dependencies
 """
 
+import sys
+
+try:
+    from .modules.crypt_utils import eprint
+except ImportError:
+    # Fallback when run as __main__ or outside package context
+    def eprint(*args, **kwargs):
+        print(*args, file=sys.stderr, **kwargs)
+
 LIBOQS_VERSION = "0.12.0"
 LIBOQS_PYTHON_VERSION = "0.12.0"
 
