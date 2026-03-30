@@ -15,17 +15,12 @@ import logging
 import os
 import shutil
 import statistics
-import subprocess
-import sys
 import tempfile
 import time
 import unittest
 import warnings
 from io import StringIO
-from unittest import mock
-from unittest.mock import MagicMock, patch
 
-import pytest
 
 # Import the modules to test
 from openssl_encrypt.modules.crypt_core import (
@@ -33,13 +28,7 @@ from openssl_encrypt.modules.crypt_core import (
     EncryptionAlgorithm,
     decrypt_file,
     encrypt_file,
-    extract_file_metadata,
     is_aead_algorithm,
-)
-from openssl_encrypt.modules.crypt_errors import (
-    AuthenticationError,
-    DecryptionError,
-    ValidationError,
 )
 from openssl_encrypt.modules.secure_ops import constant_time_pkcs7_unpad
 
@@ -48,9 +37,6 @@ try:
     from openssl_encrypt.modules.crypt_core import PQC_AVAILABLE
     from openssl_encrypt.modules.pqc import (
         LIBOQS_AVAILABLE,
-        PQCAlgorithm,
-        PQCipher,
-        check_pqc_support,
     )
 except ImportError:
     LIBOQS_AVAILABLE = False
@@ -299,7 +285,8 @@ class TestAlgorithmWarnings(unittest.TestCase):
 
         self.assertFalse(self.AlgorithmWarningConfig._show_warnings)
         self.assertEqual(
-            self.AlgorithmWarningConfig._min_warning_level, self.DeprecationLevel.WARNING
+            self.AlgorithmWarningConfig._min_warning_level,
+            self.DeprecationLevel.WARNING,
         )
         self.assertFalse(self.AlgorithmWarningConfig._log_warnings)
         self.assertFalse(self.AlgorithmWarningConfig._show_once)
@@ -714,7 +701,9 @@ class TestRandomXIntegration(unittest.TestCase):
                 decrypted_file, "r", encoding="utf-8"
             ) as decrypted:
                 self.assertEqual(
-                    original.read(), decrypted.read(), "Decrypted content should match original"
+                    original.read(),
+                    decrypted.read(),
+                    "Decrypted content should match original",
                 )
 
         except Exception as e:
@@ -838,7 +827,8 @@ class TestRandomXIntegration(unittest.TestCase):
 
             # Verify encryption succeeded
             self.assertTrue(
-                os.path.exists(encrypted_file), "Encrypted file should exist after user acceptance"
+                os.path.exists(encrypted_file),
+                "Encrypted file should exist after user acceptance",
             )
             mock_input.assert_called_once()
 
@@ -994,12 +984,16 @@ class TestAEADBinding(unittest.TestCase):
 
         # Check that encrypted_hash is NOT present
         self.assertNotIn(
-            "encrypted_hash", metadata.get("hashes", {}), "AEAD file should not have encrypted_hash"
+            "encrypted_hash",
+            metadata.get("hashes", {}),
+            "AEAD file should not have encrypted_hash",
         )
 
         # Check that original_hash IS present
         self.assertIn(
-            "original_hash", metadata.get("hashes", {}), "AEAD file should have original_hash"
+            "original_hash",
+            metadata.get("hashes", {}),
+            "AEAD file should have original_hash",
         )
 
     def test_non_aead_metadata_has_encrypted_hash(self):
@@ -1033,12 +1027,16 @@ class TestAEADBinding(unittest.TestCase):
 
         # Check that encrypted_hash IS present
         self.assertIn(
-            "encrypted_hash", metadata.get("hashes", {}), "Non-AEAD file should have encrypted_hash"
+            "encrypted_hash",
+            metadata.get("hashes", {}),
+            "Non-AEAD file should have encrypted_hash",
         )
 
         # Check that original_hash IS present
         self.assertIn(
-            "original_hash", metadata.get("hashes", {}), "Non-AEAD file should have original_hash"
+            "original_hash",
+            metadata.get("hashes", {}),
+            "Non-AEAD file should have original_hash",
         )
 
     def test_aead_metadata_tampering_detected(self):
@@ -1122,7 +1120,8 @@ class TestAEADBinding(unittest.TestCase):
                 metadata_b64, _ = content.split(b":", 1)
                 metadata = json.loads(base64.b64decode(metadata_b64))
                 self.assertTrue(
-                    metadata.get("aead_binding"), f"{algorithm.value} should use AEAD binding"
+                    metadata.get("aead_binding"),
+                    f"{algorithm.value} should use AEAD binding",
                 )
 
                 # Decrypt

@@ -12,10 +12,10 @@ IMPORTANT: This is a demonstration only. In production:
 4. Configure dead man's switch appropriately
 """
 
-import sys
 from pathlib import Path
 
-from openssl_encrypt.plugins.pepper import PepperPlugin, PepperConfig, PepperError
+from openssl_encrypt.plugins.pepper import PepperConfig, PepperError, PepperPlugin
+
 from ...modules.crypt_utils import eprint
 
 
@@ -97,7 +97,7 @@ def main():
 
         # Save QR code to file
         with open("totp_qr.svg", "w") as f:
-            f.write(totp_setup['qr_svg'])
+            f.write(totp_setup["qr_svg"])
 
         eprint("\nAfter scanning, verify with: plugin.verify_totp('123456')")
 
@@ -124,7 +124,7 @@ def main():
         result = plugin.store_pepper(
             name="example-pepper",
             pepper_encrypted=pepper_data,
-            description="Example pepper for demonstration"
+            description="Example pepper for demonstration",
         )
         eprint(f"✓ Pepper stored: {result['name']}")
         eprint(f"  Created: {result['created_at']}")
@@ -172,7 +172,7 @@ def main():
         deadman = plugin.configure_deadman(
             interval="7d",  # Check in every 7 days
             grace_period="24h",  # 24 hour grace period
-            enabled=True
+            enabled=True,
         )
         eprint("✓ Dead man's switch configured")
         eprint(f"  Enabled: {deadman['enabled']}")

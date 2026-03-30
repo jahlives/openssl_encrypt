@@ -7,18 +7,12 @@ block-based processing for large data, and adaptive error correction based on
 channel quality assessment.
 """
 
-import hashlib
-import math
 import struct
-from typing import Any, Dict, List, Optional, Tuple, Union
-
-import numpy as np
+from typing import List
 
 
 class ErrorCorrectionError(Exception):
     """Exception raised for error correction failures."""
-
-    pass
 
 
 class GaloisField:

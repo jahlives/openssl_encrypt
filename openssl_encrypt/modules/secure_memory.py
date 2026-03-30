@@ -6,17 +6,16 @@ This module provides functions for secure memory handling, ensuring that
 sensitive data is properly wiped from memory when no longer needed.
 """
 
-import array
 import contextlib
 import ctypes
 import gc
 import mmap
 import os
 import platform
-import random
 import secrets
 import sys
 import time
+
 from .crypt_utils import eprint
 
 
@@ -89,7 +88,13 @@ def verify_memory_zeroed(data, full_check=True, sample_size=16):
             # - Start of buffer (often contains headers)
             # - End of buffer (often contains padding)
             # - Quarter points (ensure even distribution)
-            critical_points = [0, data_len // 4, data_len // 2, (3 * data_len) // 4, data_len - 1]
+            critical_points = [
+                0,
+                data_len // 4,
+                data_len // 2,
+                (3 * data_len) // 4,
+                data_len - 1,
+            ]
 
             # Add evenly distributed sampling points throughout the buffer
             stride_points = []
@@ -300,7 +305,9 @@ def secure_memzero(data, full_verification=True):
                                 # MS_SYNC: Synchronous flush (2 on most systems)
                                 MS_SYNC = 2
                                 libc.msync(
-                                    ctypes.c_void_p(page_addr), ctypes.c_size_t(page_len), MS_SYNC
+                                    ctypes.c_void_p(page_addr),
+                                    ctypes.c_size_t(page_len),
+                                    MS_SYNC,
                                 )
                             except:
                                 pass
@@ -611,13 +618,17 @@ class SecureMemoryAllocator:
                             # MADV_DONTDUMP (16) - exclude from core dumps
                             MADV_DONTDUMP = 16
                             libc.madvise(
-                                ctypes.c_void_p(addr), ctypes.c_size_t(size), MADV_DONTDUMP
+                                ctypes.c_void_p(addr),
+                                ctypes.c_size_t(size),
+                                MADV_DONTDUMP,
                             )
 
                             # MADV_DONTFORK (10) - don't share with child processes
                             MADV_DONTFORK = 10
                             libc.madvise(
-                                ctypes.c_void_p(addr), ctypes.c_size_t(size), MADV_DONTFORK
+                                ctypes.c_void_p(addr),
+                                ctypes.c_size_t(size),
+                                MADV_DONTFORK,
                             )
                         except:
                             pass
@@ -634,7 +645,11 @@ class SecureMemoryAllocator:
 
                         # VM_INHERIT_NONE (2) - memory not inherited by child processes
                         VM_INHERIT_NONE = 2
-                        libc.minherit(ctypes.c_void_p(addr), ctypes.c_size_t(size), VM_INHERIT_NONE)
+                        libc.minherit(
+                            ctypes.c_void_p(addr),
+                            ctypes.c_size_t(size),
+                            VM_INHERIT_NONE,
+                        )
                 except:
                     pass
 
@@ -673,7 +688,6 @@ class SecureMemoryAllocator:
             if self.system in ("linux", "darwin", "freebsd"):
                 # Try to import the appropriate modules
                 try:
-                    import fcntl
                     import resource
 
                     # Attempt to disable core dumps
@@ -1073,7 +1087,7 @@ def secure_memcpy(dest, src, length=None):
             else:
                 # We've reached the end of at least one buffer
                 return i
-    except (TypeError, IndexError, ValueError) as e:
+    except (TypeError, IndexError, ValueError):
         # Strategy 2: Try with explicit type conversions
         try:
             # Convert to bytearrays/bytes if needed
@@ -1084,7 +1098,7 @@ def secure_memcpy(dest, src, length=None):
                     dest[i] = src_bytes[i]
                 else:
                     return i
-        except Exception as e:
+        except Exception:
             # Strategy 3: Try using memory views if possible
             try:
                 # Create memory views with explicit bounds checking
@@ -1107,7 +1121,7 @@ def secure_memcpy(dest, src, length=None):
                 else:
                     # Memory views aren't compatible for copying
                     return 0
-            except Exception as final_error:
+            except Exception:
                 # Last resort: log the error and return 0
                 # This prevents breaking old files completely
                 return 0
@@ -1318,7 +1332,8 @@ def secure_erase_system_memory(trigger_gc=True, full_sweep=False):
                 # Allocate a large buffer and fill with random data to overwrite free memory
                 # This helps against memory dump attacks
                 memory_size = min(
-                    1024 * 1024 * 32, os.sysconf("SC_PHYS_PAGES") * os.sysconf("SC_PAGE_SIZE") // 4
+                    1024 * 1024 * 32,
+                    os.sysconf("SC_PHYS_PAGES") * os.sysconf("SC_PAGE_SIZE") // 4,
                 )
 
                 # Break this into smaller chunks to avoid OOM killer

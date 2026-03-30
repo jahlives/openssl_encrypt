@@ -151,7 +151,11 @@ class DangerousPatternVisitor(ast.NodeVisitor):
         self.imported_names: Set[str] = set()
 
     def add_violation(
-        self, node: ast.AST, violation_type: str, description: str, severity: str = "critical"
+        self,
+        node: ast.AST,
+        violation_type: str,
+        description: str,
+        severity: str = "critical",
     ):
         """Add a security violation"""
         self.violations.append(

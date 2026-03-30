@@ -887,7 +887,9 @@ def analyze_current_security_configuration(args):
             f"Encryption: {analysis['cipher_analysis']['score']:.1f}/10 ({analysis['cipher_analysis']['description']})"
         )
         eprint(f"  Algorithm: {analysis['cipher_analysis']['algorithm']}")
-        eprint(f"  Authenticated: {'Yes' if analysis['cipher_analysis']['authenticated'] else 'No'}")
+        eprint(
+            f"  Authenticated: {'Yes' if analysis['cipher_analysis']['authenticated'] else 'No'}"
+        )
 
         if analysis["pqc_analysis"]["enabled"]:
             eprint(f"Post-Quantum: {analysis['pqc_analysis']['score']:.1f}/10 (Quantum-resistant)")
@@ -1362,7 +1364,10 @@ def install_optional_dependencies(args):
     try:
         # Check if already installed
         result = subprocess.run(
-            ["pkg-config", "--modversion", "liboqs"], capture_output=True, text=True, timeout=5
+            ["pkg-config", "--modversion", "liboqs"],
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         if result.returncode == 0 and result.stdout.strip() == "0.12.0":
             eprint("  ✓ liboqs 0.12.0 already installed")
@@ -1491,7 +1496,10 @@ def install_optional_dependencies(args):
                 env["PYO3_USE_ABI3_FORWARD_COMPATIBILITY"] = "1"
 
                 subprocess.run(
-                    ["maturin", "build", "--release"], cwd=threefish_dir, env=env, check=True
+                    ["maturin", "build", "--release"],
+                    cwd=threefish_dir,
+                    env=env,
+                    check=True,
                 )
 
                 # Install the built wheel
@@ -1710,7 +1718,13 @@ def _display_analysis_results(analysis):
             by_priority[priority].append(rec)
 
         # Display by priority
-        priority_icons = {"critical": "🚨", "high": "⚠️", "medium": "💡", "low": "ℹ️", "info": "📝"}
+        priority_icons = {
+            "critical": "🚨",
+            "high": "⚠️",
+            "medium": "💡",
+            "low": "ℹ️",
+            "info": "📝",
+        }
 
         for priority in ["critical", "high", "medium", "low", "info"]:
             if priority in by_priority:
@@ -2006,10 +2020,22 @@ def _handle_recommendations_quick(engine, args):
 def _display_recommendation(rec, number: int):
     """Display a single recommendation with formatting."""
     # Priority icon
-    priority_icons = {"info": "ℹ️", "low": "🔷", "medium": "🔶", "high": "🔺", "critical": "🚨"}
+    priority_icons = {
+        "info": "ℹ️",
+        "low": "🔷",
+        "medium": "🔶",
+        "high": "🔺",
+        "critical": "🚨",
+    }
 
     # Confidence indicator
-    confidence_indicators = {1: "⭐", 2: "⭐⭐", 3: "⭐⭐⭐", 4: "⭐⭐⭐⭐", 5: "⭐⭐⭐⭐⭐"}
+    confidence_indicators = {
+        1: "⭐",
+        2: "⭐⭐",
+        3: "⭐⭐⭐",
+        4: "⭐⭐⭐⭐",
+        5: "⭐⭐⭐⭐⭐",
+    }
 
     priority_icon = priority_icons.get(rec.priority.value, "🔷")
     confidence_stars = confidence_indicators.get(rec.confidence.value, "⭐⭐⭐")
@@ -2926,7 +2952,9 @@ def handle_keyserver_command(args):
                 return
 
             if not identity.is_own_identity:
-                eprint(f"✗ Cannot upload '{identity_name}': not your own identity (no private keys)")
+                eprint(
+                    f"✗ Cannot upload '{identity_name}': not your own identity (no private keys)"
+                )
                 return
 
             # Create bundle
@@ -3351,7 +3379,7 @@ def main_with_args(args=None):
 
     # Register handlers for common termination signals
     _sigs = [signal.SIGINT, signal.SIGTERM]
-    if hasattr(signal, 'SIGHUP'):
+    if hasattr(signal, "SIGHUP"):
         _sigs.append(signal.SIGHUP)
     for sig in _sigs:
         try:
@@ -3891,7 +3919,9 @@ def main_with_args(args=None):
     )
     keystore_group.add_argument("--keystore", help="Path to the keystore file")
     keystore_group.add_argument(
-        "--keystore-path", dest="keystore", help="Path to the keystore file (alias for --keystore)"
+        "--keystore-path",
+        dest="keystore",
+        help="Path to the keystore file (alias for --keystore)",
     )
     keystore_group.add_argument(
         "--keystore-password",
@@ -4788,7 +4818,9 @@ def main_with_args(args=None):
 
         eprint("\nUsage examples:")
         eprint("  Encrypt with Kyber-768 (NIST Level 3):")
-        eprint("    python -m openssl_encrypt.crypt encrypt -i file.txt --algorithm kyber768-hybrid")
+        eprint(
+            "    python -m openssl_encrypt.crypt encrypt -i file.txt --algorithm kyber768-hybrid"
+        )
         eprint("\n  Generate and save a key pair:")
         eprint(
             "    python -m openssl_encrypt.crypt encrypt -i file.txt --algorithm kyber768-hybrid --pqc-gen-key --pqc-keyfile key.pqc"
@@ -5245,7 +5277,11 @@ def main_with_args(args=None):
 
         try:
             key, _, _ = generate_key(
-                password=derive_password.encode("utf-8") if isinstance(derive_password, str) else derive_password,
+                password=(
+                    derive_password.encode("utf-8")
+                    if isinstance(derive_password, str)
+                    else derive_password
+                ),
                 salt=salt,
                 hash_config=hash_config,
                 pbkdf2_iterations=pbkdf2_iters,
@@ -5268,6 +5304,7 @@ def main_with_args(args=None):
             print(derived.hex())
         elif output_format == "base64":
             import base64 as _b64
+
             print(_b64.b64encode(derived).decode("ascii"))
         elif output_format == "raw":
             sys.stdout.buffer.write(derived)
@@ -5314,7 +5351,10 @@ def main_with_args(args=None):
         # Copy all data from stdin to temp file
         stdin_data = sys.stdin.buffer.read()
         if args.debug:
-            eprint(f"DEBUG: Read {len(stdin_data)} bytes from stdin (early)", file=sys.stderr)
+            eprint(
+                f"DEBUG: Read {len(stdin_data)} bytes from stdin (early)",
+                file=sys.stderr,
+            )
         stdin_temp_file_early.write(stdin_data)
         stdin_temp_file_early.close()
 
@@ -5449,7 +5489,9 @@ def main_with_args(args=None):
                     else:
                         eprint(f"No password found in keyring for label '{args.keyring_load}'")
                 except ImportError:
-                    eprint("Error: keyring package not installed. Install with: pip install keyring")
+                    eprint(
+                        "Error: keyring package not installed. Install with: pip install keyring"
+                    )
                     sys.exit(1)
 
             if (
@@ -5596,7 +5638,9 @@ def main_with_args(args=None):
                                     f"\nPassword strength: {strength} (entropy: {entropy:.1f} bits)"
                                 )
                                 eprint(f"Password validation failed: {str(e)}")
-                                eprint("Use --force-password to bypass validation (not recommended)")
+                                eprint(
+                                    "Use --force-password to bypass validation (not recommended)"
+                                )
                             sys.exit(1)
 
                     password_secure.extend(env_password.encode())
@@ -5646,7 +5690,9 @@ def main_with_args(args=None):
                                     f"\nPassword strength: {strength} (entropy: {entropy:.1f} bits)"
                                 )
                                 eprint(f"Password validation failed: {str(e)}")
-                                eprint("Use --force-password to bypass validation (not recommended)")
+                                eprint(
+                                    "Use --force-password to bypass validation (not recommended)"
+                                )
                             sys.exit(1)
 
                     password_secure.extend(args.password.encode())
@@ -6151,7 +6197,7 @@ def main_with_args(args=None):
                 "whirlpool": getattr(args, "whirlpool_rounds", 0),
                 "scrypt": {
                     "enabled": args.enable_scrypt,
-                    "n": args.scrypt_n if args.scrypt_n and args.scrypt_n > 0 else 16384,
+                    "n": (args.scrypt_n if args.scrypt_n and args.scrypt_n > 0 else 16384),
                     "r": args.scrypt_r if args.scrypt_r is not None else 8,
                     "p": args.scrypt_p if args.scrypt_p is not None else 1,
                     "rounds": args.scrypt_rounds,
@@ -6433,7 +6479,10 @@ def main_with_args(args=None):
                         )
                         sys.exit(1)
                     except TrustDeclinedError:
-                        eprint(f"ERROR: Trust declined for '{recipient_name}' ❌", file=sys.stderr)
+                        eprint(
+                            f"ERROR: Trust declined for '{recipient_name}' ❌",
+                            file=sys.stderr,
+                        )
                         sys.exit(1)
                     except KeyError as e:
                         eprint(f"ERROR: {e} ❌", file=sys.stderr)
@@ -6448,13 +6497,19 @@ def main_with_args(args=None):
 
                 # Load sender
                 if not hasattr(args, "sign_with") or not args.sign_with:
-                    eprint("ERROR: --sign-with required for asymmetric encryption", file=sys.stderr)
+                    eprint(
+                        "ERROR: --sign-with required for asymmetric encryption",
+                        file=sys.stderr,
+                    )
                     sys.exit(1)
 
                 # First load identity metadata to check protection level
                 sender_metadata = store.get_by_name(args.sign_with, load_private_keys=False)
                 if sender_metadata is None:
-                    eprint(f"ERROR: Sender identity '{args.sign_with}' not found ❌", file=sys.stderr)
+                    eprint(
+                        f"ERROR: Sender identity '{args.sign_with}' not found ❌",
+                        file=sys.stderr,
+                    )
                     sys.exit(1)
 
                 # Determine if passphrase is needed
@@ -6471,7 +6526,9 @@ def main_with_args(args=None):
 
                 try:
                     sender = store.get_by_name(
-                        args.sign_with, passphrase=sender_passphrase, load_private_keys=True
+                        args.sign_with,
+                        passphrase=sender_passphrase,
+                        load_private_keys=True,
                     )
                     if sender is None:
                         eprint(
@@ -6512,65 +6569,89 @@ def main_with_args(args=None):
                     "scrypt": {
                         "enabled": getattr(args, "enable_scrypt", False),
                         "n": getattr(args, "scrypt_n", 0) or 0,
-                        "r": getattr(args, "scrypt_r", 8) if hasattr(args, "scrypt_r") else 8,
-                        "p": getattr(args, "scrypt_p", 1) if hasattr(args, "scrypt_p") else 1,
-                        "rounds": getattr(args, "scrypt_rounds", 1)
-                        if hasattr(args, "scrypt_rounds")
-                        else 1,
+                        "r": (getattr(args, "scrypt_r", 8) if hasattr(args, "scrypt_r") else 8),
+                        "p": (getattr(args, "scrypt_p", 1) if hasattr(args, "scrypt_p") else 1),
+                        "rounds": (
+                            getattr(args, "scrypt_rounds", 1)
+                            if hasattr(args, "scrypt_rounds")
+                            else 1
+                        ),
                     },
                     "argon2": {
                         "enabled": getattr(args, "enable_argon2", False),
-                        "time_cost": getattr(args, "argon2_time", 3)
-                        if hasattr(args, "argon2_time")
-                        else 3,
-                        "memory_cost": getattr(args, "argon2_memory", 65536)
-                        if hasattr(args, "argon2_memory")
-                        else 65536,
-                        "parallelism": getattr(args, "argon2_parallelism", 4)
-                        if hasattr(args, "argon2_parallelism")
-                        else 4,
-                        "hash_len": getattr(args, "argon2_hash_len", 32)
-                        if hasattr(args, "argon2_hash_len")
-                        else 32,
+                        "time_cost": (
+                            getattr(args, "argon2_time", 3) if hasattr(args, "argon2_time") else 3
+                        ),
+                        "memory_cost": (
+                            getattr(args, "argon2_memory", 65536)
+                            if hasattr(args, "argon2_memory")
+                            else 65536
+                        ),
+                        "parallelism": (
+                            getattr(args, "argon2_parallelism", 4)
+                            if hasattr(args, "argon2_parallelism")
+                            else 4
+                        ),
+                        "hash_len": (
+                            getattr(args, "argon2_hash_len", 32)
+                            if hasattr(args, "argon2_hash_len")
+                            else 32
+                        ),
                         "type": ARGON2_TYPE_INT_MAP.get(getattr(args, "argon2_type", "id"), 2),
                         "rounds": getattr(args, "argon2_rounds", 0) or 0,
                     },
                     "balloon": {
                         "enabled": getattr(args, "enable_balloon", False)
                         or getattr(args, "use_balloon", False),
-                        "space_cost": getattr(args, "balloon_space_cost", 1024)
-                        if hasattr(args, "balloon_space_cost")
-                        else 1024,
-                        "time_cost": getattr(args, "balloon_time_cost", 1)
-                        if hasattr(args, "balloon_time_cost")
-                        else 1,
-                        "parallelism": getattr(args, "balloon_parallelism", 1)
-                        if hasattr(args, "balloon_parallelism")
-                        else 1,
-                        "rounds": getattr(args, "balloon_rounds", 1)
-                        if hasattr(args, "balloon_rounds")
-                        else 1,
+                        "space_cost": (
+                            getattr(args, "balloon_space_cost", 1024)
+                            if hasattr(args, "balloon_space_cost")
+                            else 1024
+                        ),
+                        "time_cost": (
+                            getattr(args, "balloon_time_cost", 1)
+                            if hasattr(args, "balloon_time_cost")
+                            else 1
+                        ),
+                        "parallelism": (
+                            getattr(args, "balloon_parallelism", 1)
+                            if hasattr(args, "balloon_parallelism")
+                            else 1
+                        ),
+                        "rounds": (
+                            getattr(args, "balloon_rounds", 1)
+                            if hasattr(args, "balloon_rounds")
+                            else 1
+                        ),
                     },
                     "hkdf": {
                         "enabled": getattr(args, "enable_hkdf", False),
-                        "rounds": getattr(args, "hkdf_rounds", 1)
-                        if hasattr(args, "hkdf_rounds")
-                        else 1,
+                        "rounds": (
+                            getattr(args, "hkdf_rounds", 1) if hasattr(args, "hkdf_rounds") else 1
+                        ),
                     },
                     "randomx": {
                         "enabled": getattr(args, "enable_randomx", False),
-                        "mode": getattr(args, "randomx_mode", "light")
-                        if hasattr(args, "randomx_mode")
-                        else "light",
-                        "height": getattr(args, "randomx_height", 1)
-                        if hasattr(args, "randomx_height")
-                        else 1,
-                        "hash_len": getattr(args, "randomx_hash_len", 32)
-                        if hasattr(args, "randomx_hash_len")
-                        else 32,
-                        "rounds": getattr(args, "randomx_rounds", 1)
-                        if hasattr(args, "randomx_rounds")
-                        else 1,
+                        "mode": (
+                            getattr(args, "randomx_mode", "light")
+                            if hasattr(args, "randomx_mode")
+                            else "light"
+                        ),
+                        "height": (
+                            getattr(args, "randomx_height", 1)
+                            if hasattr(args, "randomx_height")
+                            else 1
+                        ),
+                        "hash_len": (
+                            getattr(args, "randomx_hash_len", 32)
+                            if hasattr(args, "randomx_hash_len")
+                            else 32
+                        ),
+                        "rounds": (
+                            getattr(args, "randomx_rounds", 1)
+                            if hasattr(args, "randomx_rounds")
+                            else 1
+                        ),
                     },
                 }
 
@@ -6650,8 +6731,16 @@ def main_with_args(args=None):
 
             # DEPRECATED: Kyber algorithms are no longer supported for new encryptions
             # Only warn if user actually used the old Kyber names, not if they used ML-KEM names
-            kyber_algorithms = ["kyber512-hybrid", "kyber768-hybrid", "kyber1024-hybrid"]
-            ml_kem_algorithms = ["ml-kem-512-hybrid", "ml-kem-768-hybrid", "ml-kem-1024-hybrid"]
+            kyber_algorithms = [
+                "kyber512-hybrid",
+                "kyber768-hybrid",
+                "kyber1024-hybrid",
+            ]
+            ml_kem_algorithms = [
+                "ml-kem-512-hybrid",
+                "ml-kem-768-hybrid",
+                "ml-kem-1024-hybrid",
+            ]
 
             # Check if this algorithm was originally an ML-KEM name that got converted
             original_ml_kem_algorithm = os.environ.get("OPENSSL_ENCRYPT_ORIGINAL_MLKEM_ALGORITHM")
@@ -7253,7 +7342,10 @@ def main_with_args(args=None):
 
                                         # Display suggestion if available
                                         if warning.suggestion and not args.quiet:
-                                            eprint(f"  → {warning.suggestion}", file=sys.stderr)
+                                            eprint(
+                                                f"  → {warning.suggestion}",
+                                                file=sys.stderr,
+                                            )
 
                                     # Abort if errors or strict mode with warnings
                                     if has_error or (strict_mode and has_warning):
@@ -8297,9 +8389,11 @@ def main_with_args(args=None):
                         {
                             "input_file": str(args.input),
                             "output_file": str(output_file),
-                            "algorithm": args.algorithm.value
-                            if hasattr(args.algorithm, "value")
-                            else str(args.algorithm),
+                            "algorithm": (
+                                args.algorithm.value
+                                if hasattr(args.algorithm, "value")
+                                else str(args.algorithm)
+                            ),
                             "service": "cli",
                         },
                     )
@@ -8559,7 +8653,9 @@ def main_with_args(args=None):
                                         # Shred original if requested
                                         if args.shred:
                                             secure_shred_file(
-                                                args.input, args.shred_passes, args.quiet
+                                                args.input,
+                                                args.shred_passes,
+                                                args.quiet,
                                             )
                                     finally:
                                         # Clean up plaintext from memory
@@ -8570,7 +8666,8 @@ def main_with_args(args=None):
                                     sys.exit(0)
                                 except Exception as e:
                                     eprint(
-                                        f"ERROR: Asymmetric decryption failed: {e}", file=sys.stderr
+                                        f"ERROR: Asymmetric decryption failed: {e}",
+                                        file=sys.stderr,
                                     )
                                     sys.exit(1)
                         except Exception:
@@ -8660,7 +8757,9 @@ def main_with_args(args=None):
                             if not skip_verification:
                                 if hasattr(args, "verify_from") and args.verify_from:
                                     sender = store.get_by_name(
-                                        args.verify_from, passphrase=None, load_private_keys=False
+                                        args.verify_from,
+                                        passphrase=None,
+                                        load_private_keys=False,
                                     )
                                     if sender is None:
                                         eprint(
@@ -8678,7 +8777,9 @@ def main_with_args(args=None):
                                     )
                                     if sender_key_id:
                                         sender = store.get_by_fingerprint(
-                                            sender_key_id, passphrase=None, load_private_keys=False
+                                            sender_key_id,
+                                            passphrase=None,
+                                            load_private_keys=False,
                                         )
                                         if sender:
                                             sender_public_key = sender.signing_public_key
@@ -8755,7 +8856,10 @@ def main_with_args(args=None):
                                 sys.exit(0)
 
                             except Exception as e:
-                                eprint(f"ERROR: Asymmetric decryption failed: {e}", file=sys.stderr)
+                                eprint(
+                                    f"ERROR: Asymmetric decryption failed: {e}",
+                                    file=sys.stderr,
+                                )
                                 if args.debug:
                                     import traceback
 
@@ -9025,9 +9129,13 @@ def main_with_args(args=None):
                                         )
 
                                         if not args.quiet:
-                                            eprint("Successfully decrypted private key from keyfile")
+                                            eprint(
+                                                "Successfully decrypted private key from keyfile"
+                                            )
                                     except Exception as e:
-                                        eprint(f"Error decrypting private key: {e}. Wrong password?")
+                                        eprint(
+                                            f"Error decrypting private key: {e}. Wrong password?"
+                                        )
                                         eprint("Decryption may fail without a valid private key.")
                                         pqc_private_key = None
                                 else:

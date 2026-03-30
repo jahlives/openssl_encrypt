@@ -15,11 +15,10 @@ Design Philosophy:
 - Future-proofing considerations for long-term security
 """
 
-import json
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional
 
 from .security_scorer import SecurityLevel, SecurityScorer
 
@@ -89,7 +88,11 @@ class ConfigurationAnalyzer:
         "aes-siv": {"speed": "high", "memory": "low", "cpu_intensive": False},
         "aes-ocb3": {"speed": "high", "memory": "low", "cpu_intensive": False},
         "chacha20-poly1305": {"speed": "high", "memory": "low", "cpu_intensive": False},
-        "xchacha20-poly1305": {"speed": "high", "memory": "low", "cpu_intensive": False},
+        "xchacha20-poly1305": {
+            "speed": "high",
+            "memory": "low",
+            "cpu_intensive": False,
+        },
     }
 
     # KDF performance characteristics
@@ -114,7 +117,11 @@ class ConfigurationAnalyzer:
             "approved_hashes": ["sha256", "sha512", "sha384", "sha3_256", "sha3_512"],
         },
         "nist_guidelines": {
-            "approved_algorithms": ["aes-gcm", "chacha20-poly1305", "xchacha20-poly1305"],
+            "approved_algorithms": [
+                "aes-gcm",
+                "chacha20-poly1305",
+                "xchacha20-poly1305",
+            ],
             "approved_kdfs": ["pbkdf2", "argon2"],
             "approved_hashes": ["sha256", "sha512", "sha3_256", "sha3_512", "blake3"],
         },
@@ -264,7 +271,10 @@ class ConfigurationAnalyzer:
 
         # HKDF
         if config.get("enable_hkdf", False):
-            kdf_config["hkdf"] = {"enabled": True, "rounds": config.get("hkdf_rounds", 1)}
+            kdf_config["hkdf"] = {
+                "enabled": True,
+                "rounds": config.get("hkdf_rounds", 1),
+            }
 
         return kdf_config
 
@@ -737,11 +747,9 @@ class ConfigurationAnalyzer:
 
         return {
             "estimated_peak_mb": base_memory,
-            "classification": "high"
-            if base_memory > 1024
-            else "medium"
-            if base_memory > 256
-            else "low",
+            "classification": (
+                "high" if base_memory > 1024 else "medium" if base_memory > 256 else "low"
+            ),
         }
 
     def _calculate_cpu_intensity(self, config: Dict[str, Any]) -> str:
@@ -820,7 +828,10 @@ class ConfigurationAnalyzer:
         }
 
     def _calculate_compatibility_score(
-        self, platform: Dict[str, bool], library: Dict[str, bool], format: Dict[str, bool]
+        self,
+        platform: Dict[str, bool],
+        library: Dict[str, bool],
+        format: Dict[str, bool],
     ) -> float:
         """Calculate overall compatibility score."""
         total_checks = len(platform) + len(library) + len(format)

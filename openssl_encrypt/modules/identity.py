@@ -37,7 +37,6 @@ from .crypto_secure_memory import CryptoKey
 
 # Import protection classes
 from .identity_protection import (
-    HSMNotAvailableError,
     IdentityKeyProtectionService,
     IdentityProtection,
     InvalidCredentialsError,
@@ -62,22 +61,17 @@ except ImportError:
 class IdentityError(Exception):
     """Base exception for identity operations"""
 
-    pass
-
 
 class IdentityNotFoundError(IdentityError):
     """Raised when identity not found"""
-
-    pass
 
 
 class IdentityExistsError(IdentityError):
     """Raised when identity already exists"""
 
-    pass
-
 
 import re
+
 from .crypt_utils import eprint
 
 # Strict pattern for identity names: alphanumeric, hyphens, underscores, dots.
@@ -218,7 +212,9 @@ class Identity:
             if protection_level != ProtectionLevel.PASSWORD_ONLY:
                 protection_service = IdentityKeyProtectionService()
                 protection = protection_service.create_protection_config(
-                    level=protection_level, hsm_slot=hsm_slot, require_touch=require_touch
+                    level=protection_level,
+                    hsm_slot=hsm_slot,
+                    require_touch=require_touch,
                 )
 
             identity = cls(
@@ -323,10 +319,18 @@ class Identity:
 
             # Decrypt private keys (pass protection and identity name)
             enc_private_key = _decrypt_private_key(
-                enc_priv_encrypted, passphrase, protection, name, key_purpose="encryption",
+                enc_priv_encrypted,
+                passphrase,
+                protection,
+                name,
+                key_purpose="encryption",
             )
             sig_private_key = _decrypt_private_key(
-                sig_priv_encrypted, passphrase, protection, name, key_purpose="signing",
+                sig_priv_encrypted,
+                passphrase,
+                protection,
+                name,
+                key_purpose="signing",
             )
 
         identity = cls(
@@ -378,6 +382,7 @@ class Identity:
             create_secure_file,
             set_permissions,
         )
+
         if overwrite and path.exists():
             # create_secure_directory uses exist_ok=True, just ensure permissions
             create_secure_directory(path, level=PermissionLevel.OWNER_FULL)
@@ -430,7 +435,10 @@ class Identity:
 
             if self.encryption_private_key:
                 enc_priv_encrypted = _encrypt_private_key(
-                    self.encryption_private_key.get_bytes(), passphrase, self.protection, self.name,
+                    self.encryption_private_key.get_bytes(),
+                    passphrase,
+                    self.protection,
+                    self.name,
                     key_purpose="encryption",
                 )
                 enc_priv_path = path / "encryption_private.pem"
@@ -440,7 +448,10 @@ class Identity:
 
             if self.signing_private_key:
                 sig_priv_encrypted = _encrypt_private_key(
-                    self.signing_private_key.get_bytes(), passphrase, self.protection, self.name,
+                    self.signing_private_key.get_bytes(),
+                    passphrase,
+                    self.protection,
+                    self.name,
                     key_purpose="signing",
                 )
                 sig_priv_path = path / "signing_private.pem"
@@ -825,7 +836,11 @@ def _encrypt_private_key(
     )
 
     # Build AAD to bind ciphertext to identity and key purpose
-    aad = f"identity:{identity_name}:purpose:{key_purpose}".encode("utf-8") if identity_name and key_purpose else None
+    aad = (
+        f"identity:{identity_name}:purpose:{key_purpose}".encode("utf-8")
+        if identity_name and key_purpose
+        else None
+    )
 
     # Encrypt with AES-256-GCM
     nonce = secrets.token_bytes(12)
@@ -914,7 +929,11 @@ def _decrypt_private_key(
         cipher = AESGCM(key)
 
         # Build AAD to bind ciphertext to identity and key purpose
-        aad = f"identity:{identity_name}:purpose:{key_purpose}".encode("utf-8") if identity_name and key_purpose else None
+        aad = (
+            f"identity:{identity_name}:purpose:{key_purpose}".encode("utf-8")
+            if identity_name and key_purpose
+            else None
+        )
 
         # Try with AAD first (new format), fall back to no-AAD (legacy)
         try:

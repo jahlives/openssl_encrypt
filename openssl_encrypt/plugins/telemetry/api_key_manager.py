@@ -14,14 +14,10 @@ The client ID is purely for rate limiting and deduplication on the server side.
 It cannot be used to identify a specific user or machine.
 """
 
-import hashlib
 import json
 import os
-import secrets
 import stat
-import sys
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from typing import Dict, Optional
 
 import requests

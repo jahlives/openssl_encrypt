@@ -16,7 +16,6 @@ from openssl_encrypt.modules.crypt_core import (
     encrypt_file,
     extract_file_metadata,
     generate_key,
-    multi_hash_password,
 )
 
 
@@ -473,10 +472,20 @@ class TestSaltDerivationVersions(unittest.TestCase):
                     }
                 },
             ),
-            ("Scrypt", {"scrypt": {"enabled": True, "n": 1024, "r": 4, "p": 1, "rounds": 2}}),
+            (
+                "Scrypt",
+                {"scrypt": {"enabled": True, "n": 1024, "r": 4, "p": 1, "rounds": 2}},
+            ),
             (
                 "Balloon",
-                {"balloon": {"enabled": True, "space_cost": 1024, "time_cost": 2, "rounds": 2}},
+                {
+                    "balloon": {
+                        "enabled": True,
+                        "space_cost": 1024,
+                        "time_cost": 2,
+                        "rounds": 2,
+                    }
+                },
             ),
             ("BLAKE2b", {"blake2b": 3}),
             ("BLAKE3", {"blake3": 3}),
@@ -534,7 +543,12 @@ class TestSaltDerivationVersions(unittest.TestCase):
                     # Skip if algorithm not available
                     if any(
                         word in str(e).lower()
-                        for word in ["not available", "not supported", "module", "import"]
+                        for word in [
+                            "not available",
+                            "not supported",
+                            "module",
+                            "import",
+                        ]
                     ):
                         self.skipTest(f"{algo_name} not available: {e}")
                     raise

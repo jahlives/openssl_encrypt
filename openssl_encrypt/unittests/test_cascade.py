@@ -57,7 +57,8 @@ class TestCascadeConfig(unittest.TestCase):
     def test_valid_config_with_three_ciphers(self):
         """Test creating a valid configuration with 3 ciphers."""
         config = CascadeConfig(
-            cipher_names=["aes-256-gcm", "chacha20-poly1305", "aes-128-gcm"], hkdf_hash="sha512"
+            cipher_names=["aes-256-gcm", "chacha20-poly1305", "aes-128-gcm"],
+            hkdf_hash="sha512",
         )
         self.assertEqual(config.layer_count, 3)
         self.assertEqual(config.hkdf_hash, "sha512")
@@ -153,7 +154,8 @@ class TestCascadeKeyDerivation(unittest.TestCase):
     def test_chain_prefix_is_used(self):
         """Test that chain prefix from previous layer affects next layer."""
         config = CascadeConfig(
-            cipher_names=["aes-256-gcm", "chacha20-poly1305", "aes-256-ocb3"], hkdf_hash="sha256"
+            cipher_names=["aes-256-gcm", "chacha20-poly1305", "aes-256-ocb3"],
+            hkdf_hash="sha256",
         )
         kd = CascadeKeyDerivation(config)
         layers = kd.derive_layer_keys(self.master_key, self.salt)
@@ -198,7 +200,8 @@ class TestCascadeKeyDerivation(unittest.TestCase):
     def test_unsupported_hash_algorithm(self):
         """Test that unsupported hash algorithm raises error."""
         config = CascadeConfig(
-            cipher_names=["aes-256-gcm", "chacha20-poly1305"], hkdf_hash="md5"  # Unsupported
+            cipher_names=["aes-256-gcm", "chacha20-poly1305"],
+            hkdf_hash="md5",  # Unsupported
         )
 
         with self.assertRaises(CascadeConfigError) as context:
@@ -289,7 +292,8 @@ class TestCascadeEncryption(unittest.TestCase):
     def test_three_layer_cascade(self):
         """Test cascade with three layers."""
         config = CascadeConfig(
-            cipher_names=["aes-256-gcm", "chacha20-poly1305", "aes-256-ocb3"], hkdf_hash="sha256"
+            cipher_names=["aes-256-gcm", "chacha20-poly1305", "aes-256-ocb3"],
+            hkdf_hash="sha256",
         )
         cascade = CascadeEncryption(config)
 
@@ -1013,9 +1017,7 @@ class TestCascadeAllLayerAAD(unittest.TestCase):
         )
 
         with self.assertRaises((AuthenticationError, CascadeError)):
-            cascade.decrypt(
-                ciphertext, self.master_key, self.salt, associated_data=b"wrong"
-            )
+            cascade.decrypt(ciphertext, self.master_key, self.salt, associated_data=b"wrong")
 
     def test_v12_ciphertext_differs_from_legacy_with_aad(self):
         """Test that v12+ AAD on all layers produces different ciphertext than legacy."""

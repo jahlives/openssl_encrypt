@@ -11,7 +11,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
 
 class TestResultLevel(Enum):
@@ -85,7 +85,6 @@ class BaseSecurityTest(ABC):
         Returns:
             List of TestResult objects
         """
-        pass
 
     def run_single_test(self, test_func, test_name: str, *args, **kwargs) -> TestResult:
         """
@@ -203,16 +202,10 @@ class TestConfig:
 class SecurityTestException(Exception):
     """Base exception for security testing framework."""
 
-    pass
-
 
 class TestConfigurationError(SecurityTestException):
     """Exception raised for invalid test configuration."""
 
-    pass
-
 
 class TestExecutionError(SecurityTestException):
     """Exception raised during test execution."""
-
-    pass

@@ -37,8 +37,6 @@ logger = logging.getLogger(__name__)
 class ConfigError(Exception):
     """Base exception for configuration errors"""
 
-    pass
-
 
 @dataclass
 class KeyserverConfig:
@@ -291,7 +289,6 @@ class KeyserverConfig:
         except Exception as e:
             logger.error(f"Failed to delete API token: {e}")
             raise ConfigError(f"Failed to delete API token: {e}")
-
 
     def load_refresh_token(self) -> Optional[str]:
         """

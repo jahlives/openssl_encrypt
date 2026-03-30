@@ -5,14 +5,12 @@ Provides comprehensive fuzzing capabilities to test input boundary conditions,
 edge cases, and resilience against malformed inputs.
 """
 
-import json
 import os
 import random
 import string
-import struct
 import tempfile
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from ..crypt_core import decrypt_file, encrypt_file
 from .base_test import BaseSecurityTest, TestConfig, TestResult, TestResultLevel
@@ -145,7 +143,8 @@ class FuzzTestSuite(BaseSecurityTest):
 
     def __init__(self):
         super().__init__(
-            "FuzzTestSuite", "Comprehensive fuzzing tests for input validation and error handling"
+            "FuzzTestSuite",
+            "Comprehensive fuzzing tests for input validation and error handling",
         )
         self.input_generator = InputGenerator()
         self.temp_dir = None
@@ -395,13 +394,19 @@ class FuzzTestSuite(BaseSecurityTest):
         """Test various file-related boundary conditions."""
         test_cases = [
             ("empty_file", b""),
-            ("large_file", self.input_generator.generate_random_bytes(10 * 1024 * 1024)),  # 10MB
+            (
+                "large_file",
+                self.input_generator.generate_random_bytes(10 * 1024 * 1024),
+            ),  # 10MB
             ("file_with_nulls", b"\x00" * 1000 + b"data" + b"\x00" * 1000),
         ]
 
         for test_name, test_data in test_cases:
             result = self.run_single_test(
-                self._test_file_condition, f"file_boundary_{test_name}", test_data, test_name
+                self._test_file_condition,
+                f"file_boundary_{test_name}",
+                test_data,
+                test_name,
             )
             self.add_result(result)
 
@@ -507,7 +512,6 @@ class FuzzTestSuite(BaseSecurityTest):
     def _test_concurrent_access(self, config: TestConfig) -> None:
         """Test concurrent file access scenarios."""
         import threading
-        import time
 
         def encrypt_worker(worker_id: int, results: List):
             try:
@@ -519,7 +523,10 @@ class FuzzTestSuite(BaseSecurityTest):
 
                 config_dict = {"algorithm": "fernet", "hash_algorithm": "SHA256"}
                 encrypt_file(
-                    input_file, encrypted_file, f"password_{worker_id}", hash_config=config_dict
+                    input_file,
+                    encrypted_file,
+                    f"password_{worker_id}",
+                    hash_config=config_dict,
                 )
 
                 results.append(("success", worker_id, None))
@@ -547,14 +554,21 @@ class FuzzTestSuite(BaseSecurityTest):
                 "concurrent_access",
                 TestResultLevel.PASS,
                 f"All {success_count} concurrent operations succeeded",
-                details={"concurrent_operations": len(results), "success_count": success_count},
+                details={
+                    "concurrent_operations": len(results),
+                    "success_count": success_count,
+                },
             )
         else:
             test_result = TestResult(
                 "concurrent_access",
                 TestResultLevel.WARNING,
                 f"{success_count} succeeded, {error_count} failed in concurrent test",
-                details={"total": len(results), "success": success_count, "errors": error_count},
+                details={
+                    "total": len(results),
+                    "success": success_count,
+                    "errors": error_count,
+                },
             )
 
         self.add_result(test_result)

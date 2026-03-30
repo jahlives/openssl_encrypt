@@ -101,7 +101,11 @@ def create_gitlab_report(prod_results, dev_results):
                                 },
                             },
                             "identifiers": [
-                                {"type": "pip-audit", "name": vuln_id, "value": vuln_id},
+                                {
+                                    "type": "pip-audit",
+                                    "name": vuln_id,
+                                    "value": vuln_id,
+                                },
                                 {
                                     "type": "cve",
                                     "name": vuln.get("cve_id", ""),
@@ -163,7 +167,11 @@ def create_gitlab_report(prod_results, dev_results):
                                 },
                             },
                             "identifiers": [
-                                {"type": "pip-audit", "name": vuln_id, "value": vuln_id},
+                                {
+                                    "type": "pip-audit",
+                                    "name": vuln_id,
+                                    "value": vuln_id,
+                                },
                                 {
                                     "type": "cve",
                                     "name": vuln.get("cve_id", ""),

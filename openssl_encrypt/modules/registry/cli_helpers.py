@@ -154,7 +154,7 @@ def format_algorithm_help(category: str) -> str:
 
     for name, (info, is_available) in registry.list_all().items():
         status = "✓" if is_available else "✗"
-        security = info.security_level.name.lower()
+        info.security_level.name.lower()
 
         # Format line
         line = f"  {status} {name:25s} - {info.description}"
@@ -257,7 +257,10 @@ def validate_algorithm_name(name: str, category: str) -> Tuple[bool, str]:
 
     # Check if algorithm is available on this system
     if not registry.is_available(name):
-        return False, f"Algorithm '{name}' is not available (requires additional package)"
+        return (
+            False,
+            f"Algorithm '{name}' is not available (requires additional package)",
+        )
 
     return True, ""
 

@@ -10,7 +10,6 @@ import errno
 import glob
 import json
 import os
-import random
 import secrets
 import signal
 import stat
@@ -21,7 +20,7 @@ import time
 
 def eprint(*args, **kwargs):
     """Print to stderr. Drop-in replacement for print() for non-data output."""
-    kwargs.setdefault('file', sys.stderr)
+    kwargs.setdefault("file", sys.stderr)
     print(*args, **kwargs)
 
 
@@ -373,6 +372,7 @@ def safe_open_file(file_path, mode, secure_mode=False, allow_special_files=True)
         # On Windows, os.open() mode bits are insufficient — apply real ACLs
         if sys.platform == "win32":
             from openssl_encrypt.modules.file_permissions import PermissionLevel, set_permissions
+
             try:
                 set_permissions(file_path, PermissionLevel.OWNER_ONLY)
             except Exception:
@@ -429,9 +429,11 @@ def secure_shred_file(file_path, passes=3, quiet=False, secure_mode=False):
         bool: True if file was successfully shredded, False otherwise
     """
     # Skip special device files (stdin, stdout, stderr, pipes, etc.)
-    if file_path in ("/dev/stdin", "/dev/stdout", "/dev/stderr") or file_path.startswith(
-        "/dev/fd/"
-    ):
+    if file_path in (
+        "/dev/stdin",
+        "/dev/stdout",
+        "/dev/stderr",
+    ) or file_path.startswith("/dev/fd/"):
         if not quiet:
             eprint(f"Skipping shred for special device file: {file_path}")
         return False

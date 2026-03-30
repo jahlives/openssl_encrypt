@@ -17,7 +17,7 @@ import abc
 import enum
 import logging
 import time
-from typing import Any, Dict, List, Optional, Set, Union
+from typing import Any, Dict, List, Optional, Set
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +94,10 @@ class PluginSecurityContext:
     """
 
     def __init__(
-        self, plugin_id: str, capabilities: Set[PluginCapability], plugin_file_directory: str = None
+        self,
+        plugin_id: str,
+        capabilities: Set[PluginCapability],
+        plugin_file_directory: str = None,
     ):
         self.plugin_id = plugin_id
         self.capabilities = frozenset(capabilities)
@@ -119,7 +122,6 @@ class PluginSecurityContext:
 
     def get_safe_temp_path(self, suffix: str = "") -> str:
         """Generate safe temporary file path for plugin use (0o600 permissions)."""
-        import os
         import tempfile
 
         temp_file = tempfile.NamedTemporaryFile(
@@ -128,6 +130,7 @@ class PluginSecurityContext:
         temp_path = temp_file.name
         temp_file.close()
         from openssl_encrypt.modules.file_permissions import PermissionLevel, set_permissions
+
         set_permissions(temp_path, PermissionLevel.OWNER_ONLY)
         return temp_path
 
@@ -196,7 +199,10 @@ class PluginResult:
     """
 
     def __init__(
-        self, success: bool = True, message: str = "", data: Optional[Dict[str, Any]] = None
+        self,
+        success: bool = True,
+        message: str = "",
+        data: Optional[Dict[str, Any]] = None,
     ):
         self.success = success
         self.message = message
@@ -286,17 +292,14 @@ class BasePlugin(abc.ABC):
     @abc.abstractmethod
     def get_plugin_type(self) -> PluginType:
         """Return the type of this plugin."""
-        pass
 
     @abc.abstractmethod
     def get_required_capabilities(self) -> Set[PluginCapability]:
         """Return set of capabilities this plugin requires."""
-        pass
 
     @abc.abstractmethod
     def get_description(self) -> str:
         """Return human-readable description of plugin functionality."""
-        pass
 
     def get_metadata(self) -> Dict[str, Any]:
         """Return plugin metadata (non-sensitive information only)."""
@@ -325,7 +328,6 @@ class BasePlugin(abc.ABC):
         Execute the plugin with given security context.
         This is the main entry point for plugin execution.
         """
-        pass
 
     def initialize(self, config: Dict[str, Any]) -> PluginResult:
         """Initialize plugin with configuration (optional override)."""
@@ -357,7 +359,6 @@ class PreProcessorPlugin(BasePlugin):
         Returns:
             PluginResult with processing status and any modifications
         """
-        pass
 
     def execute(self, context: PluginSecurityContext) -> PluginResult:
         """Execute pre-processing for files in context."""
@@ -372,7 +373,8 @@ class PreProcessorPlugin(BasePlugin):
                 return result  # Fail fast on first error
 
         return PluginResult.success_result(
-            f"Pre-processed {len(results)} files successfully", {"processed_files": len(results)}
+            f"Pre-processed {len(results)} files successfully",
+            {"processed_files": len(results)},
         )
 
 
@@ -399,7 +401,6 @@ class PostProcessorPlugin(BasePlugin):
         Returns:
             PluginResult with processing status and any modifications
         """
-        pass
 
     def execute(self, context: PluginSecurityContext) -> PluginResult:
         """Execute post-processing for encrypted files in context."""
@@ -442,7 +443,6 @@ class MetadataHandlerPlugin(BasePlugin):
         Returns:
             PluginResult with modified metadata or processing status
         """
-        pass
 
     def execute(self, context: PluginSecurityContext) -> PluginResult:
         """Execute metadata processing."""
@@ -461,12 +461,10 @@ class FormatConverterPlugin(BasePlugin):
     @abc.abstractmethod
     def get_supported_input_formats(self) -> List[str]:
         """Return list of supported input formats (e.g., ['txt', 'doc'])."""
-        pass
 
     @abc.abstractmethod
     def get_supported_output_formats(self) -> List[str]:
         """Return list of supported output formats (e.g., ['pdf', 'html'])."""
-        pass
 
     @abc.abstractmethod
     def convert_format(
@@ -490,7 +488,6 @@ class FormatConverterPlugin(BasePlugin):
         Returns:
             PluginResult with conversion status
         """
-        pass
 
     def execute(self, context: PluginSecurityContext) -> PluginResult:
         """Execute format conversion based on context metadata."""
@@ -530,7 +527,6 @@ class AnalyzerPlugin(BasePlugin):
         Returns:
             PluginResult with analysis results
         """
-        pass
 
     def execute(self, context: PluginSecurityContext) -> PluginResult:
         """Execute analysis for files in context."""
@@ -568,7 +564,6 @@ class UtilityPlugin(BasePlugin):
         Returns:
             Dict mapping function names to callable functions
         """
-        pass
 
     def execute(self, context: PluginSecurityContext) -> PluginResult:
         """Execute utility function based on context."""
@@ -585,7 +580,8 @@ class UtilityPlugin(BasePlugin):
             function_args = context.metadata.get("function_args", {})
             result = function(**function_args)
             return PluginResult.success_result(
-                f"Utility function '{function_name}' executed successfully", {"result": result}
+                f"Utility function '{function_name}' executed successfully",
+                {"result": result},
             )
         except Exception as e:
             return PluginResult.error_result(f"Utility function failed: {str(e)}")
@@ -643,7 +639,6 @@ class HSMPlugin(BasePlugin):
             - Hardware availability is REQUIRED - return error if device not present
             - Never log or expose the pepper value
         """
-        pass
 
     def execute(self, context: PluginSecurityContext) -> PluginResult:
         """
@@ -713,7 +708,6 @@ class TelemetryPlugin(BasePlugin):
             - Should NOT raise exceptions (catch and log errors internally)
             - Should NOT block the main encryption/decryption operation
         """
-        pass
 
     @abc.abstractmethod
     def flush(self) -> PluginResult:
@@ -729,7 +723,6 @@ class TelemetryPlugin(BasePlugin):
             - Should return success if most/all events uploaded
             - Failed events should be kept in buffer for retry
         """
-        pass
 
     @abc.abstractmethod
     def get_status(self) -> Dict[str, Any]:
@@ -750,7 +743,6 @@ class TelemetryPlugin(BasePlugin):
             - Should be fast (no network calls)
             - Should provide useful info for debugging
         """
-        pass
 
     @abc.abstractmethod
     def get_pending_events(self) -> List[Dict[str, Any]]:
@@ -766,7 +758,6 @@ class TelemetryPlugin(BasePlugin):
             - Critical for transparency and user trust
             - Should return events in chronological order
         """
-        pass
 
     def execute(self, context: PluginSecurityContext) -> PluginResult:
         """

@@ -19,14 +19,7 @@ CASCADE_PRESETS = {
 
 # Import registry helper functions
 try:
-    from .registry import (  # noqa: F401
-        format_algorithm_help,
-        get_available_ciphers,
-        get_available_hashes,
-        get_available_kdfs,
-        get_available_kems,
-        get_available_signatures,
-    )
+    from .registry import format_algorithm_help  # noqa: F401
 
     REGISTRY_AVAILABLE = True
 except ImportError:
@@ -212,7 +205,10 @@ def _add_hash_kdf_arguments(subparser):
         "--scrypt-r", type=int, default=8, help="Scrypt r parameter (block size)"
     )
     scrypt_group.add_argument(
-        "--scrypt-p", type=int, default=1, help="Scrypt p parameter (parallelization factor)"
+        "--scrypt-p",
+        type=int,
+        default=1,
+        help="Scrypt p parameter (parallelization factor)",
     )
 
     # Argon2 options
@@ -690,7 +686,9 @@ def setup_encrypt_parser(subparser):
         help="Randomize pixel selection order (requires --stego-password)",
     )
     stego_group.add_argument(
-        "--stego-decoy-data", action="store_true", help="Fill unused capacity with decoy data"
+        "--stego-decoy-data",
+        action="store_true",
+        help="Fill unused capacity with decoy data",
     )
     stego_group.add_argument(
         "--jpeg-quality",
@@ -1291,7 +1289,10 @@ def setup_rekey_parser(subparser):
         "--scrypt-r", type=int, default=8, help="Scrypt r parameter (block size)"
     )
     scrypt_group.add_argument(
-        "--scrypt-p", type=int, default=1, help="Scrypt p parameter (parallelization factor)"
+        "--scrypt-p",
+        type=int,
+        default=1,
+        help="Scrypt p parameter (parallelization factor)",
     )
 
     # Argon2 options
@@ -1722,7 +1723,6 @@ def setup_derive_password_parser(subparser):
 def setup_simple_parser(subparser):
     """Set up arguments for simple commands (security-info, check-argon2, check-pqc, version)."""
     # These commands don't need any special arguments
-    pass
 
 
 def setup_analyze_security_parser(subparser):
@@ -1933,7 +1933,9 @@ def setup_template_parser(subparser):
     """Set up arguments specific to the template command"""
     # Create subparsers for template operations
     template_subparsers = subparser.add_subparsers(
-        dest="template_action", help="Template management operations", metavar="operation"
+        dest="template_action",
+        help="Template management operations",
+        metavar="operation",
     )
 
     # List templates
@@ -1963,7 +1965,10 @@ def setup_template_parser(subparser):
         help="Use cases this template is suitable for",
     )
     create_parser.add_argument(
-        "--format", choices=["json", "yaml"], default="json", help="Template format (default: json)"
+        "--format",
+        choices=["json", "yaml"],
+        default="json",
+        help="Template format (default: json)",
     )
     create_parser.add_argument(
         "--overwrite", action="store_true", help="Overwrite existing template"
@@ -2007,7 +2012,10 @@ def setup_template_parser(subparser):
         help="Use case to recommend templates for",
     )
     recommend_parser.add_argument(
-        "--max-results", type=int, default=3, help="Maximum number of recommendations (default: 3)"
+        "--max-results",
+        type=int,
+        default=3,
+        help="Maximum number of recommendations (default: 3)",
     )
 
     # Delete template
@@ -2022,7 +2030,9 @@ def setup_smart_recommendations_parser(subparser):
     """Set up arguments specific to the smart-recommendations command."""
     # Create subparsers for smart recommendations operations
     recs_subparsers = subparser.add_subparsers(
-        dest="recommendations_action", help="Smart recommendations operations", metavar="operation"
+        dest="recommendations_action",
+        help="Smart recommendations operations",
+        metavar="operation",
     )
 
     # Get recommendations
@@ -2075,7 +2085,9 @@ def setup_smart_recommendations_parser(subparser):
         "profile", help="Manage user profiles for personalized recommendations"
     )
     profile_parser.add_argument(
-        "--user-id", default="default", help="User ID for profile operations (default: default)"
+        "--user-id",
+        default="default",
+        help="User ID for profile operations (default: default)",
     )
     profile_group = profile_parser.add_mutually_exclusive_group(required=True)
     profile_group.add_argument(
@@ -2091,7 +2103,9 @@ def setup_smart_recommendations_parser(subparser):
         "recommendation_id", help="ID of the recommendation to provide feedback on"
     )
     feedback_parser.add_argument(
-        "accepted", type=bool, help="Whether the recommendation was accepted (True/False)"
+        "accepted",
+        type=bool,
+        help="Whether the recommendation was accepted (True/False)",
     )
     feedback_parser.add_argument(
         "--user-id", default="default", help="User ID for feedback (default: default)"
@@ -2127,7 +2141,9 @@ def setup_identity_parser(subparser):
 
     # Create subparsers for identity subcommands
     identity_subparsers = subparser.add_subparsers(
-        dest="identity_action", help="Identity management operations", metavar="operation"
+        dest="identity_action",
+        help="Identity management operations",
+        metavar="operation",
     )
 
     # Create identity
@@ -2260,7 +2276,10 @@ def setup_test_parser(subparser):
     # Memory testing
     memory_parser = test_subparsers.add_parser("memory", help="Run memory safety tests")
     memory_parser.add_argument(
-        "--test-iterations", type=int, default=10, help="Number of memory test iterations"
+        "--test-iterations",
+        type=int,
+        default=10,
+        help="Number of memory test iterations",
     )
     memory_parser.add_argument(
         "--leak-threshold", type=float, default=1.0, help="Memory leak threshold in MB"
@@ -2319,7 +2338,8 @@ def setup_hsm_parser(subparser):
 
     # FIDO2 registration subcommand
     fido2_register_parser = hsm_subparsers.add_parser(
-        "fido2-register", help="Register new FIDO2 credential for hardware-bound encryption"
+        "fido2-register",
+        help="Register new FIDO2 credential for hardware-bound encryption",
     )
     fido2_register_parser.add_argument(
         "--description",
@@ -2338,7 +2358,8 @@ def setup_hsm_parser(subparser):
 
     # FIDO2 status subcommand
     fido2_status_parser = hsm_subparsers.add_parser(
-        "fido2-status", help="Show FIDO2 registration status and list registered credentials"
+        "fido2-status",
+        help="Show FIDO2 registration status and list registered credentials",
     )
     fido2_status_parser.add_argument(
         "--rp-id",
@@ -2439,7 +2460,9 @@ def setup_keyserver_parser(subparser):
     )
     import_parser.add_argument("identifier", help="Fingerprint, name, or email to import")
     import_parser.add_argument(
-        "--no-trust-prompt", action="store_true", help="Skip trust confirmation (dangerous)"
+        "--no-trust-prompt",
+        action="store_true",
+        help="Skip trust confirmation (dangerous)",
     )
 
     # Upload subcommand (requires API token)
@@ -2490,7 +2513,10 @@ def setup_telemetry_parser(subparser):
     )
     show_pending_parser.add_argument("--json", action="store_true", help="Output in JSON format")
     show_pending_parser.add_argument(
-        "--limit", type=int, default=100, help="Maximum number of events to show (default: 100)"
+        "--limit",
+        type=int,
+        default=100,
+        help="Maximum number of events to show (default: 100)",
     )
 
     # Flush subcommand

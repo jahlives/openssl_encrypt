@@ -9,10 +9,8 @@ cryptographic memory operations with enhanced security protections.
 """
 
 import contextlib
-import os
 import secrets
-import sys
-from typing import Any, BinaryIO, Callable, Dict, List, Optional, Tuple, Union
+from typing import Optional, Union
 
 # Import secure error handling
 from .crypt_errors import KeyDerivationError
@@ -21,7 +19,6 @@ from .crypt_errors import secure_key_derivation_error_handler, secure_memory_err
 
 # Import from secure_allocator module
 from .secure_allocator import (
-    SecureBytes,
     allocate_secure_crypto_buffer,
     check_all_crypto_buffer_integrity,
     free_secure_crypto_buffer,
@@ -40,7 +37,9 @@ class CryptoSecureBuffer:
 
     @secure_memory_error_handler
     def __init__(
-        self, size: Optional[int] = None, data: Optional[Union[bytes, bytearray, str]] = None
+        self,
+        size: Optional[int] = None,
+        data: Optional[Union[bytes, bytearray, str]] = None,
     ):
         """
         Initialize a secure cryptographic buffer.
@@ -66,7 +65,8 @@ class CryptoSecureBuffer:
                 size = len(byte_data)
             else:
                 raise SecureMemoryError(
-                    "Invalid data type", f"Data must be bytes, bytearray, or str, got {type(data)}"
+                    "Invalid data type",
+                    f"Data must be bytes, bytearray, or str, got {type(data)}",
                 )
         else:
             if size is None:
@@ -289,7 +289,8 @@ def secure_crypto_buffer(size: int) -> CryptoSecureBuffer:
 
 @contextlib.contextmanager
 def secure_crypto_key(
-    key_data: Optional[Union[bytes, bytearray, str]] = None, key_size: Optional[int] = None
+    key_data: Optional[Union[bytes, bytearray, str]] = None,
+    key_size: Optional[int] = None,
 ) -> CryptoKey:
     """
     Context manager for a secure cryptographic key.

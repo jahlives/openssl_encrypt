@@ -9,20 +9,15 @@ This module contains comprehensive tests for:
 - Secure password handling and memory management
 """
 
-import os
 import secrets
 import string
-import sys
-import tempfile
 import unittest
-from unittest.mock import MagicMock, patch
 
-import pytest
 
 # Import the modules to test
 from openssl_encrypt.modules.asymmetric_core import PasswordWrapper, PasswordWrapperError
 from openssl_encrypt.modules.crypt_utils import generate_strong_password
-from openssl_encrypt.modules.pqc import LIBOQS_AVAILABLE, PQCipher
+from openssl_encrypt.modules.pqc import PQCipher
 
 # Check if PQC is available
 try:
@@ -51,35 +46,55 @@ class TestPasswordGeneration(unittest.TestCase):
         """Test password generation with different character sets."""
         # Only lowercase
         password = generate_strong_password(
-            16, use_lowercase=True, use_uppercase=False, use_digits=False, use_special=False
+            16,
+            use_lowercase=True,
+            use_uppercase=False,
+            use_digits=False,
+            use_special=False,
         )
         self.assertEqual(len(password), 16)
         self.assertTrue(all(c.islower() for c in password))
 
         # Only uppercase
         password = generate_strong_password(
-            16, use_lowercase=False, use_uppercase=True, use_digits=False, use_special=False
+            16,
+            use_lowercase=False,
+            use_uppercase=True,
+            use_digits=False,
+            use_special=False,
         )
         self.assertEqual(len(password), 16)
         self.assertTrue(all(c.isupper() for c in password))
 
         # Only digits
         password = generate_strong_password(
-            16, use_lowercase=False, use_uppercase=False, use_digits=True, use_special=False
+            16,
+            use_lowercase=False,
+            use_uppercase=False,
+            use_digits=True,
+            use_special=False,
         )
         self.assertEqual(len(password), 16)
         self.assertTrue(all(c.isdigit() for c in password))
 
         # Only special characters
         password = generate_strong_password(
-            16, use_lowercase=False, use_uppercase=False, use_digits=False, use_special=True
+            16,
+            use_lowercase=False,
+            use_uppercase=False,
+            use_digits=False,
+            use_special=True,
         )
         self.assertEqual(len(password), 16)
         self.assertTrue(all(c in string.punctuation for c in password))
 
         # Mix of uppercase and digits
         password = generate_strong_password(
-            16, use_lowercase=False, use_uppercase=True, use_digits=True, use_special=False
+            16,
+            use_lowercase=False,
+            use_uppercase=True,
+            use_digits=True,
+            use_special=False,
         )
         self.assertEqual(len(password), 16)
         self.assertTrue(all(c.isupper() or c.isdigit() for c in password))
@@ -88,7 +103,11 @@ class TestPasswordGeneration(unittest.TestCase):
         """Test default behavior when no character sets are specified."""
         # When no character sets are specified, should default to using all
         password = generate_strong_password(
-            16, use_lowercase=False, use_uppercase=False, use_digits=False, use_special=False
+            16,
+            use_lowercase=False,
+            use_uppercase=False,
+            use_digits=False,
+            use_special=False,
         )
         self.assertEqual(len(password), 16)
 

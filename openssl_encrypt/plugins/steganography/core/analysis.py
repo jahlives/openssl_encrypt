@@ -7,13 +7,10 @@ calculating capacities, assessing security properties, and evaluating
 resistance to steganalysis attacks.
 """
 
-import hashlib
 import logging
-import math
 import statistics
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List
 
-import numpy as np
 
 # Import core steganography modules
 from .exceptions import SteganographyError
@@ -292,10 +289,12 @@ class SecurityAnalyzer:
     def _assess_threat_models(self, security_scores: Dict[str, float]) -> Dict[str, str]:
         """Assess resistance against different threat models"""
         return {
-            "casual_observer": "high" if security_scores["visual_analysis"] > 0.7 else "low",
-            "forensic_analyst": "high" if security_scores["statistical_analysis"] > 0.7 else "low",
-            "automated_detection": "high" if security_scores["machine_learning"] > 0.6 else "low",
-            "academic_researcher": "medium" if min(security_scores.values()) > 0.5 else "low",
+            "casual_observer": ("high" if security_scores["visual_analysis"] > 0.7 else "low"),
+            "forensic_analyst": (
+                "high" if security_scores["statistical_analysis"] > 0.7 else "low"
+            ),
+            "automated_detection": ("high" if security_scores["machine_learning"] > 0.6 else "low"),
+            "academic_researcher": ("medium" if min(security_scores.values()) > 0.5 else "low"),
             "nation_state": "low",  # Conservative assumption for highest-level threats
         }
 

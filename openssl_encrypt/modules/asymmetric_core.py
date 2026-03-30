@@ -22,10 +22,10 @@ from typing import Dict, Tuple
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
+from .crypt_utils import eprint
 from .crypto_secure_memory import CryptoKey
 from .pqc import PQCAlgorithm, PQCipher
 from .secure_memory import SecureBytes, secure_memzero
-from .crypt_utils import eprint
 
 # Set up module-level logger
 logger = logging.getLogger(__name__)
@@ -33,8 +33,6 @@ logger = logging.getLogger(__name__)
 
 class PasswordWrapperError(Exception):
     """Base exception for password wrapping operations"""
-
-    pass
 
 
 class PasswordWrapper:
@@ -204,8 +202,8 @@ class PasswordWrapper:
 
         try:
             # Derive 32-byte key from shared secret using HKDF
-            from cryptography.hazmat.primitives.kdf.hkdf import HKDF
             from cryptography.hazmat.primitives import hashes as crypto_hashes
+            from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
             hkdf = HKDF(
                 algorithm=crypto_hashes.SHA256(),
@@ -285,8 +283,8 @@ class PasswordWrapper:
             ciphertext_with_tag = encrypted_password[12:]
 
             # Try HKDF-based derivation first (v2), fall back to SHA-256 (v1 legacy)
-            from cryptography.hazmat.primitives.kdf.hkdf import HKDF
             from cryptography.hazmat.primitives import hashes as crypto_hashes
+            from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
             hkdf = HKDF(
                 algorithm=crypto_hashes.SHA256(),
@@ -554,7 +552,9 @@ if __name__ == "__main__":
     cipher = PQCipher("ML-KEM-768")
     recipient_pubkey, recipient_privkey = cipher.generate_keypair()
 
-    eprint(f"Recipient keys: pub={len(recipient_pubkey)} bytes, priv={len(recipient_privkey)} bytes")
+    eprint(
+        f"Recipient keys: pub={len(recipient_pubkey)} bytes, priv={len(recipient_privkey)} bytes"
+    )
 
     # Generate random password
     password = secrets.token_bytes(32)

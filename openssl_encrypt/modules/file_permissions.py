@@ -20,7 +20,6 @@ import stat
 import sys
 from enum import Enum
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -28,9 +27,8 @@ logger = logging.getLogger(__name__)
 _HAS_WIN32 = False
 if sys.platform == "win32":
     try:
-        import win32api
         import ntsecuritycon as con
-        import pywintypes
+        import win32api
         import win32security
 
         _HAS_WIN32 = True
@@ -139,12 +137,9 @@ def _apply_dacl(path: str, dacl: "win32security.ACL") -> None:
     """
     # PROTECTED_DACL_SECURITY_INFORMATION disables inheritance from parent
     security_info = (
-        win32security.DACL_SECURITY_INFORMATION
-        | win32security.PROTECTED_DACL_SECURITY_INFORMATION
+        win32security.DACL_SECURITY_INFORMATION | win32security.PROTECTED_DACL_SECURITY_INFORMATION
     )
-    sd = win32security.GetFileSecurity(
-        str(path), win32security.OWNER_SECURITY_INFORMATION
-    )
+    sd = win32security.GetFileSecurity(str(path), win32security.OWNER_SECURITY_INFORMATION)
     sd.SetSecurityDescriptorDacl(True, dacl, False)
     win32security.SetFileSecurity(str(path), security_info, sd)
 
@@ -163,8 +158,7 @@ def _dacl_matches_level(path: str, level: PermissionLevel) -> bool:
     try:
         sd = win32security.GetFileSecurity(
             str(path),
-            win32security.DACL_SECURITY_INFORMATION
-            | win32security.OWNER_SECURITY_INFORMATION,
+            win32security.DACL_SECURITY_INFORMATION | win32security.OWNER_SECURITY_INFORMATION,
         )
         dacl = sd.GetSecurityDescriptorDacl()
         if dacl is None:
@@ -328,9 +322,7 @@ def get_posix_mode(path) -> int:
         return stat.S_IMODE(os.stat(path_str).st_mode)
 
 
-def create_secure_directory(
-    path, level: PermissionLevel = PermissionLevel.OWNER_FULL
-) -> Path:
+def create_secure_directory(path, level: PermissionLevel = PermissionLevel.OWNER_FULL) -> Path:
     """
     Create a directory with secure permissions set atomically.
 
@@ -372,9 +364,7 @@ def create_secure_directory(
     return path
 
 
-def create_secure_file(
-    path, level: PermissionLevel = PermissionLevel.OWNER_ONLY
-) -> int:
+def create_secure_file(path, level: PermissionLevel = PermissionLevel.OWNER_ONLY) -> int:
     """
     Open/create a file with secure permissions, returning a file descriptor.
 
@@ -407,9 +397,7 @@ def create_secure_file(
         umask_val = 0o777 & ~posix_mode
         old_umask = os.umask(umask_val)
         try:
-            fd = os.open(
-                path_str, os.O_CREAT | os.O_WRONLY | os.O_TRUNC, posix_mode
-            )
+            fd = os.open(path_str, os.O_CREAT | os.O_WRONLY | os.O_TRUNC, posix_mode)
         finally:
             os.umask(old_umask)
 
@@ -442,9 +430,7 @@ def copy_permissions(source, target) -> None:
 
     if sys.platform == "win32" and _HAS_WIN32:
         # Copy the DACL from source to target
-        sd = win32security.GetFileSecurity(
-            source_str, win32security.DACL_SECURITY_INFORMATION
-        )
+        sd = win32security.GetFileSecurity(source_str, win32security.DACL_SECURITY_INFORMATION)
         dacl = sd.GetSecurityDescriptorDacl()
 
         security_info = (

@@ -12,11 +12,8 @@ Tests the interaction between:
 
 import json
 import os
-import tempfile
-import time
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -570,7 +567,11 @@ class TestEndToEndTelemetryFlow:
             },
             "encryption": {
                 "cascade": True,
-                "cipher_chain": ["aes-256-gcm", "chacha20-poly1305", "xchacha20-poly1305"],
+                "cipher_chain": [
+                    "aes-256-gcm",
+                    "chacha20-poly1305",
+                    "xchacha20-poly1305",
+                ],
                 "hkdf_hash": "sha256",
             },
             "hashes": {},

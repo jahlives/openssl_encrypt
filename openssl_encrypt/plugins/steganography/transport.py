@@ -344,7 +344,10 @@ def create_steganography_transport(args) -> Optional[SteganographyTransport]:
         }
 
         return SteganographyTransport(
-            method=method, bits_per_channel=bits_per_channel, password=stego_password, **options
+            method=method,
+            bits_per_channel=bits_per_channel,
+            password=stego_password,
+            **options,
         )
 
     except ImportError as e:
@@ -358,8 +361,7 @@ def create_steganography_transport(args) -> Optional[SteganographyTransport]:
 def is_steganography_available() -> bool:
     """Check if steganography dependencies are available"""
     try:
-        import numpy as np
-        from PIL import Image
+        pass
 
         return True
     except ImportError:

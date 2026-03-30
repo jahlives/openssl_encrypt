@@ -17,14 +17,13 @@ Security properties:
     - Metadata tampering detection: metadata is AAD for every chunk's AEAD
 """
 
-import base64
 import hashlib
 import hmac as hmac_module
 import logging
 import os
 import secrets
 import struct
-from typing import Callable, List, Optional, Tuple, Union
+from typing import Callable, List, Optional, Union
 
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import (
@@ -425,12 +424,14 @@ class StreamingEncryptor:
             32-byte HMAC key as bytearray (mutable so caller can secure_memzero it)
         """
         if self.format_version is not None and self.format_version >= 12:
-            return bytearray(HKDF(
-                algorithm=hashes.SHA256(),
-                length=32,
-                salt=None,
-                info=b"openssl_encrypt-streaming-hmac-key",
-            ).derive(self.key))
+            return bytearray(
+                HKDF(
+                    algorithm=hashes.SHA256(),
+                    length=32,
+                    salt=None,
+                    info=b"openssl_encrypt-streaming-hmac-key",
+                ).derive(self.key)
+            )
         else:
             return bytearray(hashlib.sha256(self.key + b"oesc-trailer-hmac").digest())
 
@@ -500,7 +501,10 @@ class StreamingEncryptor:
                 # Encrypt the chunk
                 if self.algorithm == "cascade" and self.cascade_encryptor:
                     ciphertext = self.cascade_encryptor.encrypt(
-                        plaintext, self.key, self.cascade_salt, associated_data=aad,
+                        plaintext,
+                        self.key,
+                        self.cascade_salt,
+                        associated_data=aad,
                         chunk_nonce=nonce,
                     )
                 else:
@@ -600,12 +604,14 @@ class StreamingDecryptor:
             32-byte HMAC key as bytearray (mutable so caller can secure_memzero it)
         """
         if self.format_version is not None and self.format_version >= 12:
-            return bytearray(HKDF(
-                algorithm=hashes.SHA256(),
-                length=32,
-                salt=None,
-                info=b"openssl_encrypt-streaming-hmac-key",
-            ).derive(self.key))
+            return bytearray(
+                HKDF(
+                    algorithm=hashes.SHA256(),
+                    length=32,
+                    salt=None,
+                    info=b"openssl_encrypt-streaming-hmac-key",
+                ).derive(self.key)
+            )
         else:
             return bytearray(hashlib.sha256(self.key + b"oesc-trailer-hmac").digest())
 
@@ -677,9 +683,7 @@ class StreamingDecryptor:
 
             payload_version = struct.unpack("<I", header[4:8])[0]
             if payload_version != PAYLOAD_VERSION:
-                raise DecryptionError(
-                    f"Unsupported streaming payload version: {payload_version}"
-                )
+                raise DecryptionError(f"Unsupported streaming payload version: {payload_version}")
 
             # --- Read trailer (last 36 bytes of file) ---
             file_size = fin.seek(0, 2)  # seek to end
@@ -756,13 +760,14 @@ class StreamingDecryptor:
                     # Decrypt the chunk
                     if self.algorithm == "cascade" and self.cascade_decryptor:
                         plaintext = self.cascade_decryptor.decrypt(
-                            ciphertext, self.key, self.cascade_salt, associated_data=aad,
+                            ciphertext,
+                            self.key,
+                            self.cascade_salt,
+                            associated_data=aad,
                             chunk_nonce=nonce,
                         )
                     else:
-                        plaintext = decrypt_chunk(
-                            self.key, nonce, ciphertext, aad, self.algorithm
-                        )
+                        plaintext = decrypt_chunk(self.key, nonce, ciphertext, aad, self.algorithm)
 
                     # Write / collect plaintext
                     if fout is not None:

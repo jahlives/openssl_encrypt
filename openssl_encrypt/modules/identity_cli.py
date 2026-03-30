@@ -16,11 +16,10 @@ import getpass
 import json
 import os
 import sys
-
-from .crypt_utils import eprint
 from pathlib import Path
 from typing import Optional
 
+from .crypt_utils import eprint
 from .identity import Identity, IdentityError, IdentityStore
 from .identity_protection import HSMNotAvailableError, IdentityKeyProtectionService, ProtectionLevel
 from .pqc_signing import LIBOQS_AVAILABLE
@@ -107,10 +106,16 @@ def cmd_create(args) -> int:
             return 1
 
         # Check HSM availability if required
-        if protection_level in (ProtectionLevel.PASSWORD_AND_HSM, ProtectionLevel.HSM_ONLY):
+        if protection_level in (
+            ProtectionLevel.PASSWORD_AND_HSM,
+            ProtectionLevel.HSM_ONLY,
+        ):
             protection_service = IdentityKeyProtectionService()
             if not protection_service.is_hsm_available():
-                eprint("ERROR: Yubikey not found. Please insert your Yubikey.", file=sys.stderr)
+                eprint(
+                    "ERROR: Yubikey not found. Please insert your Yubikey.",
+                    file=sys.stderr,
+                )
                 return 1
 
             detected_slot = protection_service.detect_hsm_slot()
@@ -146,7 +151,10 @@ def cmd_create(args) -> int:
         # Generate identity
         eprint(f"Generating identity for '{args.name}'...")
 
-        if protection_level in (ProtectionLevel.PASSWORD_AND_HSM, ProtectionLevel.HSM_ONLY):
+        if protection_level in (
+            ProtectionLevel.PASSWORD_AND_HSM,
+            ProtectionLevel.HSM_ONLY,
+        ):
             eprint("Touch your Yubikey to generate keys...")
 
         hsm_slot_arg = getattr(args, "hsm_slot", None)

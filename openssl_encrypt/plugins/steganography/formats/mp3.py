@@ -25,11 +25,9 @@ Version: 1.3.0
 """
 
 import logging
-import os
 import struct
-import tempfile
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 
@@ -89,7 +87,24 @@ class MP3Steganography(SteganographyBase):
 
     # MP3 constants
     BITRATES = {
-        "MPEG1_L3": [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0],
+        "MPEG1_L3": [
+            0,
+            32,
+            40,
+            48,
+            56,
+            64,
+            80,
+            96,
+            112,
+            128,
+            160,
+            192,
+            224,
+            256,
+            320,
+            0,
+        ],
         "MPEG2_L3": [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 0],
     }
 
@@ -269,7 +284,7 @@ class MP3Steganography(SteganographyBase):
                 # Parse ID3v2 header
                 version_major = mp3_data[3]
                 version_minor = mp3_data[4]
-                flags = mp3_data[5]
+                mp3_data[5]
 
                 # Calculate tag size (synchsafe integer)
                 tag_size = (
@@ -460,7 +475,7 @@ class MP3Steganography(SteganographyBase):
         # Estimate based on typical MP3 structure
         # Each frame has ~576 or 1152 granules with frequency coefficients
 
-        audio_size = mp3_info["audio_size"]
+        mp3_info["audio_size"]
         bitrate = mp3_info.get("bitrate", 128)
         duration = mp3_info.get("duration_seconds", 1.0)
 
@@ -822,8 +837,10 @@ class MP3Analyzer:
                     "frame_capacity": frame_capacity,
                     "reservoir_capacity": reservoir_capacity,
                     "total_capacity": frame_capacity + reservoir_capacity,
-                    "quality_impact": "Low" if basic_info.get("bitrate", 0) >= 192 else "Medium",
-                    "recommended_coefficient_bits": 1 if basic_info.get("bitrate", 0) < 192 else 2,
+                    "quality_impact": ("Low" if basic_info.get("bitrate", 0) >= 192 else "Medium"),
+                    "recommended_coefficient_bits": (
+                        1 if basic_info.get("bitrate", 0) < 192 else 2
+                    ),
                 },
             }
 
@@ -944,7 +961,6 @@ def is_mp3_steganography_available() -> bool:
 
         # Test basic functionality needed for MP3 steganography
         test_array = np.array([1, 2, 3, 4], dtype=np.int16)
-        test_binary = "10101010"
         test_header = struct.pack(">I", 0xFFFBD000)  # Sample MP3 header
 
         return True

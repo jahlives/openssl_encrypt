@@ -53,19 +53,13 @@ CHAIN_PREFIX_LENGTH = 16  # 128 bits from previous layer
 class CascadeError(Exception):
     """Base exception for cascade encryption errors."""
 
-    pass
-
 
 class CascadeConfigError(CascadeError):
     """Exception raised for invalid cascade configuration."""
 
-    pass
-
 
 class AuthenticationError(CascadeError):
     """Exception raised when authentication fails during decryption."""
-
-    pass
 
 
 @dataclass
@@ -319,9 +313,7 @@ class CascadeEncryption:
         layer_keys = self.key_derivation.derive_layer_keys(master_key, effective_salt)
 
         # Encrypt through each layer sequentially
-        use_aad_all_layers = (
-            self.format_version is not None and self.format_version >= 12
-        )
+        use_aad_all_layers = self.format_version is not None and self.format_version >= 12
         try:
             data = plaintext
             for i, (cipher, (key, nonce)) in enumerate(zip(self.ciphers, layer_keys)):
@@ -370,9 +362,7 @@ class CascadeEncryption:
         layer_keys = self.key_derivation.derive_layer_keys(master_key, effective_salt)
 
         # Decrypt through layers in reverse order
-        use_aad_all_layers = (
-            self.format_version is not None and self.format_version >= 12
-        )
+        use_aad_all_layers = self.format_version is not None and self.format_version >= 12
         try:
             data = ciphertext
             for i in range(len(self.ciphers) - 1, -1, -1):

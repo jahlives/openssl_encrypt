@@ -9,8 +9,7 @@ steganalysis resistance.
 
 import io
 import logging
-import math
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 
@@ -456,7 +455,11 @@ class JPEGSteganalysisResistance:
 
     def _blockiness_analysis(self, cover_data: bytes, stego_data: bytes) -> Dict[str, Any]:
         """Analyze DCT blocking artifacts"""
-        return {"test_name": "Blockiness Artifact Analysis", "score": 0.7, "status": "acceptable"}
+        return {
+            "test_name": "Blockiness Artifact Analysis",
+            "score": 0.7,
+            "status": "acceptable",
+        }
 
     def _histogram_analysis(self, cover_data: bytes, stego_data: bytes) -> Dict[str, Any]:
         """Analyze histogram changes"""

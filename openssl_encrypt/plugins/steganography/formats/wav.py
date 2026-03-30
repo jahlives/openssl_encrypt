@@ -30,7 +30,7 @@ import io
 import logging
 import struct
 import wave
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, Optional
 
 import numpy as np
 
@@ -68,7 +68,17 @@ class WAVSteganography(SteganographyBase):
 
     # Supported audio formats
     PCM_FORMAT = 1
-    SUPPORTED_SAMPLE_RATES = [8000, 11025, 16000, 22050, 32000, 44100, 48000, 96000, 192000]
+    SUPPORTED_SAMPLE_RATES = [
+        8000,
+        11025,
+        16000,
+        22050,
+        32000,
+        44100,
+        48000,
+        96000,
+        192000,
+    ]
     SUPPORTED_BIT_DEPTHS = [16, 24, 32]
 
     def __init__(
@@ -725,7 +735,7 @@ class WAVAnalyzer:
 
             # Capacity analysis
             total_samples = audio.get("total_samples", 0)
-            channels = audio.get("channels", 1)
+            audio.get("channels", 1)
 
             if total_samples > 1000000:  # > ~22 seconds at 44.1kHz
                 suitability["capacity_score"] = 1.0
@@ -841,8 +851,6 @@ def is_wav_steganography_available() -> bool:
     """Check if WAV steganography dependencies are available"""
     try:
         import wave
-
-        import numpy as np
 
         # Test basic WAV functionality
         test_buffer = io.BytesIO()

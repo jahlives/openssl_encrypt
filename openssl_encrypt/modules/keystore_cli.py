@@ -14,7 +14,7 @@ import sys
 import time
 import uuid
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 from .crypt_errors import (
     KeyNotFoundError,
@@ -41,7 +41,7 @@ except ImportError:
             return False
 
 
-from .secure_memory import SecureBytes, secure_memzero
+from .secure_memory import secure_memzero
 
 # Import portable media modules
 try:
@@ -50,8 +50,6 @@ try:
         QRKeyError,
         QRKeyFormat,
         USBCreationError,
-        USBDriveCreator,
-        USBSecurityProfile,
         create_portable_usb,
         verify_usb_integrity,
     )
@@ -141,7 +139,9 @@ class PQCKeystore:
         self.close()
 
     def create_keystore(
-        self, password: str, security_level: KeystoreSecurityLevel = KeystoreSecurityLevel.STANDARD
+        self,
+        password: str,
+        security_level: KeystoreSecurityLevel = KeystoreSecurityLevel.STANDARD,
     ) -> None:
         """
         Create a new keystore with the given password
@@ -281,6 +281,7 @@ class PQCKeystore:
 
         # Create a temporary file with secure permissions first
         from .file_permissions import PermissionLevel, create_secure_file
+
         temp_path = self.keystore_path + ".tmp"
         fd = create_secure_file(temp_path, PermissionLevel.OWNER_ONLY)
         with os.fdopen(fd, "w") as f:
@@ -503,12 +504,11 @@ class PQCKeystore:
         )
 
         # Prepare file_password if it's provided
-        file_password_bytes = None
         if file_password is not None:
             if isinstance(file_password, str):
-                file_password_bytes = file_password.encode("utf-8")
+                file_password.encode("utf-8")
             else:
-                file_password_bytes = file_password
+                pass
 
         # Validate file_password if dual encryption is enabled
         if dual_encryption and file_password is None:
@@ -707,7 +707,11 @@ class PQCKeystore:
         self.save_keystore()
 
     def change_key_password(
-        self, key_id: str, old_password: str, new_password: str, use_master_password: bool = None
+        self,
+        key_id: str,
+        old_password: str,
+        new_password: str,
+        use_master_password: bool = None,
     ) -> None:
         """
         Change the password for a specific key
@@ -1191,7 +1195,11 @@ class PQCKeystore:
                 "for keystore key derivation. Install argon2-cffi for stronger protection."
             )
             key = hashlib.pbkdf2_hmac(
-                "sha256", password.encode("utf-8"), salt, params["pbkdf2_iterations"], dklen=32
+                "sha256",
+                password.encode("utf-8"),
+                salt,
+                params["pbkdf2_iterations"],
+                dklen=32,
             )
             return key
 
@@ -1453,13 +1461,19 @@ def main():
     # Create keystore
     create_parser = subparsers.add_parser("create", help="Create a new keystore")
     create_parser.add_argument(
-        "--keystore-standard", action="store_true", help="Use standard security settings (default)"
+        "--keystore-standard",
+        action="store_true",
+        help="Use standard security settings (default)",
     )
     create_parser.add_argument(
-        "--keystore-high-security", action="store_true", help="Use high security settings"
+        "--keystore-high-security",
+        action="store_true",
+        help="Use high security settings",
     )
     create_parser.add_argument(
-        "--keystore-paranoid", action="store_true", help="Use paranoid security settings"
+        "--keystore-paranoid",
+        action="store_true",
+        help="Use paranoid security settings",
     )
     create_parser.add_argument("--force", action="store_true", help="Overwrite existing keystore")
 
@@ -1469,7 +1483,9 @@ def main():
     add_parser.add_argument("--key-description", help="Description of the key")
     add_parser.add_argument("--key-tags", help="Comma-separated list of tags")
     add_parser.add_argument(
-        "--prompt-key-password", action="store_true", help="Use a separate password for the key"
+        "--prompt-key-password",
+        action="store_true",
+        help="Use a separate password for the key",
     )
     add_parser.add_argument("--key-password-file", help="File containing the key password")
 
@@ -1496,7 +1512,9 @@ def main():
     chkey_parser = subparsers.add_parser("change-key-password", help="Change a key password")
     chkey_parser.add_argument("key_id", help="The key ID to change")
     chkey_parser.add_argument(
-        "--convert-key-to-master", action="store_true", help="Convert to using the master password"
+        "--convert-key-to-master",
+        action="store_true",
+        help="Convert to using the master password",
     )
     chkey_parser.add_argument(
         "--convert-key-to-separate",
@@ -1514,7 +1532,9 @@ def main():
     import_parser.add_argument("--key-description", help="Description for the imported key")
     import_parser.add_argument("--key-tags", help="Comma-separated list of tags")
     import_parser.add_argument(
-        "--prompt-key-password", action="store_true", help="Use a separate password for the key"
+        "--prompt-key-password",
+        action="store_true",
+        help="Use a separate password for the key",
     )
     import_parser.add_argument("--key-password-file", help="File containing the key password")
 
@@ -1551,7 +1571,9 @@ def main():
     import_qr_parser.add_argument("--key-description", help="Description for the imported key")
     import_qr_parser.add_argument("--key-tags", help="Comma-separated list of tags")
     import_qr_parser.add_argument(
-        "--prompt-key-password", action="store_true", help="Use a separate password for the key"
+        "--prompt-key-password",
+        action="store_true",
+        help="Use a separate password for the key",
     )
     import_qr_parser.add_argument("--key-password-file", help="File containing the key password")
 
@@ -1980,7 +2002,7 @@ def handle_import_qr_command(args, keystore_password):
         # Deserialize key data from JSON
         import json
 
-        key_data = json.loads(key_data_bytes.decode("utf-8"))
+        json.loads(key_data_bytes.decode("utf-8"))
 
         # Get key password if needed
         key_password = None
@@ -1988,7 +2010,7 @@ def handle_import_qr_command(args, keystore_password):
             key_password = getpass.getpass(f"Enter password for key '{original_key_name}': ")
         elif args.key_password_file:
             with open(args.key_password_file, "r") as f:
-                key_password = f.read().strip()
+                f.read().strip()
 
         # Parse tags
         tags = []

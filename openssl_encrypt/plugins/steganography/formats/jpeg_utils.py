@@ -10,7 +10,7 @@ import io
 import logging
 import math
 import struct
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Tuple
 
 import numpy as np
 
@@ -25,7 +25,7 @@ except ImportError:
     ImageFile = None
     TAGS = None
 
-from ..core import CoverMediaError, SteganographyError
+from ..core import CoverMediaError
 
 # Set up module logger
 logger = logging.getLogger(__name__)

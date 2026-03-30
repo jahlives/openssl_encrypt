@@ -27,10 +27,9 @@ Supported FLAC Features:
 - Lossless compression with steganographic preservation
 """
 
-import io
 import logging
 import struct
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -430,7 +429,8 @@ class FLACSteganography(SteganographyBase):
                 try:
                     samples_length_offset = marker_pos + 4
                     samples_length = struct.unpack(
-                        "<I", flac_data[samples_length_offset : samples_length_offset + 4]
+                        "<I",
+                        flac_data[samples_length_offset : samples_length_offset + 4],
                     )[0]
                     samples_data_offset = samples_length_offset + 4
                     samples_bytes = flac_data[
@@ -510,7 +510,10 @@ class FLACSteganography(SteganographyBase):
                 )
             else:
                 samples = np.random.randint(
-                    -max_val // 4, max_val // 4, size=(int(total_samples), channels), dtype=dtype
+                    -max_val // 4,
+                    max_val // 4,
+                    size=(int(total_samples), channels),
+                    dtype=dtype,
                 )
 
             logger.debug(
@@ -967,7 +970,7 @@ class FLACAnalyzer:
 
             # Capacity analysis
             total_samples = audio.get("total_samples", 0)
-            channels = audio.get("channels", 1)
+            audio.get("channels", 1)
 
             if total_samples > 2000000:  # > ~45 seconds at 44.1kHz
                 suitability["capacity_score"] = 1.0
@@ -1131,7 +1134,6 @@ def is_flac_steganography_available() -> bool:
 
         # Test basic functionality needed for FLAC steganography
         test_array = np.array([1, 2, 3, 4], dtype=np.int16)
-        test_binary = "10101010"
 
         return True
     except Exception as e:

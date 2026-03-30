@@ -9,9 +9,7 @@ adaptive techniques, and advanced security features.
 
 import io
 import logging
-import math
-import os
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import List, Optional, Tuple
 
 try:
     from PIL import Image, ImageStat
@@ -28,7 +26,6 @@ from ..core import (
     CapacityError,
     CoverMediaError,
     ExtractionError,
-    SecurityError,
     SteganographyBase,
     SteganographyConfig,
     SteganographyUtils,

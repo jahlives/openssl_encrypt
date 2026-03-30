@@ -200,10 +200,10 @@ def test_telemetry_submit(base_url: str, token: str, events: List[Dict]) -> bool
             print(f"  Received: {data['received']}")
             print(f"  Processed: {data['processed']}")
 
-            if data['received'] != len(events):
+            if data["received"] != len(events):
                 print(f"  ⚠ Warning: Expected {len(events)} received, got {data['received']}")
 
-            if data['processed'] != data['received']:
+            if data["processed"] != data["received"]:
                 print(f"  ⚠ Warning: Not all events were processed")
                 return False
 
@@ -234,20 +234,20 @@ def test_telemetry_stats(base_url: str) -> Dict:
             print(f"  Total operations: {data['total_operations']}")
             print(f"  Total clients: {data['total_clients']}")
             # Success rate can be 0-1 (fraction) or 0-100 (percentage)
-            success_rate = data['success_rate']
+            success_rate = data["success_rate"]
             if success_rate > 1:
                 print(f"  Success rate: {success_rate:.2f}%")
             else:
                 print(f"  Success rate: {success_rate:.2%}")
 
-            if data.get('algorithms'):
+            if data.get("algorithms"):
                 print(f"  Algorithms:")
-                for algo, count in sorted(data['algorithms'].items(), key=lambda x: -x[1])[:5]:
+                for algo, count in sorted(data["algorithms"].items(), key=lambda x: -x[1])[:5]:
                     print(f"    {algo}: {count}")
 
-            if data.get('operations'):
+            if data.get("operations"):
                 print(f"  Operations:")
-                for op, count in data['operations'].items():
+                for op, count in data["operations"].items():
                     print(f"    {op}: {count}")
 
             return data
@@ -270,21 +270,23 @@ def verify_test_results(stats: Dict, submitted_events: int) -> bool:
         return False
 
     # Check if operations increased
-    if stats['total_operations'] >= submitted_events:
-        print(f"✓ Total operations check passed ({stats['total_operations']} >= {submitted_events})")
+    if stats["total_operations"] >= submitted_events:
+        print(
+            f"✓ Total operations check passed ({stats['total_operations']} >= {submitted_events})"
+        )
     else:
         print(f"✗ Total operations too low ({stats['total_operations']} < {submitted_events})")
         return False
 
     # Check if we have at least one client
-    if stats['total_clients'] >= 1:
+    if stats["total_clients"] >= 1:
         print(f"✓ Client registration verified ({stats['total_clients']} clients)")
     else:
         print(f"✗ No clients registered")
         return False
 
     # Check success rate (can be 0-1 fraction or 0-100 percentage)
-    success_rate = stats['success_rate']
+    success_rate = stats["success_rate"]
     if 0 <= success_rate <= 1:
         print(f"✓ Success rate valid: {success_rate:.2%}")
     elif 0 <= success_rate <= 100:
@@ -314,7 +316,7 @@ def main():
     elif os.getenv("TELEMETRY_SERVER_URL"):
         base_url = os.getenv("TELEMETRY_SERVER_URL").rstrip("/")
         source = "environment variable (TELEMETRY_SERVER_URL)"
-    elif (config_url := load_telemetry_config()):
+    elif config_url := load_telemetry_config():
         base_url = config_url.rstrip("/")
         source = "config file (~/.openssl_encrypt/plugins/telemetry/config.json)"
     else:

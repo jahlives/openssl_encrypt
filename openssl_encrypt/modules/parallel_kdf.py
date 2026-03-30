@@ -19,6 +19,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from enum import Enum
 from typing import Dict, Optional, Tuple
+
 from .crypt_utils import eprint
 
 
@@ -181,7 +182,9 @@ def _hash_worker(
         # Report error
         progress_queue.put(
             ProgressMessage(
-                worker_id=worker_id, progress_type=ProgressType.WORKER_ERROR, error=str(e)
+                worker_id=worker_id,
+                progress_type=ProgressType.WORKER_ERROR,
+                error=str(e),
             )
         )
         raise
@@ -359,7 +362,9 @@ def _kdf_worker(
         # Report error
         progress_queue.put(
             ProgressMessage(
-                worker_id=worker_id, progress_type=ProgressType.WORKER_ERROR, error=str(e)
+                worker_id=worker_id,
+                progress_type=ProgressType.WORKER_ERROR,
+                error=str(e),
             )
         )
         raise
@@ -603,6 +608,7 @@ def generate_key_independent_xor_parallel(
             if kdf_type == "randomx":
                 try:
                     from .randomx import check_randomx_support
+
                     if not check_randomx_support():
                         if not quiet:
                             eprint("⚠️ RandomX not available, skipping")

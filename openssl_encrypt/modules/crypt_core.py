@@ -1179,23 +1179,29 @@ def set_secure_permissions(file_path):
         file_path (str): Path to the file
     """
     # Skip special device files (stdin, stdout, stderr, pipes, etc.)
-    if file_path in ("/dev/stdin", "/dev/stdout", "/dev/stderr") or file_path.startswith(
-        "/dev/fd/"
-    ):
+    if file_path in (
+        "/dev/stdin",
+        "/dev/stdout",
+        "/dev/stderr",
+    ) or file_path.startswith("/dev/fd/"):
         return
 
     # Security: Canonicalize path to prevent symlink attacks
     try:
         canonical_path = os.path.realpath(os.path.abspath(file_path))
         if not os.path.samefile(file_path, canonical_path):
-            eprint(f"Warning: Path canonicalization changed target: {file_path} -> {canonical_path}")
+            eprint(
+                f"Warning: Path canonicalization changed target: {file_path} -> {canonical_path}"
+            )
         file_path = canonical_path
     except (OSError, ValueError) as e:
         eprint(f"Error canonicalizing path '{file_path}': {e}")
         return
 
     # Set permissions to 0600 (read/write for owner only)
-    from openssl_encrypt.modules.file_permissions import PermissionLevel, set_permissions as _set_perms
+    from openssl_encrypt.modules.file_permissions import PermissionLevel
+    from openssl_encrypt.modules.file_permissions import set_permissions as _set_perms
+
     _set_perms(file_path, PermissionLevel.OWNER_ONLY)
 
 
@@ -1210,22 +1216,27 @@ def get_file_permissions(file_path):
         int: File permissions mode
     """
     # Skip special device files (stdin, stdout, stderr, pipes, etc.)
-    if file_path in ("/dev/stdin", "/dev/stdout", "/dev/stderr") or file_path.startswith(
-        "/dev/fd/"
-    ):
+    if file_path in (
+        "/dev/stdin",
+        "/dev/stdout",
+        "/dev/stderr",
+    ) or file_path.startswith("/dev/fd/"):
         return 0o600  # Return default secure permissions for special files
 
     # Security: Canonicalize path to prevent symlink attacks
     try:
         canonical_path = os.path.realpath(os.path.abspath(file_path))
         if not os.path.samefile(file_path, canonical_path):
-            eprint(f"Warning: Path canonicalization changed target: {file_path} -> {canonical_path}")
+            eprint(
+                f"Warning: Path canonicalization changed target: {file_path} -> {canonical_path}"
+            )
         file_path = canonical_path
     except (OSError, ValueError) as e:
         eprint(f"Error canonicalizing path '{file_path}': {e}")
         raise
 
     from openssl_encrypt.modules.file_permissions import get_posix_mode
+
     return get_posix_mode(file_path)
 
 
@@ -1241,6 +1252,7 @@ def copy_permissions(source_file, target_file):
     """
     try:
         from openssl_encrypt.modules.file_permissions import copy_permissions as _copy_perms
+
         _copy_perms(source_file, target_file)
     except Exception:
         # If we can't copy permissions, fall back to secure permissions
@@ -2314,7 +2326,11 @@ def compute_kdf_independent(
                 bar_len = 30
                 filled = int(bar_len * (i + 1) // rounds)
                 bar = "█" * filled + "░" * (bar_len - filled)
-                eprint(f"\rArgon2 KDF: [{bar}] {percent:.1f}% ({i+1}/{rounds})", end="", flush=True)
+                eprint(
+                    f"\rArgon2 KDF: [{bar}] {percent:.1f}% ({i+1}/{rounds})",
+                    end="",
+                    flush=True,
+                )
         if progress and not quiet:
             eprint()
 
@@ -2477,7 +2493,11 @@ def compute_kdf_independent(
                 bar_len = 30
                 filled = int(bar_len * (i + 1) // rounds)
                 bar = "█" * filled + "░" * (bar_len - filled)
-                eprint(f"\rRandomX KDF: [{bar}] {percent:.1f}% ({i+1}/{rounds})", end="", flush=True)
+                eprint(
+                    f"\rRandomX KDF: [{bar}] {percent:.1f}% ({i+1}/{rounds})",
+                    end="",
+                    flush=True,
+                )
         if progress and not quiet:
             eprint()
 
@@ -2621,7 +2641,9 @@ def generate_key_independent_xor(
                 if not quiet and not progress:
                     # Only print initial message if progress bars disabled
                     eprint(
-                        f"Computing {algo_display} hash ({rounds} rounds)...", end=" ", flush=True
+                        f"Computing {algo_display} hash ({rounds} rounds)...",
+                        end=" ",
+                        flush=True,
                     )
                 elif not quiet and progress:
                     # Print header before progress bar
@@ -4062,7 +4084,11 @@ def generate_key(
             if not quiet and not progress:
                 eprint(" ✅")
             KeyStretch.key_stretch = True
-            show_progress("PBKDF2 (fallback)", default_pbkdf2_iterations, default_pbkdf2_iterations)
+            show_progress(
+                "PBKDF2 (fallback)",
+                default_pbkdf2_iterations,
+                default_pbkdf2_iterations,
+            )
 
         # NEW: For v10/v8, save fallback PBKDF2 final output to XOR accumulator
         # CRITICAL: Store as SecureBytes, will be zeroed after XOR completes
@@ -5617,7 +5643,9 @@ def encrypt_file_asymmetric(
                     )
 
                     if not quiet:
-                        eprint(f"Wrapped password for: {recipient.name} ({recipient.fingerprint}) ✅")
+                        eprint(
+                            f"Wrapped password for: {recipient.name} ({recipient.fingerprint}) ✅"
+                        )
 
                 finally:
                     secure_memzero(shared_secret_raw)
@@ -5646,10 +5674,19 @@ def encrypt_file_asymmetric(
                         }
                         for r in recipients_data
                     ],
-                    "sender": {"key_id": sender.fingerprint, "sig_algorithm": "ML-DSA-65"},
+                    "sender": {
+                        "key_id": sender.fingerprint,
+                        "sig_algorithm": "ML-DSA-65",
+                    },
                 },
-                "hashes": {"original_hash": original_hash, "encrypted_hash": encrypted_hash},
-                "encryption": {"algorithm": algorithm, "encryption_data": encryption_data},
+                "hashes": {
+                    "original_hash": original_hash,
+                    "encrypted_hash": encrypted_hash,
+                },
+                "encryption": {
+                    "algorithm": algorithm,
+                    "encryption_data": encryption_data,
+                },
             }
 
             # Add hash algorithms
@@ -5760,12 +5797,14 @@ def _derive_pepper_key(password: bytes, format_version: int = None) -> bytearray
         from cryptography.hazmat.primitives import hashes as _hashes
         from cryptography.hazmat.primitives.kdf.hkdf import HKDF as _HKDF
 
-        return bytearray(_HKDF(
-            algorithm=_hashes.SHA256(),
-            length=32,
-            salt=None,
-            info=b"openssl_encrypt-pepper-key",
-        ).derive(password))
+        return bytearray(
+            _HKDF(
+                algorithm=_hashes.SHA256(),
+                length=32,
+                salt=None,
+                info=b"openssl_encrypt-pepper-key",
+            ).derive(password)
+        )
     else:
         return bytearray(hashlib.sha256(password).digest())
 
@@ -5794,12 +5833,14 @@ def _derive_pqc_sig_key(
     if salt is None:
         salt = b"OpenSSL-Encrypt-PQ-Signature-Hybrid"
 
-    return bytearray(_HKDF(
-        algorithm=_hashes.SHA256(),
-        length=32,
-        salt=salt,
-        info=f"encryption-key-{algorithm}".encode(),
-    ).derive(private_key))
+    return bytearray(
+        _HKDF(
+            algorithm=_hashes.SHA256(),
+            length=32,
+            salt=salt,
+            info=f"encryption-key-{algorithm}".encode(),
+        ).derive(private_key)
+    )
 
 
 @secure_encrypt_error_handler
@@ -5934,7 +5975,8 @@ def encrypt_file(
             plugin_context.file_paths = [] if input_is_bytes else [input_file]
             plugin_context.add_metadata("operation", "encrypt")
             plugin_context.add_metadata(
-                "algorithm", str(algorithm.value if hasattr(algorithm, "value") else algorithm)
+                "algorithm",
+                str(algorithm.value if hasattr(algorithm, "value") else algorithm),
             )
             if output_file is not None:
                 plugin_context.add_metadata("output_path", output_file)
@@ -6108,7 +6150,10 @@ def encrypt_file(
             # Create security context for HSM plugin
             hsm_context = PluginSecurityContext(
                 plugin_id=hsm_plugin.plugin_id,
-                capabilities={PluginCapability.ACCESS_CONFIG, PluginCapability.WRITE_LOGS},
+                capabilities={
+                    PluginCapability.ACCESS_CONFIG,
+                    PluginCapability.WRITE_LOGS,
+                },
             )
             hsm_context.metadata["salt"] = salt
 
@@ -6419,26 +6464,28 @@ def encrypt_file(
             salt=salt,
             hash_config=hash_config,
             original_hash=original_hash,
-            algorithm=algorithm_value if not (cascade and cipher_names) else algorithm.value,
+            algorithm=(algorithm_value if not (cascade and cipher_names) else algorithm.value),
             pbkdf2_iterations=pbkdf2_iterations,
             encryption_data=encryption_data,
             cascade=cascade and bool(cipher_names),
             cipher_chain=cipher_names if (cascade and cipher_names) else None,
             hkdf_hash=cascade_hash if (cascade and cipher_names) else None,
             cascade_salt=_cascade_salt_streaming,
-            layer_info=[
-                {
-                    "cipher": c.info().name,
-                    "key_size": c.info().key_size,
-                    "tag_size": c.info().tag_size,
-                }
-                for c in _cascade_enc_streaming.ciphers
-            ]
-            if _cascade_enc_streaming
-            else None,
-            total_overhead=_cascade_enc_streaming.get_total_overhead()
-            if _cascade_enc_streaming
-            else None,
+            layer_info=(
+                [
+                    {
+                        "cipher": c.info().name,
+                        "key_size": c.info().key_size,
+                        "tag_size": c.info().tag_size,
+                    }
+                    for c in _cascade_enc_streaming.ciphers
+                ]
+                if _cascade_enc_streaming
+                else None
+            ),
+            total_overhead=(
+                _cascade_enc_streaming.get_total_overhead() if _cascade_enc_streaming else None
+            ),
             include_encrypted_hash=False,
             encrypted_hash=None,
             aad_mode=True,
@@ -6472,7 +6519,11 @@ def encrypt_file(
 
             def progress_cb(idx, total):
                 pct = ((idx + 1) / total) * 100 if total > 0 else 100
-                eprint(f"\rEncrypting: {pct:.1f}% ({idx + 1}/{total} chunks)", end="", flush=True)
+                eprint(
+                    f"\rEncrypting: {pct:.1f}% ({idx + 1}/{total} chunks)",
+                    end="",
+                    flush=True,
+                )
 
         streaming_enc.encrypt_file(
             input_file=input_file,
@@ -6800,7 +6851,10 @@ def encrypt_file(
                 else:
                     # If no keypair provided, we need to create a new one and store it in metadata
                     cipher = PQCipher(
-                        pqc_algo_map[algorithm], quiet=quiet, verbose=verbose, debug=debug
+                        pqc_algo_map[algorithm],
+                        quiet=quiet,
+                        verbose=verbose,
+                        debug=debug,
                     )
                     public_key, private_key = cipher.generate_keypair()
                     # We'll add these to metadata later
@@ -7884,7 +7938,9 @@ def print_file_info(input_file: str, json_output: bool = False) -> dict:
                 rounds = config
             if rounds > 0:
                 display_name = algo.upper().replace("_", "-")
-                eprint(f"      {display_name}:{' ' * max(1, 13 - len(display_name))}{rounds} rounds")
+                eprint(
+                    f"      {display_name}:{' ' * max(1, 13 - len(display_name))}{rounds} rounds"
+                )
 
     if kdf_config:
         eprint("    KDFs:")
@@ -8345,9 +8401,7 @@ def decrypt_file(
     # Read metadata incrementally (avoids loading full file for streaming v12)
     file_content = None  # Only populated for non-streaming path (needed for secure cleanup)
     try:
-        metadata_b64, _fallback_content = _read_metadata_only(
-            input_file, secure_mode=secure_mode
-        )
+        metadata_b64, _fallback_content = _read_metadata_only(input_file, secure_mode=secure_mode)
         # MED-8 Security fix: Use secure JSON validation for metadata parsing
         metadata_json = base64.b64decode(metadata_b64).decode("utf-8")
         try:
@@ -8396,7 +8450,9 @@ def decrypt_file(
     # Extract and validate format_version
     format_version = metadata.get("format_version", 1)
     if not isinstance(format_version, int):
-        raise ValueError(f"Invalid format_version type: expected int, got {type(format_version).__name__}")
+        raise ValueError(
+            f"Invalid format_version type: expected int, got {type(format_version).__name__}"
+        )
 
     # Verify metadata integrity with remote server if enabled (BEFORE key derivation)
     if verify_integrity and _INTEGRITY_PLUGIN_AVAILABLE:
@@ -8839,7 +8895,10 @@ def decrypt_file(
             # Create security context for HSM plugin
             hsm_context = PluginSecurityContext(
                 plugin_id=hsm_plugin.plugin_id,
-                capabilities={PluginCapability.ACCESS_CONFIG, PluginCapability.WRITE_LOGS},
+                capabilities={
+                    PluginCapability.ACCESS_CONFIG,
+                    PluginCapability.WRITE_LOGS,
+                },
             )
             hsm_context.metadata["salt"] = salt
 
@@ -9244,7 +9303,11 @@ def decrypt_file(
 
             def progress_cb(idx, total):
                 pct = ((idx + 1) / total) * 100 if total > 0 else 100
-                eprint(f"\rDecrypting: {pct:.1f}% ({idx + 1}/{total} chunks)", end="", flush=True)
+                eprint(
+                    f"\rDecrypting: {pct:.1f}% ({idx + 1}/{total} chunks)",
+                    end="",
+                    flush=True,
+                )
 
         result = streaming_dec.decrypt_file(
             input_file=input_file,
@@ -9547,7 +9610,8 @@ def decrypt_file(
 
                             cipher = AESSIV(key)
                             result = cipher.decrypt(
-                                encrypted_data, [aad_for_decrypt] if aad_for_decrypt else None
+                                encrypted_data,
+                                [aad_for_decrypt] if aad_for_decrypt else None,
                             )
 
                             if debug:
@@ -9948,7 +10012,14 @@ def get_organized_hash_config(hash_config, encryption_algo=None, salt=None):
     }
 
     # Define which algorithms are KDFs and which are hashes
-    kdf_algorithms = ["scrypt", "argon2", "balloon", "hkdf", "pbkdf2_iterations", "pbkdf2"]
+    kdf_algorithms = [
+        "scrypt",
+        "argon2",
+        "balloon",
+        "hkdf",
+        "pbkdf2_iterations",
+        "pbkdf2",
+    ]
     hash_algorithms = [
         "sha3_512",
         "sha3_384",

@@ -17,19 +17,15 @@ Security Features:
 import json
 import logging
 import os
-import stat
-import sys
 import threading
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Union
+from typing import Any, Dict, List, Optional, Set
 
 logger = logging.getLogger(__name__)
 
 
 class ConfigValidationError(Exception):
     """Raised when plugin configuration validation fails."""
-
-    pass
 
 
 class PluginConfigSchema:
@@ -179,15 +175,14 @@ def ensure_plugin_data_dir(plugin_id: str, subdir: str = "") -> Optional[Path]:
 
         # Verify permissions were set correctly (defense in depth)
         if not check_permissions(data_dir, PermissionLevel.OWNER_FULL):
-            logger.warning(
-                f"Failed to set secure permissions (0o700) on {data_dir}"
-            )
+            logger.warning(f"Failed to set secure permissions (0o700) on {data_dir}")
             return None
 
         # Also ensure parent is secured if we created a subdirectory
         if subdir and base_dir.exists():
             if not check_permissions(base_dir, PermissionLevel.OWNER_FULL):
                 from openssl_encrypt.modules.file_permissions import set_permissions
+
                 set_permissions(base_dir, PermissionLevel.OWNER_FULL)
 
         return data_dir
@@ -223,14 +218,13 @@ class PluginConfigManager:
             check_permissions,
             create_secure_directory,
         )
+
         create_secure_directory(self.config_dir, level=PermissionLevel.OWNER_FULL)
 
         # Verify permissions were set correctly (defense in depth)
         try:
             if not check_permissions(self.config_dir, PermissionLevel.OWNER_FULL):
-                logger.warning(
-                    f"Failed to set secure permissions (0o700) on {self.config_dir}"
-                )
+                logger.warning(f"Failed to set secure permissions (0o700) on {self.config_dir}")
         except (OSError, PermissionError) as e:
             logger.warning(f"Failed to verify permissions on {self.config_dir}: {e}")
 
@@ -401,7 +395,7 @@ class PluginConfigManager:
 
         for plugin_dir in entries:
             try:
-                if not plugin_dir.is_dir() or plugin_dir.name.startswith('.'):
+                if not plugin_dir.is_dir() or plugin_dir.name.startswith("."):
                     continue
 
                 config_file = plugin_dir / "config.json"
@@ -451,16 +445,13 @@ class PluginConfigManager:
             # Serialize config to JSON
             config_json = json.dumps(config, indent=2, sort_keys=True)
 
-            from openssl_encrypt.modules.file_permissions import (
-                PermissionLevel,
-                create_secure_file,
-            )
+            from openssl_encrypt.modules.file_permissions import PermissionLevel, create_secure_file
 
             # Open file with secure permissions
             fd = create_secure_file(config_file, level=PermissionLevel.OWNER_ONLY)
             try:
                 # Write config via file descriptor
-                os.write(fd, config_json.encode('utf-8'))
+                os.write(fd, config_json.encode("utf-8"))
             finally:
                 os.close(fd)
 
@@ -486,6 +477,7 @@ class PluginConfigManager:
             PermissionLevel,
             create_secure_directory,
         )
+
         create_secure_directory(plugin_dir, level=PermissionLevel.OWNER_FULL)
 
         return plugin_dir / "config.json"
@@ -571,7 +563,12 @@ def create_integer_field(
             return False
         return True
 
-    return {"type": int, "required": required, "default": default, "validator": validator}
+    return {
+        "type": int,
+        "required": required,
+        "default": default,
+        "validator": validator,
+    }
 
 
 def create_boolean_field(required: bool = False, default: bool = False) -> Dict[str, Any]:

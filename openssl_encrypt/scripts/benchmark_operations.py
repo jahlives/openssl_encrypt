@@ -20,6 +20,7 @@ import sys
 import time
 import tracemalloc
 from typing import Dict, Tuple
+
 from openssl_encrypt.modules.crypt_utils import eprint
 
 # Add parent directory to path for imports

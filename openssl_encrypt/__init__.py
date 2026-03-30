@@ -6,6 +6,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+
 from openssl_encrypt.modules.crypt_utils import eprint
 
 # Version will be set by setup.py
@@ -79,7 +80,10 @@ def _check_and_build_dependencies():
     build_script = package_path / "scripts" / "build_local_deps.sh"
 
     if build_script.exists():
-        print("\nBuild script found. You can build dependencies by running:", file=sys.stderr)
+        print(
+            "\nBuild script found. You can build dependencies by running:",
+            file=sys.stderr,
+        )
         print(f"  {build_script}", file=sys.stderr)
         print("\nOr install automatically with:", file=sys.stderr)
         print(f"  python {package_path / 'setup.py'} develop", file=sys.stderr)
@@ -110,14 +114,20 @@ def _check_and_build_dependencies():
                         )
                     except subprocess.CalledProcessError as e:
                         print(f"\n✗ Build failed: {e}", file=sys.stderr)
-                        print("Please install manually (see INSTALLATION.md)", file=sys.stderr)
+                        print(
+                            "Please install manually (see INSTALLATION.md)",
+                            file=sys.stderr,
+                        )
             except (EOFError, KeyboardInterrupt):
                 print("\nSkipping automatic build.", file=sys.stderr)
     else:
         print("\nPlease install liboqs dependencies manually:", file=sys.stderr)
         print(f"  liboqs {REQUIRED_LIBOQS_VERSION}", file=sys.stderr)
         print(f"  liboqs-python {REQUIRED_LIBOQS_PYTHON_VERSION}", file=sys.stderr)
-        print("\nSee openssl_encrypt/docs/INSTALLATION.md for instructions", file=sys.stderr)
+        print(
+            "\nSee openssl_encrypt/docs/INSTALLATION.md for instructions",
+            file=sys.stderr,
+        )
 
     print("=" * 60, file=sys.stderr)
     print("Continuing with possibly limited functionality...\n", file=sys.stderr)

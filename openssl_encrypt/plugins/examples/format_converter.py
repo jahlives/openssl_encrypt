@@ -319,7 +319,8 @@ class SmartFormatPreProcessor(PreProcessorPlugin):
                     logger.info(f"Smart format conversion: {current_format} -> {target_format}")
 
                     return PluginResult.success_result(
-                        f"Converted {current_format} to {target_format}", conversion_result.data
+                        f"Converted {current_format} to {target_format}",
+                        conversion_result.data,
                     )
                 else:
                     context.add_metadata("format_processing", "conversion_failed")

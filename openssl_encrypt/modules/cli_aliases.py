@@ -15,7 +15,7 @@ Design Philosophy:
 """
 
 import argparse
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 
 class CLIAliasConfig:
@@ -227,7 +227,12 @@ class CLIAliasProcessor:
             help_lines.append(f"  --quantum-safe {alias:<12} → {full}")
 
         help_lines.extend(
-            ["", "USE CASE ALIASES:", "Context-aware configurations for different scenarios:", ""]
+            [
+                "",
+                "USE CASE ALIASES:",
+                "Context-aware configurations for different scenarios:",
+                "",
+            ]
         )
 
         for alias, config in self.config.USE_CASE_ALIASES.items():

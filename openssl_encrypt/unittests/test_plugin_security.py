@@ -18,7 +18,6 @@ are not accidentally broken in future updates.
 import os
 import sys
 import tempfile
-import threading
 import time
 import unittest
 from pathlib import Path
@@ -36,10 +35,6 @@ from openssl_encrypt.modules.plugin_system import (
     PreProcessorPlugin,
 )
 from openssl_encrypt.modules.plugin_system.plugin_config import PluginConfigManager
-from openssl_encrypt.modules.plugin_system.plugin_sandbox import (
-    PluginSandbox,
-    SandboxViolationError,
-)
 
 
 class TestSensitiveDataProtection(unittest.TestCase):
@@ -287,7 +282,8 @@ class NetworkPlugin(PreProcessorPlugin):
 
         try:
             context = PluginSecurityContext(
-                "network_test", capabilities={PluginCapability.READ_FILES}  # NO NETWORK_ACCESS
+                "network_test",
+                capabilities={PluginCapability.READ_FILES},  # NO NETWORK_ACCESS
             )
             context.file_paths = [test_file.name]
 
@@ -550,7 +546,8 @@ class TestCapabilityValidation(unittest.TestCase):
 
         # Create context with ALL required capabilities
         context = PluginSecurityContext(
-            "test", capabilities={PluginCapability.READ_FILES, PluginCapability.WRITE_LOGS}
+            "test",
+            capabilities={PluginCapability.READ_FILES, PluginCapability.WRITE_LOGS},
         )
 
         # Validation should succeed
@@ -605,9 +602,7 @@ class TestResultValidation(unittest.TestCase):
 
     def test_sensitive_data_filtered_in_success_result(self):
         """success_result class method must also filter sensitive keys (M10)."""
-        result = PluginResult.success_result(
-            "test", data={"api_key": "abc123", "status": "ok"}
-        )
+        result = PluginResult.success_result("test", data={"api_key": "abc123", "status": "ok"})
         self.assertNotIn("api_key", result.data)
         self.assertEqual(result.data["status"], "ok")
 
@@ -812,7 +807,8 @@ class TestPlugin(PreProcessorPlugin):
 
                     # Should fail to load on all platforms
                     self.assertFalse(
-                        result.success, "Plugin load should fail with insecure permissions"
+                        result.success,
+                        "Plugin load should fail with insecure permissions",
                     )
                     self.assertIn("insecure permissions", result.message.lower())
 
@@ -1082,7 +1078,9 @@ class TestUnifiedConfigPaths(unittest.TestCase):
 
         expected = Path.home() / ".openssl_encrypt" / "plugins" / "test_plugin" / "config.json"
         self.assertEqual(
-            config_path, expected, f"Config path should be {expected}, got {config_path}"
+            config_path,
+            expected,
+            f"Config path should be {expected}, got {config_path}",
         )
 
         # Clean up
@@ -1101,7 +1099,9 @@ class TestUnifiedConfigPaths(unittest.TestCase):
         expected_full = expected_base / "data"
 
         self.assertEqual(
-            test_dir, expected_full, f"Data dir should be {expected_full}, got {test_dir}"
+            test_dir,
+            expected_full,
+            f"Data dir should be {expected_full}, got {test_dir}",
         )
 
         # Verify parent is also under plugins/

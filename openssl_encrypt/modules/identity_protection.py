@@ -22,8 +22,8 @@ from typing import Any, Dict, Optional
 from argon2.low_level import Type, hash_secret_raw
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-from .secure_memory import SecureBytes, secure_memzero
-from .crypt_utils import eprint, tty_write
+from .crypt_utils import tty_write
+from .secure_memory import secure_memzero
 
 
 class ProtectionLevel(Enum):
@@ -113,11 +113,17 @@ class IdentityProtection:
 
     def requires_password(self) -> bool:
         """Check if password is required for this protection level."""
-        return self.level in (ProtectionLevel.PASSWORD_ONLY, ProtectionLevel.PASSWORD_AND_HSM)
+        return self.level in (
+            ProtectionLevel.PASSWORD_ONLY,
+            ProtectionLevel.PASSWORD_AND_HSM,
+        )
 
     def requires_hsm(self) -> bool:
         """Check if HSM is required for this protection level."""
-        return self.level in (ProtectionLevel.HSM_ONLY, ProtectionLevel.PASSWORD_AND_HSM)
+        return self.level in (
+            ProtectionLevel.HSM_ONLY,
+            ProtectionLevel.PASSWORD_AND_HSM,
+        )
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -148,25 +154,17 @@ class IdentityProtection:
 class IdentityProtectionError(Exception):
     """Base exception for identity protection errors."""
 
-    pass
-
 
 class HSMNotAvailableError(IdentityProtectionError):
     """HSM is not available or not configured."""
-
-    pass
 
 
 class HSMTouchTimeoutError(IdentityProtectionError):
     """Timeout waiting for HSM touch."""
 
-    pass
-
 
 class InvalidCredentialsError(IdentityProtectionError):
     """Invalid password or HSM response."""
-
-    pass
 
 
 class IdentityKeyProtectionService:
@@ -448,7 +446,11 @@ class IdentityKeyProtectionService:
 
         try:
             # Build AAD to bind ciphertext to identity and key purpose
-            aad = f"identity:{identity_name}:purpose:{key_purpose}".encode("utf-8") if identity_name and key_purpose else None
+            aad = (
+                f"identity:{identity_name}:purpose:{key_purpose}".encode("utf-8")
+                if identity_name and key_purpose
+                else None
+            )
 
             # Encrypt with AES-256-GCM
             nonce = secrets.token_bytes(self.NONCE_SIZE)
@@ -518,7 +520,11 @@ class IdentityKeyProtectionService:
             ciphertext = encrypted_data[self.NONCE_SIZE :]
 
             # Build AAD to bind ciphertext to identity and key purpose
-            aad = f"identity:{identity_name}:purpose:{key_purpose}".encode("utf-8") if identity_name and key_purpose else None
+            aad = (
+                f"identity:{identity_name}:purpose:{key_purpose}".encode("utf-8")
+                if identity_name and key_purpose
+                else None
+            )
 
             # Decrypt with AES-256-GCM
             aesgcm = AESGCM(encryption_key)
@@ -544,7 +550,10 @@ class IdentityKeyProtectionService:
                 secure_memzero(bytearray(hsm_pepper))
 
     def create_protection_config(
-        self, level: ProtectionLevel, hsm_slot: Optional[int] = None, require_touch: bool = True
+        self,
+        level: ProtectionLevel,
+        hsm_slot: Optional[int] = None,
+        require_touch: bool = True,
     ) -> IdentityProtection:
         """
         Create a new protection configuration.

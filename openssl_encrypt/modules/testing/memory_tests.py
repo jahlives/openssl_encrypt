@@ -5,7 +5,6 @@ Tests for memory leaks, buffer overflows, use-after-free,
 secure memory zeroing, and other memory-related security issues.
 """
 
-import ctypes
 import gc
 import os
 import sys
@@ -14,7 +13,7 @@ import threading
 import time
 import weakref
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from ..crypt_core import decrypt_file, encrypt_file
 from .base_test import BaseSecurityTest, TestConfig, TestResult, TestResultLevel
@@ -309,7 +308,10 @@ class MemoryTestSuite(BaseSecurityTest):
 
                 # Perform encryption
                 encrypt_file(
-                    input_file, encrypted_file, "pattern_password", hash_config=config_dict
+                    input_file,
+                    encrypted_file,
+                    "pattern_password",
+                    hash_config=config_dict,
                 )
 
                 # Take memory snapshot after operation
@@ -320,9 +322,11 @@ class MemoryTestSuite(BaseSecurityTest):
                     memory_patterns[file_size] = {
                         "file_size_mb": file_size / (1024 * 1024),
                         "memory_increase_mb": delta["rss_delta_mb"],
-                        "memory_ratio": delta["rss_delta_mb"] / (file_size / (1024 * 1024))
-                        if file_size > 0
-                        else 0,
+                        "memory_ratio": (
+                            delta["rss_delta_mb"] / (file_size / (1024 * 1024))
+                            if file_size > 0
+                            else 0
+                        ),
                     }
 
                 # Clean up
@@ -415,7 +419,10 @@ class MemoryTestSuite(BaseSecurityTest):
 
             try:
                 encrypt_file(
-                    input_file, encrypted_file, "large_file_password", hash_config=config_dict
+                    input_file,
+                    encrypted_file,
+                    "large_file_password",
+                    hash_config=config_dict,
                 )
                 encryption_successful = True
             except MemoryError:
@@ -604,7 +611,11 @@ class MemoryTestSuite(BaseSecurityTest):
 
             error_scenarios = [
                 ("nonexistent_file", "nonexistent_input.bin", "output.bin"),
-                ("invalid_password", "valid_input.txt", "output.bin"),  # We'll create this one
+                (
+                    "invalid_password",
+                    "valid_input.txt",
+                    "output.bin",
+                ),  # We'll create this one
             ]
 
             # Create a valid input file for invalid password test
@@ -616,7 +627,10 @@ class MemoryTestSuite(BaseSecurityTest):
             # First encrypt with correct password
             correct_config = {"algorithm": "fernet", "hash_algorithm": "SHA256"}
             encrypt_file(
-                valid_input, encrypted_valid, "correct_password", hash_config=correct_config
+                valid_input,
+                encrypted_valid,
+                "correct_password",
+                hash_config=correct_config,
             )
 
             memory_after_errors = []
@@ -627,7 +641,10 @@ class MemoryTestSuite(BaseSecurityTest):
                         if scenario_name == "nonexistent_file":
                             # This should fail - file doesn't exist
                             encrypt_file(
-                                input_file, output_file, "test_password", hash_config=correct_config
+                                input_file,
+                                output_file,
+                                "test_password",
+                                hash_config=correct_config,
                             )
                         elif scenario_name == "invalid_password":
                             # This should fail - wrong password for decryption
@@ -762,9 +779,9 @@ class MemoryTestSuite(BaseSecurityTest):
                 details = {
                     "weak_references_created": total_refs,
                     "references_still_alive": alive_refs,
-                    "cleanup_percentage": (total_refs - alive_refs) / total_refs * 100
-                    if total_refs > 0
-                    else 0,
+                    "cleanup_percentage": (
+                        (total_refs - alive_refs) / total_refs * 100 if total_refs > 0 else 0
+                    ),
                     "good_cleanup": good_cleanup,
                 }
 

@@ -10,7 +10,7 @@ import hashlib
 import logging
 from typing import Any, Dict, Optional
 
-from .exceptions import CapacityError, CoverMediaError, ExtractionError
+from .exceptions import CoverMediaError, ExtractionError
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +67,6 @@ class SteganographyBase(abc.ABC):
         Returns:
             Maximum bytes that can be hidden
         """
-        pass
 
     @abc.abstractmethod
     def hide_data(self, cover_data: bytes, secret_data: bytes) -> bytes:
@@ -85,7 +84,6 @@ class SteganographyBase(abc.ABC):
             CapacityError: If secret_data exceeds capacity
             CoverMediaError: If cover_data is invalid
         """
-        pass
 
     @abc.abstractmethod
     def extract_data(self, stego_data: bytes) -> bytes:
@@ -101,7 +99,6 @@ class SteganographyBase(abc.ABC):
         Raises:
             ExtractionError: If data cannot be extracted
         """
-        pass
 
     def _add_eof_marker(self, data: bytes) -> bytes:
         """Add end-of-file marker to data before hiding"""

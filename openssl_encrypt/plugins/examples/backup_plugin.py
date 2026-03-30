@@ -22,7 +22,6 @@ Security Notes:
 
 import os
 import shutil
-import tempfile
 import time
 from datetime import datetime
 from pathlib import Path
@@ -279,7 +278,10 @@ class BackupUtilityPlugin(UtilityPlugin):
 
             # Check if restore path already exists
             if os.path.exists(restore_path):
-                return {"success": False, "error": f"Restore target already exists: {restore_path}"}
+                return {
+                    "success": False,
+                    "error": f"Restore target already exists: {restore_path}",
+                }
 
             # Copy backup to restore location
             shutil.copy2(backup_path, restore_path)
@@ -317,7 +319,11 @@ class BackupUtilityPlugin(UtilityPlugin):
                 backup_dir = Path(backup_dir)
 
             if not backup_dir.exists():
-                return {"cleaned": 0, "size_freed": 0, "error": "Backup directory not found"}
+                return {
+                    "cleaned": 0,
+                    "size_freed": 0,
+                    "error": "Backup directory not found",
+                }
 
             cutoff_time = time.time() - (days_to_keep * 24 * 3600)
             cleaned_count = 0

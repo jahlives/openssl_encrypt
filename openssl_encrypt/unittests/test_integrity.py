@@ -11,14 +11,13 @@ This test suite focuses on preventing regressions related to:
 NOTE: These tests use mocked integrity plugin - no remote server required.
 """
 
-import base64
 import hashlib
 import json
 import os
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import Mock, patch
 
 from openssl_encrypt.modules.crypt_core import EncryptionAlgorithm, decrypt_file, encrypt_file
 from openssl_encrypt.modules.crypt_errors import DecryptionError
@@ -162,7 +161,9 @@ class TestIntegrityFileIDConsistency(unittest.TestCase):
 
         # Get the file_id used during encryption
         self.assertEqual(
-            len(self.mock_storage.store_calls), 1, "store_hash should be called exactly once"
+            len(self.mock_storage.store_calls),
+            1,
+            "store_hash should be called exactly once",
         )
         encryption_file_id, encryption_hash = self.mock_storage.store_calls[0]
 
@@ -177,7 +178,9 @@ class TestIntegrityFileIDConsistency(unittest.TestCase):
 
         # Get the file_id used during decryption
         self.assertEqual(
-            len(self.mock_storage.verify_calls), 1, "verify should be called exactly once"
+            len(self.mock_storage.verify_calls),
+            1,
+            "verify should be called exactly once",
         )
         decryption_file_id, decryption_hash = self.mock_storage.verify_calls[0]
 
@@ -259,7 +262,9 @@ class TestIntegrityFileIDConsistency(unittest.TestCase):
         # Ensure it's not a temp file path (no .tmp extension)
         for path in file_id_paths:
             self.assertNotIn(
-                ".tmp", path.lower(), msg=f"File ID should not be computed from temp file: {path}"
+                ".tmp",
+                path.lower(),
+                msg=f"File ID should not be computed from temp file: {path}",
             )
 
 
@@ -590,7 +595,9 @@ class TestIntegrityTamperingDetection(unittest.TestCase):
 
         # Hashes should differ
         self.assertNotEqual(
-            original_hash, tampered_hash, msg="Hash should change when metadata is tampered with"
+            original_hash,
+            tampered_hash,
+            msg="Hash should change when metadata is tampered with",
         )
 
 
@@ -678,7 +685,8 @@ class TestIntegrityEdgeCases(unittest.TestCase):
 
         self.assertEqual(len(file_id), 64, msg="File ID should be 64 characters (SHA-256)")
         self.assertTrue(
-            all(c in "0123456789abcdef" for c in file_id), msg="File ID should be lowercase hex"
+            all(c in "0123456789abcdef" for c in file_id),
+            msg="File ID should be lowercase hex",
         )
 
     def test_metadata_hash_is_64_char_hex(self):
@@ -690,7 +698,8 @@ class TestIntegrityEdgeCases(unittest.TestCase):
 
         self.assertEqual(len(metadata_hash), 64, msg="Hash should be 64 characters (SHA-256)")
         self.assertTrue(
-            all(c in "0123456789abcdef" for c in metadata_hash), msg="Hash should be lowercase hex"
+            all(c in "0123456789abcdef" for c in metadata_hash),
+            msg="Hash should be lowercase hex",
         )
 
 

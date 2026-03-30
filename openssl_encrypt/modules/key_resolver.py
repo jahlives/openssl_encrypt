@@ -21,9 +21,9 @@ import logging
 import os
 from typing import TYPE_CHECKING, Callable, Optional
 
+from .crypt_utils import eprint
 from .identity import Identity, IdentityStore
 from .key_bundle import InvalidFingerprintError, InvalidSignatureError
-from .crypt_utils import eprint
 
 if TYPE_CHECKING:
     from ..plugins.keyserver.keyserver_plugin import KeyserverPlugin
@@ -35,13 +35,9 @@ logger = logging.getLogger(__name__)
 class KeyNotFoundError(Exception):
     """Raised when key not found in any source"""
 
-    pass
-
 
 class TrustDeclinedError(Exception):
     """Raised when user declines to trust keyserver key"""
-
-    pass
 
 
 class KeyResolver:

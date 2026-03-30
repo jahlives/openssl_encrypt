@@ -10,13 +10,11 @@ Dependencies:
 - liboqs-python (pip install liboqs)
 """
 
-import hashlib
 import logging
 import os
-import secrets
-import sys
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple, Union, cast
+from typing import Dict, List, Optional, Tuple, Union
+
 from .crypt_utils import eprint
 
 # Configure logger
@@ -266,7 +264,7 @@ class PQEncapsulator:
             except Exception as original_error:
                 # Clean up and raise a completely new exception without any references
                 # to the original oqs objects that might cause segfaults
-                error_msg = str(original_error)
+                str(original_error)
                 try:
                     kem_with_secret.free()
                 except:

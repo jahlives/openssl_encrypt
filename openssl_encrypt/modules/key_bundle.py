@@ -26,8 +26,8 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Dict, Optional
 
-from .pqc_signing import PQCSigner, calculate_fingerprint
 from .crypt_utils import eprint
+from .pqc_signing import PQCSigner, calculate_fingerprint
 
 if TYPE_CHECKING:
     from .identity import Identity
@@ -39,25 +39,17 @@ logger = logging.getLogger(__name__)
 class KeyBundleError(Exception):
     """Base exception for key bundle operations"""
 
-    pass
-
 
 class InvalidSignatureError(KeyBundleError):
     """Raised when bundle signature verification fails"""
-
-    pass
 
 
 class InvalidAlgorithmError(KeyBundleError):
     """Raised when unsupported algorithm is used"""
 
-    pass
-
 
 class InvalidFingerprintError(KeyBundleError):
     """Raised when fingerprint doesn't match keys"""
-
-    pass
 
 
 @dataclass(frozen=True)

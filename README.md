@@ -2,7 +2,7 @@
 
 A Python-based file encryption tool with modern ciphers, post-quantum algorithms, and defense-in-depth key derivation.
 
-> **Looking for the stable release?** The latest stable version is [v1.4.0](https://github.com/jahlives/openssl_encrypt/tree/releases/1.4.x) on the releases/1.4.x branch. The current release candidate is [v1.4.1rc2](https://github.com/jahlives/openssl_encrypt/releases/tag/v1.4.1rc2).
+> **Looking for the stable release?** The latest stable version is [v1.4.1](https://github.com/jahlives/openssl_encrypt/releases/tag/v1.4.1) on the releases/1.4.x branch.
 
 ## History
 
@@ -51,25 +51,19 @@ For deep-dives into the cryptographic design and security policies of this proje
 * **Metadata Integrity**: Cryptographic binding of headers to prevent tampering (on AEAD-supported ciphers).
 * **Hardware-Resistant KDF**: Sequential Argon2id and RandomX hashing to neutralize ASIC/GPU brute-force clusters.
 ---
-## 🚀 v1.4.1rc2 Release Candidate
+## 🚀 What's New in v1.4.1
 
-**Current Release:** v1.4.1rc2 | **Status:** Release Candidate | **Tests:** 1636+ passing
+**Current Release:** v1.4.1 | **Status:** Stable | **Tests:** 1636+ passing
 
-**What's New in v1.4.1rc2:**
-
-- **Security dependency update**: Bumped nltk to 3.9.3 (CVE-2026-33236, CVE-2026-33231, CVE-2026-33230, GHSA-rf74-v2fm-23pw)
-
-**What's New since v1.4.0:**
 - **Streaming chunked encryption (format v12)**: Constant-memory handling of large files via AEAD chunks — memory usage stays proportional to chunk size regardless of file size
 - **`--info` CLI action**: Display format version, algorithms, and `encrypted_at` timestamp without decrypting
-- **Windows compatibility**: Full Windows support backported from v1.5.x (NTFS ACLs, UTF-8 fixes, Whirlpool build)
+- **Windows compatibility**: Full Windows support (NTFS ACLs, UTF-8 fixes, Whirlpool build)
 - **Stderr output separation**: All progress/status output now goes to stderr — `2>/dev/null` correctly suppresses everything except decrypted content
 - **Security hardening**: Key zeroization, HKDF for all derived keys (v12+), per-layer cascade salts and AAD, plugin sandbox hardening, restrictive file permissions, identity import fingerprint verification
-- **Dependency updates**: authlib 1.6.9, python-jose 3.4.0, cryptography ≥46.0.5
+- **Dependency updates**: authlib 1.6.9, python-jose 3.4.0, cryptography ≥46.0.5, nltk 3.9.3
 
 **Release History:**
-- **v1.4.1rc2** (Current) - Security dependency update (nltk 3.9.3)
-- **v1.4.1rc1** - Streaming encryption, Windows compatibility, stderr separation, security hardening
+- **v1.4.1** (Current) - Stable release
 - **v1.4.0** - Stable release with in-memory encryption and security-hardened rekey
 - **v1.4.0rc2** - Relax SAST rules for built-in plugins
 - **v1.4.0rc1** - First release candidate: security hardening and dependency updates

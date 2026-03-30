@@ -10,7 +10,7 @@ nature makes it excellent for steganographic applications.
 import io
 import logging
 import struct
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, Optional
 
 try:
     from PIL import Image, ImageFile

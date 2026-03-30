@@ -9,10 +9,9 @@ import gc
 import os
 import statistics
 import tempfile
-import threading
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List
 
 from ..crypt_core import decrypt_file, encrypt_file
 from .base_test import BaseSecurityTest, TestConfig, TestResult, TestResultLevel
@@ -160,7 +159,7 @@ class SideChannelTestSuite(BaseSecurityTest):
             operation_func(*args, **kwargs)
             end_time = time.perf_counter()
             return end_time - start_time
-        except Exception as e:
+        except Exception:
             # Return a sentinel value for failed operations
             return -1.0
 
@@ -313,7 +312,11 @@ class SideChannelTestSuite(BaseSecurityTest):
                 timings = []
                 for i in range(5):  # Multiple measurements
                     timing = self._measure_operation_timing(
-                        encrypt_file, input_file, encrypted_file, "test_password", config_dict
+                        encrypt_file,
+                        input_file,
+                        encrypted_file,
+                        "test_password",
+                        config_dict,
                     )
                     if timing > 0:
                         timings.append(timing)
@@ -409,11 +412,14 @@ class SideChannelTestSuite(BaseSecurityTest):
 
             memory_before = process.memory_info().rss
             encrypt_file(
-                input_file, encrypted_file, "memory_test_password", hash_config=config_dict
+                input_file,
+                encrypted_file,
+                "memory_test_password",
+                hash_config=config_dict,
             )
             memory_after = process.memory_info().rss
 
-            memory_used = memory_after - memory_before
+            memory_after - memory_before
 
             # Test multiple iterations to check consistency
             memory_measurements = []
@@ -423,7 +429,10 @@ class SideChannelTestSuite(BaseSecurityTest):
 
                 memory_before = process.memory_info().rss
                 encrypt_file(
-                    input_file, encrypted_file, "memory_test_password", hash_config=config_dict
+                    input_file,
+                    encrypted_file,
+                    "memory_test_password",
+                    hash_config=config_dict,
                 )
                 memory_after = process.memory_info().rss
 
@@ -508,7 +517,11 @@ class SideChannelTestSuite(BaseSecurityTest):
                         os.remove(encrypted_file)
 
                     timing = self._measure_operation_timing(
-                        encrypt_file, input_file, encrypted_file, "cache_test_password", config_dict
+                        encrypt_file,
+                        input_file,
+                        encrypted_file,
+                        "cache_test_password",
+                        config_dict,
                     )
                     if timing > 0:
                         timings.append(timing)
@@ -595,7 +608,11 @@ class SideChannelTestSuite(BaseSecurityTest):
                         os.remove(encrypted_file)
 
                     timing = self._measure_operation_timing(
-                        encrypt_file, input_file, encrypted_file, "algo_test_password", config_dict
+                        encrypt_file,
+                        input_file,
+                        encrypted_file,
+                        "algo_test_password",
+                        config_dict,
                     )
                     if timing > 0:
                         timings.append(timing)

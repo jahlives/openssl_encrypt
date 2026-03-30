@@ -721,9 +721,9 @@ class PluginManager:
                 content = f.read()
 
             # Store source hash for TOCTOU verification before exec_module
-            self._validated_source_hashes[os.path.realpath(file_path)] = (
-                _hashlib.sha256(content.encode("utf-8")).hexdigest()
-            )
+            self._validated_source_hashes[os.path.realpath(file_path)] = _hashlib.sha256(
+                content.encode("utf-8")
+            ).hexdigest()
 
             # Use AST-based analysis to detect dangerous patterns
             is_safe, violations = analyze_plugin_code(
@@ -879,7 +879,10 @@ class PluginManager:
             return PluginResult.error_result(f"Plugin validation error: {str(e)}")
 
     def _check_capabilities(
-        self, plugin_id: str, required_capabilities: frozenset, context: PluginSecurityContext
+        self,
+        plugin_id: str,
+        required_capabilities: frozenset,
+        context: PluginSecurityContext,
     ) -> PluginResult:
         """Check if plugin has required capabilities in context.
 

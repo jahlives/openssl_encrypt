@@ -21,12 +21,11 @@ import time
 import uuid
 from dataclasses import asdict, dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import yaml
 
 from .config_analyzer import ConfigurationAnalyzer, analyze_configuration_from_args
-from .security_scorer import SecurityLevel
 from .crypt_utils import eprint
 
 
@@ -591,9 +590,11 @@ class TemplateManager:
             for h in ["sha256", "sha512", "blake2b", "blake3"]
         )
         has_kdf = any(
-            hash_config.get(kdf, {}).get("enabled", False)
-            if isinstance(hash_config.get(kdf), dict)
-            else False
+            (
+                hash_config.get(kdf, {}).get("enabled", False)
+                if isinstance(hash_config.get(kdf), dict)
+                else False
+            )
             for kdf in ["argon2", "scrypt", "balloon"]
         )
         has_pbkdf2 = (
@@ -693,7 +694,7 @@ class TemplateManager:
             return analyzer.analyze_configuration(
                 template.config, use_case, compliance_requirements
             )
-        except Exception as e:
+        except Exception:
             # Return a minimal analysis object in case of error
             from .config_analyzer import ConfigurationAnalysis
 

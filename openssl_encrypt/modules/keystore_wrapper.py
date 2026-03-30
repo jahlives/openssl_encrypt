@@ -13,8 +13,8 @@ from typing import Any, Dict, Optional, Tuple, Union
 
 from .crypt_core import decrypt_file as original_decrypt_file
 from .crypt_core import encrypt_file as original_encrypt_file
-from .keystore_utils import extract_key_id_from_metadata, get_pqc_key_for_decryption
 from .crypt_utils import eprint
+from .keystore_utils import extract_key_id_from_metadata
 
 
 def encrypt_file_with_keystore(
@@ -173,7 +173,11 @@ def encrypt_file_with_keystore(
 
                         # Store the key in the keystore - passing the complete metadata
                         store_pqc_key_in_keystore(
-                            metadata, keystore_file, keystore_password, key_id=key_id, quiet=quiet
+                            metadata,
+                            keystore_file,
+                            keystore_password,
+                            key_id=key_id,
+                            quiet=quiet,
                         )
 
                         # Create a clean copy of the metadata to avoid any reference issues
@@ -743,7 +747,7 @@ def decrypt_file_with_keystore(
     if pqc_private_key is None and key_id is not None and keystore_file is not None:
         import getpass
 
-        from .keystore_cli import KeyNotFoundError, PQCKeystore
+        from .keystore_cli import PQCKeystore
 
         # Check if keystore file exists
         if not os.path.exists(keystore_file):

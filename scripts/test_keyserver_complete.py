@@ -26,8 +26,8 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from openssl_encrypt.modules.identity import Identity
 from openssl_encrypt.modules.key_bundle import PublicKeyBundle
-from openssl_encrypt.plugins.keyserver.keyserver_plugin import KeyserverPlugin
 from openssl_encrypt.plugins.keyserver.config import KeyserverConfig
+from openssl_encrypt.plugins.keyserver.keyserver_plugin import KeyserverPlugin
 
 
 def print_section(title: str):
@@ -150,6 +150,7 @@ def test_keyserver_complete():
     except Exception as e:
         print(f"✗ Upload error: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
@@ -254,8 +255,10 @@ def test_keyserver_complete():
         print(f"  Expired entries: {stats['expired_entries']}")
         print(f"  Total accesses: {stats['total_accesses']}")
         if stats.get("most_accessed"):
-            print(f"  Most accessed: {stats['most_accessed']['name']} "
-                  f"({stats['most_accessed']['count']} times)")
+            print(
+                f"  Most accessed: {stats['most_accessed']['name']} "
+                f"({stats['most_accessed']['count']} times)"
+            )
 
     except Exception as e:
         print(f"✗ Failed to get cache statistics: {e}")
@@ -295,6 +298,7 @@ def main():
     except Exception as e:
         print(f"\n\n✗ FATAL ERROR: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)
 

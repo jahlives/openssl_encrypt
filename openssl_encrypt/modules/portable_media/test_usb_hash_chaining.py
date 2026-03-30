@@ -6,7 +6,6 @@ This test verifies that the USB system correctly uses the same hash chaining
 approach as the main CLI for password derivation.
 """
 
-import json
 import os
 import sys
 import tempfile

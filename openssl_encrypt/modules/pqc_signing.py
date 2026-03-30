@@ -16,8 +16,8 @@ import logging
 import time
 from typing import Tuple
 
-from .secure_memory import SecureBytes
 from .crypt_utils import eprint
+from .secure_memory import SecureBytes
 
 # Set up module-level logger
 logger = logging.getLogger(__name__)
@@ -37,13 +37,9 @@ except ImportError:
 class SignatureError(Exception):
     """Base exception for signature operations"""
 
-    pass
-
 
 class SignatureVerificationError(SignatureError):
     """Raised when signature verification fails"""
-
-    pass
 
 
 class SignatureAlgorithm:

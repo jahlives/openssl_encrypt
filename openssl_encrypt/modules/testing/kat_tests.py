@@ -7,11 +7,10 @@ cryptographic algorithms produce expected results.
 
 import hashlib
 import hmac
-import json
 import os
 import tempfile
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List
 
 from ..crypt_core import decrypt_file, encrypt_file
 from .base_test import BaseSecurityTest, TestConfig, TestResult, TestResultLevel
@@ -258,7 +257,8 @@ class KATTestSuite(BaseSecurityTest):
 
     def __init__(self):
         super().__init__(
-            "KATTestSuite", "Known-Answer Tests to verify cryptographic algorithm correctness"
+            "KATTestSuite",
+            "Known-Answer Tests to verify cryptographic algorithm correctness",
         )
         self.temp_dir = None
 
@@ -349,9 +349,11 @@ class KATTestSuite(BaseSecurityTest):
                     details={
                         "expected": vector.expected_output.hex(),
                         "computed": computed_hash.hex(),
-                        "input": vector.input_data.hex()
-                        if len(vector.input_data) < 100
-                        else f"{len(vector.input_data)} bytes",
+                        "input": (
+                            vector.input_data.hex()
+                            if len(vector.input_data) < 100
+                            else f"{len(vector.input_data)} bytes"
+                        ),
                     },
                 )
 
@@ -405,9 +407,11 @@ class KATTestSuite(BaseSecurityTest):
                         "expected": vector.expected_output.hex(),
                         "computed": computed_hmac.hex(),
                         "key": vector.key.hex(),
-                        "input": vector.input_data.hex()
-                        if len(vector.input_data) < 100
-                        else f"{len(vector.input_data)} bytes",
+                        "input": (
+                            vector.input_data.hex()
+                            if len(vector.input_data) < 100
+                            else f"{len(vector.input_data)} bytes"
+                        ),
                     },
                 )
 
@@ -485,7 +489,9 @@ class KATTestSuite(BaseSecurityTest):
         file_vectors = CustomTestVectors.get_file_encryption_vectors()
         for vector in file_vectors:
             result = self.run_single_test(
-                self._test_file_encryption_vector, f"file_encrypt_{vector.test_name}", vector
+                self._test_file_encryption_vector,
+                f"file_encrypt_{vector.test_name}",
+                vector,
             )
             self.add_result(result)
 

@@ -15,28 +15,29 @@ import secrets
 import time
 import uuid
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Tuple
 
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM, ChaCha20Poly1305
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
 
-from .crypt_errors import AuthenticationError, InternalError, KeyDerivationError, ValidationError
-from .secure_memory import SecureBytes, secure_memzero
+from .crypt_errors import AuthenticationError, InternalError, ValidationError
+from .secure_memory import secure_memzero
 
 # Check for Argon2 support
 try:
     import argon2
     from argon2 import PasswordHasher
-    from argon2.exceptions import VerifyMismatchError
 
     ARGON2_AVAILABLE = True
 except ImportError:
     ARGON2_AVAILABLE = False
 
 
-def _argon2_derive_key(password: str, salt: bytes, argon2_params: dict, kdf_version: int = 2) -> bytes:
+def _argon2_derive_key(
+    password: str, salt: bytes, argon2_params: dict, kdf_version: int = 2
+) -> bytes:
     """Derive a 32-byte key using Argon2id.
 
     Args:
@@ -393,7 +394,9 @@ class PQCKeystore:
                     argon2_params = params["argon2_params"]
                     salt = base64.b64decode(params["salt"])
 
-                    derived_key = _argon2_derive_key(master_password, salt, argon2_params, kdf_version=2)
+                    derived_key = _argon2_derive_key(
+                        master_password, salt, argon2_params, kdf_version=2
+                    )
                     params["kdf_version"] = 2
 
                 elif method == KeystoreProtectionMethod.SCRYPT_CHACHA20.value:
@@ -469,6 +472,7 @@ class PQCKeystore:
 
             # Restrict keystore file to owner read/write only
             from openssl_encrypt.modules.file_permissions import PermissionLevel, set_permissions
+
             set_permissions(self.keystore_path, PermissionLevel.OWNER_ONLY)
 
             return True
@@ -527,7 +531,10 @@ class PQCKeystore:
             "creation_date": datetime.datetime.now().isoformat(),
             "last_used": datetime.datetime.now().isoformat(),
             "purpose": purposes,
-            "metadata": {"description": description or f"{algorithm} key", "tags": tags or []},
+            "metadata": {
+                "description": description or f"{algorithm} key",
+                "tags": tags or [],
+            },
             "public_key": base64.b64encode(public_key).decode("utf-8"),
             "use_master_password": use_master_password,
         }
@@ -543,7 +550,9 @@ class PQCKeystore:
 
             # Encrypt using the master key
             encrypted_data = self._encrypt_with_derived_key(
-                private_key, self.master_key, KeystoreProtectionMethod(protection_params["method"])
+                private_key,
+                self.master_key,
+                KeystoreProtectionMethod(protection_params["method"]),
             )
 
         else:
@@ -712,9 +721,9 @@ class PQCKeystore:
                 "purpose": key["purpose"],
                 "metadata": key["metadata"],
                 "is_default": key["key_id"] == self.keystore_data["default_key_id"],
-                "protection": "master_password"
-                if key.get("use_master_password", False)
-                else "key_password",
+                "protection": (
+                    "master_password" if key.get("use_master_password", False) else "key_password"
+                ),
             }
             result.append(key_info)
 
@@ -779,7 +788,10 @@ class PQCKeystore:
         raise NotImplementedError("Key rotation not implemented yet")
 
     def import_legacy_key(
-        self, keyfile_path: str, key_password: str = None, use_master_password: bool = True
+        self,
+        keyfile_path: str,
+        key_password: str = None,
+        use_master_password: bool = True,
     ) -> str:
         """
         Import a key from a legacy format keyfile
@@ -801,7 +813,11 @@ class PQCKeystore:
         raise NotImplementedError("Legacy key import not implemented yet")
 
     def export_key(
-        self, key_id: str, output_path: str, key_password: str = None, export_format: str = "modern"
+        self,
+        key_id: str,
+        output_path: str,
+        key_password: str = None,
+        export_format: str = "modern",
     ) -> bool:
         """
         Export a key to a file
@@ -901,7 +917,7 @@ class PQCKeystore:
 
         # Get the protection method
         protection = self.keystore_data["protection"]
-        method = protection["method"]
+        protection["method"]
 
         # Generate new salt and nonce
         salt = secrets.token_bytes(16)
@@ -915,7 +931,7 @@ class PQCKeystore:
         for key in self.keystore_data["keys"]:
             if key.get("use_master_password", False):
                 # Get the key pair
-                public_key = base64.b64decode(key["public_key"])
+                base64.b64decode(key["public_key"])
                 encrypted_private_key = key["private_key"]
 
                 # Decrypt with the old master key
@@ -997,7 +1013,9 @@ class PQCKeystore:
 
         # Re-encrypt with the master key
         new_encrypted_data = self._encrypt_with_derived_key(
-            private_key, self.master_key, KeystoreProtectionMethod(protection_params["method"])
+            private_key,
+            self.master_key,
+            KeystoreProtectionMethod(protection_params["method"]),
         )
 
         # Update the key entry
@@ -1084,7 +1102,10 @@ class PQCKeystore:
         self.master_key_time = 0
 
     def _encrypt_private_key(
-        self, private_key: bytes, password: str, protection_method: KeystoreProtectionMethod
+        self,
+        private_key: bytes,
+        password: str,
+        protection_method: KeystoreProtectionMethod,
     ) -> Dict:
         """
         Encrypt a private key using the specified method
@@ -1119,7 +1140,9 @@ class PQCKeystore:
                     "memory_cost": memory_cost,
                     "parallelism": parallelism,
                 }
-                derived_key = bytearray(_argon2_derive_key(password, salt, argon2_params, kdf_version=2))
+                derived_key = bytearray(
+                    _argon2_derive_key(password, salt, argon2_params, kdf_version=2)
+                )
 
                 salt_b64 = base64.b64encode(salt).decode("utf-8")
 
@@ -1128,10 +1151,15 @@ class PQCKeystore:
                 # Create a consistent header for associated data
                 header = {
                     "method": protection_method.value,
-                    "params": {"salt": salt_b64, "nonce": base64.b64encode(nonce).decode("utf-8")},
+                    "params": {
+                        "salt": salt_b64,
+                        "nonce": base64.b64encode(nonce).decode("utf-8"),
+                    },
                 }
                 ciphertext = cipher.encrypt(
-                    nonce, private_key, associated_data=json.dumps(header).encode("utf-8")
+                    nonce,
+                    private_key,
+                    associated_data=json.dumps(header).encode("utf-8"),
                 )
 
                 # Prepare result
@@ -1167,7 +1195,9 @@ class PQCKeystore:
                     },
                 }
                 ciphertext = cipher.encrypt(
-                    nonce, private_key, associated_data=json.dumps(header).encode("utf-8")
+                    nonce,
+                    private_key,
+                    associated_data=json.dumps(header).encode("utf-8"),
                 )
 
                 # Prepare result
@@ -1187,7 +1217,12 @@ class PQCKeystore:
                 iterations = 500000
 
                 # Derive key with PBKDF2
-                kdf = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=salt, iterations=iterations)
+                kdf = PBKDF2HMAC(
+                    algorithm=hashes.SHA256(),
+                    length=32,
+                    salt=salt,
+                    iterations=iterations,
+                )
                 derived_key = bytearray(kdf.derive(password.encode("utf-8")))
 
                 # Encrypt with AES-GCM
@@ -1195,10 +1230,15 @@ class PQCKeystore:
                 # Create a consistent header for associated data
                 header = {
                     "method": protection_method.value,
-                    "params": {"salt": salt_b64, "nonce": base64.b64encode(nonce).decode("utf-8")},
+                    "params": {
+                        "salt": salt_b64,
+                        "nonce": base64.b64encode(nonce).decode("utf-8"),
+                    },
                 }
                 ciphertext = cipher.encrypt(
-                    nonce, private_key, associated_data=json.dumps(header).encode("utf-8")
+                    nonce,
+                    private_key,
+                    associated_data=json.dumps(header).encode("utf-8"),
                 )
 
                 # Prepare result
@@ -1253,14 +1293,19 @@ class PQCKeystore:
                 argon2_params = params["argon2_params"]
                 kdf_version = params.get("kdf_version", 1)
 
-                derived_key = bytearray(_argon2_derive_key(password, salt, argon2_params, kdf_version))
+                derived_key = bytearray(
+                    _argon2_derive_key(password, salt, argon2_params, kdf_version)
+                )
 
                 # Decrypt with AES-GCM
                 cipher = AESGCM(bytes(derived_key))
                 # Recreate the header to match encryption
                 header = {
                     "method": method,
-                    "params": {"salt": salt_b64, "nonce": base64.b64encode(nonce).decode("utf-8")},
+                    "params": {
+                        "salt": salt_b64,
+                        "nonce": base64.b64encode(nonce).decode("utf-8"),
+                    },
                 }
                 header_aad = json.dumps(header).encode("utf-8")
 
@@ -1329,7 +1374,10 @@ class PQCKeystore:
                 # Recreate the header to match encryption
                 header = {
                     "method": method,
-                    "params": {"salt": salt_b64, "nonce": base64.b64encode(nonce).decode("utf-8")},
+                    "params": {
+                        "salt": salt_b64,
+                        "nonce": base64.b64encode(nonce).decode("utf-8"),
+                    },
                 }
                 header_aad = json.dumps(header).encode("utf-8")
                 kdf_version = params.get("kdf_version", 1)
@@ -1357,7 +1405,10 @@ class PQCKeystore:
                 secure_memzero(derived_key)
 
     def _encrypt_with_derived_key(
-        self, data: bytes, derived_key: bytes, protection_method: KeystoreProtectionMethod
+        self,
+        data: bytes,
+        derived_key: bytes,
+        protection_method: KeystoreProtectionMethod,
     ) -> Dict:
         """
         Encrypt data using an already derived key
@@ -1376,7 +1427,10 @@ class PQCKeystore:
         # Prepare the header that will be used for associated_data
         header = {
             "method": protection_method.value,
-            "params": {"nonce": base64.b64encode(nonce).decode("utf-8"), "key_source": "master"},
+            "params": {
+                "nonce": base64.b64encode(nonce).decode("utf-8"),
+                "key_source": "master",
+            },
         }
 
         if protection_method == KeystoreProtectionMethod.SCRYPT_CHACHA20:
@@ -1446,7 +1500,9 @@ class PQCKeystore:
                 # BUGFIX: Try methods in consistent order for compatibility
                 try:
                     plaintext = cipher.decrypt(
-                        nonce, ciphertext, associated_data=json.dumps(header).encode("utf-8")
+                        nonce,
+                        ciphertext,
+                        associated_data=json.dumps(header).encode("utf-8"),
                     )
                 except Exception:
                     try:
@@ -1472,7 +1528,9 @@ class PQCKeystore:
                     except Exception:
                         # Finally try with header
                         plaintext = cipher.decrypt(
-                            nonce, ciphertext, associated_data=json.dumps(header).encode("utf-8")
+                            nonce,
+                            ciphertext,
+                            associated_data=json.dumps(header).encode("utf-8"),
                         )
 
             else:

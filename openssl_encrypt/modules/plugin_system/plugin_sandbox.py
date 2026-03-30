@@ -325,8 +325,6 @@ class ResourceMonitor:
 class SandboxViolationError(Exception):
     """Raised when plugin violates sandbox restrictions."""
 
-    pass
-
 
 class PluginSandbox:
     """
@@ -456,7 +454,10 @@ class PluginSandbox:
 
     @contextmanager
     def _create_sandbox_environment(
-        self, context: PluginSecurityContext, max_memory_mb: int, use_process_isolation: bool = True
+        self,
+        context: PluginSecurityContext,
+        max_memory_mb: int,
+        use_process_isolation: bool = True,
     ):
         """Create sandboxed environment for plugin execution.
 
@@ -683,7 +684,9 @@ class PluginSandbox:
             if hasattr(os, func_name):
                 saved_state[f"os.{func_name}"] = getattr(os, func_name)
                 setattr(
-                    os, func_name, lambda *args, **kwargs: self._raise_process_execution_error()
+                    os,
+                    func_name,
+                    lambda *args, **kwargs: self._raise_process_execution_error(),
                 )
 
     def _raise_process_execution_error(self):

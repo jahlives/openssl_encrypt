@@ -183,7 +183,10 @@ class SecurityAuditLogger:
         self._write_to_log(event)
 
         # Send to syslog if enabled and severity is warning or critical
-        if self.syslog_enabled and severity in [self.SEVERITY_WARNING, self.SEVERITY_CRITICAL]:
+        if self.syslog_enabled and severity in [
+            self.SEVERITY_WARNING,
+            self.SEVERITY_CRITICAL,
+        ]:
             self._send_to_syslog(event)
 
     def _write_to_log(self, event: dict) -> None:
@@ -196,6 +199,7 @@ class SecurityAuditLogger:
                 # Write event as JSON line (secure permissions on creation)
                 if not self.log_file.exists():
                     from .file_permissions import PermissionLevel, create_secure_file
+
                     fd = create_secure_file(self.log_file, PermissionLevel.OWNER_ONLY)
                     with os.fdopen(fd, "a", encoding="utf-8") as f:
                         f.write(json.dumps(event) + "\n")
@@ -258,7 +262,10 @@ class SecurityAuditLogger:
             logger.error(f"Failed to send to syslog: {e}")
 
     def get_recent_events(
-        self, hours: int = 24, event_type: Optional[str] = None, severity: Optional[str] = None
+        self,
+        hours: int = 24,
+        event_type: Optional[str] = None,
+        severity: Optional[str] = None,
     ) -> list:
         """
         Retrieve recent security events from log.

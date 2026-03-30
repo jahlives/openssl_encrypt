@@ -167,7 +167,10 @@ class SteganographyPlugin(BasePlugin):
 
             # Create transport with specified options
             transport = SteganographyTransport(
-                method=method, bits_per_channel=bits_per_channel, password=password, **options
+                method=method,
+                bits_per_channel=bits_per_channel,
+                password=password,
+                **options,
             )
 
             # Hide data in media
@@ -215,7 +218,10 @@ class SteganographyPlugin(BasePlugin):
 
             # Create transport with specified options
             transport = SteganographyTransport(
-                method=method, bits_per_channel=bits_per_channel, password=password, **options
+                method=method,
+                bits_per_channel=bits_per_channel,
+                password=password,
+                **options,
             )
 
             # Extract data from media
@@ -257,7 +263,10 @@ class SteganographyPlugin(BasePlugin):
             password = options.get("password", None)
 
             transport = SteganographyTransport(
-                method=method, bits_per_channel=bits_per_channel, password=password, **options
+                method=method,
+                bits_per_channel=bits_per_channel,
+                password=password,
+                **options,
             )
 
             # Get capacity
@@ -301,7 +310,10 @@ class SteganographyPlugin(BasePlugin):
             password = options.get("password", None)
 
             transport = SteganographyTransport(
-                method=method, bits_per_channel=bits_per_channel, password=password, **options
+                method=method,
+                bits_per_channel=bits_per_channel,
+                password=password,
+                **options,
             )
 
             # Get capacity
@@ -333,12 +345,12 @@ class SteganographyPlugin(BasePlugin):
             missing_deps = []
 
             try:
-                import PIL
+                pass
             except ImportError:
                 missing_deps.append("PIL/Pillow")
 
             try:
-                import numpy
+                pass
             except ImportError:
                 missing_deps.append("numpy")
 

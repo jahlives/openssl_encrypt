@@ -15,7 +15,6 @@ import json
 import os
 import secrets
 import shutil
-import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -24,7 +23,6 @@ from unittest.mock import MagicMock, patch
 # Import the modules to test
 from openssl_encrypt.modules.crypt_core import (
     create_metadata_v7,
-    decrypt_file_asymmetric,
     encrypt_file_asymmetric,
 )
 from openssl_encrypt.modules.crypto_secure_memory import CryptoKey
@@ -707,6 +705,7 @@ class TestIdentity(unittest.TestCase):
         exported = identity.export_public()
         # Tamper with the encryption public key
         import base64
+
         exported["encryption_public_key"] = base64.b64encode(b"tampered" * 100).decode()
         with self.assertRaises(IdentityError) as ctx:
             Identity.import_public(exported)
@@ -715,13 +714,22 @@ class TestIdentity(unittest.TestCase):
     def test_path_traversal_identity_name_rejected(self):
         """Path traversal in identity names must be rejected (H1/H2)."""
         from openssl_encrypt.modules.identity import validate_identity_name
-        for bad_name in ["../../etc/passwd", "../secret", "a/b/c", ".hidden", "", "a" * 256]:
+
+        for bad_name in [
+            "../../etc/passwd",
+            "../secret",
+            "a/b/c",
+            ".hidden",
+            "",
+            "a" * 256,
+        ]:
             with self.assertRaises(IdentityError):
                 validate_identity_name(bad_name)
 
     def test_valid_identity_names_accepted(self):
         """Valid identity names must be accepted."""
         from openssl_encrypt.modules.identity import validate_identity_name
+
         for good_name in ["alice", "bob-key", "my_identity", "test.key", "A1"]:
             validate_identity_name(good_name)  # Should not raise
 

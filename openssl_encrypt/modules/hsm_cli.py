@@ -11,15 +11,15 @@ Usage:
     openssl_encrypt hsm fido2-unregister
 """
 
-import sys
 import secrets
-import click
-from pathlib import Path
+import sys
 from typing import Optional
+
+import click
 
 # Import FIDO2 plugin
 try:
-    from ..plugins.hsm.fido2_pepper import FIDO2HSMPlugin, FIDO2_AVAILABLE
+    from ..plugins.hsm.fido2_pepper import FIDO2_AVAILABLE, FIDO2HSMPlugin
 except ImportError:
     FIDO2_AVAILABLE = False
     FIDO2HSMPlugin = None
@@ -28,7 +28,6 @@ except ImportError:
 @click.group(name="hsm")
 def hsm_group():
     """Hardware Security Module management commands."""
-    pass
 
 
 @hsm_group.command(name="fido2-register")
@@ -212,10 +211,10 @@ def fido2_test(rp_id: Optional[str]):
     click.echo("  2. Touch your security key\n")
 
     # Create dummy security context
-    from ..modules.plugin_system.plugin_base import PluginSecurityContext, PluginCapability
+    from ..modules.plugin_system.plugin_base import PluginSecurityContext
+
     context = PluginSecurityContext(
-        plugin_id=plugin.plugin_id,
-        capabilities=plugin.get_required_capabilities()
+        plugin_id=plugin.plugin_id, capabilities=plugin.get_required_capabilities()
     )
 
     # Test pepper derivation

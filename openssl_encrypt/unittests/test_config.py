@@ -20,8 +20,6 @@ import tempfile
 import time
 import unittest
 from io import StringIO
-from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -33,7 +31,6 @@ from openssl_encrypt.modules.config_wizard import (
     generate_cli_arguments,
     run_configuration_wizard,
 )
-from openssl_encrypt.modules.keystore_cli import KeystoreSecurityLevel, PQCKeystore
 from openssl_encrypt.modules.security_scorer import SecurityLevel, SecurityScorer
 
 # Import PQC modules if available
@@ -109,18 +106,27 @@ class TestDefaultConfiguration(unittest.TestCase):
         inner_metadata = metadata["metadata"]
         hash_config = inner_metadata["derivation_config"]["hash_config"]
         self.assertEqual(
-            hash_config["sha3_512"]["rounds"], 10000, "Default should include 10k SHA3-512 rounds"
+            hash_config["sha3_512"]["rounds"],
+            10000,
+            "Default should include 10k SHA3-512 rounds",
         )
         self.assertEqual(
-            hash_config["blake3"]["rounds"], 10000, "Default should include 10k BLAKE3 rounds"
+            hash_config["blake3"]["rounds"],
+            10000,
+            "Default should include 10k BLAKE3 rounds",
         )
 
         # Check that default KDF configurations are applied
         kdf_config = inner_metadata["derivation_config"]["kdf_config"]
-        self.assertFalse(kdf_config.get("scrypt", {}).get("enabled", False), "Default should disable Scrypt")
+        self.assertFalse(
+            kdf_config.get("scrypt", {}).get("enabled", False),
+            "Default should disable Scrypt",
+        )
         self.assertTrue(kdf_config["argon2"]["enabled"], "Default should enable Argon2")
         self.assertEqual(
-            kdf_config["argon2"]["rounds"], 10, "Default should include 10 Argon2 rounds"
+            kdf_config["argon2"]["rounds"],
+            10,
+            "Default should include 10 Argon2 rounds",
         )
 
     def test_default_configuration_decryption(self):
@@ -154,7 +160,9 @@ class TestDefaultConfiguration(unittest.TestCase):
             decrypted_file, "r", encoding="utf-8"
         ) as decrypted:
             self.assertEqual(
-                original.read(), decrypted.read(), "Decrypted content should match original"
+                original.read(),
+                decrypted.read(),
+                "Decrypted content should match original",
             )
 
     def test_no_security_warning_with_defaults(self):
@@ -192,8 +200,6 @@ try:
     if tests_path not in sys.path:
         sys.path.insert(0, tests_path)
 
-    from keystore.test_keystore_hqc_mlkem_integration import TestHQCMLKEMKeystoreIntegration
-
     print("✅ HQC and ML-KEM keystore integration tests imported successfully")
 except ImportError as e:
     print(f"⚠️  Could not import HQC/ML-KEM keystore integration tests: {e}")
@@ -211,7 +217,6 @@ try:
     from openssl_encrypt.modules.plugin_system import (
         PluginCapability,
         PluginResult,
-        PluginSecurityContext,
         PreProcessorPlugin,
     )
 
@@ -378,9 +383,6 @@ class TestPluginSystem(unittest.TestCase):
             from ..modules.plugin_system import (
                 ConfigValidationError,
                 PluginConfigSchema,
-                create_boolean_field,
-                create_integer_field,
-                create_string_field,
             )
 
             # Create test schema
@@ -408,7 +410,7 @@ class TestPluginSystem(unittest.TestCase):
     def test_plugin_config_manager_basic_operations(self):
         """Test basic plugin configuration manager operations."""
         try:
-            from ..modules.plugin_system import ConfigValidationError, PluginConfigManager
+            from ..modules.plugin_system import PluginConfigManager
 
             config_manager = PluginConfigManager(self.config_dir)
 
@@ -459,12 +461,7 @@ class TestPluginSystem(unittest.TestCase):
     def test_create_simple_test_plugin(self):
         """Test creating and loading a simple test plugin."""
         try:
-            from ..modules.plugin_system import (
-                PluginCapability,
-                PluginResult,
-                PluginSecurityContext,
-                PreProcessorPlugin,
-            )
+            pass
 
             # Create a simple test plugin file
             plugin_code = """
@@ -638,19 +635,20 @@ class SimpleTestPlugin(PreProcessorPlugin):
     def test_plugin_sandbox_execution_timeout(self):
         """Test plugin sandbox timeout functionality."""
         try:
+            import importlib.util
+            import tempfile
+            import textwrap
+
             from ..modules.plugin_system import (
                 PluginCapability,
                 PluginSandbox,
                 PluginSecurityContext,
             )
 
-            import importlib.util
-            import tempfile
-            import textwrap
-
             # Create a standalone slow plugin module in a temp file so the AST
             # analyzer only sees clean code (no blocked imports from test_config.py).
-            slow_plugin_source = textwrap.dedent("""\
+            slow_plugin_source = textwrap.dedent(
+                """\
                 import time
                 from openssl_encrypt.modules.plugin_system.plugin_base import (
                     PreProcessorPlugin,
@@ -675,7 +673,8 @@ class SimpleTestPlugin(PreProcessorPlugin):
                     def execute(self, context):
                         time.sleep(2)
                         return PluginResult.success_result("Should not reach here")
-            """)
+            """
+            )
 
             with tempfile.NamedTemporaryFile(
                 mode="w", suffix=".py", prefix="slow_plugin_", delete=False
@@ -701,8 +700,7 @@ class SimpleTestPlugin(PreProcessorPlugin):
                 # Should fail due to timeout or process crash
                 self.assertFalse(result.success)
                 self.assertTrue(
-                    "timed out" in result.message.lower()
-                    or "process" in result.message.lower(),
+                    "timed out" in result.message.lower() or "process" in result.message.lower(),
                     f"Expected timeout or process failure, got: {result.message}",
                 )
             finally:
@@ -753,10 +751,8 @@ class SimpleTestPlugin(PreProcessorPlugin):
         """Test plugin manager audit logging functionality."""
         try:
             from ..modules.plugin_system import (
-                PluginCapability,
                 PluginConfigManager,
                 PluginManager,
-                PluginSecurityContext,
             )
 
             config_manager = PluginConfigManager(self.config_dir)
@@ -1064,7 +1060,9 @@ class TestPluginIntegration(unittest.TestCase):
             self.assertTrue(os.path.exists(backup_path))
 
             # Verify backup content matches original
-            with open(self.text_file, "r", encoding="utf-8") as original, open(backup_path, "r", encoding="utf-8") as backup:
+            with open(self.text_file, "r", encoding="utf-8") as original, open(
+                backup_path, "r", encoding="utf-8"
+            ) as backup:
                 self.assertEqual(original.read(), backup.read())
 
             # Test backup verification
@@ -1334,7 +1332,14 @@ class TestSecurityScorer(unittest.TestCase):
     def test_hash_strength_ratings(self):
         """Test hash algorithm strength ratings."""
         # Test that all expected algorithms have ratings
-        expected_hashes = ["sha256", "sha512", "sha3_256", "sha3_512", "blake2b", "blake3"]
+        expected_hashes = [
+            "sha256",
+            "sha512",
+            "sha3_256",
+            "sha3_512",
+            "blake2b",
+            "blake3",
+        ]
         for hash_alg in expected_hashes:
             self.assertIn(hash_alg, SecurityScorer.HASH_STRENGTH)
             self.assertIsInstance(SecurityScorer.HASH_STRENGTH[hash_alg], (int, float))
@@ -1350,7 +1355,12 @@ class TestSecurityScorer(unittest.TestCase):
 
     def test_cipher_strength_ratings(self):
         """Test encryption algorithm strength ratings."""
-        expected_ciphers = ["aes-gcm", "aes-gcm-siv", "chacha20-poly1305", "xchacha20-poly1305"]
+        expected_ciphers = [
+            "aes-gcm",
+            "aes-gcm-siv",
+            "chacha20-poly1305",
+            "xchacha20-poly1305",
+        ]
         for cipher in expected_ciphers:
             self.assertIn(cipher, SecurityScorer.CIPHER_STRENGTH)
             self.assertIsInstance(SecurityScorer.CIPHER_STRENGTH[cipher], (int, float))
@@ -1415,7 +1425,12 @@ class TestSecurityScorer(unittest.TestCase):
     def test_score_kdf_config_argon2(self):
         """Test KDF scoring with Argon2 configuration."""
         kdf_config = {
-            "argon2": {"enabled": True, "memory_cost": 65536, "time_cost": 3, "parallelism": 4}
+            "argon2": {
+                "enabled": True,
+                "memory_cost": 65536,
+                "time_cost": 3,
+                "parallelism": 4,
+            }
         }
         result = self.scorer._score_kdf_config(kdf_config)
 
@@ -1778,7 +1793,12 @@ class TestConfigurationWizard(unittest.TestCase):
         config = {
             "hash_algorithms": {"sha256": {"rounds": 1000000}},
             "kdf_settings": {
-                "argon2": {"enabled": True, "memory_cost": 65536, "time_cost": 3, "parallelism": 4}
+                "argon2": {
+                    "enabled": True,
+                    "memory_cost": 65536,
+                    "time_cost": 3,
+                    "parallelism": 4,
+                }
             },
             "encryption": {"algorithm": "aes-gcm"},
             "post_quantum": {},
@@ -1805,7 +1825,10 @@ class TestConfigurationWizard(unittest.TestCase):
     def test_generate_cli_arguments_advanced(self):
         """Test CLI argument generation for advanced configuration."""
         config = {
-            "hash_algorithms": {"sha256": {"rounds": 2000000}, "blake3": {"rounds": 1000000}},
+            "hash_algorithms": {
+                "sha256": {"rounds": 2000000},
+                "blake3": {"rounds": 1000000},
+            },
             "kdf_settings": {
                 "argon2": {
                     "enabled": True,
@@ -1844,7 +1867,10 @@ class TestConfigurationWizard(unittest.TestCase):
     def test_generate_cli_arguments_with_underscores(self):
         """Test CLI argument generation handles underscores correctly."""
         config = {
-            "hash_algorithms": {"sha3_256": {"rounds": 1500000}, "sha3_512": {"rounds": 800000}},
+            "hash_algorithms": {
+                "sha3_256": {"rounds": 1500000},
+                "sha3_512": {"rounds": 800000},
+            },
             "kdf_settings": {},
             "encryption": {"algorithm": "aes-gcm"},
             "post_quantum": {},
@@ -1860,7 +1886,12 @@ class TestConfigurationWizard(unittest.TestCase):
 
     def test_generate_cli_arguments_empty_config(self):
         """Test CLI argument generation with empty configuration."""
-        config = {"hash_algorithms": {}, "kdf_settings": {}, "encryption": {}, "post_quantum": {}}
+        config = {
+            "hash_algorithms": {},
+            "kdf_settings": {},
+            "encryption": {},
+            "post_quantum": {},
+        }
 
         args = generate_cli_arguments(config)
 
@@ -1942,9 +1973,7 @@ class TestConfigurationAnalyzer(unittest.TestCase):
     def setUp(self):
         """Set up test environment."""
         from ..modules.config_analyzer import (
-            AnalysisCategory,
             ConfigurationAnalyzer,
-            RecommendationPriority,
         )
 
         self.analyzer = ConfigurationAnalyzer()
@@ -2021,7 +2050,11 @@ class TestConfigurationAnalyzer(unittest.TestCase):
 
     def test_use_case_analysis(self):
         """Test use case specific analysis."""
-        config = {"algorithm": "aes-gcm", "sha256_rounds": 1000, "pbkdf2_iterations": 100000}
+        config = {
+            "algorithm": "aes-gcm",
+            "sha256_rounds": 1000,
+            "pbkdf2_iterations": 100000,
+        }
 
         # Test different use cases
         for use_case in ["personal", "business", "compliance", "archival"]:
@@ -2036,7 +2069,11 @@ class TestConfigurationAnalyzer(unittest.TestCase):
     def test_compliance_checking(self):
         """Test compliance framework checking."""
         # FIPS-compliant config
-        config = {"algorithm": "aes-gcm", "pbkdf2_iterations": 100000, "enable_argon2": False}
+        config = {
+            "algorithm": "aes-gcm",
+            "pbkdf2_iterations": 100000,
+            "enable_argon2": False,
+        }
 
         analysis = self.analyzer.analyze_configuration(
             config, compliance_requirements=["fips_140_2"]
@@ -2363,7 +2400,11 @@ class TestCLIAliases(unittest.TestCase):
         )
 
         # Create overrides
-        overrides = {"algorithm": "aes-gcm", "template": "standard", "new_attr": "new_value"}
+        overrides = {
+            "algorithm": "aes-gcm",
+            "template": "standard",
+            "new_attr": "new_value",
+        }
 
         # Apply overrides
         modified_args = apply_alias_overrides(original_args, overrides)
@@ -2473,10 +2514,9 @@ class TestTemplateManager(unittest.TestCase):
 
     def setUp(self):
         """Set up test environment."""
-        import os
         import tempfile
 
-        from ..modules.template_manager import EnhancedTemplate, TemplateManager, TemplateMetadata
+        from ..modules.template_manager import TemplateManager
 
         self.manager = TemplateManager()
         # Create temporary directory for test templates
@@ -2520,7 +2560,6 @@ class TestTemplateManager(unittest.TestCase):
 
     def test_template_saving_and_loading(self):
         """Test template saving and loading functionality."""
-        import json
 
         from ..modules.template_manager import EnhancedTemplate, TemplateFormat, TemplateMetadata
 
@@ -2556,7 +2595,11 @@ class TestTemplateManager(unittest.TestCase):
         # Create two templates
         template1 = EnhancedTemplate(
             config={
-                "hash_config": {"algorithm": "aes-gcm", "sha256": 1000, "argon2": {"enabled": True}}
+                "hash_config": {
+                    "algorithm": "aes-gcm",
+                    "sha256": 1000,
+                    "argon2": {"enabled": True},
+                }
             },
             metadata=TemplateMetadata(name="template1", security_level="MODERATE"),
         )
@@ -2585,25 +2628,36 @@ class TestTemplateManager(unittest.TestCase):
 
     def test_template_recommendations(self):
         """Test template recommendation system."""
-        import os
 
         from ..modules.template_manager import EnhancedTemplate, TemplateMetadata
 
         # Create test templates for different use cases
         personal_template = EnhancedTemplate(
             config={
-                "hash_config": {"algorithm": "fernet", "sha256": 500, "pbkdf2_iterations": 5000}
+                "hash_config": {
+                    "algorithm": "fernet",
+                    "sha256": 500,
+                    "pbkdf2_iterations": 5000,
+                }
             },
             metadata=TemplateMetadata(
-                name="personal-template", use_cases=["personal"], security_level="MINIMAL"
+                name="personal-template",
+                use_cases=["personal"],
+                security_level="MINIMAL",
             ),
         )
         business_template = EnhancedTemplate(
             config={
-                "hash_config": {"algorithm": "aes-gcm", "sha256": 1000, "argon2": {"enabled": True}}
+                "hash_config": {
+                    "algorithm": "aes-gcm",
+                    "sha256": 1000,
+                    "argon2": {"enabled": True},
+                }
             },
             metadata=TemplateMetadata(
-                name="business-template", use_cases=["business"], security_level="MODERATE"
+                name="business-template",
+                use_cases=["business"],
+                security_level="MODERATE",
             ),
         )
 
@@ -2623,7 +2677,6 @@ class TestTemplateManager(unittest.TestCase):
 
     def test_template_analysis_integration(self):
         """Test template analysis integration with configuration analyzer."""
-        from ..modules.config_analyzer import ConfigurationAnalyzer
         from ..modules.template_manager import EnhancedTemplate, TemplateMetadata
 
         # Create template with analyzable configuration
@@ -2660,7 +2713,8 @@ class TestTemplateManager(unittest.TestCase):
             }
         }
         valid_template = EnhancedTemplate(
-            config=valid_config, metadata=TemplateMetadata(name="valid", security_level="MODERATE")
+            config=valid_config,
+            metadata=TemplateMetadata(name="valid", security_level="MODERATE"),
         )
 
         is_valid, errors = self.manager.validate_template(valid_template)
@@ -2689,13 +2743,21 @@ class TestTemplateManager(unittest.TestCase):
         # Create templates for different use cases
         personal_template = EnhancedTemplate(
             config={
-                "hash_config": {"algorithm": "fernet", "sha256": 500, "pbkdf2_iterations": 5000}
+                "hash_config": {
+                    "algorithm": "fernet",
+                    "sha256": 500,
+                    "pbkdf2_iterations": 5000,
+                }
             },
             metadata=TemplateMetadata(name="personal", use_cases=["personal"]),
         )
         business_template = EnhancedTemplate(
             config={
-                "hash_config": {"algorithm": "aes-gcm", "sha256": 1000, "argon2": {"enabled": True}}
+                "hash_config": {
+                    "algorithm": "aes-gcm",
+                    "sha256": 1000,
+                    "argon2": {"enabled": True},
+                }
             },
             metadata=TemplateMetadata(name="business", use_cases=["business"]),
         )
@@ -2743,7 +2805,11 @@ class TestTemplateManager(unittest.TestCase):
         # Create and save template
         template = EnhancedTemplate(
             config={
-                "hash_config": {"algorithm": "aes-gcm", "sha256": 1000, "argon2": {"enabled": True}}
+                "hash_config": {
+                    "algorithm": "aes-gcm",
+                    "sha256": 1000,
+                    "argon2": {"enabled": True},
+                }
             },
             metadata=TemplateMetadata(name="delete-test", security_level="MODERATE"),
         )
@@ -2765,10 +2831,9 @@ class TestSmartRecommendations(unittest.TestCase):
 
     def setUp(self):
         """Set up test environment."""
-        import os
         import tempfile
 
-        from ..modules.smart_recommendations import SmartRecommendationEngine, UserContext
+        from ..modules.smart_recommendations import SmartRecommendationEngine
 
         # Create temporary directory for test data
         self.test_dir = tempfile.mkdtemp()
@@ -2922,7 +2987,9 @@ class TestSmartRecommendations(unittest.TestCase):
         from ..modules.smart_recommendations import RecommendationCategory, UserContext
 
         user_context = UserContext(
-            performance_priority="speed", computational_constraints=True, typical_file_sizes="large"
+            performance_priority="speed",
+            computational_constraints=True,
+            typical_file_sizes="large",
         )
 
         recommendations = self.engine.generate_recommendations(user_context)
@@ -2990,7 +3057,6 @@ class TestSmartRecommendations(unittest.TestCase):
 
     def test_feedback_recording(self):
         """Test feedback recording and learning."""
-        from ..modules.smart_recommendations import UserContext
 
         user_id = "test_user"
         rec_id = "test_rec_001"
@@ -3027,8 +3093,14 @@ class TestSmartRecommendations(unittest.TestCase):
 
         # Test different contexts
         contexts = [
-            (UserContext(user_type="personal", data_sensitivity="low"), "lower security"),
-            (UserContext(user_type="business", data_sensitivity="high"), "higher security"),
+            (
+                UserContext(user_type="personal", data_sensitivity="low"),
+                "lower security",
+            ),
+            (
+                UserContext(user_type="business", data_sensitivity="high"),
+                "higher security",
+            ),
             (
                 UserContext(user_type="compliance", data_sensitivity="top_secret"),
                 "maximum security",
@@ -3068,7 +3140,13 @@ class TestSmartRecommendations(unittest.TestCase):
                 next_rec = recommendations[i + 1]
 
                 # Priority ordering: critical > high > medium > low > info
-                priority_order = {"critical": 5, "high": 4, "medium": 3, "low": 2, "info": 1}
+                priority_order = {
+                    "critical": 5,
+                    "high": 4,
+                    "medium": 3,
+                    "low": 2,
+                    "info": 1,
+                }
                 current_priority = priority_order.get(current.priority.value, 0)
                 next_priority = priority_order.get(next_rec.priority.value, 0)
 

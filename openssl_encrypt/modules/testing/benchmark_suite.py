@@ -13,7 +13,7 @@ import tempfile
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Tuple
 
 from ..crypt_core import decrypt_file, encrypt_file
 from .base_test import BaseSecurityTest, TestConfig, TestResult, TestResultLevel
@@ -63,7 +63,9 @@ class PerformanceAnalyzer:
 
     @staticmethod
     def detect_regression(
-        current_result: BenchmarkResult, baseline: BaselineData, regression_threshold: float = 20.0
+        current_result: BenchmarkResult,
+        baseline: BaselineData,
+        regression_threshold: float = 20.0,
     ) -> Tuple[bool, float]:
         """
         Detect performance regression compared to baseline.
@@ -383,7 +385,9 @@ class BenchmarkTestSuite(BaseSecurityTest):
         """Benchmark and compare different algorithms."""
 
         result = self.run_single_test(
-            self._algorithm_comparison_benchmark, "algorithm_comparison_benchmark", config
+            self._algorithm_comparison_benchmark,
+            "algorithm_comparison_benchmark",
+            config,
         )
         self.add_result(result)
 
@@ -404,16 +408,25 @@ class BenchmarkTestSuite(BaseSecurityTest):
 
             for algorithm in algorithms:
                 encrypted_file = os.path.join(self.temp_dir, f"comparison_{algorithm}_enc.bin")
-                decrypted_file = os.path.join(self.temp_dir, f"comparison_{algorithm}_dec.bin")
+                os.path.join(self.temp_dir, f"comparison_{algorithm}_dec.bin")
 
-                config_dict = {"algorithm": algorithm, "hash_algorithm": "SHA256", "kdf": "pbkdf2"}
+                config_dict = {
+                    "algorithm": algorithm,
+                    "hash_algorithm": "SHA256",
+                    "kdf": "pbkdf2",
+                }
 
                 try:
                     # Measure encryption
                     def encrypt_op():
                         if os.path.exists(encrypted_file):
                             os.remove(encrypted_file)
-                        encrypt_file(input_file, encrypted_file, password, hash_config=config_dict)
+                        encrypt_file(
+                            input_file,
+                            encrypted_file,
+                            password,
+                            hash_config=config_dict,
+                        )
 
                     encrypt_timings = self._measure_operation_performance(encrypt_op, 3)
 
@@ -508,14 +521,23 @@ class BenchmarkTestSuite(BaseSecurityTest):
             for i, kdf_config in enumerate(kdf_configs):
                 encrypted_file = os.path.join(self.temp_dir, f"kdf_{i}_enc.bin")
 
-                config_dict = {"algorithm": "fernet", "hash_algorithm": "SHA256", **kdf_config}
+                config_dict = {
+                    "algorithm": "fernet",
+                    "hash_algorithm": "SHA256",
+                    **kdf_config,
+                }
 
                 try:
 
                     def kdf_encrypt_op():
                         if os.path.exists(encrypted_file):
                             os.remove(encrypted_file)
-                        encrypt_file(input_file, encrypted_file, password, hash_config=config_dict)
+                        encrypt_file(
+                            input_file,
+                            encrypted_file,
+                            password,
+                            hash_config=config_dict,
+                        )
 
                     timings = self._measure_operation_performance(kdf_encrypt_op, 3)
 
@@ -617,7 +639,10 @@ class BenchmarkTestSuite(BaseSecurityTest):
 
                 # Perform encryption
                 encrypt_file(
-                    input_file, encrypted_file, "memory_test_password", hash_config=config_dict
+                    input_file,
+                    encrypted_file,
+                    "memory_test_password",
+                    hash_config=config_dict,
                 )
 
                 # Measure memory after operation

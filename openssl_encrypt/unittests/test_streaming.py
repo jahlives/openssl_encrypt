@@ -36,10 +36,7 @@ from openssl_encrypt.modules.crypt_errors import (
     ValidationError,
 )
 from openssl_encrypt.modules.streaming import (
-    DEFAULT_CHUNK_SIZE,
     DEFAULT_STREAMING_THRESHOLD,
-    STREAMING_MAGIC,
-    STREAMING_SUPPORTED_ALGORITHMS,
     STREAMING_UNSUPPORTED_ALGORITHMS,
     StreamingDecryptor,
     StreamingEncryptor,
@@ -255,7 +252,7 @@ class TestThreefishChunks(unittest.TestCase):
     def test_threefish_512_roundtrip(self):
         """Threefish-512 chunk roundtrip."""
         try:
-            import threefish_native
+            pass
         except ImportError:
             pytest.skip("threefish_native not available")
 
@@ -271,7 +268,7 @@ class TestThreefishChunks(unittest.TestCase):
     def test_threefish_1024_roundtrip(self):
         """Threefish-1024 chunk roundtrip."""
         try:
-            import threefish_native
+            pass
         except ImportError:
             pytest.skip("threefish_native not available")
 
@@ -1186,8 +1183,10 @@ class TestStreamingHMACKeyDerivation(unittest.TestCase):
         """Decryptor and encryptor should derive the same HMAC key."""
         enc = StreamingEncryptor(key=self.key, algorithm="aes-gcm", format_version=12)
         dec = StreamingDecryptor(
-            key=self.key, algorithm="aes-gcm", nonce_prefix=enc.nonce_prefix,
-            format_version=12
+            key=self.key,
+            algorithm="aes-gcm",
+            nonce_prefix=enc.nonce_prefix,
+            format_version=12,
         )
 
         self.assertEqual(enc._derive_hmac_key(), dec._derive_hmac_key())

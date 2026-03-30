@@ -20,14 +20,12 @@ Security Notes:
 - Follows zero-trust plugin architecture
 """
 
-import hashlib
 import json
 import logging
 import mimetypes
 import os
 import time
 from pathlib import Path
-from typing import Any, Dict
 
 from ...modules.plugin_system import (
     AnalyzerPlugin,
@@ -206,7 +204,8 @@ class FilePreProcessor(PreProcessorPlugin):
             )
 
             return PluginResult.success_result(
-                f"Pre-processed {analysis.get('file_name')}", {"original_analysis": analysis}
+                f"Pre-processed {analysis.get('file_name')}",
+                {"original_analysis": analysis},
             )
 
         except Exception as e:
@@ -270,7 +269,11 @@ class EncryptionOverheadAnalyzer(PostProcessorPlugin):
             operation = context.metadata.get("operation", "unknown")
 
             analysis.update(
-                {"algorithm": algorithm, "operation": operation, "analysis_timestamp": time.time()}
+                {
+                    "algorithm": algorithm,
+                    "operation": operation,
+                    "analysis_timestamp": time.time(),
+                }
             )
 
             # Check if this looks like our encrypted format

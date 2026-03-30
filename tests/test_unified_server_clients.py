@@ -14,12 +14,12 @@ from pathlib import Path
 # Add project to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from openssl_encrypt.plugins.keyserver import KeyserverConfig
 from openssl_encrypt.plugins.telemetry.api_key_manager import APIKeyManager
 
 
 class MockTelemetryConfig:
     """Mock config for telemetry testing"""
+
     def __init__(self):
         self.server_url = "http://localhost:8080"
         self.buffer_path = Path("/tmp/telemetry_test_buffer.db")
@@ -51,13 +51,14 @@ def test_keyserver_registration():
 
         # Save token for later tests
         token_file = Path("/tmp/keyserver_test_token")
-        token_file.write_text(result['token'])
+        token_file.write_text(result["token"])
         print(f"✓ Token saved to {token_file}")
 
         return True
     except Exception as e:
         print(f"✗ Registration failed: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
@@ -97,6 +98,7 @@ def test_telemetry_registration():
     except Exception as e:
         print(f"✗ Registration failed: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
@@ -139,13 +141,14 @@ def test_token_isolation():
             # Try to decode JWTs to verify issuer claims (optional)
             try:
                 import jwt
+
                 ks_decoded = jwt.decode(ks_token, options={"verify_signature": False})
                 tm_decoded = jwt.decode(tm_token, options={"verify_signature": False})
 
                 print(f"✓ Keyserver issuer: {ks_decoded.get('iss')}")
                 print(f"✓ Telemetry issuer: {tm_decoded.get('iss')}")
 
-                if ks_decoded.get('iss') == tm_decoded.get('iss'):
+                if ks_decoded.get("iss") == tm_decoded.get("iss"):
                     print("✗ SECURITY ISSUE: Same issuer!")
                     return False
 
@@ -158,6 +161,7 @@ def test_token_isolation():
     except Exception as e:
         print(f"✗ Token isolation test failed: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 

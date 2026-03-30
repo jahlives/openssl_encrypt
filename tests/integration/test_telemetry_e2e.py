@@ -5,11 +5,6 @@ End-to-end integration tests for complete telemetry system.
 Tests the full flow from client plugin to server and back.
 """
 
-import tempfile
-import time
-from datetime import datetime, timezone
-from pathlib import Path
-from unittest.mock import Mock, patch
 
 import pytest
 import requests_mock
@@ -249,7 +244,10 @@ class TestEndToEndFlow:
                 "https://test-telemetry.example.com/api/v1/telemetry",
                 [
                     {"status_code": 401},  # Expired key
-                    {"json": {"received": 1, "processed": 1}, "status_code": 200},  # After refresh
+                    {
+                        "json": {"received": 1, "processed": 1},
+                        "status_code": 200,
+                    },  # After refresh
                 ],
             )
 

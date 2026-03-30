@@ -19,38 +19,26 @@ import random
 import secrets
 import shutil
 import statistics
-import sys
 import tempfile
 import threading
 import time
 import unittest
 from pathlib import Path
-from unittest import mock
-from unittest.mock import MagicMock, patch
 
-import pytest
 
 # Import the modules to test
 from openssl_encrypt.modules.crypt_core import (
-    calculate_hash,
     decrypt_file,
     encrypt_file,
     generate_key,
 )
 from openssl_encrypt.modules.crypt_errors import (
-    AuthenticationError,
     DecryptionError,
     EncryptionError,
     ErrorCategory,
-    InternalError,
     KeyDerivationError,
-    KeystoreError,
 )
-from openssl_encrypt.modules.crypt_errors import MemoryError as SecureMemoryError
 from openssl_encrypt.modules.crypt_errors import (
-    PermissionError,
-    PlatformError,
-    SecureError,
     ValidationError,
     add_timing_jitter,
     get_jitter_stats,
@@ -58,34 +46,9 @@ from openssl_encrypt.modules.crypt_errors import (
     secure_encrypt_error_handler,
     secure_error_handler,
     secure_key_derivation_error_handler,
-    secure_memory_error_handler,
     set_debug_mode,
 )
-from openssl_encrypt.modules.crypto_secure_memory import (
-    CryptoIV,
-    CryptoKey,
-    CryptoSecureBuffer,
-    create_key_from_password,
-    generate_secure_key,
-    secure_crypto_buffer,
-    secure_crypto_iv,
-    secure_crypto_key,
-    validate_crypto_memory_integrity,
-)
-from openssl_encrypt.modules.secure_allocator import (
-    SecureBytes,
-    SecureHeap,
-    SecureHeapBlock,
-    allocate_secure_crypto_buffer,
-    allocate_secure_memory,
-    check_all_crypto_buffer_integrity,
-    cleanup_secure_heap,
-    free_secure_crypto_buffer,
-    get_crypto_heap_stats,
-)
 from openssl_encrypt.modules.secure_memory import (
-    SecureBytes,
-    SecureMemoryAllocator,
     allocate_secure_buffer,
     free_secure_buffer,
 )
@@ -96,7 +59,6 @@ from openssl_encrypt.modules.secure_ops import (
     constant_time_compare,
     constant_time_pkcs7_unpad,
     secure_memzero,
-    verify_mac,
 )
 
 # Try to import PQC modules
@@ -106,7 +68,6 @@ try:
         LIBOQS_AVAILABLE,
         PQCAlgorithm,
         PQCipher,
-        check_pqc_support,
     )
 except ImportError:
     LIBOQS_AVAILABLE = False
@@ -192,7 +153,7 @@ class TestSecureErrorHandling(unittest.TestCase):
                 quiet=True,
             )
             self.fail("Expected exception was not raised")
-        except (ValidationError, FileNotFoundError) as e:
+        except (ValidationError, FileNotFoundError):
             # Either exception type is acceptable for this test
             pass
 
@@ -386,7 +347,9 @@ class TestBufferOverflowProtection(unittest.TestCase):
             "Missing special case handling for /proc/ files in encrypt_file",
         )
         self.assertIn(
-            "/dev/", encrypt_source, "Missing special case handling for /dev/ files in encrypt_file"
+            "/dev/",
+            encrypt_source,
+            "Missing special case handling for /dev/ files in encrypt_file",
         )
 
         # Check decrypt_file includes special handling (accept both single and double quotes)
@@ -400,7 +363,9 @@ class TestBufferOverflowProtection(unittest.TestCase):
             "Missing special case handling for /proc/ files in decrypt_file",
         )
         self.assertIn(
-            "/dev/", decrypt_source, "Missing special case handling for /dev/ files in decrypt_file"
+            "/dev/",
+            decrypt_source,
+            "Missing special case handling for /dev/ files in decrypt_file",
         )
 
     def test_large_input_handling(self):
@@ -475,7 +440,11 @@ class TestBufferOverflowProtection(unittest.TestCase):
         self.test_files.append(encrypted_file)
 
         encrypt_file(
-            self.test_file, encrypted_file, self.test_password, self.basic_hash_config, quiet=True
+            self.test_file,
+            encrypted_file,
+            self.test_password,
+            self.basic_hash_config,
+            quiet=True,
         )
 
         # Now create a corrupted version with invalid metadata
@@ -584,7 +553,6 @@ try:
         LIBOQS_AVAILABLE,
         PQCAlgorithm,
         PQCipher,
-        check_pqc_support,
     )
 except ImportError:
     # Mock the PQC classes if not available
@@ -652,7 +620,9 @@ class TestSecureOperations(unittest.TestCase):
             # On a real system, consistent timing would have std_dev/mean < 0.5
             # We use a higher threshold to avoid spurious failures on CI systems
             self.assertLess(
-                std_dev / mean_time, 1.5, "Timing variation too large for constant-time comparison"
+                std_dev / mean_time,
+                1.5,
+                "Timing variation too large for constant-time comparison",
             )
 
     def test_secure_memzero(self):
@@ -737,7 +707,9 @@ class TestSecureOperations(unittest.TestCase):
         if mean_time > 0:
             # Use a high threshold to avoid spurious CI failures
             self.assertLess(
-                std_dev / mean_time, 1.5, "Timing variation too large for constant-time unpadding"
+                std_dev / mean_time,
+                1.5,
+                "Timing variation too large for constant-time unpadding",
             )
 
     def test_secure_container(self):
@@ -1161,49 +1133,18 @@ class TestVerifyMAC(unittest.TestCase):
 
 
 from openssl_encrypt.modules.crypt_errors import (
-    AuthenticationError,
-    ConfigurationError,
     DecryptionError,
     EncryptionError,
     ErrorCategory,
-    InternalError,
     KeyDerivationError,
-    KeystoreError,
 )
-from openssl_encrypt.modules.crypt_errors import MemoryError as SecureMemoryError
 from openssl_encrypt.modules.crypt_errors import (
-    PermissionError,
-    PlatformError,
-    SecureError,
     ValidationError,
     secure_error_handler,
     secure_key_derivation_error_handler,
-    secure_memory_error_handler,
-)
-from openssl_encrypt.modules.crypto_secure_memory import (
-    CryptoIV,
-    CryptoKey,
-    CryptoSecureBuffer,
-    create_key_from_password,
-    generate_secure_key,
-    secure_crypto_buffer,
-    secure_crypto_iv,
-    secure_crypto_key,
-    validate_crypto_memory_integrity,
 )
 
 # Import secure memory and error handling modules for the tests
-from openssl_encrypt.modules.secure_allocator import (
-    SecureBytes,
-    SecureHeap,
-    SecureHeapBlock,
-    allocate_secure_crypto_buffer,
-    allocate_secure_memory,
-    check_all_crypto_buffer_integrity,
-    cleanup_secure_heap,
-    free_secure_crypto_buffer,
-    get_crypto_heap_stats,
-)
 from openssl_encrypt.modules.secure_memory import secure_memzero, verify_memory_zeroed
 
 
@@ -1404,7 +1345,11 @@ class TestSecurityLogger(unittest.TestCase):
         self.logger.log_event(
             "encryption_started",
             "info",
-            {"file": "test.txt", "password": "SuperSecret123!", "key": "0x1234567890abcdef"},
+            {
+                "file": "test.txt",
+                "password": "SuperSecret123!",
+                "key": "0x1234567890abcdef",
+            },
         )
 
         # Read log file and verify sensitive fields are redacted
@@ -1457,7 +1402,7 @@ class TestSecurityLogger(unittest.TestCase):
             self.logger.log_event(f"event_{i}", "info", large_detail)
 
         # Check that log rotation occurred
-        rotated_log = Path(self.test_log_dir) / "security-audit.log.1"
+        Path(self.test_log_dir) / "security-audit.log.1"
         # Note: Rotation may not occur in this test due to timing, so we just check
         # that the logger doesn't crash when writing large amounts of data
         self.assertTrue(self.logger.log_file.exists())
@@ -1510,7 +1455,9 @@ class TestSecurityLogger(unittest.TestCase):
         def log_events(thread_id, count):
             for i in range(count):
                 self.logger.log_event(
-                    f"thread_{thread_id}_event_{i}", "info", {"thread": thread_id, "iteration": i}
+                    f"thread_{thread_id}_event_{i}",
+                    "info",
+                    {"thread": thread_id, "iteration": i},
                 )
 
         # Create multiple threads
@@ -1550,6 +1497,7 @@ class TestPepperKeyDerivation(unittest.TestCase):
     def test_legacy_uses_sha256(self):
         """Legacy format (< 12) uses raw SHA-256."""
         import hashlib
+
         from openssl_encrypt.modules.crypt_core import _derive_pepper_key
 
         password = b"test-password"
@@ -1564,6 +1512,7 @@ class TestPepperKeyDerivation(unittest.TestCase):
     def test_v12_uses_hkdf(self):
         """v12+ uses HKDF with domain separation, producing different output."""
         import hashlib
+
         from openssl_encrypt.modules.crypt_core import _derive_pepper_key
 
         password = b"test-password"

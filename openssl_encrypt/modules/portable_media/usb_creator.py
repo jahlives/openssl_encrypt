@@ -16,18 +16,16 @@ Security Features:
 - Pre-loaded encrypted keystores
 """
 
-import base64
 import hashlib
 import json
 import logging
 import os
 import platform
 import shutil
-import tempfile
 import time
 from enum import Enum
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, Optional, Union
 
 try:
     from cryptography.hazmat.primitives import hashes
@@ -53,8 +51,6 @@ logger = logging.getLogger(__name__)
 
 class USBCreationError(KeystoreError):
     """USB drive creation specific errors"""
-
-    pass
 
 
 class USBSecurityProfile(Enum):
@@ -253,7 +249,10 @@ class USBDriveCreator:
                 secure_memzero(encryption_key)
 
     def verify_usb_integrity(
-        self, usb_path: Union[str, Path], password: str, hash_config: Optional[Dict] = None
+        self,
+        usb_path: Union[str, Path],
+        password: str,
+        hash_config: Optional[Dict] = None,
     ) -> Dict[str, any]:
         """
         Verify USB drive integrity and tamper detection
@@ -386,9 +385,11 @@ class USBDriveCreator:
             "network_disabled": True,  # Air-gapped mode
             "logging_enabled": include_logs,
             "workspace_path": "data/",
-            "keystore_path": "config/keystore.encrypted"
-            if custom_config and custom_config.get("include_keystore")
-            else None,
+            "keystore_path": (
+                "config/keystore.encrypted"
+                if custom_config and custom_config.get("include_keystore")
+                else None
+            ),
             "created_at": time.time(),
         }
 
@@ -491,7 +492,11 @@ python3 ../decrypt_file.py data.txt.enc mypassword | grep "important"
             with open(readme_path, "w", encoding="utf-8") as f:
                 f.write(readme_content)
 
-            return {"created": True, "path": str(workspace_dir.name), "encryption": "AES-256-GCM"}
+            return {
+                "created": True,
+                "path": str(workspace_dir.name),
+                "encryption": "AES-256-GCM",
+            }
 
         except Exception as e:
             raise USBCreationError(f"Failed to create workspace: {e}")
@@ -602,7 +607,11 @@ fi
             with open(integrity_path, "wb") as f:
                 f.write(nonce + encrypted_integrity)
 
-            return {"created": True, "files_verified": len(checksums), "path": self.INTEGRITY_FILE}
+            return {
+                "created": True,
+                "files_verified": len(checksums),
+                "path": self.INTEGRITY_FILE,
+            }
 
         except Exception as e:
             raise USBCreationError(f"Failed to create integrity file: {e}")
@@ -755,7 +764,10 @@ fi
             return None
 
     def _create_transparent_encryption_helpers(
-        self, portable_root: Path, hash_config: Optional[Dict] = None, algorithm: str = "fernet"
+        self,
+        portable_root: Path,
+        hash_config: Optional[Dict] = None,
+        algorithm: str = "fernet",
     ) -> None:
         """Create unified helper script for encryption/decryption"""
         try:
@@ -987,7 +999,7 @@ if __name__ == "__main__":
 
             logger.debug("Created transparent encryption helper scripts")
 
-        except Exception as e:
+        except Exception:
             logger.warning(f"Failed to create encryption helpers: {{e}}")
 
     def _cleanup_temp_files(self):
@@ -1019,7 +1031,6 @@ if __name__ == "__main__":
         file integrity without relying on potentially tampered verification code.
         """
         try:
-            import base64
             import hashlib
             import json
             import secrets
@@ -1039,7 +1050,14 @@ if __name__ == "__main__":
 
             # Files to hash for manifest
             files_to_hash = []
-            hash_patterns = ["*.py", "*.exe", "openssl_encrypt", "*.sh", "*.bat", "*.conf"]
+            hash_patterns = [
+                "*.py",
+                "*.exe",
+                "openssl_encrypt",
+                "*.sh",
+                "*.bat",
+                "*.conf",
+            ]
 
             for pattern in hash_patterns:
                 files_to_hash.extend(portable_root.rglob(pattern))
@@ -1075,11 +1093,9 @@ if __name__ == "__main__":
                 "manifest_config": {
                     "password_type": "custom" if manifest_password else "main",
                     "security_profile": manifest_security_profile,
-                    "hash_config_type": "custom"
-                    if manifest_hash_config
-                    else "main"
-                    if hash_config
-                    else "pbkdf2",
+                    "hash_config_type": (
+                        "custom" if manifest_hash_config else "main" if hash_config else "pbkdf2"
+                    ),
                 },
             }
 

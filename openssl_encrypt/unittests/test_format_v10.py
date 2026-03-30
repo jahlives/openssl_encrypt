@@ -6,8 +6,6 @@ Tests v10 encryption/decryption, XOR composition logic, and various algorithm co
 All code in English as per project requirements.
 """
 
-import hashlib
-import json
 import os
 import tempfile
 import unittest
@@ -18,7 +16,6 @@ from openssl_encrypt.modules.crypt_core import (
     encrypt_file,
     extract_file_metadata,
     generate_key,
-    multi_hash_password,
 )
 
 
@@ -94,7 +91,9 @@ class TestFormatV10(unittest.TestCase):
             decrypted_content = f.read()
 
         self.assertEqual(
-            original_content, decrypted_content, "Decrypted content should match original"
+            original_content,
+            decrypted_content,
+            "Decrypted content should match original",
         )
 
     def test_v10_with_sha512_only(self):

@@ -19,7 +19,7 @@ import json
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 
 from ...modules.telemetry_filter import TelemetryDataFilter, TelemetryEvent
 
@@ -107,7 +107,7 @@ class LocalBuffer:
         self._cleanup_if_full()
 
         # Convert event to dictionary for storage
-        event_dict = TelemetryDataFilter.to_dict(event)
+        TelemetryDataFilter.to_dict(event)
 
         with sqlite3.connect(self.buffer_path) as conn:
             cursor = conn.cursor()
@@ -211,9 +211,9 @@ class LocalBuffer:
                     "format_version": row["format_version"],
                     "hash_algorithms": json.loads(row["hash_algorithms"]),
                     "kdf_algorithms": json.loads(row["kdf_algorithms"]),
-                    "kdf_parameters": json.loads(row["kdf_parameters"])
-                    if row["kdf_parameters"]
-                    else {},
+                    "kdf_parameters": (
+                        json.loads(row["kdf_parameters"]) if row["kdf_parameters"] else {}
+                    ),
                     "encryption_algorithm": row["encryption_algorithm"],
                     "cascade_enabled": bool(row["cascade_enabled"]),
                     "cascade_cipher_count": row["cascade_cipher_count"],
@@ -331,9 +331,9 @@ class LocalBuffer:
                     "format_version": row["format_version"],
                     "hash_algorithms": json.loads(row["hash_algorithms"]),
                     "kdf_algorithms": json.loads(row["kdf_algorithms"]),
-                    "kdf_parameters": json.loads(row["kdf_parameters"])
-                    if row["kdf_parameters"]
-                    else {},
+                    "kdf_parameters": (
+                        json.loads(row["kdf_parameters"]) if row["kdf_parameters"] else {}
+                    ),
                     "encryption_algorithm": row["encryption_algorithm"],
                     "cascade_enabled": bool(row["cascade_enabled"]),
                     "cascade_cipher_count": row["cascade_cipher_count"],

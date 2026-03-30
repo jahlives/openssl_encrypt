@@ -6,14 +6,9 @@ This version adds a settings tab to configure hash parameters.
 
 import json
 import os
-import random
-import string
-import subprocess
-import sys
-import threading
-import time
 import tkinter as tk
-from tkinter import filedialog, messagebox, simpledialog, ttk
+from tkinter import messagebox, ttk
+
 from .crypt_utils import eprint
 
 CONFIG_FILE = os.path.join(os.path.expanduser("~"), ".crypt_settings.json")
@@ -120,7 +115,9 @@ class SettingsTab:
 
         # Settings header
         ttk.Label(
-            scrollable_frame, text="Hash Algorithm Settings", font=("TkDefaultFont", 12, "bold")
+            scrollable_frame,
+            text="Hash Algorithm Settings",
+            font=("TkDefaultFont", 12, "bold"),
         ).pack(pady=(10, 5), padx=10, anchor=tk.W)
         ttk.Separator(scrollable_frame, orient="horizontal").pack(fill=tk.X, padx=10, pady=5)
 
@@ -306,7 +303,9 @@ class SettingsTab:
             row=row, column=1, sticky=tk.W, padx=5, pady=5
         )
         shake256_help = ttk.Label(
-            shake_frame, text="(SHA-3 family extendable-output function)", foreground="blue"
+            shake_frame,
+            text="(SHA-3 family extendable-output function)",
+            foreground="blue",
         )
         shake256_help.grid(row=row, column=2, sticky=tk.W, padx=5, pady=5)
 
@@ -329,7 +328,9 @@ class SettingsTab:
             row=row, column=1, sticky=tk.W, padx=5, pady=5
         )
         shake128_help = ttk.Label(
-            shake_frame, text="(SHA-3 family extendable-output function)", foreground="blue"
+            shake_frame,
+            text="(SHA-3 family extendable-output function)",
+            foreground="blue",
         )
         shake128_help.grid(row=row, column=2, sticky=tk.W, padx=5, pady=5)
 
@@ -360,7 +361,9 @@ class SettingsTab:
 
         # KDF Algorithm Settings header
         ttk.Label(
-            scrollable_frame, text="KDF Algorithm Settings", font=("TkDefaultFont", 12, "bold")
+            scrollable_frame,
+            text="KDF Algorithm Settings",
+            font=("TkDefaultFont", 12, "bold"),
         ).pack(pady=(20, 5), padx=10, anchor=tk.W)
         ttk.Separator(scrollable_frame, orient="horizontal").pack(fill=tk.X, padx=10, pady=5)
 
@@ -394,7 +397,19 @@ class SettingsTab:
             row=row, column=0, sticky=tk.W, padx=5, pady=5
         )
         self.scrypt_vars["n"] = tk.IntVar(value=self.config["scrypt"]["n"])
-        n_values = [1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072, 262144, 524288, 1048576]
+        n_values = [
+            1024,
+            2048,
+            4096,
+            8192,
+            16384,
+            32768,
+            65536,
+            131072,
+            262144,
+            524288,
+            1048576,
+        ]
         n_combo = ttk.Combobox(
             scrypt_frame, textvariable=self.scrypt_vars["n"], values=n_values, width=10
         )
@@ -441,7 +456,10 @@ class SettingsTab:
         self.scrypt_vars["rounds"] = tk.IntVar(value=self.config["scrypt"]["rounds"])
         rounds_values = [1, 5, 10, 25, 50, 100, 250, 500, 1000]
         rounds_combo = ttk.Combobox(
-            scrypt_frame, textvariable=self.scrypt_vars["rounds"], values=rounds_values, width=10
+            scrypt_frame,
+            textvariable=self.scrypt_vars["rounds"],
+            values=rounds_values,
+            width=10,
         )
         rounds_combo.grid(row=row, column=1, sticky=tk.W, padx=5, pady=5)
         rounds_help = ttk.Label(scrypt_frame, text="(number of times to apply KDF sequentially)")
@@ -478,7 +496,10 @@ class SettingsTab:
         self.argon2_vars["type"] = tk.StringVar(value=self.config["argon2"]["type"])
         variant_values = ["id", "i", "d"]
         variant_combo = ttk.Combobox(
-            argon2_frame, textvariable=self.argon2_vars["type"], values=variant_values, width=10
+            argon2_frame,
+            textvariable=self.argon2_vars["type"],
+            values=variant_values,
+            width=10,
         )
         variant_combo.grid(row=row, column=1, sticky=tk.W, padx=5, pady=5)
         ttk.Label(argon2_frame, text="(id is recommended for most uses)").grid(
@@ -493,7 +514,10 @@ class SettingsTab:
         self.argon2_vars["time_cost"] = tk.IntVar(value=self.config["argon2"]["time_cost"])
         time_values = [1, 2, 3, 4, 6, 8, 10, 12, 16]
         time_combo = ttk.Combobox(
-            argon2_frame, textvariable=self.argon2_vars["time_cost"], values=time_values, width=10
+            argon2_frame,
+            textvariable=self.argon2_vars["time_cost"],
+            values=time_values,
+            width=10,
         )
         time_combo.grid(row=row, column=1, sticky=tk.W, padx=5, pady=5)
         ttk.Label(argon2_frame, text="(higher is slower but more secure)").grid(
@@ -562,7 +586,10 @@ class SettingsTab:
         self.argon2_vars["rounds"] = tk.IntVar(value=self.config["argon2"]["rounds"])
         rounds_values = [1, 5, 10, 25, 50, 100, 250, 500, 1000]
         rounds_combo = ttk.Combobox(
-            argon2_frame, textvariable=self.argon2_vars["rounds"], values=rounds_values, width=10
+            argon2_frame,
+            textvariable=self.argon2_vars["rounds"],
+            values=rounds_values,
+            width=10,
         )
         rounds_combo.grid(row=row, column=1, sticky=tk.W, padx=5, pady=5)
         argon2_rounds_help = ttk.Label(
@@ -628,7 +655,10 @@ class SettingsTab:
         self.balloon_vars["time_cost"] = tk.IntVar(value=self.config["balloon"]["time_cost"])
         time_values = [10, 20, 30, 40, 50]
         time_combo = ttk.Combobox(
-            balloon_frame, textvariable=self.balloon_vars["time_cost"], values=time_values, width=10
+            balloon_frame,
+            textvariable=self.balloon_vars["time_cost"],
+            values=time_values,
+            width=10,
         )
         time_combo.grid(row=row, column=1, sticky=tk.W, padx=5, pady=5)
         ttk.Label(balloon_frame, text="(number of rounds, higher is more secure)").grid(
@@ -641,7 +671,10 @@ class SettingsTab:
         self.balloon_vars["delta"] = tk.IntVar(value=self.config["balloon"]["delta"])
         delta_values = [3, 4, 5, 6]
         delta_combo = ttk.Combobox(
-            balloon_frame, textvariable=self.balloon_vars["delta"], values=delta_values, width=10
+            balloon_frame,
+            textvariable=self.balloon_vars["delta"],
+            values=delta_values,
+            width=10,
         )
         delta_combo.grid(row=row, column=1, sticky=tk.W, padx=5, pady=5)
         delta_help = ttk.Label(balloon_frame, text="(number of random blocks, 4 is standard)")
@@ -673,11 +706,14 @@ class SettingsTab:
             row=row, column=0, sticky=tk.W, padx=5, pady=5
         )
         self.balloon_vars["rounds"] = tk.IntVar(
-            value=self.config["balloon"]["rounds"] if "rounds" in self.config["balloon"] else 1
+            value=(self.config["balloon"]["rounds"] if "rounds" in self.config["balloon"] else 1)
         )
         rounds_values = [1, 5, 10, 25, 50, 100, 250, 500, 1000]
         rounds_combo = ttk.Combobox(
-            balloon_frame, textvariable=self.balloon_vars["rounds"], values=rounds_values, width=10
+            balloon_frame,
+            textvariable=self.balloon_vars["rounds"],
+            values=rounds_values,
+            width=10,
         )
         rounds_combo.grid(row=row, column=1, sticky=tk.W, padx=5, pady=5)
         balloon_rounds_help = ttk.Label(
@@ -725,7 +761,10 @@ class SettingsTab:
         self.hkdf_vars["algorithm"] = tk.StringVar(value=self.config["hkdf"]["algorithm"])
         algorithm_values = ["sha224", "sha256", "sha384", "sha512"]
         algorithm_combo = ttk.Combobox(
-            hkdf_frame, textvariable=self.hkdf_vars["algorithm"], values=algorithm_values, width=10
+            hkdf_frame,
+            textvariable=self.hkdf_vars["algorithm"],
+            values=algorithm_values,
+            width=10,
         )
         algorithm_combo.grid(row=row, column=1, sticky=tk.W, padx=5, pady=5)
         ttk.Label(hkdf_frame, text="(sha256 is recommended)").grid(
@@ -753,7 +792,10 @@ class SettingsTab:
         self.hkdf_vars["rounds"] = tk.IntVar(value=self.config["hkdf"]["rounds"])
         rounds_values = [1, 5, 10, 25, 50, 100, 250, 500, 1000]
         rounds_combo = ttk.Combobox(
-            hkdf_frame, textvariable=self.hkdf_vars["rounds"], values=rounds_values, width=10
+            hkdf_frame,
+            textvariable=self.hkdf_vars["rounds"],
+            values=rounds_values,
+            width=10,
         )
         rounds_combo.grid(row=row, column=1, sticky=tk.W, padx=5, pady=5)
         hkdf_rounds_help = ttk.Label(hkdf_frame, text="(number of times to apply KDF sequentially)")
@@ -1078,7 +1120,8 @@ class SettingsTab:
         n_value = self.scrypt_vars["n"].get()
         if n_value > 0 and (n_value & (n_value - 1)) != 0:
             messagebox.showerror(
-                "Invalid Setting", "Scrypt N value must be a power of 2 (1024, 2048, 4096, etc.)"
+                "Invalid Setting",
+                "Scrypt N value must be a power of 2 (1024, 2048, 4096, etc.)",
             )
             return False
 
@@ -1120,7 +1163,8 @@ class SettingsTab:
             delta = self.balloon_vars["delta"].get()
             if delta < 3:
                 messagebox.showerror(
-                    "Invalid Setting", "Balloon delta must be at least 3 for proper security."
+                    "Invalid Setting",
+                    "Balloon delta must be at least 3 for proper security.",
                 )
                 return False
 
@@ -1257,7 +1301,8 @@ class SettingsTab:
     def reset_to_defaults(self):
         """Reset settings to default values"""
         if messagebox.askyesno(
-            "Reset Settings", "Are you sure you want to reset all settings to their defaults?"
+            "Reset Settings",
+            "Are you sure you want to reset all settings to their defaults?",
         ):
             self.config = DEFAULT_CONFIG.copy()
             self.update_ui_from_config()
@@ -1300,38 +1345,38 @@ class SettingsTab:
             sha3_512=self.config["sha3_512"],
             # Add BLAKE2b with recommendation
             blake2b=self.config["blake2b"],
-            blake2b_recommended="★ (high performance)" if self.config["blake2b"] > 0 else "",
+            blake2b_recommended=("★ (high performance)" if self.config["blake2b"] > 0 else ""),
             # Add SHAKE-256 with recommendation
             shake256=self.config["shake256"],
             shake256_recommended=(
                 "★ (variable-length output)" if self.config["shake256"] > 0 else ""
             ),
             whirlpool=self.config["whirlpool"],
-            scrypt_enabled="Enabled"
-            if self.config.get("scrypt", {}).get("enabled", False)
-            else "Disabled",
+            scrypt_enabled=(
+                "Enabled" if self.config.get("scrypt", {}).get("enabled", False) else "Disabled"
+            ),
             scrypt_n=self.config.get("scrypt", {}).get("n", 16384),
             scrypt_r=self.config.get("scrypt", {}).get("r", 8),
             scrypt_p=self.config.get("scrypt", {}).get("p", 1),
             scrypt_rounds=self.config.get("scrypt", {}).get("rounds", 100),
-            argon2_enabled="Enabled"
-            if self.config.get("argon2", {}).get("enabled", False)
-            else "Disabled",
+            argon2_enabled=(
+                "Enabled" if self.config.get("argon2", {}).get("enabled", False) else "Disabled"
+            ),
             argon2_t=self.config.get("argon2", {}).get("time_cost", 3),
             argon2_m=self.config.get("argon2", {}).get("memory_cost", 65536),
             argon2_p=self.config.get("argon2", {}).get("parallelism", 4),
             argon2_rounds=self.config.get("argon2", {}).get("rounds", 100),
-            balloon_enabled="Enabled"
-            if self.config.get("balloon", {}).get("enabled", False)
-            else "Disabled",
+            balloon_enabled=(
+                "Enabled" if self.config.get("balloon", {}).get("enabled", False) else "Disabled"
+            ),
             balloon_s=self.config.get("balloon", {}).get("space_cost", 16),
             balloon_t=self.config.get("balloon", {}).get("time_cost", 20),
             balloon_d=self.config.get("balloon", {}).get("delta", 4),
             balloon_p=self.config.get("balloon", {}).get("parallel_cost", 4),
             balloon_rounds=self.config.get("balloon", {}).get("rounds", 1),
-            hkdf_enabled="Enabled"
-            if self.config.get("hkdf", {}).get("enabled", False)
-            else "Disabled",
+            hkdf_enabled=(
+                "Enabled" if self.config.get("hkdf", {}).get("enabled", False) else "Disabled"
+            ),
             hkdf_algorithm=self.config.get("hkdf", {}).get("algorithm", "sha256"),
             hkdf_rounds=self.config.get("hkdf", {}).get("rounds", 1),
             pbkdf2=self.config["pbkdf2_iterations"],

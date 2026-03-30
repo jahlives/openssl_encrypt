@@ -23,12 +23,11 @@ import argparse
 import json
 import sys
 from collections import Counter, defaultdict
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
+from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
-from .security_logger import get_security_logger
 from .crypt_utils import eprint
+from .security_logger import get_security_logger
 
 
 class SecurityReportGenerator:
@@ -72,7 +71,11 @@ class SecurityReportGenerator:
             return self._generate_text_report(events, hours, severity, event_type)
 
     def _generate_text_report(
-        self, events: List[dict], hours: int, severity: Optional[str], event_type: Optional[str]
+        self,
+        events: List[dict],
+        hours: int,
+        severity: Optional[str],
+        event_type: Optional[str],
     ) -> str:
         """Generate human-readable text report."""
         lines = []
@@ -314,11 +317,16 @@ def main():
         "--hours", type=int, default=24, help="Number of hours to analyze (default: 24)"
     )
     parser.add_argument(
-        "--severity", choices=["info", "warning", "critical"], help="Filter by severity level"
+        "--severity",
+        choices=["info", "warning", "critical"],
+        help="Filter by severity level",
     )
     parser.add_argument("--event-type", help="Filter by specific event type")
     parser.add_argument(
-        "--format", choices=["text", "json"], default="text", help="Output format (default: text)"
+        "--format",
+        choices=["text", "json"],
+        default="text",
+        help="Output format (default: text)",
     )
     parser.add_argument(
         "--anomalies", action="store_true", help="Check for security anomalies only"
@@ -370,7 +378,10 @@ def main():
     else:
         # Generate full report
         report = generator.generate_report(
-            hours=args.hours, severity=args.severity, event_type=args.event_type, format=args.format
+            hours=args.hours,
+            severity=args.severity,
+            event_type=args.event_type,
+            format=args.format,
         )
         eprint(report)
 

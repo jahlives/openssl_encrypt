@@ -6,11 +6,8 @@ Tests the DangerousPatternVisitor and analyze_plugin_code function
 to ensure dangerous patterns are detected and bypass attempts blocked.
 """
 
-import pytest
 
 from openssl_encrypt.modules.plugin_system.plugin_ast_analyzer import (
-    DangerousPatternVisitor,
-    SecurityViolation,
     analyze_plugin_code,
 )
 
@@ -685,7 +682,15 @@ def test(obj):
 
     def test_os_execv_variants_detected(self):
         """os.execv/execve/execvp/execvpe should be blocked"""
-        for func in ["execv", "execve", "execvp", "execvpe", "execl", "execle", "execlp"]:
+        for func in [
+            "execv",
+            "execve",
+            "execvp",
+            "execvpe",
+            "execl",
+            "execle",
+            "execlp",
+        ]:
             code = f"""
 import os
 

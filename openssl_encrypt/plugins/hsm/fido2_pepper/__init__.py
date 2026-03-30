@@ -69,6 +69,7 @@ except ImportError:
     FIDO2_AVAILABLE = False
     CLIUserInteraction = None  # Placeholder when FIDO2 is not available
 
+from ....modules.crypt_utils import eprint
 from ....modules.plugin_system.plugin_base import (
     HSMPlugin,
     PluginCapability,
@@ -76,7 +77,6 @@ from ....modules.plugin_system.plugin_base import (
     PluginSecurityContext,
 )
 from ....modules.plugin_system.plugin_config import ensure_plugin_data_dir
-from ....modules.crypt_utils import eprint
 
 logger = logging.getLogger(__name__)
 
@@ -154,6 +154,7 @@ class FIDO2HSMPlugin(HSMPlugin):
                     PermissionLevel,
                     create_secure_directory,
                 )
+
                 create_secure_directory(self.config_dir, level=PermissionLevel.OWNER_FULL)
                 logger.info(f"Created custom FIDO2 config directory: {self.config_dir}")
         except Exception as e:
@@ -295,6 +296,7 @@ class FIDO2HSMPlugin(HSMPlugin):
 
             # Set secure permissions (0o600)
             from openssl_encrypt.modules.file_permissions import PermissionLevel, set_permissions
+
             set_permissions(temp_file, PermissionLevel.OWNER_ONLY)
 
             # Atomic replace
@@ -530,7 +532,8 @@ class FIDO2HSMPlugin(HSMPlugin):
             logger.info(f"Successfully derived FIDO2 pepper ({len(pepper)} bytes)")
 
             return PluginResult.success_result(
-                f"FIDO2 pepper derived ({len(pepper)} bytes)", data={"hsm_pepper": pepper}
+                f"FIDO2 pepper derived ({len(pepper)} bytes)",
+                data={"hsm_pepper": pepper},
             )
 
         except Exception as e:
@@ -687,11 +690,13 @@ class FIDO2HSMPlugin(HSMPlugin):
                     {
                         "product_name": getattr(device, "product_name", "Unknown"),
                         "manufacturer": getattr(device, "manufacturer", "Unknown"),
-                        "aaguid": str(info.aaguid) if hasattr(info, "aaguid") else "Unknown",
+                        "aaguid": (str(info.aaguid) if hasattr(info, "aaguid") else "Unknown"),
                         "versions": info.versions if hasattr(info, "versions") else [],
-                        "extensions": list(info.extensions)
-                        if hasattr(info, "extensions") and info.extensions
-                        else [],
+                        "extensions": (
+                            list(info.extensions)
+                            if hasattr(info, "extensions") and info.extensions
+                            else []
+                        ),
                         "hmac_secret_support": self._check_hmac_secret_support(device),
                     }
                 )

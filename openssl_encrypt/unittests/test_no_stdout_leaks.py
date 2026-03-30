@@ -12,7 +12,6 @@ import os
 
 import pytest
 
-
 # Whitelisted print() calls that MUST remain on stdout (data output)
 # Format: (filename_suffix, line_number, description)
 # Line numbers are checked with a tolerance of ±5 to handle minor edits
@@ -92,7 +91,10 @@ def _find_stdout_prints(filepath: str) -> list:
             if not _has_stderr_kwarg(node):
                 if not _is_whitelisted(filepath, node.lineno):
                     violations.append(
-                        (node.lineno, ast.get_source_segment(source, node) or "print(...)")
+                        (
+                            node.lineno,
+                            ast.get_source_segment(source, node) or "print(...)",
+                        )
                     )
 
     return violations

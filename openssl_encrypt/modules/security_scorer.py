@@ -14,11 +14,9 @@ Security Design:
 - Educational guidance without compromising security posture
 """
 
-import hashlib
 import math
-import time
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 
 class SecurityLevel(Enum):
@@ -92,7 +90,6 @@ class SecurityScorer:
 
     def __init__(self):
         """Initialize the security scorer."""
-        pass
 
     def score_configuration(
         self,
@@ -343,7 +340,10 @@ class SecurityScorer:
             return "Excellent encryption algorithm"
 
     def _calculate_security_estimates(
-        self, hash_score: Dict[str, Any], kdf_score: Dict[str, Any], cipher_score: Dict[str, Any]
+        self,
+        hash_score: Dict[str, Any],
+        kdf_score: Dict[str, Any],
+        cipher_score: Dict[str, Any],
     ) -> Dict[str, str]:
         """Calculate security time estimates (generic, educational only)."""
         # These are very rough educational estimates

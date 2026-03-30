@@ -27,7 +27,6 @@ Usage:
 """
 
 import logging
-import sys
 from typing import Any, Dict, Set
 
 from ....modules.crypt_utils import tty_clear_line, tty_write
@@ -48,7 +47,9 @@ class YubikeyHSMPlugin(HSMPlugin):
 
     def __init__(self):
         super().__init__(
-            plugin_id="yubikey_hsm", name="Yubikey Challenge-Response HSM", version="1.0.0"
+            plugin_id="yubikey_hsm",
+            name="Yubikey Challenge-Response HSM",
+            version="1.0.0",
         )
         self._ykman_available = None
         self._cached_slot = None
@@ -68,7 +69,7 @@ class YubikeyHSMPlugin(HSMPlugin):
         """Check if yubikey-manager is available."""
         if self._ykman_available is None:
             try:
-                import ykman
+                pass
 
                 self._ykman_available = True
             except ImportError:

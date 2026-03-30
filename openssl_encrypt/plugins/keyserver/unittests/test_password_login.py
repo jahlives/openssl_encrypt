@@ -13,11 +13,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from openssl_encrypt.plugins.keyserver.config import KeyserverConfig
-from openssl_encrypt.plugins.keyserver.keyserver_plugin import (
-    AuthenticationError,
-    KeyserverPlugin,
-)
-
+from openssl_encrypt.plugins.keyserver.keyserver_plugin import AuthenticationError, KeyserverPlugin
 
 # ---------------------------------------------------------------------------
 # Password Storage Tests
@@ -136,7 +132,10 @@ class TestLoginWithPassword:
         plugin.login("abc", password="securepassword12")
 
         call_args = plugin.session.post.call_args
-        assert call_args[1]["json"] == {"client_id": "abc", "password": "securepassword12"}
+        assert call_args[1]["json"] == {
+            "client_id": "abc",
+            "password": "securepassword12",
+        }
 
     def test_login_sends_stored_password(self, tmp_path):
         """Login uses stored password from config when no password arg given."""
@@ -155,7 +154,10 @@ class TestLoginWithPassword:
         plugin.login("abc")
 
         call_args = plugin.session.post.call_args
-        assert call_args[1]["json"] == {"client_id": "abc", "password": "stored_password"}
+        assert call_args[1]["json"] == {
+            "client_id": "abc",
+            "password": "stored_password",
+        }
 
     def test_login_without_password_sends_client_id_only(self, tmp_path):
         """Login without stored or provided password sends client_id only."""

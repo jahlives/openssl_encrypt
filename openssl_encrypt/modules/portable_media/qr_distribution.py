@@ -23,7 +23,7 @@ import logging
 import os
 import zlib
 from enum import Enum
-from typing import Dict, List, Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union
 
 try:
     import qrcode
@@ -37,6 +37,7 @@ except ImportError:
     # Dummy Image class so type annotations and isinstance() don't raise NameError
     class _DummyImage:
         """Placeholder when PIL is not installed."""
+
         Image = type(None)
 
     Image = _DummyImage  # type: ignore[misc,assignment]
@@ -57,8 +58,6 @@ logger = logging.getLogger(__name__)
 class QRKeyError(KeystoreError):
     """QR code key distribution specific errors"""
 
-    pass
-
 
 class QRKeyFormat(Enum):
     """QR code key format versions"""
@@ -78,7 +77,9 @@ class QRKeyDistribution:
     # QR Code configuration
     MAX_SINGLE_QR_SIZE = 2048  # Max bytes for single QR (Version 40)
     MAX_QR_DATA_SIZE = 2953  # Theoretical max for Version 40 QR
-    QR_ERROR_CORRECTION = qrcode.constants.ERROR_CORRECT_M if QR_AVAILABLE else 0  # 15% error correction
+    QR_ERROR_CORRECTION = (
+        qrcode.constants.ERROR_CORRECT_M if QR_AVAILABLE else 0
+    )  # 15% error correction
 
     # Protocol constants
     PROTOCOL_VERSION = "1.0"

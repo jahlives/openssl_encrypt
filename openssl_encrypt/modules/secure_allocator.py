@@ -18,27 +18,21 @@ implements platform-specific memory protections where available.
 
 import atexit
 import ctypes
-import gc
-import logging
-import mmap
 import os
 import platform
-import random
 import secrets
-import sys
 import threading
 import time
-import weakref
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, Tuple
 
 # Import secure error handling
 from .crypt_errors import MemoryError as SecureMemoryError
 from .crypt_errors import secure_memory_error_handler
+from .crypt_utils import eprint
 
 # Import secure memory utility functions
 from .secure_memory import SecureBytes as BaseSecureBytes
-from .secure_memory import get_memory_page_size, secure_memzero, verify_memory_zeroed
-from .crypt_utils import eprint
+from .secure_memory import get_memory_page_size, secure_memzero
 
 
 class SecureHeapBlock:
@@ -409,7 +403,8 @@ class SecureHeap:
                 # Raise a secure error for non-existent blocks
                 if not isinstance(block_id, str):
                     raise SecureMemoryError(
-                        "Invalid block ID type", f"Block ID must be a string, got {type(block_id)}"
+                        "Invalid block ID type",
+                        f"Block ID must be a string, got {type(block_id)}",
                     )
                 raise SecureMemoryError("Block not found", f"No block with ID {block_id} exists")
 

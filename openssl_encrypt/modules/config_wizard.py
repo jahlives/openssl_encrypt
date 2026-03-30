@@ -14,21 +14,16 @@ Security Design:
 """
 
 import sys
+from enum import Enum
+from typing import Any, Dict, List
 
 from .crypt_utils import eprint
-from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple
-
-from .security_scorer import SecurityLevel, SecurityScorer
+from .security_scorer import SecurityScorer
 
 # Import registry helper functions for algorithm discovery
 try:
     from .registry import (
         get_available_ciphers,
-        get_available_hashes,
-        get_available_kdfs,
-        get_cipher_info_dict,
-        get_kdf_info_dict,
     )
 
     REGISTRY_AVAILABLE = True
@@ -190,7 +185,12 @@ class ConfigurationWizard:
 
     def _generate_base_config(self) -> Dict[str, Any]:
         """Generate base configuration based on user profile."""
-        config = {"hash_algorithms": {}, "kdf_settings": {}, "encryption": {}, "post_quantum": {}}
+        config = {
+            "hash_algorithms": {},
+            "kdf_settings": {},
+            "encryption": {},
+            "post_quantum": {},
+        }
 
         # Base configuration matrix based on use case
         if self.use_case in [UseCase.PERSONAL_FILES, UseCase.BUSINESS_DOCUMENTS]:
@@ -214,7 +214,12 @@ class ConfigurationWizard:
                 "time_cost": 4,
                 "parallelism": 4,
             }
-            config["kdf_settings"]["scrypt"] = {"enabled": True, "n": 32768, "r": 8, "p": 1}
+            config["kdf_settings"]["scrypt"] = {
+                "enabled": True,
+                "n": 32768,
+                "r": 8,
+                "p": 1,
+            }
             config["encryption"]["algorithm"] = "xchacha20-poly1305"
 
         elif self.use_case == UseCase.ARCHIVAL_STORAGE:
@@ -242,7 +247,12 @@ class ConfigurationWizard:
                 "time_cost": 8,
                 "parallelism": 8,
             }
-            config["kdf_settings"]["scrypt"] = {"enabled": True, "n": 65536, "r": 8, "p": 1}
+            config["kdf_settings"]["scrypt"] = {
+                "enabled": True,
+                "n": 65536,
+                "r": 8,
+                "p": 1,
+            }
             config["encryption"]["algorithm"] = "xchacha20-poly1305"
             config["post_quantum"]["enabled"] = True
             config["post_quantum"]["algorithm"] = "ml-kem-1024"

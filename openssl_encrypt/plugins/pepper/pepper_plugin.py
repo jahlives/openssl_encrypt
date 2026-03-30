@@ -34,25 +34,17 @@ logger = logging.getLogger(__name__)
 class PepperError(Exception):
     """Base exception for pepper operations"""
 
-    pass
-
 
 class NetworkError(PepperError):
     """Raised when network request fails"""
-
-    pass
 
 
 class AuthenticationError(PepperError):
     """Raised when mTLS authentication fails"""
 
-    pass
-
 
 class TOTPRequiredError(PepperError):
     """Raised when TOTP code is required but not provided"""
-
-    pass
 
 
 class PepperPlugin(BasePlugin):
@@ -165,7 +157,9 @@ class PepperPlugin(BasePlugin):
             PepperError: If certificates not configured
         """
         if not self.config.client_cert or not self.config.client_key:
-            raise PepperError("Client certificate and key must be configured for mTLS authentication")
+            raise PepperError(
+                "Client certificate and key must be configured for mTLS authentication"
+            )
 
         session = requests.Session()
 
@@ -179,7 +173,10 @@ class PepperPlugin(BasePlugin):
             session.verify = True  # Use system CA bundle
 
         # Configure timeouts
-        session.timeout = (self.config.connect_timeout_seconds, self.config.read_timeout_seconds)
+        session.timeout = (
+            self.config.connect_timeout_seconds,
+            self.config.read_timeout_seconds,
+        )
 
         return session
 
@@ -225,7 +222,10 @@ class PepperPlugin(BasePlugin):
                 url=url,
                 json=json_data,
                 headers=headers,
-                timeout=(self.config.connect_timeout_seconds, self.config.read_timeout_seconds),
+                timeout=(
+                    self.config.connect_timeout_seconds,
+                    self.config.read_timeout_seconds,
+                ),
             )
 
             # Handle authentication errors
@@ -423,7 +423,9 @@ class PepperPlugin(BasePlugin):
         response = self._make_request("GET", "/peppers")
         return response["peppers"]
 
-    def update_pepper(self, name: str, pepper_encrypted: bytes, description: Optional[str] = None) -> Dict:
+    def update_pepper(
+        self, name: str, pepper_encrypted: bytes, description: Optional[str] = None
+    ) -> Dict:
         """
         Update existing pepper.
 

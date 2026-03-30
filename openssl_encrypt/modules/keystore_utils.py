@@ -8,7 +8,8 @@ import getpass
 import json
 import logging
 import os
-from typing import Any, Dict, Optional, Tuple
+from typing import Optional
+
 from .crypt_utils import eprint
 
 # Set up module-level logger
@@ -401,7 +402,11 @@ def get_pqc_key_for_decryption(args, hash_config=None, metadata=None):
                                     # Return the key pair
                                     pqc_keypair = (public_key, private_key)
                                     pqc_private_key = private_key
-                                    return pqc_keypair, pqc_private_key, "EMBEDDED_PRIVATE_KEY"
+                                    return (
+                                        pqc_keypair,
+                                        pqc_private_key,
+                                        "EMBEDDED_PRIVATE_KEY",
+                                    )
                     else:
                         # Legacy format (v1-3)
                         if "hash_config" in header_config:
@@ -426,7 +431,11 @@ def get_pqc_key_for_decryption(args, hash_config=None, metadata=None):
                                     # Return the key pair
                                     pqc_keypair = (public_key, private_key)
                                     pqc_private_key = private_key
-                                    return pqc_keypair, pqc_private_key, "EMBEDDED_PRIVATE_KEY"
+                                    return (
+                                        pqc_keypair,
+                                        pqc_private_key,
+                                        "EMBEDDED_PRIVATE_KEY",
+                                    )
             except Exception as e:
                 if getattr(args, "verbose", False):
                     logger.info(f"Failed to extract embedded private key: {e}")

@@ -23,14 +23,13 @@ SECURITY:
 import hashlib
 import json
 import logging
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import requests
 
-from .config import IntegrityConfig
 from ...modules.crypt_utils import eprint
+from .config import IntegrityConfig
 
 logger = logging.getLogger(__name__)
 
@@ -38,13 +37,9 @@ logger = logging.getLogger(__name__)
 class IntegrityPluginError(Exception):
     """Base exception for integrity plugin errors"""
 
-    pass
-
 
 class IntegrityVerificationError(Exception):
     """Raised when integrity verification fails"""
-
-    pass
 
 
 class IntegrityPlugin:
@@ -89,7 +84,10 @@ class IntegrityPlugin:
 
             # Configure mTLS client certificates
             if self.config.client_cert and self.config.client_key:
-                self._session.cert = (str(self.config.client_cert), str(self.config.client_key))
+                self._session.cert = (
+                    str(self.config.client_cert),
+                    str(self.config.client_key),
+                )
 
             # Configure CA cert for server verification
             if self.config.ca_cert:
@@ -99,12 +97,19 @@ class IntegrityPlugin:
                 self._session.verify = True
 
             # Set timeouts
-            self._session.timeout = (self.config.connect_timeout_seconds, self.config.read_timeout_seconds)
+            self._session.timeout = (
+                self.config.connect_timeout_seconds,
+                self.config.read_timeout_seconds,
+            )
 
         return self._session
 
     def _make_request(
-        self, method: str, endpoint: str, json_data: Optional[Dict] = None, params: Optional[Dict] = None
+        self,
+        method: str,
+        endpoint: str,
+        json_data: Optional[Dict] = None,
+        params: Optional[Dict] = None,
     ) -> Dict[str, Any]:
         """
         Make HTTP request to integrity server.
@@ -130,7 +135,9 @@ class IntegrityPlugin:
             return response.json()
 
         except requests.exceptions.SSLError as e:
-            raise IntegrityPluginError(f"mTLS authentication failed: {e}. Check your client certificates.")
+            raise IntegrityPluginError(
+                f"mTLS authentication failed: {e}. Check your client certificates."
+            )
         except requests.exceptions.Timeout as e:
             raise IntegrityPluginError(f"Request timeout: {e}")
         except requests.exceptions.RequestException as e:
@@ -181,7 +188,11 @@ class IntegrityPlugin:
     # Hash Storage
 
     def store_hash(
-        self, file_id: str, metadata_hash: str, algorithm: Optional[str] = None, description: Optional[str] = None
+        self,
+        file_id: str,
+        metadata_hash: str,
+        algorithm: Optional[str] = None,
+        description: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Store metadata hash for a file.
@@ -201,7 +212,9 @@ class IntegrityPlugin:
         # Validate inputs
         if not file_id or len(file_id) > 128:
             raise IntegrityPluginError("file_id must be 1-128 characters")
-        if len(metadata_hash) != 64 or not all(c in "0123456789abcdefABCDEF" for c in metadata_hash):
+        if len(metadata_hash) != 64 or not all(
+            c in "0123456789abcdefABCDEF" for c in metadata_hash
+        ):
             raise IntegrityPluginError("metadata_hash must be 64 hex characters (SHA-256)")
         if algorithm and len(algorithm) > 50:
             raise IntegrityPluginError("algorithm must be max 50 characters")
@@ -265,7 +278,9 @@ class IntegrityPlugin:
         Raises:
             IntegrityPluginError: If file not found or parameters invalid
         """
-        if len(metadata_hash) != 64 or not all(c in "0123456789abcdefABCDEF" for c in metadata_hash):
+        if len(metadata_hash) != 64 or not all(
+            c in "0123456789abcdefABCDEF" for c in metadata_hash
+        ):
             raise IntegrityPluginError("metadata_hash must be 64 hex characters (SHA-256)")
         if description and len(description) > 1000:
             raise IntegrityPluginError("description must be max 1000 characters")
@@ -325,7 +340,9 @@ class IntegrityPlugin:
         Raises:
             IntegrityPluginError: If request fails
         """
-        if len(metadata_hash) != 64 or not all(c in "0123456789abcdefABCDEF" for c in metadata_hash):
+        if len(metadata_hash) != 64 or not all(
+            c in "0123456789abcdefABCDEF" for c in metadata_hash
+        ):
             raise IntegrityPluginError("metadata_hash must be 64 hex characters (SHA-256)")
 
         request_data = {"file_id": file_id, "metadata_hash": metadata_hash.lower()}
@@ -365,20 +382,28 @@ class IntegrityPlugin:
         normalized_verifications = []
         for v in verifications:
             if "file_id" not in v or "metadata_hash" not in v:
-                raise IntegrityPluginError("Each verification must have 'file_id' and 'metadata_hash'")
+                raise IntegrityPluginError(
+                    "Each verification must have 'file_id' and 'metadata_hash'"
+                )
 
             hash_value = v["metadata_hash"]
             if len(hash_value) != 64 or not all(c in "0123456789abcdefABCDEF" for c in hash_value):
-                raise IntegrityPluginError(f"Invalid hash for {v['file_id']}: must be 64 hex characters")
+                raise IntegrityPluginError(
+                    f"Invalid hash for {v['file_id']}: must be 64 hex characters"
+                )
 
-            normalized_verifications.append({"file_id": v["file_id"], "metadata_hash": hash_value.lower()})
+            normalized_verifications.append(
+                {"file_id": v["file_id"], "metadata_hash": hash_value.lower()}
+            )
 
         request_data = {"verifications": normalized_verifications}
         response = self._make_request("POST", "/verify/batch", json_data=request_data)
 
         # Log any mismatches
         if response.get("mismatches", 0) > 0:
-            logger.warning(f"BATCH VERIFICATION: {response['mismatches']} integrity violations detected!")
+            logger.warning(
+                f"BATCH VERIFICATION: {response['mismatches']} integrity violations detected!"
+            )
             for result in response.get("results", []):
                 if not result.get("match") and result.get("warning"):
                     logger.warning(f"  - {result['file_id']}: {result['warning']}")
@@ -472,7 +497,12 @@ if __name__ == "__main__":
         file_id = IntegrityPlugin.compute_file_id(Path("important_file.txt.enc"))
         metadata_hash = IntegrityPlugin.compute_metadata_hash(b"encrypted metadata here")
 
-        result = plugin.store_hash(file_id, metadata_hash, algorithm="aes-256-gcm", description="Important file")
+        result = plugin.store_hash(
+            file_id,
+            metadata_hash,
+            algorithm="aes-256-gcm",
+            description="Important file",
+        )
         eprint(f"Stored hash: {result['file_id']}")
 
         # Verify integrity

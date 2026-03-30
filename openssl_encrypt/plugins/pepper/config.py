@@ -18,7 +18,7 @@ SECURITY:
 import json
 import logging
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
@@ -29,8 +29,6 @@ logger = logging.getLogger(__name__)
 
 class ConfigError(Exception):
     """Base exception for configuration errors"""
-
-    pass
 
 
 def _get_default_config_dir() -> Path:
@@ -122,7 +120,9 @@ class PepperConfig:
 
             # Warn if CA cert specified but doesn't exist
             if self.ca_cert and not self.ca_cert.exists():
-                logger.warning(f"CA certificate not found: {self.ca_cert} (server cert verification may fail)")
+                logger.warning(
+                    f"CA certificate not found: {self.ca_cert} (server cert verification may fail)"
+                )
 
     @classmethod
     def from_file(cls, config_path: Optional[Path] = None) -> "PepperConfig":

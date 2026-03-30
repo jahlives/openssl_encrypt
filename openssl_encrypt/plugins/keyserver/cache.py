@@ -24,16 +24,14 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from ...modules.key_bundle import PublicKeyBundle
 from ...modules.crypt_utils import eprint
+from ...modules.key_bundle import PublicKeyBundle
 
 logger = logging.getLogger(__name__)
 
 
 class CacheError(Exception):
     """Base exception for cache operations"""
-
-    pass
 
 
 class KeyserverCache:

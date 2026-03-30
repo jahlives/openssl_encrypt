@@ -8,23 +8,20 @@ Tests the polling-based flow:
 3. On confirmed → saves tokens automatically
 """
 
-import time
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
 
-from openssl_encrypt.plugins.keyserver.keyserver_plugin import (
-    KeyserverPlugin,
-    NetworkError,
-)
 from openssl_encrypt.plugins.keyserver.config import KeyserverConfig
+from openssl_encrypt.plugins.keyserver.keyserver_plugin import KeyserverPlugin, NetworkError
 
 
 @pytest.fixture
 def config(tmp_path):
     """Create a minimal keyserver config."""
     from pathlib import Path
+
     return KeyserverConfig(
         enabled=True,
         servers=["https://keys.example.com"],

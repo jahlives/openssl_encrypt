@@ -28,9 +28,9 @@ import logging
 import os
 import threading
 import time
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from ...modules.plugin_system import (
     MetadataHandlerPlugin,
@@ -67,7 +67,8 @@ class AuditLogger:
 
         # Format for structured logging
         formatter = logging.Formatter(
-            "%(asctime)s | %(levelname)s | %(name)s | %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
+            "%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
         )
         handler.setFormatter(formatter)
 
@@ -217,7 +218,11 @@ class EncryptionAuditPlugin(PreProcessorPlugin):
             if self.audit_logger:
                 self.audit_logger.log_event(
                     "audit_error",
-                    {"error": str(e), "plugin": self.plugin_id, "operation": "process_file"},
+                    {
+                        "error": str(e),
+                        "plugin": self.plugin_id,
+                        "operation": "process_file",
+                    },
                     "ERROR",
                 )
             return PluginResult.error_result(f"Audit logging failed: {str(e)}")
@@ -368,7 +373,10 @@ class SecurityEventMonitor(MetadataHandlerPlugin):
                     "security_events": security_events,
                     "operation": context.metadata.get("operation", "unknown"),
                     "file_count": len(context.file_paths),
-                    "session_info": {"plugin_id": context.plugin_id, "timestamp": time.time()},
+                    "session_info": {
+                        "plugin_id": context.plugin_id,
+                        "timestamp": time.time(),
+                    },
                 }
 
                 self.audit_logger.log_event("security_event_detected", event_info, "WARNING")
@@ -386,7 +394,11 @@ class SecurityEventMonitor(MetadataHandlerPlugin):
             if self.audit_logger:
                 self.audit_logger.log_event(
                     "audit_error",
-                    {"error": str(e), "plugin": self.plugin_id, "operation": "process_metadata"},
+                    {
+                        "error": str(e),
+                        "plugin": self.plugin_id,
+                        "operation": "process_metadata",
+                    },
                     "ERROR",
                 )
             return PluginResult.error_result(f"Security monitoring failed: {str(e)}")

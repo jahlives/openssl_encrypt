@@ -6,15 +6,10 @@ This module provides support for post-quantum cryptographic algorithms
 using the liboqs-python wrapper for liboqs.
 """
 
-import base64
-import ctypes
 import hashlib
-import json
 import logging
 import os
 import secrets
-import sys
-import time
 from enum import Enum
 from typing import Optional, Tuple, Union
 
@@ -23,8 +18,8 @@ from .algorithm_warnings import (
     is_deprecated,
     warn_deprecated_algorithm,
 )
-from .secure_memory import SecureBytes, secure_memzero, secure_string
 from .crypt_utils import eprint
+from .secure_memory import SecureBytes, secure_memzero
 
 # Set up module-level logger
 logger = logging.getLogger(__name__)
@@ -194,7 +189,7 @@ def check_pqc_support(quiet: bool = False) -> Tuple[bool, Optional[str], list]:
         tuple: (is_available, version, supported_algorithms)
     """
     # Respect both the parameter and the global environment variable setting
-    should_be_quiet = quiet or PQC_QUIET
+    quiet or PQC_QUIET
 
     if not LIBOQS_AVAILABLE:
         return False, None, []
@@ -290,7 +285,7 @@ def check_pqc_support(quiet: bool = False) -> Tuple[bool, Optional[str], list]:
                         "SPHINCS+-SHA2-256f",
                     ]
                 )
-        except Exception as e:
+        except Exception:
             # Skip printing warning about signature algorithms
             pass
 
@@ -300,7 +295,14 @@ def check_pqc_support(quiet: bool = False) -> Tuple[bool, Optional[str], list]:
         return (
             False,
             None,
-            ["ML-KEM-512", "ML-KEM-768", "ML-KEM-1024", "Kyber512", "Kyber768", "Kyber1024"],
+            [
+                "ML-KEM-512",
+                "ML-KEM-768",
+                "ML-KEM-1024",
+                "Kyber512",
+                "Kyber768",
+                "Kyber1024",
+            ],
         )
 
 
@@ -928,7 +930,7 @@ class PQCipher:
                             except Exception as e:
                                 if not self.quiet:
                                     eprint(f"Error extracting encryption_data from metadata: {e}")
-                    except Exception as e:
+                    except Exception:
                         # Ignore extraction errors
                         pass
 
@@ -1005,7 +1007,7 @@ class PQCipher:
                             logger.debug(f"Decryption successful, length: {len(secure_plaintext)}")
                         return bytes(secure_plaintext)
 
-                except Exception as e:
+                except Exception:
                     # SECURITY (CRIT-2): No fallback to unauthenticated ciphers.
                     logger.warning(
                         "AEAD decryption failed. No fallback to unauthenticated "
