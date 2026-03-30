@@ -35,10 +35,8 @@ class JSONSecurityError(Exception):
     """Raised when JSON content violates security constraints."""
 
 
-
 class JSONValidationError(Exception):
     """Raised when JSON content fails schema validation."""
-
 
 
 class SecureJSONValidator:

@@ -9,10 +9,8 @@ and voting schemes that are more practical for this specific use case.
 import struct
 
 
-
 class ErrorCorrectionError(Exception):
     """Exception raised for error correction failures."""
-
 
 
 class SimpleRepetitionEncoder:

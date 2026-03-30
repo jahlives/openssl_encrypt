@@ -40,20 +40,16 @@ class KeyBundleError(Exception):
     """Base exception for key bundle operations"""
 
 
-
 class InvalidSignatureError(KeyBundleError):
     """Raised when bundle signature verification fails"""
-
 
 
 class InvalidAlgorithmError(KeyBundleError):
     """Raised when unsupported algorithm is used"""
 
 
-
 class InvalidFingerprintError(KeyBundleError):
     """Raised when fingerprint doesn't match keys"""
-
 
 
 @dataclass(frozen=True)

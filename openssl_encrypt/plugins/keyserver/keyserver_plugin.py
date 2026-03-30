@@ -110,20 +110,16 @@ class KeyserverError(Exception):
     """Base exception for keyserver operations"""
 
 
-
 class NetworkError(KeyserverError):
     """Raised when network request fails"""
-
 
 
 class AuthenticationError(KeyserverError):
     """Raised when API token authentication fails"""
 
 
-
 class PasswordRequiredError(AuthenticationError):
     """Raised when server requires password setup (403 password_required)."""
-
 
 
 class KeyserverPlugin(BasePlugin):

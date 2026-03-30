@@ -59,7 +59,6 @@ class QRKeyError(KeystoreError):
     """QR code key distribution specific errors"""
 
 
-
 class QRKeyFormat(Enum):
     """QR code key format versions"""
 

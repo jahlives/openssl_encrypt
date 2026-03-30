@@ -10,7 +10,6 @@ class SteganographyError(Exception):
     """Base exception for all steganography operations"""
 
 
-
 class CapacityError(SteganographyError):
     """Raised when data exceeds cover media capacity"""
 
@@ -28,12 +27,9 @@ class ExtractionError(SteganographyError):
     """Raised when data cannot be extracted from cover media"""
 
 
-
 class CoverMediaError(SteganographyError):
     """Raised when cover media is invalid or corrupted"""
 
 
-
 class SecurityError(SteganographyError):
     """Raised when security constraints are violated"""
-

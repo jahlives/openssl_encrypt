@@ -38,10 +38,8 @@ class SignatureError(Exception):
     """Base exception for signature operations"""
 
 
-
 class SignatureVerificationError(SignatureError):
     """Raised when signature verification fails"""
-
 
 
 class SignatureAlgorithm:

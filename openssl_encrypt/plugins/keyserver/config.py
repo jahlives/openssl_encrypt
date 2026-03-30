@@ -38,7 +38,6 @@ class ConfigError(Exception):
     """Base exception for configuration errors"""
 
 
-
 @dataclass
 class KeyserverConfig:
     """

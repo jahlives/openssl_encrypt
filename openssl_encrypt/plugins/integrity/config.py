@@ -31,7 +31,6 @@ class ConfigError(Exception):
     """Base exception for configuration errors"""
 
 
-
 def _get_default_config_dir() -> Path:
     """Get default configuration directory for integrity plugin."""
     config_dir = Path.home() / ".openssl_encrypt" / "plugins" / "integrity"

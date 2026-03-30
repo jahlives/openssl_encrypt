@@ -916,7 +916,6 @@ class TestCryptCore(unittest.TestCase):
         """Test decryption from stdin using a temporary file instead of mocking."""
         import tempfile
 
-
         # Create a temporary file to use instead of mocking stdin
         with tempfile.NamedTemporaryFile() as temp_file:
             encrypted_content = b"eyJmb3JtYXRfdmVyc2lvbiI6IDMsICJzYWx0IjogIkNRNWphR3E2NFNickhBQ1g1aytLbXc9PSIsICJoYXNoX2NvbmZpZyI6IHsic2hhNTEyIjogMCwgInNoYTI1NiI6IDAsICJzaGEzXzI1NiI6IDAsICJzaGEzXzUxMiI6IDEwLCAiYmxha2UyYiI6IDAsICJzaGFrZTI1NiI6IDAsICJ3aGlybHBvb2wiOiAwLCAic2NyeXB0IjogeyJlbmFibGVkIjogZmFsc2UsICJuIjogMTI4LCAiciI6IDgsICJwIjogMSwgInJvdW5kcyI6IDF9LCAiYXJnb24yIjogeyJlbmFibGVkIjogZmFsc2UsICJ0aW1lX2Nvc3QiOiAzLCAibWVtb3J5X2Nvc3QiOiA2NTUzNiwgInBhcmFsbGVsaXNtIjogNCwgImhhc2hfbGVuIjogMzIsICJ0eXBlIjogMiwgInJvdW5kcyI6IDF9LCAiYmFsbG9vbiI6IHsiZW5hYmxlZCI6IGZhbHNlLCAidGltZV9jb3N0IjogMywgInNwYWNlX2Nvc3QiOiA2NTUzNiwgInBhcmFsbGVsaXNtIjogNCwgInJvdW5kcyI6IDJ9LCAicGJrZGYyX2l0ZXJhdGlvbnMiOiAxMCwgInR5cGUiOiAiaWQifSwgInBia2RmMl9pdGVyYXRpb25zIjogMTAsICJvcmlnaW5hbF9oYXNoIjogImQyYTg0ZjRiOGI2NTA5MzdlYzhmNzNjZDhiZTJjNzRhZGQ1YTkxMWJhNjRkZjI3NDU4ZWQ4MjI5ZGE4MDRhMjYiLCAiZW5jcnlwdGVkX2hhc2giOiAiY2UwNTI4MWRkMmY1NmUzNDEzMmI2NjZjZDkwMTM5OGI0YTA4MWEyZmFjZDcxOTNlMzAwZWM2YjJjODY1MWRhMyIsICJhbGdvcml0aG0iOiAiZmVybmV0In0=:Z0FBQUFBQm9GTC1FNG5Gc2Q1aHhJSzJrTUN5amx4TnF4RXozTHhhQUhqbzRZZlNfQTVOUmRpc0lrUTQxblI1a1J5M05sOXYwUnBMM0Q5a1NnRFZWNzFfOEczZDRLZXo2S3c9PQ=="
@@ -945,7 +944,6 @@ class TestCryptCore(unittest.TestCase):
     def test_decrypt_stdin_quick(self):
         """Test quick decryption from stdin using a temporary file instead of mocking."""
         import tempfile
-
 
         # Create a temporary file to use instead of mocking stdin
         with tempfile.NamedTemporaryFile() as temp_file:
@@ -2531,7 +2529,6 @@ class TestCryptErrorsFixes(unittest.TestCase):
     def test_xchacha20poly1305_nonce_handling(self):
         """Test that XChaCha20Poly1305 properly handles nonces of different lengths."""
         import secrets
-
 
         # Create an instance with a valid key
         key = secrets.token_bytes(32)  # 32 bytes for ChaCha20Poly1305

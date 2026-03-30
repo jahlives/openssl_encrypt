@@ -852,7 +852,6 @@ def is_wav_steganography_available() -> bool:
     try:
         import wave
 
-
         # Test basic WAV functionality
         test_buffer = io.BytesIO()
         with wave.open(test_buffer, "wb") as wav_file:

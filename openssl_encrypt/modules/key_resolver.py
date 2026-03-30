@@ -36,10 +36,8 @@ class KeyNotFoundError(Exception):
     """Raised when key not found in any source"""
 
 
-
 class TrustDeclinedError(Exception):
     """Raised when user declines to trust keyserver key"""
-
 
 
 class KeyResolver:

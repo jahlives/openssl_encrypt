@@ -140,25 +140,20 @@ class AlgorithmError(Exception):
     """Base exception for algorithm errors."""
 
 
-
 class AlgorithmNotAvailableError(AlgorithmError):
     """Algorithm is not available (missing dependency)."""
-
 
 
 class AlgorithmNotFoundError(AlgorithmError):
     """Algorithm was not found in registry."""
 
 
-
 class ValidationError(AlgorithmError):
     """Parameter validation failed."""
 
 
-
 class AuthenticationError(AlgorithmError):
     """Authentication failed (for AEAD ciphers)."""
-
 
 
 class AlgorithmBase(ABC):

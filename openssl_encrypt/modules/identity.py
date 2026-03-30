@@ -62,15 +62,12 @@ class IdentityError(Exception):
     """Base exception for identity operations"""
 
 
-
 class IdentityNotFoundError(IdentityError):
     """Raised when identity not found"""
 
 
-
 class IdentityExistsError(IdentityError):
     """Raised when identity already exists"""
-
 
 
 import re

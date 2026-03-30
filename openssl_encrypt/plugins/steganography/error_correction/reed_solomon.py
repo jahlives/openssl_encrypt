@@ -11,10 +11,8 @@ import struct
 from typing import List
 
 
-
 class ErrorCorrectionError(Exception):
     """Exception raised for error correction failures."""
-
 
 
 class GaloisField:

@@ -35,7 +35,6 @@ class PasswordWrapperError(Exception):
     """Base exception for password wrapping operations"""
 
 
-
 class PasswordWrapper:
     """
     KEM-based password wrapping for asymmetric encryption.

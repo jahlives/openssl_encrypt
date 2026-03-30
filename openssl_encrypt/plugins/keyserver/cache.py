@@ -34,7 +34,6 @@ class CacheError(Exception):
     """Base exception for cache operations"""
 
 
-
 class KeyserverCache:
     """
     SQLite-based cache for public key bundles.

@@ -38,10 +38,8 @@ class IntegrityPluginError(Exception):
     """Base exception for integrity plugin errors"""
 
 
-
 class IntegrityVerificationError(Exception):
     """Raised when integrity verification fails"""
-
 
 
 class IntegrityPlugin:

@@ -28,7 +28,6 @@ class ConfigValidationError(Exception):
     """Raised when plugin configuration validation fails."""
 
 
-
 class PluginConfigSchema:
     """
     Schema definition for plugin configuration validation.

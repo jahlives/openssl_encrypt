@@ -15,7 +15,6 @@ import tempfile
 import unittest
 
 
-
 class TestQRCodeKeyDistribution(unittest.TestCase):
     """Test suite for QR Code Key Distribution functionality."""
 

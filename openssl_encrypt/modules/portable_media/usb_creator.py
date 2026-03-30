@@ -53,7 +53,6 @@ class USBCreationError(KeystoreError):
     """USB drive creation specific errors"""
 
 
-
 class USBSecurityProfile(Enum):
     """Security profiles for USB drives"""
 

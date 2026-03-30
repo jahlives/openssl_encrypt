@@ -35,20 +35,16 @@ class PepperError(Exception):
     """Base exception for pepper operations"""
 
 
-
 class NetworkError(PepperError):
     """Raised when network request fails"""
-
 
 
 class AuthenticationError(PepperError):
     """Raised when mTLS authentication fails"""
 
 
-
 class TOTPRequiredError(PepperError):
     """Raised when TOTP code is required but not provided"""
-
 
 
 class PepperPlugin(BasePlugin):

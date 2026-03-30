@@ -326,7 +326,6 @@ class SandboxViolationError(Exception):
     """Raised when plugin violates sandbox restrictions."""
 
 
-
 class PluginSandbox:
     """
     Security sandbox for plugin execution.

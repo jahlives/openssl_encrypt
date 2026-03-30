@@ -54,15 +54,12 @@ class CascadeError(Exception):
     """Base exception for cascade encryption errors."""
 
 
-
 class CascadeConfigError(CascadeError):
     """Exception raised for invalid cascade configuration."""
 
 
-
 class AuthenticationError(CascadeError):
     """Exception raised when authentication fails during decryption."""
-
 
 
 @dataclass

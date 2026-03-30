@@ -203,12 +203,9 @@ class SecurityTestException(Exception):
     """Base exception for security testing framework."""
 
 
-
 class TestConfigurationError(SecurityTestException):
     """Exception raised for invalid test configuration."""
 
 
-
 class TestExecutionError(SecurityTestException):
     """Exception raised during test execution."""
-

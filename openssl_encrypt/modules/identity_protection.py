@@ -155,20 +155,16 @@ class IdentityProtectionError(Exception):
     """Base exception for identity protection errors."""
 
 
-
 class HSMNotAvailableError(IdentityProtectionError):
     """HSM is not available or not configured."""
-
 
 
 class HSMTouchTimeoutError(IdentityProtectionError):
     """Timeout waiting for HSM touch."""
 
 
-
 class InvalidCredentialsError(IdentityProtectionError):
     """Invalid password or HSM response."""
-
 
 
 class IdentityKeyProtectionService:

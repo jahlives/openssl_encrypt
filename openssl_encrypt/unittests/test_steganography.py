@@ -22,7 +22,6 @@ import tempfile
 import unittest
 
 
-
 class TestSteganographyCore(unittest.TestCase):
     """Test suite for steganography core functionality."""
 
@@ -327,7 +326,6 @@ class TestSteganographyTransport(unittest.TestCase):
         try:
             pass
 
-
             self.transport_available = True
         except ImportError:
             self.transport_available = False
@@ -430,7 +428,6 @@ class TestSteganographyCLIIntegration(unittest.TestCase):
         # Import CLI modules
         try:
             pass
-
 
             self.cli_available = True
         except ImportError:
