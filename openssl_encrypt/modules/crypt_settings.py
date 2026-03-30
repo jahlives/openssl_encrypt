@@ -125,9 +125,7 @@ class SettingsTab:
             text="Hash Algorithm Settings",
             font=("TkDefaultFont", 12, "bold"),
         ).pack(pady=(10, 5), padx=10, anchor=tk.W)
-        ttk.Separator(scrollable_frame, orient="horizontal").pack(
-            fill=tk.X, padx=10, pady=5
-        )
+        ttk.Separator(scrollable_frame, orient="horizontal").pack(fill=tk.X, padx=10, pady=5)
 
         # Create variables for iterative hashes
         self.hash_vars = {}
@@ -227,9 +225,7 @@ class SettingsTab:
         ttk.Entry(sha3_frame, textvariable=self.hash_vars["sha3_256"], width=10).grid(
             row=row, column=1, sticky=tk.W, padx=5, pady=5
         )
-        sha3_256_help = ttk.Label(
-            sha3_frame, text="(Recommended: 10000+)", foreground="blue"
-        )
+        sha3_256_help = ttk.Label(sha3_frame, text="(Recommended: 10000+)", foreground="blue")
         sha3_256_help.grid(row=row, column=2, sticky=tk.W, padx=5, pady=5)
 
         # Add tooltip functionality for SHA3-256
@@ -288,9 +284,7 @@ class SettingsTab:
         ttk.Entry(blake_frame, textvariable=self.hash_vars["blake3"], width=10).grid(
             row=row, column=1, sticky=tk.W, padx=5, pady=5
         )
-        blake3_help = ttk.Label(
-            blake_frame, text="(Ultra-fast tree-based hash)", foreground="blue"
-        )
+        blake3_help = ttk.Label(blake_frame, text="(Ultra-fast tree-based hash)", foreground="blue")
         blake3_help.grid(row=row, column=2, sticky=tk.W, padx=5, pady=5)
 
         # Add tooltip for BLAKE3
@@ -364,9 +358,9 @@ class SettingsTab:
             row=row, column=0, sticky=tk.W, padx=5, pady=5
         )
         self.hash_vars["whirlpool"] = tk.IntVar(value=self.config["whirlpool"])
-        ttk.Entry(
-            legacy_frame, textvariable=self.hash_vars["whirlpool"], width=10
-        ).grid(row=row, column=1, sticky=tk.W, padx=5, pady=5)
+        ttk.Entry(legacy_frame, textvariable=self.hash_vars["whirlpool"], width=10).grid(
+            row=row, column=1, sticky=tk.W, padx=5, pady=5
+        )
         ttk.Label(legacy_frame, text="(0 to disable)").grid(
             row=row, column=2, sticky=tk.W, padx=5, pady=5
         )
@@ -377,9 +371,7 @@ class SettingsTab:
             text="KDF Algorithm Settings",
             font=("TkDefaultFont", 12, "bold"),
         ).pack(pady=(20, 5), padx=10, anchor=tk.W)
-        ttk.Separator(scrollable_frame, orient="horizontal").pack(
-            fill=tk.X, padx=10, pady=5
-        )
+        ttk.Separator(scrollable_frame, orient="horizontal").pack(fill=tk.X, padx=10, pady=5)
 
         # Scrypt settings
         scrypt_frame = ttk.LabelFrame(
@@ -391,9 +383,7 @@ class SettingsTab:
 
         # Enable Scrypt
         row = 0
-        self.scrypt_vars["enabled"] = tk.BooleanVar(
-            value=self.config["scrypt"]["enabled"]
-        )
+        self.scrypt_vars["enabled"] = tk.BooleanVar(value=self.config["scrypt"]["enabled"])
         scrypt_enable = ttk.Checkbutton(
             scrypt_frame, text="Enable Scrypt", variable=self.scrypt_vars["enabled"]
         )
@@ -478,9 +468,7 @@ class SettingsTab:
             width=10,
         )
         rounds_combo.grid(row=row, column=1, sticky=tk.W, padx=5, pady=5)
-        rounds_help = ttk.Label(
-            scrypt_frame, text="(number of times to apply KDF sequentially)"
-        )
+        rounds_help = ttk.Label(scrypt_frame, text="(number of times to apply KDF sequentially)")
         rounds_help.grid(row=row, column=2, sticky=tk.W, padx=5, pady=5)
 
         # Add tooltip for rounds
@@ -501,9 +489,7 @@ class SettingsTab:
 
         # Enable Argon2
         row = 0
-        self.argon2_vars["enabled"] = tk.BooleanVar(
-            value=self.config["argon2"]["enabled"]
-        )
+        self.argon2_vars["enabled"] = tk.BooleanVar(value=self.config["argon2"]["enabled"])
         ttk.Checkbutton(
             argon2_frame, text="Enable Argon2", variable=self.argon2_vars["enabled"]
         ).grid(row=row, column=0, columnspan=3, sticky=tk.W, padx=5, pady=5)
@@ -531,9 +517,7 @@ class SettingsTab:
         ttk.Label(argon2_frame, text="Time cost:").grid(
             row=row, column=0, sticky=tk.W, padx=5, pady=5
         )
-        self.argon2_vars["time_cost"] = tk.IntVar(
-            value=self.config["argon2"]["time_cost"]
-        )
+        self.argon2_vars["time_cost"] = tk.IntVar(value=self.config["argon2"]["time_cost"])
         time_values = [1, 2, 3, 4, 6, 8, 10, 12, 16]
         time_combo = ttk.Combobox(
             argon2_frame,
@@ -551,9 +535,7 @@ class SettingsTab:
         ttk.Label(argon2_frame, text="Memory cost (KB):").grid(
             row=row, column=0, sticky=tk.W, padx=5, pady=5
         )
-        self.argon2_vars["memory_cost"] = tk.IntVar(
-            value=self.config["argon2"]["memory_cost"]
-        )
+        self.argon2_vars["memory_cost"] = tk.IntVar(value=self.config["argon2"]["memory_cost"])
         memory_values = [8192, 16384, 32768, 65536, 131072, 262144, 524288, 1048576]
         memory_combo = ttk.Combobox(
             argon2_frame,
@@ -571,9 +553,7 @@ class SettingsTab:
         ttk.Label(argon2_frame, text="Parallelism:").grid(
             row=row, column=0, sticky=tk.W, padx=5, pady=5
         )
-        self.argon2_vars["parallelism"] = tk.IntVar(
-            value=self.config["argon2"]["parallelism"]
-        )
+        self.argon2_vars["parallelism"] = tk.IntVar(value=self.config["argon2"]["parallelism"])
         parallel_values = [1, 2, 4, 8, 16]
         parallel_combo = ttk.Combobox(
             argon2_frame,
@@ -591,9 +571,7 @@ class SettingsTab:
         ttk.Label(argon2_frame, text="Hash length:").grid(
             row=row, column=0, sticky=tk.W, padx=5, pady=5
         )
-        self.argon2_vars["hash_len"] = tk.IntVar(
-            value=self.config["argon2"]["hash_len"]
-        )
+        self.argon2_vars["hash_len"] = tk.IntVar(value=self.config["argon2"]["hash_len"])
         hash_len_values = [16, 24, 32, 48, 64]
         hash_len_combo = ttk.Combobox(
             argon2_frame,
@@ -643,15 +621,11 @@ class SettingsTab:
 
         # Enable Balloon
         row = 0
-        self.balloon_vars["enabled"] = tk.BooleanVar(
-            value=self.config["balloon"]["enabled"]
-        )
+        self.balloon_vars["enabled"] = tk.BooleanVar(value=self.config["balloon"]["enabled"])
         balloon_enable = ttk.Checkbutton(
             balloon_frame, text="Enable Balloon", variable=self.balloon_vars["enabled"]
         )
-        balloon_enable.grid(
-            row=row, column=0, columnspan=3, sticky=tk.W, padx=5, pady=5
-        )
+        balloon_enable.grid(row=row, column=0, columnspan=3, sticky=tk.W, padx=5, pady=5)
 
         # Add tooltip for Balloon
         self.create_tooltip(
@@ -666,9 +640,7 @@ class SettingsTab:
         ttk.Label(balloon_frame, text="Space cost:").grid(
             row=row, column=0, sticky=tk.W, padx=5, pady=5
         )
-        self.balloon_vars["space_cost"] = tk.IntVar(
-            value=self.config["balloon"]["space_cost"]
-        )
+        self.balloon_vars["space_cost"] = tk.IntVar(value=self.config["balloon"]["space_cost"])
         space_values = [8, 16, 32, 64, 128, 256]
         space_combo = ttk.Combobox(
             balloon_frame,
@@ -677,18 +649,16 @@ class SettingsTab:
             width=10,
         )
         space_combo.grid(row=row, column=1, sticky=tk.W, padx=5, pady=5)
-        ttk.Label(
-            balloon_frame, text="(memory usage factor, higher is more secure)"
-        ).grid(row=row, column=2, sticky=tk.W, padx=5, pady=5)
+        ttk.Label(balloon_frame, text="(memory usage factor, higher is more secure)").grid(
+            row=row, column=2, sticky=tk.W, padx=5, pady=5
+        )
 
         # Time cost
         row += 1
         ttk.Label(balloon_frame, text="Time cost:").grid(
             row=row, column=0, sticky=tk.W, padx=5, pady=5
         )
-        self.balloon_vars["time_cost"] = tk.IntVar(
-            value=self.config["balloon"]["time_cost"]
-        )
+        self.balloon_vars["time_cost"] = tk.IntVar(value=self.config["balloon"]["time_cost"])
         time_values = [10, 20, 30, 40, 50]
         time_combo = ttk.Combobox(
             balloon_frame,
@@ -703,9 +673,7 @@ class SettingsTab:
 
         # Delta
         row += 1
-        ttk.Label(balloon_frame, text="Delta:").grid(
-            row=row, column=0, sticky=tk.W, padx=5, pady=5
-        )
+        ttk.Label(balloon_frame, text="Delta:").grid(row=row, column=0, sticky=tk.W, padx=5, pady=5)
         self.balloon_vars["delta"] = tk.IntVar(value=self.config["balloon"]["delta"])
         delta_values = [3, 4, 5, 6]
         delta_combo = ttk.Combobox(
@@ -715,9 +683,7 @@ class SettingsTab:
             width=10,
         )
         delta_combo.grid(row=row, column=1, sticky=tk.W, padx=5, pady=5)
-        delta_help = ttk.Label(
-            balloon_frame, text="(number of random blocks, 4 is standard)"
-        )
+        delta_help = ttk.Label(balloon_frame, text="(number of random blocks, 4 is standard)")
         delta_help.grid(row=row, column=2, sticky=tk.W, padx=5, pady=5)
 
         # Parallel cost
@@ -736,9 +702,9 @@ class SettingsTab:
             width=10,
         )
         parallel_combo.grid(row=row, column=1, sticky=tk.W, padx=5, pady=5)
-        ttk.Label(
-            balloon_frame, text="(concurrent instances, use CPU core count)"
-        ).grid(row=row, column=2, sticky=tk.W, padx=5, pady=5)
+        ttk.Label(balloon_frame, text="(concurrent instances, use CPU core count)").grid(
+            row=row, column=2, sticky=tk.W, padx=5, pady=5
+        )
 
         # KDF rounds
         row += 1
@@ -746,11 +712,7 @@ class SettingsTab:
             row=row, column=0, sticky=tk.W, padx=5, pady=5
         )
         self.balloon_vars["rounds"] = tk.IntVar(
-            value=(
-                self.config["balloon"]["rounds"]
-                if "rounds" in self.config["balloon"]
-                else 1
-            )
+            value=(self.config["balloon"]["rounds"] if "rounds" in self.config["balloon"] else 1)
         )
         rounds_values = [1, 5, 10, 25, 50, 100, 250, 500, 1000]
         rounds_combo = ttk.Combobox(
@@ -802,9 +764,7 @@ class SettingsTab:
         ttk.Label(hkdf_frame, text="Hash Algorithm:").grid(
             row=row, column=0, sticky=tk.W, padx=5, pady=5
         )
-        self.hkdf_vars["algorithm"] = tk.StringVar(
-            value=self.config["hkdf"]["algorithm"]
-        )
+        self.hkdf_vars["algorithm"] = tk.StringVar(value=self.config["hkdf"]["algorithm"])
         algorithm_values = ["sha224", "sha256", "sha384", "sha512"]
         algorithm_combo = ttk.Combobox(
             hkdf_frame,
@@ -844,9 +804,7 @@ class SettingsTab:
             width=10,
         )
         rounds_combo.grid(row=row, column=1, sticky=tk.W, padx=5, pady=5)
-        hkdf_rounds_help = ttk.Label(
-            hkdf_frame, text="(number of times to apply KDF sequentially)"
-        )
+        hkdf_rounds_help = ttk.Label(hkdf_frame, text="(number of times to apply KDF sequentially)")
         hkdf_rounds_help.grid(row=row, column=2, sticky=tk.W, padx=5, pady=5)
 
         # Add tooltip for rounds
@@ -866,9 +824,7 @@ class SettingsTab:
         ttk.Label(legacy_kdf_frame, text="PBKDF2 iterations:").grid(
             row=row, column=0, sticky=tk.W, padx=5, pady=5
         )
-        self.hash_vars["pbkdf2_iterations"] = tk.IntVar(
-            value=self.config["pbkdf2_iterations"]
-        )
+        self.hash_vars["pbkdf2_iterations"] = tk.IntVar(value=self.config["pbkdf2_iterations"])
         ttk.Entry(
             legacy_kdf_frame, textvariable=self.hash_vars["pbkdf2_iterations"], width=10
         ).grid(row=row, column=1, sticky=tk.W, padx=5, pady=5)
@@ -884,18 +840,18 @@ class SettingsTab:
         preset_row = ttk.Frame(presets_frame)
         preset_row.pack(fill=tk.X, padx=5, pady=5)
 
-        ttk.Button(
-            preset_row, text="Standard", command=lambda: self.load_preset("standard")
-        ).pack(side=tk.LEFT, padx=5)
-        ttk.Button(
-            preset_row, text="High Security", command=lambda: self.load_preset("high")
-        ).pack(side=tk.LEFT, padx=5)
-        ttk.Button(
-            preset_row, text="Paranoid", command=lambda: self.load_preset("paranoid")
-        ).pack(side=tk.LEFT, padx=5)
-        ttk.Button(
-            preset_row, text="Legacy", command=lambda: self.load_preset("legacy")
-        ).pack(side=tk.LEFT, padx=5)
+        ttk.Button(preset_row, text="Standard", command=lambda: self.load_preset("standard")).pack(
+            side=tk.LEFT, padx=5
+        )
+        ttk.Button(preset_row, text="High Security", command=lambda: self.load_preset("high")).pack(
+            side=tk.LEFT, padx=5
+        )
+        ttk.Button(preset_row, text="Paranoid", command=lambda: self.load_preset("paranoid")).pack(
+            side=tk.LEFT, padx=5
+        )
+        ttk.Button(preset_row, text="Legacy", command=lambda: self.load_preset("legacy")).pack(
+            side=tk.LEFT, padx=5
+        )
 
         # Action buttons
         button_frame = ttk.Frame(scrollable_frame)
@@ -904,9 +860,9 @@ class SettingsTab:
         ttk.Button(button_frame, text="Save Settings", command=self.save_settings).pack(
             side=tk.LEFT, padx=5, pady=5
         )
-        ttk.Button(
-            button_frame, text="Reset to Defaults", command=self.reset_to_defaults
-        ).pack(side=tk.LEFT, padx=5, pady=5)
+        ttk.Button(button_frame, text="Reset to Defaults", command=self.reset_to_defaults).pack(
+            side=tk.LEFT, padx=5, pady=5
+        )
         ttk.Button(button_frame, text="Test Settings", command=self.test_settings).pack(
             side=tk.LEFT, padx=5, pady=5
         )
@@ -1290,9 +1246,7 @@ class SettingsTab:
             try:
                 import tkinter.messagebox
 
-                tkinter.messagebox.showerror(
-                    "Error", f"Failed to save settings: {str(e)}"
-                )
+                tkinter.messagebox.showerror("Error", f"Failed to save settings: {str(e)}")
             except Exception as show_err:
                 eprint(f"[SETTINGS] Could not show error message: {show_err}")
 
@@ -1306,9 +1260,11 @@ class SettingsTab:
                     # MED-8 Security fix: Use secure JSON validation for settings loading
                     json_content = f.read()
                     try:
-                        from .json_validator import (JSONSecurityError,
-                                                     JSONValidationError,
-                                                     secure_json_loads)
+                        from .json_validator import (
+                            JSONSecurityError,
+                            JSONValidationError,
+                            secure_json_loads,
+                        )
 
                         loaded_config = secure_json_loads(json_content)
                     except (JSONSecurityError, JSONValidationError) as e:
@@ -1339,9 +1295,7 @@ class SettingsTab:
         # Update top-level keys
         for key in self.config:
             if key in loaded_config:
-                if isinstance(self.config[key], dict) and isinstance(
-                    loaded_config[key], dict
-                ):
+                if isinstance(self.config[key], dict) and isinstance(loaded_config[key], dict):
                     # For nested dictionaries like scrypt and argon2
                     for subkey in self.config[key]:
                         if subkey in loaded_config[key]:
@@ -1397,9 +1351,7 @@ class SettingsTab:
             sha3_512=self.config["sha3_512"],
             # Add BLAKE2b with recommendation
             blake2b=self.config["blake2b"],
-            blake2b_recommended=(
-                "★ (high performance)" if self.config["blake2b"] > 0 else ""
-            ),
+            blake2b_recommended=("★ (high performance)" if self.config["blake2b"] > 0 else ""),
             # Add SHAKE-256 with recommendation
             shake256=self.config["shake256"],
             shake256_recommended=(
@@ -1407,27 +1359,21 @@ class SettingsTab:
             ),
             whirlpool=self.config["whirlpool"],
             scrypt_enabled=(
-                "Enabled"
-                if self.config.get("scrypt", {}).get("enabled", False)
-                else "Disabled"
+                "Enabled" if self.config.get("scrypt", {}).get("enabled", False) else "Disabled"
             ),
             scrypt_n=self.config.get("scrypt", {}).get("n", 16384),
             scrypt_r=self.config.get("scrypt", {}).get("r", 8),
             scrypt_p=self.config.get("scrypt", {}).get("p", 1),
             scrypt_rounds=self.config.get("scrypt", {}).get("rounds", 100),
             argon2_enabled=(
-                "Enabled"
-                if self.config.get("argon2", {}).get("enabled", False)
-                else "Disabled"
+                "Enabled" if self.config.get("argon2", {}).get("enabled", False) else "Disabled"
             ),
             argon2_t=self.config.get("argon2", {}).get("time_cost", 3),
             argon2_m=self.config.get("argon2", {}).get("memory_cost", 65536),
             argon2_p=self.config.get("argon2", {}).get("parallelism", 4),
             argon2_rounds=self.config.get("argon2", {}).get("rounds", 100),
             balloon_enabled=(
-                "Enabled"
-                if self.config.get("balloon", {}).get("enabled", False)
-                else "Disabled"
+                "Enabled" if self.config.get("balloon", {}).get("enabled", False) else "Disabled"
             ),
             balloon_s=self.config.get("balloon", {}).get("space_cost", 16),
             balloon_t=self.config.get("balloon", {}).get("time_cost", 20),
@@ -1435,9 +1381,7 @@ class SettingsTab:
             balloon_p=self.config.get("balloon", {}).get("parallel_cost", 4),
             balloon_rounds=self.config.get("balloon", {}).get("rounds", 1),
             hkdf_enabled=(
-                "Enabled"
-                if self.config.get("hkdf", {}).get("enabled", False)
-                else "Disabled"
+                "Enabled" if self.config.get("hkdf", {}).get("enabled", False) else "Disabled"
             ),
             hkdf_algorithm=self.config.get("hkdf", {}).get("algorithm", "sha256"),
             hkdf_rounds=self.config.get("hkdf", {}).get("rounds", 1),
@@ -1456,13 +1400,15 @@ class SettingsTab:
         performance_level = self.estimate_performance_level()
 
         if performance_level == "light":
-            message += (
-                "Performance Impact: Light ✓\nEncryption and decryption should be fast."
-            )
+            message += "Performance Impact: Light ✓\nEncryption and decryption should be fast."
         elif performance_level == "moderate":
-            message += "Performance Impact: Moderate ⚠️\nEncryption and decryption may take a few seconds."
+            message += (
+                "Performance Impact: Moderate ⚠️\nEncryption and decryption may take a few seconds."
+            )
         elif performance_level == "heavy":
-            message += "Performance Impact: Heavy ⚠️⚠️\nEncryption and decryption may take 10+ seconds."
+            message += (
+                "Performance Impact: Heavy ⚠️⚠️\nEncryption and decryption may take 10+ seconds."
+            )
         else:  # intensive
             message += "Performance Impact: Intensive ⚠️⚠️⚠️\nEncryption and decryption may take 30+ seconds or more."
 

@@ -124,9 +124,7 @@ class CryptoClient:
         logger.debug(f"Operation complete: {operation_id} - success={success}")
         if operation_id in self.completion_callbacks:
             try:
-                self.completion_callbacks[operation_id](
-                    operation_id, success, error_msg
-                )
+                self.completion_callbacks[operation_id](operation_id, success, error_msg)
             except Exception as e:
                 logger.error(f"Error in completion callback: {e}")
 
@@ -278,9 +276,7 @@ class CryptoClient:
             logger.error(f"D-Bus error in encrypt_data: {e}")
             return (False, b"", str(e))
 
-    def decrypt_data(
-        self, encrypted_data: bytes, password: str
-    ) -> Tuple[bool, bytes, str]:
+    def decrypt_data(self, encrypted_data: bytes, password: str) -> Tuple[bool, bytes, str]:
         """
         Decrypt binary data directly
 
@@ -506,9 +502,7 @@ class CryptoClient:
             value: Maximum concurrent operations
         """
         try:
-            self.properties.Set(
-                self.INTERFACE_NAME, "MaxConcurrentOperations", dbus.UInt32(value)
-            )
+            self.properties.Set(self.INTERFACE_NAME, "MaxConcurrentOperations", dbus.UInt32(value))
         except dbus.exceptions.DBusException as e:
             logger.error(f"D-Bus error setting MaxConcurrentOperations: {e}")
 
@@ -534,9 +528,7 @@ class CryptoClient:
             value: Timeout in seconds
         """
         try:
-            self.properties.Set(
-                self.INTERFACE_NAME, "DefaultTimeout", dbus.UInt32(value)
-            )
+            self.properties.Set(self.INTERFACE_NAME, "DefaultTimeout", dbus.UInt32(value))
         except dbus.exceptions.DBusException as e:
             logger.error(f"D-Bus error setting DefaultTimeout: {e}")
 
@@ -546,9 +538,7 @@ def main():
     import tempfile
 
     # Set up logging
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-    )
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
     # Create client
     client = CryptoClient()

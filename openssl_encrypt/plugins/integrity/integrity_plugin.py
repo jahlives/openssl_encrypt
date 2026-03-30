@@ -135,9 +135,7 @@ class IntegrityPlugin:
         session = self._get_session()
 
         try:
-            response = session.request(
-                method=method, url=url, json=json_data, params=params
-            )
+            response = session.request(method=method, url=url, json=json_data, params=params)
             response.raise_for_status()
             return response.json()
 
@@ -222,9 +220,7 @@ class IntegrityPlugin:
         if len(metadata_hash) != 64 or not all(
             c in "0123456789abcdefABCDEF" for c in metadata_hash
         ):
-            raise IntegrityPluginError(
-                "metadata_hash must be 64 hex characters (SHA-256)"
-            )
+            raise IntegrityPluginError("metadata_hash must be 64 hex characters (SHA-256)")
         if algorithm and len(algorithm) > 50:
             raise IntegrityPluginError("algorithm must be max 50 characters")
         if description and len(description) > 1000:
@@ -290,9 +286,7 @@ class IntegrityPlugin:
         if len(metadata_hash) != 64 or not all(
             c in "0123456789abcdefABCDEF" for c in metadata_hash
         ):
-            raise IntegrityPluginError(
-                "metadata_hash must be 64 hex characters (SHA-256)"
-            )
+            raise IntegrityPluginError("metadata_hash must be 64 hex characters (SHA-256)")
         if description and len(description) > 1000:
             raise IntegrityPluginError("description must be max 1000 characters")
 
@@ -354,9 +348,7 @@ class IntegrityPlugin:
         if len(metadata_hash) != 64 or not all(
             c in "0123456789abcdefABCDEF" for c in metadata_hash
         ):
-            raise IntegrityPluginError(
-                "metadata_hash must be 64 hex characters (SHA-256)"
-            )
+            raise IntegrityPluginError("metadata_hash must be 64 hex characters (SHA-256)")
 
         request_data = {"file_id": file_id, "metadata_hash": metadata_hash.lower()}
 
@@ -400,9 +392,7 @@ class IntegrityPlugin:
                 )
 
             hash_value = v["metadata_hash"]
-            if len(hash_value) != 64 or not all(
-                c in "0123456789abcdefABCDEF" for c in hash_value
-            ):
+            if len(hash_value) != 64 or not all(c in "0123456789abcdefABCDEF" for c in hash_value):
                 raise IntegrityPluginError(
                     f"Invalid hash for {v['file_id']}: must be 64 hex characters"
                 )
@@ -510,9 +500,7 @@ if __name__ == "__main__":
 
         # Store metadata hash
         file_id = IntegrityPlugin.compute_file_id(Path("important_file.txt.enc"))
-        metadata_hash = IntegrityPlugin.compute_metadata_hash(
-            b"encrypted metadata here"
-        )
+        metadata_hash = IntegrityPlugin.compute_metadata_hash(b"encrypted metadata here")
 
         result = plugin.store_hash(
             file_id,

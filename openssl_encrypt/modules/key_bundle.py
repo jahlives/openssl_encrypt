@@ -142,14 +142,10 @@ class PublicKeyBundle:
         if not self.fingerprint or not isinstance(self.fingerprint, str):
             raise ValueError("Fingerprint is required and must be a string")
 
-        if not self.encryption_public_key or not isinstance(
-            self.encryption_public_key, bytes
-        ):
+        if not self.encryption_public_key or not isinstance(self.encryption_public_key, bytes):
             raise ValueError("Encryption public key is required and must be bytes")
 
-        if not self.signing_public_key or not isinstance(
-            self.signing_public_key, bytes
-        ):
+        if not self.signing_public_key or not isinstance(self.signing_public_key, bytes):
             raise ValueError("Signing public key is required and must be bytes")
 
         if not self.self_signature or not isinstance(self.self_signature, bytes):
@@ -180,9 +176,7 @@ class PublicKeyBundle:
             raise TypeError("identity must be an Identity instance")
 
         if not identity.signing_private_key:
-            raise ValueError(
-                "Identity must have signing_private_key loaded to create bundle"
-            )
+            raise ValueError("Identity must have signing_private_key loaded to create bundle")
 
         if not identity.is_own_identity:
             raise ValueError("Can only create bundles from own identities")
@@ -204,20 +198,16 @@ class PublicKeyBundle:
             "email": identity.email,
             "fingerprint": identity.fingerprint,
             "created_at": identity.created_at,
-            "encryption_public_key": base64.b64encode(
-                identity.encryption_public_key
-            ).decode("ascii"),
-            "signing_public_key": base64.b64encode(identity.signing_public_key).decode(
+            "encryption_public_key": base64.b64encode(identity.encryption_public_key).decode(
                 "ascii"
             ),
+            "signing_public_key": base64.b64encode(identity.signing_public_key).decode("ascii"),
             "encryption_algorithm": identity.encryption_algorithm,
             "signing_algorithm": identity.signing_algorithm,
         }
 
         # Serialize for signing (deterministic JSON)
-        message = json.dumps(bundle_data, sort_keys=True, separators=(",", ":")).encode(
-            "utf-8"
-        )
+        message = json.dumps(bundle_data, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
         # Sign with identity's private signing key
         signer = PQCSigner(identity.signing_algorithm, quiet=True)
@@ -265,26 +255,20 @@ class PublicKeyBundle:
                 "email": self.email,
                 "fingerprint": self.fingerprint,
                 "created_at": self.created_at,
-                "encryption_public_key": base64.b64encode(
-                    self.encryption_public_key
-                ).decode("ascii"),
-                "signing_public_key": base64.b64encode(self.signing_public_key).decode(
+                "encryption_public_key": base64.b64encode(self.encryption_public_key).decode(
                     "ascii"
                 ),
+                "signing_public_key": base64.b64encode(self.signing_public_key).decode("ascii"),
                 "encryption_algorithm": self.encryption_algorithm,
                 "signing_algorithm": self.signing_algorithm,
             }
 
             # Serialize (deterministic JSON)
-            message = json.dumps(
-                bundle_data, sort_keys=True, separators=(",", ":")
-            ).encode("utf-8")
+            message = json.dumps(bundle_data, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
             # Verify signature
             signer = PQCSigner(self.signing_algorithm, quiet=True)
-            signature_valid = signer.verify(
-                message, self.self_signature, self.signing_public_key
-            )
+            signature_valid = signer.verify(message, self.self_signature, self.signing_public_key)
 
             if not signature_valid:
                 raise InvalidSignatureError("Self-signature verification failed")
@@ -335,12 +319,8 @@ class PublicKeyBundle:
             "email": self.email,
             "fingerprint": self.fingerprint,
             "created_at": self.created_at,
-            "encryption_public_key": base64.b64encode(
-                self.encryption_public_key
-            ).decode("ascii"),
-            "signing_public_key": base64.b64encode(self.signing_public_key).decode(
-                "ascii"
-            ),
+            "encryption_public_key": base64.b64encode(self.encryption_public_key).decode("ascii"),
+            "signing_public_key": base64.b64encode(self.signing_public_key).decode("ascii"),
             "encryption_algorithm": self.encryption_algorithm,
             "signing_algorithm": self.signing_algorithm,
             "self_signature": base64.b64encode(self.self_signature).decode("ascii"),

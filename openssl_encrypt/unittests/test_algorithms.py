@@ -28,21 +28,30 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 # Import the modules to test
-from openssl_encrypt.modules.crypt_core import (CamelliaCipher,
-                                                EncryptionAlgorithm,
-                                                decrypt_file, encrypt_file,
-                                                extract_file_metadata,
-                                                is_aead_algorithm)
-from openssl_encrypt.modules.crypt_errors import (AuthenticationError,
-                                                  DecryptionError,
-                                                  ValidationError)
+from openssl_encrypt.modules.crypt_core import (
+    CamelliaCipher,
+    EncryptionAlgorithm,
+    decrypt_file,
+    encrypt_file,
+    extract_file_metadata,
+    is_aead_algorithm,
+)
+from openssl_encrypt.modules.crypt_errors import (
+    AuthenticationError,
+    DecryptionError,
+    ValidationError,
+)
 from openssl_encrypt.modules.secure_ops import constant_time_pkcs7_unpad
 
 # Try to import PQC modules
 try:
     from openssl_encrypt.modules.crypt_core import PQC_AVAILABLE
-    from openssl_encrypt.modules.pqc import (LIBOQS_AVAILABLE, PQCAlgorithm,
-                                             PQCipher, check_pqc_support)
+    from openssl_encrypt.modules.pqc import (
+        LIBOQS_AVAILABLE,
+        PQCAlgorithm,
+        PQCipher,
+        check_pqc_support,
+    )
 except ImportError:
     LIBOQS_AVAILABLE = False
     PQC_AVAILABLE = False
@@ -116,9 +125,7 @@ class TestCamelliaImplementation(unittest.TestCase):
             data = b"Test data"
             # Make sure the data is of proper block size (16 bytes)
             block_size = 16
-            data_with_padding = data + bytes([0]) * (
-                block_size - (len(data) % block_size)
-            )
+            data_with_padding = data + bytes([0]) * (block_size - (len(data) % block_size))
             # Replace the padding with valid PKCS#7 padding
             padded = data_with_padding[:-pad_len] + bytes([pad_len] * pad_len)
 
@@ -131,9 +138,7 @@ class TestCamelliaImplementation(unittest.TestCase):
 
             # Unpad and verify
             unpadded, is_valid = constant_time_pkcs7_unpad(padded, block_size)
-            self.assertTrue(
-                is_valid, f"Padding of length {pad_len} not recognized as valid"
-            )
+            self.assertTrue(is_valid, f"Padding of length {pad_len} not recognized as valid")
             # Correct expected data based on our padding algorithm
             expected_data = data_with_padding[:-pad_len]
             self.assertEqual(expected_data, unpadded)
@@ -190,9 +195,7 @@ class TestCamelliaImplementation(unittest.TestCase):
             self.assertEqual(data, decrypted)
 
 
-@unittest.skipIf(
-    not LIBOQS_AVAILABLE, "liboqs-python not available, skipping keystore tests"
-)
+@unittest.skipIf(not LIBOQS_AVAILABLE, "liboqs-python not available, skipping keystore tests")
 class TestAlgorithmWarnings(unittest.TestCase):
     """Tests for algorithm deprecation warning system."""
 
@@ -200,9 +203,13 @@ class TestAlgorithmWarnings(unittest.TestCase):
         """Set up test environment."""
         # Import the warnings module
         from openssl_encrypt.modules.algorithm_warnings import (
-            DEPRECATED_ALGORITHMS, AlgorithmWarningConfig, DeprecationLevel,
-            get_recommended_replacement, is_deprecated,
-            warn_deprecated_algorithm)
+            DEPRECATED_ALGORITHMS,
+            AlgorithmWarningConfig,
+            DeprecationLevel,
+            get_recommended_replacement,
+            is_deprecated,
+            warn_deprecated_algorithm,
+        )
 
         self.AlgorithmWarningConfig = AlgorithmWarningConfig
         self.warn_deprecated_algorithm = warn_deprecated_algorithm
@@ -263,29 +270,21 @@ class TestAlgorithmWarnings(unittest.TestCase):
     def test_get_recommended_replacement(self):
         """Test the get_recommended_replacement function."""
         # Test known replacements
-        self.assertEqual(
-            self.get_recommended_replacement("kyber512-hybrid"), "ml-kem-512-hybrid"
-        )
+        self.assertEqual(self.get_recommended_replacement("kyber512-hybrid"), "ml-kem-512-hybrid")
         self.assertEqual(self.get_recommended_replacement("Kyber512"), "ML-KEM-512")
-        self.assertEqual(
-            self.get_recommended_replacement("aes-ocb3"), "aes-gcm or aes-gcm-siv"
-        )
+        self.assertEqual(self.get_recommended_replacement("aes-ocb3"), "aes-gcm or aes-gcm-siv")
 
         # Test non-deprecated algorithm
         self.assertIsNone(self.get_recommended_replacement("aes-gcm"))
 
         # Test case normalization
-        self.assertEqual(
-            self.get_recommended_replacement("KYBER768-HYBRID"), "ml-kem-768-hybrid"
-        )
+        self.assertEqual(self.get_recommended_replacement("KYBER768-HYBRID"), "ml-kem-768-hybrid")
 
     def test_warning_configuration(self):
         """Test AlgorithmWarningConfig class."""
         # Test default configuration
         self.assertTrue(self.AlgorithmWarningConfig._show_warnings)
-        self.assertEqual(
-            self.AlgorithmWarningConfig._min_warning_level, self.DeprecationLevel.INFO
-        )
+        self.assertEqual(self.AlgorithmWarningConfig._min_warning_level, self.DeprecationLevel.INFO)
         self.assertTrue(self.AlgorithmWarningConfig._log_warnings)
         self.assertTrue(self.AlgorithmWarningConfig._show_once)
 
@@ -310,57 +309,41 @@ class TestAlgorithmWarnings(unittest.TestCase):
         # Test reset
         self.AlgorithmWarningConfig.reset()
         self.assertTrue(self.AlgorithmWarningConfig._show_warnings)
-        self.assertEqual(
-            self.AlgorithmWarningConfig._min_warning_level, self.DeprecationLevel.INFO
-        )
+        self.assertEqual(self.AlgorithmWarningConfig._min_warning_level, self.DeprecationLevel.INFO)
 
     def test_should_warn_logic(self):
         """Test the should_warn method logic."""
         # Test with warnings enabled
         self.assertTrue(
-            self.AlgorithmWarningConfig.should_warn(
-                "test-algo", self.DeprecationLevel.INFO
-            )
+            self.AlgorithmWarningConfig.should_warn("test-algo", self.DeprecationLevel.INFO)
         )
         self.assertTrue(
-            self.AlgorithmWarningConfig.should_warn(
-                "test-algo", self.DeprecationLevel.WARNING
-            )
+            self.AlgorithmWarningConfig.should_warn("test-algo", self.DeprecationLevel.WARNING)
         )
 
         # Test with higher minimum level
         self.AlgorithmWarningConfig.configure(min_level=self.DeprecationLevel.WARNING)
         self.assertFalse(
-            self.AlgorithmWarningConfig.should_warn(
-                "test-algo", self.DeprecationLevel.INFO
-            )
+            self.AlgorithmWarningConfig.should_warn("test-algo", self.DeprecationLevel.INFO)
         )
         self.assertTrue(
-            self.AlgorithmWarningConfig.should_warn(
-                "test-algo", self.DeprecationLevel.WARNING
-            )
+            self.AlgorithmWarningConfig.should_warn("test-algo", self.DeprecationLevel.WARNING)
         )
 
         # Test show_once behavior
         self.AlgorithmWarningConfig.reset()
         self.assertTrue(
-            self.AlgorithmWarningConfig.should_warn(
-                "test-algo", self.DeprecationLevel.INFO
-            )
+            self.AlgorithmWarningConfig.should_warn("test-algo", self.DeprecationLevel.INFO)
         )
         self.AlgorithmWarningConfig.mark_warned("test-algo")
         self.assertFalse(
-            self.AlgorithmWarningConfig.should_warn(
-                "test-algo", self.DeprecationLevel.INFO
-            )
+            self.AlgorithmWarningConfig.should_warn("test-algo", self.DeprecationLevel.INFO)
         )
 
         # Test with warnings disabled
         self.AlgorithmWarningConfig.configure(show_warnings=False)
         self.assertFalse(
-            self.AlgorithmWarningConfig.should_warn(
-                "other-algo", self.DeprecationLevel.WARNING
-            )
+            self.AlgorithmWarningConfig.should_warn("other-algo", self.DeprecationLevel.WARNING)
         )
 
     def test_warn_deprecated_algorithm_basic(self):
@@ -422,9 +405,7 @@ class TestAlgorithmWarnings(unittest.TestCase):
         self.AlgorithmWarningConfig.configure(
             show_warnings=True, min_level=self.DeprecationLevel.WARNING
         )
-        self.warn_deprecated_algorithm(
-            "ml-kem-512-hybrid"
-        )  # INFO level, should be filtered
+        self.warn_deprecated_algorithm("ml-kem-512-hybrid")  # INFO level, should be filtered
         self.assertEqual(len(self.warnings_capture), 0)
 
         self.warn_deprecated_algorithm("aes-ocb3")  # WARNING level, should show
@@ -449,14 +430,14 @@ class TestAlgorithmWarnings(unittest.TestCase):
 
         # Test that the warning functions are properly imported in CLI
         from openssl_encrypt.modules.crypt_cli import (
-            get_recommended_replacement, is_deprecated,
-            warn_deprecated_algorithm)
+            get_recommended_replacement,
+            is_deprecated,
+            warn_deprecated_algorithm,
+        )
 
         # These should be the same functions we tested above
         self.assertTrue(is_deprecated("kyber512-hybrid"))
-        self.assertEqual(
-            get_recommended_replacement("kyber512-hybrid"), "ml-kem-512-hybrid"
-        )
+        self.assertEqual(get_recommended_replacement("kyber512-hybrid"), "ml-kem-512-hybrid")
 
         # Test that warning can be called (without actual CLI execution)
         self.warnings_capture = []
@@ -468,9 +449,11 @@ class TestAlgorithmWarnings(unittest.TestCase):
 
     def test_extract_file_metadata_integration(self):
         """Test that extract_file_metadata works for warning system."""
-        from openssl_encrypt.modules.crypt_core import (EncryptionAlgorithm,
-                                                        encrypt_file,
-                                                        extract_file_metadata)
+        from openssl_encrypt.modules.crypt_core import (
+            EncryptionAlgorithm,
+            encrypt_file,
+            extract_file_metadata,
+        )
 
         # Create a test file with a deprecated algorithm
         test_input = "Test content for metadata extraction"
@@ -678,20 +661,14 @@ class TestRandomXIntegration(unittest.TestCase):
         self._check_randomx_available()
 
         try:
-            from ..modules.randomx import (RANDOMX_AVAILABLE,
-                                           check_randomx_support,
-                                           get_randomx_info)
+            from ..modules.randomx import RANDOMX_AVAILABLE, check_randomx_support, get_randomx_info
 
             # Check that RandomX is available
-            self.assertTrue(
-                RANDOMX_AVAILABLE, "RandomX should be available for testing"
-            )
+            self.assertTrue(RANDOMX_AVAILABLE, "RandomX should be available for testing")
 
             # Check support function (returns bool)
             support_available = check_randomx_support()
-            self.assertIsInstance(
-                support_available, bool, "Support check should return boolean"
-            )
+            self.assertIsInstance(support_available, bool, "Support check should return boolean")
             self.assertTrue(support_available, "RandomX support should be available")
 
             # Check info function (returns dict)
@@ -707,8 +684,7 @@ class TestRandomXIntegration(unittest.TestCase):
         """Test that RandomX is properly used in encryption and decryption."""
         self._check_randomx_available()
 
-        from ..modules.crypt_core import (EncryptionAlgorithm, decrypt_file,
-                                          encrypt_file)
+        from ..modules.crypt_core import EncryptionAlgorithm, decrypt_file, encrypt_file
 
         encrypted_file = self.test_file + ".enc"
 
@@ -725,20 +701,14 @@ class TestRandomXIntegration(unittest.TestCase):
             )
 
             self.assertTrue(result, "Encryption should succeed")
-            self.assertTrue(
-                os.path.exists(encrypted_file), "Encrypted file should exist"
-            )
+            self.assertTrue(os.path.exists(encrypted_file), "Encrypted file should exist")
 
             # Decrypt the file
             decrypted_file = self.test_file + ".dec"
-            result = decrypt_file(
-                encrypted_file, decrypted_file, self.test_password, quiet=True
-            )
+            result = decrypt_file(encrypted_file, decrypted_file, self.test_password, quiet=True)
 
             self.assertTrue(result, "Decryption should succeed")
-            self.assertTrue(
-                os.path.exists(decrypted_file), "Decrypted file should exist"
-            )
+            self.assertTrue(os.path.exists(decrypted_file), "Decrypted file should exist")
 
             # Verify content matches
             with open(self.test_file, "r", encoding="utf-8") as original, open(
@@ -760,8 +730,7 @@ class TestRandomXIntegration(unittest.TestCase):
         """Test that RandomX configuration is properly stored in metadata."""
         self._check_randomx_available()
 
-        from ..modules.crypt_core import (EncryptionAlgorithm, encrypt_file,
-                                          extract_file_metadata)
+        from ..modules.crypt_core import EncryptionAlgorithm, encrypt_file, extract_file_metadata
 
         encrypted_file = self.test_file + ".enc"
 
@@ -784,9 +753,7 @@ class TestRandomXIntegration(unittest.TestCase):
             self.assertIsNotNone(metadata, "Metadata should be present")
 
             # Check RandomX configuration in nested metadata structure
-            self.assertIn(
-                "metadata", metadata, "Metadata should contain metadata field"
-            )
+            self.assertIn("metadata", metadata, "Metadata should contain metadata field")
             inner_metadata = metadata["metadata"]
             self.assertIn(
                 "derivation_config",
@@ -801,18 +768,12 @@ class TestRandomXIntegration(unittest.TestCase):
 
             # Check RandomX configuration in metadata
             kdf_config = inner_metadata["derivation_config"]["kdf_config"]
-            self.assertIn(
-                "randomx", kdf_config, "KDF config should contain randomx configuration"
-            )
+            self.assertIn("randomx", kdf_config, "KDF config should contain randomx configuration")
 
             randomx_config = kdf_config["randomx"]
-            self.assertTrue(
-                randomx_config["enabled"], "RandomX should be enabled in metadata"
-            )
+            self.assertTrue(randomx_config["enabled"], "RandomX should be enabled in metadata")
             self.assertEqual(randomx_config["rounds"], 1, "RandomX rounds should match")
-            self.assertEqual(
-                randomx_config["mode"], "light", "RandomX mode should match"
-            )
+            self.assertEqual(randomx_config["mode"], "light", "RandomX mode should match")
 
         except Exception as e:
             if "RandomX requested but not available" in str(e):
@@ -823,9 +784,7 @@ class TestRandomXIntegration(unittest.TestCase):
     @unittest.mock.patch("sys.stdin.isatty", return_value=True)
     @unittest.mock.patch("builtins.input", return_value="n")
     @unittest.mock.patch("sys.exit")
-    def test_security_warning_randomx_no_hashing(
-        self, mock_exit, mock_input, mock_isatty
-    ):
+    def test_security_warning_randomx_no_hashing(self, mock_exit, mock_input, mock_isatty):
         """Test that security warning appears when RandomX is used without prior hashing."""
         self._check_randomx_available()
 
@@ -919,9 +878,7 @@ class TestRandomXIntegration(unittest.TestCase):
                 # Verify no user input was requested (no warning)
                 mock_input.assert_not_called()
 
-            self.assertTrue(
-                os.path.exists(encrypted_file), "Encrypted file should exist"
-            )
+            self.assertTrue(os.path.exists(encrypted_file), "Encrypted file should exist")
 
         except Exception as e:
             if "RandomX requested but not available" in str(e):
@@ -1008,9 +965,7 @@ class TestAEADBinding(unittest.TestCase):
             EncryptionAlgorithm.CAMELLIA,
         ]
         for algo in non_aead_algorithms:
-            self.assertFalse(
-                is_aead_algorithm(algo), f"{algo.value} should NOT be AEAD"
-            )
+            self.assertFalse(is_aead_algorithm(algo), f"{algo.value} should NOT be AEAD")
 
     def test_aead_metadata_has_binding_marker(self):
         """Test that AEAD-encrypted files have aead_binding marker."""
@@ -1038,9 +993,7 @@ class TestAEADBinding(unittest.TestCase):
         metadata = json.loads(base64.b64decode(metadata_b64))
 
         # Check for AEAD binding marker
-        self.assertIn(
-            "aead_binding", metadata, "AEAD file should have aead_binding field"
-        )
+        self.assertIn("aead_binding", metadata, "AEAD file should have aead_binding field")
         self.assertTrue(metadata["aead_binding"], "aead_binding should be True")
 
         # Check that encrypted_hash is NOT present
@@ -1084,9 +1037,7 @@ class TestAEADBinding(unittest.TestCase):
 
         # Check that aead_binding is NOT present or False
         aead_binding = metadata.get("aead_binding", False)
-        self.assertFalse(
-            aead_binding, "Non-AEAD file should not have aead_binding=True"
-        )
+        self.assertFalse(aead_binding, "Non-AEAD file should not have aead_binding=True")
 
         # Check that encrypted_hash IS present
         self.assertIn(
@@ -1159,12 +1110,8 @@ class TestAEADBinding(unittest.TestCase):
         for algorithm in algorithms:
             with self.subTest(algorithm=algorithm.value):
                 input_file = os.path.join(self.test_dir, f"input_{algorithm.value}.txt")
-                encrypted_file = os.path.join(
-                    self.test_dir, f"encrypted_{algorithm.value}.bin"
-                )
-                output_file = os.path.join(
-                    self.test_dir, f"output_{algorithm.value}.txt"
-                )
+                encrypted_file = os.path.join(self.test_dir, f"encrypted_{algorithm.value}.bin")
+                output_file = os.path.join(self.test_dir, f"output_{algorithm.value}.txt")
                 self.test_files.extend([input_file, encrypted_file, output_file])
 
                 # Create test file
@@ -1202,6 +1149,4 @@ class TestAEADBinding(unittest.TestCase):
                 # Verify content matches
                 with open(output_file, "r", encoding="utf-8") as f:
                     decrypted_data = f.read()
-                self.assertEqual(
-                    decrypted_data, test_data, f"{algorithm.value} decryption failed"
-                )
+                self.assertEqual(decrypted_data, test_data, f"{algorithm.value} decryption failed")

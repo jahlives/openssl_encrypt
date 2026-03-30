@@ -19,13 +19,15 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from openssl_encrypt.modules.file_permissions import (PermissionLevel,
-                                                      check_permissions,
-                                                      copy_permissions,
-                                                      create_secure_directory,
-                                                      create_secure_file,
-                                                      get_posix_mode,
-                                                      set_permissions)
+from openssl_encrypt.modules.file_permissions import (
+    PermissionLevel,
+    check_permissions,
+    copy_permissions,
+    create_secure_directory,
+    create_secure_file,
+    get_posix_mode,
+    set_permissions,
+)
 
 
 class TestSetAndCheckPermissions(unittest.TestCase):
@@ -57,16 +59,12 @@ class TestSetAndCheckPermissions(unittest.TestCase):
     def test_owner_write_public_read(self):
         """OWNER_WRITE_PUBLIC_READ: set + check round-trip on file."""
         set_permissions(self.test_file, PermissionLevel.OWNER_WRITE_PUBLIC_READ)
-        self.assertTrue(
-            check_permissions(self.test_file, PermissionLevel.OWNER_WRITE_PUBLIC_READ)
-        )
+        self.assertTrue(check_permissions(self.test_file, PermissionLevel.OWNER_WRITE_PUBLIC_READ))
 
     def test_check_returns_false_for_wrong_level(self):
         """check_permissions returns False when level doesn't match."""
         set_permissions(self.test_file, PermissionLevel.OWNER_ONLY)
-        self.assertFalse(
-            check_permissions(self.test_file, PermissionLevel.OWNER_WRITE_PUBLIC_READ)
-        )
+        self.assertFalse(check_permissions(self.test_file, PermissionLevel.OWNER_WRITE_PUBLIC_READ))
 
     def test_nonexistent_path_raises(self):
         """set_permissions raises FileNotFoundError for nonexistent path."""
@@ -75,9 +73,7 @@ class TestSetAndCheckPermissions(unittest.TestCase):
 
     def test_check_nonexistent_returns_false(self):
         """check_permissions returns False for nonexistent path."""
-        self.assertFalse(
-            check_permissions("/nonexistent/path", PermissionLevel.OWNER_ONLY)
-        )
+        self.assertFalse(check_permissions("/nonexistent/path", PermissionLevel.OWNER_ONLY))
 
     def test_idempotent_set(self):
         """Setting the same permission level twice is a no-op."""
@@ -88,9 +84,7 @@ class TestSetAndCheckPermissions(unittest.TestCase):
     def test_path_object_accepted(self):
         """Path objects work as well as strings."""
         set_permissions(Path(self.test_file), PermissionLevel.OWNER_ONLY)
-        self.assertTrue(
-            check_permissions(Path(self.test_file), PermissionLevel.OWNER_ONLY)
-        )
+        self.assertTrue(check_permissions(Path(self.test_file), PermissionLevel.OWNER_ONLY))
 
 
 class TestGetPosixMode(unittest.TestCase):
@@ -240,9 +234,7 @@ class TestCopyPermissions(unittest.TestCase):
         """Copies OWNER_WRITE_PUBLIC_READ permissions."""
         set_permissions(self.source, PermissionLevel.OWNER_WRITE_PUBLIC_READ)
         copy_permissions(self.source, self.target)
-        self.assertTrue(
-            check_permissions(self.target, PermissionLevel.OWNER_WRITE_PUBLIC_READ)
-        )
+        self.assertTrue(check_permissions(self.target, PermissionLevel.OWNER_WRITE_PUBLIC_READ))
 
     def test_source_not_found(self):
         """Raises FileNotFoundError if source doesn't exist."""
@@ -338,8 +330,7 @@ class TestWindowsSpecific(unittest.TestCase):
         import ntsecuritycon as con
         import win32security
 
-        from openssl_encrypt.modules.file_permissions import (
-            _get_system_sid, _get_windows_owner_sid)
+        from openssl_encrypt.modules.file_permissions import _get_system_sid, _get_windows_owner_sid
 
         f = os.path.join(self.tmpdir, "test.txt")
         with open(f, "w") as fh:
@@ -367,8 +358,7 @@ class TestWindowsSpecific(unittest.TestCase):
         import ntsecuritycon as con
         import win32security
 
-        from openssl_encrypt.modules.file_permissions import \
-            _get_windows_owner_sid
+        from openssl_encrypt.modules.file_permissions import _get_windows_owner_sid
 
         d = os.path.join(self.tmpdir, "testdir")
         os.makedirs(d)

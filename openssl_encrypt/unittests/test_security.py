@@ -31,47 +31,83 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 # Import the modules to test
-from openssl_encrypt.modules.crypt_core import (calculate_hash, decrypt_file,
-                                                encrypt_file, generate_key)
-from openssl_encrypt.modules.crypt_errors import (AuthenticationError,
-                                                  DecryptionError,
-                                                  EncryptionError,
-                                                  ErrorCategory, InternalError,
-                                                  KeyDerivationError,
-                                                  KeystoreError)
-from openssl_encrypt.modules.crypt_errors import \
-    MemoryError as SecureMemoryError
+from openssl_encrypt.modules.crypt_core import (
+    calculate_hash,
+    decrypt_file,
+    encrypt_file,
+    generate_key,
+)
 from openssl_encrypt.modules.crypt_errors import (
-    PermissionError, PlatformError, SecureError, ValidationError,
-    add_timing_jitter, get_jitter_stats, secure_decrypt_error_handler,
-    secure_encrypt_error_handler, secure_error_handler,
-    secure_key_derivation_error_handler, secure_memory_error_handler,
-    set_debug_mode)
+    AuthenticationError,
+    DecryptionError,
+    EncryptionError,
+    ErrorCategory,
+    InternalError,
+    KeyDerivationError,
+    KeystoreError,
+)
+from openssl_encrypt.modules.crypt_errors import MemoryError as SecureMemoryError
+from openssl_encrypt.modules.crypt_errors import (
+    PermissionError,
+    PlatformError,
+    SecureError,
+    ValidationError,
+    add_timing_jitter,
+    get_jitter_stats,
+    secure_decrypt_error_handler,
+    secure_encrypt_error_handler,
+    secure_error_handler,
+    secure_key_derivation_error_handler,
+    secure_memory_error_handler,
+    set_debug_mode,
+)
 from openssl_encrypt.modules.crypto_secure_memory import (
-    CryptoIV, CryptoKey, CryptoSecureBuffer, create_key_from_password,
-    generate_secure_key, secure_crypto_buffer, secure_crypto_iv,
-    secure_crypto_key, validate_crypto_memory_integrity)
+    CryptoIV,
+    CryptoKey,
+    CryptoSecureBuffer,
+    create_key_from_password,
+    generate_secure_key,
+    secure_crypto_buffer,
+    secure_crypto_iv,
+    secure_crypto_key,
+    validate_crypto_memory_integrity,
+)
 from openssl_encrypt.modules.secure_allocator import (
-    SecureBytes, SecureHeap, SecureHeapBlock, allocate_secure_crypto_buffer,
-    allocate_secure_memory, check_all_crypto_buffer_integrity,
-    cleanup_secure_heap, free_secure_crypto_buffer, get_crypto_heap_stats)
-from openssl_encrypt.modules.secure_memory import (SecureBytes,
-                                                   SecureMemoryAllocator,
-                                                   allocate_secure_buffer,
-                                                   free_secure_buffer)
-from openssl_encrypt.modules.secure_memory import \
-    secure_memzero as memory_secure_memzero
+    SecureBytes,
+    SecureHeap,
+    SecureHeapBlock,
+    allocate_secure_crypto_buffer,
+    allocate_secure_memory,
+    check_all_crypto_buffer_integrity,
+    cleanup_secure_heap,
+    free_secure_crypto_buffer,
+    get_crypto_heap_stats,
+)
+from openssl_encrypt.modules.secure_memory import (
+    SecureBytes,
+    SecureMemoryAllocator,
+    allocate_secure_buffer,
+    free_secure_buffer,
+)
+from openssl_encrypt.modules.secure_memory import secure_memzero as memory_secure_memzero
 from openssl_encrypt.modules.secure_memory import verify_memory_zeroed
-from openssl_encrypt.modules.secure_ops import (SecureContainer,
-                                                constant_time_compare,
-                                                constant_time_pkcs7_unpad,
-                                                secure_memzero, verify_mac)
+from openssl_encrypt.modules.secure_ops import (
+    SecureContainer,
+    constant_time_compare,
+    constant_time_pkcs7_unpad,
+    secure_memzero,
+    verify_mac,
+)
 
 # Try to import PQC modules
 try:
     from openssl_encrypt.modules.crypt_core import PQC_AVAILABLE
-    from openssl_encrypt.modules.pqc import (LIBOQS_AVAILABLE, PQCAlgorithm,
-                                             PQCipher, check_pqc_support)
+    from openssl_encrypt.modules.pqc import (
+        LIBOQS_AVAILABLE,
+        PQCAlgorithm,
+        PQCipher,
+        check_pqc_support,
+    )
 except ImportError:
     LIBOQS_AVAILABLE = False
     PQC_AVAILABLE = False
@@ -173,9 +209,7 @@ class TestSecureErrorHandling(unittest.TestCase):
 
         # Test with other byte-like objects
         self.assertTrue(constant_time_compare(bytearray(b"test"), bytearray(b"test")))
-        self.assertFalse(
-            constant_time_compare(bytearray(b"test1"), bytearray(b"test2"))
-        )
+        self.assertFalse(constant_time_compare(bytearray(b"test1"), bytearray(b"test2")))
 
     def test_error_handler_timing_jitter(self):
         """Test that error handling adds timing jitter."""
@@ -245,8 +279,7 @@ class TestSecureErrorHandling(unittest.TestCase):
             self.fail("Expected EncryptionError was not raised")
         except Exception as e:
             self.assertTrue(
-                isinstance(e, EncryptionError)
-                or "encryption operation failed" in str(e),
+                isinstance(e, EncryptionError) or "encryption operation failed" in str(e),
                 f"Expected EncryptionError but got {type(e).__name__}: {str(e)}",
             )
 
@@ -260,8 +293,7 @@ class TestSecureErrorHandling(unittest.TestCase):
             self.fail("Expected DecryptionError was not raised")
         except Exception as e:
             self.assertTrue(
-                isinstance(e, DecryptionError)
-                or "decryption operation failed" in str(e),
+                isinstance(e, DecryptionError) or "decryption operation failed" in str(e),
                 f"Expected DecryptionError but got {type(e).__name__}: {str(e)}",
             )
 
@@ -337,8 +369,7 @@ class TestBufferOverflowProtection(unittest.TestCase):
         # This test doesn't execute the code, just verifies the pattern exists in the source
         from inspect import getsource
 
-        from openssl_encrypt.modules.crypt_core import (decrypt_file,
-                                                        encrypt_file)
+        from openssl_encrypt.modules.crypt_core import decrypt_file, encrypt_file
 
         # Get the source code
         encrypt_source = getsource(encrypt_file)
@@ -427,9 +458,7 @@ class TestBufferOverflowProtection(unittest.TestCase):
 
         # Create a 1MB SecureBytes object (reduced to avoid memory issues)
         try:
-            secure_data = SecureBytes(
-                file_data[: 1024 * 512]
-            )  # 512KB to be memory-safe
+            secure_data = SecureBytes(file_data[: 1024 * 512])  # 512KB to be memory-safe
 
             # Test accessing secure data - shouldn't crash
             for i in range(0, len(secure_data), 64 * 1024):  # Check every 64KB
@@ -559,8 +588,12 @@ class TestBufferOverflowProtection(unittest.TestCase):
 # Try to import PQC modules
 try:
     from openssl_encrypt.modules.crypt_core import PQC_AVAILABLE
-    from openssl_encrypt.modules.pqc import (LIBOQS_AVAILABLE, PQCAlgorithm,
-                                             PQCipher, check_pqc_support)
+    from openssl_encrypt.modules.pqc import (
+        LIBOQS_AVAILABLE,
+        PQCAlgorithm,
+        PQCipher,
+        check_pqc_support,
+    )
 except ImportError:
     # Mock the PQC classes if not available
     LIBOQS_AVAILABLE = False
@@ -569,9 +602,7 @@ except ImportError:
     PQCAlgorithm = None
 
 
-@unittest.skipIf(
-    not LIBOQS_AVAILABLE, "liboqs-python not available, skipping PQC tests"
-)
+@unittest.skipIf(not LIBOQS_AVAILABLE, "liboqs-python not available, skipping PQC tests")
 class TestSecureOperations(unittest.TestCase):
     """Test suite for security-critical operations in the secure_ops module."""
 
@@ -924,9 +955,7 @@ class TestSecurityEnhancements(unittest.TestCase):
         # Coefficient of variation should be low (typically < 0.2 for constant time)
         # We use a higher threshold (1.5) to account for timing jitter and system noise in CI
         cv = stdev / mean if mean > 0 else 0
-        self.assertLess(
-            cv, 1.5, "Timing variance too high for constant time comparison"
-        )
+        self.assertLess(cv, 1.5, "Timing variance too high for constant time comparison")
 
     def test_constant_time_pkcs7_unpad(self):
         """Test constant-time PKCS#7 unpadding."""
@@ -937,16 +966,12 @@ class TestSecurityEnhancements(unittest.TestCase):
         self.assertEqual(unpadded, b"test_data")
 
         # Test invalid padding - wrong padding value
-        data = b"test_data" + bytes(
-            [9] * 8
-        )  # Invalid: padding value doesn't match count
+        data = b"test_data" + bytes([9] * 8)  # Invalid: padding value doesn't match count
         unpadded, valid = constant_time_pkcs7_unpad(data)
         self.assertFalse(valid)
 
         # Test invalid padding - inconsistent padding
-        data = (
-            b"test_data" + bytes([8] * 7) + bytes([7])
-        )  # Invalid: not all bytes match
+        data = b"test_data" + bytes([8] * 7) + bytes([7])  # Invalid: not all bytes match
         unpadded, valid = constant_time_pkcs7_unpad(data)
         self.assertFalse(valid)
 
@@ -974,9 +999,7 @@ class TestSecurityEnhancements(unittest.TestCase):
         # The timing difference should be minimal
         # Allow for 50% difference as system scheduling can affect timing
         ratio = max(valid_mean, invalid_mean) / min(valid_mean, invalid_mean)
-        self.assertLess(
-            ratio, 1.5, "Timing difference too high for constant time unpadding"
-        )
+        self.assertLess(ratio, 1.5, "Timing difference too high for constant time unpadding")
 
     def test_secure_buffer_allocation(self):
         """Test secure buffer allocation and freeing."""
@@ -1089,8 +1112,7 @@ class TestConstantTimePKCS7Unpad(unittest.TestCase):
 
     def test_valid_padding(self):
         """Test unpadding with valid PKCS#7 padding."""
-        from openssl_encrypt.modules.secure_ops import \
-            constant_time_pkcs7_unpad
+        from openssl_encrypt.modules.secure_ops import constant_time_pkcs7_unpad
 
         # Test with valid padding values
         for padding_value in range(1, 17):
@@ -1101,8 +1123,7 @@ class TestConstantTimePKCS7Unpad(unittest.TestCase):
 
     def test_invalid_padding(self):
         """Test unpadding with invalid PKCS#7 padding."""
-        from openssl_encrypt.modules.secure_ops import \
-            constant_time_pkcs7_unpad
+        from openssl_encrypt.modules.secure_ops import constant_time_pkcs7_unpad
 
         # Test with inconsistent padding bytes
         data = b"A" * 12 + bytes([4, 3, 4, 4])
@@ -1121,8 +1142,7 @@ class TestConstantTimePKCS7Unpad(unittest.TestCase):
 
     def test_empty_data(self):
         """Test unpadding with empty input."""
-        from openssl_encrypt.modules.secure_ops import \
-            constant_time_pkcs7_unpad
+        from openssl_encrypt.modules.secure_ops import constant_time_pkcs7_unpad
 
         unpadded, is_valid = constant_time_pkcs7_unpad(b"", 16)
         self.assertFalse(is_valid)
@@ -1152,30 +1172,51 @@ class TestVerifyMAC(unittest.TestCase):
         self.assertTrue(verify_mac(None, None))
 
 
-from openssl_encrypt.modules.crypt_errors import (AuthenticationError,
-                                                  ConfigurationError,
-                                                  DecryptionError,
-                                                  EncryptionError,
-                                                  ErrorCategory, InternalError,
-                                                  KeyDerivationError,
-                                                  KeystoreError)
-from openssl_encrypt.modules.crypt_errors import \
-    MemoryError as SecureMemoryError
 from openssl_encrypt.modules.crypt_errors import (
-    PermissionError, PlatformError, SecureError, ValidationError,
-    secure_error_handler, secure_key_derivation_error_handler,
-    secure_memory_error_handler)
+    AuthenticationError,
+    ConfigurationError,
+    DecryptionError,
+    EncryptionError,
+    ErrorCategory,
+    InternalError,
+    KeyDerivationError,
+    KeystoreError,
+)
+from openssl_encrypt.modules.crypt_errors import MemoryError as SecureMemoryError
+from openssl_encrypt.modules.crypt_errors import (
+    PermissionError,
+    PlatformError,
+    SecureError,
+    ValidationError,
+    secure_error_handler,
+    secure_key_derivation_error_handler,
+    secure_memory_error_handler,
+)
 from openssl_encrypt.modules.crypto_secure_memory import (
-    CryptoIV, CryptoKey, CryptoSecureBuffer, create_key_from_password,
-    generate_secure_key, secure_crypto_buffer, secure_crypto_iv,
-    secure_crypto_key, validate_crypto_memory_integrity)
+    CryptoIV,
+    CryptoKey,
+    CryptoSecureBuffer,
+    create_key_from_password,
+    generate_secure_key,
+    secure_crypto_buffer,
+    secure_crypto_iv,
+    secure_crypto_key,
+    validate_crypto_memory_integrity,
+)
+
 # Import secure memory and error handling modules for the tests
 from openssl_encrypt.modules.secure_allocator import (
-    SecureBytes, SecureHeap, SecureHeapBlock, allocate_secure_crypto_buffer,
-    allocate_secure_memory, check_all_crypto_buffer_integrity,
-    cleanup_secure_heap, free_secure_crypto_buffer, get_crypto_heap_stats)
-from openssl_encrypt.modules.secure_memory import (secure_memzero,
-                                                   verify_memory_zeroed)
+    SecureBytes,
+    SecureHeap,
+    SecureHeapBlock,
+    allocate_secure_crypto_buffer,
+    allocate_secure_memory,
+    check_all_crypto_buffer_integrity,
+    cleanup_secure_heap,
+    free_secure_crypto_buffer,
+    get_crypto_heap_stats,
+)
+from openssl_encrypt.modules.secure_memory import secure_memzero, verify_memory_zeroed
 
 
 class TestBufferOverflowAndUnderflow(unittest.TestCase):
@@ -1228,9 +1269,11 @@ def test_kyber_v5_wrong_encryption_data():
     import os
 
     from openssl_encrypt.modules.crypt_core import decrypt_file
-    from openssl_encrypt.modules.crypt_errors import (AuthenticationError,
-                                                      DecryptionError,
-                                                      ValidationError)
+    from openssl_encrypt.modules.crypt_errors import (
+        AuthenticationError,
+        DecryptionError,
+        ValidationError,
+    )
 
     # Path to test files
     test_files_dir = os.path.join(os.path.dirname(__file__), "testfiles", "v5")
@@ -1253,9 +1296,7 @@ def test_kyber_v5_wrong_encryption_data():
         metadata_b64 = content.split(":", 1)[0]
         metadata_json = base64.b64decode(metadata_b64).decode("utf-8")
         metadata = json.loads(metadata_json)
-        current_encryption_data = metadata.get("encryption", {}).get(
-            "encryption_data", ""
-        )
+        current_encryption_data = metadata.get("encryption", {}).get("encryption_data", "")
 
         # Find a different encryption_data option
         encryption_data_options = [
@@ -1638,8 +1679,7 @@ class TestCascadeFormatVersionWiring(unittest.TestCase):
 
     def test_cascade_v12_uses_per_layer_salt(self):
         """Cascade with format_version=12 derives per-layer salts."""
-        from openssl_encrypt.modules.cascade import (CascadeConfig,
-                                                     CascadeEncryption)
+        from openssl_encrypt.modules.cascade import CascadeConfig, CascadeEncryption
 
         config = CascadeConfig(
             cipher_names=["aes-256-gcm", "chacha20-poly1305"],
@@ -1657,8 +1697,7 @@ class TestCascadeFormatVersionWiring(unittest.TestCase):
 
     def test_cascade_legacy_roundtrip(self):
         """Cascade without format_version still works (legacy path)."""
-        from openssl_encrypt.modules.cascade import (CascadeConfig,
-                                                     CascadeEncryption)
+        from openssl_encrypt.modules.cascade import CascadeConfig, CascadeEncryption
 
         config = CascadeConfig(
             cipher_names=["aes-256-gcm", "chacha20-poly1305"],
@@ -1675,8 +1714,7 @@ class TestCascadeFormatVersionWiring(unittest.TestCase):
 
     def test_cascade_v12_incompatible_with_legacy(self):
         """v12 ciphertext cannot be decrypted by legacy (different key derivation)."""
-        from openssl_encrypt.modules.cascade import (CascadeConfig,
-                                                     CascadeEncryption)
+        from openssl_encrypt.modules.cascade import CascadeConfig, CascadeEncryption
 
         config = CascadeConfig(
             cipher_names=["aes-256-gcm", "chacha20-poly1305"],

@@ -25,17 +25,24 @@ import pytest
 
 # Import secure memory modules
 from openssl_encrypt.modules.crypt_errors import ErrorCategory
-from openssl_encrypt.modules.crypt_errors import \
-    MemoryError as SecureMemoryError
+from openssl_encrypt.modules.crypt_errors import MemoryError as SecureMemoryError
 from openssl_encrypt.modules.crypt_errors import SecureError
 from openssl_encrypt.modules.crypto_secure_memory import (
-    CryptoKey, CryptoSecureBuffer, create_key_from_password,
-    generate_secure_key, validate_crypto_memory_integrity)
+    CryptoKey,
+    CryptoSecureBuffer,
+    create_key_from_password,
+    generate_secure_key,
+    validate_crypto_memory_integrity,
+)
 from openssl_encrypt.modules.secure_allocator import (
-    SecureBytes, SecureHeap, SecureHeapBlock, allocate_secure_crypto_buffer,
-    allocate_secure_memory, free_secure_crypto_buffer)
-from openssl_encrypt.modules.secure_memory import (secure_memzero,
-                                                   verify_memory_zeroed)
+    SecureBytes,
+    SecureHeap,
+    SecureHeapBlock,
+    allocate_secure_crypto_buffer,
+    allocate_secure_memory,
+    free_secure_crypto_buffer,
+)
+from openssl_encrypt.modules.secure_memory import secure_memzero, verify_memory_zeroed
 
 
 class TestSecureHeapBlock(unittest.TestCase):
@@ -168,10 +175,11 @@ class TestSecureBytes(unittest.TestCase):
         """Test creating a SecureBytes object."""
         # Import necessary functions
         from openssl_encrypt.modules.secure_allocator import (
-            SecureBytes, allocate_secure_crypto_buffer,
-            free_secure_crypto_buffer)
-        from openssl_encrypt.modules.secure_memory import \
-            SecureBytes as BaseSecureBytes
+            SecureBytes,
+            allocate_secure_crypto_buffer,
+            free_secure_crypto_buffer,
+        )
+        from openssl_encrypt.modules.secure_memory import SecureBytes as BaseSecureBytes
 
         # Create directly using the BaseSecureBytes class from secure_memory
         test_data = bytes([i % 256 for i in range(64)])
@@ -194,7 +202,9 @@ class TestSecureBytes(unittest.TestCase):
         """Test various operations on SecureBytes objects."""
         # Import necessary functions
         from openssl_encrypt.modules.secure_allocator import (
-            allocate_secure_crypto_buffer, free_secure_crypto_buffer)
+            allocate_secure_crypto_buffer,
+            free_secure_crypto_buffer,
+        )
         from openssl_encrypt.modules.secure_memory import SecureBytes
 
         # Create a SecureBytes object directly
@@ -251,7 +261,10 @@ class TestCryptoSecureMemory(unittest.TestCase):
         """Test cryptographic key containers."""
         # Import from crypto_secure_memory module
         from openssl_encrypt.modules.crypto_secure_memory import (
-            CryptoKey, create_key_from_password, generate_secure_key)
+            CryptoKey,
+            create_key_from_password,
+            generate_secure_key,
+        )
 
         # Generate a random key
         key = generate_secure_key(32)
@@ -288,9 +301,7 @@ class TestThreadSafety(unittest.TestCase):
         def allocate_memory():
             for _ in range(allocs_per_thread):
                 try:
-                    block_id, block = allocate_secure_crypto_buffer(
-                        random.randint(16, 64)
-                    )
+                    block_id, block = allocate_secure_crypto_buffer(random.randint(16, 64))
                     with blocks_lock:
                         blocks.append(block_id)
                 except Exception as e:
@@ -437,9 +448,7 @@ class TestThreadedErrorHandling(unittest.TestCase):
             except Exception as e:
                 # Unexpected exception type
                 with lock:
-                    errors.append(
-                        f"Unexpected exception type: {type(e).__name__}, {str(e)}"
-                    )
+                    errors.append(f"Unexpected exception type: {type(e).__name__}, {str(e)}")
 
         # Start multiple threads to allocate memory
         threads = []
@@ -458,6 +467,4 @@ class TestThreadedErrorHandling(unittest.TestCase):
         test_heap.cleanup()
 
         # Check if any errors were reported
-        self.assertEqual(
-            errors, [], f"Errors occurred during parallel allocation: {errors}"
-        )
+        self.assertEqual(errors, [], f"Errors occurred during parallel allocation: {errors}")

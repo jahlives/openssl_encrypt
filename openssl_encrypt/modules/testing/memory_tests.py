@@ -17,8 +17,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
 
 from ..crypt_core import decrypt_file, encrypt_file
-from .base_test import (BaseSecurityTest, TestConfig, TestResult,
-                        TestResultLevel)
+from .base_test import BaseSecurityTest, TestConfig, TestResult, TestResultLevel
 
 
 @dataclass
@@ -99,9 +98,7 @@ class MemoryProfiler:
         # Calculate memory deltas between consecutive operations
         deltas = []
         for i in range(1, len(operation_snapshots)):
-            delta = self.calculate_memory_delta(
-                operation_snapshots[i - 1], operation_snapshots[i]
-            )
+            delta = self.calculate_memory_delta(operation_snapshots[i - 1], operation_snapshots[i])
             deltas.append(delta["rss_delta_mb"])
 
         # Check if memory consistently increases
@@ -169,9 +166,7 @@ class MemoryTestSuite(BaseSecurityTest):
     def _test_memory_leak_detection(self, config: TestConfig) -> None:
         """Test for memory leaks during repeated operations."""
 
-        result = self.run_single_test(
-            self._memory_leak_test, "memory_leak_detection", config
-        )
+        result = self.run_single_test(self._memory_leak_test, "memory_leak_detection", config)
         self.add_result(result)
 
     def _memory_leak_test(self, config: TestConfig) -> TestResult:
@@ -218,9 +213,7 @@ class MemoryTestSuite(BaseSecurityTest):
                         os.remove(temp_file)
 
                 # Perform encryption/decryption cycle
-                encrypt_file(
-                    input_file, encrypted_file, password, hash_config=config_dict
-                )
+                encrypt_file(input_file, encrypted_file, password, hash_config=config_dict)
                 decrypt_file(encrypted_file, decrypted_file, password)
 
                 # Force garbage collection
@@ -253,9 +246,7 @@ class MemoryTestSuite(BaseSecurityTest):
 
             if leak_detected:
                 level = TestResultLevel.WARNING
-                message = (
-                    f"Potential memory leak detected ({avg_increase:.2f} MB/operation)"
-                )
+                message = f"Potential memory leak detected ({avg_increase:.2f} MB/operation)"
             else:
                 level = TestResultLevel.PASS
                 message = f"No significant memory leaks detected ({avg_increase:.2f} MB/operation)"
@@ -303,9 +294,7 @@ class MemoryTestSuite(BaseSecurityTest):
 
             for file_size in file_sizes:
                 input_file = os.path.join(self.temp_dir, f"pattern_{file_size}.bin")
-                encrypted_file = os.path.join(
-                    self.temp_dir, f"pattern_{file_size}_enc.bin"
-                )
+                encrypted_file = os.path.join(self.temp_dir, f"pattern_{file_size}_enc.bin")
 
                 # Create test file
                 test_data = os.urandom(file_size)
@@ -330,9 +319,7 @@ class MemoryTestSuite(BaseSecurityTest):
                 after_snapshot = self.profiler.take_snapshot(f"after_{file_size}")
 
                 if before_snapshot and after_snapshot:
-                    delta = self.profiler.calculate_memory_delta(
-                        before_snapshot, after_snapshot
-                    )
+                    delta = self.profiler.calculate_memory_delta(before_snapshot, after_snapshot)
                     memory_patterns[file_size] = {
                         "file_size_mb": file_size / (1024 * 1024),
                         "memory_increase_mb": delta["rss_delta_mb"],
@@ -363,7 +350,9 @@ class MemoryTestSuite(BaseSecurityTest):
             efficient = avg_ratio < 2.0
 
             level = TestResultLevel.PASS if efficient else TestResultLevel.WARNING
-            message = f"Memory usage {'efficient' if efficient else 'high'} (avg ratio: {avg_ratio:.2f}x)"
+            message = (
+                f"Memory usage {'efficient' if efficient else 'high'} (avg ratio: {avg_ratio:.2f}x)"
+            )
 
             return TestResult(
                 "memory_usage_patterns",
@@ -457,21 +446,13 @@ class MemoryTestSuite(BaseSecurityTest):
                 )
 
             if before_snapshot and after_snapshot:
-                delta = self.profiler.calculate_memory_delta(
-                    before_snapshot, after_snapshot
-                )
-                memory_usage_ratio = delta["rss_delta_mb"] / (
-                    large_file_size / (1024 * 1024)
-                )
+                delta = self.profiler.calculate_memory_delta(before_snapshot, after_snapshot)
+                memory_usage_ratio = delta["rss_delta_mb"] / (large_file_size / (1024 * 1024))
 
                 # Check if memory usage is reasonable (< 3x file size)
                 reasonable_usage = memory_usage_ratio < 3.0
 
-                level = (
-                    TestResultLevel.PASS
-                    if reasonable_usage
-                    else TestResultLevel.WARNING
-                )
+                level = TestResultLevel.PASS if reasonable_usage else TestResultLevel.WARNING
                 message = f"Large file memory usage {'reasonable' if reasonable_usage else 'high'} ({memory_usage_ratio:.2f}x)"
 
                 return TestResult(
@@ -678,9 +659,7 @@ class MemoryTestSuite(BaseSecurityTest):
                     gc.collect()
 
                     # Take memory snapshot after error
-                    snapshot = self.profiler.take_snapshot(
-                        f"{scenario_name}_attempt_{attempt}"
-                    )
+                    snapshot = self.profiler.take_snapshot(f"{scenario_name}_attempt_{attempt}")
                     if snapshot:
                         memory_after_errors.append(snapshot)
 
@@ -694,9 +673,7 @@ class MemoryTestSuite(BaseSecurityTest):
             # Analyze memory usage after errors
             memory_increases = []
             for snapshot in memory_after_errors:
-                delta = self.profiler.calculate_memory_delta(
-                    baseline_snapshot, snapshot
-                )
+                delta = self.profiler.calculate_memory_delta(baseline_snapshot, snapshot)
                 memory_increases.append(delta["rss_delta_mb"])
 
             avg_increase = sum(memory_increases) / len(memory_increases)
@@ -706,7 +683,9 @@ class MemoryTestSuite(BaseSecurityTest):
             good_cleanup = avg_increase < 1.0 and max_increase < 2.0
 
             level = TestResultLevel.PASS if good_cleanup else TestResultLevel.WARNING
-            message = f"Memory cleanup after errors {'good' if good_cleanup else 'needs improvement'}"
+            message = (
+                f"Memory cleanup after errors {'good' if good_cleanup else 'needs improvement'}"
+            )
 
             return TestResult(
                 "memory_cleanup_after_errors",
@@ -732,9 +711,7 @@ class MemoryTestSuite(BaseSecurityTest):
     def _test_secure_memory_zeroing(self, config: TestConfig) -> None:
         """Test that sensitive data is securely zeroed from memory."""
 
-        result = self.run_single_test(
-            self._secure_zeroing_test, "secure_memory_zeroing", config
-        )
+        result = self.run_single_test(self._secure_zeroing_test, "secure_memory_zeroing", config)
         self.add_result(result)
 
     def _secure_zeroing_test(self, config: TestConfig) -> TestResult:
@@ -746,9 +723,7 @@ class MemoryTestSuite(BaseSecurityTest):
             input_file = os.path.join(self.temp_dir, "zeroing_test.txt")
             encrypted_file = os.path.join(self.temp_dir, "zeroing_test_enc.bin")
 
-            test_data = (
-                "Sensitive data that should be zeroed from memory: " + "SECRET" * 100
-            )
+            test_data = "Sensitive data that should be zeroed from memory: " + "SECRET" * 100
             with open(input_file, "w") as f:
                 f.write(test_data)
 
@@ -770,9 +745,7 @@ class MemoryTestSuite(BaseSecurityTest):
                     weak_refs.append(weakref.ref(sensitive_data))
 
                 try:
-                    encrypt_file(
-                        input_file, encrypted_file, password, hash_config=config_dict
-                    )
+                    encrypt_file(input_file, encrypted_file, password, hash_config=config_dict)
                 except Exception:
                     pass  # Don't care about success/failure, just memory cleanup
 
@@ -799,22 +772,16 @@ class MemoryTestSuite(BaseSecurityTest):
             if total_refs == 0:
                 # Fallback test - just check that operations completed
                 level = TestResultLevel.WARNING
-                message = (
-                    "Secure zeroing test completed but could not verify memory cleanup"
-                )
+                message = "Secure zeroing test completed but could not verify memory cleanup"
                 details = {"note": "Weak reference tracking not available"}
             else:
-                level = (
-                    TestResultLevel.PASS if good_cleanup else TestResultLevel.WARNING
-                )
+                level = TestResultLevel.PASS if good_cleanup else TestResultLevel.WARNING
                 message = f"Secure memory zeroing {'effective' if good_cleanup else 'may need improvement'}"
                 details = {
                     "weak_references_created": total_refs,
                     "references_still_alive": alive_refs,
                     "cleanup_percentage": (
-                        (total_refs - alive_refs) / total_refs * 100
-                        if total_refs > 0
-                        else 0
+                        (total_refs - alive_refs) / total_refs * 100 if total_refs > 0 else 0
                     ),
                     "good_cleanup": good_cleanup,
                 }

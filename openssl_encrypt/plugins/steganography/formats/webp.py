@@ -33,9 +33,15 @@ import numpy as np
 from PIL import Image
 
 from ....modules.crypt_utils import eprint
-from ..core import (CapacityError, CoverMediaError, ExtractionError,
-                    SteganographyBase, SteganographyConfig, SteganographyError,
-                    SteganographyUtils)
+from ..core import (
+    CapacityError,
+    CoverMediaError,
+    ExtractionError,
+    SteganographyBase,
+    SteganographyConfig,
+    SteganographyError,
+    SteganographyUtils,
+)
 
 # Set up module logger
 logger = logging.getLogger(__name__)
@@ -136,9 +142,7 @@ class WEBPSteganography(SteganographyBase):
             # Apply safety margin
             capacity = int(capacity * 0.85)  # 15% safety margin
 
-            logger.debug(
-                f"WEBP capacity: {capacity} bytes ({webp_info['codec']} format)"
-            )
+            logger.debug(f"WEBP capacity: {capacity} bytes ({webp_info['codec']} format)")
             return max(0, capacity)
 
         except Exception as e:
@@ -330,9 +334,7 @@ class WEBPSteganography(SteganographyBase):
 
         return max(0, capacity)
 
-    def _hide_in_lossless_webp(
-        self, image: Image.Image, secret_data: bytes
-    ) -> Image.Image:
+    def _hide_in_lossless_webp(self, image: Image.Image, secret_data: bytes) -> Image.Image:
         """Hide data in lossless WEBP using LSB method"""
         try:
             # Convert image to numpy array
@@ -357,9 +359,7 @@ class WEBPSteganography(SteganographyBase):
             # Generate pixel order (crypto shuffle if password provided)
             pixel_indices = list(range(len(flat_image)))
             if self.password:
-                SteganographyUtils.crypto_seeded_shuffle_np(
-                    pixel_indices, self.shuffle_key
-                )
+                SteganographyUtils.crypto_seeded_shuffle_np(pixel_indices, self.shuffle_key)
 
             # Hide data using LSB
             bit_index = 0
@@ -373,9 +373,7 @@ class WEBPSteganography(SteganographyBase):
                 bits_to_hide = 0
                 for bit_offset in range(self.bits_per_channel):
                     if bit_index + bit_offset < len(binary_data):
-                        bits_to_hide |= (
-                            int(binary_data[bit_index + bit_offset]) << bit_offset
-                        )
+                        bits_to_hide |= int(binary_data[bit_index + bit_offset]) << bit_offset
 
                 # Modify pixel
                 original_pixel = flat_image[pixel_idx]
@@ -394,9 +392,7 @@ class WEBPSteganography(SteganographyBase):
             logger.error(f"Lossless WEBP hiding failed: {e}")
             raise SteganographyError(f"Lossless WEBP hiding failed: {e}")
 
-    def _hide_in_lossy_webp(
-        self, image: Image.Image, secret_data: bytes
-    ) -> Image.Image:
+    def _hide_in_lossy_webp(self, image: Image.Image, secret_data: bytes) -> Image.Image:
         """Hide data in lossy WEBP using robust method"""
         try:
             # For lossy WEBP, we need to use a more robust hiding method
@@ -466,9 +462,7 @@ class WEBPSteganography(SteganographyBase):
             # Generate same pixel order used during hiding
             pixel_indices = list(range(len(flat_image)))
             if self.password:
-                SteganographyUtils.crypto_seeded_shuffle_np(
-                    pixel_indices, self.shuffle_key
-                )
+                SteganographyUtils.crypto_seeded_shuffle_np(pixel_indices, self.shuffle_key)
 
             # Extract length first (4 bytes = 32 bits)
             length_bits = []
@@ -500,9 +494,7 @@ class WEBPSteganography(SteganographyBase):
             # More robust sanity check for data length
             # First check for very large values that would cause overflow
             # Be much more conservative to prevent overflow warnings completely
-            if (
-                data_length <= 0 or data_length > 100 * 1024
-            ):  # Max 100KB to prevent overflow
+            if data_length <= 0 or data_length > 100 * 1024:  # Max 100KB to prevent overflow
                 # This is likely corrupted/wrong password scenario
                 return b""
 
@@ -518,9 +510,7 @@ class WEBPSteganography(SteganographyBase):
                     return b""
 
                 data_bits = data_length * 8
-                total_bits_needed = (
-                    data_bits + 48
-                )  # Length (32) + data + end marker (16)
+                total_bits_needed = data_bits + 48  # Length (32) + data + end marker (16)
                 if total_bits_needed < 0:  # Overflow check
                     return b""
             except (OverflowError, ValueError):
@@ -541,9 +531,7 @@ class WEBPSteganography(SteganographyBase):
                         bit_index += 1
 
             # Convert bits back to bytes
-            extracted_bytes = SteganographyUtils.binary_to_bytes(
-                "".join(map(str, extracted_bits))
-            )
+            extracted_bytes = SteganographyUtils.binary_to_bytes("".join(map(str, extracted_bits)))
 
             # Extract the actual secret data (skip length prefix)
             if len(extracted_bytes) < 4:
@@ -595,9 +583,7 @@ class WEBPSteganography(SteganographyBase):
                 raise ExtractionError(f"Invalid data length: {data_length}")
 
             # Calculate total bits needed
-            total_bits_needed = (
-                32 + (data_length * 8) + 16
-            )  # Length + data + 2-byte end marker
+            total_bits_needed = 32 + (data_length * 8) + 16  # Length + data + 2-byte end marker
 
             if len(extracted_bits) < total_bits_needed:
                 raise ExtractionError(
@@ -605,15 +591,11 @@ class WEBPSteganography(SteganographyBase):
                 )
 
             # Convert all bits to bytes
-            binary_string = "".join(
-                str(bit) for bit in extracted_bits[:total_bits_needed]
-            )
+            binary_string = "".join(str(bit) for bit in extracted_bits[:total_bits_needed])
             extracted_bytes = SteganographyUtils.binary_to_bytes(binary_string)
 
             # Skip the length field, get the actual data
-            if (
-                len(extracted_bytes) < 6
-            ):  # 4 bytes length + at least 2 bytes data + end marker
+            if len(extracted_bytes) < 6:  # 4 bytes length + at least 2 bytes data + end marker
                 raise ExtractionError("Extracted data too short")
 
             payload = extracted_bytes[4 : 4 + data_length]
@@ -622,9 +604,7 @@ class WEBPSteganography(SteganographyBase):
             if len(extracted_bytes) >= 4 + data_length + 2:
                 end_marker = extracted_bytes[4 + data_length : 4 + data_length + 2]
                 if end_marker != b"\\xFF\\xFE":
-                    logger.warning(
-                        f"End marker mismatch: expected FF FE, got {end_marker.hex()}"
-                    )
+                    logger.warning(f"End marker mismatch: expected FF FE, got {end_marker.hex()}")
 
             return bytes(payload)
 
@@ -673,9 +653,7 @@ class WEBPAnalyzer:
             }
 
             # Analyze steganography suitability
-            webp_info["steganography"] = self._analyze_steganography_suitability(
-                webp_info
-            )
+            webp_info["steganography"] = self._analyze_steganography_suitability(webp_info)
 
             return webp_info
 
@@ -729,9 +707,7 @@ class WEBPAnalyzer:
 
         return chunks
 
-    def _analyze_steganography_suitability(
-        self, webp_info: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def _analyze_steganography_suitability(self, webp_info: Dict[str, Any]) -> Dict[str, Any]:
         """Analyze WEBP suitability for steganography"""
         suitability = {
             "overall_score": 0.0,
@@ -749,9 +725,7 @@ class WEBPAnalyzer:
                     break
 
             if primary_codec:
-                format_info = self.format_info.get(
-                    primary_codec, {"steganography_score": 0.5}
-                )
+                format_info = self.format_info.get(primary_codec, {"steganography_score": 0.5})
                 suitability["format_score"] = format_info["steganography_score"]
 
                 if primary_codec == "VP8L":
@@ -763,27 +737,19 @@ class WEBPAnalyzer:
                         "Lossy WEBP - good but requires robust methods"
                     )
                 else:
-                    suitability["recommendations"].append(
-                        "Extended WEBP - varies by content"
-                    )
+                    suitability["recommendations"].append("Extended WEBP - varies by content")
 
             # Size analysis
             file_size = webp_info["header"]["file_size"]
             if file_size > 1024 * 1024:  # > 1MB
                 suitability["size_score"] = 1.0
-                suitability["recommendations"].append(
-                    "Large file - high hiding capacity"
-                )
+                suitability["recommendations"].append("Large file - high hiding capacity")
             elif file_size > 100 * 1024:  # > 100KB
                 suitability["size_score"] = 0.7
-                suitability["recommendations"].append(
-                    "Medium file - good hiding capacity"
-                )
+                suitability["recommendations"].append("Medium file - good hiding capacity")
             else:
                 suitability["size_score"] = 0.3
-                suitability["recommendations"].append(
-                    "Small file - limited hiding capacity"
-                )
+                suitability["recommendations"].append("Small file - limited hiding capacity")
 
             # Calculate overall score
             suitability["overall_score"] = (
@@ -792,13 +758,9 @@ class WEBPAnalyzer:
 
             # Add general recommendations
             if suitability["overall_score"] >= 0.8:
-                suitability["recommendations"].append(
-                    "Excellent WEBP for steganography"
-                )
+                suitability["recommendations"].append("Excellent WEBP for steganography")
             elif suitability["overall_score"] >= 0.6:
-                suitability["recommendations"].append(
-                    "Good WEBP with minor limitations"
-                )
+                suitability["recommendations"].append("Good WEBP with minor limitations")
             else:
                 suitability["recommendations"].append(
                     "WEBP suitable with careful parameter selection"

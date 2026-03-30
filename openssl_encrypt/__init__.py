@@ -46,9 +46,7 @@ def _check_and_build_dependencies():
     from .versions import check_liboqs_python_version, check_liboqs_version
 
     liboqs_ok, liboqs_ver, liboqs_msg = check_liboqs_version()
-    liboqs_python_ok, liboqs_python_ver, liboqs_python_msg = (
-        check_liboqs_python_version()
-    )
+    liboqs_python_ok, liboqs_python_ver, liboqs_python_msg = check_liboqs_python_version()
 
     # If liboqs check returned None (pkg-config not available),
     # but liboqs-python works, consider that sufficient

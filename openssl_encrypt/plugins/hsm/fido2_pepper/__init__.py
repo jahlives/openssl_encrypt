@@ -33,18 +33,19 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 try:
-    from fido2.client import (DefaultClientDataCollector, Fido2Client,
-                              UserInteraction)
+    from fido2.client import DefaultClientDataCollector, Fido2Client, UserInteraction
     from fido2.ctap2 import Ctap2
     from fido2.ctap2.extensions import HmacSecretExtension
     from fido2.hid import CtapHidDevice
-    from fido2.webauthn import (AuthenticatorSelectionCriteria,
-                                PublicKeyCredentialCreationOptions,
-                                PublicKeyCredentialDescriptor,
-                                PublicKeyCredentialParameters,
-                                PublicKeyCredentialRequestOptions,
-                                PublicKeyCredentialRpEntity,
-                                PublicKeyCredentialUserEntity)
+    from fido2.webauthn import (
+        AuthenticatorSelectionCriteria,
+        PublicKeyCredentialCreationOptions,
+        PublicKeyCredentialDescriptor,
+        PublicKeyCredentialParameters,
+        PublicKeyCredentialRequestOptions,
+        PublicKeyCredentialRpEntity,
+        PublicKeyCredentialUserEntity,
+    )
 
     FIDO2_AVAILABLE = True
 
@@ -69,9 +70,12 @@ except ImportError:
     CLIUserInteraction = None  # Placeholder when FIDO2 is not available
 
 from ....modules.crypt_utils import eprint
-from ....modules.plugin_system.plugin_base import (HSMPlugin, PluginCapability,
-                                                   PluginResult,
-                                                   PluginSecurityContext)
+from ....modules.plugin_system.plugin_base import (
+    HSMPlugin,
+    PluginCapability,
+    PluginResult,
+    PluginSecurityContext,
+)
 from ....modules.plugin_system.plugin_config import ensure_plugin_data_dir
 
 logger = logging.getLogger(__name__)
@@ -136,9 +140,9 @@ class FIDO2HSMPlugin(HSMPlugin):
         """Create config directory with secure permissions (0o700)."""
         try:
             # Check if using default config directory or custom path
-            if self.config_dir == self.DEFAULT_CONFIG_DIR or str(
-                self.config_dir
-            ).startswith(str(Path.home() / ".openssl_encrypt" / "plugins")):
+            if self.config_dir == self.DEFAULT_CONFIG_DIR or str(self.config_dir).startswith(
+                str(Path.home() / ".openssl_encrypt" / "plugins")
+            ):
                 # Use centralized helper for default config directories
                 config_dir = ensure_plugin_data_dir("fido2", "")
                 if config_dir is None:
@@ -147,11 +151,11 @@ class FIDO2HSMPlugin(HSMPlugin):
             else:
                 # Custom directory - create it directly with secure permissions
                 from openssl_encrypt.modules.file_permissions import (
-                    PermissionLevel, create_secure_directory)
-
-                create_secure_directory(
-                    self.config_dir, level=PermissionLevel.OWNER_FULL
+                    PermissionLevel,
+                    create_secure_directory,
                 )
+
+                create_secure_directory(self.config_dir, level=PermissionLevel.OWNER_FULL)
                 logger.info(f"Created custom FIDO2 config directory: {self.config_dir}")
         except Exception as e:
             logger.error(f"Failed to create config directory: {e}")
@@ -206,9 +210,7 @@ class FIDO2HSMPlugin(HSMPlugin):
             if "credential_file" in config:
                 self.credential_file = Path(config["credential_file"])
 
-        return PluginResult.success_result(
-            f"FIDO2 HSM plugin initialized (RP ID: {self.rp_id})"
-        )
+        return PluginResult.success_result(f"FIDO2 HSM plugin initialized (RP ID: {self.rp_id})")
 
     def _find_device(self) -> Optional[CtapHidDevice]:
         """
@@ -293,8 +295,7 @@ class FIDO2HSMPlugin(HSMPlugin):
                 json.dump(data, f, indent=2)
 
             # Set secure permissions (0o600)
-            from openssl_encrypt.modules.file_permissions import (
-                PermissionLevel, set_permissions)
+            from openssl_encrypt.modules.file_permissions import PermissionLevel, set_permissions
 
             set_permissions(temp_file, PermissionLevel.OWNER_ONLY)
 
@@ -378,9 +379,7 @@ class FIDO2HSMPlugin(HSMPlugin):
 
         # 6. Build allow_credentials list (all registered credentials)
         allow_list = [
-            PublicKeyCredentialDescriptor(
-                type="public-key", id=b64decode(cred["credential_id"])
-            )
+            PublicKeyCredentialDescriptor(type="public-key", id=b64decode(cred["credential_id"]))
             for cred in credentials
         ]
 
@@ -426,16 +425,13 @@ class FIDO2HSMPlugin(HSMPlugin):
 
             # Method 2: Try get_response().client_extension_results (WebAuthn API)
             if not extension_results or (
-                not extension_results.get("prf")
-                and not extension_results.get("hmac-secret")
+                not extension_results.get("prf") and not extension_results.get("hmac-secret")
             ):
                 try:
                     auth_response = result.get_response(0)
                     if hasattr(auth_response, "client_extension_results"):
                         client_ext = auth_response.client_extension_results
-                        if client_ext and (
-                            "prf" in client_ext or "hmac-secret" in client_ext
-                        ):
+                        if client_ext and ("prf" in client_ext or "hmac-secret" in client_ext):
                             extension_results = client_ext
                             logger.debug(
                                 f"Method 2: Using client_extension_results: {list(extension_results.keys())}"
@@ -445,8 +441,7 @@ class FIDO2HSMPlugin(HSMPlugin):
 
             # Method 3: Fall back to raw auth_data.extensions (WILL NOT WORK - encrypted!)
             if not extension_results or (
-                not extension_results.get("prf")
-                and not extension_results.get("hmac-secret")
+                not extension_results.get("prf") and not extension_results.get("hmac-secret")
             ):
                 if hasattr(result, "_assertions") and result._assertions:
                     first_assertion = result._assertions[0]
@@ -464,9 +459,7 @@ class FIDO2HSMPlugin(HSMPlugin):
 
             # Warn if using encrypted data
             if using_raw:
-                logger.warning(
-                    "Using encrypted hmac-secret data - decryption will fail!"
-                )
+                logger.warning("Using encrypted hmac-secret data - decryption will fail!")
                 logger.warning(
                     "This indicates the HmacSecretExtension is not processing results correctly"
                 )
@@ -477,9 +470,9 @@ class FIDO2HSMPlugin(HSMPlugin):
                 prf_data = extension_results.get("prf") or extension_results.get(b"prf")
                 # Fallback to hmac-secret
                 if not prf_data:
-                    prf_data = extension_results.get(
-                        "hmac-secret"
-                    ) or extension_results.get(b"hmac-secret")
+                    prf_data = extension_results.get("hmac-secret") or extension_results.get(
+                        b"hmac-secret"
+                    )
 
             if not prf_data:
                 return PluginResult.error_result(
@@ -597,9 +590,7 @@ class FIDO2HSMPlugin(HSMPlugin):
         credentials = self._load_credentials()
         if credentials and not is_backup:
             # Check if primary credential already exists
-            primary_exists = any(
-                not cred.get("is_backup", False) for cred in credentials
-            )
+            primary_exists = any(not cred.get("is_backup", False) for cred in credentials)
             if primary_exists:
                 return PluginResult.error_result(
                     "Primary credential already exists. Use --backup flag to register backup credential."
@@ -699,9 +690,7 @@ class FIDO2HSMPlugin(HSMPlugin):
                     {
                         "product_name": getattr(device, "product_name", "Unknown"),
                         "manufacturer": getattr(device, "manufacturer", "Unknown"),
-                        "aaguid": (
-                            str(info.aaguid) if hasattr(info, "aaguid") else "Unknown"
-                        ),
+                        "aaguid": (str(info.aaguid) if hasattr(info, "aaguid") else "Unknown"),
                         "versions": info.versions if hasattr(info, "versions") else [],
                         "extensions": (
                             list(info.extensions)
@@ -756,9 +745,7 @@ class FIDO2HSMPlugin(HSMPlugin):
             try:
                 self.credential_file.unlink()
                 logger.info("All FIDO2 credentials removed")
-                return PluginResult.success_result(
-                    "All credentials removed successfully"
-                )
+                return PluginResult.success_result("All credentials removed successfully")
             except Exception as e:
                 logger.error(f"Failed to remove credentials: {e}")
                 return PluginResult.error_result(f"Failed to remove credentials: {e}")

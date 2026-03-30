@@ -13,8 +13,14 @@ from abc import abstractmethod
 from dataclasses import dataclass
 from typing import Optional, Tuple, Union
 
-from .base import (AlgorithmBase, AlgorithmCategory, AlgorithmInfo,
-                   AlgorithmNotAvailableError, RegistryBase, SecurityLevel)
+from .base import (
+    AlgorithmBase,
+    AlgorithmCategory,
+    AlgorithmInfo,
+    AlgorithmNotAvailableError,
+    RegistryBase,
+    SecurityLevel,
+)
 
 # Import secure memory handling
 try:
@@ -35,8 +41,7 @@ try:
     # Import oqs directly to avoid incorrect mapping in PQEncapsulator
     import oqs
 
-    from ..pqc_liboqs import (LIBOQS_AVAILABLE, PQAlgorithm,
-                              check_liboqs_support)
+    from ..pqc_liboqs import LIBOQS_AVAILABLE, PQAlgorithm, check_liboqs_support
 except ImportError:
     LIBOQS_AVAILABLE = False
     PQAlgorithm = None
@@ -181,13 +186,9 @@ class MLKEM512(KEMBase):
         ciphertext, shared_secret = self._kem.encap_secret(public_key)
         return ciphertext, SecureBytes(shared_secret)
 
-    def decapsulate(
-        self, ciphertext: bytes, secret_key: Union[bytes, SecureBytes]
-    ) -> SecureBytes:
+    def decapsulate(self, ciphertext: bytes, secret_key: Union[bytes, SecureBytes]) -> SecureBytes:
         # Convert SecureBytes to bytes for library
-        secret_key_bytes = (
-            bytes(secret_key) if isinstance(secret_key, SecureBytes) else secret_key
-        )
+        secret_key_bytes = bytes(secret_key) if isinstance(secret_key, SecureBytes) else secret_key
 
         try:
             # Load secret key and decapsulate
@@ -246,13 +247,9 @@ class MLKEM768(KEMBase):
         ciphertext, shared_secret = self._kem.encap_secret(public_key)
         return ciphertext, SecureBytes(shared_secret)
 
-    def decapsulate(
-        self, ciphertext: bytes, secret_key: Union[bytes, SecureBytes]
-    ) -> SecureBytes:
+    def decapsulate(self, ciphertext: bytes, secret_key: Union[bytes, SecureBytes]) -> SecureBytes:
         # Convert SecureBytes to bytes for library
-        secret_key_bytes = (
-            bytes(secret_key) if isinstance(secret_key, SecureBytes) else secret_key
-        )
+        secret_key_bytes = bytes(secret_key) if isinstance(secret_key, SecureBytes) else secret_key
 
         try:
             # Load secret key and decapsulate
@@ -317,13 +314,9 @@ class MLKEM1024(KEMBase):
         ciphertext, shared_secret = self._kem.encap_secret(public_key)
         return ciphertext, SecureBytes(shared_secret)
 
-    def decapsulate(
-        self, ciphertext: bytes, secret_key: Union[bytes, SecureBytes]
-    ) -> SecureBytes:
+    def decapsulate(self, ciphertext: bytes, secret_key: Union[bytes, SecureBytes]) -> SecureBytes:
         # Convert SecureBytes to bytes for library
-        secret_key_bytes = (
-            bytes(secret_key) if isinstance(secret_key, SecureBytes) else secret_key
-        )
+        secret_key_bytes = bytes(secret_key) if isinstance(secret_key, SecureBytes) else secret_key
 
         try:
             # Load secret key and decapsulate
@@ -387,13 +380,9 @@ class HQC128(KEMBase):
         ciphertext, shared_secret = self._kem.encap_secret(public_key)
         return ciphertext, SecureBytes(shared_secret)
 
-    def decapsulate(
-        self, ciphertext: bytes, secret_key: Union[bytes, SecureBytes]
-    ) -> SecureBytes:
+    def decapsulate(self, ciphertext: bytes, secret_key: Union[bytes, SecureBytes]) -> SecureBytes:
         # Convert SecureBytes to bytes for library
-        secret_key_bytes = (
-            bytes(secret_key) if isinstance(secret_key, SecureBytes) else secret_key
-        )
+        secret_key_bytes = bytes(secret_key) if isinstance(secret_key, SecureBytes) else secret_key
 
         try:
             # Load secret key and decapsulate
@@ -452,13 +441,9 @@ class HQC192(KEMBase):
         ciphertext, shared_secret = self._kem.encap_secret(public_key)
         return ciphertext, SecureBytes(shared_secret)
 
-    def decapsulate(
-        self, ciphertext: bytes, secret_key: Union[bytes, SecureBytes]
-    ) -> SecureBytes:
+    def decapsulate(self, ciphertext: bytes, secret_key: Union[bytes, SecureBytes]) -> SecureBytes:
         # Convert SecureBytes to bytes for library
-        secret_key_bytes = (
-            bytes(secret_key) if isinstance(secret_key, SecureBytes) else secret_key
-        )
+        secret_key_bytes = bytes(secret_key) if isinstance(secret_key, SecureBytes) else secret_key
 
         try:
             # Load secret key and decapsulate
@@ -517,13 +502,9 @@ class HQC256(KEMBase):
         ciphertext, shared_secret = self._kem.encap_secret(public_key)
         return ciphertext, SecureBytes(shared_secret)
 
-    def decapsulate(
-        self, ciphertext: bytes, secret_key: Union[bytes, SecureBytes]
-    ) -> SecureBytes:
+    def decapsulate(self, ciphertext: bytes, secret_key: Union[bytes, SecureBytes]) -> SecureBytes:
         # Convert SecureBytes to bytes for library
-        secret_key_bytes = (
-            bytes(secret_key) if isinstance(secret_key, SecureBytes) else secret_key
-        )
+        secret_key_bytes = bytes(secret_key) if isinstance(secret_key, SecureBytes) else secret_key
 
         try:
             # Load secret key and decapsulate

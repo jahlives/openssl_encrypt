@@ -21,9 +21,7 @@ def run_pip_audit(requirements_file):
         subprocess.run(["pip-audit", "--help"], capture_output=True, check=True)
     except (subprocess.CalledProcessError, FileNotFoundError):
         print("Installing pip-audit...")
-        subprocess.run(
-            [sys.executable, "-m", "pip", "install", "pip-audit"], check=True
-        )
+        subprocess.run([sys.executable, "-m", "pip", "install", "pip-audit"], check=True)
 
     # Run pip-audit with JSON output
     try:
@@ -136,9 +134,7 @@ def create_gitlab_report(prod_results, dev_results):
                     vuln_id = vuln.get("id", "unknown")
 
                     # Skip duplicates
-                    if any(
-                        v.get("id") == f"pip-audit-{vuln_id}" for v in vulnerabilities
-                    ):
+                    if any(v.get("id") == f"pip-audit-{vuln_id}" for v in vulnerabilities):
                         continue
 
                     description = vuln.get("description", "No description available")
@@ -237,9 +233,7 @@ def main():
     else:
         try:
             vuln_count = sum(
-                len(pkg.get("vulnerabilities", []))
-                for pkg in prod_results
-                if isinstance(pkg, dict)
+                len(pkg.get("vulnerabilities", [])) for pkg in prod_results if isinstance(pkg, dict)
             )
             print(f"Found {vuln_count} vulnerabilities in production dependencies")
         except (AttributeError, TypeError):
@@ -256,9 +250,7 @@ def main():
     else:
         try:
             vuln_count = sum(
-                len(pkg.get("vulnerabilities", []))
-                for pkg in dev_results
-                if isinstance(pkg, dict)
+                len(pkg.get("vulnerabilities", [])) for pkg in dev_results if isinstance(pkg, dict)
             )
             print(f"Found {vuln_count} vulnerabilities in development dependencies")
         except (AttributeError, TypeError):

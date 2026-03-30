@@ -22,21 +22,30 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 # Import the modules to test
-from openssl_encrypt.modules.crypt_core import (create_metadata_v7,
-                                                decrypt_file_asymmetric,
-                                                encrypt_file_asymmetric)
+from openssl_encrypt.modules.crypt_core import (
+    create_metadata_v7,
+    decrypt_file_asymmetric,
+    encrypt_file_asymmetric,
+)
 from openssl_encrypt.modules.crypto_secure_memory import CryptoKey
-from openssl_encrypt.modules.identity import (Identity, IdentityError,
-                                              IdentityStore)
-from openssl_encrypt.modules.identity_cli import (cmd_change_password,
-                                                  cmd_create, cmd_delete,
-                                                  cmd_export, cmd_import,
-                                                  cmd_list, cmd_show)
-from openssl_encrypt.modules.pqc_signing import (LIBOQS_AVAILABLE, PQCSigner,
-                                                 calculate_fingerprint,
-                                                 sign_with_ml_dsa_65,
-                                                 verify_signature_with_timing,
-                                                 verify_with_ml_dsa_65)
+from openssl_encrypt.modules.identity import Identity, IdentityError, IdentityStore
+from openssl_encrypt.modules.identity_cli import (
+    cmd_change_password,
+    cmd_create,
+    cmd_delete,
+    cmd_export,
+    cmd_import,
+    cmd_list,
+    cmd_show,
+)
+from openssl_encrypt.modules.pqc_signing import (
+    LIBOQS_AVAILABLE,
+    PQCSigner,
+    calculate_fingerprint,
+    sign_with_ml_dsa_65,
+    verify_signature_with_timing,
+    verify_with_ml_dsa_65,
+)
 from openssl_encrypt.modules.secure_memory import SecureBytes
 
 
@@ -250,9 +259,7 @@ class TestAsymmetricDecryption(unittest.TestCase):
 
         # Create test file
         self.test_file = os.path.join(self.temp_dir, "test.txt")
-        self.test_content = (
-            "This is a secret message for testing asymmetric encryption!"
-        )
+        self.test_content = "This is a secret message for testing asymmetric encryption!"
         with open(self.test_file, "w", encoding="utf-8") as f:
             f.write(self.test_content)
 
@@ -382,9 +389,7 @@ class TestAsymmetricDecryption(unittest.TestCase):
         sig_b64 = metadata["signature"]["value"]
         sig_bytes = bytearray(base64.b64decode(sig_b64))
         sig_bytes[100] ^= 0xFF  # Flip one byte
-        metadata["signature"]["value"] = base64.b64encode(bytes(sig_bytes)).decode(
-            "utf-8"
-        )
+        metadata["signature"]["value"] = base64.b64encode(bytes(sig_bytes)).decode("utf-8")
 
         # Rewrite file with tampered metadata
         tampered_metadata_json = json.dumps(metadata)
@@ -558,9 +563,7 @@ class TestIdentity(unittest.TestCase):
         self.assertEqual(identity1.fingerprint, identity2.fingerprint)
         self.assertEqual(identity1.encryption_algorithm, identity2.encryption_algorithm)
         self.assertEqual(identity1.signing_algorithm, identity2.signing_algorithm)
-        self.assertEqual(
-            identity1.encryption_public_key, identity2.encryption_public_key
-        )
+        self.assertEqual(identity1.encryption_public_key, identity2.encryption_public_key)
         self.assertEqual(identity1.signing_public_key, identity2.signing_public_key)
 
     def test_load_without_private_keys(self):
@@ -644,9 +647,7 @@ class TestIdentity(unittest.TestCase):
         self.assertEqual(identity1.name, identity2.name)
         self.assertEqual(identity1.email, identity2.email)
         self.assertEqual(identity1.fingerprint, identity2.fingerprint)
-        self.assertEqual(
-            identity1.encryption_public_key, identity2.encryption_public_key
-        )
+        self.assertEqual(identity1.encryption_public_key, identity2.encryption_public_key)
         self.assertEqual(identity1.signing_public_key, identity2.signing_public_key)
         self.assertIsNone(identity2.encryption_private_key)
         self.assertIsNone(identity2.signing_private_key)
@@ -792,9 +793,7 @@ class TestIdentityStore(unittest.TestCase):
         self.assertEqual(retrieved.fingerprint, identity.fingerprint)
 
         # Get by non-existent fingerprint
-        not_found = self.store.get_by_fingerprint(
-            "nonexistent", None, load_private_keys=False
-        )
+        not_found = self.store.get_by_fingerprint("nonexistent", None, load_private_keys=False)
         self.assertIsNone(not_found)
 
     def test_delete_identity(self):
@@ -803,9 +802,7 @@ class TestIdentityStore(unittest.TestCase):
         self.store.add_identity(identity, "pass")
 
         # Verify it exists
-        self.assertIsNotNone(
-            self.store.get_by_name("Dave", None, load_private_keys=False)
-        )
+        self.assertIsNotNone(self.store.get_by_name("Dave", None, load_private_keys=False))
 
         # Delete
         result = self.store.delete_identity("Dave")
@@ -981,9 +978,7 @@ class TestIdentityCLI(unittest.TestCase):
         args.hsm = None  # Explicitly set to None to avoid MagicMock
 
         # Mock getpass to return test passphrase
-        with patch(
-            "openssl_encrypt.modules.identity_cli.getpass.getpass"
-        ) as mock_getpass:
+        with patch("openssl_encrypt.modules.identity_cli.getpass.getpass") as mock_getpass:
             mock_getpass.side_effect = [
                 "testpass123",
                 "testpass123",
@@ -1012,9 +1007,7 @@ class TestIdentityCLI(unittest.TestCase):
         args.hsm = None  # Explicitly set to None to avoid MagicMock
 
         # Mock getpass to return weak passphrase
-        with patch(
-            "openssl_encrypt.modules.identity_cli.getpass.getpass"
-        ) as mock_getpass:
+        with patch("openssl_encrypt.modules.identity_cli.getpass.getpass") as mock_getpass:
             mock_getpass.side_effect = ["weak", "weak"]  # Too short
 
             result = cmd_create(args)
@@ -1187,9 +1180,7 @@ class TestIdentityCLI(unittest.TestCase):
             self.assertEqual(result, 0)  # Success but cancelled
 
             # Verify identity was NOT deleted
-            still_exists = self.store.get_by_name(
-                "Grace", None, load_private_keys=False
-            )
+            still_exists = self.store.get_by_name("Grace", None, load_private_keys=False)
             self.assertIsNotNone(still_exists)
 
     def test_cmd_delete_nonexistent(self):
@@ -1213,9 +1204,7 @@ class TestIdentityCLI(unittest.TestCase):
         args.identity_store = self.identity_store_path
 
         # Mock getpass
-        with patch(
-            "openssl_encrypt.modules.identity_cli.getpass.getpass"
-        ) as mock_getpass:
+        with patch("openssl_encrypt.modules.identity_cli.getpass.getpass") as mock_getpass:
             mock_getpass.side_effect = [
                 "oldpass123",  # Old password
                 "newpass456",  # New password
@@ -1226,9 +1215,7 @@ class TestIdentityCLI(unittest.TestCase):
             self.assertEqual(result, 0)
 
             # Verify we can load with new password
-            reloaded = self.store.get_by_name(
-                "Henry", "newpass456", load_private_keys=True
-            )
+            reloaded = self.store.get_by_name("Henry", "newpass456", load_private_keys=True)
             self.assertIsNotNone(reloaded)
             self.assertEqual(reloaded.name, "Henry")
 
@@ -1247,9 +1234,7 @@ class TestIdentityCLI(unittest.TestCase):
         args.identity_store = self.identity_store_path
 
         # Mock getpass with wrong old password
-        with patch(
-            "openssl_encrypt.modules.identity_cli.getpass.getpass"
-        ) as mock_getpass:
+        with patch("openssl_encrypt.modules.identity_cli.getpass.getpass") as mock_getpass:
             mock_getpass.return_value = "wrongpass"
 
             result = cmd_change_password(args)
@@ -1912,9 +1897,7 @@ class TestSignatureWithTiming(unittest.TestCase):
         with SecureBytes(private_key) as secure_key:
             signature = signer.sign(message, bytes(secure_key))
 
-        is_valid, timing = verify_signature_with_timing(
-            message, signature, public_key, "ML-DSA-65"
-        )
+        is_valid, timing = verify_signature_with_timing(message, signature, public_key, "ML-DSA-65")
 
         self.assertTrue(is_valid)
         self.assertGreater(timing, 0)

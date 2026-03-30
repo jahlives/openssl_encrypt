@@ -13,9 +13,16 @@ from abc import abstractmethod
 from dataclasses import dataclass
 from typing import ClassVar, Dict, Optional, Union
 
-from .base import (AlgorithmBase, AlgorithmCategory, AlgorithmInfo,
-                   AlgorithmNotAvailableError, AuthenticationError,
-                   RegistryBase, SecurityLevel, ValidationError)
+from .base import (
+    AlgorithmBase,
+    AlgorithmCategory,
+    AlgorithmInfo,
+    AlgorithmNotAvailableError,
+    AuthenticationError,
+    RegistryBase,
+    SecurityLevel,
+    ValidationError,
+)
 from .utils import generate_random_bytes
 
 # Import secure memory handling
@@ -215,18 +222,14 @@ class AES256GCM(CipherBase):
         try:
             # Validate key
             if len(key_bytes) != 32:
-                raise ValidationError(
-                    f"AES-256-GCM requires 32-byte key, got {len(key_bytes)}"
-                )
+                raise ValidationError(f"AES-256-GCM requires 32-byte key, got {len(key_bytes)}")
 
             # Generate nonce if not provided
             if nonce is None:
                 nonce = self.generate_nonce()
 
             if len(nonce) != 12:
-                raise ValidationError(
-                    f"AES-GCM nonce must be 12 bytes, got {len(nonce)}"
-                )
+                raise ValidationError(f"AES-GCM nonce must be 12 bytes, got {len(nonce)}")
 
             # Import here to allow optional dependency
             from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -262,9 +265,7 @@ class AES256GCM(CipherBase):
         try:
             # Validate key
             if len(key_bytes) != 32:
-                raise ValidationError(
-                    f"AES-256-GCM requires 32-byte key, got {len(key_bytes)}"
-                )
+                raise ValidationError(f"AES-256-GCM requires 32-byte key, got {len(key_bytes)}")
 
             # Extract nonce if not provided separately
             if nonce is None:
@@ -335,17 +336,13 @@ class AESGCMSIV(CipherBase):
 
         try:
             if len(key_bytes) != 32:
-                raise ValidationError(
-                    f"AES-256-GCM-SIV requires 32-byte key, got {len(key_bytes)}"
-                )
+                raise ValidationError(f"AES-256-GCM-SIV requires 32-byte key, got {len(key_bytes)}")
 
             if nonce is None:
                 nonce = self.generate_nonce()
 
             if len(nonce) != 12:
-                raise ValidationError(
-                    f"AES-GCM-SIV nonce must be 12 bytes, got {len(nonce)}"
-                )
+                raise ValidationError(f"AES-GCM-SIV nonce must be 12 bytes, got {len(nonce)}")
 
             from cryptography.hazmat.primitives.ciphers.aead import AESGCMSIV
 
@@ -372,9 +369,7 @@ class AESGCMSIV(CipherBase):
 
         try:
             if len(key_bytes) != 32:
-                raise ValidationError(
-                    f"AES-256-GCM-SIV requires 32-byte key, got {len(key_bytes)}"
-                )
+                raise ValidationError(f"AES-256-GCM-SIV requires 32-byte key, got {len(key_bytes)}")
 
             if nonce is None:
                 if len(ciphertext) < 12 + 16:
@@ -445,9 +440,7 @@ class AESSIV(CipherBase):
 
         try:
             if len(key_bytes) != 64:
-                raise ValidationError(
-                    f"AES-256-SIV requires 64-byte key, got {len(key_bytes)}"
-                )
+                raise ValidationError(f"AES-256-SIV requires 64-byte key, got {len(key_bytes)}")
 
             from cryptography.hazmat.primitives.ciphers.aead import AESSIV
 
@@ -474,9 +467,7 @@ class AESSIV(CipherBase):
 
         try:
             if len(key_bytes) != 64:
-                raise ValidationError(
-                    f"AES-256-SIV requires 64-byte key, got {len(key_bytes)}"
-                )
+                raise ValidationError(f"AES-256-SIV requires 64-byte key, got {len(key_bytes)}")
 
             import cryptography.exceptions
             from cryptography.hazmat.primitives.ciphers.aead import AESSIV
@@ -551,17 +542,13 @@ class AESOCB3(CipherBase):
 
         try:
             if len(key_bytes) != 32:
-                raise ValidationError(
-                    f"AES-256-OCB3 requires 32-byte key, got {len(key_bytes)}"
-                )
+                raise ValidationError(f"AES-256-OCB3 requires 32-byte key, got {len(key_bytes)}")
 
             if nonce is None:
                 nonce = self.generate_nonce()
 
             if len(nonce) != 12:
-                raise ValidationError(
-                    f"AES-OCB3 nonce must be 12 bytes, got {len(nonce)}"
-                )
+                raise ValidationError(f"AES-OCB3 nonce must be 12 bytes, got {len(nonce)}")
 
             from cryptography.hazmat.primitives.ciphers.aead import AESOCB3
 
@@ -588,9 +575,7 @@ class AESOCB3(CipherBase):
 
         try:
             if len(key_bytes) != 32:
-                raise ValidationError(
-                    f"AES-256-OCB3 requires 32-byte key, got {len(key_bytes)}"
-                )
+                raise ValidationError(f"AES-256-OCB3 requires 32-byte key, got {len(key_bytes)}")
 
             if nonce is None:
                 if len(ciphertext) < 12 + 16:
@@ -673,12 +658,11 @@ class ChaCha20Poly1305(CipherBase):
                 nonce = self.generate_nonce()
 
             if len(nonce) != 12:
-                raise ValidationError(
-                    f"ChaCha20-Poly1305 nonce must be 12 bytes, got {len(nonce)}"
-                )
+                raise ValidationError(f"ChaCha20-Poly1305 nonce must be 12 bytes, got {len(nonce)}")
 
-            from cryptography.hazmat.primitives.ciphers.aead import \
-                ChaCha20Poly1305 as CryptoChaChaCipher
+            from cryptography.hazmat.primitives.ciphers.aead import (
+                ChaCha20Poly1305 as CryptoChaChaCipher,
+            )
 
             cipher = CryptoChaChaCipher(key_bytes)
             encrypted = cipher.encrypt(nonce, plaintext_bytes, associated_data)
@@ -714,8 +698,9 @@ class ChaCha20Poly1305(CipherBase):
                 ciphertext = ciphertext[12:]
 
             import cryptography.exceptions
-            from cryptography.hazmat.primitives.ciphers.aead import \
-                ChaCha20Poly1305 as CryptoChaChaCipher
+            from cryptography.hazmat.primitives.ciphers.aead import (
+                ChaCha20Poly1305 as CryptoChaChaCipher,
+            )
 
             cipher = CryptoChaChaCipher(key_bytes)
             try:
@@ -817,13 +802,10 @@ class XChaCha20Poly1305(CipherBase):
             original_nonce = nonce
             processed_nonce = self._process_nonce(key_bytes, nonce)
 
-            from cryptography.hazmat.primitives.ciphers.aead import \
-                ChaCha20Poly1305
+            from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 
             cipher = ChaCha20Poly1305(key_bytes)
-            encrypted = cipher.encrypt(
-                processed_nonce, plaintext_bytes, associated_data
-            )
+            encrypted = cipher.encrypt(processed_nonce, plaintext_bytes, associated_data)
 
             # Return original nonce (24 bytes) + ciphertext+tag
             return original_nonce + encrypted
@@ -860,8 +842,7 @@ class XChaCha20Poly1305(CipherBase):
             processed_nonce = self._process_nonce(key_bytes, nonce)
 
             import cryptography.exceptions
-            from cryptography.hazmat.primitives.ciphers.aead import \
-                ChaCha20Poly1305
+            from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 
             cipher = ChaCha20Poly1305(key_bytes)
             try:
@@ -948,17 +929,13 @@ class Threefish512(CipherBase):
 
         try:
             if len(key_bytes) != 64:
-                raise ValidationError(
-                    f"Threefish-512 requires 64-byte key, got {len(key_bytes)}"
-                )
+                raise ValidationError(f"Threefish-512 requires 64-byte key, got {len(key_bytes)}")
 
             if nonce is None:
                 nonce = self.generate_nonce()
 
             if len(nonce) != 32:
-                raise ValidationError(
-                    f"Threefish-512 nonce must be 32 bytes, got {len(nonce)}"
-                )
+                raise ValidationError(f"Threefish-512 nonce must be 32 bytes, got {len(nonce)}")
 
             import threefish_native
 
@@ -967,7 +944,9 @@ class Threefish512(CipherBase):
             aad_bytes = (
                 bytes(associated_data)
                 if isinstance(associated_data, bytearray)
-                else associated_data if associated_data else None
+                else associated_data
+                if associated_data
+                else None
             )
 
             encrypted = threefish_native.encrypt_512(
@@ -1002,9 +981,7 @@ class Threefish512(CipherBase):
 
         try:
             if len(key_bytes) != 64:
-                raise ValidationError(
-                    f"Threefish-512 requires 64-byte key, got {len(key_bytes)}"
-                )
+                raise ValidationError(f"Threefish-512 requires 64-byte key, got {len(key_bytes)}")
 
             # Extract nonce if not provided separately
             if nonce is None:
@@ -1014,9 +991,7 @@ class Threefish512(CipherBase):
                 ciphertext = ciphertext[32:]
 
             if len(nonce) != 32:
-                raise ValidationError(
-                    f"Threefish-512 nonce must be 32 bytes, got {len(nonce)}"
-                )
+                raise ValidationError(f"Threefish-512 nonce must be 32 bytes, got {len(nonce)}")
 
             import threefish_native
 
@@ -1024,14 +999,14 @@ class Threefish512(CipherBase):
                 # Convert to bytes if bytearray (native functions require bytes)
                 nonce_bytes = bytes(nonce) if isinstance(nonce, bytearray) else nonce
                 ciphertext_bytes = (
-                    bytes(ciphertext)
-                    if isinstance(ciphertext, bytearray)
-                    else ciphertext
+                    bytes(ciphertext) if isinstance(ciphertext, bytearray) else ciphertext
                 )
                 aad_bytes = (
                     bytes(associated_data)
                     if isinstance(associated_data, bytearray)
-                    else associated_data if associated_data else None
+                    else associated_data
+                    if associated_data
+                    else None
                 )
 
                 plaintext = threefish_native.decrypt_512(
@@ -1117,17 +1092,13 @@ class Threefish1024(CipherBase):
 
         try:
             if len(key_bytes) != 128:
-                raise ValidationError(
-                    f"Threefish-1024 requires 128-byte key, got {len(key_bytes)}"
-                )
+                raise ValidationError(f"Threefish-1024 requires 128-byte key, got {len(key_bytes)}")
 
             if nonce is None:
                 nonce = self.generate_nonce()
 
             if len(nonce) != 64:
-                raise ValidationError(
-                    f"Threefish-1024 nonce must be 64 bytes, got {len(nonce)}"
-                )
+                raise ValidationError(f"Threefish-1024 nonce must be 64 bytes, got {len(nonce)}")
 
             import threefish_native
 
@@ -1136,7 +1107,9 @@ class Threefish1024(CipherBase):
             aad_bytes = (
                 bytes(associated_data)
                 if isinstance(associated_data, bytearray)
-                else associated_data if associated_data else None
+                else associated_data
+                if associated_data
+                else None
             )
 
             encrypted = threefish_native.encrypt_1024(
@@ -1171,9 +1144,7 @@ class Threefish1024(CipherBase):
 
         try:
             if len(key_bytes) != 128:
-                raise ValidationError(
-                    f"Threefish-1024 requires 128-byte key, got {len(key_bytes)}"
-                )
+                raise ValidationError(f"Threefish-1024 requires 128-byte key, got {len(key_bytes)}")
 
             # Extract nonce if not provided separately
             if nonce is None:
@@ -1183,9 +1154,7 @@ class Threefish1024(CipherBase):
                 ciphertext = ciphertext[64:]
 
             if len(nonce) != 64:
-                raise ValidationError(
-                    f"Threefish-1024 nonce must be 64 bytes, got {len(nonce)}"
-                )
+                raise ValidationError(f"Threefish-1024 nonce must be 64 bytes, got {len(nonce)}")
 
             import threefish_native
 
@@ -1193,14 +1162,14 @@ class Threefish1024(CipherBase):
                 # Convert to bytes if bytearray (native functions require bytes)
                 nonce_bytes = bytes(nonce) if isinstance(nonce, bytearray) else nonce
                 ciphertext_bytes = (
-                    bytes(ciphertext)
-                    if isinstance(ciphertext, bytearray)
-                    else ciphertext
+                    bytes(ciphertext) if isinstance(ciphertext, bytearray) else ciphertext
                 )
                 aad_bytes = (
                     bytes(associated_data)
                     if isinstance(associated_data, bytearray)
-                    else associated_data if associated_data else None
+                    else associated_data
+                    if associated_data
+                    else None
                 )
 
                 plaintext = threefish_native.decrypt_1024(

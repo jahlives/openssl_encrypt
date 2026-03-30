@@ -15,9 +15,7 @@ import unittest
 from unittest import mock
 
 # Ensure package is importable
-sys.path.insert(
-    0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-)
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from openssl_encrypt.modules.crypt_cli import main as cli_main
 
@@ -49,8 +47,7 @@ def run_derive_password(extra_args, password="testpassword123!", env=None):
 
         # If --password not in extra_args and no env password, mock getpass
         has_password = any(
-            a in extra_args
-            for a in ["--password", "-p", "--password-file", "--password-fd"]
+            a in extra_args for a in ["--password", "-p", "--password-file", "--password-fd"]
         )
         has_env_pw = env and "OPENSSL_ENCRYPT_PASSWORD" in env
 
@@ -68,7 +65,9 @@ def run_derive_password(extra_args, password="testpassword123!", env=None):
                         exit_code = (
                             e.code
                             if e.code is not None
-                            else mock_exit.call_args[0][0] if mock_exit.called else 0
+                            else mock_exit.call_args[0][0]
+                            if mock_exit.called
+                            else 0
                         )
             else:
                 try:
@@ -77,7 +76,9 @@ def run_derive_password(extra_args, password="testpassword123!", env=None):
                     exit_code = (
                         e.code
                         if e.code is not None
-                        else mock_exit.call_args[0][0] if mock_exit.called else 0
+                        else mock_exit.call_args[0][0]
+                        if mock_exit.called
+                        else 0
                     )
 
             if exit_code is None and mock_exit.called:
@@ -107,9 +108,7 @@ class TestDerivePasswordAction(unittest.TestCase):
                 self.FIXED_SALT,
             ]
         )
-        self.assertEqual(
-            exit_code, 0, f"Expected exit 0, got {exit_code}. stderr: {stderr}"
-        )
+        self.assertEqual(exit_code, 0, f"Expected exit 0, got {exit_code}. stderr: {stderr}")
         output = stdout.strip()
         # Must be valid hex
         self.assertRegex(output, r"^[0-9a-f]+$", f"Output is not valid hex: {output!r}")
@@ -178,9 +177,7 @@ class TestDerivePasswordAction(unittest.TestCase):
             sys.stderr = old_stderr
 
         raw_output = stdout_buffer.getvalue()
-        self.assertEqual(
-            len(raw_output), 32, f"Expected 32 raw bytes, got {len(raw_output)}"
-        )
+        self.assertEqual(len(raw_output), 32, f"Expected 32 raw bytes, got {len(raw_output)}")
 
     def test_reproducible_with_same_salt(self):
         """Same password + same salt = same derived key."""
@@ -192,9 +189,7 @@ class TestDerivePasswordAction(unittest.TestCase):
         ]
         _, stdout1, _ = run_derive_password(args)
         _, stdout2, _ = run_derive_password(args)
-        self.assertEqual(
-            stdout1.strip(), stdout2.strip(), "Derivation is not reproducible"
-        )
+        self.assertEqual(stdout1.strip(), stdout2.strip(), "Derivation is not reproducible")
 
     def test_different_with_different_salt(self):
         """Same password + different salt = different derived key."""

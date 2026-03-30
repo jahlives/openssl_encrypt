@@ -15,8 +15,7 @@ import pytest
 import requests
 
 from openssl_encrypt.plugins.keyserver.config import KeyserverConfig
-from openssl_encrypt.plugins.keyserver.keyserver_plugin import (
-    KeyserverPlugin, NetworkError)
+from openssl_encrypt.plugins.keyserver.keyserver_plugin import KeyserverPlugin, NetworkError
 
 
 @pytest.fixture
@@ -99,9 +98,7 @@ class TestRegisterWithEmailRequest:
         plugin.session.get.return_value = mock_status
 
         with patch.object(plugin.config, "save_api_token"):
-            plugin.register_with_email(
-                "user@example.com", server_url="https://custom.example.com"
-            )
+            plugin.register_with_email("user@example.com", server_url="https://custom.example.com")
 
         url = plugin.session.post.call_args[0][0]
         assert url.startswith("https://custom.example.com")

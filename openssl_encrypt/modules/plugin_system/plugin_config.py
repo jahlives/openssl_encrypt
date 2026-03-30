@@ -99,9 +99,7 @@ class PluginConfigSchema:
         for field_name, field_def in self.fields.items():
             if field_name in config:
                 value = config[field_name]
-                validated[field_name] = self._validate_field(
-                    field_name, value, field_def
-                )
+                validated[field_name] = self._validate_field(field_name, value, field_def)
             elif field_def.get("default") is not None:
                 validated[field_name] = field_def["default"]
 
@@ -112,9 +110,7 @@ class PluginConfigSchema:
 
         return validated
 
-    def _validate_field(
-        self, field_name: str, value: Any, field_def: Dict[str, Any]
-    ) -> Any:
+    def _validate_field(self, field_name: str, value: Any, field_def: Dict[str, Any]) -> Any:
         """Validate individual field."""
         expected_type = field_def["type"]
 
@@ -174,7 +170,10 @@ def ensure_plugin_data_dir(plugin_id: str, subdir: str = "") -> Optional[Path]:
 
     try:
         from openssl_encrypt.modules.file_permissions import (
-            PermissionLevel, check_permissions, create_secure_directory)
+            PermissionLevel,
+            check_permissions,
+            create_secure_directory,
+        )
 
         create_secure_directory(data_dir, level=PermissionLevel.OWNER_FULL)
 
@@ -186,17 +185,14 @@ def ensure_plugin_data_dir(plugin_id: str, subdir: str = "") -> Optional[Path]:
         # Also ensure parent is secured if we created a subdirectory
         if subdir and base_dir.exists():
             if not check_permissions(base_dir, PermissionLevel.OWNER_FULL):
-                from openssl_encrypt.modules.file_permissions import \
-                    set_permissions
+                from openssl_encrypt.modules.file_permissions import set_permissions
 
                 set_permissions(base_dir, PermissionLevel.OWNER_FULL)
 
         return data_dir
 
     except (OSError, PermissionError) as e:
-        logger.error(
-            f"Failed to create or secure plugin data directory {data_dir}: {e}"
-        )
+        logger.error(f"Failed to create or secure plugin data directory {data_dir}: {e}")
         return None
 
 
@@ -214,9 +210,7 @@ class PluginConfigManager:
 
     def __init__(self, config_dir: Optional[str] = None):
         self.config_dir = (
-            Path(config_dir)
-            if config_dir
-            else Path.home() / ".openssl_encrypt" / "plugins"
+            Path(config_dir) if config_dir else Path.home() / ".openssl_encrypt" / "plugins"
         )
         self.configs: Dict[str, Dict[str, Any]] = {}
         self.schemas: Dict[str, PluginConfigSchema] = {}
@@ -224,25 +218,24 @@ class PluginConfigManager:
 
         # Create config directory with secure permissions
         from openssl_encrypt.modules.file_permissions import (
-            PermissionLevel, check_permissions, create_secure_directory)
+            PermissionLevel,
+            check_permissions,
+            create_secure_directory,
+        )
 
         create_secure_directory(self.config_dir, level=PermissionLevel.OWNER_FULL)
 
         # Verify permissions were set correctly (defense in depth)
         try:
             if not check_permissions(self.config_dir, PermissionLevel.OWNER_FULL):
-                logger.warning(
-                    f"Failed to set secure permissions (0o700) on {self.config_dir}"
-                )
+                logger.warning(f"Failed to set secure permissions (0o700) on {self.config_dir}")
         except (OSError, PermissionError) as e:
             logger.warning(f"Failed to verify permissions on {self.config_dir}: {e}")
 
         # Load existing configurations
         self._load_all_configs()
 
-    def register_plugin_schema(
-        self, plugin_id: str, schema: PluginConfigSchema
-    ) -> None:
+    def register_plugin_schema(self, plugin_id: str, schema: PluginConfigSchema) -> None:
         """
         Register configuration schema for plugin.
 
@@ -373,9 +366,7 @@ class PluginConfigManager:
 
         return info
 
-    def validate_plugin_config(
-        self, plugin_id: str, config: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def validate_plugin_config(self, plugin_id: str, config: Dict[str, Any]) -> Dict[str, Any]:
         """
         Validate configuration without saving it.
 
@@ -403,9 +394,7 @@ class PluginConfigManager:
         try:
             entries = list(self.config_dir.iterdir())
         except (OSError, PermissionError) as e:
-            logger.error(
-                f"Error reading plugin config directory {self.config_dir}: {e}"
-            )
+            logger.error(f"Error reading plugin config directory {self.config_dir}: {e}")
             return
 
         for plugin_dir in entries:
@@ -421,9 +410,7 @@ class PluginConfigManager:
                         if config:
                             self.configs[plugin_id] = config
                     except Exception as e:
-                        logger.error(
-                            f"Error loading config for plugin {plugin_id}: {e}"
-                        )
+                        logger.error(f"Error loading config for plugin {plugin_id}: {e}")
             except Exception as e:
                 logger.error(f"Error processing plugin directory {plugin_dir}: {e}")
 
@@ -440,9 +427,7 @@ class PluginConfigManager:
 
             # Basic validation
             if not isinstance(config, dict):
-                logger.error(
-                    f"Invalid config format for plugin {plugin_id}: not a dictionary"
-                )
+                logger.error(f"Invalid config format for plugin {plugin_id}: not a dictionary")
                 return None
 
             return config
@@ -464,8 +449,7 @@ class PluginConfigManager:
             # Serialize config to JSON
             config_json = json.dumps(config, indent=2, sort_keys=True)
 
-            from openssl_encrypt.modules.file_permissions import (
-                PermissionLevel, create_secure_file)
+            from openssl_encrypt.modules.file_permissions import PermissionLevel, create_secure_file
 
             # Open file with secure permissions
             fd = create_secure_file(config_file, level=PermissionLevel.OWNER_ONLY)
@@ -488,15 +472,15 @@ class PluginConfigManager:
         # Sanitize plugin ID for directory name
         safe_plugin_id = "".join(c for c in plugin_id if c.isalnum() or c in "_-.")
         if not safe_plugin_id:
-            raise ValueError(
-                f"Invalid plugin_id: '{plugin_id}' - contains no valid characters"
-            )
+            raise ValueError(f"Invalid plugin_id: '{plugin_id}' - contains no valid characters")
 
         # Create plugin directory if needed with secure permissions
         plugin_dir = self.config_dir / safe_plugin_id
 
         from openssl_encrypt.modules.file_permissions import (
-            PermissionLevel, create_secure_directory)
+            PermissionLevel,
+            create_secure_directory,
+        )
 
         create_secure_directory(plugin_dir, level=PermissionLevel.OWNER_FULL)
 
@@ -538,9 +522,7 @@ class PluginConfigManager:
             # Check key names
             key_lower = key.lower()
             if any(pattern in key_lower for pattern in sensitive_patterns):
-                logger.warning(
-                    f"Configuration key '{key}' appears to contain sensitive data"
-                )
+                logger.warning(f"Configuration key '{key}' appears to contain sensitive data")
 
             # Check string values
             if isinstance(value, str) and len(value) > 100:
@@ -549,9 +531,7 @@ class PluginConfigManager:
                 if any(
                     pattern in value_lower for pattern in sensitive_patterns[:6]
                 ):  # Check fewer patterns for values
-                    logger.warning(
-                        f"Configuration value for '{key}' might contain sensitive data"
-                    )
+                    logger.warning(f"Configuration value for '{key}' might contain sensitive data")
 
             # Validate value types (only allow safe types)
             if not isinstance(value, (str, int, float, bool, list, dict, type(None))):
@@ -595,9 +575,7 @@ def create_integer_field(
     }
 
 
-def create_boolean_field(
-    required: bool = False, default: bool = False
-) -> Dict[str, Any]:
+def create_boolean_field(required: bool = False, default: bool = False) -> Dict[str, Any]:
     """Create boolean field definition."""
     return {"type": bool, "required": required, "default": default, "validator": None}
 

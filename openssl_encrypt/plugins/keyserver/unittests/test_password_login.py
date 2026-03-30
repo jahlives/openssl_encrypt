@@ -13,8 +13,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from openssl_encrypt.plugins.keyserver.config import KeyserverConfig
-from openssl_encrypt.plugins.keyserver.keyserver_plugin import (
-    AuthenticationError, KeyserverPlugin)
+from openssl_encrypt.plugins.keyserver.keyserver_plugin import AuthenticationError, KeyserverPlugin
 
 # ---------------------------------------------------------------------------
 # Password Storage Tests
@@ -219,8 +218,7 @@ class TestPasswordRequiredHandling:
 
     def test_login_raises_password_required_on_403(self, tmp_path):
         """Login raises PasswordRequiredError on 403 password_required."""
-        from openssl_encrypt.plugins.keyserver.keyserver_plugin import \
-            PasswordRequiredError
+        from openssl_encrypt.plugins.keyserver.keyserver_plugin import PasswordRequiredError
 
         plugin, config = self._make_plugin(tmp_path)
 
@@ -237,7 +235,6 @@ class TestPasswordRequiredHandling:
 
     def test_password_required_error_is_authentication_error(self):
         """PasswordRequiredError must be a subclass of AuthenticationError."""
-        from openssl_encrypt.plugins.keyserver.keyserver_plugin import \
-            PasswordRequiredError
+        from openssl_encrypt.plugins.keyserver.keyserver_plugin import PasswordRequiredError
 
         assert issubclass(PasswordRequiredError, AuthenticationError)

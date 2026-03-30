@@ -140,9 +140,7 @@ class SecurityReportGenerator:
                         lines.append(f"    {key}: {value}")
                 lines.append("")
             if len(critical_events) > 10:
-                lines.append(
-                    f"  ... and {len(critical_events) - 10} more critical events"
-                )
+                lines.append(f"  ... and {len(critical_events) - 10} more critical events")
         else:
             lines.append("\n✓ No critical security events detected")
 
@@ -178,21 +176,11 @@ class SecurityReportGenerator:
         lines.append("-" * 80)
 
         # Encryption/decryption operations
-        encryption_completed = len(
-            [e for e in events if e["event_type"] == "encryption_completed"]
-        )
-        decryption_completed = len(
-            [e for e in events if e["event_type"] == "decryption_completed"]
-        )
-        encryption_failed = len(
-            [e for e in events if e["event_type"] == "encryption_failed"]
-        )
-        decryption_failed = len(
-            [e for e in events if e["event_type"] == "decryption_failed"]
-        )
-        auth_failed = len(
-            [e for e in events if e["event_type"] == "decryption_auth_failed"]
-        )
+        encryption_completed = len([e for e in events if e["event_type"] == "encryption_completed"])
+        decryption_completed = len([e for e in events if e["event_type"] == "decryption_completed"])
+        encryption_failed = len([e for e in events if e["event_type"] == "encryption_failed"])
+        decryption_failed = len([e for e in events if e["event_type"] == "decryption_failed"])
+        auth_failed = len([e for e in events if e["event_type"] == "decryption_auth_failed"])
 
         lines.append(f"\nSuccessful Operations:")
         lines.append(f"  Encryptions: {encryption_completed}")
@@ -213,12 +201,8 @@ class SecurityReportGenerator:
         plugin_events = [e for e in events if "plugin" in e["event_type"]]
         if plugin_events:
             lines.append(f"\nPlugin Activity:")
-            plugin_loaded = len(
-                [e for e in plugin_events if e["event_type"] == "plugin_loaded"]
-            )
-            plugin_blocked = len(
-                [e for e in plugin_events if e["event_type"] == "plugin_blocked"]
-            )
+            plugin_loaded = len([e for e in plugin_events if e["event_type"] == "plugin_loaded"])
+            plugin_blocked = len([e for e in plugin_events if e["event_type"] == "plugin_blocked"])
             if plugin_loaded:
                 lines.append(f"  Plugins Loaded: {plugin_loaded}")
             if plugin_blocked:
@@ -226,9 +210,7 @@ class SecurityReportGenerator:
 
         # Path security events
         path_events = [
-            e
-            for e in events
-            if "path" in e["event_type"] or "blocked" in e["event_type"]
+            e for e in events if "path" in e["event_type"] or "blocked" in e["event_type"]
         ]
         if path_events:
             lines.append(f"\nPath Security Events:")
@@ -239,9 +221,7 @@ class SecurityReportGenerator:
                 )
 
         # Rate limiting
-        rate_limit_events = [
-            e for e in events if e["event_type"] == "rate_limit_exceeded"
-        ]
+        rate_limit_events = [e for e in events if e["event_type"] == "rate_limit_exceeded"]
         if rate_limit_events:
             lines.append(f"\nRate Limiting:")
             lines.append(f"  Events: {len(rate_limit_events)}")
@@ -262,21 +242,15 @@ class SecurityReportGenerator:
         user_counts = Counter(e.get("user", "unknown") for e in events)
 
         report = {
-            "generated_at": datetime.now(timezone.utc)
-            .isoformat()
-            .replace("+00:00", "Z"),
+            "generated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "total_events": len(events),
             "statistics": {
                 "by_event_type": dict(event_counts),
                 "by_severity": dict(severity_counts),
                 "by_user": dict(user_counts),
             },
-            "critical_events_count": len(
-                [e for e in events if e["severity"] == "critical"]
-            ),
-            "warning_events_count": len(
-                [e for e in events if e["severity"] == "warning"]
-            ),
+            "critical_events_count": len([e for e in events if e["severity"] == "critical"]),
+            "warning_events_count": len([e for e in events if e["severity"] == "warning"]),
             "events": events,
         }
 
@@ -315,14 +289,10 @@ class SecurityReportGenerator:
         }
 
         # Find critical events
-        anomalies["critical_events"] = [
-            e for e in events if e["severity"] == "critical"
-        ]
+        anomalies["critical_events"] = [e for e in events if e["severity"] == "critical"]
 
         # Find repeated authentication failures (possible brute-force)
-        auth_failures = [
-            e for e in events if e["event_type"] == "decryption_auth_failed"
-        ]
+        auth_failures = [e for e in events if e["event_type"] == "decryption_auth_failed"]
         if len(auth_failures) > 5:
             anomalies["repeated_auth_failures"] = auth_failures
 
@@ -381,9 +351,7 @@ def main():
 
         if anomalies["critical_events"]:
             has_anomalies = True
-            eprint(
-                f"⚠️  CRITICAL: {len(anomalies['critical_events'])} critical events detected!"
-            )
+            eprint(f"⚠️  CRITICAL: {len(anomalies['critical_events'])} critical events detected!")
             for event in anomalies["critical_events"]:
                 eprint(f"  [{event['timestamp']}] {event['event_type']}")
 
@@ -395,9 +363,7 @@ def main():
 
         if anomalies["path_traversal_attempts"]:
             has_anomalies = True
-            eprint(
-                f"\n⚠️  Path traversal attempts: {len(anomalies['path_traversal_attempts'])}"
-            )
+            eprint(f"\n⚠️  Path traversal attempts: {len(anomalies['path_traversal_attempts'])}")
 
         if anomalies["suspicious_plugin_activity"]:
             has_anomalies = True

@@ -231,9 +231,7 @@ class TestCryptCliArguments(unittest.TestCase):
             os.path.join(os.path.dirname(__file__), "..", "modules", "crypt_cli.py")
         )
         subparser_module_path = os.path.abspath(
-            os.path.join(
-                os.path.dirname(__file__), "..", "modules", "crypt_cli_subparser.py"
-            )
+            os.path.join(os.path.dirname(__file__), "..", "modules", "crypt_cli_subparser.py")
         )
         aliases_module_path = os.path.abspath(
             os.path.join(os.path.dirname(__file__), "..", "modules", "cli_aliases.py")
@@ -379,9 +377,7 @@ def generate_cli_argument_tests():
 
             # Issue warnings for arguments not in our test list
             if missing_from_tests:
-                warning_msg = (
-                    "\nCLI arguments found in help output but not in test list:\n"
-                )
+                warning_msg = "\nCLI arguments found in help output but not in test list:\n"
                 for arg in sorted(missing_from_tests):
                     warning_msg += f"  - {arg}\n"
                 warning_msg += "\nConsider adding these to REQUIRED_ARGUMENT_GROUPS."
@@ -701,16 +697,10 @@ class TestCLIKDFConfiguration(CLITestBase):
 
             # Check output for rounds messages (using --kdf-rounds=1)
             if ARGON2_AVAILABLE:
-                self.assertIn(
-                    "Setting --argon2-rounds=1 (--kdf-rounds=1)", combined_output
-                )
+                self.assertIn("Setting --argon2-rounds=1 (--kdf-rounds=1)", combined_output)
             self.assertIn("Setting --scrypt-rounds=1 (--kdf-rounds=1)", combined_output)
-            self.assertIn(
-                "Setting --balloon-rounds=1 (--kdf-rounds=1)", combined_output
-            )
-            self.assertIn(
-                "Setting --randomx-rounds=1 (--kdf-rounds=1)", combined_output
-            )
+            self.assertIn("Setting --balloon-rounds=1 (--kdf-rounds=1)", combined_output)
+            self.assertIn("Setting --randomx-rounds=1 (--kdf-rounds=1)", combined_output)
 
             # Verify the encrypted file was created
             self.assertTrue(os.path.exists(encrypted_file))
@@ -766,9 +756,7 @@ class TestCLIKDFConfiguration(CLITestBase):
             # Check output for global rounds messages
             self.assertIn("Setting --argon2-rounds=1 (--kdf-rounds=1)", combined_output)
             self.assertIn("Setting --scrypt-rounds=1 (--kdf-rounds=1)", combined_output)
-            self.assertIn(
-                "Setting --balloon-rounds=1 (--kdf-rounds=1)", combined_output
-            )
+            self.assertIn("Setting --balloon-rounds=1 (--kdf-rounds=1)", combined_output)
 
             # Verify the encrypted file was created
             self.assertTrue(os.path.exists(encrypted_file))
@@ -826,15 +814,11 @@ class TestCLIKDFConfiguration(CLITestBase):
             # Examine output to verify rounds values
 
             # Specific value for Argon2
-            self.assertNotIn(
-                "Setting --argon2-rounds", combined_output
-            )  # Already set explicitly
+            self.assertNotIn("Setting --argon2-rounds", combined_output)  # Already set explicitly
 
             # Global values for others
             self.assertIn("Setting --scrypt-rounds=1 (--kdf-rounds=1)", combined_output)
-            self.assertIn(
-                "Setting --balloon-rounds=1 (--kdf-rounds=1)", combined_output
-            )
+            self.assertIn("Setting --balloon-rounds=1 (--kdf-rounds=1)", combined_output)
 
             # Verify the encrypted file was created
             self.assertTrue(os.path.exists(encrypted_file))
@@ -896,15 +880,11 @@ class TestCLIAdvancedOperations(CLITestBase):
             )
 
             # Verify we got some decrypted output
-            self.assertGreater(
-                len(stdout), 0, "No decrypted output received from stdin"
-            )
+            self.assertGreater(len(stdout), 0, "No decrypted output received from stdin")
 
             # The output should contain recognizable content (test files contain "Hello, World!")
             decrypted_text = stdout.decode("utf-8", errors="ignore")
-            self.assertIn(
-                "Hello", decrypted_text, "Decrypted content doesn't match expected"
-            )
+            self.assertIn("Hello", decrypted_text, "Decrypted content doesn't match expected")
 
         except subprocess.TimeoutExpired:
             process.kill()
@@ -964,9 +944,7 @@ class TestCLIAdvancedOperations(CLITestBase):
             )
 
             # Verify we got some decrypted output
-            self.assertGreater(
-                len(stdout), 0, "No decrypted output received from stdin"
-            )
+            self.assertGreater(len(stdout), 0, "No decrypted output received from stdin")
 
             # Verify that metadata extraction worked (this test proves our new implementation works)
             combined_output = stdout.decode("utf-8", errors="ignore") + stderr.decode(
@@ -976,9 +954,7 @@ class TestCLIAdvancedOperations(CLITestBase):
             # The fact that this succeeds without "Security validation check failed"
             # proves our metadata extraction is working correctly
             decrypted_text = stdout.decode("utf-8", errors="ignore")
-            self.assertIn(
-                "Hello", decrypted_text, "Decrypted content doesn't match expected"
-            )
+            self.assertIn("Hello", decrypted_text, "Decrypted content doesn't match expected")
 
         except subprocess.TimeoutExpired:
             process.kill()
@@ -1028,9 +1004,7 @@ class TestCLIAdvancedOperations(CLITestBase):
 
             # Check that debug output was produced
             debug_records = [
-                record
-                for record in self.log_capture.records
-                if record.levelno == logging.DEBUG
+                record for record in self.log_capture.records if record.levelno == logging.DEBUG
             ]
 
             # Verify we got some debug output
@@ -1052,9 +1026,7 @@ class TestCLIAdvancedOperations(CLITestBase):
                 "Hash configuration after setup",
             ]
 
-            found_patterns = [
-                pattern for pattern in debug_patterns if pattern in debug_text
-            ]
+            found_patterns = [pattern for pattern in debug_patterns if pattern in debug_text]
             self.assertGreater(
                 len(found_patterns),
                 0,
@@ -1085,9 +1057,7 @@ class TestCLIAdvancedOperations(CLITestBase):
 
             # Check that debug output was produced during decryption
             debug_records = [
-                record
-                for record in self.log_capture.records
-                if record.levelno == logging.DEBUG
+                record for record in self.log_capture.records if record.levelno == logging.DEBUG
             ]
 
             # Verify we got debug output during decryption too
@@ -1149,8 +1119,7 @@ class TestEnvironmentPasswordHandling(unittest.TestCase):
         self.assertEqual(os.environ.get("CRYPT_PASSWORD"), self.test_password)
 
         # Import and test the password retrieval logic
-        from openssl_encrypt.modules.crypt_cli import \
-            clear_password_environment
+        from openssl_encrypt.modules.crypt_cli import clear_password_environment
 
         # Verify the password is accessible
         self.assertEqual(os.environ.get("CRYPT_PASSWORD"), self.test_password)
@@ -1175,8 +1144,7 @@ class TestEnvironmentPasswordHandling(unittest.TestCase):
 
     def test_secure_environment_clearing_function(self):
         """Test the secure environment clearing function."""
-        from openssl_encrypt.modules.crypt_cli import \
-            clear_password_environment
+        from openssl_encrypt.modules.crypt_cli import clear_password_environment
 
         # Set a test password
         test_password = "SecureTestPassword456!"
@@ -1197,8 +1165,7 @@ class TestEnvironmentPasswordHandling(unittest.TestCase):
 
     def test_secure_clearing_with_different_password_lengths(self):
         """Test secure clearing works with passwords of different lengths."""
-        from openssl_encrypt.modules.crypt_cli import \
-            clear_password_environment
+        from openssl_encrypt.modules.crypt_cli import clear_password_environment
 
         test_passwords = [
             "short",
@@ -1223,8 +1190,7 @@ class TestEnvironmentPasswordHandling(unittest.TestCase):
 
     def test_secure_clearing_nonexistent_variable(self):
         """Test that secure clearing handles nonexistent environment variable gracefully."""
-        from openssl_encrypt.modules.crypt_cli import \
-            clear_password_environment
+        from openssl_encrypt.modules.crypt_cli import clear_password_environment
 
         # Ensure no CRYPT_PASSWORD exists
         if "CRYPT_PASSWORD" in os.environ:
@@ -1243,8 +1209,7 @@ class TestEnvironmentPasswordHandling(unittest.TestCase):
 
     def test_multiple_clearing_calls(self):
         """Test that multiple calls to clear function are safe."""
-        from openssl_encrypt.modules.crypt_cli import \
-            clear_password_environment
+        from openssl_encrypt.modules.crypt_cli import clear_password_environment
 
         # Set initial password
         os.environ["CRYPT_PASSWORD"] = self.test_password
@@ -1259,8 +1224,7 @@ class TestEnvironmentPasswordHandling(unittest.TestCase):
 
     def test_environment_password_secure_clearing_behavior(self):
         """Test that secure clearing function behaves correctly and clears completely."""
-        from openssl_encrypt.modules.crypt_cli import \
-            clear_password_environment
+        from openssl_encrypt.modules.crypt_cli import clear_password_environment
 
         # Set a known password
         test_password = "SecureClearingTest123!"
@@ -1283,8 +1247,7 @@ class TestEnvironmentPasswordHandling(unittest.TestCase):
 
     def test_environment_password_memory_patterns(self):
         """Test that different overwrite patterns are used during clearing."""
-        from openssl_encrypt.modules.crypt_cli import \
-            clear_password_environment
+        from openssl_encrypt.modules.crypt_cli import clear_password_environment
 
         # Test with a specific password
         test_password = "PatternTestPassword!"
@@ -1301,8 +1264,7 @@ class TestEnvironmentPasswordHandling(unittest.TestCase):
     @patch("secrets.choice")
     def test_secure_clearing_uses_random_data(self, mock_choice):
         """Test that secure clearing uses random data for overwrites."""
-        from openssl_encrypt.modules.crypt_cli import \
-            clear_password_environment
+        from openssl_encrypt.modules.crypt_cli import clear_password_environment
 
         # Configure mock to return predictable values
         mock_choice.return_value = "R"

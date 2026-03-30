@@ -16,8 +16,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Union
 
-from .base_test import (BaseSecurityTest, TestConfig, TestResult,
-                        TestResultLevel)
+from .base_test import BaseSecurityTest, TestConfig, TestResult, TestResultLevel
 from .benchmark_suite import BenchmarkTestSuite
 from .fuzz_testing import FuzzTestSuite
 from .kat_tests import KATTestSuite
@@ -103,9 +102,7 @@ class ReportGenerator:
                 "success": suite_result.success,
                 "error_message": suite_result.error_message,
                 "summary": suite_result.summary,
-                "test_results": [
-                    result.to_dict() for result in suite_result.test_results
-                ],
+                "test_results": [result.to_dict() for result in suite_result.test_results],
             }
             report_dict["suite_results"].append(suite_dict)
 
@@ -325,9 +322,7 @@ class ReportGenerator:
 
             for test_result in suite_result.test_results:
                 level_class = test_result.level.value.lower()
-                duration_text = (
-                    f"{test_result.duration:.3f}s" if test_result.duration > 0 else ""
-                )
+                duration_text = f"{test_result.duration:.3f}s" if test_result.duration > 0 else ""
 
                 html_content += f"""
                 <div class="test-result {level_class}">
@@ -522,9 +517,7 @@ class SecurityTestRunner:
 
             # Log progress
             status = "PASSED" if result.success else "FAILED"
-            self.logger.info(
-                f"Suite {result.suite_name} {status} ({result.execution_time:.2f}s)"
-            )
+            self.logger.info(f"Suite {result.suite_name} {status} ({result.execution_time:.2f}s)")
 
         return results
 
@@ -558,9 +551,7 @@ class SecurityTestRunner:
                     )
 
                 except Exception as e:
-                    self.logger.error(
-                        f"Suite {suite_type.value} failed with exception: {e}"
-                    )
+                    self.logger.error(f"Suite {suite_type.value} failed with exception: {e}")
                     # Create error result
                     error_result = TestSuiteResult(
                         suite_name=suite_type.value,
@@ -608,9 +599,7 @@ class SecurityTestRunner:
             # Get suite summary
             summary = suite_instance.get_summary()
 
-            success = all(
-                result.level != TestResultLevel.CRITICAL for result in test_results
-            )
+            success = all(result.level != TestResultLevel.CRITICAL for result in test_results)
 
             return TestSuiteResult(
                 suite_name=suite_instance.name,
@@ -635,9 +624,7 @@ class SecurityTestRunner:
                 error_message=str(e),
             )
 
-    def _generate_overall_summary(
-        self, suite_results: List[TestSuiteResult]
-    ) -> Dict[str, Any]:
+    def _generate_overall_summary(self, suite_results: List[TestSuiteResult]) -> Dict[str, Any]:
         """Generate overall test run summary statistics."""
 
         total_suites = len(suite_results)
@@ -707,9 +694,7 @@ class SecurityTestRunner:
 
         return system_info
 
-    def _generate_reports(
-        self, report: TestRunReport, execution_plan: TestExecutionPlan
-    ) -> None:
+    def _generate_reports(self, report: TestRunReport, execution_plan: TestExecutionPlan) -> None:
         """Generate test reports in requested formats."""
 
         output_dir = execution_plan.output_directory or "test_reports"

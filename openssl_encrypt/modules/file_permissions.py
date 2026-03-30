@@ -46,9 +46,7 @@ class PermissionLevel(Enum):
 
     OWNER_ONLY = "owner_only"  # 0o600 / owner RW only
     OWNER_FULL = "owner_full"  # 0o700 / owner RWX only
-    OWNER_WRITE_PUBLIC_READ = (
-        "owner_write_public_read"  # 0o644 / owner RW, everyone read
-    )
+    OWNER_WRITE_PUBLIC_READ = "owner_write_public_read"  # 0o644 / owner RW, everyone read
 
 
 # POSIX mode mapping
@@ -141,12 +139,9 @@ def _apply_dacl(path: str, dacl: "win32security.ACL") -> None:
     """
     # PROTECTED_DACL_SECURITY_INFORMATION disables inheritance from parent
     security_info = (
-        win32security.DACL_SECURITY_INFORMATION
-        | win32security.PROTECTED_DACL_SECURITY_INFORMATION
+        win32security.DACL_SECURITY_INFORMATION | win32security.PROTECTED_DACL_SECURITY_INFORMATION
     )
-    sd = win32security.GetFileSecurity(
-        str(path), win32security.OWNER_SECURITY_INFORMATION
-    )
+    sd = win32security.GetFileSecurity(str(path), win32security.OWNER_SECURITY_INFORMATION)
     sd.SetSecurityDescriptorDacl(True, dacl, False)
     win32security.SetFileSecurity(str(path), security_info, sd)
 
@@ -165,8 +160,7 @@ def _dacl_matches_level(path: str, level: PermissionLevel) -> bool:
     try:
         sd = win32security.GetFileSecurity(
             str(path),
-            win32security.DACL_SECURITY_INFORMATION
-            | win32security.OWNER_SECURITY_INFORMATION,
+            win32security.DACL_SECURITY_INFORMATION | win32security.OWNER_SECURITY_INFORMATION,
         )
         dacl = sd.GetSecurityDescriptorDacl()
         if dacl is None:
@@ -330,9 +324,7 @@ def get_posix_mode(path) -> int:
         return stat.S_IMODE(os.stat(path_str).st_mode)
 
 
-def create_secure_directory(
-    path, level: PermissionLevel = PermissionLevel.OWNER_FULL
-) -> Path:
+def create_secure_directory(path, level: PermissionLevel = PermissionLevel.OWNER_FULL) -> Path:
     """
     Create a directory with secure permissions set atomically.
 
@@ -374,9 +366,7 @@ def create_secure_directory(
     return path
 
 
-def create_secure_file(
-    path, level: PermissionLevel = PermissionLevel.OWNER_ONLY
-) -> int:
+def create_secure_file(path, level: PermissionLevel = PermissionLevel.OWNER_ONLY) -> int:
     """
     Open/create a file with secure permissions, returning a file descriptor.
 
@@ -442,9 +432,7 @@ def copy_permissions(source, target) -> None:
 
     if sys.platform == "win32" and _HAS_WIN32:
         # Copy the DACL from source to target
-        sd = win32security.GetFileSecurity(
-            source_str, win32security.DACL_SECURITY_INFORMATION
-        )
+        sd = win32security.GetFileSecurity(source_str, win32security.DACL_SECURITY_INFORMATION)
         dacl = sd.GetSecurityDescriptorDacl()
 
         security_info = (

@@ -28,10 +28,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from ...modules.plugin_system import (PluginCapability, PluginResult,
-                                      PluginSecurityContext,
-                                      PostProcessorPlugin, PreProcessorPlugin,
-                                      UtilityPlugin)
+from ...modules.plugin_system import (
+    PluginCapability,
+    PluginResult,
+    PluginSecurityContext,
+    PostProcessorPlugin,
+    PreProcessorPlugin,
+    UtilityPlugin,
+)
 
 
 class FileBackupPlugin(PreProcessorPlugin):
@@ -73,13 +77,9 @@ class FileBackupPlugin(PreProcessorPlugin):
             )
 
         except Exception as e:
-            return PluginResult.error_result(
-                f"Backup plugin initialization failed: {str(e)}"
-            )
+            return PluginResult.error_result(f"Backup plugin initialization failed: {str(e)}")
 
-    def process_file(
-        self, file_path: str, context: PluginSecurityContext
-    ) -> PluginResult:
+    def process_file(self, file_path: str, context: PluginSecurityContext) -> PluginResult:
         """Create backup of file before encryption."""
         try:
             if not os.path.exists(file_path):
@@ -132,9 +132,7 @@ class FileBackupPlugin(PreProcessorPlugin):
             )
 
         except PermissionError as e:
-            return PluginResult.error_result(
-                f"Permission denied creating backup: {str(e)}"
-            )
+            return PluginResult.error_result(f"Permission denied creating backup: {str(e)}")
         except Exception as e:
             return PluginResult.error_result(f"Backup creation failed: {str(e)}")
 
@@ -162,9 +160,7 @@ class BackupVerificationPlugin(PostProcessorPlugin):
             # Check if backup was created during pre-processing
             backup_created = context.metadata.get("backup_created", False)
             if not backup_created:
-                return PluginResult.success_result(
-                    "No backup was requested for verification"
-                )
+                return PluginResult.success_result("No backup was requested for verification")
 
             backup_path = context.metadata.get("backup_path")
             if not backup_path:
@@ -191,9 +187,7 @@ class BackupVerificationPlugin(PostProcessorPlugin):
             except Exception as e:
                 return PluginResult.error_result(f"Backup not readable: {str(e)}")
 
-            self.logger.info(
-                f"Backup verification successful: {os.path.basename(backup_path)}"
-            )
+            self.logger.info(f"Backup verification successful: {os.path.basename(backup_path)}")
 
             return PluginResult.success_result(
                 f"Backup verified: {os.path.basename(backup_path)}",
@@ -385,9 +379,7 @@ class BackupUtilityPlugin(UtilityPlugin):
             if len(name_parts) >= 2:
                 potential_timestamp = name_parts[-1]
                 try:
-                    timestamp_match = datetime.strptime(
-                        potential_timestamp, "%Y%m%d_%H%M%S"
-                    )
+                    timestamp_match = datetime.strptime(potential_timestamp, "%Y%m%d_%H%M%S")
                 except ValueError:
                     pass
 

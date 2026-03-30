@@ -16,7 +16,9 @@ import requests_mock
 
 from openssl_encrypt.modules.telemetry_filter import TelemetryDataFilter
 from openssl_encrypt.plugins.telemetry.telemetry_plugin import (
-    OpenSSLEncryptTelemetryPlugin, TelemetryPluginConfig)
+    OpenSSLEncryptTelemetryPlugin,
+    TelemetryPluginConfig,
+)
 
 
 class TestEndToEndFlow:
@@ -59,9 +61,7 @@ class TestEndToEndFlow:
                     "derivation_config": {
                         "salt": "dGVzdA==",
                         "hash_config": {"sha512": {"rounds": 10000}},
-                        "kdf_config": {
-                            "argon2": {"time_cost": 3, "memory_cost": 65536}
-                        },
+                        "kdf_config": {"argon2": {"time_cost": 3, "memory_cost": 65536}},
                     },
                     "encryption": {"algorithm": "aes-256-gcm"},
                     "hashes": {},
@@ -207,9 +207,7 @@ class TestEndToEndFlow:
                     "derivation_config": {
                         "salt": "test",
                         "hash_config": {"sha512": {"rounds": 10000}},
-                        "kdf_config": {
-                            "argon2": {"time_cost": 3, "memory_cost": 65536}
-                        },
+                        "kdf_config": {"argon2": {"time_cost": 3, "memory_cost": 65536}},
                     },
                     "encryption": {"algorithm": f"test-algo-{i}"},
                     "hashes": {},

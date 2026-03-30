@@ -9,8 +9,7 @@ DoS attacks where malicious actors inflate metadata values to overwhelm the syst
 from typing import Dict, List, Tuple
 
 try:
-    from .benchmark_constants import (HASH_BENCHMARK_DATA, KDF_BENCHMARK_DATA,
-                                      WARNING_THRESHOLDS)
+    from .benchmark_constants import HASH_BENCHMARK_DATA, KDF_BENCHMARK_DATA, WARNING_THRESHOLDS
 except ImportError:
     # Fallback if benchmark_constants.py doesn't exist yet
     HASH_BENCHMARK_DATA = {}
@@ -354,16 +353,13 @@ def estimate_decryption_cost(metadata: Dict) -> DecryptionEstimate:
         if estimate.total_time_seconds > WARNING_THRESHOLDS["time_seconds"]:
             threshold = WARNING_THRESHOLDS["time_seconds"]
             estimate.warnings.append(
-                f"⚠️  Time: {estimate.total_time_seconds:.1f}s "
-                f"(threshold: {threshold}s)"
+                f"⚠️  Time: {estimate.total_time_seconds:.1f}s " f"(threshold: {threshold}s)"
             )
 
         if estimate.peak_memory_kb > WARNING_THRESHOLDS["memory_kb"]:
             mb = estimate.peak_memory_kb / 1024
             threshold_mb = WARNING_THRESHOLDS["memory_kb"] / 1024
-            estimate.warnings.append(
-                f"⚠️  Memory: {mb:.0f} MB (threshold: {threshold_mb:.0f} MB)"
-            )
+            estimate.warnings.append(f"⚠️  Memory: {mb:.0f} MB (threshold: {threshold_mb:.0f} MB)")
 
     return estimate
 

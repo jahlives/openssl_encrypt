@@ -26,14 +26,15 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 # Import configuration modules
-from openssl_encrypt.modules.config_wizard import (ConfigurationWizard,
-                                                   UseCase, UserExpertise,
-                                                   generate_cli_arguments,
-                                                   run_configuration_wizard)
-from openssl_encrypt.modules.keystore_cli import (KeystoreSecurityLevel,
-                                                  PQCKeystore)
-from openssl_encrypt.modules.security_scorer import (SecurityLevel,
-                                                     SecurityScorer)
+from openssl_encrypt.modules.config_wizard import (
+    ConfigurationWizard,
+    UseCase,
+    UserExpertise,
+    generate_cli_arguments,
+    run_configuration_wizard,
+)
+from openssl_encrypt.modules.keystore_cli import KeystoreSecurityLevel, PQCKeystore
+from openssl_encrypt.modules.security_scorer import SecurityLevel, SecurityScorer
 
 # Import PQC modules if available
 try:
@@ -82,8 +83,7 @@ class TestDefaultConfiguration(unittest.TestCase):
 
     def test_default_configuration_applied(self):
         """Test that default configuration is applied when no arguments provided."""
-        from ..modules.crypt_core import (EncryptionAlgorithm, encrypt_file,
-                                          extract_file_metadata)
+        from ..modules.crypt_core import EncryptionAlgorithm, encrypt_file, extract_file_metadata
 
         encrypted_file = self.test_file + ".enc"
 
@@ -134,8 +134,7 @@ class TestDefaultConfiguration(unittest.TestCase):
 
     def test_default_configuration_decryption(self):
         """Test that files encrypted with default configuration can be decrypted."""
-        from ..modules.crypt_core import (EncryptionAlgorithm, decrypt_file,
-                                          encrypt_file)
+        from ..modules.crypt_core import EncryptionAlgorithm, decrypt_file, encrypt_file
 
         encrypted_file = self.test_file + ".enc"
         decrypted_file = self.test_file + ".dec"
@@ -153,9 +152,7 @@ class TestDefaultConfiguration(unittest.TestCase):
         self.assertTrue(result, "Encryption with default config should succeed")
 
         # Decrypt the file
-        result = decrypt_file(
-            encrypted_file, decrypted_file, self.test_password, quiet=True
-        )
+        result = decrypt_file(encrypted_file, decrypted_file, self.test_password, quiet=True)
 
         self.assertTrue(result, "Decryption should succeed")
 
@@ -206,8 +203,7 @@ try:
     if tests_path not in sys.path:
         sys.path.insert(0, tests_path)
 
-    from keystore.test_keystore_hqc_mlkem_integration import \
-        TestHQCMLKEMKeystoreIntegration
+    from keystore.test_keystore_hqc_mlkem_integration import TestHQCMLKEMKeystoreIntegration
 
     print("✅ HQC and ML-KEM keystore integration tests imported successfully")
 except ImportError as e:
@@ -223,10 +219,12 @@ except Exception as e:
 
 # Plugin classes for testing (defined at module level for picklability)
 try:
-    from openssl_encrypt.modules.plugin_system import (PluginCapability,
-                                                       PluginResult,
-                                                       PluginSecurityContext,
-                                                       PreProcessorPlugin)
+    from openssl_encrypt.modules.plugin_system import (
+        PluginCapability,
+        PluginResult,
+        PluginSecurityContext,
+        PreProcessorPlugin,
+    )
 
     class SlowPluginForTimeout(PreProcessorPlugin):
         """A slow plugin for timeout testing (module-level for pickling)."""
@@ -323,8 +321,7 @@ class TestPluginSystem(unittest.TestCase):
     def test_plugin_security_context_creation(self):
         """Test PluginSecurityContext creation and capabilities."""
         try:
-            from ..modules.plugin_system import (PluginCapability,
-                                                 PluginSecurityContext)
+            from ..modules.plugin_system import PluginCapability, PluginSecurityContext
 
             capabilities = {PluginCapability.READ_FILES, PluginCapability.WRITE_LOGS}
             context = PluginSecurityContext("test_plugin", capabilities)
@@ -342,12 +339,9 @@ class TestPluginSystem(unittest.TestCase):
     def test_plugin_security_context_sensitive_data_filtering(self):
         """Test that PluginSecurityContext filters sensitive data."""
         try:
-            from ..modules.plugin_system import (PluginCapability,
-                                                 PluginSecurityContext)
+            from ..modules.plugin_system import PluginCapability, PluginSecurityContext
 
-            context = PluginSecurityContext(
-                "test_plugin", {PluginCapability.ACCESS_CONFIG}
-            )
+            context = PluginSecurityContext("test_plugin", {PluginCapability.ACCESS_CONFIG})
 
             # Try to add sensitive metadata - should be blocked
             context.add_metadata("password", "secret123")
@@ -392,11 +386,13 @@ class TestPluginSystem(unittest.TestCase):
     def test_plugin_config_schema_validation(self):
         """Test plugin configuration schema validation."""
         try:
-            from ..modules.plugin_system import (ConfigValidationError,
-                                                 PluginConfigSchema,
-                                                 create_boolean_field,
-                                                 create_integer_field,
-                                                 create_string_field)
+            from ..modules.plugin_system import (
+                ConfigValidationError,
+                PluginConfigSchema,
+                create_boolean_field,
+                create_integer_field,
+                create_string_field,
+            )
 
             # Create test schema
             schema = PluginConfigSchema()
@@ -423,8 +419,7 @@ class TestPluginSystem(unittest.TestCase):
     def test_plugin_config_manager_basic_operations(self):
         """Test basic plugin configuration manager operations."""
         try:
-            from ..modules.plugin_system import (ConfigValidationError,
-                                                 PluginConfigManager)
+            from ..modules.plugin_system import ConfigValidationError, PluginConfigManager
 
             config_manager = PluginConfigManager(self.config_dir)
 
@@ -475,10 +470,12 @@ class TestPluginSystem(unittest.TestCase):
     def test_create_simple_test_plugin(self):
         """Test creating and loading a simple test plugin."""
         try:
-            from ..modules.plugin_system import (PluginCapability,
-                                                 PluginResult,
-                                                 PluginSecurityContext,
-                                                 PreProcessorPlugin)
+            from ..modules.plugin_system import (
+                PluginCapability,
+                PluginResult,
+                PluginSecurityContext,
+                PreProcessorPlugin,
+            )
 
             # Create a simple test plugin file
             plugin_code = """
@@ -515,8 +512,7 @@ class SimpleTestPlugin(PreProcessorPlugin):
     def test_plugin_manager_plugin_discovery(self):
         """Test plugin manager discovers plugins correctly."""
         try:
-            from ..modules.plugin_system import (PluginConfigManager,
-                                                 PluginManager)
+            from ..modules.plugin_system import PluginConfigManager, PluginManager
 
             # Create test plugin file
             self.test_create_simple_test_plugin()
@@ -539,10 +535,12 @@ class SimpleTestPlugin(PreProcessorPlugin):
     def test_plugin_manager_load_and_execute_plugin(self):
         """Test loading and executing a plugin."""
         try:
-            from ..modules.plugin_system import (PluginCapability,
-                                                 PluginConfigManager,
-                                                 PluginManager,
-                                                 PluginSecurityContext)
+            from ..modules.plugin_system import (
+                PluginCapability,
+                PluginConfigManager,
+                PluginManager,
+                PluginSecurityContext,
+            )
 
             # Create and discover test plugin
             self.test_create_simple_test_plugin()
@@ -570,9 +568,7 @@ class SimpleTestPlugin(PreProcessorPlugin):
             self.assertIn("simple_test", plugin_ids)
 
             # Create security context and execute plugin
-            context = PluginSecurityContext(
-                "simple_test", {PluginCapability.READ_FILES}
-            )
+            context = PluginSecurityContext("simple_test", {PluginCapability.READ_FILES})
             context.file_paths = ["/tmp/test_file.txt"]
 
             # Use in-process execution to avoid pickling issues with dynamically loaded plugins
@@ -587,10 +583,12 @@ class SimpleTestPlugin(PreProcessorPlugin):
     def test_plugin_manager_capability_validation(self):
         """Test that plugin manager validates capabilities correctly."""
         try:
-            from ..modules.plugin_system import (PluginCapability,
-                                                 PluginConfigManager,
-                                                 PluginManager,
-                                                 PluginSecurityContext)
+            from ..modules.plugin_system import (
+                PluginCapability,
+                PluginConfigManager,
+                PluginManager,
+                PluginSecurityContext,
+            )
 
             # Create test plugin and load it
             self.test_create_simple_test_plugin()
@@ -615,9 +613,7 @@ class SimpleTestPlugin(PreProcessorPlugin):
             self.assertFalse(result.success)
 
             # Test with sufficient capabilities - should succeed
-            sufficient_context = PluginSecurityContext(
-                "simple_test", {PluginCapability.READ_FILES}
-            )
+            sufficient_context = PluginSecurityContext("simple_test", {PluginCapability.READ_FILES})
             sufficient_context.file_paths = ["/tmp/test_file.txt"]
             result = plugin_manager.execute_plugin(
                 "simple_test", sufficient_context, use_process_isolation=False
@@ -657,9 +653,11 @@ class SimpleTestPlugin(PreProcessorPlugin):
             import tempfile
             import textwrap
 
-            from ..modules.plugin_system import (PluginCapability,
-                                                 PluginSandbox,
-                                                 PluginSecurityContext)
+            from ..modules.plugin_system import (
+                PluginCapability,
+                PluginSandbox,
+                PluginSecurityContext,
+            )
 
             # Create a standalone slow plugin module in a temp file so the AST
             # analyzer only sees clean code (no blocked imports from test_config.py).
@@ -699,17 +697,13 @@ class SimpleTestPlugin(PreProcessorPlugin):
                 slow_module_path = f.name
 
             try:
-                spec = importlib.util.spec_from_file_location(
-                    "_slow_plugin_mod", slow_module_path
-                )
+                spec = importlib.util.spec_from_file_location("_slow_plugin_mod", slow_module_path)
                 slow_mod = importlib.util.module_from_spec(spec)
                 sys.modules["_slow_plugin_mod"] = slow_mod
                 spec.loader.exec_module(slow_mod)
 
                 plugin = slow_mod.SlowPluginForTimeout()
-                context = PluginSecurityContext(
-                    "slow_test", {PluginCapability.READ_FILES}
-                )
+                context = PluginSecurityContext("slow_test", {PluginCapability.READ_FILES})
                 sandbox = PluginSandbox()
 
                 # Execute with short timeout and process isolation
@@ -720,8 +714,7 @@ class SimpleTestPlugin(PreProcessorPlugin):
                 # Should fail due to timeout or process crash
                 self.assertFalse(result.success)
                 self.assertTrue(
-                    "timed out" in result.message.lower()
-                    or "process" in result.message.lower(),
+                    "timed out" in result.message.lower() or "process" in result.message.lower(),
                     f"Expected timeout or process failure, got: {result.message}",
                 )
             finally:
@@ -734,8 +727,7 @@ class SimpleTestPlugin(PreProcessorPlugin):
     def test_plugin_manager_enable_disable_plugin(self):
         """Test enabling and disabling plugins."""
         try:
-            from ..modules.plugin_system import (PluginConfigManager,
-                                                 PluginManager)
+            from ..modules.plugin_system import PluginConfigManager, PluginManager
 
             # Create and load test plugin
             self.test_create_simple_test_plugin()
@@ -772,10 +764,12 @@ class SimpleTestPlugin(PreProcessorPlugin):
     def test_plugin_manager_audit_logging(self):
         """Test plugin manager audit logging functionality."""
         try:
-            from ..modules.plugin_system import (PluginCapability,
-                                                 PluginConfigManager,
-                                                 PluginManager,
-                                                 PluginSecurityContext)
+            from ..modules.plugin_system import (
+                PluginCapability,
+                PluginConfigManager,
+                PluginManager,
+                PluginSecurityContext,
+            )
 
             config_manager = PluginConfigManager(self.config_dir)
             plugin_manager = PluginManager(config_manager)
@@ -824,12 +818,15 @@ class SimpleTestPlugin(PreProcessorPlugin):
     def test_plugin_different_types(self):
         """Test different plugin types work correctly."""
         try:
-            from ..modules.plugin_system import (AnalyzerPlugin,
-                                                 MetadataHandlerPlugin,
-                                                 PluginCapability,
-                                                 PluginResult, PluginType,
-                                                 PostProcessorPlugin,
-                                                 UtilityPlugin)
+            from ..modules.plugin_system import (
+                AnalyzerPlugin,
+                MetadataHandlerPlugin,
+                PluginCapability,
+                PluginResult,
+                PluginType,
+                PostProcessorPlugin,
+                UtilityPlugin,
+            )
 
             # Test PostProcessorPlugin
             class TestPostProcessor(PostProcessorPlugin):
@@ -910,9 +907,11 @@ class SimpleTestPlugin(PreProcessorPlugin):
     def test_plugin_system_availability_functions(self):
         """Test plugin system availability and info functions."""
         try:
-            from ..modules.plugin_system import (PLUGIN_SYSTEM_AVAILABLE,
-                                                 get_plugin_system_info,
-                                                 is_plugin_system_available)
+            from ..modules.plugin_system import (
+                PLUGIN_SYSTEM_AVAILABLE,
+                get_plugin_system_info,
+                is_plugin_system_available,
+            )
 
             # Test availability
             self.assertTrue(is_plugin_system_available())
@@ -987,9 +986,7 @@ class TestPluginIntegration(unittest.TestCase):
 
         self.json_file = os.path.join(self.test_dir, "test.json")
         with open(self.json_file, "w", encoding="utf-8") as f:
-            json.dump(
-                {"name": "test", "data": [1, 2, 3], "nested": {"key": "value"}}, f
-            )
+            json.dump({"name": "test", "data": [1, 2, 3], "nested": {"key": "value"}}, f)
         self.test_files.append(self.json_file)
 
         self.csv_file = os.path.join(self.test_dir, "test.csv")
@@ -1014,9 +1011,10 @@ class TestPluginIntegration(unittest.TestCase):
         """Test file metadata analyzer plugin functionality."""
         try:
             from openssl_encrypt.modules.plugin_system import (
-                PluginCapability, PluginSecurityContext)
-            from openssl_encrypt.plugins.examples.file_analyzer import \
-                FileMetadataAnalyzer
+                PluginCapability,
+                PluginSecurityContext,
+            )
+            from openssl_encrypt.plugins.examples.file_analyzer import FileMetadataAnalyzer
 
             analyzer = FileMetadataAnalyzer()
             context = PluginSecurityContext(
@@ -1048,9 +1046,13 @@ class TestPluginIntegration(unittest.TestCase):
         """Test backup plugin creates and verifies backups."""
         try:
             from openssl_encrypt.modules.plugin_system import (
-                PluginCapability, PluginSecurityContext)
+                PluginCapability,
+                PluginSecurityContext,
+            )
             from openssl_encrypt.plugins.examples.backup_plugin import (
-                BackupVerificationPlugin, FileBackupPlugin)
+                BackupVerificationPlugin,
+                FileBackupPlugin,
+            )
 
             backup_plugin = FileBackupPlugin()
             verifier = BackupVerificationPlugin()
@@ -1083,9 +1085,7 @@ class TestPluginIntegration(unittest.TestCase):
             context.add_metadata("backup_created", True)
             context.add_metadata("backup_path", backup_path)
 
-            verify_result = verifier.process_encrypted_file(
-                "dummy_encrypted.enc", context
-            )
+            verify_result = verifier.process_encrypted_file("dummy_encrypted.enc", context)
             self.assertTrue(verify_result.success)
 
         except ImportError:
@@ -1095,9 +1095,13 @@ class TestPluginIntegration(unittest.TestCase):
         """Test format conversion between different text formats."""
         try:
             from openssl_encrypt.modules.plugin_system import (
-                PluginCapability, PluginSecurityContext)
+                PluginCapability,
+                PluginSecurityContext,
+            )
             from openssl_encrypt.plugins.examples.format_converter import (
-                SmartFormatPreProcessor, TextFormatConverter)
+                SmartFormatPreProcessor,
+                TextFormatConverter,
+            )
 
             converter = TextFormatConverter()
             preprocessor = SmartFormatPreProcessor()
@@ -1115,9 +1119,7 @@ class TestPluginIntegration(unittest.TestCase):
             output_file = os.path.join(self.test_dir, "converted.txt")
             self.test_files.append(output_file)
 
-            result = converter.convert_format(
-                self.json_file, output_file, "json", "txt", context
-            )
+            result = converter.convert_format(self.json_file, output_file, "json", "txt", context)
             self.assertTrue(result.success)
             self.assertTrue(os.path.exists(output_file))
 
@@ -1125,9 +1127,7 @@ class TestPluginIntegration(unittest.TestCase):
             json_output = os.path.join(self.test_dir, "converted.json")
             self.test_files.append(json_output)
 
-            result = converter.convert_format(
-                self.csv_file, json_output, "csv", "json", context
-            )
+            result = converter.convert_format(self.csv_file, json_output, "csv", "json", context)
             self.assertTrue(result.success)
             self.assertTrue(os.path.exists(json_output))
 
@@ -1148,10 +1148,14 @@ class TestPluginIntegration(unittest.TestCase):
         """Test audit logging plugin functionality."""
         try:
             from openssl_encrypt.modules.plugin_system import (
-                PluginCapability, PluginSecurityContext)
+                PluginCapability,
+                PluginSecurityContext,
+            )
             from openssl_encrypt.plugins.examples.audit_logger import (
-                EncryptionAuditPlugin, EncryptionCompletionAuditor,
-                SecurityEventMonitor)
+                EncryptionAuditPlugin,
+                EncryptionCompletionAuditor,
+                SecurityEventMonitor,
+            )
 
             audit_plugin = EncryptionAuditPlugin()
             completion_auditor = EncryptionCompletionAuditor()
@@ -1208,9 +1212,13 @@ class TestPluginIntegration(unittest.TestCase):
             # Create a temporary encrypted file to analyze
             from openssl_encrypt.modules.crypt_core import encrypt_file
             from openssl_encrypt.modules.plugin_system import (
-                PluginCapability, PluginSecurityContext)
+                PluginCapability,
+                PluginSecurityContext,
+            )
             from openssl_encrypt.plugins.examples.file_analyzer import (
-                EncryptionOverheadAnalyzer, FileMetadataAnalyzer)
+                EncryptionOverheadAnalyzer,
+                FileMetadataAnalyzer,
+            )
 
             # Create hash config for encryption
             hash_config = {
@@ -1279,11 +1287,11 @@ class TestPluginIntegration(unittest.TestCase):
         """Test plugin error handling with invalid inputs."""
         try:
             from openssl_encrypt.modules.plugin_system import (
-                PluginCapability, PluginSecurityContext)
-            from openssl_encrypt.plugins.examples.backup_plugin import \
-                FileBackupPlugin
-            from openssl_encrypt.plugins.examples.file_analyzer import \
-                FileMetadataAnalyzer
+                PluginCapability,
+                PluginSecurityContext,
+            )
+            from openssl_encrypt.plugins.examples.backup_plugin import FileBackupPlugin
+            from openssl_encrypt.plugins.examples.file_analyzer import FileMetadataAnalyzer
 
             analyzer = FileMetadataAnalyzer()
             backup_plugin = FileBackupPlugin()
@@ -1599,9 +1607,7 @@ class TestSecurityScorer(unittest.TestCase):
         cipher_info = {"algorithm": "xchacha20-poly1305"}
         pqc_info = {"enabled": True, "algorithm": "ml-kem-1024"}
 
-        result = self.scorer.score_configuration(
-            hash_config, kdf_config, cipher_info, pqc_info
-        )
+        result = self.scorer.score_configuration(hash_config, kdf_config, cipher_info, pqc_info)
 
         # Should have higher overall score
         self.assertGreaterEqual(result["overall"]["score"], 5.0)
@@ -1623,9 +1629,7 @@ class TestSecurityScorer(unittest.TestCase):
         kdf_score = {"algorithms": ["argon2"]}
         cipher_score = {"algorithm": "aes-gcm"}
 
-        result = self.scorer._calculate_security_estimates(
-            hash_score, kdf_score, cipher_score
-        )
+        result = self.scorer._calculate_security_estimates(hash_score, kdf_score, cipher_score)
 
         self.assertIn("brute_force_time", result)
         self.assertIn("note", result)
@@ -1666,8 +1670,7 @@ class TestSecurityScorer(unittest.TestCase):
 
     def test_convenience_function(self):
         """Test the convenience function analyze_security_config."""
-        from openssl_encrypt.modules.security_scorer import \
-            analyze_security_config
+        from openssl_encrypt.modules.security_scorer import analyze_security_config
 
         hash_config = {"sha256": {"rounds": 1000000}}
         kdf_config = {"argon2": {"enabled": True, "memory_cost": 65536}}
@@ -1758,9 +1761,7 @@ class TestConfigurationWizard(unittest.TestCase):
 
         self.assertIn("argon2", config["kdf_settings"])
         self.assertIn("scrypt", config["kdf_settings"])
-        self.assertEqual(
-            config["kdf_settings"]["argon2"]["memory_cost"], 131072
-        )  # 128MB
+        self.assertEqual(config["kdf_settings"]["argon2"]["memory_cost"], 131072)  # 128MB
 
         self.assertEqual(config["encryption"]["algorithm"], "xchacha20-poly1305")
 
@@ -1775,9 +1776,7 @@ class TestConfigurationWizard(unittest.TestCase):
         self.assertIn("sha3_512", config["hash_algorithms"])
         self.assertIn("blake3", config["hash_algorithms"])
 
-        self.assertEqual(
-            config["kdf_settings"]["argon2"]["memory_cost"], 262144
-        )  # 256MB
+        self.assertEqual(config["kdf_settings"]["argon2"]["memory_cost"], 262144)  # 256MB
         self.assertEqual(config["encryption"]["algorithm"], "aes-gcm-siv")
 
         # Should enable post-quantum by default
@@ -1799,9 +1798,7 @@ class TestConfigurationWizard(unittest.TestCase):
 
         self.assertIn("argon2", config["kdf_settings"])
         self.assertIn("scrypt", config["kdf_settings"])
-        self.assertEqual(
-            config["kdf_settings"]["argon2"]["memory_cost"], 524288
-        )  # 512MB
+        self.assertEqual(config["kdf_settings"]["argon2"]["memory_cost"], 524288)  # 512MB
 
         self.assertEqual(config["encryption"]["algorithm"], "xchacha20-poly1305")
         self.assertTrue(config["post_quantum"]["enabled"])
@@ -1955,9 +1952,7 @@ class TestConfigurationWizard(unittest.TestCase):
                 self.assertGreater(len(config["hash_algorithms"]), 0)
 
                 # Should have at least one KDF
-                enabled_kdfs = [
-                    k for k, v in config["kdf_settings"].items() if v.get("enabled")
-                ]
+                enabled_kdfs = [k for k, v in config["kdf_settings"].items() if v.get("enabled")]
                 self.assertGreater(len(enabled_kdfs), 0)
 
                 # Should have encryption algorithm
@@ -1993,9 +1988,11 @@ class TestConfigurationAnalyzer(unittest.TestCase):
 
     def setUp(self):
         """Set up test environment."""
-        from ..modules.config_analyzer import (AnalysisCategory,
-                                               ConfigurationAnalyzer,
-                                               RecommendationPriority)
+        from ..modules.config_analyzer import (
+            AnalysisCategory,
+            ConfigurationAnalyzer,
+            RecommendationPriority,
+        )
 
         self.analyzer = ConfigurationAnalyzer()
 
@@ -2066,9 +2063,7 @@ class TestConfigurationAnalyzer(unittest.TestCase):
         self.assertGreater(len(analysis.recommendations), 0)
 
         # Check that we have security-related recommendations
-        security_recs = [
-            r for r in analysis.recommendations if r.category.value == "security"
-        ]
+        security_recs = [r for r in analysis.recommendations if r.category.value == "security"]
         self.assertGreater(len(security_recs), 0)
 
     def test_use_case_analysis(self):
@@ -2086,9 +2081,7 @@ class TestConfigurationAnalyzer(unittest.TestCase):
 
             # Archival should recommend post-quantum
             if use_case == "archival":
-                pq_recs = [
-                    r for r in analysis.recommendations if "quantum" in r.title.lower()
-                ]
+                pq_recs = [r for r in analysis.recommendations if "quantum" in r.title.lower()]
                 self.assertGreater(len(pq_recs), 0)
 
     def test_compliance_checking(self):
@@ -2160,9 +2153,7 @@ class TestConfigurationAnalyzer(unittest.TestCase):
         analysis = self.analyzer.analyze_configuration(config, "compliance")
 
         # Should have critical recommendations
-        critical_recs = [
-            r for r in analysis.recommendations if r.priority.value == "critical"
-        ]
+        critical_recs = [r for r in analysis.recommendations if r.priority.value == "critical"]
         self.assertGreater(len(critical_recs), 0)
 
         # Recommendations should be sorted by priority
@@ -2506,12 +2497,8 @@ class TestCLIAliases(unittest.TestCase):
 
         overrides = self.processor.process_aliases(args)
         self.assertEqual(overrides["template"], "standard")  # from --secure
-        self.assertEqual(
-            overrides["algorithm"], "xchacha20-poly1305"
-        )  # from --crypto-family
-        self.assertEqual(
-            overrides["pqc_algorithm"], "ml-kem-1024-hybrid"
-        )  # from --quantum-safe
+        self.assertEqual(overrides["algorithm"], "xchacha20-poly1305")  # from --crypto-family
+        self.assertEqual(overrides["pqc_algorithm"], "ml-kem-1024-hybrid")  # from --quantum-safe
 
         # Validation should pass
         errors = self.processor.validate_alias_combinations(args)
@@ -2548,9 +2535,7 @@ class TestTemplateManager(unittest.TestCase):
         import os
         import tempfile
 
-        from ..modules.template_manager import (EnhancedTemplate,
-                                                TemplateManager,
-                                                TemplateMetadata)
+        from ..modules.template_manager import EnhancedTemplate, TemplateManager, TemplateMetadata
 
         self.manager = TemplateManager()
         # Create temporary directory for test templates
@@ -2596,9 +2581,7 @@ class TestTemplateManager(unittest.TestCase):
         """Test template saving and loading functionality."""
         import json
 
-        from ..modules.template_manager import (EnhancedTemplate,
-                                                TemplateFormat,
-                                                TemplateMetadata)
+        from ..modules.template_manager import EnhancedTemplate, TemplateFormat, TemplateMetadata
 
         # Create test template
         config = {
@@ -2623,14 +2606,11 @@ class TestTemplateManager(unittest.TestCase):
         # Load template
         loaded_template = self.manager.load_template(filename)
         self.assertEqual(loaded_template.metadata.name, "test-save")
-        self.assertEqual(
-            loaded_template.config["hash_config"]["algorithm"], "xchacha20-poly1305"
-        )
+        self.assertEqual(loaded_template.config["hash_config"]["algorithm"], "xchacha20-poly1305")
 
     def test_template_comparison(self):
         """Test template comparison functionality."""
-        from ..modules.template_manager import (EnhancedTemplate,
-                                                TemplateMetadata)
+        from ..modules.template_manager import EnhancedTemplate, TemplateMetadata
 
         # Create two templates
         template1 = EnhancedTemplate(
@@ -2670,8 +2650,7 @@ class TestTemplateManager(unittest.TestCase):
         """Test template recommendation system."""
         import os
 
-        from ..modules.template_manager import (EnhancedTemplate,
-                                                TemplateMetadata)
+        from ..modules.template_manager import EnhancedTemplate, TemplateMetadata
 
         # Create test templates for different use cases
         personal_template = EnhancedTemplate(
@@ -2720,8 +2699,7 @@ class TestTemplateManager(unittest.TestCase):
     def test_template_analysis_integration(self):
         """Test template analysis integration with configuration analyzer."""
         from ..modules.config_analyzer import ConfigurationAnalyzer
-        from ..modules.template_manager import (EnhancedTemplate,
-                                                TemplateMetadata)
+        from ..modules.template_manager import EnhancedTemplate, TemplateMetadata
 
         # Create template with analyzable configuration
         config = {
@@ -2746,8 +2724,7 @@ class TestTemplateManager(unittest.TestCase):
 
     def test_template_validation(self):
         """Test template validation functionality."""
-        from ..modules.template_manager import (EnhancedTemplate,
-                                                TemplateMetadata)
+        from ..modules.template_manager import EnhancedTemplate, TemplateMetadata
 
         # Test valid template
         valid_config = {
@@ -2783,8 +2760,7 @@ class TestTemplateManager(unittest.TestCase):
 
     def test_template_listing_with_filters(self):
         """Test template listing with use case filters."""
-        from ..modules.template_manager import (EnhancedTemplate,
-                                                TemplateMetadata)
+        from ..modules.template_manager import EnhancedTemplate, TemplateMetadata
 
         # Create templates for different use cases
         personal_template = EnhancedTemplate(
@@ -2831,17 +2807,13 @@ class TestTemplateManager(unittest.TestCase):
         all_templates = self.manager.list_templates()
 
         # Filter by personal use case
-        personal_templates = [
-            t for t in all_templates if "personal" in t.metadata.use_cases
-        ]
+        personal_templates = [t for t in all_templates if "personal" in t.metadata.use_cases]
         personal_names = [t.metadata.name for t in personal_templates]
         self.assertIn("personal", personal_names)
         self.assertIn("mixed", personal_names)  # Mixed should be included
 
         # Filter by business use case
-        business_templates = [
-            t for t in all_templates if "business" in t.metadata.use_cases
-        ]
+        business_templates = [t for t in all_templates if "business" in t.metadata.use_cases]
         business_names = [t.metadata.name for t in business_templates]
         self.assertIn("business", business_names)
         self.assertIn("mixed", business_names)  # Mixed should be included
@@ -2850,8 +2822,7 @@ class TestTemplateManager(unittest.TestCase):
         """Test template deletion functionality."""
         import os
 
-        from ..modules.template_manager import (EnhancedTemplate,
-                                                TemplateMetadata)
+        from ..modules.template_manager import EnhancedTemplate, TemplateMetadata
 
         # Create and save template
         template = EnhancedTemplate(
@@ -2885,8 +2856,7 @@ class TestSmartRecommendations(unittest.TestCase):
         import os
         import tempfile
 
-        from ..modules.smart_recommendations import (SmartRecommendationEngine,
-                                                     UserContext)
+        from ..modules.smart_recommendations import SmartRecommendationEngine, UserContext
 
         # Create temporary directory for test data
         self.test_dir = tempfile.mkdtemp()
@@ -2943,8 +2913,7 @@ class TestSmartRecommendations(unittest.TestCase):
 
     def test_security_recommendations(self):
         """Test security-focused recommendations."""
-        from ..modules.smart_recommendations import (RecommendationCategory,
-                                                     UserContext)
+        from ..modules.smart_recommendations import RecommendationCategory, UserContext
 
         # High sensitivity context should generate security recommendations
         user_context = UserContext(
@@ -2972,8 +2941,7 @@ class TestSmartRecommendations(unittest.TestCase):
 
     def test_algorithm_recommendations(self):
         """Test algorithm-specific recommendations."""
-        from ..modules.smart_recommendations import (RecommendationCategory,
-                                                     UserContext)
+        from ..modules.smart_recommendations import RecommendationCategory, UserContext
 
         user_context = UserContext(
             user_type="business",
@@ -2984,30 +2952,21 @@ class TestSmartRecommendations(unittest.TestCase):
 
         current_config = {"algorithm": "fernet"}  # Suboptimal for business use
 
-        recommendations = self.engine.generate_recommendations(
-            user_context, current_config
-        )
+        recommendations = self.engine.generate_recommendations(user_context, current_config)
 
         # Should have algorithm recommendations
-        algo_recs = [
-            r for r in recommendations if r.category == RecommendationCategory.ALGORITHM
-        ]
+        algo_recs = [r for r in recommendations if r.category == RecommendationCategory.ALGORITHM]
         self.assertGreater(len(algo_recs), 0)
 
         # Should suggest better algorithms for business use
-        business_improvement_recs = [
-            r for r in algo_recs if "fernet" in r.description.lower()
-        ]
+        business_improvement_recs = [r for r in algo_recs if "fernet" in r.description.lower()]
         self.assertGreater(len(business_improvement_recs), 0)
 
     def test_template_recommendations(self):
         """Test template recommendation integration."""
-        from ..modules.smart_recommendations import (RecommendationCategory,
-                                                     UserContext)
+        from ..modules.smart_recommendations import RecommendationCategory, UserContext
 
-        user_context = UserContext(
-            primary_use_cases=["personal"], experience_level="beginner"
-        )
+        user_context = UserContext(primary_use_cases=["personal"], experience_level="beginner")
 
         recommendations = self.engine.generate_recommendations(user_context)
 
@@ -3019,15 +2978,12 @@ class TestSmartRecommendations(unittest.TestCase):
 
         # Template recommendations should mention using --template
         template_actions = [r.action for r in template_recs]
-        template_mentioned = any(
-            "template" in action.lower() for action in template_actions
-        )
+        template_mentioned = any("template" in action.lower() for action in template_actions)
         self.assertTrue(template_mentioned)
 
     def test_compliance_recommendations(self):
         """Test compliance-specific recommendations."""
-        from ..modules.smart_recommendations import (RecommendationCategory,
-                                                     UserContext)
+        from ..modules.smart_recommendations import RecommendationCategory, UserContext
 
         user_context = UserContext(
             user_type="compliance",
@@ -3039,9 +2995,7 @@ class TestSmartRecommendations(unittest.TestCase):
 
         # Should have compliance recommendations
         compliance_recs = [
-            r
-            for r in recommendations
-            if r.category == RecommendationCategory.COMPLIANCE
+            r for r in recommendations if r.category == RecommendationCategory.COMPLIANCE
         ]
         self.assertGreater(len(compliance_recs), 0)
 
@@ -3049,14 +3003,11 @@ class TestSmartRecommendations(unittest.TestCase):
         compliance_content = " ".join(
             [r.title + " " + r.description for r in compliance_recs]
         ).lower()
-        self.assertTrue(
-            "fips" in compliance_content or "common criteria" in compliance_content
-        )
+        self.assertTrue("fips" in compliance_content or "common criteria" in compliance_content)
 
     def test_performance_recommendations(self):
         """Test performance optimization recommendations."""
-        from ..modules.smart_recommendations import (RecommendationCategory,
-                                                     UserContext)
+        from ..modules.smart_recommendations import RecommendationCategory, UserContext
 
         user_context = UserContext(
             performance_priority="speed",
@@ -3067,17 +3018,11 @@ class TestSmartRecommendations(unittest.TestCase):
         recommendations = self.engine.generate_recommendations(user_context)
 
         # Should have performance recommendations
-        perf_recs = [
-            r
-            for r in recommendations
-            if r.category == RecommendationCategory.PERFORMANCE
-        ]
+        perf_recs = [r for r in recommendations if r.category == RecommendationCategory.PERFORMANCE]
         self.assertGreater(len(perf_recs), 0)
 
         # Should mention optimization for speed or constraints
-        perf_content = " ".join(
-            [r.title + " " + r.description for r in perf_recs]
-        ).lower()
+        perf_content = " ".join([r.title + " " + r.description for r in perf_recs]).lower()
         self.assertTrue(
             "speed" in perf_content
             or "performance" in perf_content
@@ -3128,18 +3073,10 @@ class TestSmartRecommendations(unittest.TestCase):
 
         self.assertIsNotNone(loaded_context)
         self.assertEqual(loaded_context.user_type, original_context.user_type)
-        self.assertEqual(
-            loaded_context.experience_level, original_context.experience_level
-        )
-        self.assertEqual(
-            loaded_context.primary_use_cases, original_context.primary_use_cases
-        )
-        self.assertEqual(
-            loaded_context.data_sensitivity, original_context.data_sensitivity
-        )
-        self.assertEqual(
-            loaded_context.preferred_algorithms, original_context.preferred_algorithms
-        )
+        self.assertEqual(loaded_context.experience_level, original_context.experience_level)
+        self.assertEqual(loaded_context.primary_use_cases, original_context.primary_use_cases)
+        self.assertEqual(loaded_context.data_sensitivity, original_context.data_sensitivity)
+        self.assertEqual(loaded_context.preferred_algorithms, original_context.preferred_algorithms)
 
     def test_feedback_recording(self):
         """Test feedback recording and learning."""
@@ -3149,9 +3086,7 @@ class TestSmartRecommendations(unittest.TestCase):
         rec_id = "test_rec_001"
 
         # Record positive feedback
-        self.engine.record_feedback(
-            user_id, rec_id, accepted=True, feedback_text="Very helpful!"
-        )
+        self.engine.record_feedback(user_id, rec_id, accepted=True, feedback_text="Very helpful!")
 
         # Load context and check feedback was recorded
         context = self.engine.load_user_context(user_id)

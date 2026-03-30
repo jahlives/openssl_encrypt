@@ -67,62 +67,85 @@ from cryptography.fernet import InvalidToken
 # Asymmetric encryption imports
 # Asymmetric encryption imports
 from openssl_encrypt.modules.asymmetric_core import (
-    MetadataCanonicalizer, PasswordWrapper, PasswordWrapperError,
-    unwrap_password_for_recipient, wrap_password_for_recipient)
-from openssl_encrypt.modules.config_wizard import (ConfigurationWizard,
-                                                   UseCase, UserExpertise,
-                                                   generate_cli_arguments,
-                                                   run_configuration_wizard)
+    MetadataCanonicalizer,
+    PasswordWrapper,
+    PasswordWrapperError,
+    unwrap_password_for_recipient,
+    wrap_password_for_recipient,
+)
+from openssl_encrypt.modules.config_wizard import (
+    ConfigurationWizard,
+    UseCase,
+    UserExpertise,
+    generate_cli_arguments,
+    run_configuration_wizard,
+)
+
 # Import the modules to test
-from openssl_encrypt.modules.crypt_core import (ARGON2_AVAILABLE,
-                                                WHIRLPOOL_AVAILABLE,
-                                                CamelliaCipher,
-                                                EncryptionAlgorithm,
-                                                XChaCha20Poly1305,
-                                                create_metadata_v7,
-                                                decrypt_file,
-                                                decrypt_file_asymmetric,
-                                                encrypt_file,
-                                                encrypt_file_asymmetric,
-                                                generate_key,
-                                                is_aead_algorithm,
-                                                multi_hash_password)
-from openssl_encrypt.modules.crypt_errors import (add_timing_jitter,
-                                                  get_jitter_stats)
-from openssl_encrypt.modules.crypt_utils import (expand_glob_patterns,
-                                                 generate_strong_password,
-                                                 secure_shred_file)
+from openssl_encrypt.modules.crypt_core import (
+    ARGON2_AVAILABLE,
+    WHIRLPOOL_AVAILABLE,
+    CamelliaCipher,
+    EncryptionAlgorithm,
+    XChaCha20Poly1305,
+    create_metadata_v7,
+    decrypt_file,
+    decrypt_file_asymmetric,
+    encrypt_file,
+    encrypt_file_asymmetric,
+    generate_key,
+    is_aead_algorithm,
+    multi_hash_password,
+)
+from openssl_encrypt.modules.crypt_errors import add_timing_jitter, get_jitter_stats
+from openssl_encrypt.modules.crypt_utils import (
+    expand_glob_patterns,
+    generate_strong_password,
+    secure_shred_file,
+)
 from openssl_encrypt.modules.crypto_secure_memory import CryptoKey
-from openssl_encrypt.modules.identity import (Identity, IdentityError,
-                                              IdentityStore)
-from openssl_encrypt.modules.identity_cli import (cmd_change_password,
-                                                  cmd_create, cmd_delete,
-                                                  cmd_export, cmd_import,
-                                                  cmd_list, cmd_show)
+from openssl_encrypt.modules.identity import Identity, IdentityError, IdentityStore
+from openssl_encrypt.modules.identity_cli import (
+    cmd_change_password,
+    cmd_create,
+    cmd_delete,
+    cmd_export,
+    cmd_import,
+    cmd_list,
+    cmd_show,
+)
 from openssl_encrypt.modules.pqc import PQCipher
-from openssl_encrypt.modules.pqc_signing import (LIBOQS_AVAILABLE, PQCSigner,
-                                                 calculate_fingerprint,
-                                                 sign_with_ml_dsa_65,
-                                                 verify_signature_with_timing,
-                                                 verify_with_ml_dsa_65)
-from openssl_encrypt.modules.secure_memory import (SecureBytes,
-                                                   SecureMemoryAllocator,
-                                                   allocate_secure_buffer,
-                                                   free_secure_buffer)
-from openssl_encrypt.modules.secure_memory import \
-    secure_memzero as memory_secure_memzero
+from openssl_encrypt.modules.pqc_signing import (
+    LIBOQS_AVAILABLE,
+    PQCSigner,
+    calculate_fingerprint,
+    sign_with_ml_dsa_65,
+    verify_signature_with_timing,
+    verify_with_ml_dsa_65,
+)
+from openssl_encrypt.modules.secure_memory import (
+    SecureBytes,
+    SecureMemoryAllocator,
+    allocate_secure_buffer,
+    free_secure_buffer,
+)
+from openssl_encrypt.modules.secure_memory import secure_memzero as memory_secure_memzero
 from openssl_encrypt.modules.secure_memory import verify_memory_zeroed
-from openssl_encrypt.modules.secure_ops import (SecureContainer,
-                                                constant_time_compare,
-                                                constant_time_pkcs7_unpad,
-                                                secure_memzero)
-from openssl_encrypt.modules.security_scorer import (SecurityLevel,
-                                                     SecurityScorer)
+from openssl_encrypt.modules.secure_ops import (
+    SecureContainer,
+    constant_time_compare,
+    constant_time_pkcs7_unpad,
+    secure_memzero,
+)
+from openssl_encrypt.modules.security_scorer import SecurityLevel, SecurityScorer
 
 try:
     from openssl_encrypt.plugins.steganography.error_correction import (
-        AdaptiveErrorCorrection, BlockEncoder, ReedSolomonDecoder,
-        ReedSolomonEncoder)
+        AdaptiveErrorCorrection,
+        BlockEncoder,
+        ReedSolomonDecoder,
+        ReedSolomonEncoder,
+    )
 
     ERROR_CORRECTION_AVAILABLE = True
 except ImportError:
@@ -130,8 +153,12 @@ except ImportError:
 
 try:
     from openssl_encrypt.modules.steganography.qim_algorithm import (
-        AdaptiveQIM, DistortionCompensatedQIM, MultiLevelQIM, QIMAnalyzer,
-        UniformQIM)
+        AdaptiveQIM,
+        DistortionCompensatedQIM,
+        MultiLevelQIM,
+        QIMAnalyzer,
+        UniformQIM,
+    )
 
     QIM_ALGORITHM_AVAILABLE = True
 except ImportError:
@@ -139,8 +166,10 @@ except ImportError:
 
 try:
     from openssl_encrypt.modules.steganography.steganalysis import (
-        AdvancedSteganalysis, ClassicalSteganalysis,
-        InformationTheoreticSecurity)
+        AdvancedSteganalysis,
+        ClassicalSteganalysis,
+        InformationTheoreticSecurity,
+    )
 
     STEGANALYSIS_AVAILABLE = True
 except ImportError:
@@ -170,23 +199,37 @@ class LogCapture(logging.Handler):
 
 from openssl_encrypt.modules.crypt_cli import main as cli_main
 from openssl_encrypt.modules.crypt_errors import (
-    AuthenticationError, DecryptionError, EncryptionError, ErrorCategory,
-    InternalError, KeyDerivationError, KeyNotFoundError,
-    KeystoreCorruptedError, KeystoreError, KeystorePasswordError,
-    KeystoreVersionError, MemoryError, ValidationError, constant_time_compare,
-    constant_time_pkcs7_unpad, secure_decrypt_error_handler,
-    secure_encrypt_error_handler, secure_error_handler,
-    secure_key_derivation_error_handler, secure_keystore_error_handler,
-    set_debug_mode)
-from openssl_encrypt.modules.keystore_cli import (KeystoreSecurityLevel,
-                                                  PQCKeystore)
-from openssl_encrypt.modules.pqc import (LIBOQS_AVAILABLE, PQCAlgorithm,
-                                         PQCipher, check_pqc_support)
+    AuthenticationError,
+    DecryptionError,
+    EncryptionError,
+    ErrorCategory,
+    InternalError,
+    KeyDerivationError,
+    KeyNotFoundError,
+    KeystoreCorruptedError,
+    KeystoreError,
+    KeystorePasswordError,
+    KeystoreVersionError,
+    MemoryError,
+    ValidationError,
+    constant_time_compare,
+    constant_time_pkcs7_unpad,
+    secure_decrypt_error_handler,
+    secure_encrypt_error_handler,
+    secure_error_handler,
+    secure_key_derivation_error_handler,
+    secure_keystore_error_handler,
+    set_debug_mode,
+)
+from openssl_encrypt.modules.keystore_cli import KeystoreSecurityLevel, PQCKeystore
+from openssl_encrypt.modules.pqc import LIBOQS_AVAILABLE, PQCAlgorithm, PQCipher, check_pqc_support
 from openssl_encrypt.modules.secure_memory import verify_memory_zeroed
-from openssl_encrypt.modules.secure_ops import (SecureContainer,
-                                                constant_time_compare,
-                                                constant_time_pkcs7_unpad,
-                                                secure_memzero)
+from openssl_encrypt.modules.secure_ops import (
+    SecureContainer,
+    constant_time_compare,
+    constant_time_pkcs7_unpad,
+    secure_memzero,
+)
 
 # Dictionary of required CLI arguments grouped by category based on help output
 # Each key is a category name, and the value is a list of arguments to check for
@@ -451,9 +494,7 @@ class TestCryptCore(unittest.TestCase):
         self.assertTrue(os.path.exists(encrypted_file))
 
         # Decrypt the file
-        result = decrypt_file(
-            encrypted_file, decrypted_file, self.test_password, quiet=True
-        )
+        result = decrypt_file(encrypted_file, decrypted_file, self.test_password, quiet=True)
         self.assertTrue(result)
         self.assertTrue(os.path.exists(decrypted_file))
 
@@ -483,9 +524,7 @@ class TestCryptCore(unittest.TestCase):
         self.assertTrue(os.path.exists(encrypted_file))
 
         # Decrypt the file
-        result = decrypt_file(
-            encrypted_file, decrypted_file, self.test_password, quiet=True
-        )
+        result = decrypt_file(encrypted_file, decrypted_file, self.test_password, quiet=True)
         self.assertTrue(result)
         self.assertTrue(os.path.exists(decrypted_file))
 
@@ -515,9 +554,7 @@ class TestCryptCore(unittest.TestCase):
         self.assertTrue(os.path.exists(encrypted_file))
 
         # Decrypt the file
-        result = decrypt_file(
-            encrypted_file, decrypted_file, self.test_password, quiet=True
-        )
+        result = decrypt_file(encrypted_file, decrypted_file, self.test_password, quiet=True)
         self.assertTrue(result)
         self.assertTrue(os.path.exists(decrypted_file))
 
@@ -567,9 +604,7 @@ class TestCryptCore(unittest.TestCase):
 
         # Skip test if Argon2 is required but not available
         if (
-            self.strong_hash_config["derivation_config"]["kdf_config"]["argon2"][
-                "enabled"
-            ]
+            self.strong_hash_config["derivation_config"]["kdf_config"]["argon2"]["enabled"]
             and not ARGON2_AVAILABLE
         ):
             self.skipTest("Argon2 is not available")
@@ -592,9 +627,9 @@ class TestCryptCore(unittest.TestCase):
 
         # Use the mock to test the implementation without actually triggering the
         # incompatibility between v3 and v4 formats
-        with patch(
-            "openssl_encrypt.modules.crypt_core.encrypt_file", mock_encrypt
-        ), patch("openssl_encrypt.modules.crypt_core.decrypt_file", mock_decrypt):
+        with patch("openssl_encrypt.modules.crypt_core.encrypt_file", mock_encrypt), patch(
+            "openssl_encrypt.modules.crypt_core.decrypt_file", mock_decrypt
+        ):
             # Mock successful encryption - and actually create a fake encrypted file
             mock_encrypt.return_value = True
 
@@ -619,9 +654,7 @@ class TestCryptCore(unittest.TestCase):
             mock_decrypt.return_value = True
 
             # Attempt decryption
-            result = mock_decrypt(
-                encrypted_file, decrypted_file, self.test_password, quiet=True
-            )
+            result = mock_decrypt(encrypted_file, decrypted_file, self.test_password, quiet=True)
 
             # Create a fake decrypted file with the original content
             with open(decrypted_file, "w", encoding="utf-8") as f:
@@ -664,15 +697,11 @@ class TestCryptCore(unittest.TestCase):
         self.assertTrue(result)
 
         # Decrypt the file
-        result = decrypt_file(
-            encrypted_file, decrypted_file, self.test_password, quiet=True
-        )
+        result = decrypt_file(encrypted_file, decrypted_file, self.test_password, quiet=True)
         self.assertTrue(result)
 
         # Verify the content
-        with open(binary_file, "rb") as original, open(
-            decrypted_file, "rb"
-        ) as decrypted:
+        with open(binary_file, "rb") as original, open(decrypted_file, "rb") as decrypted:
             self.assertEqual(original.read(), decrypted.read())
 
     def test_overwrite_original_file(self):
@@ -771,9 +800,7 @@ class TestCryptCore(unittest.TestCase):
                 # The test should only fail if both keys are truly identical
                 # For debugging purposes, let's see if they differ
                 if key1 == key3:
-                    print(
-                        "WARNING: Keys are identical despite different hash configurations"
-                    )
+                    print("WARNING: Keys are identical despite different hash configurations")
 
                 self.assertNotEqual(
                     key1, key3, "Keys should differ with different hash configurations"
@@ -853,15 +880,11 @@ class TestCryptCore(unittest.TestCase):
         # Create a proper v4 format hash config with Scrypt
         config4 = {
             "derivation_config": {
-                "hash_config": self.basic_hash_config["derivation_config"][
-                    "hash_config"
-                ],
+                "hash_config": self.basic_hash_config["derivation_config"]["hash_config"],
                 "kdf_config": {
                     **self.basic_hash_config["derivation_config"]["kdf_config"],
                     "scrypt": {
-                        **self.basic_hash_config["derivation_config"]["kdf_config"][
-                            "scrypt"
-                        ],
+                        **self.basic_hash_config["derivation_config"]["kdf_config"]["scrypt"],
                         "enabled": True,
                         "n": 1024,  # Low value for testing
                     },
@@ -882,15 +905,11 @@ class TestCryptCore(unittest.TestCase):
             # Create a proper v4 format hash config with Argon2
             config5 = {
                 "derivation_config": {
-                    "hash_config": self.basic_hash_config["derivation_config"][
-                        "hash_config"
-                    ],
+                    "hash_config": self.basic_hash_config["derivation_config"]["hash_config"],
                     "kdf_config": {
                         **self.basic_hash_config["derivation_config"]["kdf_config"],
                         "argon2": {
-                            **self.basic_hash_config["derivation_config"]["kdf_config"][
-                                "argon2"
-                            ],
+                            **self.basic_hash_config["derivation_config"]["kdf_config"]["argon2"],
                             "enabled": True,
                         },
                     },
@@ -899,9 +918,7 @@ class TestCryptCore(unittest.TestCase):
 
             hashed9 = multi_hash_password(self.test_password, salt, config5, quiet=True)
             self.assertIsNotNone(hashed9)
-            hashed10 = multi_hash_password(
-                self.test_password, salt, config5, quiet=True
-            )
+            hashed10 = multi_hash_password(self.test_password, salt, config5, quiet=True)
             self.assertEqual(hashed9, hashed10)
 
             # Print for debugging
@@ -1072,9 +1089,7 @@ class TestCryptUtils(unittest.TestCase):
         for i in range(2):
             file_path = os.path.join(self.sub_dir, f"sub_file_{i}.txt")
             with open(file_path, "w", encoding="utf-8") as f:
-                f.write(
-                    f"This is a file in the subdirectory for recursive shredding test."
-                )
+                f.write(f"This is a file in the subdirectory for recursive shredding test.")
 
     def tearDown(self):
         """Clean up after tests."""
@@ -1159,9 +1174,7 @@ class TestCryptUtils(unittest.TestCase):
         self.assertTrue(
             all(
                 os.path.exists(f)
-                for f in [
-                    os.path.join(self.sub_dir, f"sub_file_{i}.txt") for i in range(2)
-                ]
+                for f in [os.path.join(self.sub_dir, f"sub_file_{i}.txt") for i in range(2)]
             )
         )
 
@@ -1268,9 +1281,9 @@ class TestFileOperations(unittest.TestCase):
         mock_decrypt = MagicMock(return_value=True)
 
         # Apply the patches to encrypt_file and decrypt_file
-        with patch(
-            "openssl_encrypt.modules.crypt_core.encrypt_file", mock_encrypt
-        ), patch("openssl_encrypt.modules.crypt_core.decrypt_file", mock_decrypt):
+        with patch("openssl_encrypt.modules.crypt_core.encrypt_file", mock_encrypt), patch(
+            "openssl_encrypt.modules.crypt_core.decrypt_file", mock_decrypt
+        ):
             # Mock successful encryption - and actually create a fake encrypted file
             result = mock_encrypt(
                 self.empty_file,
@@ -1290,9 +1303,7 @@ class TestFileOperations(unittest.TestCase):
             self.assertTrue(os.path.getsize(encrypted_file) > 0)
 
             # Mock decryption and create an empty decrypted file
-            result = mock_decrypt(
-                encrypted_file, decrypted_file, self.test_password, quiet=True
-            )
+            result = mock_decrypt(encrypted_file, decrypted_file, self.test_password, quiet=True)
 
             # Create an empty decrypted file (simulating a successful decryption)
             with open(decrypted_file, "w", encoding="utf-8") as f:
@@ -1322,9 +1333,9 @@ class TestFileOperations(unittest.TestCase):
         mock_decrypt = MagicMock(return_value=True)
 
         # Apply the patches to encrypt_file and decrypt_file
-        with patch(
-            "openssl_encrypt.modules.crypt_core.encrypt_file", mock_encrypt
-        ), patch("openssl_encrypt.modules.crypt_core.decrypt_file", mock_decrypt):
+        with patch("openssl_encrypt.modules.crypt_core.encrypt_file", mock_encrypt), patch(
+            "openssl_encrypt.modules.crypt_core.decrypt_file", mock_decrypt
+        ):
             # Mock successful encryption - and actually create a fake encrypted file
             result = mock_encrypt(
                 self.large_file,
@@ -1342,9 +1353,7 @@ class TestFileOperations(unittest.TestCase):
             self.assertTrue(os.path.exists(encrypted_file))
 
             # Mock decryption and create a decrypted file with random content
-            result = mock_decrypt(
-                encrypted_file, decrypted_file, self.test_password, quiet=True
-            )
+            result = mock_decrypt(encrypted_file, decrypted_file, self.test_password, quiet=True)
 
             # Create a fake decrypted file with the same size as the original
             shutil.copy(self.large_file, decrypted_file)
@@ -1353,9 +1362,7 @@ class TestFileOperations(unittest.TestCase):
             self.assertTrue(os.path.exists(decrypted_file))
 
             # Verify the file size matches the original
-            self.assertEqual(
-                os.path.getsize(self.large_file), os.path.getsize(decrypted_file)
-            )
+            self.assertEqual(os.path.getsize(self.large_file), os.path.getsize(decrypted_file))
 
             # Verify the content with file hashes
             import hashlib
@@ -1397,9 +1404,9 @@ class TestFileOperations(unittest.TestCase):
         mock_decrypt = MagicMock(return_value=True)
 
         # Test only the file permission aspect rather than actual encryption/decryption
-        with patch(
-            "openssl_encrypt.modules.crypt_core.encrypt_file", mock_encrypt
-        ), patch("openssl_encrypt.modules.crypt_core.decrypt_file", mock_decrypt):
+        with patch("openssl_encrypt.modules.crypt_core.encrypt_file", mock_encrypt), patch(
+            "openssl_encrypt.modules.crypt_core.decrypt_file", mock_decrypt
+        ):
             # Define output files
             encrypted_file = os.path.join(self.test_dir, "permission_encrypted.bin")
             decrypted_file = os.path.join(self.test_dir, "permission_decrypted.txt")
@@ -1426,9 +1433,7 @@ class TestFileOperations(unittest.TestCase):
             self.assertEqual(encrypted_perms, 0o600)
 
             # Mock decryption and create the decrypted file
-            result = mock_decrypt(
-                encrypted_file, decrypted_file, self.test_password, quiet=True
-            )
+            result = mock_decrypt(encrypted_file, decrypted_file, self.test_password, quiet=True)
 
             # Create a fake decrypted file with the original content
             with open(decrypted_file, "w", encoding="utf-8") as f:
@@ -1556,9 +1561,7 @@ class TestEncryptionEdgeCases(unittest.TestCase):
                 pass
             else:
                 # Unexpected exception
-                self.fail(
-                    f"Unexpected exception type: {type(e).__name__}, message: {str(e)}"
-                )
+                self.fail(f"Unexpected exception type: {type(e).__name__}, message: {str(e)}")
 
     def test_output_file_already_exists(self):
         """Test behavior when output file already exists."""
@@ -1581,9 +1584,7 @@ class TestEncryptionEdgeCases(unittest.TestCase):
         with open(existing_file, "rb") as f:
             content = f.read()
             # The content should now be encrypted data
-            self.assertNotEqual(
-                content, b"This file already exists and should be overwritten."
-            )
+            self.assertNotEqual(content, b"This file already exists and should be overwritten.")
 
     def test_very_short_password(self):
         """Test encryption with a very short password."""
@@ -1881,9 +1882,7 @@ class TestKeystoreOperations(unittest.TestCase):
             # Try with/without hyphens
             normalized_name = algo_name.lower().replace("-", "").replace("_", "")
             for supported in self.supported_algorithms:
-                normalized_supported = (
-                    supported.lower().replace("-", "").replace("_", "")
-                )
+                normalized_supported = supported.lower().replace("-", "").replace("_", "")
                 if normalized_supported == normalized_name:
                     return supported
 
@@ -1910,9 +1909,7 @@ class TestKeystoreOperations(unittest.TestCase):
 
         # Verify keystore data
         self.assertIn("version", keystore2.keystore_data)
-        self.assertEqual(
-            keystore2.keystore_data["version"], PQCKeystore.KEYSTORE_VERSION
-        )
+        self.assertEqual(keystore2.keystore_data["version"], PQCKeystore.KEYSTORE_VERSION)
         self.assertIn("keys", keystore2.keystore_data)
         self.assertEqual(len(keystore2.keystore_data["keys"]), 0)
 
@@ -1920,9 +1917,7 @@ class TestKeystoreOperations(unittest.TestCase):
         """Test creating keystores with different security levels."""
         # Test creating with standard security
         keystore1 = PQCKeystore(self.keystore_path)
-        keystore1.create_keystore(
-            self.keystore_password, KeystoreSecurityLevel.STANDARD
-        )
+        keystore1.create_keystore(self.keystore_password, KeystoreSecurityLevel.STANDARD)
         self.assertEqual(keystore1.keystore_data["security_level"], "standard")
 
         # Test creating with high security
@@ -2157,8 +2152,8 @@ class TestKeystoreOperations(unittest.TestCase):
         keystore.set_default_key(key_id1)
 
         # Get default key
-        default_key_id, default_public_key, default_private_key = (
-            keystore.get_default_key(self.test_algorithm)
+        default_key_id, default_public_key, default_private_key = keystore.get_default_key(
+            self.test_algorithm
         )
 
         # Verify default key is key1
@@ -2170,8 +2165,8 @@ class TestKeystoreOperations(unittest.TestCase):
         keystore.set_default_key(key_id2)
 
         # Get default key again
-        default_key_id, default_public_key, default_private_key = (
-            keystore.get_default_key(self.test_algorithm)
+        default_key_id, default_public_key, default_private_key = keystore.get_default_key(
+            self.test_algorithm
         )
 
         # Verify default key is now key2
@@ -2201,9 +2196,7 @@ class TestKeystoreOperations(unittest.TestCase):
 
         # Verify dual encryption flag is set
         self.assertTrue(keystore.key_has_dual_encryption(key_id))
-        self.assertTrue(
-            keystore.keystore_data["keys"][key_id].get("dual_encryption", False)
-        )
+        self.assertTrue(keystore.keystore_data["keys"][key_id].get("dual_encryption", False))
         self.assertIn("dual_encryption_salt", keystore.keystore_data["keys"][key_id])
 
         # Get key with file password
@@ -2273,9 +2266,7 @@ class TestKeystoreOperations(unittest.TestCase):
 
         # Verify dual encryption flag is now set
         self.assertTrue(keystore.key_has_dual_encryption(key_id))
-        self.assertTrue(
-            keystore.keystore_data["keys"][key_id].get("dual_encryption", False)
-        )
+        self.assertTrue(keystore.keystore_data["keys"][key_id].get("dual_encryption", False))
         self.assertIn("dual_encryption_salt", keystore.keystore_data["keys"][key_id])
 
         # Get key with file password
@@ -2346,15 +2337,9 @@ class TestKeystoreOperations(unittest.TestCase):
         self.assertEqual(private_key3, retrieved_private_key3)
 
         # Verify each key has the correct encryption settings
-        self.assertTrue(
-            keystore.keystore_data["keys"][key_id1].get("use_master_password", True)
-        )
-        self.assertFalse(
-            keystore.keystore_data["keys"][key_id2].get("use_master_password", True)
-        )
-        self.assertTrue(
-            keystore.keystore_data["keys"][key_id3].get("dual_encryption", False)
-        )
+        self.assertTrue(keystore.keystore_data["keys"][key_id1].get("use_master_password", True))
+        self.assertFalse(keystore.keystore_data["keys"][key_id2].get("use_master_password", True))
+        self.assertTrue(keystore.keystore_data["keys"][key_id3].get("dual_encryption", False))
 
     def test_keystore_persistence_with_dual_encryption(self):
         """Test that dual encryption settings persist when keystore is saved and reloaded."""
@@ -2385,9 +2370,7 @@ class TestKeystoreOperations(unittest.TestCase):
 
         # Verify dual encryption flag is set
         self.assertTrue(keystore2.key_has_dual_encryption(key_id))
-        self.assertTrue(
-            keystore2.keystore_data["keys"][key_id].get("dual_encryption", False)
-        )
+        self.assertTrue(keystore2.keystore_data["keys"][key_id].get("dual_encryption", False))
 
         # Get key with file password
         retrieved_public_key, retrieved_private_key = keystore2.get_key(
@@ -2518,8 +2501,7 @@ class TestArgon2KdfVersion(unittest.TestCase):
         header = {"protection": protection}
 
         if protection["method"] == "scrypt_chacha20":
-            from cryptography.hazmat.primitives.ciphers.aead import \
-                ChaCha20Poly1305 as CP
+            from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305 as CP
 
             cipher = CP(derived_key_v1)
         else:
@@ -2700,8 +2682,7 @@ class TestCryptErrorsFixes(unittest.TestCase):
         """Test the optimized timing jitter function that handles sequences of calls."""
         import time
 
-        from openssl_encrypt.modules.crypt_errors import (_jitter_state,
-                                                          add_timing_jitter)
+        from openssl_encrypt.modules.crypt_errors import _jitter_state, add_timing_jitter
 
         # Test the jitter function actually adds delays
         start_time = time.time()
@@ -2818,15 +2799,9 @@ class TestErrorMessageConsistency(unittest.TestCase):
         memory_error = MemoryError("debug details")
 
         # Check that error messages follow the standardized format
-        self.assertTrue(
-            str(validation_error).startswith("Security validation check failed")
-        )
-        self.assertTrue(
-            str(crypto_error).startswith("Security encryption operation failed")
-        )
-        self.assertTrue(
-            str(memory_error).startswith("Security memory operation failed")
-        )
+        self.assertTrue(str(validation_error).startswith("Security validation check failed"))
+        self.assertTrue(str(crypto_error).startswith("Security encryption operation failed"))
+        self.assertTrue(str(memory_error).startswith("Security memory operation failed"))
 
         # In production mode, debug details should not be included
         with patch.dict("os.environ", {}, clear=True):  # Simulate production
@@ -2858,7 +2833,10 @@ class TestAdvancedTestingFramework(unittest.TestCase):
     def test_base_test_classes(self):
         """Test base testing framework classes."""
         from openssl_encrypt.modules.testing.base_test import (
-            BaseSecurityTest, TestResult, TestResultLevel)
+            BaseSecurityTest,
+            TestResult,
+            TestResultLevel,
+        )
 
         # Test TestResult creation
         result = TestResult(
@@ -2919,8 +2897,7 @@ class TestAdvancedTestingFramework(unittest.TestCase):
 
     def test_side_channel_statistical_analyzer(self):
         """Test side-channel statistical analyzer."""
-        from openssl_encrypt.modules.testing.side_channel_tests import \
-            StatisticalAnalyzer
+        from openssl_encrypt.modules.testing.side_channel_tests import StatisticalAnalyzer
 
         analyzer = StatisticalAnalyzer()
 
@@ -2936,9 +2913,7 @@ class TestAdvancedTestingFramework(unittest.TestCase):
 
         # Test inconsistent timings
         inconsistent_timings = [1.0, 5.0, 0.5, 3.0, 0.2]  # High variation
-        bad_analysis = analyzer.analyze_timing_consistency(
-            inconsistent_timings, "bad_op"
-        )
+        bad_analysis = analyzer.analyze_timing_consistency(inconsistent_timings, "bad_op")
         self.assertFalse(bad_analysis["timing_consistent"])  # Should be inconsistent
 
         # Test timing distribution comparison
@@ -2948,14 +2923,11 @@ class TestAdvancedTestingFramework(unittest.TestCase):
         comparison = analyzer.compare_timing_distributions(group1, group2)
         self.assertIn("potentially_vulnerable", comparison)
         self.assertIn("mean_difference_percentage", comparison)
-        self.assertTrue(
-            comparison["potentially_vulnerable"]
-        )  # Should detect difference
+        self.assertTrue(comparison["potentially_vulnerable"])  # Should detect difference
 
     def test_kat_test_vectors(self):
         """Test KAT test vectors."""
-        from openssl_encrypt.modules.testing.kat_tests import (
-            CustomTestVectors, NISTTestVectors)
+        from openssl_encrypt.modules.testing.kat_tests import CustomTestVectors, NISTTestVectors
 
         # Test NIST vectors
         sha256_vectors = NISTTestVectors.get_sha256_vectors()
@@ -2991,7 +2963,9 @@ class TestAdvancedTestingFramework(unittest.TestCase):
     def test_benchmark_performance_analyzer(self):
         """Test benchmark performance analyzer."""
         from openssl_encrypt.modules.testing.benchmark_suite import (
-            BenchmarkResult, PerformanceAnalyzer)
+            BenchmarkResult,
+            PerformanceAnalyzer,
+        )
 
         analyzer = PerformanceAnalyzer()
 
@@ -3043,8 +3017,7 @@ class TestAdvancedTestingFramework(unittest.TestCase):
 
     def test_test_runner_execution_plan(self):
         """Test test runner execution plan."""
-        from openssl_encrypt.modules.testing.test_runner import (
-            TestExecutionPlan, TestSuiteType)
+        from openssl_encrypt.modules.testing.test_runner import TestExecutionPlan, TestSuiteType
 
         # Test execution plan creation
         plan = TestExecutionPlan(
@@ -3077,10 +3050,8 @@ class TestAdvancedTestingFramework(unittest.TestCase):
         """Test report generation data structures."""
         from datetime import datetime
 
-        from openssl_encrypt.modules.testing.base_test import (TestResult,
-                                                               TestResultLevel)
-        from openssl_encrypt.modules.testing.test_runner import (
-            TestRunReport, TestSuiteResult)
+        from openssl_encrypt.modules.testing.base_test import TestResult, TestResultLevel
+        from openssl_encrypt.modules.testing.test_runner import TestRunReport, TestSuiteResult
 
         # Create mock test results
         test_result = TestResult(
@@ -3138,8 +3109,7 @@ class TestAdvancedTestingFramework(unittest.TestCase):
 
     def test_side_channel_testing_integration(self):
         """Test side-channel testing integration."""
-        from openssl_encrypt.modules.testing.side_channel_tests import \
-            SideChannelTestSuite
+        from openssl_encrypt.modules.testing.side_channel_tests import SideChannelTestSuite
 
         # Create a side-channel test suite
         side_channel_suite = SideChannelTestSuite()
@@ -3162,8 +3132,7 @@ class TestAdvancedTestingFramework(unittest.TestCase):
 
     def test_benchmark_testing_integration(self):
         """Test benchmark testing integration."""
-        from openssl_encrypt.modules.testing.benchmark_suite import \
-            BenchmarkTestSuite
+        from openssl_encrypt.modules.testing.benchmark_suite import BenchmarkTestSuite
 
         # Create a benchmark test suite
         benchmark_suite = BenchmarkTestSuite()
@@ -3176,8 +3145,7 @@ class TestAdvancedTestingFramework(unittest.TestCase):
 
     def test_memory_testing_integration(self):
         """Test memory testing integration."""
-        from openssl_encrypt.modules.testing.memory_tests import \
-            MemoryTestSuite
+        from openssl_encrypt.modules.testing.memory_tests import MemoryTestSuite
 
         # Create a memory test suite
         memory_suite = MemoryTestSuite()
@@ -3190,8 +3158,7 @@ class TestAdvancedTestingFramework(unittest.TestCase):
 
     def test_security_test_runner_integration(self):
         """Test security test runner integration."""
-        from openssl_encrypt.modules.testing.test_runner import (
-            SecurityTestRunner, TestSuiteType)
+        from openssl_encrypt.modules.testing.test_runner import SecurityTestRunner, TestSuiteType
 
         # Create a security test runner
         runner = SecurityTestRunner()
@@ -3214,19 +3181,25 @@ class TestAdvancedTestingFramework(unittest.TestCase):
         # Test base module imports
         try:
             from openssl_encrypt.modules.testing.base_test import (
-                BaseSecurityTest, TestResult, TestResultLevel)
+                BaseSecurityTest,
+                TestResult,
+                TestResultLevel,
+            )
             from openssl_encrypt.modules.testing.benchmark_suite import (
-                BenchmarkTestSuite, PerformanceAnalyzer)
-            from openssl_encrypt.modules.testing.fuzz_testing import (
-                FuzzTestSuite, InputGenerator)
-            from openssl_encrypt.modules.testing.kat_tests import (
-                KATTestSuite, NISTTestVectors)
-            from openssl_encrypt.modules.testing.memory_tests import (
-                MemoryProfiler, MemoryTestSuite)
+                BenchmarkTestSuite,
+                PerformanceAnalyzer,
+            )
+            from openssl_encrypt.modules.testing.fuzz_testing import FuzzTestSuite, InputGenerator
+            from openssl_encrypt.modules.testing.kat_tests import KATTestSuite, NISTTestVectors
+            from openssl_encrypt.modules.testing.memory_tests import MemoryProfiler, MemoryTestSuite
             from openssl_encrypt.modules.testing.side_channel_tests import (
-                SideChannelTestSuite, StatisticalAnalyzer)
+                SideChannelTestSuite,
+                StatisticalAnalyzer,
+            )
             from openssl_encrypt.modules.testing.test_runner import (
-                SecurityTestRunner, TestExecutionPlan)
+                SecurityTestRunner,
+                TestExecutionPlan,
+            )
 
             # If we get here, all imports succeeded
             self.assertTrue(True)

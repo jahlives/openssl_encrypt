@@ -18,13 +18,17 @@ from unittest.mock import Mock, patch
 # Add parent directory to path for importing
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
-from openssl_encrypt.modules.crypt_core import (LIBOQS_AVAILABLE,
-                                                PQC_AVAILABLE, decrypt_file,
-                                                encrypt_file)
-from openssl_encrypt.modules.keystore_cli import (KeystoreSecurityLevel,
-                                                  PQCKeystore)
+from openssl_encrypt.modules.crypt_core import (
+    LIBOQS_AVAILABLE,
+    PQC_AVAILABLE,
+    decrypt_file,
+    encrypt_file,
+)
+from openssl_encrypt.modules.keystore_cli import KeystoreSecurityLevel, PQCKeystore
 from openssl_encrypt.modules.keystore_utils import (
-    extract_key_id_from_metadata, get_pqc_key_for_decryption)
+    extract_key_id_from_metadata,
+    get_pqc_key_for_decryption,
+)
 from openssl_encrypt.modules.pqc import PQCipher
 
 
@@ -45,9 +49,7 @@ class TestHQCMLKEMKeystoreIntegration(unittest.TestCase):
 
         # Create test input file
         with open(self.input_file, "w") as f:
-            f.write(
-                "This is a test message for HQC and ML-KEM keystore integration testing."
-            )
+            f.write("This is a test message for HQC and ML-KEM keystore integration testing.")
 
         # Hash configuration for testing
         self.hash_config = {
@@ -58,9 +60,7 @@ class TestHQCMLKEMKeystoreIntegration(unittest.TestCase):
 
         # Create keystore
         self.keystore = PQCKeystore(self.keystore_path)
-        self.keystore.create_keystore(
-            self.keystore_password, KeystoreSecurityLevel.STANDARD
-        )
+        self.keystore.create_keystore(self.keystore_password, KeystoreSecurityLevel.STANDARD)
 
     def tearDown(self):
         """Clean up test files and keystore."""
@@ -101,9 +101,7 @@ class TestHQCMLKEMKeystoreIntegration(unittest.TestCase):
                     tags=["test", "hqc", "integration"],
                 )
 
-                self.assertIsNotNone(
-                    key_id, f"Key ID should be generated for {algorithm}"
-                )
+                self.assertIsNotNone(key_id, f"Key ID should be generated for {algorithm}")
 
                 # Retrieve key from keystore
                 retrieved_public, retrieved_private = self.keystore.get_key(key_id)
@@ -120,9 +118,7 @@ class TestHQCMLKEMKeystoreIntegration(unittest.TestCase):
                 # Verify key is in keystore listing
                 keys = self.keystore.list_keys()
                 key_found = any(k["key_id"] == key_id for k in keys)
-                self.assertTrue(
-                    key_found, f"Key {key_id} should be found in keystore listing"
-                )
+                self.assertTrue(key_found, f"Key {key_id} should be found in keystore listing")
 
                 # Remove key for cleanup
                 self.keystore.remove_key(key_id)
@@ -150,9 +146,7 @@ class TestHQCMLKEMKeystoreIntegration(unittest.TestCase):
                     tags=["test", "ml-kem", "integration"],
                 )
 
-                self.assertIsNotNone(
-                    key_id, f"Key ID should be generated for {algorithm}"
-                )
+                self.assertIsNotNone(key_id, f"Key ID should be generated for {algorithm}")
 
                 # Retrieve key from keystore
                 retrieved_public, retrieved_private = self.keystore.get_key(key_id)
@@ -173,9 +167,7 @@ class TestHQCMLKEMKeystoreIntegration(unittest.TestCase):
                 self.assertEqual(
                     test_key["algorithm"], algorithm, f"Algorithm mismatch in metadata"
                 )
-                self.assertIn(
-                    "ml-kem", test_key["tags"], f"ML-KEM tag should be present"
-                )
+                self.assertIn("ml-kem", test_key["tags"], f"ML-KEM tag should be present")
 
                 # Remove key for cleanup
                 self.keystore.remove_key(key_id)
@@ -200,9 +192,7 @@ class TestHQCMLKEMKeystoreIntegration(unittest.TestCase):
         # Test key retrieval from keystore
         retrieved_public, retrieved_private = self.keystore.get_key(key_id)
 
-        self.assertEqual(
-            retrieved_public, public_key, f"Public key should match for {algorithm}"
-        )
+        self.assertEqual(retrieved_public, public_key, f"Public key should match for {algorithm}")
         self.assertEqual(
             retrieved_private, private_key, f"Private key should match for {algorithm}"
         )
@@ -212,9 +202,7 @@ class TestHQCMLKEMKeystoreIntegration(unittest.TestCase):
         found_key = next((k for k in keys if k["key_id"] == key_id), None)
 
         self.assertIsNotNone(found_key, "Added key should be found in keystore listing")
-        self.assertEqual(
-            found_key["algorithm"], algorithm, "Algorithm should match in listing"
-        )
+        self.assertEqual(found_key["algorithm"], algorithm, "Algorithm should match in listing")
         self.assertIn("file-encryption", found_key["tags"], "Tags should be preserved")
 
         # Clean up
@@ -239,9 +227,7 @@ class TestHQCMLKEMKeystoreIntegration(unittest.TestCase):
             file_password=self.file_password,
         )
 
-        self.assertIsNotNone(
-            key_id, f"Key ID should be generated for dual encryption {algorithm}"
-        )
+        self.assertIsNotNone(key_id, f"Key ID should be generated for dual encryption {algorithm}")
 
         # Verify dual encryption flag
         if hasattr(self.keystore, "key_has_dual_encryption"):
@@ -300,9 +286,7 @@ class TestHQCMLKEMKeystoreIntegration(unittest.TestCase):
 
         # Test listing all keys
         all_keys = self.keystore.list_keys()
-        self.assertEqual(
-            len(all_keys), len(test_cases), "All added keys should be listed"
-        )
+        self.assertEqual(len(all_keys), len(test_cases), "All added keys should be listed")
 
         # Test filtering by tags
         hqc_keys = [k for k in all_keys if "hqc" in k.get("tags", [])]
@@ -381,9 +365,7 @@ class TestHQCMLKEMKeystoreIntegration(unittest.TestCase):
                 security_level=level.value
             ):  # Use .value for pytest-xdist serialization
                 # Create temporary keystore with specific security level
-                temp_keystore_path = os.path.join(
-                    self.temp_dir, f"security_test_{level.value}.pqc"
-                )
+                temp_keystore_path = os.path.join(self.temp_dir, f"security_test_{level.value}.pqc")
                 temp_keystore = PQCKeystore(temp_keystore_path)
                 temp_keystore.create_keystore(self.keystore_password, level)
 
@@ -453,10 +435,7 @@ class TestHQCMLKEMKeystoreIntegration(unittest.TestCase):
         ]
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
-            futures = [
-                executor.submit(add_and_remove_key, alg, tid)
-                for alg, tid in test_scenarios
-            ]
+            futures = [executor.submit(add_and_remove_key, alg, tid) for alg, tid in test_scenarios]
             results = [f.result() for f in concurrent.futures.as_completed(futures)]
 
         # Check results

@@ -22,9 +22,13 @@ from .security_scorer import SecurityLevel, SecurityScorer
 
 # Import registry helper functions for algorithm discovery
 try:
-    from .registry import (get_available_ciphers, get_available_hashes,
-                           get_available_kdfs, get_cipher_info_dict,
-                           get_kdf_info_dict)
+    from .registry import (
+        get_available_ciphers,
+        get_available_hashes,
+        get_available_kdfs,
+        get_cipher_info_dict,
+        get_kdf_info_dict,
+    )
 
     REGISTRY_AVAILABLE = True
 except ImportError:
@@ -315,9 +319,7 @@ class ConfigurationWizard:
             }
 
         current_hashes = set(self.config["hash_algorithms"].keys())
-        available = {
-            k: v for k, v in available_hashes.items() if k not in current_hashes
-        }
+        available = {k: v for k, v in available_hashes.items() if k not in current_hashes}
 
         if not available:
             eprint("All recommended hash algorithms are already configured.")
@@ -354,9 +356,7 @@ class ConfigurationWizard:
             eprint(f"{i}. {alg.upper()}: {settings['rounds']:,} rounds")
 
         try:
-            choice = input(
-                f"\nSelect algorithm to adjust (1-{len(hash_list)}): "
-            ).strip()
+            choice = input(f"\nSelect algorithm to adjust (1-{len(hash_list)}): ").strip()
             idx = int(choice) - 1
 
             if 0 <= idx < len(hash_list):
@@ -395,9 +395,7 @@ class ConfigurationWizard:
                         f"• Argon2: {settings['memory_cost']//1024}MB memory, {settings['time_cost']} iterations"
                     )
                 elif kdf == "scrypt":
-                    eprint(
-                        f"• Scrypt: N={settings['n']}, r={settings['r']}, p={settings['p']}"
-                    )
+                    eprint(f"• Scrypt: N={settings['n']}, r={settings['r']}, p={settings['p']}")
 
         if self.user_expertise in [UserExpertise.ADVANCED, UserExpertise.EXPERT]:
             eprint("\nWould you like to adjust KDF settings? (y/N): ", end="")
@@ -416,17 +414,13 @@ class ConfigurationWizard:
         eprint("3. Fine-tune Argon2 parameters")
 
         if REGISTRY_AVAILABLE:
-            eprint(
-                "\n(Tip: Use 'list-algorithms --category=kdfs' to see all available KDFs)"
-            )
+            eprint("\n(Tip: Use 'list-algorithms --category=kdfs' to see all available KDFs)")
 
         try:
             choice = input("Enter your choice (1-3): ").strip()
 
             if choice == "1":
-                current_mb = (
-                    self.config["kdf_settings"]["argon2"]["memory_cost"] // 1024
-                )
+                current_mb = self.config["kdf_settings"]["argon2"]["memory_cost"] // 1024
                 eprint(f"\nCurrent Argon2 memory: {current_mb}MB")
                 eprint("Memory recommendations:")
                 eprint("• 32MB  - Low memory systems")
@@ -478,9 +472,7 @@ class ConfigurationWizard:
                     info = registry.get_info(cipher_name)
                     if registry.is_available(cipher_name):
                         # Format: "cipher-name": "Display Name - Description"
-                        algorithms[cipher_name] = (
-                            f"{info.display_name} - {info.description[:50]}"
-                        )
+                        algorithms[cipher_name] = f"{info.display_name} - {info.description[:50]}"
                 except Exception:
                     continue
         else:
@@ -528,18 +520,14 @@ class ConfigurationWizard:
 
         if not pqc_enabled:
             eprint("Post-quantum cryptography: DISABLED")
-            eprint(
-                "\nPost-quantum algorithms protect against future quantum computers."
-            )
+            eprint("\nPost-quantum algorithms protect against future quantum computers.")
             eprint("Recommended for:")
             eprint("• Long-term data storage (>10 years)")
             eprint("• Highly sensitive information")
             eprint("• Compliance with quantum-safe requirements")
 
             try:
-                enable = (
-                    input("\nEnable post-quantum protection? (y/N): ").strip().lower()
-                )
+                enable = input("\nEnable post-quantum protection? (y/N): ").strip().lower()
                 if enable in ["y", "yes"]:
                     self.config["post_quantum"]["enabled"] = True
                     self.config["post_quantum"]["algorithm"] = "ml-kem-768"
@@ -593,15 +581,11 @@ class ConfigurationWizard:
 
         cipher_info = {"algorithm": self.config["encryption"]["algorithm"]}
         pqc_info = (
-            self.config["post_quantum"]
-            if self.config["post_quantum"].get("enabled")
-            else None
+            self.config["post_quantum"] if self.config["post_quantum"].get("enabled") else None
         )
 
         # Calculate security score
-        analysis = self.scorer.score_configuration(
-            hash_config, kdf_config, cipher_info, pqc_info
-        )
+        analysis = self.scorer.score_configuration(hash_config, kdf_config, cipher_info, pqc_info)
 
         eprint(f"\nSECURITY SCORE: {analysis['overall']['score']}/10")
         eprint(f"Security Level: {analysis['overall']['level'].name}")
@@ -624,9 +608,7 @@ class ConfigurationWizard:
                         f"  • Argon2: {settings['memory_cost']//1024}MB memory, {settings['time_cost']} iterations, {settings['parallelism']} threads"
                     )
                 elif kdf == "scrypt":
-                    eprint(
-                        f"  • Scrypt: N={settings['n']}, r={settings['r']}, p={settings['p']}"
-                    )
+                    eprint(f"  • Scrypt: N={settings['n']}, r={settings['r']}, p={settings['p']}")
 
         # Encryption
         eprint(f"Encryption Algorithm:")

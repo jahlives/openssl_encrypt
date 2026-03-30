@@ -13,9 +13,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-sys.path.insert(
-    0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-)
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from openssl_encrypt.modules.crypt_cli import main as cli_main
 
@@ -170,9 +168,7 @@ class TestKeyringRemove(unittest.TestCase):
             ]
         )
         self.assertEqual(exit_code, 0)
-        fake_keyring.delete_password.assert_called_once_with(
-            "openssl_encrypt", "mytest"
-        )
+        fake_keyring.delete_password.assert_called_once_with("openssl_encrypt", "mytest")
         self.assertIn("removed from keyring", stderr)
 
     @mock.patch.dict("sys.modules", {"keyring": mock.MagicMock()})

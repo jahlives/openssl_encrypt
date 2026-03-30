@@ -29,7 +29,10 @@ class TestQRCodeKeyDistribution(unittest.TestCase):
         # Check if QR dependencies are available
         try:
             from openssl_encrypt.modules.portable_media import (
-                QRKeyDistribution, QRKeyError, QRKeyFormat)
+                QRKeyDistribution,
+                QRKeyError,
+                QRKeyFormat,
+            )
 
             self.qr_available = True
             self.QRKeyDistribution = QRKeyDistribution
@@ -81,8 +84,7 @@ class TestQRCodeKeyDistribution(unittest.TestCase):
         if not self.qr_available:
             self.skipTest("QR code dependencies not available")
 
-        from openssl_encrypt.modules.portable_media import (create_key_qr,
-                                                            read_key_qr)
+        from openssl_encrypt.modules.portable_media import create_key_qr, read_key_qr
 
         test_key = b"test_encryption_key_for_qr_roundtrip"
         key_name = "roundtrip_test_key"
@@ -109,9 +111,7 @@ class TestQRCodeKeyDistribution(unittest.TestCase):
         large_key = b"X" * 2500  # 2.5KB key to exceed 2048 byte single QR limit
         key_name = "large_multi_qr_test"
 
-        payload = qr_dist._prepare_key_payload(
-            SecureBytes(large_key), key_name, compression=False
-        )
+        payload = qr_dist._prepare_key_payload(SecureBytes(large_key), key_name, compression=False)
 
         # Should be larger than single QR capacity
         self.assertGreater(len(payload), qr_dist.MAX_SINGLE_QR_SIZE)
@@ -125,9 +125,7 @@ class TestQRCodeKeyDistribution(unittest.TestCase):
         # Verify the multi-QR logic would split correctly (without actually creating QR codes)
         metadata_overhead = 200
         chunk_size = qr_dist.MAX_SINGLE_QR_SIZE - metadata_overhead
-        expected_chunks = (
-            len(payload) + chunk_size - 1
-        ) // chunk_size  # Ceiling division
+        expected_chunks = (len(payload) + chunk_size - 1) // chunk_size  # Ceiling division
 
         self.assertGreater(expected_chunks, 1)  # Should require multiple chunks
         self.assertLessEqual(expected_chunks, 99)  # Should not exceed max
@@ -186,9 +184,7 @@ class TestQRCodeKeyDistribution(unittest.TestCase):
         test_key = b"security_test_key_data"
         key_name = "security_test"
 
-        payload = qr_dist._prepare_key_payload(
-            SecureBytes(test_key), key_name, compression=True
-        )
+        payload = qr_dist._prepare_key_payload(SecureBytes(test_key), key_name, compression=True)
 
         import json
 
@@ -215,7 +211,10 @@ class TestUSBDriveEncryption(unittest.TestCase):
         # Check if USB dependencies are available
         try:
             from openssl_encrypt.modules.portable_media import (
-                USBCreationError, USBDriveCreator, USBSecurityProfile)
+                USBCreationError,
+                USBDriveCreator,
+                USBSecurityProfile,
+            )
 
             self.usb_available = True
             self.USBDriveCreator = USBDriveCreator
@@ -374,16 +373,12 @@ class TestUSBDriveEncryption(unittest.TestCase):
         creator = self.USBDriveCreator()
         password = "hash_chain_test_password"
 
-        result = creator.create_portable_usb(
-            usb_path, password, hash_config=hash_config
-        )
+        result = creator.create_portable_usb(usb_path, password, hash_config=hash_config)
 
         self.assertTrue(result["success"])
 
         # Verify with same hash config
-        verification = creator.verify_usb_integrity(
-            usb_path, password, hash_config=hash_config
-        )
+        verification = creator.verify_usb_integrity(usb_path, password, hash_config=hash_config)
 
         self.assertTrue(verification["integrity_ok"])
 
@@ -431,16 +426,12 @@ class TestUSBDriveEncryption(unittest.TestCase):
         os.makedirs(usb_path)
 
         creator = self.USBDriveCreator()
-        result = creator.create_portable_usb(
-            usb_path, "config_test_password", include_logs=True
-        )
+        result = creator.create_portable_usb(usb_path, "config_test_password", include_logs=True)
 
         self.assertTrue(result["success"])
 
         # Check config file
-        config_path = os.path.join(
-            usb_path, creator.PORTABLE_DIR, "config", "portable.conf"
-        )
+        config_path = os.path.join(usb_path, creator.PORTABLE_DIR, "config", "portable.conf")
         self.assertTrue(os.path.exists(config_path))
 
         # Read and verify config

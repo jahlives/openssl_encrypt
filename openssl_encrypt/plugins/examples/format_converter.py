@@ -30,9 +30,13 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from ...modules.plugin_system import (FormatConverterPlugin, PluginCapability,
-                                      PluginResult, PluginSecurityContext,
-                                      PreProcessorPlugin)
+from ...modules.plugin_system import (
+    FormatConverterPlugin,
+    PluginCapability,
+    PluginResult,
+    PluginSecurityContext,
+    PreProcessorPlugin,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -78,23 +82,17 @@ class TextFormatConverter(FormatConverterPlugin):
                 import shutil
 
                 shutil.copy2(input_path, output_path)
-                return PluginResult.success_result(
-                    f"File copied (no conversion needed)"
-                )
+                return PluginResult.success_result(f"File copied (no conversion needed)")
 
             # Load data based on input format
             data = self._load_data(input_path, input_format)
             if data is None:
-                return PluginResult.error_result(
-                    f"Failed to load data from {input_format} format"
-                )
+                return PluginResult.error_result(f"Failed to load data from {input_format} format")
 
             # Convert data to output format
             success = self._save_data(output_path, output_format, data)
             if not success:
-                return PluginResult.error_result(
-                    f"Failed to save data in {output_format} format"
-                )
+                return PluginResult.error_result(f"Failed to save data in {output_format} format")
 
             # Verify conversion
             input_size = os.path.getsize(input_path)
@@ -273,9 +271,7 @@ class SmartFormatPreProcessor(PreProcessorPlugin):
     def get_description(self):
         return "Automatically detects file formats and applies smart conversions before encryption"
 
-    def process_file(
-        self, file_path: str, context: PluginSecurityContext
-    ) -> PluginResult:
+    def process_file(self, file_path: str, context: PluginSecurityContext) -> PluginResult:
         """Process file with smart format detection and conversion."""
         try:
             if not os.path.exists(file_path):
@@ -286,9 +282,7 @@ class SmartFormatPreProcessor(PreProcessorPlugin):
             if not current_format:
                 # Not a text format we can handle
                 context.add_metadata("format_processing", "skipped_binary")
-                return PluginResult.success_result(
-                    "File format not suitable for conversion"
-                )
+                return PluginResult.success_result("File format not suitable for conversion")
 
             # Check if conversion is requested in context
             target_format = context.metadata.get("target_format")
@@ -322,9 +316,7 @@ class SmartFormatPreProcessor(PreProcessorPlugin):
                     context.add_metadata("original_format", current_format)
                     context.add_metadata("converted_to", target_format)
 
-                    logger.info(
-                        f"Smart format conversion: {current_format} -> {target_format}"
-                    )
+                    logger.info(f"Smart format conversion: {current_format} -> {target_format}")
 
                     return PluginResult.success_result(
                         f"Converted {current_format} to {target_format}",
@@ -344,9 +336,7 @@ class SmartFormatPreProcessor(PreProcessorPlugin):
                     pass  # Ignore cleanup errors
 
         except Exception as e:
-            return PluginResult.error_result(
-                f"Smart format processing failed: {str(e)}"
-            )
+            return PluginResult.error_result(f"Smart format processing failed: {str(e)}")
 
     def _detect_format(self, file_path: str) -> Optional[str]:
         """Detect file format based on content and extension."""
@@ -399,9 +389,7 @@ class SmartFormatPreProcessor(PreProcessorPlugin):
                             for line in first_lines[1:]
                             if abs(line.count(",") - first_line_commas) <= 1
                         )
-                        if (
-                            similar_comma_count / len(first_lines[1:]) > 0.7
-                        ):  # 70% similarity
+                        if similar_comma_count / len(first_lines[1:]) > 0.7:  # 70% similarity
                             return "csv"
 
                 # Default to text

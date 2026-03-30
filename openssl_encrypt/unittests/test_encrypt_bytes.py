@@ -18,10 +18,8 @@ import shutil
 import tempfile
 import unittest
 
-from openssl_encrypt.modules.crypt_core import (EncryptionAlgorithm,
-                                                decrypt_file, encrypt_file)
-from openssl_encrypt.modules.crypt_errors import (KeyDerivationError,
-                                                  ValidationError)
+from openssl_encrypt.modules.crypt_core import EncryptionAlgorithm, decrypt_file, encrypt_file
+from openssl_encrypt.modules.crypt_errors import KeyDerivationError, ValidationError
 
 
 class TestEncryptBytesInput(unittest.TestCase):

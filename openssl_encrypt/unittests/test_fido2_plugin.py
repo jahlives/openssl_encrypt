@@ -8,6 +8,7 @@ FIDO2 hardware. Tests use mocks for hardware interactions to enable CI/CD testin
 import json
 import os
 import secrets
+
 # Mock FIDO2 availability before import
 import sys
 import unittest
@@ -23,7 +24,10 @@ sys.modules["fido2.ctap2"] = MagicMock()
 sys.modules["fido2.ctap2.extensions"] = MagicMock()
 
 from openssl_encrypt.modules.plugin_system.plugin_base import (
-    PluginCapability, PluginResult, PluginSecurityContext)
+    PluginCapability,
+    PluginResult,
+    PluginSecurityContext,
+)
 from openssl_encrypt.plugins.hsm.fido2_pepper import FIDO2HSMPlugin
 
 
@@ -66,8 +70,7 @@ class TestFIDO2CredentialStorage(unittest.TestCase):
 
         # Verify file exists with correct permissions
         self.assertTrue(self.credential_file.exists())
-        from openssl_encrypt.modules.file_permissions import (
-            PermissionLevel, check_permissions)
+        from openssl_encrypt.modules.file_permissions import PermissionLevel, check_permissions
 
         self.assertTrue(
             check_permissions(self.credential_file, PermissionLevel.OWNER_ONLY),
@@ -80,12 +83,8 @@ class TestFIDO2CredentialStorage(unittest.TestCase):
         # Verify loaded data matches saved data
         self.assertEqual(len(loaded_credentials), 1)
         self.assertEqual(loaded_credentials[0]["id"], credential_data["id"])
-        self.assertEqual(
-            loaded_credentials[0]["credential_id"], credential_data["credential_id"]
-        )
-        self.assertEqual(
-            loaded_credentials[0]["description"], credential_data["description"]
-        )
+        self.assertEqual(loaded_credentials[0]["credential_id"], credential_data["credential_id"])
+        self.assertEqual(loaded_credentials[0]["description"], credential_data["description"])
 
     def test_multiple_credentials(self):
         """Test storing multiple credentials (primary + backups)."""
@@ -293,9 +292,7 @@ class TestFIDO2MockPepperDerivation(unittest.TestCase):
     @patch("openssl_encrypt.plugins.hsm.fido2_pepper.CtapHidDevice")
     @patch("openssl_encrypt.plugins.hsm.fido2_pepper.Fido2Client")
     @patch("openssl_encrypt.plugins.hsm.fido2_pepper.Ctap2")
-    def test_mock_pepper_derivation(
-        self, mock_ctap2, mock_client_class, mock_device_class
-    ):
+    def test_mock_pepper_derivation(self, mock_ctap2, mock_client_class, mock_device_class):
         """Test successful pepper derivation with mocked FIDO2."""
         # Mock device detection
         mock_device = Mock()
@@ -491,8 +488,7 @@ class TestFIDO2ConfigDirectory(unittest.TestCase):
         self.assertTrue(self.test_dir.exists())
 
         # Check permissions
-        from openssl_encrypt.modules.file_permissions import (
-            PermissionLevel, check_permissions)
+        from openssl_encrypt.modules.file_permissions import PermissionLevel, check_permissions
 
         self.assertTrue(
             check_permissions(self.test_dir, PermissionLevel.OWNER_FULL),

@@ -19,9 +19,12 @@ import unittest
 from io import StringIO
 from unittest import mock
 
-from openssl_encrypt.modules.crypt_core import (EncryptionAlgorithm,
-                                                decrypt_file, encrypt_file,
-                                                extract_file_metadata)
+from openssl_encrypt.modules.crypt_core import (
+    EncryptionAlgorithm,
+    decrypt_file,
+    encrypt_file,
+    extract_file_metadata,
+)
 
 
 class TestEncryptedAtPresence(unittest.TestCase):
@@ -114,9 +117,7 @@ class TestEncryptedAtFormat(unittest.TestCase):
         timestamp = info["metadata"]["encrypted_at"]
 
         # Must end with Z (UTC)
-        self.assertTrue(
-            timestamp.endswith("Z"), f"Timestamp must end with 'Z': {timestamp}"
-        )
+        self.assertTrue(timestamp.endswith("Z"), f"Timestamp must end with 'Z': {timestamp}")
 
         # Must parse as valid datetime
         parsed = datetime.datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%SZ")
@@ -226,9 +227,7 @@ class TestAgeWarning(unittest.TestCase):
         metadata_b64, encrypted_data = content.split(b":", 1)
         metadata = json.loads(base64.b64decode(metadata_b64))
 
-        old_date = datetime.datetime.utcnow() - datetime.timedelta(
-            days=365 * years_ago + 1
-        )
+        old_date = datetime.datetime.utcnow() - datetime.timedelta(days=365 * years_ago + 1)
         metadata["encrypted_at"] = old_date.strftime("%Y-%m-%dT%H:%M:%SZ")
 
         new_metadata_b64 = base64.b64encode(json.dumps(metadata).encode("utf-8"))

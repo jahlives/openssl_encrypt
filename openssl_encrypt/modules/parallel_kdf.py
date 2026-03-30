@@ -221,9 +221,7 @@ def _kdf_worker(
     """
     # Report start
     progress_queue.put(
-        ProgressMessage(
-            worker_id=worker_id, progress_type=ProgressType.KDF_START, total=1
-        )
+        ProgressMessage(worker_id=worker_id, progress_type=ProgressType.KDF_START, total=1)
     )
 
     start_time = time.time()
@@ -392,9 +390,7 @@ class ParallelProgressAggregator:
         self.progress_enabled = progress_enabled
 
         # Track per-worker progress
-        self.worker_progress: Dict[str, Tuple[int, int]] = (
-            {}
-        )  # worker_id -> (current, total)
+        self.worker_progress: Dict[str, Tuple[int, int]] = {}  # worker_id -> (current, total)
         self.completed_workers: set = set()
         self.completed_times: Dict[str, float] = {}  # worker_id -> elapsed time
         self.stop_event = threading.Event()
@@ -598,9 +594,7 @@ def generate_key_independent_xor_parallel(
     for algo in hash_algorithms:
         rounds = crypt_core.get_hash_rounds(hash_config, algo)
         if rounds > 0:
-            tasks.append(
-                {"type": "hash", "worker_id": algo, "algorithm": algo, "rounds": rounds}
-            )
+            tasks.append({"type": "hash", "worker_id": algo, "algorithm": algo, "rounds": rounds})
 
     # KDF tasks
     if hash_config and "derivation_config" in hash_config:
@@ -709,9 +703,7 @@ def generate_key_independent_xor_parallel(
 
     try:
         # Add initial hash component (first XOR component)
-        initial_normalized = crypt_core.normalize_to_key_length_secure(
-            initial_hash, key_length
-        )
+        initial_normalized = crypt_core.normalize_to_key_length_secure(initial_hash, key_length)
         xor_components.append(initial_normalized)
 
         if debug:
@@ -735,14 +727,10 @@ def generate_key_independent_xor_parallel(
         if not quiet:
             # Calculate rough time savings estimate
             parallel_time = (
-                max(aggregator.completed_times.values())
-                if aggregator.completed_times
-                else 0
+                max(aggregator.completed_times.values()) if aggregator.completed_times else 0
             )
             sequential_estimate = (
-                sum(aggregator.completed_times.values())
-                if aggregator.completed_times
-                else 0
+                sum(aggregator.completed_times.values()) if aggregator.completed_times else 0
             )
 
             eprint(

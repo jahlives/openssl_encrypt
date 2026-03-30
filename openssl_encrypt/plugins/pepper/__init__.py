@@ -60,8 +60,13 @@ Usage:
 """
 
 from .config import ConfigError, PepperConfig
-from .pepper_plugin import (AuthenticationError, NetworkError, PepperError,
-                            PepperPlugin, TOTPRequiredError)
+from .pepper_plugin import (
+    AuthenticationError,
+    NetworkError,
+    PepperError,
+    PepperPlugin,
+    TOTPRequiredError,
+)
 
 __all__ = [
     "PepperPlugin",

@@ -10,11 +10,14 @@ import os
 import tempfile
 import unittest
 
-from openssl_encrypt.modules.crypt_core import (EncryptionAlgorithm,
-                                                decrypt_file, encrypt_file,
-                                                extract_file_metadata,
-                                                generate_key,
-                                                multi_hash_password)
+from openssl_encrypt.modules.crypt_core import (
+    EncryptionAlgorithm,
+    decrypt_file,
+    encrypt_file,
+    extract_file_metadata,
+    generate_key,
+    multi_hash_password,
+)
 
 
 class TestSaltDerivationVersions(unittest.TestCase):
@@ -78,9 +81,7 @@ class TestSaltDerivationVersions(unittest.TestCase):
 
         # Extract and verify metadata
         metadata = extract_file_metadata(encrypted_file)
-        self.assertEqual(
-            metadata["format_version"], 10, "New files should use format version 10"
-        )
+        self.assertEqual(metadata["format_version"], 10, "New files should use format version 10")
 
     def test_decrypt_v9_file(self):
         """Test that v9 encrypted files can be decrypted."""
@@ -161,9 +162,7 @@ class TestSaltDerivationVersions(unittest.TestCase):
         salt = b"scrypt_test_salt"
 
         # Hash config with Scrypt multi-round (flat format)
-        scrypt_config = {
-            "scrypt": {"enabled": True, "n": 1024, "r": 4, "p": 1, "rounds": 2}
-        }
+        scrypt_config = {"scrypt": {"enabled": True, "n": 1024, "r": 4, "p": 1, "rounds": 2}}
 
         try:
             # v8: Predictable salt derivation
@@ -330,9 +329,7 @@ class TestSaltDerivationVersions(unittest.TestCase):
         salt = b"v7_test_salt_val"
 
         # Hash config with multi-round Scrypt
-        scrypt_config = {
-            "scrypt": {"enabled": True, "n": 1024, "r": 4, "p": 1, "rounds": 2}
-        }
+        scrypt_config = {"scrypt": {"enabled": True, "n": 1024, "r": 4, "p": 1, "rounds": 2}}
 
         try:
             # v7: Should use chained salt derivation
@@ -416,10 +413,7 @@ class TestSaltDerivationVersions(unittest.TestCase):
 
                 except Exception as e:
                     # Skip if dependency not available
-                    if any(
-                        word in str(e).lower()
-                        for word in ["not available", "scrypt", "blake"]
-                    ):
+                    if any(word in str(e).lower() for word in ["not available", "scrypt", "blake"]):
                         continue
                     raise
 

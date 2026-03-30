@@ -41,9 +41,7 @@ def secure_clear_env_password():
             for _ in range(3):
                 # Overwrite with random data of same length
                 random_data = "".join(
-                    secrets.choice(
-                        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-                    )
+                    secrets.choice("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
                     for _ in range(original_length)
                 )
                 os.environ["CRYPT_PASSWORD"] = random_data
@@ -291,9 +289,7 @@ class CryptGUI:
 
     def copy_to_clipboard(self):
         """Copy the contents of the output text widget to clipboard"""
-        self.root.clipboard_append(
-            self.output_text.get(1.0, tk.END)
-        )  # Add the text to clipboard
+        self.root.clipboard_append(self.output_text.get(1.0, tk.END))  # Add the text to clipboard
         self.root.update()  # Make sure the clipboard content is available after the function returns
 
     def setup_settings_tab(self):
@@ -346,9 +342,7 @@ class CryptGUI:
         browse_button = ttk.Button(
             output_frame,
             text="Browse",
-            command=lambda: self.browse_file(
-                self.encrypt_output_var, file_type="output"
-            ),
+            command=lambda: self.browse_file(self.encrypt_output_var, file_type="output"),
         )
         browse_button.pack(side="right", padx=(5, 0))
 
@@ -359,9 +353,7 @@ class CryptGUI:
         # Password entry with secure handling
         self.encrypt_password_var = tk.StringVar()
         self.encrypt_password_secure = SecurePasswordVar()
-        password_entry = ttk.Entry(
-            password_group, textvariable=self.encrypt_password_var, show="*"
-        )
+        password_entry = ttk.Entry(password_group, textvariable=self.encrypt_password_var, show="*")
         password_entry.pack(fill="x", padx=5, pady=2)
 
         # Bind password entry to secure storage
@@ -370,9 +362,7 @@ class CryptGUI:
         # Confirm password entry with secure handling
         self.encrypt_confirm_var = tk.StringVar()
         self.encrypt_confirm_secure = SecurePasswordVar()
-        confirm_entry = ttk.Entry(
-            password_group, textvariable=self.encrypt_confirm_var, show="*"
-        )
+        confirm_entry = ttk.Entry(password_group, textvariable=self.encrypt_confirm_var, show="*")
         confirm_entry.pack(fill="x", padx=5, pady=2)
 
         # Bind confirm password entry to secure storage
@@ -388,9 +378,7 @@ class CryptGUI:
         force_password_cb.pack(anchor="w", padx=5, pady=(5, 2))
 
         # Algorithm group
-        algorithm_group = ttk.LabelFrame(
-            self.encrypt_frame, text="Encryption Algorithm", padding=5
-        )
+        algorithm_group = ttk.LabelFrame(self.encrypt_frame, text="Encryption Algorithm", padding=5)
         algorithm_group.pack(fill="x", padx=5, pady=5)
 
         # Create the dropdown menu
@@ -589,9 +577,7 @@ class CryptGUI:
         self.decrypt_password_var = tk.StringVar()
         self.decrypt_password_secure = SecurePasswordVar()
         ttk.Label(password_frame, text="Password:").pack(side=tk.LEFT, padx=5, pady=5)
-        password_entry = ttk.Entry(
-            password_frame, textvariable=self.decrypt_password_var, show="*"
-        )
+        password_entry = ttk.Entry(password_frame, textvariable=self.decrypt_password_var, show="*")
         password_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5, pady=5)
 
         # Bind password entry to secure storage
@@ -701,17 +687,13 @@ class CryptGUI:
             "Securely shredded files CANNOT be recovered! This operation is permanent.\n"
             "Please ensure you have selected the correct files before proceeding."
         )
-        ttk.Label(warning_frame, text=warning_text, foreground="red").pack(
-            padx=10, pady=10
-        )
+        ttk.Label(warning_frame, text=warning_text, foreground="red").pack(padx=10, pady=10)
 
         # Action button
         button_frame = ttk.Frame(frame)
         button_frame.pack(fill=tk.X, padx=10, pady=20)
 
-        ttk.Button(button_frame, text="Shred", command=self.run_shred).pack(
-            padx=5, pady=5
-        )
+        ttk.Button(button_frame, text="Shred", command=self.run_shred).pack(padx=5, pady=5)
 
     def setup_password_tab(self):
         """Set up the password generation tab"""
@@ -733,9 +715,7 @@ class CryptGUI:
         )
         length_scale.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
 
-        length_display = ttk.Label(
-            length_frame, textvariable=self.password_length_var, width=3
-        )
+        length_display = ttk.Label(length_frame, textvariable=self.password_length_var, width=3)
         length_display.pack(side=tk.LEFT, padx=5)
 
         # Character sets
@@ -757,9 +737,9 @@ class CryptGUI:
         ).pack(anchor=tk.W, padx=5, pady=2)
 
         self.use_digits_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(
-            charset_frame, text="Digits (0-9)", variable=self.use_digits_var
-        ).pack(anchor=tk.W, padx=5, pady=2)
+        ttk.Checkbutton(charset_frame, text="Digits (0-9)", variable=self.use_digits_var).pack(
+            anchor=tk.W, padx=5, pady=2
+        )
 
         self.use_special_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(
@@ -807,9 +787,9 @@ class CryptGUI:
         button_frame = ttk.Frame(frame)
         button_frame.pack(fill=tk.X, padx=10, pady=20)
 
-        ttk.Button(
-            button_frame, text="Generate Password", command=self.generate_password
-        ).pack(side=tk.LEFT, padx=5, pady=5)
+        ttk.Button(button_frame, text="Generate Password", command=self.generate_password).pack(
+            side=tk.LEFT, padx=5, pady=5
+        )
 
         ttk.Button(
             button_frame,
@@ -817,9 +797,9 @@ class CryptGUI:
             command=self.copy_password_to_clipboard,
         ).pack(side=tk.LEFT, padx=5, pady=5)
 
-        ttk.Button(
-            button_frame, text="Clear", command=self.clear_generated_password
-        ).pack(side=tk.LEFT, padx=5, pady=5)
+        ttk.Button(button_frame, text="Clear", command=self.clear_generated_password).pack(
+            side=tk.LEFT, padx=5, pady=5
+        )
 
     def browse_file(self, string_var, save=False, multi=False, file_type=None):
         """Browse for a file and update the StringVar"""
@@ -955,9 +935,7 @@ class CryptGUI:
 
         # Ensure at least one character set is selected
         if not (use_lowercase or use_uppercase or use_digits or use_special):
-            messagebox.showwarning(
-                "Warning", "Please select at least one character set."
-            )
+            messagebox.showwarning("Warning", "Please select at least one character set.")
             return
 
         # Generate and display the password
@@ -1137,9 +1115,7 @@ class CryptGUI:
         # Start the command in a separate thread
         threading.Thread(target=run_in_thread, daemon=True).start()
 
-    def run_command_with_progress(
-        self, cmd, callback=None, show_output=False, env=None
-    ):
+    def run_command_with_progress(self, cmd, callback=None, show_output=False, env=None):
         """Run a command with real-time progress updates in the UI"""
 
         def run_in_thread():
@@ -1164,9 +1140,7 @@ class CryptGUI:
                 # Process output in real-time
                 stdout_lines = []
                 stderr_lines = []
-                important_output_lines = (
-                    []
-                )  # For integrity check results and decrypted content
+                important_output_lines = []  # For integrity check results and decrypted content
 
                 # Regular expressions to match different types of progress outputs
                 import re
@@ -1177,9 +1151,7 @@ class CryptGUI:
                 )
                 # Match newer format progress message (from argon2, scrypt, balloon, etc):
                 # "Argon2 processing: 50.0% complete"
-                simple_progress_regex = re.compile(
-                    r"([\w\-]+) processing: (\d+\.\d+)% complete"
-                )
+                simple_progress_regex = re.compile(r"([\w\-]+) processing: (\d+\.\d+)% complete")
                 # Match processing messages like "Applying 1000000 rounds of SHA-512..."
                 processing_regex = re.compile(r"Applying (\d+) rounds of ([\w\-]+).*")
                 # Match processing with parameters like "Applying scrypt with n=16384, r=8, p=1..."
@@ -1230,9 +1202,7 @@ class CryptGUI:
                         if algorithm != self.current_algorithm:
                             self.current_algorithm = algorithm
 
-                        progress_text = (
-                            f"{algorithm} hashing: {percent}% ({current}/{total})"
-                        )
+                        progress_text = f"{algorithm} hashing: {percent}% ({current}/{total})"
                         if progress_text != self.last_progress_text:
                             self.status_var.set(progress_text)
                             self.last_progress_text = progress_text
@@ -1275,9 +1245,7 @@ class CryptGUI:
 
                         # Update status text
                         self.current_algorithm = "Parallel KDF"
-                        progress_text = (
-                            f"Parallel KDF: {percent}% ({completed}/{total} complete)"
-                        )
+                        progress_text = f"Parallel KDF: {percent}% ({completed}/{total} complete)"
                         if progress_text != self.last_progress_text:
                             self.status_var.set(progress_text)
                             self.last_progress_text = progress_text
@@ -1286,9 +1254,7 @@ class CryptGUI:
                         # Starting a new hashing process
                         iterations, algorithm = processing_match.groups()
                         self.current_algorithm = algorithm
-                        progress_text = (
-                            f"Starting {algorithm} with {iterations} iterations..."
-                        )
+                        progress_text = f"Starting {algorithm} with {iterations} iterations..."
                         self.status_var.set(progress_text)
                         self.last_progress_text = progress_text
                         self.progress_var.set(0)  # Reset progress for new algorithm
@@ -1330,9 +1296,7 @@ class CryptGUI:
                 if not stdout_lines and process.poll() is not None:
                     # Process finished early, likely due to an error - get all output
                     try:
-                        stdout_remaining, stderr_remaining = process.communicate(
-                            timeout=5
-                        )
+                        stdout_remaining, stderr_remaining = process.communicate(timeout=5)
                         if stdout_remaining:
                             stdout_lines.append(stdout_remaining)
                         if stderr_remaining:
@@ -1501,9 +1465,7 @@ class CryptGUI:
 
         output_file = self.encrypt_output_var.get()
         if not output_file and not self.encrypt_overwrite_var.get():
-            messagebox.showerror(
-                "Error", "Please select an output file or enable overwrite."
-            )
+            messagebox.showerror("Error", "Please select an output file or enable overwrite.")
             return
 
         # Get current hash configuration and encryption algorithm
@@ -1571,10 +1533,7 @@ class CryptGUI:
             cmd.extend(["--pbkdf2-iterations", str(hash_config["pbkdf2_iterations"])])
 
             # Scrypt parameters - check if enabled
-            if (
-                hash_config["scrypt"].get("enabled", False)
-                or hash_config["scrypt"]["n"] > 0
-            ):
+            if hash_config["scrypt"].get("enabled", False) or hash_config["scrypt"]["n"] > 0:
                 cmd.append("--enable-scrypt")
                 cmd.extend(
                     [
@@ -1588,13 +1547,8 @@ class CryptGUI:
                 )
 
                 # Add rounds parameter if present
-                if (
-                    "rounds" in hash_config["scrypt"]
-                    and hash_config["scrypt"]["rounds"] > 1
-                ):
-                    cmd.extend(
-                        ["--scrypt-rounds", str(hash_config["scrypt"]["rounds"])]
-                    )
+                if "rounds" in hash_config["scrypt"] and hash_config["scrypt"]["rounds"] > 1:
+                    cmd.extend(["--scrypt-rounds", str(hash_config["scrypt"]["rounds"])])
 
             # Argon2 parameters
             if hash_config["argon2"]["enabled"]:
@@ -1615,37 +1569,24 @@ class CryptGUI:
                 )
 
                 # Add rounds parameter if present
-                if (
-                    "rounds" in hash_config["argon2"]
-                    and hash_config["argon2"]["rounds"] > 1
-                ):
-                    cmd.extend(
-                        ["--argon2-rounds", str(hash_config["argon2"]["rounds"])]
-                    )
+                if "rounds" in hash_config["argon2"] and hash_config["argon2"]["rounds"] > 1:
+                    cmd.extend(["--argon2-rounds", str(hash_config["argon2"]["rounds"])])
 
             # Balloon parameters (if present)
-            if "balloon" in hash_config and hash_config["balloon"].get(
-                "enabled", False
-            ):
+            if "balloon" in hash_config and hash_config["balloon"].get("enabled", False):
                 cmd.append("--enable-balloon")
 
                 balloon_config = hash_config["balloon"]
 
                 if "time_cost" in balloon_config:
-                    cmd.extend(
-                        ["--balloon-time-cost", str(balloon_config["time_cost"])]
-                    )
+                    cmd.extend(["--balloon-time-cost", str(balloon_config["time_cost"])])
 
                 if "space_cost" in balloon_config:
-                    cmd.extend(
-                        ["--balloon-space-cost", str(balloon_config["space_cost"])]
-                    )
+                    cmd.extend(["--balloon-space-cost", str(balloon_config["space_cost"])])
 
                 # Handle both 'parallel_cost' and 'parallelism' as keys might vary
                 if "parallel_cost" in balloon_config:
-                    cmd.extend(
-                        ["--balloon-parallelism", str(balloon_config["parallel_cost"])]
-                    )
+                    cmd.extend(["--balloon-parallelism", str(balloon_config["parallel_cost"])])
 
                 # Add rounds parameter if present
                 if "rounds" in balloon_config and balloon_config["rounds"] > 1:
@@ -1668,9 +1609,7 @@ class CryptGUI:
                     cmd.extend(["--hkdf-rounds", str(hkdf_config["rounds"])])
 
             # RandomX parameters (if present)
-            if "randomx" in hash_config and hash_config["randomx"].get(
-                "enabled", False
-            ):
+            if "randomx" in hash_config and hash_config["randomx"].get("enabled", False):
                 cmd.append("--enable-randomx")
 
                 randomx_config = hash_config["randomx"]
@@ -1819,9 +1758,7 @@ class CryptGUI:
         """Run the shred command"""
         input_files = self.shred_input_var.get()
         if not input_files:
-            messagebox.showerror(
-                "Error", "Please select files or directories to shred."
-            )
+            messagebox.showerror("Error", "Please select files or directories to shred.")
             return
 
         # Ask for confirmation

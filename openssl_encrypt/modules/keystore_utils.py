@@ -16,9 +16,7 @@ from .crypt_utils import eprint
 logger = logging.getLogger(__name__)
 
 
-def extract_key_id_from_metadata(
-    encrypted_file: str, verbose: bool = False
-) -> Optional[str]:
+def extract_key_id_from_metadata(encrypted_file: str, verbose: bool = False) -> Optional[str]:
     """
     Extract PQC keystore key ID from encrypted file metadata
 
@@ -31,9 +29,7 @@ def extract_key_id_from_metadata(
     """
     try:
         with open(encrypted_file, "rb") as f:
-            data = f.read(
-                8192
-            )  # Read enough for the header - increased to 8KB for large PQC keys
+            data = f.read(8192)  # Read enough for the header - increased to 8KB for large PQC keys
 
         # Find the colon separator
         colon_pos = data.find(b":")
@@ -64,11 +60,8 @@ def extract_key_id_from_metadata(
                         elif (
                             "derivation_config" in metadata
                             and "kdf_config" in metadata["derivation_config"]
-                            and "dual_encryption"
-                            in metadata["derivation_config"]["kdf_config"]
-                            and metadata["derivation_config"]["kdf_config"][
-                                "dual_encryption"
-                            ]
+                            and "dual_encryption" in metadata["derivation_config"]["kdf_config"]
+                            and metadata["derivation_config"]["kdf_config"]["dual_encryption"]
                         ):
                             if verbose:
                                 logger.info(
@@ -80,8 +73,7 @@ def extract_key_id_from_metadata(
                         if (
                             "derivation_config" in metadata
                             and "kdf_config" in metadata["derivation_config"]
-                            and "pqc_keystore_key_id"
-                            in metadata["derivation_config"]["kdf_config"]
+                            and "pqc_keystore_key_id" in metadata["derivation_config"]["kdf_config"]
                         ):
                             key_id = metadata["derivation_config"]["kdf_config"][
                                 "pqc_keystore_key_id"
@@ -95,11 +87,8 @@ def extract_key_id_from_metadata(
                         elif (
                             "derivation_config" in metadata
                             and "kdf_config" in metadata["derivation_config"]
-                            and "dual_encryption"
-                            in metadata["derivation_config"]["kdf_config"]
-                            and metadata["derivation_config"]["kdf_config"][
-                                "dual_encryption"
-                            ]
+                            and "dual_encryption" in metadata["derivation_config"]["kdf_config"]
+                            and metadata["derivation_config"]["kdf_config"]["dual_encryption"]
                         ):
                             if verbose:
                                 logger.info(
@@ -122,8 +111,7 @@ def extract_key_id_from_metadata(
                         if (
                             "derivation_config" in metadata
                             and "kdf_config" in metadata["derivation_config"]
-                            and "pqc_keystore_key_id"
-                            in metadata["derivation_config"]["kdf_config"]
+                            and "pqc_keystore_key_id" in metadata["derivation_config"]["kdf_config"]
                         ):
                             key_id = metadata["derivation_config"]["kdf_config"][
                                 "pqc_keystore_key_id"
@@ -137,11 +125,8 @@ def extract_key_id_from_metadata(
                         elif (
                             "derivation_config" in metadata
                             and "kdf_config" in metadata["derivation_config"]
-                            and "dual_encryption"
-                            in metadata["derivation_config"]["kdf_config"]
-                            and metadata["derivation_config"]["kdf_config"][
-                                "dual_encryption"
-                            ]
+                            and "dual_encryption" in metadata["derivation_config"]["kdf_config"]
+                            and metadata["derivation_config"]["kdf_config"]["dual_encryption"]
                         ):
                             if verbose:
                                 logger.info(
@@ -174,9 +159,7 @@ def extract_key_id_from_metadata(
                 # Fall back to regex for UUID pattern
                 import re
 
-                uuid_pattern = (
-                    r"([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
-                )
+                uuid_pattern = r"([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
                 matches = re.findall(uuid_pattern, metadata_json)
 
                 if matches:
@@ -187,9 +170,7 @@ def extract_key_id_from_metadata(
                             for match in matches:
                                 if metadata_json[i:].find(match) >= 0:
                                     if verbose:
-                                        logger.info(
-                                            f"Found key ID using regex: {match}"
-                                        )
+                                        logger.info(f"Found key ID using regex: {match}")
                                     return match
 
                     # If we couldn't find one after the key name, just return the first match
@@ -249,9 +230,7 @@ def extract_key_id_from_metadata(
                         ):
                             # This file has an embedded public key, which means it might have an embedded private key
                             if verbose:
-                                logger.info(
-                                    "Found embedded PQC public key in format v4 metadata"
-                                )
+                                logger.info("Found embedded PQC public key in format v4 metadata")
 
                             # Check for embedded private key
                             if "pqc_private_key" in header_config["encryption"]:
@@ -352,10 +331,7 @@ def get_pqc_key_for_decryption(args, hash_config=None, metadata=None):
     # Check if we have a key ID in the hash_config or metadata
     if format_version == 6 and metadata:
         # Check for key ID in format version 6 structure
-        if (
-            "derivation_config" in metadata
-            and "keystore_id" in metadata["derivation_config"]
-        ):
+        if "derivation_config" in metadata and "keystore_id" in metadata["derivation_config"]:
             key_id = metadata["derivation_config"]["keystore_id"]
             if not getattr(args, "quiet", False):
                 eprint(f"Found key ID in metadata derivation_config (v6): {key_id}")
@@ -369,9 +345,7 @@ def get_pqc_key_for_decryption(args, hash_config=None, metadata=None):
             key_id = metadata["derivation_config"]["kdf_config"]["pqc_keystore_key_id"]
             if not getattr(args, "quiet", False):
                 version_label = f"v{format_version}"
-                eprint(
-                    f"Found key ID in metadata derivation_config ({version_label}): {key_id}"
-                )
+                eprint(f"Found key ID in metadata derivation_config ({version_label}): {key_id}")
     elif hash_config and "pqc_keystore_key_id" in hash_config:
         # Legacy format (1-3)
         key_id = hash_config["pqc_keystore_key_id"]
@@ -382,9 +356,7 @@ def get_pqc_key_for_decryption(args, hash_config=None, metadata=None):
     if not key_id and hasattr(args, "input") and args.input:
         # Use the improved extract_key_id_from_metadata function
         # which now includes regex-based extraction for robustness
-        key_id = extract_key_id_from_metadata(
-            args.input, getattr(args, "verbose", False)
-        )
+        key_id = extract_key_id_from_metadata(args.input, getattr(args, "verbose", False))
         if key_id and not getattr(args, "quiet", False):
             eprint(f"Found key ID in file metadata: {key_id}")
 
@@ -411,9 +383,7 @@ def get_pqc_key_for_decryption(args, hash_config=None, metadata=None):
                             "encryption" in header_config
                             and "pqc_private_key" in header_config["encryption"]
                         ):
-                            embedded_private_key = header_config["encryption"][
-                                "pqc_private_key"
-                            ]
+                            embedded_private_key = header_config["encryption"]["pqc_private_key"]
                             if embedded_private_key:
                                 if not getattr(args, "quiet", False):
                                     eprint(
@@ -480,9 +450,7 @@ def get_pqc_key_for_decryption(args, hash_config=None, metadata=None):
             and "kdf_config" in metadata["derivation_config"]
             and "dual_encryption" in metadata["derivation_config"]["kdf_config"]
         ):
-            dual_encryption = metadata["derivation_config"]["kdf_config"][
-                "dual_encryption"
-            ]
+            dual_encryption = metadata["derivation_config"]["kdf_config"]["dual_encryption"]
             if not getattr(args, "quiet", False) and dual_encryption:
                 eprint("Dual encryption is enabled for this file (format v6)")
     elif format_version == 5 and metadata:
@@ -492,9 +460,7 @@ def get_pqc_key_for_decryption(args, hash_config=None, metadata=None):
             and "kdf_config" in metadata["derivation_config"]
             and "dual_encryption" in metadata["derivation_config"]["kdf_config"]
         ):
-            dual_encryption = metadata["derivation_config"]["kdf_config"][
-                "dual_encryption"
-            ]
+            dual_encryption = metadata["derivation_config"]["kdf_config"]["dual_encryption"]
             if not getattr(args, "quiet", False) and dual_encryption:
                 eprint("Dual encryption is enabled for this file (format v5)")
     elif format_version == 4 and metadata:
@@ -504,9 +470,7 @@ def get_pqc_key_for_decryption(args, hash_config=None, metadata=None):
             and "kdf_config" in metadata["derivation_config"]
             and "dual_encryption" in metadata["derivation_config"]["kdf_config"]
         ):
-            dual_encryption = metadata["derivation_config"]["kdf_config"][
-                "dual_encryption"
-            ]
+            dual_encryption = metadata["derivation_config"]["kdf_config"]["dual_encryption"]
             if not getattr(args, "quiet", False) and dual_encryption:
                 eprint("Dual encryption is enabled for this file (format v4)")
     elif hash_config and "dual_encryption" in hash_config:
@@ -516,12 +480,7 @@ def get_pqc_key_for_decryption(args, hash_config=None, metadata=None):
             eprint("Dual encryption is enabled for this file")
 
     # If we have a keystore and key ID, try to retrieve the key
-    if (
-        key_id
-        and key_id != "EMBEDDED_PRIVATE_KEY"
-        and hasattr(args, "keystore")
-        and args.keystore
-    ):
+    if key_id and key_id != "EMBEDDED_PRIVATE_KEY" and hasattr(args, "keystore") and args.keystore:
         try:
             # Get keystore password
             keystore_password = get_keystore_password(args)
@@ -551,13 +510,9 @@ def get_pqc_key_for_decryption(args, hash_config=None, metadata=None):
             pqc_private_key = private_key
 
             if not getattr(args, "quiet", False):
-                eprint(
-                    f"Successfully retrieved key from keystore using ID from metadata"
-                )
+                eprint(f"Successfully retrieved key from keystore using ID from metadata")
                 if dual_encryption:
-                    eprint(
-                        "Key was dual-encrypted with both keystore and file passwords"
-                    )
+                    eprint("Key was dual-encrypted with both keystore and file passwords")
 
             return pqc_keypair, pqc_private_key, key_id
         except Exception as e:
@@ -565,11 +520,7 @@ def get_pqc_key_for_decryption(args, hash_config=None, metadata=None):
                 logger.info(f"Failed to get key from keystore: {e}")
 
     # Fall back to pqc_keyfile if specified
-    if (
-        hasattr(args, "pqc_keyfile")
-        and args.pqc_keyfile
-        and os.path.exists(args.pqc_keyfile)
-    ):
+    if hasattr(args, "pqc_keyfile") and args.pqc_keyfile and os.path.exists(args.pqc_keyfile):
         try:
             # Load key pair from file
             import base64
@@ -579,9 +530,11 @@ def get_pqc_key_for_decryption(args, hash_config=None, metadata=None):
                 # MED-8 Security fix: Use secure JSON validation for PQC key file loading
                 json_content = f.read()
                 try:
-                    from .json_validator import (JSONSecurityError,
-                                                 JSONValidationError,
-                                                 secure_json_loads)
+                    from .json_validator import (
+                        JSONSecurityError,
+                        JSONValidationError,
+                        secure_json_loads,
+                    )
 
                     key_data = secure_json_loads(json_content)
                 except (JSONSecurityError, JSONValidationError) as e:
@@ -606,8 +559,7 @@ def get_pqc_key_for_decryption(args, hash_config=None, metadata=None):
                     # Import what we need to decrypt
                     import hashlib
 
-                    from cryptography.hazmat.primitives.ciphers.aead import \
-                        AESGCM
+                    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
                     # Key derivation using the same method as when encrypting
                     key_salt = base64.b64decode(key_data["key_salt"])
@@ -617,9 +569,7 @@ def get_pqc_key_for_decryption(args, hash_config=None, metadata=None):
                     encryption_key = hashlib.sha256(key_derivation).digest()
 
                     try:
-                        encrypted_private_key = base64.b64decode(
-                            key_data["private_key"]
-                        )
+                        encrypted_private_key = base64.b64decode(key_data["private_key"])
 
                         # Format: nonce (12 bytes) + encrypted_key
                         nonce = encrypted_private_key[:12]
@@ -663,9 +613,7 @@ def get_pqc_key_for_decryption(args, hash_config=None, metadata=None):
     return None, None, None
 
 
-def store_pqc_key_in_keystore(
-    metadata, keystore_path, keystore_password, key_id=None, quiet=False
-):
+def store_pqc_key_in_keystore(metadata, keystore_path, keystore_password, key_id=None, quiet=False):
     """
     Extract already-encrypted private key from metadata and store it in the keystore
 
@@ -690,10 +638,7 @@ def store_pqc_key_in_keystore(
 
     if format_version == 6 or format_version == 5:
         # Format version 6 and 5 structures (same structure for key storage)
-        if (
-            "derivation_config" in metadata
-            and "kdf_config" in metadata["derivation_config"]
-        ):
+        if "derivation_config" in metadata and "kdf_config" in metadata["derivation_config"]:
             dual_encrypt_enabled = metadata["derivation_config"]["kdf_config"].get(
                 "dual_encryption", False
             )
@@ -701,9 +646,7 @@ def store_pqc_key_in_keystore(
         if "encryption" in metadata:
             # Check for private key in encryption section
             if "pqc_private_key" in metadata["encryption"]:
-                encrypted_private_key = base64.b64decode(
-                    metadata["encryption"]["pqc_private_key"]
-                )
+                encrypted_private_key = base64.b64decode(metadata["encryption"]["pqc_private_key"])
 
             # Get public key from encryption section
             if "pqc_public_key" in metadata["encryption"]:
@@ -713,10 +656,7 @@ def store_pqc_key_in_keystore(
             algorithm = metadata["encryption"].get("algorithm", "kyber768-hybrid")
     elif format_version == 4:
         # Format version 4 structure
-        if (
-            "derivation_config" in metadata
-            and "kdf_config" in metadata["derivation_config"]
-        ):
+        if "derivation_config" in metadata and "kdf_config" in metadata["derivation_config"]:
             dual_encrypt_enabled = metadata["derivation_config"]["kdf_config"].get(
                 "dual_encryption", False
             )
@@ -724,9 +664,7 @@ def store_pqc_key_in_keystore(
         if "encryption" in metadata:
             # Check for private key in encryption section
             if "pqc_private_key" in metadata["encryption"]:
-                encrypted_private_key = base64.b64decode(
-                    metadata["encryption"]["pqc_private_key"]
-                )
+                encrypted_private_key = base64.b64decode(metadata["encryption"]["pqc_private_key"])
 
             # Get public key from encryption section
             if "pqc_public_key" in metadata["encryption"]:
@@ -736,9 +674,9 @@ def store_pqc_key_in_keystore(
             algorithm = metadata["encryption"].get("algorithm", "kyber768-hybrid")
     else:
         # Legacy format (1-3)
-        dual_encrypt_enabled = metadata.get(
-            "pqc_dual_encrypt_key", False
-        ) or metadata.get("dual_encryption", False)
+        dual_encrypt_enabled = metadata.get("pqc_dual_encrypt_key", False) or metadata.get(
+            "dual_encryption", False
+        )
 
         if "pqc_private_key" in metadata:
             encrypted_private_key = base64.b64decode(metadata["pqc_private_key"])
@@ -781,9 +719,7 @@ def store_pqc_key_in_keystore(
         # If we have a key ID and the key exists, update it
         import datetime
 
-        description = (
-            f"Updated from file on {datetime.datetime.now().strftime('%Y-%m-%d')}"
-        )
+        description = f"Updated from file on {datetime.datetime.now().strftime('%Y-%m-%d')}"
         tags = ["from-file", "dual-encrypted", f"format-v{format_version}"]
 
         if key_id and key_id in [k["key_id"] for k in keystore.list_keys()]:
@@ -844,17 +780,13 @@ def store_pqc_key_in_keystore(
                     "derivation_config" in metadata
                     and "kdf_config" in metadata["derivation_config"]
                 ):
-                    metadata["derivation_config"]["kdf_config"][
-                        "pqc_keystore_key_id"
-                    ] = key_id
+                    metadata["derivation_config"]["kdf_config"]["pqc_keystore_key_id"] = key_id
             elif format_version == 4:
                 if (
                     "derivation_config" in metadata
                     and "kdf_config" in metadata["derivation_config"]
                 ):
-                    metadata["derivation_config"]["kdf_config"][
-                        "pqc_keystore_key_id"
-                    ] = key_id
+                    metadata["derivation_config"]["kdf_config"]["pqc_keystore_key_id"] = key_id
             else:
                 # Legacy format update
                 metadata["pqc_keystore_key_id"] = key_id
@@ -958,9 +890,7 @@ def auto_generate_pqc_key(args, hash_config, format_version=3):
             if not os.path.exists(args.keystore):
                 if not getattr(args, "quiet", False):
                     eprint(f"Creating new keystore: {args.keystore}")
-                keystore.create_keystore(
-                    keystore_password, KeystoreSecurityLevel.STANDARD
-                )
+                keystore.create_keystore(keystore_password, KeystoreSecurityLevel.STANDARD)
             else:
                 keystore.load_keystore(keystore_password)
 
@@ -969,8 +899,7 @@ def auto_generate_pqc_key(args, hash_config, format_version=3):
             matching_keys = [
                 k
                 for k in keys
-                if k["algorithm"].lower().replace("-", "")
-                == pqc_algorithm.lower().replace("-", "")
+                if k["algorithm"].lower().replace("-", "") == pqc_algorithm.lower().replace("-", "")
                 and k.get("dual_encryption", False) == dual_encryption
             ]
 
@@ -978,20 +907,14 @@ def auto_generate_pqc_key(args, hash_config, format_version=3):
                 # Use existing key
                 key_id = matching_keys[0]["key_id"]
                 if dual_encryption and hasattr(args, "password"):
-                    public_key, private_key = keystore.get_key(
-                        key_id, None, args.password
-                    )
+                    public_key, private_key = keystore.get_key(key_id, None, args.password)
                 else:
                     public_key, private_key = keystore.get_key(key_id)
 
                 if not getattr(args, "quiet", False):
-                    eprint(
-                        f"Using existing {matching_keys[0]['algorithm']} key from keystore"
-                    )
+                    eprint(f"Using existing {matching_keys[0]['algorithm']} key from keystore")
                     if dual_encryption:
-                        eprint(
-                            "This key uses dual encryption (keystore password + file password)"
-                        )
+                        eprint("This key uses dual encryption (keystore password + file password)")
             else:
                 # Generate new key
                 if not getattr(args, "quiet", False):
@@ -1053,9 +976,7 @@ def auto_generate_pqc_key(args, hash_config, format_version=3):
                 if "kdf_config" not in hash_config["derivation_config"]:
                     hash_config["derivation_config"]["kdf_config"] = {}
 
-                hash_config["derivation_config"]["kdf_config"][
-                    "pqc_keystore_key_id"
-                ] = key_id
+                hash_config["derivation_config"]["kdf_config"]["pqc_keystore_key_id"] = key_id
             elif format_version == 4:
                 # Format version 4 structure
                 if not isinstance(hash_config, dict):
@@ -1071,9 +992,7 @@ def auto_generate_pqc_key(args, hash_config, format_version=3):
                 if "kdf_config" not in hash_config["derivation_config"]:
                     hash_config["derivation_config"]["kdf_config"] = {}
 
-                hash_config["derivation_config"]["kdf_config"][
-                    "pqc_keystore_key_id"
-                ] = key_id
+                hash_config["derivation_config"]["kdf_config"]["pqc_keystore_key_id"] = key_id
             else:
                 # Legacy format (v1-3)
                 hash_config["pqc_keystore_key_id"] = key_id
@@ -1087,9 +1006,7 @@ def auto_generate_pqc_key(args, hash_config, format_version=3):
                     if "kdf_config" not in hash_config["derivation_config"]:
                         hash_config["derivation_config"]["kdf_config"] = {}
 
-                    hash_config["derivation_config"]["kdf_config"][
-                        "dual_encryption"
-                    ] = True
+                    hash_config["derivation_config"]["kdf_config"]["dual_encryption"] = True
                 elif format_version == 5:
                     # Store in both locations for maximum compatibility
                     # Legacy location for backward compatibility
@@ -1101,9 +1018,7 @@ def auto_generate_pqc_key(args, hash_config, format_version=3):
                     if "kdf_config" not in hash_config["derivation_config"]:
                         hash_config["derivation_config"]["kdf_config"] = {}
 
-                    hash_config["derivation_config"]["kdf_config"][
-                        "dual_encryption"
-                    ] = True
+                    hash_config["derivation_config"]["kdf_config"]["dual_encryption"] = True
                 elif format_version == 4:
                     # Store in both locations for maximum compatibility
                     # Legacy location for backward compatibility
@@ -1115,9 +1030,7 @@ def auto_generate_pqc_key(args, hash_config, format_version=3):
                     if "kdf_config" not in hash_config["derivation_config"]:
                         hash_config["derivation_config"]["kdf_config"] = {}
 
-                    hash_config["derivation_config"]["kdf_config"][
-                        "dual_encryption"
-                    ] = True
+                    hash_config["derivation_config"]["kdf_config"]["dual_encryption"] = True
                 else:
                     # Legacy format
                     hash_config["dual_encryption"] = True

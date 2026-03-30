@@ -15,11 +15,21 @@ Author: OpenSSL Encrypt Team
 Version: 1.3.0
 """
 
-from .qr_distribution import (QRKeyDistribution, QRKeyError, QRKeyFormat,
-                              SecureBytes, create_key_qr, read_key_qr)
-from .usb_creator import (USBCreationError, USBDriveCreator,
-                          USBSecurityProfile, create_portable_usb,
-                          verify_usb_integrity)
+from .qr_distribution import (
+    QRKeyDistribution,
+    QRKeyError,
+    QRKeyFormat,
+    SecureBytes,
+    create_key_qr,
+    read_key_qr,
+)
+from .usb_creator import (
+    USBCreationError,
+    USBDriveCreator,
+    USBSecurityProfile,
+    create_portable_usb,
+    verify_usb_integrity,
+)
 
 __all__ = [
     "QRKeyDistribution",

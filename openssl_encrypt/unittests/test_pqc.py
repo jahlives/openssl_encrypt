@@ -27,15 +27,19 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 # Import the modules to test
-from openssl_encrypt.modules.crypt_core import (EncryptionAlgorithm,
-                                                decrypt_file, encrypt_file,
-                                                extract_file_metadata)
-from openssl_encrypt.modules.crypt_errors import (AuthenticationError,
-                                                  DecryptionError,
-                                                  EncryptionError,
-                                                  ValidationError)
-from openssl_encrypt.modules.pqc import (LIBOQS_AVAILABLE, PQCAlgorithm,
-                                         PQCipher, check_pqc_support)
+from openssl_encrypt.modules.crypt_core import (
+    EncryptionAlgorithm,
+    decrypt_file,
+    encrypt_file,
+    extract_file_metadata,
+)
+from openssl_encrypt.modules.crypt_errors import (
+    AuthenticationError,
+    DecryptionError,
+    EncryptionError,
+    ValidationError,
+)
+from openssl_encrypt.modules.pqc import LIBOQS_AVAILABLE, PQCAlgorithm, PQCipher, check_pqc_support
 
 # Try to import PQC support
 try:
@@ -132,9 +136,7 @@ class TestPostQuantumCrypto(unittest.TestCase):
             # Try with/without hyphens
             normalized_name = algo_name.lower().replace("-", "").replace("_", "")
             for supported in self.supported_algorithms:
-                normalized_supported = (
-                    supported.lower().replace("-", "").replace("_", "")
-                )
+                normalized_supported = supported.lower().replace("-", "").replace("_", "")
                 if normalized_supported == normalized_name:
                     return supported
 
@@ -217,9 +219,7 @@ class TestPostQuantumCrypto(unittest.TestCase):
 
         for algo in algorithms:
             # Create encrypted filename for this algorithm
-            encrypted_file = os.path.join(
-                self.test_dir, f"encrypted_{algo.replace('-', '_')}.enc"
-            )
+            encrypted_file = os.path.join(self.test_dir, f"encrypted_{algo.replace('-', '_')}.enc")
             self.test_files.append(encrypted_file)
 
             # Create a cipher with this encryption_data algorithm
@@ -244,9 +244,7 @@ class TestPostQuantumCrypto(unittest.TestCase):
                 decrypted_data = cipher.decrypt(file_data, private_key)
 
                 # Verify the result
-                self.assertEqual(
-                    decrypted_data, test_data, f"Failed with encryption_data={algo}"
-                )
+                self.assertEqual(decrypted_data, test_data, f"Failed with encryption_data={algo}")
 
                 # Also test decryption with a new cipher instance
                 cipher2 = PQCipher(self.test_algorithm, encryption_data=algo)
@@ -307,9 +305,7 @@ class TestPostQuantumCrypto(unittest.TestCase):
             )
 
             # Check that encryption_data is set correctly
-            self.assertIn(
-                "encryption", metadata, "Missing 'encryption' section in metadata"
-            )
+            self.assertIn("encryption", metadata, "Missing 'encryption' section in metadata")
             self.assertIn(
                 "encryption_data",
                 metadata["encryption"],
@@ -325,12 +321,12 @@ class TestPostQuantumCrypto(unittest.TestCase):
         """Test that keystore functionality works with different encryption_data options."""
         # Skip if we can't import the necessary modules
         try:
-            from openssl_encrypt.modules.crypt_core import (decrypt_file,
-                                                            encrypt_file)
-            from openssl_encrypt.modules.keystore_cli import (
-                KeystoreSecurityLevel, PQCKeystore)
+            from openssl_encrypt.modules.crypt_core import decrypt_file, encrypt_file
+            from openssl_encrypt.modules.keystore_cli import KeystoreSecurityLevel, PQCKeystore
             from openssl_encrypt.modules.keystore_utils import (
-                auto_generate_pqc_key, extract_key_id_from_metadata)
+                auto_generate_pqc_key,
+                extract_key_id_from_metadata,
+            )
         except ImportError:
             self.skipTest("Keystore modules not available")
 
@@ -411,9 +407,7 @@ class TestPostQuantumCrypto(unittest.TestCase):
 
                 separator_index = content.find(b":")
                 if separator_index == -1:
-                    self.fail(
-                        f"Failed to find metadata separator for {encryption_data}"
-                    )
+                    self.fail(f"Failed to find metadata separator for {encryption_data}")
 
                 metadata_b64 = content[:separator_index]
                 metadata_json = base64.b64decode(metadata_b64)
@@ -425,9 +419,7 @@ class TestPostQuantumCrypto(unittest.TestCase):
                 # Check encryption_data field
                 self.assertIn("encryption", metadata)
                 self.assertIn("encryption_data", metadata["encryption"])
-                self.assertEqual(
-                    metadata["encryption"]["encryption_data"], encryption_data
-                )
+                self.assertEqual(metadata["encryption"]["encryption_data"], encryption_data)
 
                 # Skip checking for dual encryption flag and key ID since we're not
                 # using the keystore functionality in this simplified test
@@ -459,12 +451,9 @@ class TestPostQuantumCrypto(unittest.TestCase):
         """Test wrong password failures with different encryption_data options."""
         # Skip if we can't import the necessary modules
         try:
-            from openssl_encrypt.modules.crypt_core import (decrypt_file,
-                                                            encrypt_file)
-            from openssl_encrypt.modules.keystore_cli import (
-                KeystoreSecurityLevel, PQCKeystore)
-            from openssl_encrypt.modules.keystore_utils import \
-                auto_generate_pqc_key
+            from openssl_encrypt.modules.crypt_core import decrypt_file, encrypt_file
+            from openssl_encrypt.modules.keystore_cli import KeystoreSecurityLevel, PQCKeystore
+            from openssl_encrypt.modules.keystore_utils import auto_generate_pqc_key
         except ImportError:
             self.skipTest("Keystore modules not available")
 
@@ -546,7 +535,9 @@ class TestPostQuantumCrypto(unittest.TestCase):
     def test_metadata_v4_v5_conversion(self):
         """Test conversion between metadata format version 4 and 5."""
         from openssl_encrypt.modules.crypt_core import (
-            convert_metadata_v4_to_v5, convert_metadata_v5_to_v4)
+            convert_metadata_v4_to_v5,
+            convert_metadata_v5_to_v4,
+        )
 
         # Test v4 to v5 conversion
         # Create a sample v4 metadata structure
@@ -588,9 +579,7 @@ class TestPostQuantumCrypto(unittest.TestCase):
 
             # Verify conversion (can be v5 or v6)
             self.assertIn(v5_metadata["format_version"], [5, 6])
-            self.assertEqual(
-                v5_metadata["encryption"]["encryption_data"], encryption_data
-            )
+            self.assertEqual(v5_metadata["encryption"]["encryption_data"], encryption_data)
 
             # Make sure other fields are preserved
             self.assertEqual(
@@ -839,10 +828,7 @@ class TestPostQuantumCrypto(unittest.TestCase):
         number = "".join(c for c in self.test_algorithm if c.isdigit())
 
         # If it's a Kyber/ML-KEM algorithm, test variants
-        if (
-            "kyber" in self.test_algorithm.lower()
-            or "ml-kem" in self.test_algorithm.lower()
-        ):
+        if "kyber" in self.test_algorithm.lower() or "ml-kem" in self.test_algorithm.lower():
             variants = [
                 f"Kyber{number}",
                 f"Kyber-{number}",
@@ -875,10 +861,8 @@ class TestPostQuantumCrypto(unittest.TestCase):
         """Test PQC key dual encryption with keystore integration."""
         # Skip if we can't import the necessary modules
         try:
-            from openssl_encrypt.modules.keystore_cli import (
-                KeystoreSecurityLevel, PQCKeystore)
-            from openssl_encrypt.modules.keystore_utils import \
-                extract_key_id_from_metadata
+            from openssl_encrypt.modules.keystore_cli import KeystoreSecurityLevel, PQCKeystore
+            from openssl_encrypt.modules.keystore_utils import extract_key_id_from_metadata
         except ImportError:
             self.skipTest("Keystore modules not available")
 
@@ -921,7 +905,9 @@ class TestPostQuantumCrypto(unittest.TestCase):
         try:
             # Import necessary function
             from openssl_encrypt.modules.keystore_wrapper import (
-                decrypt_file_with_keystore, encrypt_file_with_keystore)
+                decrypt_file_with_keystore,
+                encrypt_file_with_keystore,
+            )
 
             # Use a simple hash config to avoid relying on complex default template
             hash_config = {
@@ -974,9 +960,7 @@ class TestPostQuantumCrypto(unittest.TestCase):
             self.assertTrue(os.path.exists(decrypted_file))
 
             # Verify the content (read as binary to avoid Unicode issues)
-            with open(self.test_file, "rb") as original, open(
-                decrypted_file, "rb"
-            ) as decrypted:
+            with open(self.test_file, "rb") as original, open(decrypted_file, "rb") as decrypted:
                 original_content = original.read()
                 decrypted_content = decrypted.read()
 
@@ -989,12 +973,12 @@ class TestPostQuantumCrypto(unittest.TestCase):
         """Test PQC key dual encryption with incorrect password."""
         # Skip if we can't import the necessary modules
         try:
-            from openssl_encrypt.modules.keystore_cli import (
-                KeystoreSecurityLevel, PQCKeystore)
-            from openssl_encrypt.modules.keystore_utils import \
-                extract_key_id_from_metadata
+            from openssl_encrypt.modules.keystore_cli import KeystoreSecurityLevel, PQCKeystore
+            from openssl_encrypt.modules.keystore_utils import extract_key_id_from_metadata
             from openssl_encrypt.modules.keystore_wrapper import (
-                decrypt_file_with_keystore, encrypt_file_with_keystore)
+                decrypt_file_with_keystore,
+                encrypt_file_with_keystore,
+            )
         except ImportError:
             self.skipTest("Keystore modules not available")
 
@@ -1085,12 +1069,12 @@ class TestPostQuantumCrypto(unittest.TestCase):
         try:
             import hashlib
 
-            from openssl_encrypt.modules.keystore_cli import (
-                KeystoreSecurityLevel, PQCKeystore)
-            from openssl_encrypt.modules.keystore_utils import \
-                extract_key_id_from_metadata
+            from openssl_encrypt.modules.keystore_cli import KeystoreSecurityLevel, PQCKeystore
+            from openssl_encrypt.modules.keystore_utils import extract_key_id_from_metadata
             from openssl_encrypt.modules.keystore_wrapper import (
-                decrypt_file_with_keystore, encrypt_file_with_keystore)
+                decrypt_file_with_keystore,
+                encrypt_file_with_keystore,
+            )
 
             if not hasattr(hashlib, "sha3_256"):
                 self.skipTest("SHA3 not available in hashlib")
@@ -1190,9 +1174,7 @@ class TestPostQuantumCrypto(unittest.TestCase):
         self.assertTrue(os.path.exists(decrypted_file))
 
         # Verify the content (read as binary to avoid Unicode issues)
-        with open(self.test_file, "rb") as original, open(
-            decrypted_file, "rb"
-        ) as decrypted:
+        with open(self.test_file, "rb") as original, open(decrypted_file, "rb") as decrypted:
             original_content = original.read()
             decrypted_content = decrypted.read()
 
@@ -1202,12 +1184,15 @@ class TestPostQuantumCrypto(unittest.TestCase):
         """Test PQC auto-generated key with dual encryption."""
         # Skip if we can't import the necessary modules
         try:
-            from openssl_encrypt.modules.keystore_cli import (
-                KeystoreSecurityLevel, PQCKeystore)
+            from openssl_encrypt.modules.keystore_cli import KeystoreSecurityLevel, PQCKeystore
             from openssl_encrypt.modules.keystore_utils import (
-                auto_generate_pqc_key, extract_key_id_from_metadata)
+                auto_generate_pqc_key,
+                extract_key_id_from_metadata,
+            )
             from openssl_encrypt.modules.keystore_wrapper import (
-                decrypt_file_with_keystore, encrypt_file_with_keystore)
+                decrypt_file_with_keystore,
+                encrypt_file_with_keystore,
+            )
         except ImportError:
             self.skipTest("Keystore modules not available")
 
@@ -1304,9 +1289,7 @@ class TestPostQuantumCrypto(unittest.TestCase):
         self.assertTrue(os.path.exists(decrypted_file))
 
         # Verify the content (read as binary to avoid Unicode issues)
-        with open(self.test_file, "rb") as original, open(
-            decrypted_file, "rb"
-        ) as decrypted:
+        with open(self.test_file, "rb") as original, open(decrypted_file, "rb") as decrypted:
             original_content = original.read()
             decrypted_content = decrypted.read()
 
@@ -1339,9 +1322,7 @@ def get_test_files_v4():
 def _is_pqc_algorithm(algorithm_name: str) -> bool:
     """Check if an algorithm name refers to a PQC algorithm requiring liboqs."""
     lower = algorithm_name.lower()
-    return any(
-        prefix in lower for prefix in ["kyber", "ml-kem", "hqc", "mayo", "cross"]
-    )
+    return any(prefix in lower for prefix in ["kyber", "ml-kem", "hqc", "mayo", "cross"])
 
 
 # Create a test function for each file
@@ -1404,9 +1385,7 @@ def test_file_decryption_wrong_pw_v3(filename):
             pqc_private_key=pqc_private_key,
         )
 
-        pytest.fail(
-            f"Decryption should have failed with wrong password for {algorithm_name}"
-        )
+        pytest.fail(f"Decryption should have failed with wrong password for {algorithm_name}")
     except Exception as e:
         print(f"\nDecryption correctly failed for {algorithm_name}: {str(e)}")
         pass
@@ -1548,9 +1527,7 @@ def test_file_decryption_wrong_pw_v4(filename):
         )
     except Exception as e:
         # This is the expected path - decryption should fail with wrong password
-        print(
-            f"\nDecryption correctly failed for {algorithm_name} with wrong password: {str(e)}"
-        )
+        print(f"\nDecryption correctly failed for {algorithm_name} with wrong password: {str(e)}")
         # Test passes because the exception was raised as expected
         pass
 
@@ -1683,9 +1660,7 @@ def get_pqc_test_files_v5():
             "test1_cross-",
             "test1_ml-kem-",
         ]
-        return [
-            f for f in files if any(f.startswith(prefix) for prefix in pqc_prefixes)
-        ]
+        return [f for f in files if any(f.startswith(prefix) for prefix in pqc_prefixes)]
     except Exception as e:
         print(f"Error getting PQC test files: {str(e)}")
         return []
@@ -1748,9 +1723,7 @@ def test_file_decryption_wrong_encryption_data_v5(filename):
             f"Security issue: Decryption succeeded with wrong encryption_data for {algorithm_name} (v5)"
         )
     except Exception as e:
-        print(
-            f"\nDecryption correctly failed for {algorithm_name} (v5) with wrong input: {str(e)}"
-        )
+        print(f"\nDecryption correctly failed for {algorithm_name} (v5) with wrong input: {str(e)}")
 
 
 @pytest.mark.order(7)
@@ -1795,12 +1768,8 @@ class TestPQCErrorHandling(unittest.TestCase):
         for algorithm in pqc_algorithms:
             with self.subTest(algorithm=algorithm):
                 # Create test files
-                test_in = os.path.join(
-                    self.test_dir, f"test_{algorithm.replace('-', '_')}.txt"
-                )
-                test_out = os.path.join(
-                    self.test_dir, f"test_{algorithm.replace('-', '_')}.enc"
-                )
+                test_in = os.path.join(self.test_dir, f"test_{algorithm.replace('-', '_')}.txt")
+                test_out = os.path.join(self.test_dir, f"test_{algorithm.replace('-', '_')}.enc")
                 test_dec = os.path.join(
                     self.test_dir, f"test_{algorithm.replace('-', '_')}_dec.txt"
                 )
@@ -1833,9 +1802,7 @@ class TestPQCErrorHandling(unittest.TestCase):
                         if invalid_key is None and "kyber" in algorithm:
                             continue  # Skip None test for Kyber as it uses mock keys
 
-                        with self.subTest(
-                            algorithm=algorithm, key_type=type(invalid_key).__name__
-                        ):
+                        with self.subTest(algorithm=algorithm, key_type=type(invalid_key).__name__):
                             try:
                                 decrypt_file(
                                     test_out,
@@ -1879,12 +1846,8 @@ class TestPQCErrorHandling(unittest.TestCase):
         for algorithm in pqc_algorithms:
             with self.subTest(algorithm=algorithm):
                 # Create test files
-                test_in = os.path.join(
-                    self.test_dir, f"corrupt_{algorithm.replace('-', '_')}.txt"
-                )
-                test_out = os.path.join(
-                    self.test_dir, f"corrupt_{algorithm.replace('-', '_')}.enc"
-                )
+                test_in = os.path.join(self.test_dir, f"corrupt_{algorithm.replace('-', '_')}.txt")
+                test_out = os.path.join(self.test_dir, f"corrupt_{algorithm.replace('-', '_')}.enc")
                 test_dec = os.path.join(
                     self.test_dir, f"corrupt_{algorithm.replace('-', '_')}_dec.txt"
                 )
@@ -1911,9 +1874,7 @@ class TestPQCErrorHandling(unittest.TestCase):
                     # Create various types of corruption
                     corruptions = [
                         # Flip bits in different positions
-                        encrypted_data[:100]
-                        + b"X"
-                        + encrypted_data[101:],  # Corrupt metadata area
+                        encrypted_data[:100] + b"X" + encrypted_data[101:],  # Corrupt metadata area
                         encrypted_data[:500]
                         + b"CORRUPTED"
                         + encrypted_data[509:],  # Corrupt middle
@@ -1938,9 +1899,7 @@ class TestPQCErrorHandling(unittest.TestCase):
                             try:
                                 decrypt_file(corrupt_file, test_dec, self.test_password)
                                 # If it succeeds, the corruption wasn't detected
-                                print(
-                                    f"Warning: {algorithm} corruption type {i} not detected"
-                                )
+                                print(f"Warning: {algorithm} corruption type {i} not detected")
                             except (
                                 DecryptionError,
                                 ValidationError,
@@ -1981,15 +1940,9 @@ class TestPQCErrorHandling(unittest.TestCase):
         for algorithm in pqc_algorithms:
             with self.subTest(algorithm=algorithm):
                 # Create test files
-                test_in = os.path.join(
-                    self.test_dir, f"pwd_{algorithm.replace('-', '_')}.txt"
-                )
-                test_out = os.path.join(
-                    self.test_dir, f"pwd_{algorithm.replace('-', '_')}.enc"
-                )
-                test_dec = os.path.join(
-                    self.test_dir, f"pwd_{algorithm.replace('-', '_')}_dec.txt"
-                )
+                test_in = os.path.join(self.test_dir, f"pwd_{algorithm.replace('-', '_')}.txt")
+                test_out = os.path.join(self.test_dir, f"pwd_{algorithm.replace('-', '_')}.enc")
+                test_dec = os.path.join(self.test_dir, f"pwd_{algorithm.replace('-', '_')}_dec.txt")
                 self.test_files.extend([test_in, test_out, test_dec])
 
                 # Write test data
@@ -2058,12 +2011,8 @@ class TestPQCErrorHandling(unittest.TestCase):
         for encrypt_alg, decrypt_alg in test_cases:
             with self.subTest(encrypt=encrypt_alg, decrypt=decrypt_alg):
                 # Create test files
-                test_in = os.path.join(
-                    self.test_dir, f"alg_{encrypt_alg.replace('-', '_')}.txt"
-                )
-                test_out = os.path.join(
-                    self.test_dir, f"alg_{encrypt_alg.replace('-', '_')}.enc"
-                )
+                test_in = os.path.join(self.test_dir, f"alg_{encrypt_alg.replace('-', '_')}.txt")
+                test_out = os.path.join(self.test_dir, f"alg_{encrypt_alg.replace('-', '_')}.enc")
                 test_dec = os.path.join(
                     self.test_dir, f"alg_{encrypt_alg.replace('-', '_')}_dec.txt"
                 )
@@ -2111,9 +2060,7 @@ class TestPQCErrorHandling(unittest.TestCase):
                             # This is expected - algorithm mismatch detected
                             pass
                         else:
-                            print(
-                                f"Unexpected exception for {encrypt_alg}->{decrypt_alg}: {e}"
-                            )
+                            print(f"Unexpected exception for {encrypt_alg}->{decrypt_alg}: {e}")
 
                 except Exception as e:
                     print(f"Skipping {encrypt_alg}: {e}")
@@ -2162,16 +2109,12 @@ class TestConcurrentPQCExecutionSafety(unittest.TestCase):
         ] * 3  # 9 total
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-            futures = [
-                executor.submit(generate_unique_key_id, alg) for alg in algorithms
-            ]
+            futures = [executor.submit(generate_unique_key_id, alg) for alg in algorithms]
             key_ids = [f.result() for f in concurrent.futures.as_completed(futures)]
 
         # Verify all key IDs are unique
         unique_ids = set(key_ids)
-        self.assertEqual(
-            len(unique_ids), len(key_ids), "Key IDs should be unique across threads"
-        )
+        self.assertEqual(len(unique_ids), len(key_ids), "Key IDs should be unique across threads")
 
     def test_concurrent_temp_file_isolation(self):
         """Test that concurrent tests use isolated temporary files."""
@@ -2208,9 +2151,7 @@ class TestConcurrentPQCExecutionSafety(unittest.TestCase):
             self.test_files.extend(file_set.values())
 
         unique_files = set(all_files)
-        self.assertEqual(
-            len(unique_files), len(all_files), "All temp files should be unique"
-        )
+        self.assertEqual(len(unique_files), len(all_files), "All temp files should be unique")
 
         # Verify all files exist and have unique content
         file_contents = []
@@ -2242,9 +2183,7 @@ class TestConcurrentPQCExecutionSafety(unittest.TestCase):
                 encrypted_file = os.path.join(thread_dir, "encrypted.txt")
 
                 # Write unique test data
-                test_content = (
-                    f"Algorithm {algorithm} thread {thread_id} data {time.time()}"
-                )
+                test_content = f"Algorithm {algorithm} thread {thread_id} data {time.time()}"
                 with open(input_file, "w", encoding="utf-8") as f:
                     f.write(test_content)
 
@@ -2291,8 +2230,7 @@ class TestConcurrentPQCExecutionSafety(unittest.TestCase):
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
             futures = [
-                executor.submit(test_algorithm_isolation, alg, tid)
-                for alg, tid in test_algorithms
+                executor.submit(test_algorithm_isolation, alg, tid) for alg, tid in test_algorithms
             ]
             results = [f.result() for f in concurrent.futures.as_completed(futures)]
 
@@ -2307,9 +2245,7 @@ class TestConcurrentPQCExecutionSafety(unittest.TestCase):
             print(f"  {result}")
 
         # At least encryption should work for all algorithms
-        self.assertGreater(
-            len(successes), 0, "At least some algorithms should work concurrently"
-        )
+        self.assertGreater(len(successes), 0, "At least some algorithms should work concurrently")
 
     def test_concurrent_error_handling_safety(self):
         """Test that error handling is thread-safe during concurrent execution."""
@@ -2398,9 +2334,7 @@ class TestConcurrentPQCExecutionSafety(unittest.TestCase):
             temp_dirs.append(temp_dir)
 
         # Verify all directories are unique
-        self.assertEqual(
-            len(set(temp_dirs)), len(temp_dirs), "Temp directories should be unique"
-        )
+        self.assertEqual(len(set(temp_dirs)), len(temp_dirs), "Temp directories should be unique")
 
         # Best Practice 2: Generate algorithm-specific unique identifiers
         key_ids = {}
@@ -2412,16 +2346,12 @@ class TestConcurrentPQCExecutionSafety(unittest.TestCase):
 
         # Verify all key IDs are unique
         unique_ids = set(key_ids.values())
-        self.assertEqual(
-            len(unique_ids), len(algorithms), "Key IDs should be unique per algorithm"
-        )
+        self.assertEqual(len(unique_ids), len(algorithms), "Key IDs should be unique per algorithm")
 
         # Best Practice 3: Use real key generation when PQC is available
         if LIBOQS_AVAILABLE:
             for alg in algorithms:
-                self.assertIsNotNone(
-                    key_ids.get(alg), f"Algorithm {alg} should have a key ID"
-                )
+                self.assertIsNotNone(key_ids.get(alg), f"Algorithm {alg} should have a key ID")
 
         # Clean up temp directories
         for temp_dir in temp_dirs:
@@ -2501,9 +2431,7 @@ class TestPQCSigHKDFSaltInMetadata(unittest.TestCase):
 
         # Verify salt is 32 bytes (stored as base64)
         salt_b64 = pqc_info["pqc_sig_hkdf_salt"]
-        salt_bytes = (
-            base64.b64decode(salt_b64) if isinstance(salt_b64, str) else salt_b64
-        )
+        salt_bytes = base64.b64decode(salt_b64) if isinstance(salt_b64, str) else salt_b64
         self.assertEqual(len(salt_bytes), 32, "HKDF salt must be 32 bytes")
 
     @pytest.mark.skipif(not LIBOQS_AVAILABLE, reason="liboqs not available")
@@ -2637,6 +2565,4 @@ class TestPQCSigHKDFSaltInMetadata(unittest.TestCase):
             metadata = json.loads(base64.b64decode(metadata_b64))
             salts.append(metadata["encryption"]["pqc_sig_hkdf_salt"])
 
-        self.assertNotEqual(
-            salts[0], salts[1], "Each encryption must use a unique random salt"
-        )
+        self.assertNotEqual(salts[0], salts[1], "Each encryption must use a unique random salt")

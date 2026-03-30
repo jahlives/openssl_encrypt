@@ -21,12 +21,13 @@ from unittest.mock import MagicMock, Mock, patch
 import pytest
 
 # Import telemetry components
-from openssl_encrypt.modules.telemetry_filter import (TelemetryDataFilter,
-                                                      TelemetryEvent)
+from openssl_encrypt.modules.telemetry_filter import TelemetryDataFilter, TelemetryEvent
 from openssl_encrypt.plugins.telemetry.api_key_manager import APIKeyManager
 from openssl_encrypt.plugins.telemetry.local_buffer import LocalBuffer
 from openssl_encrypt.plugins.telemetry.telemetry_plugin import (
-    OpenSSLEncryptTelemetryPlugin, TelemetryPluginConfig)
+    OpenSSLEncryptTelemetryPlugin,
+    TelemetryPluginConfig,
+)
 from openssl_encrypt.plugins.telemetry.uploader import TelemetryUploader
 
 

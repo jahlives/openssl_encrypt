@@ -15,8 +15,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from ..crypt_core import decrypt_file, encrypt_file
-from .base_test import (BaseSecurityTest, TestConfig, TestResult,
-                        TestResultLevel)
+from .base_test import BaseSecurityTest, TestConfig, TestResult, TestResultLevel
 
 
 @dataclass
@@ -92,9 +91,7 @@ class InputGenerator:
         patterns.append((self.generate_random_bytes(1024), "random_pattern"))
 
         # ASCII text
-        ascii_text = "".join(
-            random.choices(string.ascii_letters + string.digits + " \n\t", k=1024)
-        )
+        ascii_text = "".join(random.choices(string.ascii_letters + string.digits + " \n\t", k=1024))
         patterns.append((ascii_text.encode("utf-8"), "ascii_text"))
 
         # Unicode text
@@ -224,9 +221,7 @@ class FuzzTestSuite(BaseSecurityTest):
             password = "test_password_123"
 
             # Encrypt file
-            encrypt_file(
-                input_file, encrypted_file, password, hash_config=encrypt_config
-            )
+            encrypt_file(input_file, encrypted_file, password, hash_config=encrypt_config)
 
             if not os.path.exists(encrypted_file):
                 return TestResult(
@@ -301,12 +296,8 @@ class FuzzTestSuite(BaseSecurityTest):
         try:
             # Create temporary files
             input_file = os.path.join(self.temp_dir, f"pattern_{pattern_name}.bin")
-            encrypted_file = os.path.join(
-                self.temp_dir, f"pattern_{pattern_name}_enc.bin"
-            )
-            decrypted_file = os.path.join(
-                self.temp_dir, f"pattern_{pattern_name}_dec.bin"
-            )
+            encrypted_file = os.path.join(self.temp_dir, f"pattern_{pattern_name}_enc.bin")
+            decrypted_file = os.path.join(self.temp_dir, f"pattern_{pattern_name}_dec.bin")
 
             # Write test data
             with open(input_file, "wb") as f:
@@ -320,9 +311,7 @@ class FuzzTestSuite(BaseSecurityTest):
 
             password = "pattern_test_password"
 
-            encrypt_file(
-                input_file, encrypted_file, password, hash_config=encrypt_config
-            )
+            encrypt_file(input_file, encrypted_file, password, hash_config=encrypt_config)
             decrypt_file(encrypted_file, decrypted_file, password)
 
             # Verify integrity
@@ -374,9 +363,7 @@ class FuzzTestSuite(BaseSecurityTest):
 
             # This should either succeed with defaults or fail gracefully
             try:
-                encrypt_file(
-                    input_file, encrypted_file, "test_password", hash_config=bad_config
-                )
+                encrypt_file(input_file, encrypted_file, "test_password", hash_config=bad_config)
 
                 # If it succeeds, that's okay (library uses defaults)
                 return TestResult(
@@ -429,21 +416,15 @@ class FuzzTestSuite(BaseSecurityTest):
         """Test specific file boundary condition."""
         try:
             input_file = os.path.join(self.temp_dir, f"{condition_name}_input.bin")
-            encrypted_file = os.path.join(
-                self.temp_dir, f"{condition_name}_encrypted.bin"
-            )
-            decrypted_file = os.path.join(
-                self.temp_dir, f"{condition_name}_decrypted.bin"
-            )
+            encrypted_file = os.path.join(self.temp_dir, f"{condition_name}_encrypted.bin")
+            decrypted_file = os.path.join(self.temp_dir, f"{condition_name}_decrypted.bin")
 
             with open(input_file, "wb") as f:
                 f.write(data)
 
             config_dict = {"algorithm": "fernet", "hash_algorithm": "SHA256"}
 
-            encrypt_file(
-                input_file, encrypted_file, "boundary_password", hash_config=config_dict
-            )
+            encrypt_file(input_file, encrypted_file, "boundary_password", hash_config=config_dict)
             decrypt_file(encrypted_file, decrypted_file, "boundary_password")
 
             with open(decrypted_file, "rb") as f:
@@ -538,9 +519,7 @@ class FuzzTestSuite(BaseSecurityTest):
         def encrypt_worker(worker_id: int, results: List):
             try:
                 input_file = os.path.join(self.temp_dir, f"concurrent_{worker_id}.txt")
-                encrypted_file = os.path.join(
-                    self.temp_dir, f"concurrent_{worker_id}_enc.bin"
-                )
+                encrypted_file = os.path.join(self.temp_dir, f"concurrent_{worker_id}_enc.bin")
 
                 with open(input_file, "w") as f:
                     f.write(f"Concurrent test data {worker_id}")

@@ -159,10 +159,7 @@ def are_related_families(family1: str, family2: str) -> bool:
         return False
 
     # Check if family1 lists family2 as related, or vice versa
-    return (
-        family2 in family1_obj.related_families
-        or family1 in family2_obj.related_families
-    )
+    return family2 in family1_obj.related_families or family1 in family2_obj.related_families
 
 
 def get_design_type(cipher_name: str) -> Optional[DesignType]:

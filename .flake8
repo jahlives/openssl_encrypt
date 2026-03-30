@@ -1,0 +1,28 @@
+[flake8]
+max-line-length = 100
+
+# Ignore: black conflicts (E203,W503,E501), security false-positives (S404,S603,S105,S110),
+# docstring style (D212,D415,D400,D401,D200,D205,D101,D103,D107,D202),
+# import order conflicts (I100,I101,I202), bugbear style (B010,B028)
+extend-ignore =
+    E203,W503,E501,
+    S404,S603,S105,S110,
+    D212,D415,D400,D401,D200,D205,D101,D103,D107,D202,
+    I100,I101,I202,
+    B010,B028
+
+exclude =
+    build,dist,.git,__pycache__,.pytest_cache,.venv,
+    flatpak/build-dir,node_modules
+
+per-file-ignores =
+    # Tests use assert statements (S101), hardcoded test passwords (S106),
+    # temp dirs (S108), missing docstrings (D102,D105), bare excepts in test cleanup (E722,B001)
+    openssl_encrypt/unittests/*:S101,S106,S108,D102,D105,D403,E722,B001
+    tests/*:S101,S106,S108,D102,D105,D403,E722,B001
+    openssl_encrypt/plugins/*/unittests/*:S101,S106,S108,D102,D105,D403,E722,B001
+    # Scripts may use subprocess with partial paths (S607)
+    scripts/*:S607,S101,D102,D403
+    # Test helpers in modules
+    openssl_encrypt/modules/testing/*:S101,D102,D403
+    openssl_encrypt/modules/portable_media/test_*:S101,D102,D403

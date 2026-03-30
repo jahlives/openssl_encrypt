@@ -9,7 +9,10 @@ to ensure dangerous patterns are detected and bypass attempts blocked.
 import pytest
 
 from openssl_encrypt.modules.plugin_system.plugin_ast_analyzer import (
-    DangerousPatternVisitor, SecurityViolation, analyze_plugin_code)
+    DangerousPatternVisitor,
+    SecurityViolation,
+    analyze_plugin_code,
+)
 
 
 class TestDirectFunctionCalls:
@@ -312,9 +315,7 @@ def plugin_function():
 """
             is_safe, violations = analyze_plugin_code(code, "test.py", strict_mode=True)
 
-            assert (
-                is_safe
-            ), f"Safe module '{module}' was incorrectly flagged as dangerous"
+            assert is_safe, f"Safe module '{module}' was incorrectly flagged as dangerous"
             assert len(violations) == 0
 
     def test_file_operations_allowed(self):
@@ -634,9 +635,7 @@ def test():
 
         assert not is_safe
         # Should detect __class__, __bases__, and __subclasses__
-        dunder_violations = [
-            v for v in violations if v.violation_type == "dunder_access"
-        ]
+        dunder_violations = [v for v in violations if v.violation_type == "dunder_access"]
         assert len(dunder_violations) >= 2  # __class__ and __bases__ at minimum
 
     def test_dynamic_getattr_detected(self):

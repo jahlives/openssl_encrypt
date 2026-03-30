@@ -14,8 +14,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
 from ..crypt_core import decrypt_file, encrypt_file
-from .base_test import (BaseSecurityTest, TestConfig, TestResult,
-                        TestResultLevel)
+from .base_test import BaseSecurityTest, TestConfig, TestResult, TestResultLevel
 
 
 @dataclass
@@ -238,9 +237,7 @@ class CustomTestVectors:
         )
 
         # Test vector 3: Unicode text with ChaCha20-Poly1305
-        unicode_text = (
-            "Hello 世界! 🔒 Encryption test with émojis and spëcial châractërs"
-        )
+        unicode_text = "Hello 世界! 🔒 Encryption test with émojis and spëcial châractërs"
         vectors.append(
             TestVector(
                 algorithm="chacha20-poly1305",
@@ -383,9 +380,7 @@ class KATTestSuite(BaseSecurityTest):
         """Test a single HMAC vector."""
         try:
             if vector.algorithm == "HMAC-SHA256":
-                computed_hmac = hmac.new(
-                    vector.key, vector.input_data, hashlib.sha256
-                ).digest()
+                computed_hmac = hmac.new(vector.key, vector.input_data, hashlib.sha256).digest()
             else:
                 return TestResult(
                     f"hmac_{vector.test_name}",
@@ -434,9 +429,7 @@ class KATTestSuite(BaseSecurityTest):
 
         pbkdf2_vectors = NISTTestVectors.get_pbkdf2_vectors()
         for vector in pbkdf2_vectors:
-            result = self.run_single_test(
-                self._test_kdf_vector, f"kdf_{vector.test_name}", vector
-            )
+            result = self.run_single_test(self._test_kdf_vector, f"kdf_{vector.test_name}", vector)
             self.add_result(result)
 
     def _test_kdf_vector(self, vector: TestVector) -> TestResult:
@@ -507,15 +500,9 @@ class KATTestSuite(BaseSecurityTest):
         """Test a single file encryption vector."""
         try:
             # Create input file
-            input_file = os.path.join(
-                self.temp_dir, f"kat_input_{vector.test_name}.bin"
-            )
-            encrypted_file = os.path.join(
-                self.temp_dir, f"kat_encrypted_{vector.test_name}.bin"
-            )
-            decrypted_file = os.path.join(
-                self.temp_dir, f"kat_decrypted_{vector.test_name}.bin"
-            )
+            input_file = os.path.join(self.temp_dir, f"kat_input_{vector.test_name}.bin")
+            encrypted_file = os.path.join(self.temp_dir, f"kat_encrypted_{vector.test_name}.bin")
+            decrypted_file = os.path.join(self.temp_dir, f"kat_decrypted_{vector.test_name}.bin")
 
             with open(input_file, "wb") as f:
                 f.write(vector.input_data)
@@ -523,9 +510,7 @@ class KATTestSuite(BaseSecurityTest):
             # Prepare configuration
             config_dict = {
                 "algorithm": vector.algorithm,
-                "hash_algorithm": vector.additional_params.get(
-                    "hash_algorithm", "SHA256"
-                ),
+                "hash_algorithm": vector.additional_params.get("hash_algorithm", "SHA256"),
                 "kdf": vector.additional_params.get("kdf", "pbkdf2"),
             }
 
@@ -627,9 +612,7 @@ class KATTestSuite(BaseSecurityTest):
                         "platform_test_password",
                         hash_config=config_dict,
                     )
-                    decrypt_file(
-                        encrypted_file, decrypted_file, "platform_test_password"
-                    )
+                    decrypt_file(encrypted_file, decrypted_file, "platform_test_password")
 
                     with open(decrypted_file, "r", encoding="utf-8") as f:
                         decrypted_data = f.read()

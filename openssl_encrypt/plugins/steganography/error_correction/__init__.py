@@ -1,10 +1,14 @@
 """Error correction modules for steganography."""
 
-from .reed_solomon import (AdaptiveErrorCorrection, BlockEncoder,
-                           ErrorCorrectionError, GaloisField,
-                           ReedSolomonDecoder, ReedSolomonEncoder)
-from .simple import (AdaptiveSimpleErrorCorrection, HammingEncoder,
-                     SimpleRepetitionEncoder)
+from .reed_solomon import (
+    AdaptiveErrorCorrection,
+    BlockEncoder,
+    ErrorCorrectionError,
+    GaloisField,
+    ReedSolomonDecoder,
+    ReedSolomonEncoder,
+)
+from .simple import AdaptiveSimpleErrorCorrection, HammingEncoder, SimpleRepetitionEncoder
 
 __all__ = [
     # Reed-Solomon classes

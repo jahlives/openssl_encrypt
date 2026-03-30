@@ -59,8 +59,7 @@ CONFIGURATION:
 
 from ...modules.crypt_utils import eprint
 from .config import IntegrityConfig
-from .integrity_plugin import (IntegrityPlugin, IntegrityPluginError,
-                               IntegrityVerificationError)
+from .integrity_plugin import IntegrityPlugin, IntegrityPluginError, IntegrityVerificationError
 
 __all__ = [
     "IntegrityPlugin",

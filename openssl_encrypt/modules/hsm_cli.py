@@ -141,9 +141,7 @@ def fido2_status(rp_id: Optional[str]):
     if not plugin.is_registered():
         click.echo("❌ No FIDO2 credentials registered")
         click.echo("\nTo register a credential, run:")
-        click.echo(
-            "  openssl_encrypt hsm fido2-register --description 'My Security Key'"
-        )
+        click.echo("  openssl_encrypt hsm fido2-register --description 'My Security Key'")
         sys.exit(0)
 
     # Load credentials
@@ -215,8 +213,7 @@ def fido2_test(rp_id: Optional[str]):
     click.echo("  2. Touch your security key\n")
 
     # Create dummy security context
-    from ..modules.plugin_system.plugin_base import (PluginCapability,
-                                                     PluginSecurityContext)
+    from ..modules.plugin_system.plugin_base import PluginCapability, PluginSecurityContext
 
     context = PluginSecurityContext(
         plugin_id=plugin.plugin_id, capabilities=plugin.get_required_capabilities()
@@ -312,9 +309,7 @@ def fido2_list():
 @click.confirmation_option(
     prompt="Are you sure you want to remove FIDO2 credentials? This cannot be undone."
 )
-def fido2_unregister(
-    credential_id: Optional[str], remove_all: bool, rp_id: Optional[str]
-):
+def fido2_unregister(credential_id: Optional[str], remove_all: bool, rp_id: Optional[str]):
     """
     Remove FIDO2 credential registration.
 

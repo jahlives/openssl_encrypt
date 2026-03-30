@@ -8,13 +8,17 @@ All code in English as per project requirements.
 
 import pytest
 
-from openssl_encrypt.modules.registry.utils import (constant_time_compare,
-                                                    derive_salt_for_round,
-                                                    format_bytes_hex,
-                                                    generate_random_bytes,
-                                                    pad_pkcs7, safe_memzero,
-                                                    split_buffer, unpad_pkcs7,
-                                                    xor_bytes)
+from openssl_encrypt.modules.registry.utils import (
+    constant_time_compare,
+    derive_salt_for_round,
+    format_bytes_hex,
+    generate_random_bytes,
+    pad_pkcs7,
+    safe_memzero,
+    split_buffer,
+    unpad_pkcs7,
+    xor_bytes,
+)
 
 
 class TestGenerateRandomBytes:

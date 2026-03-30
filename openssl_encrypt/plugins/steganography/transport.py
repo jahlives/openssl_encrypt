@@ -11,8 +11,7 @@ import logging
 import os
 from typing import Optional
 
-from .core import (CapacityError, CoverMediaError, SteganographyConfig,
-                   SteganographyError)
+from .core import CapacityError, CoverMediaError, SteganographyConfig, SteganographyError
 from .formats.flac import FLACSteganography
 from .formats.image import AdaptiveLSBStego, LSBImageStego
 from .formats.jpeg import JPEGSteganography
@@ -84,11 +83,7 @@ class SteganographyTransport:
             return "WAV"
         elif media_data.startswith(b"fLaC"):
             return "FLAC"
-        elif (
-            len(media_data) >= 4
-            and media_data[0] == 0xFF
-            and (media_data[1] & 0xE0) == 0xE0
-        ):
+        elif len(media_data) >= 4 and media_data[0] == 0xFF and (media_data[1] & 0xE0) == 0xE0:
             # MP3 frame sync pattern (11111111 111xxxxx)
             return "MP3"
         elif media_data.startswith(b"ID3"):
@@ -155,9 +150,7 @@ class SteganographyTransport:
             self.stego = WAVSteganography(
                 password=self.password,
                 security_level=2 if self.method == "adaptive" else 1,
-                bits_per_sample=self.options.get(
-                    "bits_per_sample", self.bits_per_channel
-                ),
+                bits_per_sample=self.options.get("bits_per_sample", self.bits_per_channel),
                 config=self.config,
             )
         elif media_format == "FLAC":
@@ -165,9 +158,7 @@ class SteganographyTransport:
             self.stego = FLACSteganography(
                 password=self.password,
                 security_level=2,
-                bits_per_sample=self.options.get(
-                    "bits_per_sample", self.bits_per_channel
-                ),
+                bits_per_sample=self.options.get("bits_per_sample", self.bits_per_channel),
                 config=self.config,
             )
         elif media_format == "MP3":
@@ -175,9 +166,7 @@ class SteganographyTransport:
             self.stego = MP3Steganography(
                 password=self.password,
                 security_level=2,
-                coefficient_bits=self.options.get(
-                    "coefficient_bits", self.bits_per_channel
-                ),
+                coefficient_bits=self.options.get("coefficient_bits", self.bits_per_channel),
                 use_bit_reservoir=self.options.get("use_bit_reservoir", True),
                 preserve_quality=self.options.get("preserve_quality", True),
                 config=self.config,
@@ -224,9 +213,7 @@ class SteganographyTransport:
             # Detect media format and create appropriate steganography instance
             media_format = self._detect_media_format(cover_data)
             if media_format == "UNKNOWN":
-                raise CoverMediaError(
-                    f"Unsupported media format in: {cover_media_path}"
-                )
+                raise CoverMediaError(f"Unsupported media format in: {cover_media_path}")
 
             self._create_stego_instance(media_format)
 
@@ -234,9 +221,7 @@ class SteganographyTransport:
             # Check capacity
             capacity = self.stego.calculate_capacity(cover_data)
             if len(encrypted_data) > capacity:
-                raise CapacityError(
-                    len(encrypted_data), capacity, f"{media_format} media"
-                )
+                raise CapacityError(len(encrypted_data), capacity, f"{media_format} media")
 
             # Hide data
             stego_data = self.stego.hide_data(cover_data, encrypted_data)
@@ -267,9 +252,7 @@ class SteganographyTransport:
         try:
             # Validate media exists
             if not os.path.exists(stego_media_path):
-                raise CoverMediaError(
-                    f"Steganographic media not found: {stego_media_path}"
-                )
+                raise CoverMediaError(f"Steganographic media not found: {stego_media_path}")
 
             # Read media
             with open(stego_media_path, "rb") as f:
@@ -278,9 +261,7 @@ class SteganographyTransport:
             # Detect media format and create appropriate steganography instance
             media_format = self._detect_media_format(stego_data)
             if media_format == "UNKNOWN":
-                raise CoverMediaError(
-                    f"Unsupported media format in: {stego_media_path}"
-                )
+                raise CoverMediaError(f"Unsupported media format in: {stego_media_path}")
 
             self._create_stego_instance(media_format)
 
@@ -300,9 +281,7 @@ class SteganographyTransport:
         self, encrypted_data: bytes, cover_image_path: str, output_image_path: str
     ) -> None:
         """Backward compatibility method for hide_data_in_media"""
-        return self.hide_data_in_media(
-            encrypted_data, cover_image_path, output_image_path
-        )
+        return self.hide_data_in_media(encrypted_data, cover_image_path, output_image_path)
 
     def extract_data_from_image(self, stego_image_path: str) -> bytes:
         """Backward compatibility method for extract_data_from_media"""

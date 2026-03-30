@@ -11,8 +11,7 @@ from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
-from openssl_encrypt.plugins.keyserver.keyserver_plugin import \
-    CertPinningAdapter
+from openssl_encrypt.plugins.keyserver.keyserver_plugin import CertPinningAdapter
 
 
 class TestCertPinningAdapter:
@@ -195,8 +194,7 @@ class TestKeyserverPluginWithPinning:
     def test_plugin_creates_session_with_pinning_enabled(self):
         """Plugin should mount pinning adapter when enabled"""
         from openssl_encrypt.plugins.keyserver.config import KeyserverConfig
-        from openssl_encrypt.plugins.keyserver.keyserver_plugin import \
-            KeyserverPlugin
+        from openssl_encrypt.plugins.keyserver.keyserver_plugin import KeyserverPlugin
 
         config = KeyserverConfig(
             enabled=True,
@@ -215,12 +213,9 @@ class TestKeyserverPluginWithPinning:
     def test_plugin_creates_session_without_pinning(self):
         """Plugin should create normal session when pinning disabled"""
         from openssl_encrypt.plugins.keyserver.config import KeyserverConfig
-        from openssl_encrypt.plugins.keyserver.keyserver_plugin import \
-            KeyserverPlugin
+        from openssl_encrypt.plugins.keyserver.keyserver_plugin import KeyserverPlugin
 
-        config = KeyserverConfig(
-            enabled=True, enable_cert_pinning=False, cert_fingerprints=None
-        )
+        config = KeyserverConfig(enabled=True, enable_cert_pinning=False, cert_fingerprints=None)
 
         plugin = KeyserverPlugin(config)
 
@@ -230,8 +225,7 @@ class TestKeyserverPluginWithPinning:
     def test_plugin_uses_session_for_requests(self):
         """Plugin should use session for all HTTP requests"""
         from openssl_encrypt.plugins.keyserver.config import KeyserverConfig
-        from openssl_encrypt.plugins.keyserver.keyserver_plugin import \
-            KeyserverPlugin
+        from openssl_encrypt.plugins.keyserver.keyserver_plugin import KeyserverPlugin
 
         config = KeyserverConfig(enabled=True, servers=["https://test.example.com"])
 

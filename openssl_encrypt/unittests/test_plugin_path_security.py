@@ -14,9 +14,10 @@ import tempfile
 import pytest
 
 from openssl_encrypt.modules.plugin_system.plugin_base import (
-    PluginCapability, PluginSecurityContext)
-from openssl_encrypt.modules.plugin_system.plugin_config import \
-    PluginConfigManager
+    PluginCapability,
+    PluginSecurityContext,
+)
+from openssl_encrypt.modules.plugin_system.plugin_config import PluginConfigManager
 from openssl_encrypt.modules.plugin_system.plugin_manager import PluginManager
 
 
@@ -91,9 +92,7 @@ class TestPlugin(PreProcessorPlugin):
                 content = f.read()
         """
 
-        plugin_path = self._create_plugin_with_file_access(
-            "test_symlink", file_operation
-        )
+        plugin_path = self._create_plugin_with_file_access("test_symlink", file_operation)
         load_result = self.plugin_manager.load_plugin(plugin_path)
 
         if not load_result.success:
@@ -155,9 +154,7 @@ class TestPlugin(PreProcessorPlugin):
                     raise ValueError("Read /etc/passwd - SECURITY VIOLATION")
         """
 
-        plugin_path = self._create_plugin_with_file_access(
-            "test_passwd_link", file_operation
-        )
+        plugin_path = self._create_plugin_with_file_access("test_passwd_link", file_operation)
         load_result = self.plugin_manager.load_plugin(plugin_path)
 
         if not load_result.success:
@@ -315,9 +312,7 @@ class TestPlugin(PreProcessorPlugin):
                 content = f.read()
         """
 
-        plugin_path = self._create_plugin_with_file_access(
-            "test_traversal", file_operation
-        )
+        plugin_path = self._create_plugin_with_file_access("test_traversal", file_operation)
         load_result = self.plugin_manager.load_plugin(plugin_path)
 
         if not load_result.success:
@@ -348,9 +343,7 @@ class TestPlugin(PreProcessorPlugin):
     def test_absolute_path_outside_plugin_dir_blocked(self):
         """Absolute path outside plugin directory should be blocked"""
         # Create file in /tmp
-        tmp_file = tempfile.NamedTemporaryFile(
-            mode="w", delete=False, suffix=".txt", dir="/tmp"
-        )
+        tmp_file = tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".txt", dir="/tmp")
         tmp_file.write("TMPDATA")
         tmp_file.close()
         tmp_path = tmp_file.name
@@ -364,9 +357,7 @@ class TestPlugin(PreProcessorPlugin):
                     content = f.read()
             """
 
-            plugin_path = self._create_plugin_with_file_access(
-                "test_absolute", file_operation
-            )
+            plugin_path = self._create_plugin_with_file_access("test_absolute", file_operation)
             load_result = self.plugin_manager.load_plugin(plugin_path)
 
             if not load_result.success:
@@ -462,9 +453,7 @@ class TestPlugin(PreProcessorPlugin):
                 return PluginResult.error_result("No files in context")
         """
 
-        plugin_path = self._create_plugin_with_file_access(
-            "test_legitimate", file_operation
-        )
+        plugin_path = self._create_plugin_with_file_access("test_legitimate", file_operation)
         load_result = self.plugin_manager.load_plugin(plugin_path)
 
         # May have warnings but should load in permissive mode
@@ -486,9 +475,7 @@ class TestPlugin(PreProcessorPlugin):
 
             # Should succeed - file access via context is allowed
             assert result.success
-            assert test_file.name in result.message or test_file.name in str(
-                result.data
-            )
+            assert test_file.name in result.message or test_file.name in str(result.data)
         finally:
             os.unlink(test_file.name)
 
@@ -513,9 +500,7 @@ class TestPlugin(PreProcessorPlugin):
                 return PluginResult.error_result("No files")
         """
 
-        plugin_path = self._create_plugin_with_file_access(
-            "test_subdir", file_operation
-        )
+        plugin_path = self._create_plugin_with_file_access("test_subdir", file_operation)
         load_result = self.plugin_manager.load_plugin(plugin_path)
 
         if not load_result.success:
@@ -625,9 +610,7 @@ class TestPlugin(PreProcessorPlugin):
                 content = f.read()
         """
 
-        plugin_path = self._create_plugin_with_file_access(
-            "test_hardlink", file_operation
-        )
+        plugin_path = self._create_plugin_with_file_access("test_hardlink", file_operation)
         load_result = self.plugin_manager.load_plugin(plugin_path)
 
         if not load_result.success:

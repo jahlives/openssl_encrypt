@@ -34,11 +34,15 @@ from typing import Dict, List, Optional
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from .crypto_secure_memory import CryptoKey
+
 # Import protection classes
-from .identity_protection import (HSMNotAvailableError,
-                                  IdentityKeyProtectionService,
-                                  IdentityProtection, InvalidCredentialsError,
-                                  ProtectionLevel)
+from .identity_protection import (
+    HSMNotAvailableError,
+    IdentityKeyProtectionService,
+    IdentityProtection,
+    InvalidCredentialsError,
+    ProtectionLevel,
+)
 from .pqc import PQCipher
 from .pqc_signing import PQCSigner, calculate_fingerprint
 from .secure_memory import secure_memzero
@@ -188,9 +192,7 @@ class Identity:
             HSMNotAvailableError: If HSM required but not available
         """
         validate_identity_name(name)
-        logger.info(
-            f"Generating identity '{name}' with {kem_algorithm} + {sig_algorithm}"
-        )
+        logger.info(f"Generating identity '{name}' with {kem_algorithm} + {sig_algorithm}")
 
         try:
             # Generate encryption keypair (KEM)
@@ -226,9 +228,7 @@ class Identity:
                 name=name,
                 email=email,
                 fingerprint=fingerprint,
-                created_at=datetime.now(timezone.utc)
-                .isoformat()
-                .replace("+00:00", "Z"),
+                created_at=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
                 encryption_algorithm=kem_algorithm,
                 signing_algorithm=sig_algorithm,
                 encryption_public_key=enc_public_key,
@@ -239,9 +239,7 @@ class Identity:
                 protection=protection,
             )
 
-            logger.info(
-                f"Generated identity '{name}' with fingerprint {fingerprint[:40]}..."
-            )
+            logger.info(f"Generated identity '{name}' with fingerprint {fingerprint[:40]}...")
             return identity
 
         except Exception as e:
@@ -317,9 +315,7 @@ class Identity:
 
         if load_private_keys and has_private_keys:
             # Allow None passphrase for HSM_ONLY protection
-            if not passphrase and (
-                not protection or protection.level != ProtectionLevel.HSM_ONLY
-            ):
+            if not passphrase and (not protection or protection.level != ProtectionLevel.HSM_ONLY):
                 raise ValueError("Passphrase required to load private keys")
 
             # Load encrypted private keys
@@ -388,8 +384,11 @@ class Identity:
 
         # Create directory with secure permissions
         from openssl_encrypt.modules.file_permissions import (
-            PermissionLevel, create_secure_directory, create_secure_file,
-            set_permissions)
+            PermissionLevel,
+            create_secure_directory,
+            create_secure_file,
+            set_permissions,
+        )
 
         if overwrite and path.exists():
             # create_secure_directory uses exist_ok=True, just ensure permissions
@@ -487,9 +486,7 @@ class Identity:
             "created_at": self.created_at,
             "encryption_algorithm": self.encryption_algorithm,
             "signing_algorithm": self.signing_algorithm,
-            "encryption_public_key": base64.b64encode(
-                self.encryption_public_key
-            ).decode(),
+            "encryption_public_key": base64.b64encode(self.encryption_public_key).decode(),
             "signing_public_key": base64.b64encode(self.signing_public_key).decode(),
         }
 
@@ -909,9 +906,7 @@ def _decrypt_private_key(
             secure_memzero(private_key_bytes)
             return crypto_key
         except InvalidCredentialsError:
-            raise ValueError(
-                "Failed to decrypt private key: Invalid password or HSM response"
-            )
+            raise ValueError("Failed to decrypt private key: Invalid password or HSM response")
 
     # Legacy password-only decryption (backward compatible)
     if not passphrase:

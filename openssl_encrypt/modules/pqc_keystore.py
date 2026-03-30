@@ -18,13 +18,11 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.ciphers.aead import (AESGCM,
-                                                         ChaCha20Poly1305)
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM, ChaCha20Poly1305
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
 
-from .crypt_errors import (AuthenticationError, InternalError,
-                           KeyDerivationError, ValidationError)
+from .crypt_errors import AuthenticationError, InternalError, KeyDerivationError, ValidationError
 from .secure_memory import SecureBytes, secure_memzero
 
 # Check for Argon2 support
@@ -109,9 +107,7 @@ class PQCKeystore:
     # Default metadata cache timeout (in seconds)
     DEFAULT_CACHE_TIMEOUT = 600  # 10 minutes
 
-    def __init__(
-        self, keystore_path: str = None, cache_timeout: int = DEFAULT_CACHE_TIMEOUT
-    ):
+    def __init__(self, keystore_path: str = None, cache_timeout: int = DEFAULT_CACHE_TIMEOUT):
         """
         Initialize the keystore
 
@@ -208,9 +204,11 @@ class PQCKeystore:
             header_size = int.from_bytes(encrypted_data[:4], byteorder="big")
             header_json = encrypted_data[4 : 4 + header_size].decode("utf-8")
             try:
-                from .json_validator import (JSONSecurityError,
-                                             JSONValidationError,
-                                             secure_json_loads)
+                from .json_validator import (
+                    JSONSecurityError,
+                    JSONValidationError,
+                    secure_json_loads,
+                )
 
                 header = secure_json_loads(header_json)
             except (JSONSecurityError, JSONValidationError) as e:
@@ -231,18 +229,14 @@ class PQCKeystore:
             # Derive key from master password
             if method == KeystoreProtectionMethod.ARGON2ID_AES_GCM.value:
                 if not ARGON2_AVAILABLE:
-                    raise ValidationError(
-                        "Argon2 is required for this keystore but not available"
-                    )
+                    raise ValidationError("Argon2 is required for this keystore but not available")
 
                 # Derive key with Argon2
                 argon2_params = params["argon2_params"]
                 salt = base64.b64decode(params["salt"])
                 kdf_version = params.get("kdf_version", 1)
 
-                derived_key = _argon2_derive_key(
-                    master_password, salt, argon2_params, kdf_version
-                )
+                derived_key = _argon2_derive_key(master_password, salt, argon2_params, kdf_version)
 
             elif method == KeystoreProtectionMethod.SCRYPT_CHACHA20.value:
                 # Derive key with Scrypt
@@ -285,20 +279,14 @@ class PQCKeystore:
 
                 if kdf_version >= 2:
                     # v2+: strict AAD — no fallback
-                    plaintext = cipher.decrypt(
-                        nonce, ciphertext, associated_data=header_aad
-                    )
+                    plaintext = cipher.decrypt(nonce, ciphertext, associated_data=header_aad)
                 else:
                     # Legacy: try with header AAD, fall back for old keystores
                     try:
-                        plaintext = cipher.decrypt(
-                            nonce, ciphertext, associated_data=header_aad
-                        )
+                        plaintext = cipher.decrypt(nonce, ciphertext, associated_data=header_aad)
                     except Exception as e1:
                         try:
-                            plaintext = cipher.decrypt(
-                                nonce, ciphertext, associated_data=None
-                            )
+                            plaintext = cipher.decrypt(nonce, ciphertext, associated_data=None)
                         except Exception:
                             raise e1
             else:
@@ -309,29 +297,25 @@ class PQCKeystore:
 
                 if kdf_version >= 2:
                     # v2+: strict AAD — no fallback
-                    plaintext = cipher.decrypt(
-                        nonce, ciphertext, associated_data=header_aad
-                    )
+                    plaintext = cipher.decrypt(nonce, ciphertext, associated_data=header_aad)
                 else:
                     # Legacy: try with header AAD, fall back for old keystores
                     try:
-                        plaintext = cipher.decrypt(
-                            nonce, ciphertext, associated_data=header_aad
-                        )
+                        plaintext = cipher.decrypt(nonce, ciphertext, associated_data=header_aad)
                     except Exception as e1:
                         try:
-                            plaintext = cipher.decrypt(
-                                nonce, ciphertext, associated_data=None
-                            )
+                            plaintext = cipher.decrypt(nonce, ciphertext, associated_data=None)
                         except Exception:
                             raise e1
 
             # Parse the decrypted data with secure validation (MED-8 fix)
             plaintext_json = plaintext.decode("utf-8")
             try:
-                from .json_validator import (JSONSecurityError,
-                                             JSONValidationError,
-                                             secure_keystore_loads)
+                from .json_validator import (
+                    JSONSecurityError,
+                    JSONValidationError,
+                    secure_keystore_loads,
+                )
 
                 self.keystore_data = secure_keystore_loads(plaintext_json)
             except (JSONSecurityError, JSONValidationError) as e:
@@ -357,9 +341,7 @@ class PQCKeystore:
             if isinstance(e, (KeyError, json.JSONDecodeError)):
                 raise InternalError(f"Invalid keystore format: {str(e)}")
             elif "MAC check failed" in str(e) or "Cipher tag does not match" in str(e):
-                raise AuthenticationError(
-                    "Invalid master password or corrupted keystore"
-                )
+                raise AuthenticationError("Invalid master password or corrupted keystore")
             else:
                 raise InternalError(f"Failed to load keystore: {str(e)}")
 
@@ -399,9 +381,7 @@ class PQCKeystore:
                 ):
                     derived_key = self.master_key
                 else:
-                    raise ValidationError(
-                        "Master password required (cached key expired)"
-                    )
+                    raise ValidationError("Master password required (cached key expired)")
 
             # If we don't have a cached key, derive it from the password
             if derived_key is None:
@@ -480,9 +460,7 @@ class PQCKeystore:
                 header = {"protection": protection}
                 # IMPORTANT: Use header JSON as associated_data for consistency with load_keystore
                 header_json = json.dumps(header).encode("utf-8")
-                ciphertext = cipher.encrypt(
-                    nonce, plaintext, associated_data=header_json
-                )
+                ciphertext = cipher.encrypt(nonce, plaintext, associated_data=header_json)
 
             # Prepare the final file format
             header_json = json.dumps(header).encode("utf-8")
@@ -494,8 +472,7 @@ class PQCKeystore:
                 f.write(ciphertext)
 
             # Restrict keystore file to owner read/write only
-            from openssl_encrypt.modules.file_permissions import (
-                PermissionLevel, set_permissions)
+            from openssl_encrypt.modules.file_permissions import PermissionLevel, set_permissions
 
             set_permissions(self.keystore_path, PermissionLevel.OWNER_ONLY)
 
@@ -567,9 +544,7 @@ class PQCKeystore:
         if use_master_password:
             # Use the master key to protect this key
             if self.master_key is None:
-                raise ValidationError(
-                    "Master key not available. Load the keystore first."
-                )
+                raise ValidationError("Master key not available. Load the keystore first.")
 
             # Get protection parameters from the keystore
             protection_params = self.keystore_data["protection"]
@@ -584,18 +559,14 @@ class PQCKeystore:
         else:
             # Use a key-specific password
             if key_password is None:
-                raise ValidationError(
-                    "Key password is required when not using master password"
-                )
+                raise ValidationError("Key password is required when not using master password")
 
             # Get recommended protection level for individual keys
             # (might be different from the keystore's own protection)
             protection_method = self._get_recommended_protection_method()
 
             # Encrypt with the key-specific password
-            encrypted_data = self._encrypt_private_key(
-                private_key, key_password, protection_method
-            )
+            encrypted_data = self._encrypt_private_key(private_key, key_password, protection_method)
 
         # Store the encrypted private key
         key_entry["private_key"] = encrypted_data
@@ -609,9 +580,7 @@ class PQCKeystore:
 
         return key_id
 
-    def get_key(
-        self, key_id: str = None, key_password: str = None
-    ) -> Tuple[bytes, bytes]:
+    def get_key(self, key_id: str = None, key_password: str = None) -> Tuple[bytes, bytes]:
         """
         Retrieve a key pair from the keystore
 
@@ -663,14 +632,10 @@ class PQCKeystore:
         if key_entry.get("use_master_password", False):
             # Key is protected with the master password
             if self.master_key is None:
-                raise ValidationError(
-                    "Master key not available. Load the keystore first."
-                )
+                raise ValidationError("Master key not available. Load the keystore first.")
 
             # Decrypt using the master key
-            private_key = self._decrypt_with_derived_key(
-                encrypted_private_key, self.master_key
-            )
+            private_key = self._decrypt_with_derived_key(encrypted_private_key, self.master_key)
 
         else:
             # Key has its own password
@@ -725,9 +690,7 @@ class PQCKeystore:
         if self.keystore_data["default_key_id"] == key_id:
             if self.keystore_data["keys"]:
                 # Set the first available key as default
-                self.keystore_data["default_key_id"] = self.keystore_data["keys"][0][
-                    "key_id"
-                ]
+                self.keystore_data["default_key_id"] = self.keystore_data["keys"][0]["key_id"]
             else:
                 # No keys left
                 self.keystore_data["default_key_id"] = None
@@ -760,9 +723,7 @@ class PQCKeystore:
                 "metadata": key["metadata"],
                 "is_default": key["key_id"] == self.keystore_data["default_key_id"],
                 "protection": (
-                    "master_password"
-                    if key.get("use_master_password", False)
-                    else "key_password"
+                    "master_password" if key.get("use_master_password", False) else "key_password"
                 ),
             }
             result.append(key_info)
@@ -879,9 +840,7 @@ class PQCKeystore:
         # the export format
         raise NotImplementedError("Key export not implemented yet")
 
-    def change_key_password(
-        self, key_id: str, old_password: str, new_password: str
-    ) -> bool:
+    def change_key_password(self, key_id: str, old_password: str, new_password: str) -> bool:
         """
         Change the password for a key that has its own password
 
@@ -924,9 +883,7 @@ class PQCKeystore:
 
         # Re-encrypt with the new password
         protection_method = self._get_recommended_protection_method()
-        new_encrypted_data = self._encrypt_private_key(
-            private_key, new_password, protection_method
-        )
+        new_encrypted_data = self._encrypt_private_key(private_key, new_password, protection_method)
 
         # Update the key entry
         key_entry["private_key"] = new_encrypted_data
@@ -979,9 +936,7 @@ class PQCKeystore:
                 encrypted_private_key = key["private_key"]
 
                 # Decrypt with the old master key
-                private_key = self._decrypt_with_derived_key(
-                    encrypted_private_key, self.master_key
-                )
+                private_key = self._decrypt_with_derived_key(encrypted_private_key, self.master_key)
 
                 # We'll re-encrypt after we have the new master key
                 key["_temp_private_key"] = private_key
@@ -1113,17 +1068,13 @@ class PQCKeystore:
         encrypted_private_key = key_entry["private_key"]
 
         # Decrypt with the master key
-        private_key = self._decrypt_with_derived_key(
-            encrypted_private_key, self.master_key
-        )
+        private_key = self._decrypt_with_derived_key(encrypted_private_key, self.master_key)
 
         # Get recommended protection method for individual keys
         protection_method = self._get_recommended_protection_method()
 
         # Re-encrypt with the new key-specific password
-        new_encrypted_data = self._encrypt_private_key(
-            private_key, new_password, protection_method
-        )
+        new_encrypted_data = self._encrypt_private_key(private_key, new_password, protection_method)
 
         # Update the key entry
         key_entry["private_key"] = new_encrypted_data
@@ -1304,9 +1255,7 @@ class PQCKeystore:
                 }
 
             else:
-                raise ValidationError(
-                    f"Unsupported protection method: {protection_method}"
-                )
+                raise ValidationError(f"Unsupported protection method: {protection_method}")
 
             return result
         finally:
@@ -1362,18 +1311,12 @@ class PQCKeystore:
                 header_aad = json.dumps(header).encode("utf-8")
 
                 if kdf_version >= 2:
-                    plaintext = cipher.decrypt(
-                        nonce, ciphertext, associated_data=header_aad
-                    )
+                    plaintext = cipher.decrypt(nonce, ciphertext, associated_data=header_aad)
                 else:
                     try:
-                        plaintext = cipher.decrypt(
-                            nonce, ciphertext, associated_data=header_aad
-                        )
+                        plaintext = cipher.decrypt(nonce, ciphertext, associated_data=header_aad)
                     except Exception:
-                        plaintext = cipher.decrypt(
-                            nonce, ciphertext, associated_data=None
-                        )
+                        plaintext = cipher.decrypt(nonce, ciphertext, associated_data=None)
 
             elif method == KeystoreProtectionMethod.SCRYPT_CHACHA20.value:
                 # Extract parameters
@@ -1405,18 +1348,12 @@ class PQCKeystore:
                 kdf_version = params.get("kdf_version", 1)
 
                 if kdf_version >= 2:
-                    plaintext = cipher.decrypt(
-                        nonce, ciphertext, associated_data=header_aad
-                    )
+                    plaintext = cipher.decrypt(nonce, ciphertext, associated_data=header_aad)
                 else:
                     try:
-                        plaintext = cipher.decrypt(
-                            nonce, ciphertext, associated_data=header_aad
-                        )
+                        plaintext = cipher.decrypt(nonce, ciphertext, associated_data=header_aad)
                     except Exception:
-                        plaintext = cipher.decrypt(
-                            nonce, ciphertext, associated_data=None
-                        )
+                        plaintext = cipher.decrypt(nonce, ciphertext, associated_data=None)
 
             elif method == KeystoreProtectionMethod.PBKDF2_AES_GCM.value:
                 # Extract parameters
@@ -1447,18 +1384,12 @@ class PQCKeystore:
                 kdf_version = params.get("kdf_version", 1)
 
                 if kdf_version >= 2:
-                    plaintext = cipher.decrypt(
-                        nonce, ciphertext, associated_data=header_aad
-                    )
+                    plaintext = cipher.decrypt(nonce, ciphertext, associated_data=header_aad)
                 else:
                     try:
-                        plaintext = cipher.decrypt(
-                            nonce, ciphertext, associated_data=header_aad
-                        )
+                        plaintext = cipher.decrypt(nonce, ciphertext, associated_data=header_aad)
                     except Exception:
-                        plaintext = cipher.decrypt(
-                            nonce, ciphertext, associated_data=None
-                        )
+                        plaintext = cipher.decrypt(nonce, ciphertext, associated_data=None)
 
             else:
                 raise ValidationError(f"Unsupported protection method: {method}")
@@ -1540,9 +1471,7 @@ class PQCKeystore:
 
         return result
 
-    def _decrypt_with_derived_key(
-        self, encrypted_data: Dict, derived_key: bytes
-    ) -> bytes:
+    def _decrypt_with_derived_key(self, encrypted_data: Dict, derived_key: bytes) -> bytes:
         """
         Decrypt data using an already derived key
 
@@ -1579,14 +1508,10 @@ class PQCKeystore:
                 except Exception:
                     try:
                         # Then try with empty bytes
-                        plaintext = cipher.decrypt(
-                            nonce, ciphertext, associated_data=b""
-                        )
+                        plaintext = cipher.decrypt(nonce, ciphertext, associated_data=b"")
                     except Exception:
                         # Finally try with None
-                        plaintext = cipher.decrypt(
-                            nonce, ciphertext, associated_data=None
-                        )
+                        plaintext = cipher.decrypt(nonce, ciphertext, associated_data=None)
 
             elif method in [
                 KeystoreProtectionMethod.ARGON2ID_AES_GCM.value,
@@ -1600,9 +1525,7 @@ class PQCKeystore:
                 except Exception:
                     try:
                         # Then try with None
-                        plaintext = cipher.decrypt(
-                            nonce, ciphertext, associated_data=None
-                        )
+                        plaintext = cipher.decrypt(nonce, ciphertext, associated_data=None)
                     except Exception:
                         # Finally try with header
                         plaintext = cipher.decrypt(

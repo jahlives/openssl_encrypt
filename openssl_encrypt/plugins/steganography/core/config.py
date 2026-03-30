@@ -64,13 +64,9 @@ class SteganographyConfig:
 
         if "capacity" in config_dict:
             cap = config_dict["capacity"]
-            config.max_bits_per_sample = cap.get(
-                "max_bits_per_sample", config.max_bits_per_sample
-            )
+            config.max_bits_per_sample = cap.get("max_bits_per_sample", config.max_bits_per_sample)
             config.min_cover_size = cap.get("min_cover_size", config.min_cover_size)
-            config.capacity_safety_margin = cap.get(
-                "safety_margin", config.capacity_safety_margin
-            )
+            config.capacity_safety_margin = cap.get("safety_margin", config.capacity_safety_margin)
 
         if "security" in config_dict:
             sec = config_dict["security"]
@@ -78,24 +74,16 @@ class SteganographyConfig:
                 "encryption_integration", config.use_encryption_integration
             )
             config.enable_decoy_data = sec.get("decoy_data", config.enable_decoy_data)
-            config.randomize_pixel_order = sec.get(
-                "randomize_pixels", config.randomize_pixel_order
-            )
-            config.preserve_statistics = sec.get(
-                "preserve_stats", config.preserve_statistics
-            )
+            config.randomize_pixel_order = sec.get("randomize_pixels", config.randomize_pixel_order)
+            config.preserve_statistics = sec.get("preserve_stats", config.preserve_statistics)
 
         if "quality" in config_dict:
             qual = config_dict["quality"]
-            config.quality_threshold = qual.get(
-                "quality_threshold", config.quality_threshold
-            )
+            config.quality_threshold = qual.get("quality_threshold", config.quality_threshold)
             config.histogram_preservation = qual.get(
                 "histogram_preservation", config.histogram_preservation
             )
-            config.adaptive_embedding = qual.get(
-                "adaptive_embedding", config.adaptive_embedding
-            )
+            config.adaptive_embedding = qual.get("adaptive_embedding", config.adaptive_embedding)
 
         if "performance" in config_dict:
             perf = config_dict["performance"]

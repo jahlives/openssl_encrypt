@@ -27,13 +27,16 @@ import struct
 from typing import Callable, List, Optional, Tuple, Union
 
 from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.ciphers.aead import (AESGCM, AESGCMSIV,
-                                                         AESOCB3, AESSIV,
-                                                         ChaCha20Poly1305)
+from cryptography.hazmat.primitives.ciphers.aead import (
+    AESGCM,
+    AESGCMSIV,
+    AESOCB3,
+    AESSIV,
+    ChaCha20Poly1305,
+)
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
-from .crypt_errors import (AuthenticationError, DecryptionError,
-                           EncryptionError, ValidationError)
+from .crypt_errors import AuthenticationError, DecryptionError, EncryptionError, ValidationError
 from .secure_memory import secure_memzero
 
 logger = logging.getLogger(__name__)
@@ -104,9 +107,7 @@ def _get_nonce_size(algorithm: str) -> int:
     return nonce_sizes.get(algorithm, 12)
 
 
-def derive_chunk_nonce(
-    nonce_prefix: bytes, chunk_index: int, nonce_size: int = 12
-) -> bytes:
+def derive_chunk_nonce(nonce_prefix: bytes, chunk_index: int, nonce_size: int = 12) -> bytes:
     """Derive a unique per-chunk nonce using HKDF-SHA256.
 
     Each chunk gets a deterministic, unique nonce derived from a random
@@ -158,11 +159,7 @@ def build_chunk_aad(metadata_b64: bytes, chunk_index: int, chunk_count: int) -> 
         AAD bytes for this chunk.
     """
     return (
-        metadata_b64
-        + b":"
-        + struct.pack(">I", chunk_index)
-        + b":"
-        + struct.pack(">I", chunk_count)
+        metadata_b64 + b":" + struct.pack(">I", chunk_index) + b":" + struct.pack(">I", chunk_count)
     )
 
 
@@ -232,9 +229,7 @@ def encrypt_chunk(
 
         elif algorithm == "cascade":
             # Cascade is handled at StreamingEncryptor level
-            raise ValidationError(
-                "Cascade encryption must be handled via StreamingEncryptor"
-            )
+            raise ValidationError("Cascade encryption must be handled via StreamingEncryptor")
 
         else:
             raise ValidationError(f"Unsupported streaming algorithm: {algorithm}")
@@ -307,9 +302,7 @@ def decrypt_chunk(
             return threefish_native.decrypt_1024(key, nonce, ciphertext, aad)
 
         elif algorithm == "cascade":
-            raise ValidationError(
-                "Cascade decryption must be handled via StreamingDecryptor"
-            )
+            raise ValidationError("Cascade decryption must be handled via StreamingDecryptor")
 
         else:
             raise ValidationError(f"Unsupported streaming algorithm: {algorithm}")
@@ -353,9 +346,7 @@ def should_use_streaming(
     return file_size >= threshold
 
 
-def calculate_hash_streaming(
-    file_path: str, chunk_size: int = DEFAULT_CHUNK_SIZE
-) -> str:
+def calculate_hash_streaming(file_path: str, chunk_size: int = DEFAULT_CHUNK_SIZE) -> str:
     """Calculate SHA-256 hash of a file using streaming reads.
 
     This avoids loading the entire file into memory.
@@ -503,9 +494,7 @@ class StreamingEncryptor:
                     break
 
                 # Derive per-chunk nonce
-                nonce = derive_chunk_nonce(
-                    self.nonce_prefix, chunk_index, self.nonce_size
-                )
+                nonce = derive_chunk_nonce(self.nonce_prefix, chunk_index, self.nonce_size)
 
                 # Build per-chunk AAD
                 aad = build_chunk_aad(metadata_b64, chunk_index, chunk_count)
@@ -520,9 +509,7 @@ class StreamingEncryptor:
                         chunk_nonce=nonce,
                     )
                 else:
-                    ciphertext = encrypt_chunk(
-                        self.key, nonce, plaintext, aad, self.algorithm
-                    )
+                    ciphertext = encrypt_chunk(self.key, nonce, plaintext, aad, self.algorithm)
 
                 # Collect tag material (last 16 bytes of ciphertext for HMAC)
                 tag_material = ciphertext[-16:] if len(ciphertext) >= 16 else ciphertext
@@ -550,9 +537,7 @@ class StreamingEncryptor:
             hmac_key = self._derive_hmac_key()
             try:
                 tag_concatenation = b"".join(chunk_tags)
-                trailer_hmac = hmac_module.new(
-                    hmac_key, tag_concatenation, hashlib.sha256
-                ).digest()
+                trailer_hmac = hmac_module.new(hmac_key, tag_concatenation, hashlib.sha256).digest()
                 fout.write(trailer_hmac)
             finally:
                 secure_memzero(hmac_key)
@@ -684,9 +669,7 @@ class StreamingDecryptor:
                     colon_pos = idx
                     break
             if colon_pos == -1:
-                raise DecryptionError(
-                    "Invalid streaming file: no metadata separator found"
-                )
+                raise DecryptionError("Invalid streaming file: no metadata separator found")
 
             payload_start = colon_pos + 1
 
@@ -701,17 +684,13 @@ class StreamingDecryptor:
 
             payload_version = struct.unpack("<I", header[4:8])[0]
             if payload_version != PAYLOAD_VERSION:
-                raise DecryptionError(
-                    f"Unsupported streaming payload version: {payload_version}"
-                )
+                raise DecryptionError(f"Unsupported streaming payload version: {payload_version}")
 
             # --- Read trailer (last 36 bytes of file) ---
             file_size = fin.seek(0, 2)  # seek to end
             payload_len = file_size - payload_start
             if payload_len < 8 + 36:
-                raise DecryptionError(
-                    "Streaming payload too short for header + trailer"
-                )
+                raise DecryptionError("Streaming payload too short for header + trailer")
 
             trailer_offset = file_size - 36
             fin.seek(trailer_offset)
@@ -733,9 +712,7 @@ class StreamingDecryptor:
             hash_ctx = hashlib.sha256() if original_hash else None
 
             # For in-memory return when output_file is None
-            decrypted_chunks: Optional[List[bytes]] = (
-                [] if output_file is None else None
-            )
+            decrypted_chunks: Optional[List[bytes]] = [] if output_file is None else None
             fout = None
             try:
                 if output_file is not None:
@@ -772,20 +749,14 @@ class StreamingDecryptor:
                         raise DecryptionError(f"Chunk {chunk_index} read truncated")
 
                     # Collect tag material for HMAC verification
-                    tag_material = (
-                        ciphertext[-16:] if len(ciphertext) >= 16 else ciphertext
-                    )
+                    tag_material = ciphertext[-16:] if len(ciphertext) >= 16 else ciphertext
                     chunk_tags.append(tag_material)
 
                     # Derive per-chunk nonce
-                    nonce = derive_chunk_nonce(
-                        self.nonce_prefix, chunk_index, self.nonce_size
-                    )
+                    nonce = derive_chunk_nonce(self.nonce_prefix, chunk_index, self.nonce_size)
 
                     # Build per-chunk AAD
-                    aad = build_chunk_aad(
-                        metadata_b64, chunk_index, expected_chunk_count
-                    )
+                    aad = build_chunk_aad(metadata_b64, chunk_index, expected_chunk_count)
 
                     # Decrypt the chunk
                     if self.algorithm == "cascade" and self.cascade_decryptor:
@@ -797,9 +768,7 @@ class StreamingDecryptor:
                             chunk_nonce=nonce,
                         )
                     else:
-                        plaintext = decrypt_chunk(
-                            self.key, nonce, ciphertext, aad, self.algorithm
-                        )
+                        plaintext = decrypt_chunk(self.key, nonce, ciphertext, aad, self.algorithm)
 
                     # Write / collect plaintext
                     if fout is not None:
@@ -828,9 +797,7 @@ class StreamingDecryptor:
         hmac_key = self._derive_hmac_key()
         try:
             tag_concatenation = b"".join(chunk_tags)
-            computed_hmac = hmac_module.new(
-                hmac_key, tag_concatenation, hashlib.sha256
-            ).digest()
+            computed_hmac = hmac_module.new(hmac_key, tag_concatenation, hashlib.sha256).digest()
         finally:
             secure_memzero(hmac_key)
 
@@ -852,9 +819,7 @@ class StreamingDecryptor:
             if computed_hash != original_hash:
                 if output_file is not None and os.path.exists(output_file):
                     os.remove(output_file)
-                raise AuthenticationError(
-                    "Original content hash mismatch after decryption"
-                )
+                raise AuthenticationError("Original content hash mismatch after decryption")
 
         # Return result
         if output_file is None:

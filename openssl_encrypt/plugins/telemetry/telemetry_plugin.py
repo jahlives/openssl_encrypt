@@ -31,9 +31,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
-from ...modules.plugin_system.plugin_base import (PluginCapability,
-                                                  PluginResult, PluginType,
-                                                  TelemetryPlugin)
+from ...modules.plugin_system.plugin_base import (
+    PluginCapability,
+    PluginResult,
+    PluginType,
+    TelemetryPlugin,
+)
 from ...modules.telemetry_filter import TelemetryEvent
 from .api_key_manager import APIKeyManager
 from .local_buffer import LocalBuffer
@@ -237,9 +240,7 @@ class OpenSSLEncryptTelemetryPlugin(TelemetryPlugin):
         while not self._stop_upload.is_set():
             try:
                 # Wait for upload interval (with periodic checks for stop signal)
-                if self._stop_upload.wait(
-                    timeout=self.telemetry_config.upload_interval
-                ):
+                if self._stop_upload.wait(timeout=self.telemetry_config.upload_interval):
                     break  # Stop signal received
 
                 # Upload events

@@ -44,9 +44,7 @@ def load_telemetry_config() -> Optional[str]:
     Returns:
         Server URL from config, or None if config doesn't exist
     """
-    config_path = (
-        Path.home() / ".openssl_encrypt" / "plugins" / "telemetry" / "config.json"
-    )
+    config_path = Path.home() / ".openssl_encrypt" / "plugins" / "telemetry" / "config.json"
 
     if not config_path.exists():
         return None
@@ -203,9 +201,7 @@ def test_telemetry_submit(base_url: str, token: str, events: List[Dict]) -> bool
             print(f"  Processed: {data['processed']}")
 
             if data["received"] != len(events):
-                print(
-                    f"  ⚠ Warning: Expected {len(events)} received, got {data['received']}"
-                )
+                print(f"  ⚠ Warning: Expected {len(events)} received, got {data['received']}")
 
             if data["processed"] != data["received"]:
                 print(f"  ⚠ Warning: Not all events were processed")
@@ -246,9 +242,7 @@ def test_telemetry_stats(base_url: str) -> Dict:
 
             if data.get("algorithms"):
                 print(f"  Algorithms:")
-                for algo, count in sorted(
-                    data["algorithms"].items(), key=lambda x: -x[1]
-                )[:5]:
+                for algo, count in sorted(data["algorithms"].items(), key=lambda x: -x[1])[:5]:
                     print(f"    {algo}: {count}")
 
             if data.get("operations"):
@@ -281,9 +275,7 @@ def verify_test_results(stats: Dict, submitted_events: int) -> bool:
             f"✓ Total operations check passed ({stats['total_operations']} >= {submitted_events})"
         )
     else:
-        print(
-            f"✗ Total operations too low ({stats['total_operations']} < {submitted_events})"
-        )
+        print(f"✗ Total operations too low ({stats['total_operations']} < {submitted_events})")
         return False
 
     # Check if we have at least one client
@@ -353,12 +345,8 @@ def main():
     # Test 2: Submit events
     test_events = create_test_events()
     print(f"\nCreated {len(test_events)} test events:")
-    print(
-        f"  - {sum(1 for e in test_events if e['operation'] == 'encrypt')} encrypt operations"
-    )
-    print(
-        f"  - {sum(1 for e in test_events if e['operation'] == 'decrypt')} decrypt operations"
-    )
+    print(f"  - {sum(1 for e in test_events if e['operation'] == 'encrypt')} encrypt operations")
+    print(f"  - {sum(1 for e in test_events if e['operation'] == 'decrypt')} decrypt operations")
     print(f"  - {sum(1 for e in test_events if e['success'])} successful")
     print(f"  - {sum(1 for e in test_events if not e['success'])} failed")
 

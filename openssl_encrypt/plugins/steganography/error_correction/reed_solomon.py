@@ -50,9 +50,7 @@ class GaloisField:
         }
 
         if m not in primitives:
-            raise ErrorCorrectionError(
-                f"Primitive polynomial for GF(2^{m}) not available"
-            )
+            raise ErrorCorrectionError(f"Primitive polynomial for GF(2^{m}) not available")
 
         return primitives[m]
 
@@ -137,17 +135,11 @@ class ReedSolomonEncoder:
         if n > 255:
             raise ErrorCorrectionError("Codeword length cannot exceed 255 for GF(256)")
         if k > n:
-            raise ErrorCorrectionError(
-                "Information symbols cannot exceed codeword length"
-            )
+            raise ErrorCorrectionError("Information symbols cannot exceed codeword length")
         if t < 0:
-            raise ErrorCorrectionError(
-                "Error correction capability must be non-negative"
-            )
+            raise ErrorCorrectionError("Error correction capability must be non-negative")
         if 2 * t > n - k:
-            raise ErrorCorrectionError(
-                "Error correction capability too high for given parameters"
-            )
+            raise ErrorCorrectionError("Error correction capability too high for given parameters")
 
         self.n = n
         self.k = k
@@ -236,9 +228,7 @@ class ReedSolomonEncoder:
 
         return bytes(codeword)
 
-    def _polynomial_remainder(
-        self, dividend: List[int], divisor: List[int]
-    ) -> List[int]:
+    def _polynomial_remainder(self, dividend: List[int], divisor: List[int]) -> List[int]:
         """Calculate polynomial remainder in GF(256)."""
         # Copy dividend
         remainder = dividend[:]
@@ -290,9 +280,7 @@ class ReedSolomonDecoder:
         encoded_blocks = encoded_data[4:]
 
         if len(encoded_blocks) % self.n != 0:
-            raise ErrorCorrectionError(
-                f"Invalid codeword length: {len(encoded_blocks)}"
-            )
+            raise ErrorCorrectionError(f"Invalid codeword length: {len(encoded_blocks)}")
 
         # Decode each block
         decoded_blocks = []
@@ -347,9 +335,7 @@ class ReedSolomonDecoder:
         error_indicators = sum(1 for s in final_syndromes if s != 0)
 
         if error_indicators > self.t:
-            raise ErrorCorrectionError(
-                f"Too many errors: {error_indicators} indicators > {self.t}"
-            )
+            raise ErrorCorrectionError(f"Too many errors: {error_indicators} indicators > {self.t}")
 
         return best_candidate[: self.k]
 
@@ -364,9 +350,7 @@ class ReedSolomonDecoder:
             # Evaluate received(x) at α^i
             for j in range(self.n):
                 syndrome ^= self.gf.multiply(received[j], power)
-                power = self.gf.multiply(
-                    power, self.gf.exp_table[i % (self.gf.size - 1)]
-                )
+                power = self.gf.multiply(power, self.gf.exp_table[i % (self.gf.size - 1)])
 
             syndromes.append(syndrome)
 
@@ -430,18 +414,14 @@ class BlockEncoder:
                 raise ErrorCorrectionError("Incomplete block header")
 
             # Get original length from block header
-            block_original_length = struct.unpack(
-                "<I", remaining_data[offset : offset + 4]
-            )[0]
+            block_original_length = struct.unpack("<I", remaining_data[offset : offset + 4])[0]
 
             # Calculate encoded block size
             padded_length = (
                 (block_original_length + self.rs_encoder.k - 1) // self.rs_encoder.k
             ) * self.rs_encoder.k
             num_codewords = padded_length // self.rs_encoder.k
-            encoded_block_size = (
-                4 + num_codewords * self.rs_encoder.n
-            )  # Header + codewords
+            encoded_block_size = 4 + num_codewords * self.rs_encoder.n  # Header + codewords
 
             if offset + encoded_block_size > len(remaining_data):
                 raise ErrorCorrectionError("Incomplete encoded block")

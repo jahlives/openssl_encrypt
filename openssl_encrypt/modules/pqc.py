@@ -18,8 +18,11 @@ import time
 from enum import Enum
 from typing import Optional, Tuple, Union
 
-from .algorithm_warnings import (get_recommended_replacement, is_deprecated,
-                                 warn_deprecated_algorithm)
+from .algorithm_warnings import (
+    get_recommended_replacement,
+    is_deprecated,
+    warn_deprecated_algorithm,
+)
 from .crypt_utils import eprint
 from .secure_memory import SecureBytes, secure_memzero, secure_string
 
@@ -110,12 +113,8 @@ class PQCAlgorithm(Enum):
     ML_DSA_87 = "ML-DSA-87"  # NIST FIPS 204 (formerly Dilithium5)
     FN_DSA_512 = "FN-DSA-512"  # NIST FIPS 206 (formerly Falcon-512)
     FN_DSA_1024 = "FN-DSA-1024"  # NIST FIPS 206 (formerly Falcon-1024)
-    SLH_DSA_SHA2_128F = (
-        "SLH-DSA-SHA2-128F"  # NIST FIPS 205 (formerly SPHINCS+-SHA2-128f)
-    )
-    SLH_DSA_SHA2_256F = (
-        "SLH-DSA-SHA2-256F"  # NIST FIPS 205 (formerly SPHINCS+-SHA2-256f)
-    )
+    SLH_DSA_SHA2_128F = "SLH-DSA-SHA2-128F"  # NIST FIPS 205 (formerly SPHINCS+-SHA2-128f)
+    SLH_DSA_SHA2_256F = "SLH-DSA-SHA2-256F"  # NIST FIPS 205 (formerly SPHINCS+-SHA2-256f)
 
     # NIST Round 2 Additional Signature Algorithms
     # MAYO (Oil-and-Vinegar multivariate signature scheme)
@@ -161,9 +160,7 @@ LEGACY_TO_STANDARD_ALGORITHM_MAP = {
 }
 
 # Reverse mapping for backward compatibility
-STANDARD_TO_LEGACY_ALGORITHM_MAP = {
-    v: k for k, v in LEGACY_TO_STANDARD_ALGORITHM_MAP.items()
-}
+STANDARD_TO_LEGACY_ALGORITHM_MAP = {v: k for k, v in LEGACY_TO_STANDARD_ALGORITHM_MAP.items()}
 
 
 def normalize_algorithm_name(name: str, use_standard: bool = True) -> str:
@@ -363,14 +360,8 @@ class PQCipher:
             replacement = get_recommended_replacement(algorithm)
             warn_deprecated_algorithm(algorithm, "PQCipher initialization")
             # Only show direct warning messages if verbose or not an INFO warning about Kyber vs ML-KEM
-            kyber_or_mlkem_warning = (
-                "kyber" in algorithm.lower() or "ml-kem" in algorithm.lower()
-            )
-            if (
-                not should_be_quiet
-                and replacement
-                and (verbose or not kyber_or_mlkem_warning)
-            ):
+            kyber_or_mlkem_warning = "kyber" in algorithm.lower() or "ml-kem" in algorithm.lower()
+            if not should_be_quiet and replacement and (verbose or not kyber_or_mlkem_warning):
                 eprint(f"Warning: The algorithm '{algorithm}' is deprecated.")
                 eprint(f"Consider using '{replacement}' instead for better security.")
 
@@ -389,12 +380,8 @@ class PQCipher:
             warn_deprecated_algorithm(encryption_data, "PQC data encryption")
             # Only show direct warning messages if verbose or not an INFO level warning
             if not should_be_quiet and data_replacement and verbose:
-                eprint(
-                    f"Warning: The data encryption algorithm '{encryption_data}' is deprecated."
-                )
-                eprint(
-                    f"Consider using '{data_replacement}' instead for better security."
-                )
+                eprint(f"Warning: The data encryption algorithm '{encryption_data}' is deprecated.")
+                eprint(f"Consider using '{data_replacement}' instead for better security.")
 
         # Store the encryption_data parameter
         self.encryption_data = encryption_data
@@ -402,7 +389,12 @@ class PQCipher:
         # Import required symmetric encryption algorithms
         try:
             from cryptography.hazmat.primitives.ciphers.aead import (
-                AESGCM, AESGCMSIV, AESOCB3, AESSIV, ChaCha20Poly1305)
+                AESGCM,
+                AESGCMSIV,
+                AESOCB3,
+                AESSIV,
+                ChaCha20Poly1305,
+            )
 
             self.AESGCM = AESGCM
             self.ChaCha20Poly1305 = ChaCha20Poly1305
@@ -441,16 +433,12 @@ class PQCipher:
                 self.algorithm_name = requested_algo
             else:
                 # As a fallback, look for variants (with/without hyphens, case insensitive)
-                requested_base = (
-                    requested_algo.lower().replace("-", "").replace("_", "")
-                )
+                requested_base = requested_algo.lower().replace("-", "").replace("_", "")
 
                 # For each supported algorithm, see if it's a variant of the requested one
                 matched = False
                 for supported_algo in supported:
-                    supported_base = (
-                        supported_algo.lower().replace("-", "").replace("_", "")
-                    )
+                    supported_base = supported_algo.lower().replace("-", "").replace("_", "")
 
                     # Check if the algorithm names match after normalization
                     if supported_base == requested_base:
@@ -491,9 +479,9 @@ class PQCipher:
             else:
                 # Look for variants
                 for supported_algo in supported:
-                    if algorithm.value.lower().replace(
+                    if algorithm.value.lower().replace("-", "") == supported_algo.lower().replace(
                         "-", ""
-                    ) == supported_algo.lower().replace("-", ""):
+                    ):
                         self.algorithm_name = supported_algo
                         break
                 else:
@@ -505,9 +493,7 @@ class PQCipher:
             eprint(f"Using algorithm: {self.algorithm_name}")
 
         # All Kyber/ML-KEM/HQC algorithms are KEM algorithms
-        self.is_kem = any(
-            x in self.algorithm_name.lower() for x in ["kyber", "ml-kem", "hqc"]
-        )
+        self.is_kem = any(x in self.algorithm_name.lower() for x in ["kyber", "ml-kem", "hqc"])
 
     def generate_keypair(self) -> Tuple[bytes, bytes]:
         """
@@ -618,9 +604,7 @@ class PQCipher:
                 shared_secret = kem.decap_secret(encapsulated_key)
 
                 if self.debug:
-                    logger.debug(
-                        f"KEM decapsulation: shared_secret={len(shared_secret)} bytes"
-                    )
+                    logger.debug(f"KEM decapsulation: shared_secret={len(shared_secret)} bytes")
 
                 # Return shared secret - caller must handle secure cleanup
                 return shared_secret
@@ -652,9 +636,7 @@ class PQCipher:
             logger.debug(f"ENCRYPT:PQC_KEM Algorithm: {self.algorithm_name}")
             logger.debug(f"ENCRYPT:PQC_KEM Public key length: {len(public_key)} bytes")
             logger.debug(f"ENCRYPT:PQC_KEM Input data length: {len(data)} bytes")
-            logger.debug(
-                f"ENCRYPT:PQC_KEM Symmetric encryption: {self.encryption_data}"
-            )
+            logger.debug(f"ENCRYPT:PQC_KEM Symmetric encryption: {self.encryption_data}")
 
         # SECURITY (CRIT-1): Test environment detection has been removed.
         # All encryptions now use real PQC KEM regardless of environment.
@@ -680,8 +662,7 @@ class PQCipher:
                     cipher = self.ChaCha20Poly1305(symmetric_key)
                 elif self.encryption_data == "xchacha20-poly1305":
                     try:
-                        from openssl_encrypt.modules.crypt_core import \
-                            XChaCha20Poly1305
+                        from openssl_encrypt.modules.crypt_core import XChaCha20Poly1305
 
                         cipher = XChaCha20Poly1305(symmetric_key)
                     except ImportError:
@@ -746,24 +727,16 @@ class PQCipher:
         logger.debug(
             f"DECRYPT:PQC_KEM decrypt() called with encrypted_data length: {len(encrypted_data)}"
         )
-        logger.debug(
-            f"DECRYPT:PQC_KEM encrypted_data starts with: {encrypted_data[:50]}"
-        )
+        logger.debug(f"DECRYPT:PQC_KEM encrypted_data starts with: {encrypted_data[:50]}")
 
         if not self.is_kem:
             raise ValueError("This method is only supported for KEM algorithms")
 
         if self.debug:
             logger.debug(f"DECRYPT:PQC_KEM Algorithm: {self.algorithm_name}")
-            logger.debug(
-                f"DECRYPT:PQC_KEM Private key length: {len(private_key)} bytes"
-            )
-            logger.debug(
-                f"DECRYPT:PQC_KEM Encrypted data length: {len(encrypted_data)} bytes"
-            )
-            logger.debug(
-                f"DECRYPT:PQC_KEM Symmetric encryption: {self.encryption_data}"
-            )
+            logger.debug(f"DECRYPT:PQC_KEM Private key length: {len(private_key)} bytes")
+            logger.debug(f"DECRYPT:PQC_KEM Encrypted data length: {len(encrypted_data)} bytes")
+            logger.debug(f"DECRYPT:PQC_KEM Symmetric encryption: {self.encryption_data}")
 
         # Initialize variables for later cleanup
         shared_secret = None
@@ -783,12 +756,8 @@ class PQCipher:
                     shared_secret_len = kem.details.get("length_shared_secret", 32)
 
                 if self.debug:
-                    logger.debug(
-                        f"DECRYPT:PQC_KEM encrypted_data length: {len(encrypted_data)}"
-                    )
-                    logger.debug(
-                        f"DECRYPT:PQC_KEM kem_ciphertext_size: {kem_ciphertext_size}"
-                    )
+                    logger.debug(f"DECRYPT:PQC_KEM encrypted_data length: {len(encrypted_data)}")
+                    logger.debug(f"DECRYPT:PQC_KEM kem_ciphertext_size: {kem_ciphertext_size}")
                     logger.debug(
                         f"DECRYPT:PQC_KEM encrypted_data starts with: {encrypted_data[:50]}"
                     )
@@ -855,8 +824,7 @@ class PQCipher:
                 # Standard format: remaining_data = nonce + ciphertext
                 if len(remaining_data) < 12:
                     raise ValueError(
-                        "Encrypted data too short: missing nonce. "
-                        "The file may be corrupted."
+                        "Encrypted data too short: missing nonce. " "The file may be corrupted."
                     )
 
                 nonce = remaining_data[:12]
@@ -937,9 +905,7 @@ class PQCipher:
 
                 # Derive the symmetric key using secure memory operations
                 with SecureBytes(shared_secret) as secure_shared_secret:
-                    symmetric_key = SecureBytes(
-                        hashlib.sha256(secure_shared_secret).digest()
-                    )
+                    symmetric_key = SecureBytes(hashlib.sha256(secure_shared_secret).digest())
 
                 # Get the encryption_data from the metadata if available
                 metadata_encryption_data = None
@@ -953,37 +919,28 @@ class PQCipher:
                         parts = file_contents.split(b":", 1)
                         if len(parts) > 1 and len(parts[0]) > 0:
                             try:
-                                metadata_json = base64.b64decode(parts[0]).decode(
-                                    "utf-8"
-                                )
+                                metadata_json = base64.b64decode(parts[0]).decode("utf-8")
                                 metadata = json.loads(metadata_json)
                                 if isinstance(metadata, dict):
                                     # Check v5 format first (nested encryption section)
                                     if "encryption" in metadata and isinstance(
                                         metadata["encryption"], dict
                                     ):
-                                        metadata_encryption_data = metadata[
-                                            "encryption"
-                                        ].get("encryption_data")
+                                        metadata_encryption_data = metadata["encryption"].get(
+                                            "encryption_data"
+                                        )
                                     # Then check for top-level field (older formats)
                                     elif "encryption_data" in metadata:
-                                        metadata_encryption_data = metadata[
-                                            "encryption_data"
-                                        ]
+                                        metadata_encryption_data = metadata["encryption_data"]
                             except Exception as e:
                                 if not self.quiet:
-                                    eprint(
-                                        f"Error extracting encryption_data from metadata: {e}"
-                                    )
+                                    eprint(f"Error extracting encryption_data from metadata: {e}")
                     except Exception as e:
                         # Ignore extraction errors
                         pass
 
                 # Validate encryption_data against metadata if available
-                if (
-                    metadata_encryption_data
-                    and self.encryption_data != metadata_encryption_data
-                ):
+                if metadata_encryption_data and self.encryption_data != metadata_encryption_data:
                     if not self.quiet:
                         eprint(
                             f"Error: Encryption data mismatch - provided '{self.encryption_data}' but metadata has '{metadata_encryption_data}'"
@@ -1000,8 +957,7 @@ class PQCipher:
                 elif self.encryption_data == "xchacha20-poly1305":
                     # Use the custom XChaCha20Poly1305 implementation from crypt_core
                     try:
-                        from openssl_encrypt.modules.crypt_core import \
-                            XChaCha20Poly1305
+                        from openssl_encrypt.modules.crypt_core import XChaCha20Poly1305
 
                         cipher = XChaCha20Poly1305(symmetric_key)
                     except ImportError as e:
@@ -1053,9 +1009,7 @@ class PQCipher:
                         if isinstance(decrypted, bytearray):
                             secure_memzero(decrypted)
                         if self.debug:
-                            logger.debug(
-                                f"Decryption successful, length: {len(secure_plaintext)}"
-                            )
+                            logger.debug(f"Decryption successful, length: {len(secure_plaintext)}")
                         return bytes(secure_plaintext)
 
                 except Exception as e:

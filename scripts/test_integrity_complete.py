@@ -41,9 +41,7 @@ def load_integrity_config() -> Optional[Dict]:
     Returns:
         Config dict or None if not found
     """
-    config_path = (
-        Path.home() / ".openssl_encrypt" / "plugins" / "integrity" / "integrity.json"
-    )
+    config_path = Path.home() / ".openssl_encrypt" / "plugins" / "integrity" / "integrity.json"
 
     if not config_path.exists():
         print(f"✗ Config file not found: {config_path}")
@@ -95,9 +93,7 @@ def test_get_profile(base_url: str, cert: tuple) -> Dict:
         if response.status_code == 200:
             data = response.json()
             print(f"✓ Profile retrieved")
-            print(
-                f"  Certificate fingerprint: {data.get('cert_fingerprint', 'N/A')[:40]}..."
-            )
+            print(f"  Certificate fingerprint: {data.get('cert_fingerprint', 'N/A')[:40]}...")
             print(f"  Name: {data.get('name', 'N/A')}")
             print(f"  Hash count: {data.get('hash_count', 0)}")
             print(f"  Created: {data.get('created_at', 'N/A')}")
@@ -175,9 +171,7 @@ def test_list_hashes(base_url: str, cert: tuple) -> Dict:
                 print(f"  Hashes:")
                 for h in data["hashes"][:5]:  # Show first 5
                     file_id_short = h["file_id"][:20] + "..."
-                    print(
-                        f"    - {file_id_short}: {h.get('description', 'No description')}"
-                    )
+                    print(f"    - {file_id_short}: {h.get('description', 'No description')}")
 
             return data
         else:
@@ -219,9 +213,7 @@ def test_get_hash(base_url: str, cert: tuple, file_id: str) -> Dict:
         return None
 
 
-def test_verify_hash(
-    base_url: str, cert: tuple, file_id: str, metadata_hash: str
-) -> Dict:
+def test_verify_hash(base_url: str, cert: tuple, file_id: str, metadata_hash: str) -> Dict:
     """Test: Verify hash."""
     print_subsection(f"Step 5: Verify Metadata Hash")
 

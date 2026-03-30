@@ -129,9 +129,7 @@ class SecurityScorer:
 
         # Calculate overall score
         base_score = (
-            hash_score["score"] * 0.25
-            + kdf_score["score"] * 0.35
-            + cipher_score["score"] * 0.30
+            hash_score["score"] * 0.25 + kdf_score["score"] * 0.35 + cipher_score["score"] * 0.30
         )
 
         # Add post-quantum bonus
@@ -170,9 +168,7 @@ class SecurityScorer:
 
                 # Score based on rounds (logarithmic scaling)
                 if rounds > 0:
-                    round_score = min(
-                        math.log10(rounds) / 6.0, 1.0
-                    )  # Cap at 1M rounds = 1.0
+                    round_score = min(math.log10(rounds) / 6.0, 1.0)  # Cap at 1M rounds = 1.0
                     hash_score = base_strength * (0.5 + 0.5 * round_score)
                     score = max(score, hash_score)
                     active_hashes.append(hash_name)
@@ -395,9 +391,7 @@ class SecurityScorer:
             suggestions.append("Key derivation settings could be enhanced")
 
         if overall_score > 8.0:
-            suggestions.append(
-                "Configuration may be stronger than necessary for most use cases"
-            )
+            suggestions.append("Configuration may be stronger than necessary for most use cases")
 
         if not suggestions:
             suggestions.append("Configuration provides good security balance")

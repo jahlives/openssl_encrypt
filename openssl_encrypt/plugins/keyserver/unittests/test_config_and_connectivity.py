@@ -19,10 +19,12 @@ from unittest.mock import MagicMock, patch
 import pytest
 import requests
 
-from openssl_encrypt.plugins.keyserver.config import (ConfigError,
-                                                      KeyserverConfig)
+from openssl_encrypt.plugins.keyserver.config import ConfigError, KeyserverConfig
 from openssl_encrypt.plugins.keyserver.keyserver_plugin import (
-    AuthenticationError, KeyserverPlugin, NetworkError)
+    AuthenticationError,
+    KeyserverPlugin,
+    NetworkError,
+)
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -119,9 +121,7 @@ class TestConfigFromFile:
         """Raises ConfigError for unknown config keys."""
         bad_file = tmp_config_dir / "config.json"
         bad_file.write_text(
-            json.dumps(
-                {"enabled": True, "servers": ["https://x.com"], "bogus_field": 42}
-            )
+            json.dumps({"enabled": True, "servers": ["https://x.com"], "bogus_field": 42})
         )
         with pytest.raises((ConfigError, TypeError)):
             KeyserverConfig.from_file(bad_file)
@@ -402,8 +402,8 @@ class TestServerConnectivity:
 
     def test_search_handles_connection_error(self, plugin_with_mock_session):
         """Plugin handles connection failures gracefully."""
-        plugin_with_mock_session.session.get.side_effect = (
-            requests.exceptions.ConnectionError("Connection refused")
+        plugin_with_mock_session.session.get.side_effect = requests.exceptions.ConnectionError(
+            "Connection refused"
         )
         result = plugin_with_mock_session.fetch_key("test@example.com")
         assert result is None

@@ -87,13 +87,9 @@ class IntegrityConfig:
         """Validate configuration after initialization."""
         # Convert string paths to Path objects
         if isinstance(self.client_cert, str):
-            self.client_cert = (
-                Path(self.client_cert).expanduser() if self.client_cert else None
-            )
+            self.client_cert = Path(self.client_cert).expanduser() if self.client_cert else None
         if isinstance(self.client_key, str):
-            self.client_key = (
-                Path(self.client_key).expanduser() if self.client_key else None
-            )
+            self.client_key = Path(self.client_key).expanduser() if self.client_key else None
         if isinstance(self.ca_cert, str):
             self.ca_cert = Path(self.ca_cert).expanduser() if self.ca_cert else None
 
@@ -146,9 +142,7 @@ class IntegrityConfig:
             config_path = _get_default_config_path()
 
         if not config_path.exists():
-            logger.info(
-                f"Integrity config not found at {config_path}, using defaults (disabled)"
-            )
+            logger.info(f"Integrity config not found at {config_path}, using defaults (disabled)")
             return cls()
 
         try:
@@ -164,9 +158,7 @@ class IntegrityConfig:
                 data["ca_cert"] = Path(data["ca_cert"]).expanduser()
 
             config = cls(**data)
-            logger.info(
-                f"Loaded integrity config from {config_path} (enabled={config.enabled})"
-            )
+            logger.info(f"Loaded integrity config from {config_path} (enabled={config.enabled})")
             return config
 
         except json.JSONDecodeError as e:

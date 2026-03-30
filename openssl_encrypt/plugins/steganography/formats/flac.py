@@ -35,9 +35,15 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 
 from ....modules.crypt_utils import eprint
-from ..core import (CapacityError, CoverMediaError, ExtractionError,
-                    SteganographyBase, SteganographyConfig, SteganographyError,
-                    SteganographyUtils)
+from ..core import (
+    CapacityError,
+    CoverMediaError,
+    ExtractionError,
+    SteganographyBase,
+    SteganographyConfig,
+    SteganographyError,
+    SteganographyUtils,
+)
 
 # Set up module logger
 logger = logging.getLogger(__name__)
@@ -158,9 +164,7 @@ class FLACSteganography(SteganographyBase):
 
             # Apply quality preservation if enabled
             if self.preserve_quality:
-                total_capacity = int(
-                    total_capacity * 0.8
-                )  # Use 80% for quality preservation
+                total_capacity = int(total_capacity * 0.8)  # Use 80% for quality preservation
 
             logger.debug(
                 f"FLAC capacity: {total_capacity} bytes (audio: {audio_capacity}, metadata: {metadata_capacity})"
@@ -327,12 +331,8 @@ class FLACSteganography(SteganographyBase):
         # Parse STREAMINFO fields
         streaminfo["min_blocksize"] = struct.unpack(">H", streaminfo_data[0:2])[0]
         streaminfo["max_blocksize"] = struct.unpack(">H", streaminfo_data[2:4])[0]
-        streaminfo["min_framesize"] = struct.unpack(
-            ">I", b"\x00" + streaminfo_data[4:7]
-        )[0]
-        streaminfo["max_framesize"] = struct.unpack(
-            ">I", b"\x00" + streaminfo_data[7:10]
-        )[0]
+        streaminfo["min_framesize"] = struct.unpack(">I", b"\x00" + streaminfo_data[4:7])[0]
+        streaminfo["max_framesize"] = struct.unpack(">I", b"\x00" + streaminfo_data[7:10])[0]
 
         # Sample rate, channels, bits per sample, total samples (10 bytes, bit-packed)
         # Need to read 10 bytes and parse bit-packed data correctly
@@ -382,9 +382,7 @@ class FLACSteganography(SteganographyBase):
                 if offset + 4 > len(comment_data):
                     break
 
-                comment_length = struct.unpack("<I", comment_data[offset : offset + 4])[
-                    0
-                ]
+                comment_length = struct.unpack("<I", comment_data[offset : offset + 4])[0]
                 offset += 4
 
                 if offset + comment_length > len(comment_data):
@@ -415,9 +413,7 @@ class FLACSteganography(SteganographyBase):
 
         return metadata_capacity
 
-    def _decode_flac_samples(
-        self, flac_data: bytes, flac_info: Dict[str, Any]
-    ) -> np.ndarray:
+    def _decode_flac_samples(self, flac_data: bytes, flac_info: Dict[str, Any]) -> np.ndarray:
         """
         Decode FLAC audio samples for steganography
 
@@ -473,25 +469,16 @@ class FLACSteganography(SteganographyBase):
 
             # Apply sanity checks to prevent unrealistic values from bad parsing
             # For synthetic test data, channels > 2 are unusual, bits_per_sample of 7 is invalid
-            if (
-                channels < 1
-                or channels > 2
-                or bits_per_sample < 8
-                or bits_per_sample > 24
-            ):
+            if channels < 1 or channels > 2 or bits_per_sample < 8 or bits_per_sample > 24:
                 logger.debug(
                     f"Invalid audio params - channels: {channels}, bits_per_sample: {bits_per_sample}"
                 )
                 logger.debug("Defaulting to stereo 16-bit for synthetic test data")
                 channels = 2  # Default to stereo
                 bits_per_sample = 16  # Default to 16-bit
-            if (
-                total_samples < 0 or total_samples > 100000000
-            ):  # Cap at ~37 minutes at 44.1kHz
+            if total_samples < 0 or total_samples > 100000000:  # Cap at ~37 minutes at 44.1kHz
                 # Estimate from file size
-                audio_size = max(
-                    0, len(flac_data) - flac_info.get("audio_offset", len(flac_data))
-                )
+                audio_size = max(0, len(flac_data) - flac_info.get("audio_offset", len(flac_data)))
                 # Conservative estimate: assume 30% compression ratio for safety
                 estimated_samples = (audio_size * 3) // (
                     10 * channels * max(1, (bits_per_sample // 8))
@@ -514,9 +501,7 @@ class FLACSteganography(SteganographyBase):
 
             # Generate synthetic audio pattern based on file content
             # This creates a reproducible pattern from the FLAC file
-            seed_data = flac_data[
-                flac_info["audio_offset"] : flac_info["audio_offset"] + 1024
-            ]
+            seed_data = flac_data[flac_info["audio_offset"] : flac_info["audio_offset"] + 1024]
             np.random.seed(hash(bytes(seed_data)) & 0xFFFFFFFF)
 
             # Create audio samples
@@ -548,9 +533,7 @@ class FLACSteganography(SteganographyBase):
         try:
             # For simplicity, we'll only use audio sample hiding
             # Metadata hiding is complex and can be added later
-            modified_samples = self._hide_in_flac_samples(
-                samples, secret_data, flac_info
-            )
+            modified_samples = self._hide_in_flac_samples(samples, secret_data, flac_info)
 
             updated_metadata = {"hidden_in_metadata": False, "metadata_bytes": 0}
             return modified_samples, updated_metadata
@@ -559,9 +542,7 @@ class FLACSteganography(SteganographyBase):
             logger.error(f"FLAC hybrid hiding failed: {e}")
             raise SteganographyError(f"FLAC hybrid hiding failed: {e}")
 
-    def _hide_in_metadata(
-        self, data: bytes, flac_info: Dict[str, Any]
-    ) -> Tuple[bytes, int]:
+    def _hide_in_metadata(self, data: bytes, flac_info: Dict[str, Any]) -> Tuple[bytes, int]:
         """Hide data in FLAC metadata blocks (simplified implementation)"""
         # For this demonstration, we'll simulate metadata hiding
         # In a full implementation, you'd modify VORBIS_COMMENT or PADDING blocks
@@ -603,9 +584,7 @@ class FLACSteganography(SteganographyBase):
             # Generate sample order (crypto shuffle if password provided)
             sample_indices = list(range(len(flat_samples)))
             if self.password:
-                SteganographyUtils.crypto_seeded_shuffle_np(
-                    sample_indices, self.shuffle_key
-                )
+                SteganographyUtils.crypto_seeded_shuffle_np(sample_indices, self.shuffle_key)
 
             # Hide data using LSB
             bit_index = 0
@@ -628,9 +607,7 @@ class FLACSteganography(SteganographyBase):
                 bits_to_hide = 0
                 for bit_offset in range(bits_per_sample):
                     if bit_index + bit_offset < len(binary_data):
-                        bits_to_hide |= (
-                            int(binary_data[bit_index + bit_offset]) << bit_offset
-                        )
+                        bits_to_hide |= int(binary_data[bit_index + bit_offset]) << bit_offset
 
                 # Modify sample with proper bounds checking
                 original_sample = int(flat_samples[sample_idx])
@@ -657,9 +634,7 @@ class FLACSteganography(SteganographyBase):
             logger.error(f"FLAC sample hiding failed: {e}")
             raise SteganographyError(f"FLAC sample hiding failed: {e}")
 
-    def _extract_from_flac_hybrid(
-        self, samples: np.ndarray, flac_info: Dict[str, Any]
-    ) -> bytes:
+    def _extract_from_flac_hybrid(self, samples: np.ndarray, flac_info: Dict[str, Any]) -> bytes:
         """Extract data from FLAC using hybrid metadata/audio approach"""
         try:
             # For simplicity, we'll only extract from audio samples
@@ -674,9 +649,7 @@ class FLACSteganography(SteganographyBase):
         # This would extract from actual metadata in a full implementation
         return b""
 
-    def _extract_from_flac_samples(
-        self, samples: np.ndarray, flac_info: Dict[str, Any]
-    ) -> bytes:
+    def _extract_from_flac_samples(self, samples: np.ndarray, flac_info: Dict[str, Any]) -> bytes:
         """Extract data from FLAC audio samples using LSB method"""
         try:
             # Work with flattened samples
@@ -685,9 +658,7 @@ class FLACSteganography(SteganographyBase):
             # Generate same sample order used during hiding
             sample_indices = list(range(len(flat_samples)))
             if self.password:
-                SteganographyUtils.crypto_seeded_shuffle_np(
-                    sample_indices, self.shuffle_key
-                )
+                SteganographyUtils.crypto_seeded_shuffle_np(sample_indices, self.shuffle_key)
 
             # Initialize extraction state
             extracted_bits = []
@@ -760,16 +731,12 @@ class FLACSteganography(SteganographyBase):
             logger.debug(
                 f"Total bits extracted: {len(extracted_bits)}, needed: {total_bits_needed}"
             )
-            binary_string = "".join(
-                str(bit) for bit in extracted_bits[:total_bits_needed]
-            )
+            binary_string = "".join(str(bit) for bit in extracted_bits[:total_bits_needed])
             extracted_bytes = SteganographyUtils.binary_to_bytes(binary_string)
             logger.debug(f"Extracted bytes length: {len(extracted_bytes)}")
 
             # Verify and extract payload
-            if (
-                len(extracted_bytes) < 6
-            ):  # 4 bytes length + at least 2 bytes data + end marker
+            if len(extracted_bytes) < 6:  # 4 bytes length + at least 2 bytes data + end marker
                 raise ExtractionError("Extracted data too short")
 
             # Skip the length field, get the actual data
@@ -779,9 +746,7 @@ class FLACSteganography(SteganographyBase):
             if len(extracted_bytes) >= 4 + data_length + 2:
                 end_marker = extracted_bytes[4 + data_length : 4 + data_length + 2]
                 if end_marker != b"\xFF\xFE":
-                    logger.warning(
-                        f"End marker mismatch: expected FF FE, got {end_marker.hex()}"
-                    )
+                    logger.warning(f"End marker mismatch: expected FF FE, got {end_marker.hex()}")
 
             logger.debug(f"Successfully extracted {len(payload)} bytes from FLAC")
             return bytes(payload)
@@ -880,9 +845,7 @@ class FLACAnalyzer:
             flac_info["audio"] = self._extract_audio_properties(flac_info["metadata"])
 
             # Analyze steganography suitability
-            flac_info["steganography"] = self._analyze_steganography_suitability(
-                flac_info
-            )
+            flac_info["steganography"] = self._analyze_steganography_suitability(flac_info)
 
             return flac_info
 
@@ -909,9 +872,7 @@ class FLACAnalyzer:
 
                 block_info = {
                     "type": block_type,
-                    "type_name": self.block_types.get(
-                        block_type, f"UNKNOWN_{block_type}"
-                    ),
+                    "type_name": self.block_types.get(block_type, f"UNKNOWN_{block_type}"),
                     "length": block_length,
                     "offset": offset,
                     "last": last_block,
@@ -919,12 +880,8 @@ class FLACAnalyzer:
 
                 if block_type == 0 and block_length >= 34:
                     # Parse STREAMINFO
-                    streaminfo_data = flac_data[
-                        offset + 4 : offset + 4 + min(block_length, 34)
-                    ]
-                    block_info["streaminfo"] = self._parse_streaminfo_data(
-                        streaminfo_data
-                    )
+                    streaminfo_data = flac_data[offset + 4 : offset + 4 + min(block_length, 34)]
+                    block_info["streaminfo"] = self._parse_streaminfo_data(streaminfo_data)
 
                 blocks.append(block_info)
                 offset += 4 + block_length
@@ -957,9 +914,7 @@ class FLACAnalyzer:
 
         return streaminfo
 
-    def _extract_audio_properties(
-        self, metadata: List[Dict[str, Any]]
-    ) -> Dict[str, Any]:
+    def _extract_audio_properties(self, metadata: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Extract audio properties from metadata blocks"""
         audio_props = {}
 
@@ -977,9 +932,7 @@ class FLACAnalyzer:
 
         return audio_props
 
-    def _analyze_steganography_suitability(
-        self, flac_info: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def _analyze_steganography_suitability(self, flac_info: Dict[str, Any]) -> Dict[str, Any]:
         """Analyze FLAC suitability for steganography"""
         suitability = {
             "overall_score": 0.0,
@@ -1011,14 +964,10 @@ class FLACAnalyzer:
                 )
             elif bits_per_sample >= 16:
                 suitability["quality_score"] = 0.8
-                suitability["recommendations"].append(
-                    "Good bit depth, adequate sample rate"
-                )
+                suitability["recommendations"].append("Good bit depth, adequate sample rate")
             else:
                 suitability["quality_score"] = 0.6
-                suitability["recommendations"].append(
-                    "Lower quality - limited hiding capacity"
-                )
+                suitability["recommendations"].append("Lower quality - limited hiding capacity")
 
             # Capacity analysis
             total_samples = audio.get("total_samples", 0)
@@ -1031,14 +980,10 @@ class FLACAnalyzer:
                 )
             elif total_samples > 500000:  # > ~11 seconds at 44.1kHz
                 suitability["capacity_score"] = 0.8
-                suitability["recommendations"].append(
-                    "Medium audio file - good hiding capacity"
-                )
+                suitability["recommendations"].append("Medium audio file - good hiding capacity")
             else:
                 suitability["capacity_score"] = 0.5
-                suitability["recommendations"].append(
-                    "Small audio file - moderate hiding capacity"
-                )
+                suitability["recommendations"].append("Small audio file - moderate hiding capacity")
 
             # Metadata analysis
             has_comments = any(block["type"] == 4 for block in metadata)
@@ -1056,9 +1001,7 @@ class FLACAnalyzer:
                 )
             else:
                 suitability["metadata_score"] = 0.3
-                suitability["recommendations"].append(
-                    "Limited metadata - audio-only steganography"
-                )
+                suitability["recommendations"].append("Limited metadata - audio-only steganography")
 
             # Calculate overall score
             suitability["overall_score"] = (
@@ -1070,17 +1013,11 @@ class FLACAnalyzer:
 
             # Add general recommendations
             if suitability["overall_score"] >= 0.9:
-                suitability["recommendations"].append(
-                    "Excellent FLAC for steganography"
-                )
+                suitability["recommendations"].append("Excellent FLAC for steganography")
             elif suitability["overall_score"] >= 0.7:
-                suitability["recommendations"].append(
-                    "Very good FLAC with minor limitations"
-                )
+                suitability["recommendations"].append("Very good FLAC with minor limitations")
             else:
-                suitability["recommendations"].append(
-                    "Good FLAC suitable with parameter tuning"
-                )
+                suitability["recommendations"].append("Good FLAC suitable with parameter tuning")
 
         except Exception as e:
             logger.error(f"Steganography suitability analysis failed: {e}")
@@ -1153,9 +1090,7 @@ def create_flac_test_audio(
         )
 
         # Convert to bytes (10 bytes)
-        streaminfo_data.extend(
-            struct.pack(">Q", (packed_info >> 16) & 0xFFFFFFFFFFFFFFFF)
-        )
+        streaminfo_data.extend(struct.pack(">Q", (packed_info >> 16) & 0xFFFFFFFFFFFFFFFF))
         streaminfo_data.extend(struct.pack(">H", packed_info & 0xFFFF))
 
         # MD5 signature placeholder (16 bytes)
@@ -1180,9 +1115,7 @@ def create_flac_test_audio(
 
             # Add some dummy audio data
             audio_bytes = channels * (bits_per_sample // 8) * frame_size
-            dummy_audio = bytes(
-                [(i * 37 + frame_idx) % 256 for i in range(audio_bytes)]
-            )
+            dummy_audio = bytes([(i * 37 + frame_idx) % 256 for i in range(audio_bytes)])
             flac_data.extend(dummy_audio)
 
         logger.debug(
@@ -1216,9 +1149,7 @@ if __name__ == "__main__":
         eprint("FLAC steganography is available")
 
         # Create test audio
-        test_flac = create_flac_test_audio(
-            duration_seconds=3.0, sample_rate=44100, channels=2
-        )
+        test_flac = create_flac_test_audio(duration_seconds=3.0, sample_rate=44100, channels=2)
         eprint(f"Created test FLAC: {len(test_flac)} bytes")
 
         # Test steganography

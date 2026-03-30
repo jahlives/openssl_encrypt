@@ -8,8 +8,7 @@ import os
 import sys
 
 from openssl_encrypt.modules.crypt_core import decrypt_file, encrypt_file
-from openssl_encrypt.modules.keystore_cli import (KeystoreSecurityLevel,
-                                                  PQCKeystore)
+from openssl_encrypt.modules.keystore_cli import KeystoreSecurityLevel, PQCKeystore
 from openssl_encrypt.modules.pqc import PQCipher
 
 
@@ -121,14 +120,11 @@ def test_keystore_encrypt_decrypt():
         progress = True
 
     # Import the keystore utilities
-    from openssl_encrypt.modules.keystore_utils import \
-        get_pqc_key_for_decryption
+    from openssl_encrypt.modules.keystore_utils import get_pqc_key_for_decryption
 
     # Get the key from keystore
     args = Args()
-    pqc_keypair, pqc_private_key, found_key_id = get_pqc_key_for_decryption(
-        args, hash_config
-    )
+    pqc_keypair, pqc_private_key, found_key_id = get_pqc_key_for_decryption(args, hash_config)
 
     print(f"Found key from keystore: {found_key_id}")
 

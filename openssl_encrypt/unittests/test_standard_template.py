@@ -8,8 +8,7 @@ Verifies that the STANDARD template uses the expected modern defaults:
 
 import unittest
 
-from openssl_encrypt.modules.crypt_cli import (SecurityTemplate,
-                                               get_template_config)
+from openssl_encrypt.modules.crypt_cli import SecurityTemplate, get_template_config
 
 
 class TestStandardTemplateHashes(unittest.TestCase):

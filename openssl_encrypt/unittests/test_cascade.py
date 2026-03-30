@@ -18,14 +18,19 @@ import unittest
 import pytest
 
 # Import the modules to test
-from openssl_encrypt.modules.cascade import (CHAIN_PREFIX_LENGTH,
-                                             KEY_INFO_PREFIX,
-                                             NONCE_INFO_PREFIX,
-                                             AuthenticationError,
-                                             CascadeConfig, CascadeConfigError,
-                                             CascadeEncryption, CascadeError,
-                                             CascadeKeyDerivation,
-                                             cascade_decrypt, cascade_encrypt)
+from openssl_encrypt.modules.cascade import (
+    CHAIN_PREFIX_LENGTH,
+    KEY_INFO_PREFIX,
+    NONCE_INFO_PREFIX,
+    AuthenticationError,
+    CascadeConfig,
+    CascadeConfigError,
+    CascadeEncryption,
+    CascadeError,
+    CascadeKeyDerivation,
+    cascade_decrypt,
+    cascade_encrypt,
+)
 
 # Check if registry is available
 try:
@@ -77,9 +82,7 @@ class TestCascadeConfig(unittest.TestCase):
 
     def test_layer_count_property(self):
         """Test layer_count property returns correct count."""
-        config = CascadeConfig(
-            cipher_names=["aes-256-gcm", "chacha20-poly1305", "aes-128-gcm"]
-        )
+        config = CascadeConfig(cipher_names=["aes-256-gcm", "chacha20-poly1305", "aes-128-gcm"])
         self.assertEqual(config.layer_count, 3)
         self.assertEqual(config.layer_count, len(config.cipher_names))
 
@@ -244,9 +247,7 @@ class TestCascadeEncryption(unittest.TestCase):
         ciphertext = cascade.encrypt(
             self.plaintext, self.master_key, self.salt, associated_data=aad
         )
-        decrypted = cascade.decrypt(
-            ciphertext, self.master_key, self.salt, associated_data=aad
-        )
+        decrypted = cascade.decrypt(ciphertext, self.master_key, self.salt, associated_data=aad)
 
         self.assertEqual(decrypted, self.plaintext)
 
@@ -261,9 +262,7 @@ class TestCascadeEncryption(unittest.TestCase):
         )
 
         with self.assertRaises(AuthenticationError):
-            cascade.decrypt(
-                ciphertext, self.master_key, self.salt, associated_data=wrong_aad
-            )
+            cascade.decrypt(ciphertext, self.master_key, self.salt, associated_data=wrong_aad)
 
     def test_tampered_ciphertext_fails(self):
         """Test that tampered ciphertext causes authentication failure."""
@@ -314,8 +313,7 @@ class TestCascadeEncryption(unittest.TestCase):
         # ChaCha20-Poly1305: 12 byte nonce + 16 byte tag = 28 bytes
         # Total: 56 bytes
         expected_overhead = sum(
-            cipher.info().nonce_size + cipher.info().tag_size
-            for cipher in cascade.ciphers
+            cipher.info().nonce_size + cipher.info().tag_size for cipher in cascade.ciphers
         )
 
         # Ciphertext should be plaintext + overhead (nonces + tags)
@@ -387,9 +385,7 @@ class TestConvenienceFunctions(unittest.TestCase):
         """Test roundtrip using convenience functions."""
         cipher_names = ["aes-256-gcm", "chacha20-poly1305"]
 
-        ciphertext, metadata = cascade_encrypt(
-            self.plaintext, self.master_key, cipher_names
-        )
+        ciphertext, metadata = cascade_encrypt(self.plaintext, self.master_key, cipher_names)
 
         decrypted = cascade_decrypt(ciphertext, self.master_key, metadata)
 
@@ -399,9 +395,7 @@ class TestConvenienceFunctions(unittest.TestCase):
         """Test that metadata has correct structure."""
         cipher_names = ["aes-256-gcm", "chacha20-poly1305"]
 
-        ciphertext, metadata = cascade_encrypt(
-            self.plaintext, self.master_key, cipher_names
-        )
+        ciphertext, metadata = cascade_encrypt(self.plaintext, self.master_key, cipher_names)
 
         self.assertTrue(metadata["cascade"])
         self.assertEqual(metadata["cipher_chain"], cipher_names)
@@ -415,9 +409,7 @@ class TestConvenienceFunctions(unittest.TestCase):
         """Test that layer_info contains correct cipher information."""
         cipher_names = ["aes-256-gcm", "chacha20-poly1305"]
 
-        ciphertext, metadata = cascade_encrypt(
-            self.plaintext, self.master_key, cipher_names
-        )
+        ciphertext, metadata = cascade_encrypt(self.plaintext, self.master_key, cipher_names)
 
         layer_info = metadata["layer_info"]
         self.assertEqual(len(layer_info), 2)
@@ -436,9 +428,7 @@ class TestConvenienceFunctions(unittest.TestCase):
         """Test that cascade_salt in metadata is base64 encoded."""
         cipher_names = ["aes-256-gcm", "chacha20-poly1305"]
 
-        ciphertext, metadata = cascade_encrypt(
-            self.plaintext, self.master_key, cipher_names
-        )
+        ciphertext, metadata = cascade_encrypt(self.plaintext, self.master_key, cipher_names)
 
         salt_b64 = metadata["cascade_salt"]
         # Should be able to decode
@@ -468,9 +458,7 @@ class TestConvenienceFunctions(unittest.TestCase):
             self.plaintext, self.master_key, cipher_names, associated_data=aad
         )
 
-        decrypted = cascade_decrypt(
-            ciphertext, self.master_key, metadata, associated_data=aad
-        )
+        decrypted = cascade_decrypt(ciphertext, self.master_key, metadata, associated_data=aad)
 
         self.assertEqual(decrypted, self.plaintext)
 
@@ -557,12 +545,8 @@ class TestDifferentHashFunctions(unittest.TestCase):
         cascade_sha256 = CascadeEncryption(config_sha256)
         cascade_sha512 = CascadeEncryption(config_sha512)
 
-        ciphertext_sha256 = cascade_sha256.encrypt(
-            self.plaintext, self.master_key, self.salt
-        )
-        ciphertext_sha512 = cascade_sha512.encrypt(
-            self.plaintext, self.master_key, self.salt
-        )
+        ciphertext_sha256 = cascade_sha256.encrypt(self.plaintext, self.master_key, self.salt)
+        ciphertext_sha512 = cascade_sha512.encrypt(self.plaintext, self.master_key, self.salt)
 
         self.assertNotEqual(ciphertext_sha256, ciphertext_sha512)
 
@@ -573,8 +557,7 @@ class TestCipherFamilies(unittest.TestCase):
 
     def test_get_cipher_family_for_aes(self):
         """Test getting cipher family for AES variants."""
-        from openssl_encrypt.modules.registry.cipher_families import \
-            get_cipher_family
+        from openssl_encrypt.modules.registry.cipher_families import get_cipher_family
 
         family = get_cipher_family("aes-256-gcm")
         self.assertIsNotNone(family)
@@ -583,8 +566,7 @@ class TestCipherFamilies(unittest.TestCase):
 
     def test_get_cipher_family_for_chacha(self):
         """Test getting cipher family for ChaCha variants."""
-        from openssl_encrypt.modules.registry.cipher_families import \
-            get_cipher_family
+        from openssl_encrypt.modules.registry.cipher_families import get_cipher_family
 
         family = get_cipher_family("chacha20-poly1305")
         self.assertIsNotNone(family)
@@ -593,8 +575,7 @@ class TestCipherFamilies(unittest.TestCase):
 
     def test_get_cipher_family_for_threefish(self):
         """Test getting cipher family for Threefish."""
-        from openssl_encrypt.modules.registry.cipher_families import \
-            get_cipher_family
+        from openssl_encrypt.modules.registry.cipher_families import get_cipher_family
 
         family = get_cipher_family("threefish-512")
         self.assertIsNotNone(family)
@@ -603,16 +584,14 @@ class TestCipherFamilies(unittest.TestCase):
 
     def test_get_cipher_family_for_unknown_cipher(self):
         """Test that unknown cipher returns None."""
-        from openssl_encrypt.modules.registry.cipher_families import \
-            get_cipher_family
+        from openssl_encrypt.modules.registry.cipher_families import get_cipher_family
 
         family = get_cipher_family("nonexistent-cipher")
         self.assertIsNone(family)
 
     def test_get_family_name(self):
         """Test getting family name string."""
-        from openssl_encrypt.modules.registry.cipher_families import \
-            get_family_name
+        from openssl_encrypt.modules.registry.cipher_families import get_family_name
 
         self.assertEqual(get_family_name("aes-256-gcm"), "aes")
         self.assertEqual(get_family_name("chacha20-poly1305"), "chacha")
@@ -621,8 +600,7 @@ class TestCipherFamilies(unittest.TestCase):
 
     def test_are_related_families(self):
         """Test checking if families are related."""
-        from openssl_encrypt.modules.registry.cipher_families import \
-            are_related_families
+        from openssl_encrypt.modules.registry.cipher_families import are_related_families
 
         # AES and Fernet are related (Fernet uses AES)
         self.assertTrue(are_related_families("aes", "fernet"))
@@ -636,8 +614,7 @@ class TestCipherFamilies(unittest.TestCase):
 
     def test_get_design_type(self):
         """Test getting design type for ciphers."""
-        from openssl_encrypt.modules.registry.cipher_families import (
-            DesignType, get_design_type)
+        from openssl_encrypt.modules.registry.cipher_families import DesignType, get_design_type
 
         self.assertEqual(get_design_type("aes-256-gcm"), DesignType.SPN)
         self.assertEqual(get_design_type("chacha20-poly1305"), DesignType.ARX)
@@ -646,19 +623,15 @@ class TestCipherFamilies(unittest.TestCase):
 
     def test_normalize_cipher_name(self):
         """Test cipher name normalization."""
-        from openssl_encrypt.modules.registry.cipher_families import \
-            normalize_cipher_name
+        from openssl_encrypt.modules.registry.cipher_families import normalize_cipher_name
 
         self.assertEqual(normalize_cipher_name("AES-256-GCM"), "aes-256-gcm")
-        self.assertEqual(
-            normalize_cipher_name("  ChaCha20-Poly1305  "), "chacha20-poly1305"
-        )
+        self.assertEqual(normalize_cipher_name("  ChaCha20-Poly1305  "), "chacha20-poly1305")
         self.assertEqual(normalize_cipher_name("aes-256-gcm"), "aes-256-gcm")
 
     def test_list_all_families(self):
         """Test listing all cipher families."""
-        from openssl_encrypt.modules.registry.cipher_families import \
-            list_all_families
+        from openssl_encrypt.modules.registry.cipher_families import list_all_families
 
         families = list_all_families()
         self.assertIn("aes", families)
@@ -668,8 +641,7 @@ class TestCipherFamilies(unittest.TestCase):
 
     def test_list_family_members(self):
         """Test listing members of a family."""
-        from openssl_encrypt.modules.registry.cipher_families import \
-            list_family_members
+        from openssl_encrypt.modules.registry.cipher_families import list_family_members
 
         aes_members = list_family_members("aes")
         self.assertIn("aes-256-gcm", aes_members)
@@ -686,7 +658,9 @@ class TestCascadeDiversityValidator(unittest.TestCase):
     def test_good_diversity_aes_chacha(self):
         """Test that AES + ChaCha shows good diversity."""
         from openssl_encrypt.modules.cascade_validator import (
-            CascadeDiversityValidator, DiversityWarningLevel)
+            CascadeDiversityValidator,
+            DiversityWarningLevel,
+        )
 
         validator = CascadeDiversityValidator(strict=False)
         warnings = validator.validate(["aes-256-gcm", "chacha20-poly1305"])
@@ -701,7 +675,9 @@ class TestCascadeDiversityValidator(unittest.TestCase):
     def test_same_family_warning(self):
         """Test that multiple ciphers from same family produces warning."""
         from openssl_encrypt.modules.cascade_validator import (
-            CascadeDiversityValidator, DiversityWarningLevel)
+            CascadeDiversityValidator,
+            DiversityWarningLevel,
+        )
 
         validator = CascadeDiversityValidator(strict=False)
         warnings = validator.validate(["aes-256-gcm", "aes-gcm-siv"])
@@ -714,8 +690,7 @@ class TestCascadeDiversityValidator(unittest.TestCase):
         same_family_warning = [
             w
             for w in warnings
-            if w.level == DiversityWarningLevel.WARNING
-            and "same 'aes' family" in w.message
+            if w.level == DiversityWarningLevel.WARNING and "same 'aes' family" in w.message
         ][0]
 
         self.assertIn("aes-256-gcm", same_family_warning.ciphers_involved)
@@ -725,7 +700,9 @@ class TestCascadeDiversityValidator(unittest.TestCase):
     def test_all_same_design_type(self):
         """Test that all ciphers with same design type produces info."""
         from openssl_encrypt.modules.cascade_validator import (
-            CascadeDiversityValidator, DiversityWarningLevel)
+            CascadeDiversityValidator,
+            DiversityWarningLevel,
+        )
 
         validator = CascadeDiversityValidator(strict=False)
         warnings = validator.validate(["chacha20-poly1305", "threefish-512"])
@@ -734,31 +711,31 @@ class TestCascadeDiversityValidator(unittest.TestCase):
         info_warnings = [w for w in warnings if w.level == DiversityWarningLevel.INFO]
         self.assertTrue(len(info_warnings) > 0)
 
-        design_warning = [
-            w for w in info_warnings if "same design paradigm" in w.message
-        ][0]
+        design_warning = [w for w in info_warnings if "same design paradigm" in w.message][0]
         self.assertIn("ARX", design_warning.message)
 
     def test_related_families_info(self):
         """Test that related families produces info message."""
         from openssl_encrypt.modules.cascade_validator import (
-            CascadeDiversityValidator, DiversityWarningLevel)
+            CascadeDiversityValidator,
+            DiversityWarningLevel,
+        )
 
         validator = CascadeDiversityValidator(strict=False)
         warnings = validator.validate(["aes-256-gcm", "fernet"])
 
         # Should have INFO about related families (AES and Fernet)
         info_warnings = [w for w in warnings if w.level == DiversityWarningLevel.INFO]
-        related_warning = [
-            w for w in info_warnings if "related families" in w.message.lower()
-        ]
+        related_warning = [w for w in info_warnings if "related families" in w.message.lower()]
 
         self.assertTrue(len(related_warning) > 0)
 
     def test_strict_mode_upgrades_warnings_to_errors(self):
         """Test that strict mode converts warnings to errors."""
         from openssl_encrypt.modules.cascade_validator import (
-            CascadeDiversityValidator, DiversityWarningLevel)
+            CascadeDiversityValidator,
+            DiversityWarningLevel,
+        )
 
         validator = CascadeDiversityValidator(strict=True)
         warnings = validator.validate(["aes-256-gcm", "aes-gcm-siv"])
@@ -773,7 +750,9 @@ class TestCascadeDiversityValidator(unittest.TestCase):
     def test_strict_mode_keeps_info_as_info(self):
         """Test that strict mode doesn't upgrade INFO messages."""
         from openssl_encrypt.modules.cascade_validator import (
-            CascadeDiversityValidator, DiversityWarningLevel)
+            CascadeDiversityValidator,
+            DiversityWarningLevel,
+        )
 
         validator = CascadeDiversityValidator(strict=True)
         warnings = validator.validate(["aes-256-gcm", "chacha20-poly1305"])
@@ -784,13 +763,10 @@ class TestCascadeDiversityValidator(unittest.TestCase):
 
     def test_three_cipher_validation(self):
         """Test diversity validation with three ciphers."""
-        from openssl_encrypt.modules.cascade_validator import \
-            CascadeDiversityValidator
+        from openssl_encrypt.modules.cascade_validator import CascadeDiversityValidator
 
         validator = CascadeDiversityValidator(strict=False)
-        warnings = validator.validate(
-            ["aes-256-gcm", "chacha20-poly1305", "threefish-512"]
-        )
+        warnings = validator.validate(["aes-256-gcm", "chacha20-poly1305", "threefish-512"])
 
         # Should have at least one INFO about design diversity
         self.assertTrue(len(warnings) > 0)
@@ -798,7 +774,9 @@ class TestCascadeDiversityValidator(unittest.TestCase):
     def test_multiple_same_family_warnings(self):
         """Test that multiple same-family combinations produce multiple warnings."""
         from openssl_encrypt.modules.cascade_validator import (
-            CascadeDiversityValidator, DiversityWarningLevel)
+            CascadeDiversityValidator,
+            DiversityWarningLevel,
+        )
 
         validator = CascadeDiversityValidator(strict=False)
         # Two AES ciphers, two ChaCha variants (if available)
@@ -807,15 +785,12 @@ class TestCascadeDiversityValidator(unittest.TestCase):
         )
 
         # Should have WARNING for AES family and WARNING for ChaCha family
-        warning_count = len(
-            [w for w in warnings if w.level == DiversityWarningLevel.WARNING]
-        )
+        warning_count = len([w for w in warnings if w.level == DiversityWarningLevel.WARNING])
         self.assertGreaterEqual(warning_count, 2)
 
     def test_validate_with_empty_list(self):
         """Test validation with empty cipher list."""
-        from openssl_encrypt.modules.cascade_validator import \
-            CascadeDiversityValidator
+        from openssl_encrypt.modules.cascade_validator import CascadeDiversityValidator
 
         validator = CascadeDiversityValidator(strict=False)
         warnings = validator.validate([])
@@ -825,8 +800,7 @@ class TestCascadeDiversityValidator(unittest.TestCase):
 
     def test_validate_with_single_cipher(self):
         """Test validation with single cipher."""
-        from openssl_encrypt.modules.cascade_validator import \
-            CascadeDiversityValidator
+        from openssl_encrypt.modules.cascade_validator import CascadeDiversityValidator
 
         validator = CascadeDiversityValidator(strict=False)
         warnings = validator.validate(["aes-256-gcm"])
@@ -836,8 +810,7 @@ class TestCascadeDiversityValidator(unittest.TestCase):
 
     def test_validate_with_unknown_ciphers(self):
         """Test validation with unknown cipher names."""
-        from openssl_encrypt.modules.cascade_validator import \
-            CascadeDiversityValidator
+        from openssl_encrypt.modules.cascade_validator import CascadeDiversityValidator
 
         validator = CascadeDiversityValidator(strict=False)
         # Should not crash with unknown ciphers
@@ -848,8 +821,7 @@ class TestCascadeDiversityValidator(unittest.TestCase):
 
     def test_warning_has_all_fields(self):
         """Test that DiversityWarning has all required fields."""
-        from openssl_encrypt.modules.cascade_validator import \
-            CascadeDiversityValidator
+        from openssl_encrypt.modules.cascade_validator import CascadeDiversityValidator
 
         validator = CascadeDiversityValidator(strict=False)
         warnings = validator.validate(["aes-256-gcm", "aes-gcm-siv"])
@@ -864,35 +836,30 @@ class TestCascadeDiversityValidator(unittest.TestCase):
 
     def test_convenience_function(self):
         """Test convenience function for diversity validation."""
-        from openssl_encrypt.modules.cascade_validator import \
-            validate_cascade_diversity
+        from openssl_encrypt.modules.cascade_validator import validate_cascade_diversity
 
         warnings = validate_cascade_diversity(["aes-256-gcm", "chacha20-poly1305"])
         self.assertIsInstance(warnings, list)
 
         # Test with strict mode
-        warnings_strict = validate_cascade_diversity(
-            ["aes-256-gcm", "aes-gcm-siv"], strict=True
-        )
+        warnings_strict = validate_cascade_diversity(["aes-256-gcm", "aes-gcm-siv"], strict=True)
         error_count = len([w for w in warnings_strict if w.level.name == "ERROR"])
         self.assertGreater(error_count, 0)
 
     def test_paranoia_preset_validation(self):
         """Test diversity validation on paranoia preset (3 ciphers)."""
         from openssl_encrypt.modules.cascade_validator import (
-            CascadeDiversityValidator, DiversityWarningLevel)
+            CascadeDiversityValidator,
+            DiversityWarningLevel,
+        )
 
         validator = CascadeDiversityValidator(strict=False)
         # Paranoia preset: AES + ChaCha + Threefish
-        warnings = validator.validate(
-            ["aes-256-gcm", "chacha20-poly1305", "threefish-512"]
-        )
+        warnings = validator.validate(["aes-256-gcm", "chacha20-poly1305", "threefish-512"])
 
         # Should show good design diversity (SPN + ARX)
         info_warnings = [w for w in warnings if w.level == DiversityWarningLevel.INFO]
-        good_diversity = [
-            w for w in info_warnings if "Good design diversity" in w.message
-        ]
+        good_diversity = [w for w in info_warnings if "Good design diversity" in w.message]
         self.assertTrue(len(good_diversity) > 0)
 
 
@@ -1005,9 +972,7 @@ class TestCascadePerLayerSalt(unittest.TestCase):
         ciphertext = cascade.encrypt(
             self.plaintext, self.master_key, self.salt, associated_data=aad
         )
-        decrypted = cascade.decrypt(
-            ciphertext, self.master_key, self.salt, associated_data=aad
-        )
+        decrypted = cascade.decrypt(ciphertext, self.master_key, self.salt, associated_data=aad)
 
         self.assertEqual(decrypted, self.plaintext)
 
@@ -1052,9 +1017,7 @@ class TestCascadeAllLayerAAD(unittest.TestCase):
         )
 
         with self.assertRaises((AuthenticationError, CascadeError)):
-            cascade.decrypt(
-                ciphertext, self.master_key, self.salt, associated_data=b"wrong"
-            )
+            cascade.decrypt(ciphertext, self.master_key, self.salt, associated_data=b"wrong")
 
     def test_v12_ciphertext_differs_from_legacy_with_aad(self):
         """Test that v12+ AAD on all layers produces different ciphertext than legacy."""

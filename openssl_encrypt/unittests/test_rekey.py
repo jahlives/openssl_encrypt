@@ -21,10 +21,13 @@ import sys
 import tempfile
 import unittest
 
-from openssl_encrypt.modules.crypt_core import (EncryptionAlgorithm,
-                                                decrypt_file, encrypt_file,
-                                                extract_file_metadata,
-                                                rekey_file)
+from openssl_encrypt.modules.crypt_core import (
+    EncryptionAlgorithm,
+    decrypt_file,
+    encrypt_file,
+    extract_file_metadata,
+    rekey_file,
+)
 from openssl_encrypt.modules.crypt_errors import DecryptionError, RekeyError
 
 
@@ -68,9 +71,7 @@ class TestRekeyBasic(unittest.TestCase):
         self.assertTrue(os.path.exists(rekeyed_file))
 
         # Decrypt with new password
-        decrypted = decrypt_file(
-            rekeyed_file, decrypted_file, self.new_password, quiet=True
-        )
+        decrypted = decrypt_file(rekeyed_file, decrypted_file, self.new_password, quiet=True)
         self.assertTrue(decrypted)
         with open(decrypted_file, "rb") as f:
             self.assertEqual(f.read(), self.test_content)
@@ -117,9 +118,7 @@ class TestRekeyBasic(unittest.TestCase):
         self.assertTrue(result)
 
         # Decrypt with new password
-        decrypted = decrypt_file(
-            encrypted_file, decrypted_file, self.new_password, quiet=True
-        )
+        decrypted = decrypt_file(encrypted_file, decrypted_file, self.new_password, quiet=True)
         self.assertTrue(decrypted)
         with open(decrypted_file, "rb") as f:
             self.assertEqual(f.read(), self.test_content)
@@ -248,13 +247,9 @@ class TestRekeyAlgorithms(unittest.TestCase):
 
     def _test_rekey_algorithm(self, algorithm):
         """Helper: encrypt with algorithm, rekey, decrypt."""
-        encrypted_file = os.path.join(
-            self.temp_dir, f"test_{algorithm.value}.encrypted"
-        )
+        encrypted_file = os.path.join(self.temp_dir, f"test_{algorithm.value}.encrypted")
         rekeyed_file = os.path.join(self.temp_dir, f"test_{algorithm.value}.rekeyed")
-        decrypted_file = os.path.join(
-            self.temp_dir, f"test_{algorithm.value}.decrypted"
-        )
+        decrypted_file = os.path.join(self.temp_dir, f"test_{algorithm.value}.decrypted")
 
         encrypt_file(
             self.test_file,
@@ -352,9 +347,7 @@ class TestRekeyAlgorithmChange(unittest.TestCase):
         )
 
         metadata = extract_file_metadata(rekeyed_file)
-        self.assertEqual(
-            metadata["algorithm"], EncryptionAlgorithm.CHACHA20_POLY1305.value
-        )
+        self.assertEqual(metadata["algorithm"], EncryptionAlgorithm.CHACHA20_POLY1305.value)
 
         decrypt_file(rekeyed_file, decrypted_file, self.new_password, quiet=True)
         with open(decrypted_file, "rb") as f:
@@ -1339,9 +1332,7 @@ class TestRekeyNoTempPlaintext(unittest.TestCase):
         self.assertEqual(plain_files, [], f"Temp plaintext files found: {plain_files}")
 
         # Roundtrip still works
-        decrypted = decrypt_file(
-            encrypted_file, decrypted_file, self.new_password, quiet=True
-        )
+        decrypted = decrypt_file(encrypted_file, decrypted_file, self.new_password, quiet=True)
         self.assertTrue(decrypted)
         with open(decrypted_file, "rb") as f:
             self.assertEqual(f.read(), self.test_content)
@@ -1388,9 +1379,7 @@ class TestRekeyNoTempPlaintext(unittest.TestCase):
         self.assertTrue(result)
 
         # Verify content is correct
-        decrypted = decrypt_file(
-            encrypted_file, decrypted_file, self.new_password, quiet=True
-        )
+        decrypted = decrypt_file(encrypted_file, decrypted_file, self.new_password, quiet=True)
         self.assertTrue(decrypted)
         with open(decrypted_file, "rb") as f:
             self.assertEqual(f.read(), self.test_content)

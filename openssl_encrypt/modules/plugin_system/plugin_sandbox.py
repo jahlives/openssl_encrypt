@@ -31,8 +31,7 @@ from contextlib import contextmanager
 from typing import Any, Dict
 
 from .plugin_ast_analyzer import analyze_plugin_code
-from .plugin_base import (BasePlugin, PluginCapability, PluginResult,
-                          PluginSecurityContext)
+from .plugin_base import BasePlugin, PluginCapability, PluginResult, PluginSecurityContext
 
 logger = logging.getLogger(__name__)
 
@@ -88,9 +87,7 @@ def _validate_plugin_source(plugin: BasePlugin) -> None:
     )
     if not is_safe:
         critical = [v for v in violations if v.severity == "critical"]
-        violation_msgs = "; ".join(
-            f"Line {v.line}: {v.description}" for v in critical[:5]
-        )
+        violation_msgs = "; ".join(f"Line {v.line}: {v.description}" for v in critical[:5])
         raise SandboxViolationError(
             f"Plugin '{plugin.plugin_id}' failed security analysis: {violation_msgs}"
         )
@@ -163,16 +160,11 @@ class PluginImportGuard:
         """
         with self._modules_lock:
             # Get all modules that should be blocked
-            modules_to_hide = set(self.ALWAYS_BLOCKED) | set(
-                self.CAPABILITY_GATED.keys()
-            )
+            modules_to_hide = set(self.ALWAYS_BLOCKED) | set(self.CAPABILITY_GATED.keys())
 
             for module_name in modules_to_hide:
                 # Check if module should actually be blocked based on capabilities
-                if (
-                    self._should_block_module(module_name)
-                    and module_name in sys.modules
-                ):
+                if self._should_block_module(module_name) and module_name in sys.modules:
                     self.hidden_modules[module_name] = sys.modules[module_name]
                     del sys.modules[module_name]
                     logger.debug(f"Hidden module from sys.modules: {module_name}")
@@ -354,9 +346,7 @@ class PluginSandbox:
     def __init__(self):
         self.temp_dir = None
         self.monitor = ResourceMonitor()
-        self.current_context = (
-            None  # Store current plugin context for file access checks
-        )
+        self.current_context = None  # Store current plugin context for file access checks
 
     @staticmethod
     def _sanitize_plugin_id(plugin_id: str) -> str:
@@ -378,19 +368,13 @@ class PluginSandbox:
 
         # Reject path separators, traversal, and null bytes
         if any(c in plugin_id for c in ("/", "\\", "\x00")):
-            raise SandboxViolationError(
-                f"Plugin ID contains unsafe characters: {plugin_id!r}"
-            )
+            raise SandboxViolationError(f"Plugin ID contains unsafe characters: {plugin_id!r}")
         if ".." in plugin_id:
-            raise SandboxViolationError(
-                f"Plugin ID contains path traversal: {plugin_id!r}"
-            )
+            raise SandboxViolationError(f"Plugin ID contains path traversal: {plugin_id!r}")
 
         # Only allow alphanumeric, hyphens, underscores
         if not re.match(r"^[a-zA-Z0-9_-]+$", plugin_id):
-            raise SandboxViolationError(
-                f"Plugin ID contains disallowed characters: {plugin_id!r}"
-            )
+            raise SandboxViolationError(f"Plugin ID contains disallowed characters: {plugin_id!r}")
 
         return plugin_id
 
@@ -430,9 +414,7 @@ class PluginSandbox:
 
             if use_process_isolation:
                 # Use multiprocessing for reliable timeout (recommended)
-                return self._execute_in_process(
-                    plugin, context, max_execution_time, max_memory_mb
-                )
+                return self._execute_in_process(plugin, context, max_execution_time, max_memory_mb)
             else:
                 # Use threading (legacy, less reliable for blocking operations)
                 # Acquire lock to serialize threading-mode execution — monkey-patching
@@ -459,9 +441,7 @@ class PluginSandbox:
                         if result.success:
                             result.add_data("resource_usage", stats)
 
-                        logger.debug(
-                            f"Plugin {plugin.plugin_id} resource usage: {stats}"
-                        )
+                        logger.debug(f"Plugin {plugin.plugin_id} resource usage: {stats}")
 
                         return result
 
@@ -504,11 +484,7 @@ class PluginSandbox:
 
             # Set memory limits only for process isolation (Unix only)
             # Threading mode needs more memory for thread creation, so we skip strict limits
-            if (
-                use_process_isolation
-                and resource is not None
-                and hasattr(resource, "RLIMIT_AS")
-            ):
+            if use_process_isolation and resource is not None and hasattr(resource, "RLIMIT_AS"):
                 try:
                     # Set virtual memory limit
                     memory_limit = max_memory_mb * 1024 * 1024
@@ -539,11 +515,7 @@ class PluginSandbox:
                     logger.error(f"Error cleaning up temp directory: {e}")
 
             # Reset memory limits only if we set them
-            if (
-                memory_limit_set
-                and resource is not None
-                and hasattr(resource, "RLIMIT_AS")
-            ):
+            if memory_limit_set and resource is not None and hasattr(resource, "RLIMIT_AS"):
                 try:
                     resource.setrlimit(resource.RLIMIT_AS, (-1, -1))
                 except (OSError, ValueError):
@@ -616,9 +588,7 @@ class PluginSandbox:
             abs_path = os.path.abspath(str(file))
             is_write = any(c in mode for c in ["w", "a", "+", "x"])
             if not sandbox._is_safe_path(abs_path, context, is_write):
-                raise SandboxViolationError(
-                    f"File access denied: {file} (mode: {mode})"
-                )
+                raise SandboxViolationError(f"File access denied: {file} (mode: {mode})")
             return original_open(file, mode, **kwargs)
 
         def _make_pathlib_blocker(method_name, is_write=False):
@@ -627,9 +597,7 @@ class PluginSandbox:
             def blocked(self_path, *args, **kwargs):
                 abs_path = os.path.abspath(str(self_path))
                 if not sandbox._is_safe_path(abs_path, context, is_write):
-                    raise SandboxViolationError(
-                        f"File access denied via pathlib: {self_path}"
-                    )
+                    raise SandboxViolationError(f"File access denied via pathlib: {self_path}")
                 return original(self_path, *args, **kwargs)
 
             return blocked
@@ -889,9 +857,7 @@ class PluginSandbox:
                         )
                         return False
                     # Allow read access
-                    logger.debug(
-                        f"Plugin '{plugin_id}' reading from code directory: {abs_path}"
-                    )
+                    logger.debug(f"Plugin '{plugin_id}' reading from code directory: {abs_path}")
                     return True
 
         # Deny access to everything else
@@ -994,9 +960,7 @@ class PluginSandbox:
                 process.join(timeout=1.0)
 
                 if process.is_alive():
-                    logger.error(
-                        f"Plugin {plugin.plugin_id} did not terminate, force killing..."
-                    )
+                    logger.error(f"Plugin {plugin.plugin_id} did not terminate, force killing...")
                     process.kill()
                     process.join()
 
@@ -1033,9 +997,7 @@ class PluginSandbox:
                 )
             except Exception as e:
                 # Other queue errors
-                logger.error(
-                    f"Failed to get result from queue for {plugin.plugin_id}: {e}"
-                )
+                logger.error(f"Failed to get result from queue for {plugin.plugin_id}: {e}")
                 return PluginResult.error_result(
                     f"Plugin queue error: {type(e).__name__}: {str(e)}"
                 )
@@ -1107,15 +1069,11 @@ class IsolatedPluginExecutor:
                 )
                 if not is_safe:
                     critical = [v for v in violations if v.severity == "critical"]
-                    msgs = "; ".join(
-                        f"L{v.line}: {v.description}" for v in critical[:5]
-                    )
+                    msgs = "; ".join(f"L{v.line}: {v.description}" for v in critical[:5])
                     result_queue.put(
                         (
                             "error",
-                            PluginResult.error_result(
-                                f"Code failed security analysis: {msgs}"
-                            ),
+                            PluginResult.error_result(f"Code failed security analysis: {msgs}"),
                         )
                     )
                     return
@@ -1183,9 +1141,7 @@ class IsolatedPluginExecutor:
                 result_queue.put(("success", result))
 
             except Exception as e:
-                result = PluginResult.error_result(
-                    f"Isolated execution error: {str(e)}"
-                )
+                result = PluginResult.error_result(f"Isolated execution error: {str(e)}")
                 result_queue.put(("error", result))
 
         # Create process with timeout using spawn for fork-safety
@@ -1208,9 +1164,7 @@ class IsolatedPluginExecutor:
                 status, result = result_queue.get()
                 return result
             else:
-                return PluginResult.error_result(
-                    "No result returned from isolated execution"
-                )
+                return PluginResult.error_result("No result returned from isolated execution")
 
         except Exception as e:
             if process.is_alive():

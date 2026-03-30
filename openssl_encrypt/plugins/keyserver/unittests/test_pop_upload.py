@@ -23,7 +23,10 @@ import requests
 
 from openssl_encrypt.plugins.keyserver.config import KeyserverConfig
 from openssl_encrypt.plugins.keyserver.keyserver_plugin import (
-    AuthenticationError, KeyserverPlugin, NetworkError)
+    AuthenticationError,
+    KeyserverPlugin,
+    NetworkError,
+)
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
@@ -99,9 +102,7 @@ class TestCreatePopSignature:
 
         nonce_hex = "a" * 64
         fingerprint = "3a:4b:5c"
-        expected_message = (
-            b"POP:" + nonce_hex.encode("ascii") + b":" + fingerprint.encode("utf-8")
-        )
+        expected_message = b"POP:" + nonce_hex.encode("ascii") + b":" + fingerprint.encode("utf-8")
 
         captured_messages = []
 
@@ -135,9 +136,7 @@ class TestCreatePopSignature:
         hex_string_message = (
             b"POP:" + nonce_hex.encode("ascii") + b":" + fingerprint.encode("utf-8")
         )
-        raw_bytes_message = (
-            b"POP:" + bytes.fromhex(nonce_hex) + b":" + fingerprint.encode("utf-8")
-        )
+        raw_bytes_message = b"POP:" + bytes.fromhex(nonce_hex) + b":" + fingerprint.encode("utf-8")
 
         captured_messages = []
         with patch.object(
@@ -256,9 +255,7 @@ class TestRequestChallenge:
         """Returns the full response dict on HTTP 200."""
         data = {"challenge_id": "abc", "nonce": "b" * 64, "expires_at": "2026-01-01"}
 
-        with patch.object(
-            plugin, "_authenticated_request", return_value=_make_response(200, data)
-        ):
+        with patch.object(plugin, "_authenticated_request", return_value=_make_response(200, data)):
             result = plugin._request_challenge("https://keyserver.example.com")
 
         assert result["challenge_id"] == "abc"
@@ -278,9 +275,7 @@ class TestRequestChallenge:
         """_request_challenge works without a fingerprint hint."""
         data = {"challenge_id": "abc", "nonce": "c" * 64, "expires_at": "2026-01-01"}
 
-        with patch.object(
-            plugin, "_authenticated_request", return_value=_make_response(200, data)
-        ):
+        with patch.object(plugin, "_authenticated_request", return_value=_make_response(200, data)):
             result = plugin._request_challenge("https://keyserver.example.com")
 
         assert "challenge_id" in result
@@ -307,9 +302,7 @@ class TestUploadKeyWithPoP:
             "expires_at": "2026-01-01",
         }
 
-        with patch.object(
-            plugin, "_request_challenge", return_value=challenge
-        ) as mock_challenge:
+        with patch.object(plugin, "_request_challenge", return_value=challenge) as mock_challenge:
             with patch(
                 "openssl_encrypt.plugins.keyserver.keyserver_plugin.create_pop_signature",
                 return_value=b"pop_sig",
@@ -317,13 +310,9 @@ class TestUploadKeyWithPoP:
                 with patch.object(
                     plugin,
                     "_authenticated_request",
-                    return_value=_make_response(
-                        200, {"success": True, "fingerprint": "fp"}
-                    ),
+                    return_value=_make_response(200, {"success": True, "fingerprint": "fp"}),
                 ):
-                    plugin.upload_key(
-                        mock_bundle, signing_private_key_bytes=b"priv_key"
-                    )
+                    plugin.upload_key(mock_bundle, signing_private_key_bytes=b"priv_key")
 
         mock_challenge.assert_called_once()
 
@@ -335,9 +324,7 @@ class TestUploadKeyWithPoP:
             "expires_at": "2026-01-01",
         }
 
-        with patch.object(
-            plugin, "_request_challenge", return_value=challenge
-        ) as mock_challenge:
+        with patch.object(plugin, "_request_challenge", return_value=challenge) as mock_challenge:
             with patch(
                 "openssl_encrypt.plugins.keyserver.keyserver_plugin.create_pop_signature",
                 return_value=b"pop_sig",
@@ -347,19 +334,13 @@ class TestUploadKeyWithPoP:
                     "_authenticated_request",
                     return_value=_make_response(200, {}),
                 ):
-                    plugin.upload_key(
-                        mock_bundle, signing_private_key_bytes=b"priv_key"
-                    )
+                    plugin.upload_key(mock_bundle, signing_private_key_bytes=b"priv_key")
 
         # Hint should be the bundle's fingerprint
         call_args = mock_challenge.call_args
-        assert mock_bundle.fingerprint in call_args[
-            0
-        ] or mock_bundle.fingerprint in str(call_args)
+        assert mock_bundle.fingerprint in call_args[0] or mock_bundle.fingerprint in str(call_args)
 
-    def test_upload_key_signs_with_bundle_algorithm_and_private_key(
-        self, plugin, mock_bundle
-    ):
+    def test_upload_key_signs_with_bundle_algorithm_and_private_key(self, plugin, mock_bundle):
         """create_pop_signature is called with bundle's algorithm and the provided private key."""
         challenge = {
             "challenge_id": "chal-1",
@@ -377,9 +358,7 @@ class TestUploadKeyWithPoP:
                     "_authenticated_request",
                     return_value=_make_response(200, {}),
                 ):
-                    plugin.upload_key(
-                        mock_bundle, signing_private_key_bytes=b"my_priv_key"
-                    )
+                    plugin.upload_key(mock_bundle, signing_private_key_bytes=b"my_priv_key")
 
         mock_sign.assert_called_once()
         call_kwargs = mock_sign.call_args[1] if mock_sign.call_args[1] else {}
@@ -390,9 +369,7 @@ class TestUploadKeyWithPoP:
         assert "ff" * 32 in str(mock_sign.call_args)  # nonce passed through
         assert "ML-DSA-65" in str(mock_sign.call_args)  # algorithm from bundle
 
-    def test_upload_body_includes_challenge_id_and_pop_signature(
-        self, plugin, mock_bundle
-    ):
+    def test_upload_body_includes_challenge_id_and_pop_signature(self, plugin, mock_bundle):
         """The upload POST body contains challenge_id and base64-encoded pop_signature."""
         challenge = {
             "challenge_id": "chal-uuid-123",
@@ -414,14 +391,10 @@ class TestUploadKeyWithPoP:
                     plugin.upload_key(mock_bundle, signing_private_key_bytes=b"key")
 
         upload_call = mock_req.call_args
-        body = upload_call[1].get("json") or (
-            upload_call[0][2] if len(upload_call[0]) > 2 else {}
-        )
+        body = upload_call[1].get("json") or (upload_call[0][2] if len(upload_call[0]) > 2 else {})
 
         assert body.get("challenge_id") == "chal-uuid-123"
-        assert body.get("pop_signature") == base64.b64encode(pop_sig_bytes).decode(
-            "ascii"
-        )
+        assert body.get("pop_signature") == base64.b64encode(pop_sig_bytes).decode("ascii")
 
     def test_pop_signature_is_base64_encoded_in_body(self, plugin, mock_bundle):
         """pop_signature in request body is base64-encoded string, not raw bytes."""
@@ -466,17 +439,13 @@ class TestUploadKeyWithPoP:
                     "_authenticated_request",
                     return_value=_make_response(200, {}),
                 ):
-                    result = plugin.upload_key(
-                        mock_bundle, signing_private_key_bytes=b"key"
-                    )
+                    result = plugin.upload_key(mock_bundle, signing_private_key_bytes=b"key")
 
         assert result is True
 
     def test_upload_key_returns_false_when_challenge_fails(self, plugin, mock_bundle):
         """Returns False (does not raise) when challenge request fails on all servers."""
-        with patch.object(
-            plugin, "_request_challenge", side_effect=NetworkError("timeout")
-        ):
+        with patch.object(plugin, "_request_challenge", side_effect=NetworkError("timeout")):
             result = plugin.upload_key(mock_bundle, signing_private_key_bytes=b"key")
 
         assert result is False
@@ -499,9 +468,7 @@ class TestUploadKeyWithPoP:
                     "_authenticated_request",
                     return_value=_make_response(400, {"detail": "PoP failed"}),
                 ):
-                    result = plugin.upload_key(
-                        mock_bundle, signing_private_key_bytes=b"key"
-                    )
+                    result = plugin.upload_key(mock_bundle, signing_private_key_bytes=b"key")
 
         assert result is False
 
@@ -523,9 +490,7 @@ class TestUploadKeyWithPoP:
                     "_authenticated_request",
                     return_value=_make_response(409, {}),
                 ):
-                    result = plugin.upload_key(
-                        mock_bundle, signing_private_key_bytes=b"key"
-                    )
+                    result = plugin.upload_key(mock_bundle, signing_private_key_bytes=b"key")
 
         # 409 is a valid pre-existing state, not a crash
         assert result is False
@@ -543,9 +508,7 @@ class TestUploadKeyWithPoP:
             "expires_at": "2026-01-01",
         }
 
-        with patch.object(
-            plugin, "_request_challenge", return_value=challenge
-        ) as mock_challenge:
+        with patch.object(plugin, "_request_challenge", return_value=challenge) as mock_challenge:
             with patch(
                 "openssl_encrypt.plugins.keyserver.keyserver_plugin.create_pop_signature",
                 return_value=b"sig",
@@ -560,9 +523,7 @@ class TestUploadKeyWithPoP:
         # Called once per server
         assert mock_challenge.call_count == 2
 
-    def test_upload_key_verifies_bundle_signature_before_upload(
-        self, plugin, mock_bundle
-    ):
+    def test_upload_key_verifies_bundle_signature_before_upload(self, plugin, mock_bundle):
         """Bundle signature is verified locally before attempting upload."""
         mock_bundle.verify_signature.return_value = False
 

@@ -122,10 +122,7 @@ class CLIAliasProcessor:
             choices=list(self.config.ALGORITHM_ALIASES.keys()),
             help="Choose encryption algorithm family: "
             + ", ".join(
-                [
-                    f"{alias}={full}"
-                    for alias, full in self.config.ALGORITHM_ALIASES.items()
-                ]
+                [f"{alias}={full}" for alias, full in self.config.ALGORITHM_ALIASES.items()]
             ),
         )
 
@@ -138,15 +135,11 @@ class CLIAliasProcessor:
             "--quantum-safe",
             choices=list(self.config.PQC_ALIASES.keys()),
             help="Enable post-quantum encryption: "
-            + ", ".join(
-                [f"{alias}={full}" for alias, full in self.config.PQC_ALIASES.items()]
-            ),
+            + ", ".join([f"{alias}={full}" for alias, full in self.config.PQC_ALIASES.items()]),
         )
 
         # Use case aliases group
-        usecase_group = parser.add_argument_group(
-            "Use Case Aliases (context-aware configurations)"
-        )
+        usecase_group = parser.add_argument_group("Use Case Aliases (context-aware configurations)")
 
         usecase_alias_group = usecase_group.add_mutually_exclusive_group()
 
@@ -223,16 +216,12 @@ class CLIAliasProcessor:
             )
             help_lines.append("")
 
-        help_lines.extend(
-            ["ALGORITHM FAMILY ALIASES:", "Simplified algorithm selection:", ""]
-        )
+        help_lines.extend(["ALGORITHM FAMILY ALIASES:", "Simplified algorithm selection:", ""])
 
         for alias, full in self.config.ALGORITHM_ALIASES.items():
             help_lines.append(f"  --crypto-family {alias:<10} → {full}")
 
-        help_lines.extend(
-            ["", "POST-QUANTUM ALIASES:", "Future-proof encryption options:", ""]
-        )
+        help_lines.extend(["", "POST-QUANTUM ALIASES:", "Future-proof encryption options:", ""])
 
         for alias, full in self.config.PQC_ALIASES.items():
             help_lines.append(f"  --quantum-safe {alias:<12} → {full}")
@@ -283,21 +272,15 @@ class CLIAliasProcessor:
         ]
 
         if len(active_security_aliases) > 1:
-            errors.append(
-                f"Conflicting security aliases: {', '.join(active_security_aliases)}"
-            )
+            errors.append(f"Conflicting security aliases: {', '.join(active_security_aliases)}")
 
         # Check for conflicting use cases
         active_usecase_aliases = [
-            alias
-            for alias in self.config.USE_CASE_ALIASES
-            if getattr(args, f"for_{alias}", False)
+            alias for alias in self.config.USE_CASE_ALIASES if getattr(args, f"for_{alias}", False)
         ]
 
         if len(active_usecase_aliases) > 1:
-            errors.append(
-                f"Conflicting use case aliases: {', '.join(active_usecase_aliases)}"
-            )
+            errors.append(f"Conflicting use case aliases: {', '.join(active_usecase_aliases)}")
 
         # Validate post-quantum + algorithm combinations
         if (
@@ -306,9 +289,7 @@ class CLIAliasProcessor:
             and hasattr(args, "crypto_family")
             and args.crypto_family == "fernet"
         ):
-            errors.append(
-                "Post-quantum encryption is not compatible with Fernet algorithm"
-            )
+            errors.append("Post-quantum encryption is not compatible with Fernet algorithm")
 
         return errors
 

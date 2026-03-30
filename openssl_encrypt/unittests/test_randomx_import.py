@@ -117,9 +117,7 @@ class TestGetSubprocessEnv(unittest.TestCase):
         from openssl_encrypt.modules.randomx import _get_subprocess_env
 
         # Simulate being inside a virtualenv (prefix != base_prefix)
-        with patch.object(sys, "prefix", "/app/venv"), patch.object(
-            sys, "base_prefix", "/usr"
-        ):
+        with patch.object(sys, "prefix", "/app/venv"), patch.object(sys, "base_prefix", "/usr"):
             env = _get_subprocess_env()
             self.assertEqual(env["VIRTUAL_ENV"], "/app/venv")
 

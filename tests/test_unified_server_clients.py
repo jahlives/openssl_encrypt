@@ -36,9 +36,7 @@ def test_keyserver_registration():
     try:
         # Test direct registration with unified server
         print("Registering with keyserver...")
-        response = requests.post(
-            "http://localhost:8080/api/v1/keys/register", timeout=10
-        )
+        response = requests.post("http://localhost:8080/api/v1/keys/register", timeout=10)
 
         if response.status_code != 200:
             print(f"✗ Registration failed with status {response.status_code}")

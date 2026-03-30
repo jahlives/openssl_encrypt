@@ -90,9 +90,7 @@ def test_usb_with_hash_chaining():
                 usb_path, password, hash_config=hash_config
             )
 
-            print(
-                f"✅ Hash chaining verification: {verification_result['integrity_ok']}"
-            )
+            print(f"✅ Hash chaining verification: {verification_result['integrity_ok']}")
 
             # Test that verification fails with different hash config
             different_hash_config = hash_config.copy()
@@ -138,9 +136,7 @@ def test_usb_fallback_compatibility():
             print(f"✅ USB fallback creation: {result['success']}")
 
             # Verify without hash config
-            verification_result = creator.verify_usb_integrity(
-                usb_path, password, hash_config=None
-            )
+            verification_result = creator.verify_usb_integrity(usb_path, password, hash_config=None)
 
             print(f"✅ Fallback verification: {verification_result['integrity_ok']}")
 

@@ -8,13 +8,25 @@ All code in English as per project requirements.
 
 import pytest
 
-from openssl_encrypt.modules.registry import (BLAKE3, SHA3_256, SHA3_384,
-                                              SHA3_512, SHA256, SHA384, SHA512,
-                                              SHAKE128, SHAKE256,
-                                              AlgorithmCategory, BLAKE2b,
-                                              BLAKE2s, HashRegistry,
-                                              SecurityLevel, ValidationError,
-                                              Whirlpool, get_hash)
+from openssl_encrypt.modules.registry import (
+    BLAKE3,
+    SHA3_256,
+    SHA3_384,
+    SHA3_512,
+    SHA256,
+    SHA384,
+    SHA512,
+    SHAKE128,
+    SHAKE256,
+    AlgorithmCategory,
+    BLAKE2b,
+    BLAKE2s,
+    HashRegistry,
+    SecurityLevel,
+    ValidationError,
+    Whirlpool,
+    get_hash,
+)
 
 
 class TestHashRegistry:
@@ -93,9 +105,7 @@ class TestSHA256:
         # SHA-256("abc") = ba7816bf...
         data = b"abc"
         digest = hasher.hash(data)
-        expected = bytes.fromhex(
-            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
-        )
+        expected = bytes.fromhex("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
         assert digest == expected
 
     def test_fixed_output_length(self):

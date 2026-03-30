@@ -12,11 +12,14 @@ import os
 import tempfile
 import unittest
 
-from openssl_encrypt.modules.crypt_core import (EncryptionAlgorithm,
-                                                decrypt_file, encrypt_file,
-                                                extract_file_metadata,
-                                                generate_key,
-                                                multi_hash_password)
+from openssl_encrypt.modules.crypt_core import (
+    EncryptionAlgorithm,
+    decrypt_file,
+    encrypt_file,
+    extract_file_metadata,
+    generate_key,
+    multi_hash_password,
+)
 
 
 class TestFormatV10(unittest.TestCase):
@@ -248,14 +251,10 @@ class TestFormatV10(unittest.TestCase):
         }
 
         # Generate key with v9
-        key_v9, _, _ = generate_key(
-            password, salt, hash_config, format_version=9, quiet=True
-        )
+        key_v9, _, _ = generate_key(password, salt, hash_config, format_version=9, quiet=True)
 
         # Generate key with v10
-        key_v10, _, _ = generate_key(
-            password, salt, hash_config, format_version=10, quiet=True
-        )
+        key_v10, _, _ = generate_key(password, salt, hash_config, format_version=10, quiet=True)
 
         # Keys MUST be different due to XOR in v10
         self.assertNotEqual(key_v9, key_v10, "v9 and v10 should produce different keys")
@@ -267,12 +266,8 @@ class TestFormatV10(unittest.TestCase):
         hash_config = {"sha512": 10, "argon2": {"enabled": True, "time_cost": 1}}
 
         # Generate key twice with same inputs
-        key1, _, _ = generate_key(
-            password, salt, hash_config, format_version=10, quiet=True
-        )
-        key2, _, _ = generate_key(
-            password, salt, hash_config, format_version=10, quiet=True
-        )
+        key1, _, _ = generate_key(password, salt, hash_config, format_version=10, quiet=True)
+        key2, _, _ = generate_key(password, salt, hash_config, format_version=10, quiet=True)
 
         self.assertEqual(key1, key2, "v10 key derivation should be deterministic")
 
@@ -286,12 +281,8 @@ class TestFormatV10(unittest.TestCase):
 
         for algorithm in algorithms:
             with self.subTest(algorithm=algorithm.value):
-                encrypted_file = os.path.join(
-                    self.test_dir, f"encrypted_{algorithm.value}.enc"
-                )
-                decrypted_file = os.path.join(
-                    self.test_dir, f"decrypted_{algorithm.value}.txt"
-                )
+                encrypted_file = os.path.join(self.test_dir, f"encrypted_{algorithm.value}.enc")
+                decrypted_file = os.path.join(self.test_dir, f"decrypted_{algorithm.value}.txt")
                 self.test_files.extend([encrypted_file, decrypted_file])
 
                 with open(self.test_file, "rb") as f:
@@ -307,9 +298,7 @@ class TestFormatV10(unittest.TestCase):
                     format_version=10,
                 )
 
-                decrypt_file(
-                    encrypted_file, decrypted_file, self.test_password, quiet=True
-                )
+                decrypt_file(encrypted_file, decrypted_file, self.test_password, quiet=True)
 
                 with open(decrypted_file, "rb") as f:
                     decrypted_content = f.read()

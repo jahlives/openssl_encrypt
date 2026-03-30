@@ -110,9 +110,7 @@ class PQCSigner:
         if algorithm in LEGACY_TO_STANDARD_SIG:
             self.algorithm = LEGACY_TO_STANDARD_SIG[algorithm]
             if not quiet:
-                logger.info(
-                    f"Using standard name {self.algorithm} for legacy {algorithm}"
-                )
+                logger.info(f"Using standard name {self.algorithm} for legacy {algorithm}")
         else:
             self.algorithm = algorithm
 
@@ -234,9 +232,7 @@ class PQCSigner:
             is_valid = verifier.verify(message, signature, public_key)
 
             if not self.quiet:
-                logger.debug(
-                    f"Signature verification: {'VALID' if is_valid else 'INVALID'}"
-                )
+                logger.debug(f"Signature verification: {'VALID' if is_valid else 'INVALID'}")
 
             return is_valid
 

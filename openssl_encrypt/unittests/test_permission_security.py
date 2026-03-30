@@ -17,10 +17,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from openssl_encrypt.modules.file_permissions import (PermissionLevel,
-                                                      check_permissions)
+from openssl_encrypt.modules.file_permissions import PermissionLevel, check_permissions
 from openssl_encrypt.modules.plugin_system.plugin_config import (
-    PluginConfigManager, ensure_plugin_data_dir)
+    PluginConfigManager,
+    ensure_plugin_data_dir,
+)
 
 
 class TestEnsurePluginDataDir:

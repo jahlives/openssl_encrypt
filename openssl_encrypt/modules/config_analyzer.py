@@ -191,9 +191,7 @@ class ConfigurationAnalyzer:
 
         performance_assessment = self._assess_performance(config)
         compatibility_matrix = self._analyze_compatibility(config)
-        compliance_status = self._check_compliance(
-            config, compliance_requirements or []
-        )
+        compliance_status = self._check_compliance(config, compliance_requirements or [])
         future_proofing = self._assess_future_proofing(config)
         configuration_summary = self._generate_summary(config, security_analysis)
 
@@ -311,9 +309,7 @@ class ConfigurationAnalyzer:
         recommendations = []
 
         # Security-based recommendations
-        recommendations.extend(
-            self._security_recommendations(config, security_analysis)
-        )
+        recommendations.extend(self._security_recommendations(config, security_analysis))
 
         # Performance-based recommendations
         recommendations.extend(self._performance_recommendations(config))
@@ -399,10 +395,7 @@ class ConfigurationAnalyzer:
         # Post-quantum recommendations
         if not security_analysis["pqc_analysis"]["enabled"]:
             priority = RecommendationPriority.MEDIUM
-            if any(
-                case in config.get("use_case", "")
-                for case in ["archival", "compliance"]
-            ):
+            if any(case in config.get("use_case", "") for case in ["archival", "compliance"]):
                 priority = RecommendationPriority.HIGH
 
             recommendations.append(
@@ -420,9 +413,7 @@ class ConfigurationAnalyzer:
 
         return recommendations
 
-    def _performance_recommendations(
-        self, config: Dict[str, Any]
-    ) -> List[AnalysisRecommendation]:
+    def _performance_recommendations(self, config: Dict[str, Any]) -> List[AnalysisRecommendation]:
         """Generate performance-focused recommendations."""
         recommendations = []
 
@@ -444,9 +435,7 @@ class ConfigurationAnalyzer:
             )
 
         # Memory usage recommendations
-        if (
-            config.get("enable_argon2") and config.get("argon2_memory", 0) > 2097152
-        ):  # 2GB
+        if config.get("enable_argon2") and config.get("argon2_memory", 0) > 2097152:  # 2GB
             recommendations.append(
                 AnalysisRecommendation(
                     category=AnalysisCategory.PERFORMANCE,
@@ -607,9 +596,7 @@ class ConfigurationAnalyzer:
                 active_kdfs.append("argon2")
 
             approved_kdfs_list = requirements.get("approved_kdfs", []) or []
-            non_compliant_kdfs = [
-                kdf for kdf in active_kdfs if kdf not in approved_kdfs_list
-            ]
+            non_compliant_kdfs = [kdf for kdf in active_kdfs if kdf not in approved_kdfs_list]
             if non_compliant_kdfs:
                 recommendations.append(
                     AnalysisRecommendation(
@@ -727,9 +714,7 @@ class ConfigurationAnalyzer:
             "overall_score": max(1.0, min(10.0, performance_score)),
             "algorithm_characteristics": algo_perf,
             "kdf_impact": kdf_impact,
-            "estimated_relative_speed": self._calculate_speed_estimate(
-                performance_score
-            ),
+            "estimated_relative_speed": self._calculate_speed_estimate(performance_score),
             "memory_requirements": self._calculate_memory_requirements(config),
             "cpu_intensity": self._calculate_cpu_intensity(config),
         }
@@ -758,17 +743,13 @@ class ConfigurationAnalyzer:
         if config.get("enable_scrypt", False):
             scrypt_n = config.get("scrypt_n", 16384)
             scrypt_r = config.get("scrypt_r", 8)
-            scrypt_memory = (scrypt_n * scrypt_r * 128) // (
-                1024 * 1024
-            )  # Convert to MB
+            scrypt_memory = (scrypt_n * scrypt_r * 128) // (1024 * 1024)  # Convert to MB
             base_memory += scrypt_memory
 
         return {
             "estimated_peak_mb": base_memory,
             "classification": (
-                "high"
-                if base_memory > 1024
-                else "medium" if base_memory > 256 else "low"
+                "high" if base_memory > 1024 else "medium" if base_memory > 256 else "low"
             ),
         }
 
@@ -818,8 +799,7 @@ class ConfigurationAnalyzer:
             "windows": True,
             "macos": True,
             "linux": True,
-            "mobile": algorithm
-            in ["aes-gcm", "chacha20-poly1305"],  # Hardware acceleration
+            "mobile": algorithm in ["aes-gcm", "chacha20-poly1305"],  # Hardware acceleration
             "embedded": algorithm in ["aes-gcm", "fernet"],  # Simpler implementations
         }
 
@@ -856,14 +836,10 @@ class ConfigurationAnalyzer:
     ) -> float:
         """Calculate overall compatibility score."""
         total_checks = len(platform) + len(library) + len(format)
-        passed_checks = (
-            sum(platform.values()) + sum(library.values()) + sum(format.values())
-        )
+        passed_checks = sum(platform.values()) + sum(library.values()) + sum(format.values())
         return (passed_checks / total_checks) * 10.0
 
-    def _check_compliance(
-        self, config: Dict[str, Any], requirements: List[str]
-    ) -> Dict[str, Any]:
+    def _check_compliance(self, config: Dict[str, Any], requirements: List[str]) -> Dict[str, Any]:
         """Check compliance with specified frameworks."""
         compliance_results = {}
 
@@ -942,9 +918,7 @@ class ConfigurationAnalyzer:
             "algorithm_longevity_score": min(10.0, longevity_score),
             "key_size_adequacy_score": key_size_score,
             "post_quantum_ready": pqc_ready,
-            "estimated_secure_years": self._estimate_secure_years(
-                longevity_score, pqc_ready
-            ),
+            "estimated_secure_years": self._estimate_secure_years(longevity_score, pqc_ready),
             "future_proofing_recommendations": self._get_future_proofing_tips(config),
         }
 
@@ -963,9 +937,7 @@ class ConfigurationAnalyzer:
         tips = []
 
         if not config.get("pqc_algorithm"):
-            tips.append(
-                "Consider enabling post-quantum encryption for long-term security"
-            )
+            tips.append("Consider enabling post-quantum encryption for long-term security")
 
         algorithm = config.get("algorithm", "aes-gcm")
         if algorithm == "aes-ocb3":
@@ -1005,9 +977,7 @@ class ConfigurationAnalyzer:
             "security_level": security_analysis["overall"]["level"].name,
             "overall_score": security_analysis["overall"]["score"],
             "configuration_complexity": self._assess_complexity(config),
-            "suitable_for": self._determine_suitability(
-                security_analysis["overall"]["level"]
-            ),
+            "suitable_for": self._determine_suitability(security_analysis["overall"]["level"]),
         }
 
     def _assess_complexity(self, config: Dict[str, Any]) -> str:
@@ -1062,9 +1032,7 @@ class ConfigurationAnalyzer:
         return suitability
 
 
-def analyze_configuration_from_args(
-    args, use_case: Optional[str] = None
-) -> ConfigurationAnalysis:
+def analyze_configuration_from_args(args, use_case: Optional[str] = None) -> ConfigurationAnalysis:
     """
     Convenience function to analyze configuration from parsed arguments.
 

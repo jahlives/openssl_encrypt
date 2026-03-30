@@ -105,9 +105,7 @@ class PluginSecurityContext:
         self.file_paths = []  # Only paths to encrypted files or safe temp files
         self.config = {}  # Plugin-specific configuration only
         self.timestamp = time.time()
-        self.plugin_file_directory = (
-            plugin_file_directory  # Directory where plugin code is located
-        )
+        self.plugin_file_directory = plugin_file_directory  # Directory where plugin code is located
 
     def has_capability(self, capability: PluginCapability) -> bool:
         """Check if plugin has specific capability."""
@@ -132,8 +130,7 @@ class PluginSecurityContext:
         )
         temp_path = temp_file.name
         temp_file.close()
-        from openssl_encrypt.modules.file_permissions import (PermissionLevel,
-                                                              set_permissions)
+        from openssl_encrypt.modules.file_permissions import PermissionLevel, set_permissions
 
         set_permissions(temp_path, PermissionLevel.OWNER_ONLY)
         return temp_path
@@ -241,9 +238,7 @@ class PluginResult:
         return cls(success=True, message=message, data=data)
 
     @classmethod
-    def error_result(
-        cls, message: str, data: Optional[Dict[str, Any]] = None
-    ) -> "PluginResult":
+    def error_result(cls, message: str, data: Optional[Dict[str, Any]] = None) -> "PluginResult":
         """Create error result."""
         return cls(success=False, message=message, data=data)
 
@@ -358,9 +353,7 @@ class PreProcessorPlugin(BasePlugin):
         return PluginType.PRE_PROCESSOR
 
     @abc.abstractmethod
-    def process_file(
-        self, file_path: str, context: PluginSecurityContext
-    ) -> PluginResult:
+    def process_file(self, file_path: str, context: PluginSecurityContext) -> PluginResult:
         """
         Process input file before encryption.
 
@@ -419,9 +412,7 @@ class PostProcessorPlugin(BasePlugin):
     def execute(self, context: PluginSecurityContext) -> PluginResult:
         """Execute post-processing for encrypted files in context."""
         if not context.file_paths:
-            return PluginResult.error_result(
-                "No encrypted files provided for post-processing"
-            )
+            return PluginResult.error_result("No encrypted files provided for post-processing")
 
         results = []
         for file_path in context.file_paths:
@@ -515,9 +506,7 @@ class FormatConverterPlugin(BasePlugin):
         output_format = context.metadata.get("output_format")
 
         if not input_format or not output_format:
-            return PluginResult.error_result(
-                "Input and output formats must be specified"
-            )
+            return PluginResult.error_result("Input and output formats must be specified")
 
         if not context.file_paths:
             return PluginResult.error_result("No files provided for format conversion")
@@ -525,9 +514,7 @@ class FormatConverterPlugin(BasePlugin):
         input_path = context.file_paths[0]
         output_path = context.get_safe_temp_path(f".{output_format}")
 
-        return self.convert_format(
-            input_path, output_path, input_format, output_format, context
-        )
+        return self.convert_format(input_path, output_path, input_format, output_format, context)
 
 
 class AnalyzerPlugin(BasePlugin):
@@ -540,9 +527,7 @@ class AnalyzerPlugin(BasePlugin):
         return PluginType.ANALYZER
 
     @abc.abstractmethod
-    def analyze_file(
-        self, file_path: str, context: PluginSecurityContext
-    ) -> PluginResult:
+    def analyze_file(self, file_path: str, context: PluginSecurityContext) -> PluginResult:
         """
         Analyze encrypted file without decrypting.
 
@@ -601,9 +586,7 @@ class UtilityPlugin(BasePlugin):
 
         functions = self.get_utility_functions()
         if function_name not in functions:
-            return PluginResult.error_result(
-                f"Unknown utility function: {function_name}"
-            )
+            return PluginResult.error_result(f"Unknown utility function: {function_name}")
 
         try:
             function = functions[function_name]
@@ -642,9 +625,7 @@ class HSMPlugin(BasePlugin):
         return PluginType.HSM
 
     @abc.abstractmethod
-    def get_hsm_pepper(
-        self, salt: bytes, context: PluginSecurityContext
-    ) -> PluginResult:
+    def get_hsm_pepper(self, salt: bytes, context: PluginSecurityContext) -> PluginResult:
         """
         Derive HSM pepper from salt using hardware security module.
 
@@ -681,9 +662,7 @@ class HSMPlugin(BasePlugin):
         """
         salt = context.metadata.get("salt")
         if not salt:
-            return PluginResult.error_result(
-                "No salt provided for HSM pepper derivation"
-            )
+            return PluginResult.error_result("No salt provided for HSM pepper derivation")
 
         if not isinstance(salt, bytes):
             return PluginResult.error_result("Salt must be bytes")

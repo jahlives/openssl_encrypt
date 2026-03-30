@@ -29,9 +29,14 @@ import time
 from pathlib import Path
 from typing import Any, Dict
 
-from ...modules.plugin_system import (AnalyzerPlugin, PluginCapability,
-                                      PluginResult, PluginSecurityContext,
-                                      PostProcessorPlugin, PreProcessorPlugin)
+from ...modules.plugin_system import (
+    AnalyzerPlugin,
+    PluginCapability,
+    PluginResult,
+    PluginSecurityContext,
+    PostProcessorPlugin,
+    PreProcessorPlugin,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -51,9 +56,7 @@ class FileMetadataAnalyzer(AnalyzerPlugin):
     def get_description(self):
         return "Analyzes file metadata (size, type, timestamps) without accessing sensitive content"
 
-    def analyze_file(
-        self, file_path: str, context: PluginSecurityContext
-    ) -> PluginResult:
+    def analyze_file(self, file_path: str, context: PluginSecurityContext) -> PluginResult:
         """Analyze file metadata safely."""
         try:
             if not os.path.exists(file_path):
@@ -95,9 +98,7 @@ class FileMetadataAnalyzer(AnalyzerPlugin):
             )
 
         except PermissionError:
-            return PluginResult.error_result(
-                f"Permission denied accessing: {file_path}"
-            )
+            return PluginResult.error_result(f"Permission denied accessing: {file_path}")
         except Exception as e:
             return PluginResult.error_result(f"Analysis error: {str(e)}")
 
@@ -114,10 +115,7 @@ class FileMetadataAnalyzer(AnalyzerPlugin):
         elif mime_type.startswith("application/"):
             if "pdf" in mime_type:
                 return "document"
-            elif any(
-                office in mime_type
-                for office in ["word", "excel", "powerpoint", "office"]
-            ):
+            elif any(office in mime_type for office in ["word", "excel", "powerpoint", "office"]):
                 return "document"
             elif "zip" in mime_type or "archive" in mime_type:
                 return "archive"
@@ -142,9 +140,9 @@ class FileMetadataAnalyzer(AnalyzerPlugin):
             # Our encrypted files have base64 metadata followed by ':'
             try:
                 header_str = header.decode("utf-8", errors="ignore")
-                if ":" in header_str and header_str.split(":")[0].replace(
-                    "\n", ""
-                ).replace("\r", ""):
+                if ":" in header_str and header_str.split(":")[0].replace("\n", "").replace(
+                    "\r", ""
+                ):
                     # Try to decode the first part as base64
                     import base64
 
@@ -179,9 +177,7 @@ class FilePreProcessor(PreProcessorPlugin):
     def get_description(self):
         return "Logs safe file information before encryption and adds metadata"
 
-    def process_file(
-        self, file_path: str, context: PluginSecurityContext
-    ) -> PluginResult:
+    def process_file(self, file_path: str, context: PluginSecurityContext) -> PluginResult:
         """Process file before encryption."""
         try:
             if not os.path.exists(file_path):
@@ -198,12 +194,8 @@ class FilePreProcessor(PreProcessorPlugin):
 
             # Add useful metadata to context for other plugins or post-processing
             context.add_metadata("original_file_size", analysis.get("file_size", 0))
-            context.add_metadata(
-                "original_file_type", analysis.get("file_category", "unknown")
-            )
-            context.add_metadata(
-                "original_file_extension", analysis.get("file_extension", "")
-            )
+            context.add_metadata("original_file_type", analysis.get("file_category", "unknown"))
+            context.add_metadata("original_file_extension", analysis.get("file_extension", ""))
             context.add_metadata("pre_encryption_timestamp", time.time())
 
             # Log the pre-encryption state
@@ -243,9 +235,7 @@ class EncryptionOverheadAnalyzer(PostProcessorPlugin):
         """Analyze encrypted file and calculate overhead."""
         try:
             if not os.path.exists(encrypted_file_path):
-                return PluginResult.error_result(
-                    f"Encrypted file not found: {encrypted_file_path}"
-                )
+                return PluginResult.error_result(f"Encrypted file not found: {encrypted_file_path}")
 
             encrypted_size = os.path.getsize(encrypted_file_path)
             original_size = context.metadata.get("original_file_size", 0)
@@ -266,9 +256,7 @@ class EncryptionOverheadAnalyzer(PostProcessorPlugin):
                         "overhead_bytes": overhead,
                         "overhead_percentage": overhead_percentage,
                         "size_ratio": size_ratio,
-                        "efficiency_rating": self._calculate_efficiency_rating(
-                            overhead_percentage
-                        ),
+                        "efficiency_rating": self._calculate_efficiency_rating(overhead_percentage),
                     }
                 )
 
@@ -291,9 +279,7 @@ class EncryptionOverheadAnalyzer(PostProcessorPlugin):
             )
 
             # Check if this looks like our encrypted format
-            analysis["openssl_encrypt_format"] = self._verify_format(
-                encrypted_file_path
-            )
+            analysis["openssl_encrypt_format"] = self._verify_format(encrypted_file_path)
 
             return PluginResult.success_result(
                 f"Analyzed encryption overhead for {analysis['encrypted_file_name']}",

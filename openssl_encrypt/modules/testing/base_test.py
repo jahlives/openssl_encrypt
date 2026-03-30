@@ -157,13 +157,9 @@ class BaseSecurityTest(ABC):
         """Get a summary of test results."""
         total = len(self.results)
         pass_count = sum(1 for r in self.results if r.level == TestResultLevel.PASS)
-        warning_count = sum(
-            1 for r in self.results if r.level == TestResultLevel.WARNING
-        )
+        warning_count = sum(1 for r in self.results if r.level == TestResultLevel.WARNING)
         error_count = sum(
-            1
-            for r in self.results
-            if r.level in [TestResultLevel.ERROR, TestResultLevel.CRITICAL]
+            1 for r in self.results if r.level in [TestResultLevel.ERROR, TestResultLevel.CRITICAL]
         )
 
         total_duration = sum(r.duration for r in self.results)

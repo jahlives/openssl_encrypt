@@ -45,8 +45,7 @@ try:
 except ImportError:
     # Fallback for standalone testing
     from openssl_encrypt.modules.crypt_errors import KeystoreError
-    from openssl_encrypt.modules.secure_memory import (SecureBytes,
-                                                       secure_memzero)
+    from openssl_encrypt.modules.secure_memory import SecureBytes, secure_memzero
 
 # Set up module logger
 logger = logging.getLogger(__name__)
@@ -90,9 +89,7 @@ class USBDriveCreator:
     INTEGRITY_FILE = ".integrity"
     VERSION = "1.0"
 
-    def __init__(
-        self, security_profile: USBSecurityProfile = USBSecurityProfile.STANDARD
-    ):
+    def __init__(self, security_profile: USBSecurityProfile = USBSecurityProfile.STANDARD):
         """
         Initialize USB Drive Creator
 
@@ -204,9 +201,7 @@ class USBDriveCreator:
             workspace_info = self._create_encrypted_workspace(data_dir, encryption_key)
 
             # Create transparent encryption helper scripts
-            self._create_transparent_encryption_helpers(
-                portable_root, hash_config, algorithm
-            )
+            self._create_transparent_encryption_helpers(portable_root, hash_config, algorithm)
 
             # Create auto-run files
             autorun_info = self._create_autorun_files(usb_path, portable_root)
@@ -216,9 +211,7 @@ class USBDriveCreator:
                 self._store_hash_config_metadata(config_dir, hash_config)
 
             # Generate integrity file and cryptographic hash manifest
-            integrity_info = self._create_integrity_file(
-                portable_root, encryption_key, hash_config
-            )
+            integrity_info = self._create_integrity_file(portable_root, encryption_key, hash_config)
             manifest_info = self._create_hash_manifest(
                 portable_root,
                 password,
@@ -281,9 +274,7 @@ class USBDriveCreator:
             portable_root = usb_path / self.PORTABLE_DIR
 
             if not portable_root.exists():
-                raise USBCreationError(
-                    f"Portable installation not found: {portable_root}"
-                )
+                raise USBCreationError(f"Portable installation not found: {portable_root}")
 
             # First, try to read the hash_config from the integrity file if not provided
             if hash_config is None:
@@ -293,9 +284,7 @@ class USBDriveCreator:
                     )
                     if stored_hash_config:
                         hash_config = stored_hash_config
-                        logger.debug(
-                            "Successfully read hash_config from USB integrity file"
-                        )
+                        logger.debug("Successfully read hash_config from USB integrity file")
                 except Exception as e:
                     logger.debug(f"Could not read hash_config from integrity file: {e}")
                     # Continue with None hash_config (will use PBKDF2 fallback)
@@ -309,9 +298,7 @@ class USBDriveCreator:
             if not integrity_path.exists():
                 raise USBCreationError("Integrity file missing - USB may be tampered")
 
-            verification_result = self._verify_integrity_file(
-                portable_root, encryption_key
-            )
+            verification_result = self._verify_integrity_file(portable_root, encryption_key)
 
             # Clean up
             secure_memzero(encryption_key)
@@ -366,9 +353,7 @@ class USBDriveCreator:
             return self._derive_key_pbkdf2_fallback(password)
         except Exception as e:
             # Log the error but continue with fallback
-            logger.warning(
-                f"Complex hash derivation failed, using PBKDF2 fallback: {e}"
-            )
+            logger.warning(f"Complex hash derivation failed, using PBKDF2 fallback: {e}")
             return self._derive_key_pbkdf2_fallback(password)
 
     def _derive_key_pbkdf2_fallback(self, password: SecureBytes) -> bytes:
@@ -393,9 +378,7 @@ class USBDriveCreator:
         key = kdf.derive(bytes(password))
         return key
 
-    def _create_portable_config(
-        self, custom_config: Optional[Dict], include_logs: bool
-    ) -> Dict:
+    def _create_portable_config(self, custom_config: Optional[Dict], include_logs: bool) -> Dict:
         """Create portable configuration file"""
         config = {
             "portable_mode": True,
@@ -420,9 +403,7 @@ class USBDriveCreator:
 
         return config
 
-    def _encrypt_keystore_to_usb(
-        self, keystore_path: str, output_path: Path, key: bytes
-    ) -> Dict:
+    def _encrypt_keystore_to_usb(self, keystore_path: str, output_path: Path, key: bytes) -> Dict:
         """Encrypt and copy keystore to USB"""
         try:
             with open(keystore_path, "rb") as f:
@@ -619,9 +600,7 @@ fi
             }
 
             # Encrypt integrity data
-            integrity_json = json.dumps(integrity_data, separators=(",", ":")).encode(
-                "utf-8"
-            )
+            integrity_json = json.dumps(integrity_data, separators=(",", ":")).encode("utf-8")
 
             cipher = AESGCM(key)
             nonce = os.urandom(self.NONCE_LENGTH)
@@ -1120,9 +1099,7 @@ if __name__ == "__main__":
                     "password_type": "custom" if manifest_password else "main",
                     "security_profile": manifest_security_profile,
                     "hash_config_type": (
-                        "custom"
-                        if manifest_hash_config
-                        else "main" if hash_config else "pbkdf2"
+                        "custom" if manifest_hash_config else "main" if hash_config else "pbkdf2"
                     ),
                 },
             }
@@ -1185,9 +1162,7 @@ if __name__ == "__main__":
                         logger.warning(f"Failed to cleanup temp files: {e}")
 
             except Exception as e:
-                logger.warning(
-                    f"Main CLI encryption failed: {e}, using fallback format"
-                )
+                logger.warning(f"Main CLI encryption failed: {e}, using fallback format")
 
                 # Derive key for manifest encryption
                 secure_password = SecureBytes(actual_manifest_password.encode("utf-8"))
@@ -1198,9 +1173,7 @@ if __name__ == "__main__":
                 # Encrypt manifest
                 cipher = AESGCM(manifest_key)
                 nonce = secrets.token_bytes(self.NONCE_LENGTH)
-                encrypted_manifest = cipher.encrypt(
-                    nonce, manifest_json.encode("utf-8"), None
-                )
+                encrypted_manifest = cipher.encrypt(nonce, manifest_json.encode("utf-8"), None)
 
                 # Write encrypted manifest (fallback format)
                 manifest_file = portable_root / "hash_manifest.enc"
@@ -1321,9 +1294,7 @@ If any verification step fails, assume the USB has been compromised!
                     shutil.rmtree(usb_project_dir)
 
                 # Copy the entire openssl_encrypt directory
-                shutil.copytree(
-                    openssl_encrypt_src, usb_project_dir / "openssl_encrypt"
-                )
+                shutil.copytree(openssl_encrypt_src, usb_project_dir / "openssl_encrypt")
 
                 # Copy essential project files
                 essential_files = [
@@ -1341,9 +1312,7 @@ If any verification step fails, assume the USB has been compromised!
                 # Create __init__.py to make it a package
                 (usb_project_dir / "__init__.py").touch()
 
-                logger.debug(
-                    f"Successfully copied openssl_encrypt project to {usb_project_dir}"
-                )
+                logger.debug(f"Successfully copied openssl_encrypt project to {usb_project_dir}")
 
                 return {
                     "copied": True,
@@ -1352,9 +1321,7 @@ If any verification step fails, assume the USB has been compromised!
                     "size": self._get_directory_size(usb_project_dir),
                 }
             else:
-                logger.warning(
-                    f"OpenSSL Encrypt source directory not found: {openssl_encrypt_src}"
-                )
+                logger.warning(f"OpenSSL Encrypt source directory not found: {openssl_encrypt_src}")
                 return {"copied": False, "error": "Source directory not found"}
 
         except Exception as e:
@@ -1391,9 +1358,7 @@ def create_portable_usb(
     """
     security_profile = USBSecurityProfile(kwargs.pop("security_profile", "standard"))
     creator = USBDriveCreator(security_profile)
-    return creator.create_portable_usb(
-        usb_path, password, hash_config=hash_config, **kwargs
-    )
+    return creator.create_portable_usb(usb_path, password, hash_config=hash_config, **kwargs)
 
 
 def verify_usb_integrity(

@@ -46,9 +46,13 @@ try:
 except ImportError:
     security_logger = None
 from .crypt_core import EncryptionAlgorithm, decrypt_file, encrypt_file
-from .crypt_errors import (AuthenticationError, DecryptionError,
-                           EncryptionError, KeyDerivationError,
-                           ValidationError)
+from .crypt_errors import (
+    AuthenticationError,
+    DecryptionError,
+    EncryptionError,
+    KeyDerivationError,
+    ValidationError,
+)
 from .crypt_utils import secure_shred_file
 
 # Set up logging
@@ -159,9 +163,7 @@ class CryptoService(dbus.service.Object):
     # Helper Methods
     # ========================================
 
-    def _validate_file_path(
-        self, path: str, must_exist: bool = False
-    ) -> Tuple[bool, str]:
+    def _validate_file_path(self, path: str, must_exist: bool = False) -> Tuple[bool, str]:
         """
         Validate file path for security with directory whitelisting.
 
@@ -206,9 +208,7 @@ class CryptoService(dbus.service.Object):
                 continue
 
         if not path_allowed:
-            logger.warning(
-                f"D-Bus path validation: Path outside allowed directories: {abs_path}"
-            )
+            logger.warning(f"D-Bus path validation: Path outside allowed directories: {abs_path}")
 
             # Security audit log for path traversal attempt
             if security_logger:
@@ -324,9 +324,7 @@ class CryptoService(dbus.service.Object):
         except Exception as e:
             logger.error(f"Error emitting progress signal: {e}")
 
-    def _emit_operation_complete(
-        self, operation_id: str, success: bool, error_msg: str = ""
-    ):
+    def _emit_operation_complete(self, operation_id: str, success: bool, error_msg: str = ""):
         """Emit operation complete signal"""
         try:
             self.OperationComplete(operation_id, success, error_msg)
@@ -441,10 +439,7 @@ class CryptoService(dbus.service.Object):
 
                 # Enable Argon2 by default if not specified
                 # (pbkdf2_iterations=0 disables PBKDF2 and uses Argon2)
-                if (
-                    "argon2_mode" not in hash_config
-                    and "argon2_time_cost" not in hash_config
-                ):
+                if "argon2_mode" not in hash_config and "argon2_time_cost" not in hash_config:
                     # Set default Argon2 configuration
                     hash_config["argon2_mode"] = "argon2id"
                     hash_config["argon2_time_cost"] = 3
@@ -455,9 +450,7 @@ class CryptoService(dbus.service.Object):
                 algorithm_enum = self.ALGORITHM_MAP.get(algorithm.lower())
                 if not algorithm_enum:
                     operation.complete(False, f"Unsupported algorithm: {algorithm}")
-                    reply_handler(
-                        (False, f"Unsupported algorithm: {algorithm}", operation_id)
-                    )
+                    reply_handler((False, f"Unsupported algorithm: {algorithm}", operation_id))
                     return
 
                 # Set PBKDF2 iterations to 0 to disable it (use Argon2 instead)
@@ -781,9 +774,7 @@ class CryptoService(dbus.service.Object):
         return (False, b"", "Not implemented yet")
 
     @dbus.service.method(INTERFACE_NAME, in_signature="ays", out_signature="bays")
-    def DecryptData(
-        self, encrypted_data: bytes, password: str
-    ) -> Tuple[bool, bytes, str]:
+    def DecryptData(self, encrypted_data: bytes, password: str) -> Tuple[bool, bytes, str]:
         """
         Decrypt binary data directly (no file I/O)
 
@@ -1027,9 +1018,7 @@ class CryptoService(dbus.service.Object):
 
         if property_name == "ActiveOperations":
             with self.operations_lock:
-                return dbus.UInt32(
-                    sum(1 for op in self.operations.values() if not op.completed)
-                )
+                return dbus.UInt32(sum(1 for op in self.operations.values() if not op.completed))
         elif property_name == "MaxConcurrentOperations":
             return dbus.UInt32(self.max_concurrent_ops)
         elif property_name == "DefaultTimeout":

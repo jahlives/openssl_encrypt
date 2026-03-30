@@ -15,8 +15,7 @@ IMPORTANT: This is a demonstration only. In production:
 import sys
 from pathlib import Path
 
-from openssl_encrypt.plugins.pepper import (PepperConfig, PepperError,
-                                            PepperPlugin)
+from openssl_encrypt.plugins.pepper import PepperConfig, PepperError, PepperPlugin
 
 from ...modules.crypt_utils import eprint
 

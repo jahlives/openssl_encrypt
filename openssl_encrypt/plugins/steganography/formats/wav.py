@@ -35,9 +35,15 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 
 from ....modules.crypt_utils import eprint
-from ..core import (CapacityError, CoverMediaError, ExtractionError,
-                    SteganographyBase, SteganographyConfig, SteganographyError,
-                    SteganographyUtils)
+from ..core import (
+    CapacityError,
+    CoverMediaError,
+    ExtractionError,
+    SteganographyBase,
+    SteganographyConfig,
+    SteganographyError,
+    SteganographyUtils,
+)
 
 # Set up module logger
 logger = logging.getLogger(__name__)
@@ -143,9 +149,7 @@ class WAVSteganography(SteganographyBase):
 
             # Total hiding capacity = samples * channels * bits_per_sample
             total_bits = total_samples * channels * self.bits_per_sample
-            capacity = (
-                total_bits // 8
-            ) - 64  # 64 bytes overhead for length and markers
+            capacity = (total_bits // 8) - 64  # 64 bytes overhead for length and markers
 
             # Apply quality preservation if enabled
             if self.preserve_quality:
@@ -191,9 +195,7 @@ class WAVSteganography(SteganographyBase):
 
             # Hide data in audio samples
             logger.debug("Hiding data in WAV audio using LSB method")
-            stego_samples = self._hide_in_wav_samples(
-                audio_samples, secret_data, wav_info
-            )
+            stego_samples = self._hide_in_wav_samples(audio_samples, secret_data, wav_info)
 
             # Convert back to WAV bytes
             return self._samples_to_wav_bytes(stego_samples, wav_info, cover_data)
@@ -317,9 +319,7 @@ class WAVSteganography(SteganographyBase):
 
         return fmt_info
 
-    def _load_wav_samples(
-        self, wav_data: bytes, wav_info: Dict[str, Any]
-    ) -> np.ndarray:
+    def _load_wav_samples(self, wav_data: bytes, wav_info: Dict[str, Any]) -> np.ndarray:
         """Load audio samples from WAV data"""
         try:
             data_offset = wav_info["data_offset"]
@@ -391,9 +391,7 @@ class WAVSteganography(SteganographyBase):
             # Generate sample order (crypto shuffle if password provided)
             sample_indices = list(range(len(flat_samples)))
             if self.password:
-                SteganographyUtils.crypto_seeded_shuffle_np(
-                    sample_indices, self.shuffle_key
-                )
+                SteganographyUtils.crypto_seeded_shuffle_np(sample_indices, self.shuffle_key)
 
             # Hide data using LSB
             bit_index = 0
@@ -420,9 +418,7 @@ class WAVSteganography(SteganographyBase):
                 bits_to_hide = 0
                 for bit_offset in range(bits_per_sample):
                     if bit_index + bit_offset < len(binary_data):
-                        bits_to_hide |= (
-                            int(binary_data[bit_index + bit_offset]) << bit_offset
-                        )
+                        bits_to_hide |= int(binary_data[bit_index + bit_offset]) << bit_offset
 
                 # Modify sample with proper bounds checking
                 original_sample = int(flat_samples[sample_idx])
@@ -452,9 +448,7 @@ class WAVSteganography(SteganographyBase):
             logger.error(f"WAV sample hiding failed: {e}")
             raise SteganographyError(f"WAV sample hiding failed: {e}")
 
-    def _extract_from_wav_samples(
-        self, samples: np.ndarray, wav_info: Dict[str, Any]
-    ) -> bytes:
+    def _extract_from_wav_samples(self, samples: np.ndarray, wav_info: Dict[str, Any]) -> bytes:
         """Extract data from WAV audio samples using LSB method"""
         try:
             # Work with flattened samples
@@ -463,9 +457,7 @@ class WAVSteganography(SteganographyBase):
             # Generate same sample order used during hiding
             sample_indices = list(range(len(flat_samples)))
             if self.password:
-                SteganographyUtils.crypto_seeded_shuffle_np(
-                    sample_indices, self.shuffle_key
-                )
+                SteganographyUtils.crypto_seeded_shuffle_np(sample_indices, self.shuffle_key)
 
             # Extract length first (4 bytes = 32 bits)
             length_bits = []
@@ -497,9 +489,7 @@ class WAVSteganography(SteganographyBase):
                 raise ExtractionError("Invalid data length detected")
 
             # Extract actual data + end marker
-            total_bits_needed = (
-                32 + (data_length * 8) + 64
-            )  # Length + data + end marker
+            total_bits_needed = 32 + (data_length * 8) + 64  # Length + data + end marker
             extracted_bits = []
 
             bit_index = 0
@@ -516,9 +506,7 @@ class WAVSteganography(SteganographyBase):
                         bit_index += 1
 
             # Convert bits back to bytes
-            extracted_bytes = SteganographyUtils.binary_to_bytes(
-                "".join(map(str, extracted_bits))
-            )
+            extracted_bytes = SteganographyUtils.binary_to_bytes("".join(map(str, extracted_bits)))
 
             # Extract the actual secret data (skip length prefix)
             if len(extracted_bytes) < 4:
@@ -564,9 +552,7 @@ class WAVSteganography(SteganographyBase):
                     # Update data chunk size
                     struct.pack_into("<I", updated_header, offset + 4, new_data_size)
                     break
-                chunk_size = struct.unpack(
-                    "<I", updated_header[offset + 4 : offset + 8]
-                )[0]
+                chunk_size = struct.unpack("<I", updated_header[offset + 4 : offset + 8])[0]
                 offset += 8 + ((chunk_size + 1) & ~1)
 
             # Update RIFF chunk size
@@ -639,9 +625,7 @@ class WAVAnalyzer:
             wav_info["audio"] = self._parse_audio_properties(wav_data)
 
             # Analyze steganography suitability
-            wav_info["steganography"] = self._analyze_steganography_suitability(
-                wav_info
-            )
+            wav_info["steganography"] = self._analyze_steganography_suitability(wav_info)
 
             return wav_info
 
@@ -677,9 +661,7 @@ class WAVAnalyzer:
                     audio_props["sample_rate"] = struct.unpack("<I", fmt_data[4:8])[0]
                     audio_props["byte_rate"] = struct.unpack("<I", fmt_data[8:12])[0]
                     audio_props["block_align"] = struct.unpack("<H", fmt_data[12:14])[0]
-                    audio_props["bits_per_sample"] = struct.unpack(
-                        "<H", fmt_data[14:16]
-                    )[0]
+                    audio_props["bits_per_sample"] = struct.unpack("<H", fmt_data[14:16])[0]
                 break
 
             offset += 8 + ((chunk_size + 1) & ~1)
@@ -708,9 +690,7 @@ class WAVAnalyzer:
 
         return audio_props
 
-    def _analyze_steganography_suitability(
-        self, wav_info: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def _analyze_steganography_suitability(self, wav_info: Dict[str, Any]) -> Dict[str, Any]:
         """Analyze WAV suitability for steganography"""
         suitability = {
             "overall_score": 0.0,
@@ -725,23 +705,17 @@ class WAVAnalyzer:
 
             # Format analysis
             format_code = audio.get("format_code", 0)
-            format_info = self.format_info.get(
-                format_code, {"steganography_score": 0.5}
-            )
+            format_info = self.format_info.get(format_code, {"steganography_score": 0.5})
             suitability["format_score"] = format_info["steganography_score"]
 
             if format_code == 1:
-                suitability["recommendations"].append(
-                    "PCM format - excellent for steganography"
-                )
+                suitability["recommendations"].append("PCM format - excellent for steganography")
             elif format_code in [6, 7]:
                 suitability["recommendations"].append(
                     "Compressed audio - limited steganography potential"
                 )
             else:
-                suitability["recommendations"].append(
-                    "Non-standard format - check compatibility"
-                )
+                suitability["recommendations"].append("Non-standard format - check compatibility")
 
             # Quality analysis (bit depth and sample rate)
             bits_per_sample = audio.get("bits_per_sample", 16)
@@ -754,14 +728,10 @@ class WAVAnalyzer:
                 )
             elif bits_per_sample >= 16:
                 suitability["quality_score"] = 0.8
-                suitability["recommendations"].append(
-                    "Good bit depth, consider higher sample rate"
-                )
+                suitability["recommendations"].append("Good bit depth, consider higher sample rate")
             else:
                 suitability["quality_score"] = 0.5
-                suitability["recommendations"].append(
-                    "Low bit depth - limited hiding capacity"
-                )
+                suitability["recommendations"].append("Low bit depth - limited hiding capacity")
 
             # Capacity analysis
             total_samples = audio.get("total_samples", 0)
@@ -769,19 +739,13 @@ class WAVAnalyzer:
 
             if total_samples > 1000000:  # > ~22 seconds at 44.1kHz
                 suitability["capacity_score"] = 1.0
-                suitability["recommendations"].append(
-                    "Large audio file - high hiding capacity"
-                )
+                suitability["recommendations"].append("Large audio file - high hiding capacity")
             elif total_samples > 100000:  # > ~2 seconds at 44.1kHz
                 suitability["capacity_score"] = 0.7
-                suitability["recommendations"].append(
-                    "Medium audio file - good hiding capacity"
-                )
+                suitability["recommendations"].append("Medium audio file - good hiding capacity")
             else:
                 suitability["capacity_score"] = 0.3
-                suitability["recommendations"].append(
-                    "Small audio file - limited hiding capacity"
-                )
+                suitability["recommendations"].append("Small audio file - limited hiding capacity")
 
             # Calculate overall score
             suitability["overall_score"] = (
@@ -910,9 +874,7 @@ if __name__ == "__main__":
         eprint("WAV steganography is available")
 
         # Create test audio
-        test_wav = create_wav_test_audio(
-            duration_seconds=2.0, sample_rate=44100, channels=2
-        )
+        test_wav = create_wav_test_audio(duration_seconds=2.0, sample_rate=44100, channels=2)
         eprint(f"Created test WAV: {len(test_wav)} bytes")
 
         # Test steganography

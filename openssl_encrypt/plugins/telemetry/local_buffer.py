@@ -212,9 +212,7 @@ class LocalBuffer:
                     "hash_algorithms": json.loads(row["hash_algorithms"]),
                     "kdf_algorithms": json.loads(row["kdf_algorithms"]),
                     "kdf_parameters": (
-                        json.loads(row["kdf_parameters"])
-                        if row["kdf_parameters"]
-                        else {}
+                        json.loads(row["kdf_parameters"]) if row["kdf_parameters"] else {}
                     ),
                     "encryption_algorithm": row["encryption_algorithm"],
                     "cascade_enabled": bool(row["cascade_enabled"]),
@@ -334,9 +332,7 @@ class LocalBuffer:
                     "hash_algorithms": json.loads(row["hash_algorithms"]),
                     "kdf_algorithms": json.loads(row["kdf_algorithms"]),
                     "kdf_parameters": (
-                        json.loads(row["kdf_parameters"])
-                        if row["kdf_parameters"]
-                        else {}
+                        json.loads(row["kdf_parameters"]) if row["kdf_parameters"] else {}
                     ),
                     "encryption_algorithm": row["encryption_algorithm"],
                     "cascade_enabled": bool(row["cascade_enabled"]),

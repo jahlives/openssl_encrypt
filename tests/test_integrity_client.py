@@ -12,10 +12,12 @@ from pathlib import Path
 # Add openssl_encrypt to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from openssl_encrypt.plugins.integrity import (IntegrityConfig,
-                                               IntegrityPlugin,
-                                               IntegrityPluginError,
-                                               IntegrityVerificationError)
+from openssl_encrypt.plugins.integrity import (
+    IntegrityConfig,
+    IntegrityPlugin,
+    IntegrityPluginError,
+    IntegrityVerificationError,
+)
 
 
 def test_integrity_client():
@@ -38,9 +40,7 @@ def test_integrity_client():
         if home:
             config_path = Path(home) / ".openssl_encrypt" / "plugins" / "integrity.json"
         else:
-            config_path = (
-                Path.home() / ".openssl_encrypt" / "plugins" / "integrity.json"
-            )
+            config_path = Path.home() / ".openssl_encrypt" / "plugins" / "integrity.json"
     except Exception:
         # Fallback if home directory cannot be determined
         config_path = Path("/tmp/.openssl_encrypt/plugins/integrity.json")

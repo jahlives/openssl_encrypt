@@ -28,9 +28,7 @@ def check_liboqs_version():
             dll_path = os.path.join(prefix, "bin", "oqs.dll")
             if os.path.exists(dll_path):
                 # Try to get version from cmake package config
-                cmake_config = os.path.join(
-                    prefix, "lib", "cmake", "liboqs", "liboqsConfig.cmake"
-                )
+                cmake_config = os.path.join(prefix, "lib", "cmake", "liboqs", "liboqsConfig.cmake")
                 version = None
                 if os.path.exists(cmake_config):
                     try:
@@ -171,9 +169,7 @@ def check_all_dependencies(verbose=True):
         eprint(liboqs_msg)
 
     # Check liboqs-python
-    liboqs_python_ok, liboqs_python_ver, liboqs_python_msg = (
-        check_liboqs_python_version()
-    )
+    liboqs_python_ok, liboqs_python_ver, liboqs_python_msg = check_liboqs_python_version()
     if verbose:
         eprint(liboqs_python_msg)
 

@@ -17,8 +17,7 @@ import pytest
 import requests
 
 from openssl_encrypt.plugins.keyserver.config import KeyserverConfig
-from openssl_encrypt.plugins.keyserver.keyserver_plugin import (
-    KeyserverPlugin, NetworkError)
+from openssl_encrypt.plugins.keyserver.keyserver_plugin import KeyserverPlugin, NetworkError
 
 # ---------------------------------------------------------------------------
 # Shared fixtures and helpers
@@ -146,9 +145,7 @@ class TestSearchKeysMethod:
         plugin.search_keys("alice@example.com")
 
         call_args = plugin.session.get.call_args
-        params = call_args[1].get("params") or (
-            call_args[0][1] if len(call_args[0]) > 1 else {}
-        )
+        params = call_args[1].get("params") or (call_args[0][1] if len(call_args[0]) > 1 else {})
         assert params.get("q") == "alice@example.com"
 
     def test_returns_list_of_public_key_bundles(self, plugin):
@@ -181,9 +178,7 @@ class TestSearchKeysMethod:
 
     def test_returns_empty_list_on_404(self, plugin):
         """search_keys returns [] when server responds with 404."""
-        plugin.session.get.return_value = _make_response(
-            404, {"detail": "Key not found"}
-        )
+        plugin.session.get.return_value = _make_response(404, {"detail": "Key not found"})
 
         result = plugin.search_keys("nobody@example.com")
 
@@ -246,9 +241,7 @@ class TestSearchKeysMethod:
         bad_bundle.fingerprint = "dd:ee:ff"
         bad_bundle.verify_signature.return_value = False
 
-        with patch.object(
-            PublicKeyBundle, "from_dict", side_effect=[good_bundle, bad_bundle]
-        ):
+        with patch.object(PublicKeyBundle, "from_dict", side_effect=[good_bundle, bad_bundle]):
             result = plugin.search_keys("Alice")
 
         assert len(result) == 1
@@ -474,9 +467,7 @@ class TestFetchKeyUsesFingerprint:
     def test_fetch_key_returns_none_on_fingerprint_404(self, plugin):
         """fetch_key() returns None when fingerprint endpoint returns 404."""
         fp = "aa:bb:cc:dd"
-        plugin.session.get.return_value = _make_response(
-            404, {"detail": "Key not found"}
-        )
+        plugin.session.get.return_value = _make_response(404, {"detail": "Key not found"})
 
         result = plugin.fetch_key(fp)
 

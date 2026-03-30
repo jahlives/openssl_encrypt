@@ -10,8 +10,7 @@ import warnings
 
 import pytest
 
-from openssl_encrypt.modules.registry.utils import (derive_salt_chained,
-                                                    derive_salt_for_round)
+from openssl_encrypt.modules.registry.utils import derive_salt_chained, derive_salt_for_round
 
 
 class TestDeprecatedSaltDerivation:

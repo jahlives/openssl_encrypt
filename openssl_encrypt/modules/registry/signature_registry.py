@@ -15,8 +15,14 @@ All code in English as per project requirements.
 from abc import abstractmethod
 from typing import Optional, Tuple, Union
 
-from .base import (AlgorithmBase, AlgorithmCategory, AlgorithmInfo,
-                   AlgorithmNotAvailableError, RegistryBase, SecurityLevel)
+from .base import (
+    AlgorithmBase,
+    AlgorithmCategory,
+    AlgorithmInfo,
+    AlgorithmNotAvailableError,
+    RegistryBase,
+    SecurityLevel,
+)
 
 # Import SecureBytes for secure memory handling of secret keys
 try:
@@ -38,8 +44,7 @@ try:
     # Import oqs directly to avoid incorrect mapping in PQSigner
     import oqs
 
-    from ..pqc_liboqs import (LIBOQS_AVAILABLE, PQAlgorithm,
-                              check_liboqs_support)
+    from ..pqc_liboqs import LIBOQS_AVAILABLE, PQAlgorithm, check_liboqs_support
 except ImportError:
     LIBOQS_AVAILABLE = False
     PQAlgorithm = None
@@ -169,9 +174,7 @@ class MLDSA44(SignatureBase):
 
     def sign(self, message: bytes, secret_key: Union[bytes, SecureBytes]) -> bytes:
         # Convert SecureBytes to bytes for library
-        secret_key_bytes = (
-            bytes(secret_key) if isinstance(secret_key, SecureBytes) else secret_key
-        )
+        secret_key_bytes = bytes(secret_key) if isinstance(secret_key, SecureBytes) else secret_key
 
         try:
             signer = oqs.Signature("ML-DSA-44", secret_key_bytes)
@@ -229,9 +232,7 @@ class MLDSA65(SignatureBase):
 
     def sign(self, message: bytes, secret_key: Union[bytes, SecureBytes]) -> bytes:
         # Convert SecureBytes to bytes for library
-        secret_key_bytes = (
-            bytes(secret_key) if isinstance(secret_key, SecureBytes) else secret_key
-        )
+        secret_key_bytes = bytes(secret_key) if isinstance(secret_key, SecureBytes) else secret_key
 
         try:
             signer = oqs.Signature("ML-DSA-65", secret_key_bytes)
@@ -289,9 +290,7 @@ class MLDSA87(SignatureBase):
 
     def sign(self, message: bytes, secret_key: Union[bytes, SecureBytes]) -> bytes:
         # Convert SecureBytes to bytes for library
-        secret_key_bytes = (
-            bytes(secret_key) if isinstance(secret_key, SecureBytes) else secret_key
-        )
+        secret_key_bytes = bytes(secret_key) if isinstance(secret_key, SecureBytes) else secret_key
 
         try:
             signer = oqs.Signature("ML-DSA-87", secret_key_bytes)
@@ -354,9 +353,7 @@ class SLHDSASHA2128F(SignatureBase):
 
     def sign(self, message: bytes, secret_key: Union[bytes, SecureBytes]) -> bytes:
         # Convert SecureBytes to bytes for library
-        secret_key_bytes = (
-            bytes(secret_key) if isinstance(secret_key, SecureBytes) else secret_key
-        )
+        secret_key_bytes = bytes(secret_key) if isinstance(secret_key, SecureBytes) else secret_key
 
         try:
             signer = oqs.Signature("SPHINCS+-SHA2-128f-simple", secret_key_bytes)
@@ -414,9 +411,7 @@ class SLHDSASHA2192F(SignatureBase):
 
     def sign(self, message: bytes, secret_key: Union[bytes, SecureBytes]) -> bytes:
         # Convert SecureBytes to bytes for library
-        secret_key_bytes = (
-            bytes(secret_key) if isinstance(secret_key, SecureBytes) else secret_key
-        )
+        secret_key_bytes = bytes(secret_key) if isinstance(secret_key, SecureBytes) else secret_key
 
         try:
             signer = oqs.Signature("SPHINCS+-SHA2-192f-simple", secret_key_bytes)
@@ -474,9 +469,7 @@ class SLHDSASHA2256F(SignatureBase):
 
     def sign(self, message: bytes, secret_key: Union[bytes, SecureBytes]) -> bytes:
         # Convert SecureBytes to bytes for library
-        secret_key_bytes = (
-            bytes(secret_key) if isinstance(secret_key, SecureBytes) else secret_key
-        )
+        secret_key_bytes = bytes(secret_key) if isinstance(secret_key, SecureBytes) else secret_key
 
         try:
             signer = oqs.Signature("SPHINCS+-SHA2-256f-simple", secret_key_bytes)
@@ -539,9 +532,7 @@ class FNDSA512(SignatureBase):
 
     def sign(self, message: bytes, secret_key: Union[bytes, SecureBytes]) -> bytes:
         # Convert SecureBytes to bytes for library
-        secret_key_bytes = (
-            bytes(secret_key) if isinstance(secret_key, SecureBytes) else secret_key
-        )
+        secret_key_bytes = bytes(secret_key) if isinstance(secret_key, SecureBytes) else secret_key
 
         try:
             signer = oqs.Signature("Falcon-512", secret_key_bytes)
@@ -605,9 +596,7 @@ class FNDSA1024(SignatureBase):
 
     def sign(self, message: bytes, secret_key: Union[bytes, SecureBytes]) -> bytes:
         # Convert SecureBytes to bytes for library
-        secret_key_bytes = (
-            bytes(secret_key) if isinstance(secret_key, SecureBytes) else secret_key
-        )
+        secret_key_bytes = bytes(secret_key) if isinstance(secret_key, SecureBytes) else secret_key
 
         try:
             signer = oqs.Signature("Falcon-1024", secret_key_bytes)
@@ -670,9 +659,7 @@ class MAYO1(SignatureBase):
 
     def sign(self, message: bytes, secret_key: Union[bytes, SecureBytes]) -> bytes:
         # Convert SecureBytes to bytes for library
-        secret_key_bytes = (
-            bytes(secret_key) if isinstance(secret_key, SecureBytes) else secret_key
-        )
+        secret_key_bytes = bytes(secret_key) if isinstance(secret_key, SecureBytes) else secret_key
 
         try:
             signer = oqs.Signature("MAYO-1", secret_key_bytes)
@@ -730,9 +717,7 @@ class MAYO3(SignatureBase):
 
     def sign(self, message: bytes, secret_key: Union[bytes, SecureBytes]) -> bytes:
         # Convert SecureBytes to bytes for library
-        secret_key_bytes = (
-            bytes(secret_key) if isinstance(secret_key, SecureBytes) else secret_key
-        )
+        secret_key_bytes = bytes(secret_key) if isinstance(secret_key, SecureBytes) else secret_key
 
         try:
             signer = oqs.Signature("MAYO-3", secret_key_bytes)
@@ -790,9 +775,7 @@ class MAYO5(SignatureBase):
 
     def sign(self, message: bytes, secret_key: Union[bytes, SecureBytes]) -> bytes:
         # Convert SecureBytes to bytes for library
-        secret_key_bytes = (
-            bytes(secret_key) if isinstance(secret_key, SecureBytes) else secret_key
-        )
+        secret_key_bytes = bytes(secret_key) if isinstance(secret_key, SecureBytes) else secret_key
 
         try:
             signer = oqs.Signature("MAYO-5", secret_key_bytes)
@@ -855,9 +838,7 @@ class CROSS128(SignatureBase):
 
     def sign(self, message: bytes, secret_key: Union[bytes, SecureBytes]) -> bytes:
         # Convert SecureBytes to bytes for library
-        secret_key_bytes = (
-            bytes(secret_key) if isinstance(secret_key, SecureBytes) else secret_key
-        )
+        secret_key_bytes = bytes(secret_key) if isinstance(secret_key, SecureBytes) else secret_key
 
         try:
             signer = oqs.Signature("cross-rsdp-128-balanced", secret_key_bytes)
@@ -915,9 +896,7 @@ class CROSS192(SignatureBase):
 
     def sign(self, message: bytes, secret_key: Union[bytes, SecureBytes]) -> bytes:
         # Convert SecureBytes to bytes for library
-        secret_key_bytes = (
-            bytes(secret_key) if isinstance(secret_key, SecureBytes) else secret_key
-        )
+        secret_key_bytes = bytes(secret_key) if isinstance(secret_key, SecureBytes) else secret_key
 
         try:
             signer = oqs.Signature("cross-rsdp-192-balanced", secret_key_bytes)
@@ -975,9 +954,7 @@ class CROSS256(SignatureBase):
 
     def sign(self, message: bytes, secret_key: Union[bytes, SecureBytes]) -> bytes:
         # Convert SecureBytes to bytes for library
-        secret_key_bytes = (
-            bytes(secret_key) if isinstance(secret_key, SecureBytes) else secret_key
-        )
+        secret_key_bytes = bytes(secret_key) if isinstance(secret_key, SecureBytes) else secret_key
 
         try:
             signer = oqs.Signature("cross-rsdp-256-balanced", secret_key_bytes)

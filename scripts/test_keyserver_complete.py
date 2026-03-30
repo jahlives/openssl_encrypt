@@ -101,9 +101,7 @@ def test_keyserver_complete():
         bundle = PublicKeyBundle.from_identity(identity)
         print(f"✓ Bundle created")
         print(f"  Fingerprint: {bundle.fingerprint}")
-        print(
-            f"  Algorithms: {bundle.encryption_algorithm} / {bundle.signing_algorithm}"
-        )
+        print(f"  Algorithms: {bundle.encryption_algorithm} / {bundle.signing_algorithm}")
 
     except Exception as e:
         print(f"✗ Failed to create bundle: {e}")
@@ -138,9 +136,7 @@ def test_keyserver_complete():
     try:
         print(f"Uploading '{bundle.name}' to {config.servers[0]}...")
         signing_private_key_bytes = identity.signing_private_key.get_bytes()
-        success = plugin.upload_key(
-            bundle, signing_private_key_bytes=signing_private_key_bytes
-        )
+        success = plugin.upload_key(bundle, signing_private_key_bytes=signing_private_key_bytes)
 
         if success:
             print("✓ Upload successful")

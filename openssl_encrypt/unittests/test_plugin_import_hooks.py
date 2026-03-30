@@ -14,12 +14,12 @@ import tempfile
 import pytest
 
 from openssl_encrypt.modules.plugin_system.plugin_base import (
-    PluginCapability, PluginSecurityContext)
-from openssl_encrypt.modules.plugin_system.plugin_config import \
-    PluginConfigManager
+    PluginCapability,
+    PluginSecurityContext,
+)
+from openssl_encrypt.modules.plugin_system.plugin_config import PluginConfigManager
 from openssl_encrypt.modules.plugin_system.plugin_manager import PluginManager
-from openssl_encrypt.modules.plugin_system.plugin_sandbox import \
-    PluginImportGuard
+from openssl_encrypt.modules.plugin_system.plugin_sandbox import PluginImportGuard
 
 
 class TestDirectImportBlocking:
@@ -39,13 +39,9 @@ class TestDirectImportBlocking:
         if os.path.exists(self.temp_dir):
             shutil.rmtree(self.temp_dir)
 
-    def _create_plugin(
-        self, plugin_id: str, import_statement: str, capabilities: str = ""
-    ):
+    def _create_plugin(self, plugin_id: str, import_statement: str, capabilities: str = ""):
         """Create a test plugin with specific import"""
-        caps = (
-            f"{{{capabilities}}}" if capabilities else "{PluginCapability.READ_FILES}"
-        )
+        caps = f"{{{capabilities}}}" if capabilities else "{PluginCapability.READ_FILES}"
 
         plugin_content = f"""
 from openssl_encrypt.modules.plugin_system import PreProcessorPlugin, PluginCapability, PluginResult, PluginType
@@ -88,9 +84,7 @@ class TestPlugin(PreProcessorPlugin):
         test_file.close()
 
         try:
-            context = PluginSecurityContext(
-                "test_subprocess", {PluginCapability.READ_FILES}
-            )
+            context = PluginSecurityContext("test_subprocess", {PluginCapability.READ_FILES})
             context.file_paths = [test_file.name]
 
             result = self.plugin_manager.execute_plugin(
@@ -99,10 +93,7 @@ class TestPlugin(PreProcessorPlugin):
 
             # Should be blocked
             assert not result.success
-            assert (
-                "import" in result.message.lower()
-                or "blocked" in result.message.lower()
-            )
+            assert "import" in result.message.lower() or "blocked" in result.message.lower()
             assert "subprocess" in result.message.lower()
         finally:
             os.unlink(test_file.name)
@@ -121,9 +112,7 @@ class TestPlugin(PreProcessorPlugin):
         test_file.close()
 
         try:
-            context = PluginSecurityContext(
-                "test_socket", {PluginCapability.READ_FILES}
-            )
+            context = PluginSecurityContext("test_socket", {PluginCapability.READ_FILES})
             context.file_paths = [test_file.name]
 
             result = self.plugin_manager.execute_plugin(
@@ -141,10 +130,7 @@ class TestPlugin(PreProcessorPlugin):
         load_result = self.plugin_manager.load_plugin(plugin_path)
 
         if not load_result.success:
-            assert (
-                "os" in load_result.message.lower()
-                or "security" in load_result.message.lower()
-            )
+            assert "os" in load_result.message.lower() or "security" in load_result.message.lower()
             return
 
         test_file = tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".txt")
@@ -170,8 +156,7 @@ class TestPlugin(PreProcessorPlugin):
 
         if not load_result.success:
             assert (
-                "ctypes" in load_result.message.lower()
-                or "security" in load_result.message.lower()
+                "ctypes" in load_result.message.lower() or "security" in load_result.message.lower()
             )
             return
 
@@ -180,9 +165,7 @@ class TestPlugin(PreProcessorPlugin):
         test_file.close()
 
         try:
-            context = PluginSecurityContext(
-                "test_ctypes", {PluginCapability.READ_FILES}
-            )
+            context = PluginSecurityContext("test_ctypes", {PluginCapability.READ_FILES})
             context.file_paths = [test_file.name]
 
             result = self.plugin_manager.execute_plugin(
@@ -236,9 +219,7 @@ class TestPlugin(PreProcessorPlugin):
 
     def test_from_subprocess_import_blocked(self):
         """from subprocess import Popen should be blocked"""
-        plugin_path = self._create_plugin(
-            "test_from_subprocess", "from subprocess import Popen"
-        )
+        plugin_path = self._create_plugin("test_from_subprocess", "from subprocess import Popen")
         load_result = self.plugin_manager.load_plugin(plugin_path)
 
         # Should be blocked at static analysis or runtime
@@ -271,10 +252,7 @@ class TestPlugin(PreProcessorPlugin):
         load_result = self.plugin_manager.load_plugin(plugin_path)
 
         if not load_result.success:
-            assert (
-                "os" in load_result.message.lower()
-                or "security" in load_result.message.lower()
-            )
+            assert "os" in load_result.message.lower() or "security" in load_result.message.lower()
 
 
 class TestSafeImportsAllowed:
@@ -362,9 +340,7 @@ class TestPlugin(PreProcessorPlugin):
         test_file.close()
 
         try:
-            context = PluginSecurityContext(
-                "test_datetime", {PluginCapability.READ_FILES}
-            )
+            context = PluginSecurityContext("test_datetime", {PluginCapability.READ_FILES})
             context.file_paths = [test_file.name]
 
             result = self.plugin_manager.execute_plugin(
@@ -490,9 +466,7 @@ class TestPlugin(PreProcessorPlugin):
                 )
 
                 message = result.message.lower()
-                assert (
-                    "import" in message or "blocked" in message or "security" in message
-                )
+                assert "import" in message or "blocked" in message or "security" in message
             finally:
                 os.unlink(test_file.name)
 

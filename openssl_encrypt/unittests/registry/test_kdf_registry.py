@@ -8,14 +8,27 @@ All code in English as per project requirements.
 
 import pytest
 
-from openssl_encrypt.modules.registry import (HKDF, PBKDF2, AlgorithmCategory,
-                                              Argon2d, Argon2i, Argon2id,
-                                              Argon2Params, Balloon,
-                                              BalloonParams, HKDFParams,
-                                              KDFRegistry, PBKDF2Params,
-                                              RandomX, RandomXParams, Scrypt,
-                                              ScryptParams, SecurityLevel,
-                                              ValidationError, get_kdf)
+from openssl_encrypt.modules.registry import (
+    HKDF,
+    PBKDF2,
+    AlgorithmCategory,
+    Argon2d,
+    Argon2i,
+    Argon2id,
+    Argon2Params,
+    Balloon,
+    BalloonParams,
+    HKDFParams,
+    KDFRegistry,
+    PBKDF2Params,
+    RandomX,
+    RandomXParams,
+    Scrypt,
+    ScryptParams,
+    SecurityLevel,
+    ValidationError,
+    get_kdf,
+)
 
 
 class TestKDFRegistry:
@@ -587,9 +600,7 @@ class TestMultiRoundKDF:
                 round_salt = base_salt
             else:
                 # Use predictable derivation (v8 method)
-                salt_material = hashlib.sha256(
-                    base_salt + str(round_num).encode()
-                ).digest()
+                salt_material = hashlib.sha256(base_salt + str(round_num).encode()).digest()
                 round_salt = salt_material[:16]
 
             current_output = kdf.derive(bytes(current_output), round_salt)
@@ -630,9 +641,7 @@ class TestMultiRoundKDF:
                 round_salt = base_salt
             else:
                 # Use predictable derivation (v8 method)
-                salt_material = hashlib.sha256(
-                    base_salt + str(round_num).encode()
-                ).digest()
+                salt_material = hashlib.sha256(base_salt + str(round_num).encode()).digest()
                 round_salt = salt_material[:16]
 
             current_output = kdf.derive(bytes(current_output), round_salt)
@@ -676,9 +685,7 @@ class TestMultiRoundKDF:
                 round_salt = base_salt
             else:
                 # Use predictable derivation (v8 method)
-                salt_material = hashlib.sha256(
-                    base_salt + str(round_num).encode()
-                ).digest()
+                salt_material = hashlib.sha256(base_salt + str(round_num).encode()).digest()
                 round_salt = salt_material[:16]
 
             current_output = kdf.derive(bytes(current_output), round_salt, params)
