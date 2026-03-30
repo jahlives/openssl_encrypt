@@ -17,6 +17,7 @@ from openssl_encrypt.modules.registry import (
     Argon2id,
     Argon2Params,
     Balloon,
+    BalloonParams,
     HKDFParams,
     KDFRegistry,
     PBKDF2Params,

@@ -29,6 +29,7 @@ from typing import List, Optional, Set
 
 import requests
 from requests.adapters import HTTPAdapter
+from urllib3.poolmanager import PoolManager
 
 from ...modules.crypt_utils import eprint
 from ...modules.key_bundle import PublicKeyBundle, create_pop_signature
@@ -109,17 +110,25 @@ class CertPinningAdapter(HTTPAdapter):
 class KeyserverError(Exception):
     """Base exception for keyserver operations"""
 
+    pass
+
 
 class NetworkError(KeyserverError):
     """Raised when network request fails"""
+
+    pass
 
 
 class AuthenticationError(KeyserverError):
     """Raised when API token authentication fails"""
 
+    pass
+
 
 class PasswordRequiredError(AuthenticationError):
     """Raised when server requires password setup (403 password_required)."""
+
+    pass
 
 
 class KeyserverPlugin(BasePlugin):

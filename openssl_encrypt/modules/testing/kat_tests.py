@@ -7,10 +7,11 @@ cryptographic algorithms produce expected results.
 
 import hashlib
 import hmac
+import json
 import os
 import tempfile
 from dataclasses import dataclass, field
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Tuple
 
 from ..crypt_core import decrypt_file, encrypt_file
 from .base_test import BaseSecurityTest, TestConfig, TestResult, TestResultLevel
@@ -522,7 +523,7 @@ class KATTestSuite(BaseSecurityTest):
                 return TestResult(
                     f"file_encrypt_{vector.test_name}",
                     TestResultLevel.ERROR,
-                    "Encryption failed - no output file created",
+                    f"Encryption failed - no output file created",
                 )
 
             # Decrypt file
@@ -532,7 +533,7 @@ class KATTestSuite(BaseSecurityTest):
                 return TestResult(
                     f"file_encrypt_{vector.test_name}",
                     TestResultLevel.ERROR,
-                    "Decryption failed - no output file created",
+                    f"Decryption failed - no output file created",
                 )
 
             # Verify data integrity
@@ -555,7 +556,7 @@ class KATTestSuite(BaseSecurityTest):
                 return TestResult(
                     f"file_encrypt_{vector.test_name}",
                     TestResultLevel.ERROR,
-                    "File encryption test failed: data corruption detected",
+                    f"File encryption test failed: data corruption detected",
                     details={
                         "expected_size": len(vector.input_data),
                         "actual_size": len(decrypted_data),

@@ -20,12 +20,14 @@ Security Notes:
 - Follows zero-trust plugin architecture
 """
 
+import hashlib
 import json
 import logging
 import mimetypes
 import os
 import time
 from pathlib import Path
+from typing import Any, Dict
 
 from ...modules.plugin_system import (
     AnalyzerPlugin,
@@ -147,7 +149,7 @@ class FileMetadataAnalyzer(AnalyzerPlugin):
                     first_part = header_str.split(":")[0].strip()
                     base64.b64decode(first_part + "==")  # Add padding just in case
                     return True
-            except ValueError:
+            except (UnicodeDecodeError, ValueError):
                 pass
 
             return False

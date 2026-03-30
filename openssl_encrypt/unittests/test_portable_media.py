@@ -13,6 +13,10 @@ import os
 import shutil
 import tempfile
 import unittest
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 
 class TestQRCodeKeyDistribution(unittest.TestCase):
@@ -80,7 +84,7 @@ class TestQRCodeKeyDistribution(unittest.TestCase):
         if not self.qr_available:
             self.skipTest("QR code dependencies not available")
 
-        from openssl_encrypt.modules.portable_media import create_key_qr
+        from openssl_encrypt.modules.portable_media import create_key_qr, read_key_qr
 
         test_key = b"test_encryption_key_for_qr_roundtrip"
         key_name = "roundtrip_test_key"

@@ -21,12 +21,13 @@ import time
 import uuid
 from dataclasses import asdict, dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import yaml
 
 from .config_analyzer import ConfigurationAnalyzer, analyze_configuration_from_args
 from .crypt_utils import eprint
+from .security_scorer import SecurityLevel
 
 
 class TemplateCategory(Enum):
@@ -218,7 +219,7 @@ class TemplateManager:
         """Create a template from wizard configuration."""
         metadata = TemplateMetadata(
             name=name,
-            description=description or "Template generated from configuration wizard",
+            description=description or f"Template generated from configuration wizard",
             category=TemplateCategory.WIZARD_GENERATED,
             author="Configuration Wizard",
             use_cases=use_cases or [],
@@ -257,7 +258,7 @@ class TemplateManager:
 
         metadata = TemplateMetadata(
             name=name,
-            description=description or "Template created from CLI configuration",
+            description=description or f"Template created from CLI configuration",
             category=TemplateCategory.USER_CREATED,
             author="CLI Configuration",
             use_cases=use_cases or [],
@@ -694,7 +695,7 @@ class TemplateManager:
             return analyzer.analyze_configuration(
                 template.config, use_case, compliance_requirements
             )
-        except Exception:
+        except Exception as e:
             # Return a minimal analysis object in case of error
             from .config_analyzer import ConfigurationAnalysis
 

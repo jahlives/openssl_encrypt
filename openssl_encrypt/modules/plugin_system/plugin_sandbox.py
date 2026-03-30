@@ -325,6 +325,8 @@ class ResourceMonitor:
 class SandboxViolationError(Exception):
     """Raised when plugin violates sandbox restrictions."""
 
+    pass
+
 
 class PluginSandbox:
     """

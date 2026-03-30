@@ -9,6 +9,8 @@ Exception hierarchy for steganographic operations.
 class SteganographyError(Exception):
     """Base exception for all steganography operations"""
 
+    pass
+
 
 class CapacityError(SteganographyError):
     """Raised when data exceeds cover media capacity"""
@@ -26,10 +28,16 @@ class CapacityError(SteganographyError):
 class ExtractionError(SteganographyError):
     """Raised when data cannot be extracted from cover media"""
 
+    pass
+
 
 class CoverMediaError(SteganographyError):
     """Raised when cover media is invalid or corrupted"""
 
+    pass
+
 
 class SecurityError(SteganographyError):
     """Raised when security constraints are violated"""
+
+    pass

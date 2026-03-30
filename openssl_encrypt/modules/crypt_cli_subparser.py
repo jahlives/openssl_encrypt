@@ -20,6 +20,13 @@ CASCADE_PRESETS = {
 # Import registry helper functions
 try:
     from .registry import format_algorithm_help  # noqa: F401
+    from .registry import (
+        get_available_ciphers,
+        get_available_hashes,
+        get_available_kdfs,
+        get_available_kems,
+        get_available_signatures,
+    )
 
     REGISTRY_AVAILABLE = True
 except ImportError:
@@ -1723,6 +1730,7 @@ def setup_derive_password_parser(subparser):
 def setup_simple_parser(subparser):
     """Set up arguments for simple commands (security-info, check-argon2, check-pqc, version)."""
     # These commands don't need any special arguments
+    pass
 
 
 def setup_analyze_security_parser(subparser):

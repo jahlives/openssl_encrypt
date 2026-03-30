@@ -26,6 +26,7 @@ COMPONENTS:
 import logging
 import os
 import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
@@ -337,5 +338,5 @@ class OpenSSLEncryptTelemetryPlugin(TelemetryPlugin):
         """
         try:
             self.stop()
-        except Exception:
+        except:
             pass

@@ -18,6 +18,7 @@ are not accidentally broken in future updates.
 import os
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -35,6 +36,10 @@ from openssl_encrypt.modules.plugin_system import (
     PreProcessorPlugin,
 )
 from openssl_encrypt.modules.plugin_system.plugin_config import PluginConfigManager
+from openssl_encrypt.modules.plugin_system.plugin_sandbox import (
+    PluginSandbox,
+    SandboxViolationError,
+)
 
 
 class TestSensitiveDataProtection(unittest.TestCase):

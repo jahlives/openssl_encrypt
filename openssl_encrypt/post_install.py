@@ -4,6 +4,8 @@ This script is executed after the package is installed to perform additional set
 """
 
 import logging
+import os
+import sys
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("post_install")

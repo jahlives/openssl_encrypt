@@ -9,6 +9,7 @@ All code in English as per project requirements.
 """
 
 import subprocess
+import sys
 from abc import abstractmethod
 from dataclasses import dataclass
 from enum import Enum
@@ -35,6 +36,7 @@ except ImportError:
 
     def secure_memzero(data):
         """Fallback no-op."""
+        pass
 
 
 class Argon2Type(Enum):
@@ -202,6 +204,7 @@ class KDFBase(AlgorithmBase):
               >>>     secure_memzero(key)
               >>>     del key
         """
+        pass
 
     @classmethod
     @abstractmethod
@@ -212,6 +215,7 @@ class KDFBase(AlgorithmBase):
         Returns:
             Default KDFParams instance
         """
+        pass
 
     @classmethod
     def validate_params(cls, params: KDFParams) -> None:
@@ -263,7 +267,7 @@ class Argon2id(KDFBase):
     def is_available(cls) -> bool:
         if cls._available is None:
             try:
-                pass
+                import argon2
 
                 cls._available = True
             except ImportError:
@@ -537,7 +541,7 @@ class Scrypt(KDFBase):
     def is_available(cls) -> bool:
         if cls._available is None:
             try:
-                pass
+                from cryptography.hazmat.primitives.kdf.scrypt import Scrypt as CryptoScrypt
 
                 cls._available = True
             except ImportError:
@@ -629,7 +633,7 @@ class Balloon(KDFBase):
     def is_available(cls) -> bool:
         if cls._available is None:
             try:
-                pass
+                from openssl_encrypt.modules.balloon import balloon_m
 
                 cls._available = True
             except ImportError:
@@ -721,7 +725,7 @@ class HKDF(KDFBase):
     def is_available(cls) -> bool:
         if cls._available is None:
             try:
-                pass
+                from cryptography.hazmat.primitives.kdf.hkdf import HKDF as CryptoHKDF
 
                 cls._available = True
             except ImportError:
@@ -826,7 +830,7 @@ class RandomX(KDFBase):
                     env=_get_subprocess_env(),
                 )
                 cls._available = result.returncode == 0
-            except (subprocess.TimeoutExpired, OSError):
+            except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
                 cls._available = False
         return cls._available
 

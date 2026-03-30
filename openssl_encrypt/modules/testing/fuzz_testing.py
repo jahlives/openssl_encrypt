@@ -5,12 +5,14 @@ Provides comprehensive fuzzing capabilities to test input boundary conditions,
 edge cases, and resilience against malformed inputs.
 """
 
+import json
 import os
 import random
 import string
+import struct
 import tempfile
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from ..crypt_core import decrypt_file, encrypt_file
 from .base_test import BaseSecurityTest, TestConfig, TestResult, TestResultLevel
@@ -365,7 +367,7 @@ class FuzzTestSuite(BaseSecurityTest):
 
                 # If it succeeds, that's okay (library uses defaults)
                 return TestResult(
-                    "malformed_config",
+                    f"malformed_config",
                     TestResultLevel.PASS,
                     "Malformed config handled gracefully (used defaults)",
                     details={"config": bad_config},
@@ -374,7 +376,7 @@ class FuzzTestSuite(BaseSecurityTest):
             except (ValueError, TypeError, KeyError) as expected_error:
                 # Expected behavior - library should reject invalid configs
                 return TestResult(
-                    "malformed_config",
+                    f"malformed_config",
                     TestResultLevel.PASS,
                     f"Malformed config properly rejected: {str(expected_error)}",
                     details={"config": bad_config, "error": str(expected_error)},
@@ -383,7 +385,7 @@ class FuzzTestSuite(BaseSecurityTest):
         except Exception as unexpected_error:
             # Unexpected errors indicate problems
             return TestResult(
-                "malformed_config",
+                f"malformed_config",
                 TestResultLevel.ERROR,
                 f"Unexpected error with malformed config: {str(unexpected_error)}",
                 details={"config": bad_config},
@@ -489,13 +491,13 @@ class FuzzTestSuite(BaseSecurityTest):
 
             if decrypted_data != test_data:
                 return TestResult(
-                    "password_fuzz",
+                    f"password_fuzz",
                     TestResultLevel.ERROR,
-                    "Password case failed data integrity check",
+                    f"Password case failed data integrity check",
                 )
 
             return TestResult(
-                "password_fuzz",
+                f"password_fuzz",
                 TestResultLevel.PASS,
                 "Password case handled successfully",
                 details={"password_length": len(password)},
@@ -503,7 +505,7 @@ class FuzzTestSuite(BaseSecurityTest):
 
         except Exception as e:
             return TestResult(
-                "password_fuzz",
+                f"password_fuzz",
                 TestResultLevel.ERROR,
                 f"Password case failed: {str(e)}",
                 exception=e,
@@ -512,6 +514,7 @@ class FuzzTestSuite(BaseSecurityTest):
     def _test_concurrent_access(self, config: TestConfig) -> None:
         """Test concurrent file access scenarios."""
         import threading
+        import time
 
         def encrypt_worker(worker_id: int, results: List):
             try:

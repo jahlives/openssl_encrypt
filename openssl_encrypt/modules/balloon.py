@@ -1,5 +1,6 @@
 import concurrent.futures
 import hashlib
+import secrets
 
 hash_functions = {
     "sha224": hashlib.sha224,

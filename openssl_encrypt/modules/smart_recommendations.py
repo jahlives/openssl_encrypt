@@ -23,7 +23,7 @@ import os
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from .config_analyzer import ConfigurationAnalyzer
 from .security_scorer import SecurityScorer
@@ -481,7 +481,7 @@ class SmartRecommendationEngine:
                             action=rec.action,
                             reasoning=rec.rationale,
                             evidence=[
-                                "Configuration issue detected by analyzer",
+                                f"Configuration issue detected by analyzer",
                                 f"Applies to: {', '.join(rec.applies_to)}",
                                 f"Impact: {rec.impact}",
                             ],

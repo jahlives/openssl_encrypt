@@ -7,7 +7,7 @@ particularly for handling extended post-quantum algorithm options.
 """
 
 import logging
-from typing import Any
+from typing import Any, Dict, Optional, Union
 
 # Configure logger
 logger = logging.getLogger(__name__)

@@ -11,13 +11,14 @@ This test suite focuses on preventing regressions related to:
 NOTE: These tests use mocked integrity plugin - no remote server required.
 """
 
+import base64
 import hashlib
 import json
 import os
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 from openssl_encrypt.modules.crypt_core import EncryptionAlgorithm, decrypt_file, encrypt_file
 from openssl_encrypt.modules.crypt_errors import DecryptionError

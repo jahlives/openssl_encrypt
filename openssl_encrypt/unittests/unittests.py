@@ -11,10 +11,14 @@ error handling, and buffer overflow protection.
 import json
 import logging
 import os
+import random
+import re
 import shutil
+import statistics
 import string
 import sys
 import tempfile
+import time
 import unittest
 import warnings
 
@@ -49,54 +53,123 @@ import json
 import secrets
 import threading
 import uuid
-from io import StringIO
+from enum import Enum
+from io import BytesIO, StringIO
+from pathlib import Path
+from typing import Any, Dict, Optional
 from unittest import mock
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
+import yaml
+from cryptography.fernet import InvalidToken
 
 # Asymmetric encryption imports
 # Asymmetric encryption imports
 from openssl_encrypt.modules.asymmetric_core import (
     MetadataCanonicalizer,
+    PasswordWrapper,
+    PasswordWrapperError,
     unwrap_password_for_recipient,
     wrap_password_for_recipient,
+)
+from openssl_encrypt.modules.config_wizard import (
+    ConfigurationWizard,
+    UseCase,
+    UserExpertise,
+    generate_cli_arguments,
+    run_configuration_wizard,
 )
 
 # Import the modules to test
 from openssl_encrypt.modules.crypt_core import (
     ARGON2_AVAILABLE,
     WHIRLPOOL_AVAILABLE,
+    CamelliaCipher,
     EncryptionAlgorithm,
     XChaCha20Poly1305,
+    create_metadata_v7,
     decrypt_file,
+    decrypt_file_asymmetric,
     encrypt_file,
+    encrypt_file_asymmetric,
     generate_key,
+    is_aead_algorithm,
     multi_hash_password,
 )
+from openssl_encrypt.modules.crypt_errors import add_timing_jitter, get_jitter_stats
 from openssl_encrypt.modules.crypt_utils import (
     expand_glob_patterns,
     generate_strong_password,
     secure_shred_file,
 )
+from openssl_encrypt.modules.crypto_secure_memory import CryptoKey
+from openssl_encrypt.modules.identity import Identity, IdentityError, IdentityStore
+from openssl_encrypt.modules.identity_cli import (
+    cmd_change_password,
+    cmd_create,
+    cmd_delete,
+    cmd_export,
+    cmd_import,
+    cmd_list,
+    cmd_show,
+)
 from openssl_encrypt.modules.pqc import PQCipher
+from openssl_encrypt.modules.pqc_signing import (
+    LIBOQS_AVAILABLE,
+    PQCSigner,
+    calculate_fingerprint,
+    sign_with_ml_dsa_65,
+    verify_signature_with_timing,
+    verify_with_ml_dsa_65,
+)
+from openssl_encrypt.modules.secure_memory import (
+    SecureBytes,
+    SecureMemoryAllocator,
+    allocate_secure_buffer,
+    free_secure_buffer,
+)
+from openssl_encrypt.modules.secure_memory import secure_memzero as memory_secure_memzero
+from openssl_encrypt.modules.secure_memory import verify_memory_zeroed
+from openssl_encrypt.modules.secure_ops import (
+    SecureContainer,
+    constant_time_compare,
+    constant_time_pkcs7_unpad,
+    secure_memzero,
+)
+from openssl_encrypt.modules.security_scorer import SecurityLevel, SecurityScorer
 
 try:
-    pass
+    from openssl_encrypt.plugins.steganography.error_correction import (
+        AdaptiveErrorCorrection,
+        BlockEncoder,
+        ReedSolomonDecoder,
+        ReedSolomonEncoder,
+    )
 
     ERROR_CORRECTION_AVAILABLE = True
 except ImportError:
     ERROR_CORRECTION_AVAILABLE = False
 
 try:
-    pass
+    from openssl_encrypt.modules.steganography.qim_algorithm import (
+        AdaptiveQIM,
+        DistortionCompensatedQIM,
+        MultiLevelQIM,
+        QIMAnalyzer,
+        UniformQIM,
+    )
 
     QIM_ALGORITHM_AVAILABLE = True
 except ImportError:
     QIM_ALGORITHM_AVAILABLE = False
 
 try:
-    pass
+    from openssl_encrypt.modules.steganography.steganalysis import (
+        AdvancedSteganalysis,
+        ClassicalSteganalysis,
+        InformationTheoreticSecurity,
+    )
 
     STEGANALYSIS_AVAILABLE = True
 except ImportError:
@@ -124,20 +197,39 @@ class LogCapture(logging.Handler):
         self.output = StringIO()
 
 
+from openssl_encrypt.modules.crypt_cli import main as cli_main
 from openssl_encrypt.modules.crypt_errors import (
+    AuthenticationError,
     DecryptionError,
     EncryptionError,
     ErrorCategory,
+    InternalError,
+    KeyDerivationError,
     KeyNotFoundError,
+    KeystoreCorruptedError,
     KeystoreError,
     KeystorePasswordError,
+    KeystoreVersionError,
     MemoryError,
     ValidationError,
+    constant_time_compare,
+    constant_time_pkcs7_unpad,
+    secure_decrypt_error_handler,
+    secure_encrypt_error_handler,
     secure_error_handler,
+    secure_key_derivation_error_handler,
     secure_keystore_error_handler,
+    set_debug_mode,
 )
 from openssl_encrypt.modules.keystore_cli import KeystoreSecurityLevel, PQCKeystore
-from openssl_encrypt.modules.pqc import PQCipher, check_pqc_support
+from openssl_encrypt.modules.pqc import LIBOQS_AVAILABLE, PQCAlgorithm, PQCipher, check_pqc_support
+from openssl_encrypt.modules.secure_memory import verify_memory_zeroed
+from openssl_encrypt.modules.secure_ops import (
+    SecureContainer,
+    constant_time_compare,
+    constant_time_pkcs7_unpad,
+    secure_memzero,
+)
 
 # Dictionary of required CLI arguments grouped by category based on help output
 # Each key is a category name, and the value is a list of arguments to check for
@@ -499,7 +591,7 @@ class TestCryptCore(unittest.TestCase):
             decrypt_file(encrypted_file, decrypted_file, wrong_password, quiet=True)
             # If we get here, decryption succeeded, which is not what we expect
             self.fail("Decryption should have failed with wrong password")
-        except Exception:
+        except Exception as e:
             # Accept any exception that indicates decryption or authentication failure
             # This broad check is necessary because the error handling system might wrap
             # the original exception in various ways depending on the environment
@@ -562,7 +654,7 @@ class TestCryptCore(unittest.TestCase):
             mock_decrypt.return_value = True
 
             # Attempt decryption
-            _result = mock_decrypt(encrypted_file, decrypted_file, self.test_password, quiet=True)
+            result = mock_decrypt(encrypted_file, decrypted_file, self.test_password, quiet=True)
 
             # Create a fake decrypted file with the original content
             with open(decrypted_file, "w", encoding="utf-8") as f:
@@ -916,6 +1008,8 @@ class TestCryptCore(unittest.TestCase):
         """Test decryption from stdin using a temporary file instead of mocking."""
         import tempfile
 
+        from openssl_encrypt.modules.secure_memory import SecureBytes
+
         # Create a temporary file to use instead of mocking stdin
         with tempfile.NamedTemporaryFile() as temp_file:
             encrypted_content = b"eyJmb3JtYXRfdmVyc2lvbiI6IDMsICJzYWx0IjogIkNRNWphR3E2NFNickhBQ1g1aytLbXc9PSIsICJoYXNoX2NvbmZpZyI6IHsic2hhNTEyIjogMCwgInNoYTI1NiI6IDAsICJzaGEzXzI1NiI6IDAsICJzaGEzXzUxMiI6IDEwLCAiYmxha2UyYiI6IDAsICJzaGFrZTI1NiI6IDAsICJ3aGlybHBvb2wiOiAwLCAic2NyeXB0IjogeyJlbmFibGVkIjogZmFsc2UsICJuIjogMTI4LCAiciI6IDgsICJwIjogMSwgInJvdW5kcyI6IDF9LCAiYXJnb24yIjogeyJlbmFibGVkIjogZmFsc2UsICJ0aW1lX2Nvc3QiOiAzLCAibWVtb3J5X2Nvc3QiOiA2NTUzNiwgInBhcmFsbGVsaXNtIjogNCwgImhhc2hfbGVuIjogMzIsICJ0eXBlIjogMiwgInJvdW5kcyI6IDF9LCAiYmFsbG9vbiI6IHsiZW5hYmxlZCI6IGZhbHNlLCAidGltZV9jb3N0IjogMywgInNwYWNlX2Nvc3QiOiA2NTUzNiwgInBhcmFsbGVsaXNtIjogNCwgInJvdW5kcyI6IDJ9LCAicGJrZGYyX2l0ZXJhdGlvbnMiOiAxMCwgInR5cGUiOiAiaWQifSwgInBia2RmMl9pdGVyYXRpb25zIjogMTAsICJvcmlnaW5hbF9oYXNoIjogImQyYTg0ZjRiOGI2NTA5MzdlYzhmNzNjZDhiZTJjNzRhZGQ1YTkxMWJhNjRkZjI3NDU4ZWQ4MjI5ZGE4MDRhMjYiLCAiZW5jcnlwdGVkX2hhc2giOiAiY2UwNTI4MWRkMmY1NmUzNDEzMmI2NjZjZDkwMTM5OGI0YTA4MWEyZmFjZDcxOTNlMzAwZWM2YjJjODY1MWRhMyIsICJhbGdvcml0aG0iOiAiZmVybmV0In0=:Z0FBQUFBQm9GTC1FNG5Gc2Q1aHhJSzJrTUN5amx4TnF4RXozTHhhQUhqbzRZZlNfQTVOUmRpc0lrUTQxblI1a1J5M05sOXYwUnBMM0Q5a1NnRFZWNzFfOEczZDRLZXo2S3c9PQ=="
@@ -944,6 +1038,8 @@ class TestCryptCore(unittest.TestCase):
     def test_decrypt_stdin_quick(self):
         """Test quick decryption from stdin using a temporary file instead of mocking."""
         import tempfile
+
+        from openssl_encrypt.modules.secure_memory import SecureBytes
 
         # Create a temporary file to use instead of mocking stdin
         with tempfile.NamedTemporaryFile() as temp_file:
@@ -993,7 +1089,7 @@ class TestCryptUtils(unittest.TestCase):
         for i in range(2):
             file_path = os.path.join(self.sub_dir, f"sub_file_{i}.txt")
             with open(file_path, "w", encoding="utf-8") as f:
-                f.write("This is a file in the subdirectory for recursive shredding test.")
+                f.write(f"This is a file in the subdirectory for recursive shredding test.")
 
     def tearDown(self):
         """Clean up after tests."""
@@ -1337,7 +1433,7 @@ class TestFileOperations(unittest.TestCase):
             self.assertEqual(encrypted_perms, 0o600)
 
             # Mock decryption and create the decrypted file
-            _result = mock_decrypt(encrypted_file, decrypted_file, self.test_password, quiet=True)
+            result = mock_decrypt(encrypted_file, decrypted_file, self.test_password, quiet=True)
 
             # Create a fake decrypted file with the original content
             with open(decrypted_file, "w", encoding="utf-8") as f:
@@ -1408,7 +1504,7 @@ class TestEncryptionEdgeCases(unittest.TestCase):
                 quiet=True,
             )
             self.fail("Expected exception was not raised")
-        except (ValidationError, OSError):
+        except (FileNotFoundError, ValidationError, OSError) as e:
             # Any of these exception types is acceptable
             # Don't test for specific message content as it varies by environment
             pass
@@ -1428,7 +1524,7 @@ class TestEncryptionEdgeCases(unittest.TestCase):
                 quiet=True,
             )
             self.fail("Expected exception was not raised")
-        except (EncryptionError, ValidationError, OSError):
+        except (FileNotFoundError, EncryptionError, ValidationError, OSError) as e:
             # Any of these exception types is acceptable
             # The actual behavior varies between environments
             pass
@@ -2530,6 +2626,10 @@ class TestCryptErrorsFixes(unittest.TestCase):
         """Test that XChaCha20Poly1305 properly handles nonces of different lengths."""
         import secrets
 
+        from cryptography.hazmat.backends import default_backend
+        from cryptography.hazmat.primitives import hashes
+        from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+
         # Create an instance with a valid key
         key = secrets.token_bytes(32)  # 32 bytes for ChaCha20Poly1305
         cipher = XChaCha20Poly1305(key)
@@ -2661,7 +2761,7 @@ class TestCryptErrorsFixes(unittest.TestCase):
         from openssl_encrypt.modules.setup_whirlpool import install_whirlpool
 
         # Mock Python version info to simulate Python 3.13
-        sys.version_info
+        original_version_info = sys.version_info
 
         class MockVersionInfo:
             def __init__(self, major, minor):
@@ -2672,7 +2772,7 @@ class TestCryptErrorsFixes(unittest.TestCase):
             # Mock subprocess.check_call to prevent actual package installation
             with unittest.mock.patch("subprocess.check_call") as mock_check_call:
                 # Call install_whirlpool and verify it tries to install the right package
-                install_whirlpool()
+                result = install_whirlpool()
 
                 # Verify it attempted to check for whirlpool-py313 availability
                 mock_check_call.assert_called()
@@ -2733,6 +2833,7 @@ class TestAdvancedTestingFramework(unittest.TestCase):
     def test_base_test_classes(self):
         """Test base testing framework classes."""
         from openssl_encrypt.modules.testing.base_test import (
+            BaseSecurityTest,
             TestResult,
             TestResultLevel,
         )
@@ -2862,6 +2963,7 @@ class TestAdvancedTestingFramework(unittest.TestCase):
     def test_benchmark_performance_analyzer(self):
         """Test benchmark performance analyzer."""
         from openssl_encrypt.modules.testing.benchmark_suite import (
+            BenchmarkResult,
             PerformanceAnalyzer,
         )
 
@@ -3000,7 +3102,7 @@ class TestAdvancedTestingFramework(unittest.TestCase):
         self.assertIn("fuzz", fuzz_suite.description.lower())
 
         # Test with minimal config (avoiding actual file operations)
-        _config = TestConfig(algorithm="fernet", test_mode=True)
+        config = TestConfig(algorithm="fernet", test_mode=True)
 
         # Just test that the suite can be instantiated and configured
         self.assertIsNotNone(fuzz_suite.input_generator)
@@ -3078,7 +3180,26 @@ class TestAdvancedTestingFramework(unittest.TestCase):
         """Test that all testing framework modules can be imported."""
         # Test base module imports
         try:
-            pass
+            from openssl_encrypt.modules.testing.base_test import (
+                BaseSecurityTest,
+                TestResult,
+                TestResultLevel,
+            )
+            from openssl_encrypt.modules.testing.benchmark_suite import (
+                BenchmarkTestSuite,
+                PerformanceAnalyzer,
+            )
+            from openssl_encrypt.modules.testing.fuzz_testing import FuzzTestSuite, InputGenerator
+            from openssl_encrypt.modules.testing.kat_tests import KATTestSuite, NISTTestVectors
+            from openssl_encrypt.modules.testing.memory_tests import MemoryProfiler, MemoryTestSuite
+            from openssl_encrypt.modules.testing.side_channel_tests import (
+                SideChannelTestSuite,
+                StatisticalAnalyzer,
+            )
+            from openssl_encrypt.modules.testing.test_runner import (
+                SecurityTestRunner,
+                TestExecutionPlan,
+            )
 
             # If we get here, all imports succeeded
             self.assertTrue(True)

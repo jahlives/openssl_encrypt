@@ -154,7 +154,7 @@ def format_algorithm_help(category: str) -> str:
 
     for name, (info, is_available) in registry.list_all().items():
         status = "✓" if is_available else "✗"
-        info.security_level.name.lower()
+        security = info.security_level.name.lower()
 
         # Format line
         line = f"  {status} {name:25s} - {info.description}"

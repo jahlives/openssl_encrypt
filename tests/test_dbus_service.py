@@ -17,7 +17,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 try:
+    import dbus
     from dbus.mainloop.glib import DBusGMainLoop
+    from gi.repository import GLib
 
     DBUS_AVAILABLE = True
 except ImportError:
@@ -269,7 +271,7 @@ class TestDBusServiceStructure(unittest.TestCase):
     def test_imports(self):
         """Test that modules can be imported"""
         try:
-            pass
+            from openssl_encrypt.modules import dbus_client, dbus_service
 
             self.assertTrue(True)
         except ImportError as e:

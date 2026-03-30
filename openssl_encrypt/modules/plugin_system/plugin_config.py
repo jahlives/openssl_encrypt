@@ -17,15 +17,19 @@ Security Features:
 import json
 import logging
 import os
+import stat
+import sys
 import threading
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set, Union
 
 logger = logging.getLogger(__name__)
 
 
 class ConfigValidationError(Exception):
     """Raised when plugin configuration validation fails."""
+
+    pass
 
 
 class PluginConfigSchema:
@@ -187,7 +191,7 @@ def ensure_plugin_data_dir(plugin_id: str, subdir: str = "") -> Optional[Path]:
 
         return data_dir
 
-    except OSError as e:
+    except (OSError, PermissionError) as e:
         logger.error(f"Failed to create or secure plugin data directory {data_dir}: {e}")
         return None
 
@@ -225,7 +229,7 @@ class PluginConfigManager:
         try:
             if not check_permissions(self.config_dir, PermissionLevel.OWNER_FULL):
                 logger.warning(f"Failed to set secure permissions (0o700) on {self.config_dir}")
-        except OSError as e:
+        except (OSError, PermissionError) as e:
             logger.warning(f"Failed to verify permissions on {self.config_dir}: {e}")
 
         # Load existing configurations
@@ -389,7 +393,7 @@ class PluginConfigManager:
         # Load configs from new directory structure: plugins/<plugin_id>/config.json
         try:
             entries = list(self.config_dir.iterdir())
-        except OSError as e:
+        except (OSError, PermissionError) as e:
             logger.error(f"Error reading plugin config directory {self.config_dir}: {e}")
             return
 
@@ -455,7 +459,7 @@ class PluginConfigManager:
             finally:
                 os.close(fd)
 
-        except (json.JSONEncodeError, OSError) as e:
+        except (IOError, json.JSONEncodeError, OSError) as e:
             logger.error(f"Error saving config file for plugin {plugin_id}: {e}")
             raise ConfigValidationError(f"Could not save configuration: {e}")
 

@@ -33,6 +33,8 @@ logger = logging.getLogger(__name__)
 class CacheError(Exception):
     """Base exception for cache operations"""
 
+    pass
+
 
 class KeyserverCache:
     """

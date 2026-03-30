@@ -14,7 +14,7 @@ import sys
 import time
 import uuid
 from enum import Enum
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from .crypt_errors import (
     KeyNotFoundError,
@@ -41,7 +41,7 @@ except ImportError:
             return False
 
 
-from .secure_memory import secure_memzero
+from .secure_memory import SecureBytes, secure_memzero
 
 # Import portable media modules
 try:
@@ -50,6 +50,8 @@ try:
         QRKeyError,
         QRKeyFormat,
         USBCreationError,
+        USBDriveCreator,
+        USBSecurityProfile,
         create_portable_usb,
         verify_usb_integrity,
     )
@@ -224,7 +226,7 @@ class PQCKeystore:
             "version" not in self.keystore_data
             or self.keystore_data["version"] != self.KEYSTORE_VERSION
         ):
-            raise KeystoreVersionError("Unsupported keystore version")
+            raise KeystoreVersionError(f"Unsupported keystore version")
 
         # Get encryption parameters
         if "encryption" not in self.keystore_data:
@@ -504,11 +506,12 @@ class PQCKeystore:
         )
 
         # Prepare file_password if it's provided
+        file_password_bytes = None
         if file_password is not None:
             if isinstance(file_password, str):
-                file_password.encode("utf-8")
+                file_password_bytes = file_password.encode("utf-8")
             else:
-                pass
+                file_password_bytes = file_password
 
         # Validate file_password if dual encryption is enabled
         if dual_encryption and file_password is None:
@@ -1504,7 +1507,7 @@ def main():
     default_parser.add_argument("key_id", help="The key ID to set as default")
 
     # Change master password
-    _chpass_parser = subparsers.add_parser(
+    chpass_parser = subparsers.add_parser(
         "change-master-password", help="Change the master password"
     )
 
@@ -1523,7 +1526,7 @@ def main():
     )
 
     # Keystore info
-    _info_parser = subparsers.add_parser("info", help="Show keystore information")
+    info_parser = subparsers.add_parser("info", help="Show keystore information")
 
     # Import key
     import_parser = subparsers.add_parser("import-key", help="Import a key from a file")
@@ -2002,15 +2005,15 @@ def handle_import_qr_command(args, keystore_password):
         # Deserialize key data from JSON
         import json
 
-        json.loads(key_data_bytes.decode("utf-8"))
+        key_data = json.loads(key_data_bytes.decode("utf-8"))
 
         # Get key password if needed
         key_password = None
         if args.prompt_key_password:
-            _key_password = getpass.getpass(f"Enter password for key '{original_key_name}': ")
+            key_password = getpass.getpass(f"Enter password for key '{original_key_name}': ")
         elif args.key_password_file:
             with open(args.key_password_file, "r") as f:
-                f.read().strip()
+                key_password = f.read().strip()
 
         # Parse tags
         tags = []
@@ -2331,7 +2334,7 @@ def handle_verify_usb_command(args):
         # Verify USB integrity
         result = verify_usb_integrity(args.usb_path, usb_password, hash_config=hash_config)
 
-        eprint("📊 Verification Results:")
+        eprint(f"📊 Verification Results:")
         eprint(f"   Overall integrity: {'✅ PASSED' if result['integrity_ok'] else '❌ FAILED'}")
         eprint(f"   Files verified: {result['verified_files']}")
         eprint(f"   Files failed: {result['failed_files']}")
@@ -2339,22 +2342,22 @@ def handle_verify_usb_command(args):
         eprint(f"   Original file count: {result['original_file_count']}")
 
         if result["tampered_files"]:
-            eprint("\n⚠️  Tampered files detected:")
+            eprint(f"\n⚠️  Tampered files detected:")
             for file_path in result["tampered_files"]:
                 eprint(f"      - {file_path}")
 
         if result["missing_file_list"]:
-            eprint("\n⚠️  Missing files:")
+            eprint(f"\n⚠️  Missing files:")
             for file_path in result["missing_file_list"]:
                 eprint(f"      - {file_path}")
 
         if result["integrity_ok"]:
-            eprint("\n✅ USB drive integrity verified successfully!")
+            eprint(f"\n✅ USB drive integrity verified successfully!")
             eprint(f"   Created: {time.ctime(result['created_at'])}")
             return 0
         else:
-            eprint("\n❌ USB drive integrity check FAILED!")
-            eprint("   The drive may have been tampered with or corrupted.")
+            eprint(f"\n❌ USB drive integrity check FAILED!")
+            eprint(f"   The drive may have been tampered with or corrupted.")
             return 1
 
     except USBCreationError as e:

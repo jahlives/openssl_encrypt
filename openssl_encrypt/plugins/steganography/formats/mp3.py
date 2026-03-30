@@ -25,9 +25,11 @@ Version: 1.3.0
 """
 
 import logging
+import os
 import struct
+import tempfile
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 
@@ -284,7 +286,7 @@ class MP3Steganography(SteganographyBase):
                 # Parse ID3v2 header
                 version_major = mp3_data[3]
                 version_minor = mp3_data[4]
-                mp3_data[5]
+                flags = mp3_data[5]
 
                 # Calculate tag size (synchsafe integer)
                 tag_size = (
@@ -475,7 +477,7 @@ class MP3Steganography(SteganographyBase):
         # Estimate based on typical MP3 structure
         # Each frame has ~576 or 1152 granules with frequency coefficients
 
-        mp3_info["audio_size"]
+        audio_size = mp3_info["audio_size"]
         bitrate = mp3_info.get("bitrate", 128)
         duration = mp3_info.get("duration_seconds", 1.0)
 
@@ -960,8 +962,9 @@ def is_mp3_steganography_available() -> bool:
         import numpy as np
 
         # Test basic functionality needed for MP3 steganography
-        _test_array = np.array([1, 2, 3, 4], dtype=np.int16)
-        _test_header = struct.pack(">I", 0xFFFBD000)  # Sample MP3 header
+        test_array = np.array([1, 2, 3, 4], dtype=np.int16)
+        test_binary = "10101010"
+        test_header = struct.pack(">I", 0xFFFBD000)  # Sample MP3 header
 
         return True
     except Exception as e:

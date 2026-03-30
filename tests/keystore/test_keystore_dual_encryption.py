@@ -14,12 +14,14 @@ import base64
 import json
 import os
 import sys
+import tempfile
 import traceback
 
 # Add the parent directory to the python path for importing
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), ".")))
 
 from openssl_encrypt.modules.keystore_cli import PQCKeystore
+from openssl_encrypt.modules.keystore_utils import extract_key_id_from_metadata
 from openssl_encrypt.modules.keystore_wrapper import (
     decrypt_file_with_keystore,
     encrypt_file_with_keystore,

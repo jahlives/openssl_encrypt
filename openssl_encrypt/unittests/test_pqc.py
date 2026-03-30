@@ -12,12 +12,17 @@ This module contains comprehensive tests for:
 import base64
 import json
 import os
+import secrets
 import shutil
+import sys
 import tempfile
+import threading
 import time
 import unittest
 import warnings
 from pathlib import Path
+from unittest import mock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -26,13 +31,15 @@ from openssl_encrypt.modules.crypt_core import (
     EncryptionAlgorithm,
     decrypt_file,
     encrypt_file,
+    extract_file_metadata,
 )
 from openssl_encrypt.modules.crypt_errors import (
     AuthenticationError,
     DecryptionError,
+    EncryptionError,
     ValidationError,
 )
-from openssl_encrypt.modules.pqc import LIBOQS_AVAILABLE, PQCipher, check_pqc_support
+from openssl_encrypt.modules.pqc import LIBOQS_AVAILABLE, PQCAlgorithm, PQCipher, check_pqc_support
 
 # Try to import PQC support
 try:
@@ -316,6 +323,10 @@ class TestPostQuantumCrypto(unittest.TestCase):
         try:
             from openssl_encrypt.modules.crypt_core import decrypt_file, encrypt_file
             from openssl_encrypt.modules.keystore_cli import KeystoreSecurityLevel, PQCKeystore
+            from openssl_encrypt.modules.keystore_utils import (
+                auto_generate_pqc_key,
+                extract_key_id_from_metadata,
+            )
         except ImportError:
             self.skipTest("Keystore modules not available")
 
@@ -349,7 +360,7 @@ class TestPostQuantumCrypto(unittest.TestCase):
             self.test_files.extend([encrypted_file, decrypted_file])
 
             # Create a test config with format_version 5
-            _hash_config = {
+            hash_config = {
                 "format_version": 5,
                 "encryption": {
                     "algorithm": "ml-kem-768-hybrid",
@@ -358,7 +369,7 @@ class TestPostQuantumCrypto(unittest.TestCase):
             }
 
             # Create args for key generation
-            _args = type(
+            args = type(
                 "Args",
                 (),
                 {
@@ -442,6 +453,7 @@ class TestPostQuantumCrypto(unittest.TestCase):
         try:
             from openssl_encrypt.modules.crypt_core import decrypt_file, encrypt_file
             from openssl_encrypt.modules.keystore_cli import KeystoreSecurityLevel, PQCKeystore
+            from openssl_encrypt.modules.keystore_utils import auto_generate_pqc_key
         except ImportError:
             self.skipTest("Keystore modules not available")
 
@@ -464,7 +476,7 @@ class TestPostQuantumCrypto(unittest.TestCase):
         self.test_files.extend([encrypted_file, decrypted_file])
 
         # Create a test config with format_version 5
-        _hash_config = {
+        hash_config = {
             "format_version": 5,
             "encryption": {
                 "algorithm": "ml-kem-768-hybrid",
@@ -473,7 +485,7 @@ class TestPostQuantumCrypto(unittest.TestCase):
         }
 
         # Create args for key generation
-        _args = type(
+        args = type(
             "Args",
             (),
             {
@@ -1058,6 +1070,7 @@ class TestPostQuantumCrypto(unittest.TestCase):
             import hashlib
 
             from openssl_encrypt.modules.keystore_cli import KeystoreSecurityLevel, PQCKeystore
+            from openssl_encrypt.modules.keystore_utils import extract_key_id_from_metadata
             from openssl_encrypt.modules.keystore_wrapper import (
                 decrypt_file_with_keystore,
                 encrypt_file_with_keystore,
@@ -1173,6 +1186,7 @@ class TestPostQuantumCrypto(unittest.TestCase):
         try:
             from openssl_encrypt.modules.keystore_cli import KeystoreSecurityLevel, PQCKeystore
             from openssl_encrypt.modules.keystore_utils import (
+                auto_generate_pqc_key,
                 extract_key_id_from_metadata,
             )
             from openssl_encrypt.modules.keystore_wrapper import (
@@ -1364,7 +1378,7 @@ def test_file_decryption_wrong_pw_v3(filename):
     pqc_private_key = None
 
     try:
-        _decrypted_data = decrypt_file(
+        decrypted_data = decrypt_file(
             input_file=f"{get_testfiles_dir()}/v3/{filename}",
             output_file=None,
             password=b"12345",
@@ -1374,6 +1388,7 @@ def test_file_decryption_wrong_pw_v3(filename):
         pytest.fail(f"Decryption should have failed with wrong password for {algorithm_name}")
     except Exception as e:
         print(f"\nDecryption correctly failed for {algorithm_name}: {str(e)}")
+        pass
 
 
 @pytest.mark.parametrize(
@@ -1428,7 +1443,7 @@ def test_file_decryption_wrong_algorithm_v3(filename):
         wrong_algorithm = "fernet" if current_algorithm != "fernet" else "aes-gcm"
 
     try:
-        _decrypted_data = decrypt_file(
+        decrypted_data = decrypt_file(
             input_file=f"{get_testfiles_dir()}/v3/{filename}",
             output_file=None,
             password=b"wrong_password",
@@ -1499,7 +1514,7 @@ def test_file_decryption_wrong_pw_v4(filename):
 
     try:
         # Try to decrypt with an incorrect password (correct is '1234' but we use '12345')
-        _decrypted_data = decrypt_file(
+        decrypted_data = decrypt_file(
             input_file=f"{get_testfiles_dir()}/v4/{filename}",
             output_file=None,
             password=b"12345",  # Wrong password
@@ -1514,6 +1529,7 @@ def test_file_decryption_wrong_pw_v4(filename):
         # This is the expected path - decryption should fail with wrong password
         print(f"\nDecryption correctly failed for {algorithm_name} with wrong password: {str(e)}")
         # Test passes because the exception was raised as expected
+        pass
 
 
 @pytest.mark.parametrize(
@@ -1531,7 +1547,7 @@ def test_file_decryption_wrong_algorithm_v4(filename):
     algorithm_name = filename.replace("test1_", "").replace(".txt", "")
 
     try:
-        _decrypted_data = decrypt_file(
+        decrypted_data = decrypt_file(
             input_file=f"{get_testfiles_dir()}/v4/{filename}",
             output_file=None,
             password=b"wrong_password",
@@ -1613,7 +1629,7 @@ def test_file_decryption_wrong_pw_v5(filename):
 
     try:
         # Try to decrypt with an incorrect password (correct is '1234' but we use '12345')
-        _decrypted_data = decrypt_file(
+        decrypted_data = decrypt_file(
             input_file=f"{get_testfiles_dir()}/v5/{filename}",
             output_file=None,
             password=b"12345",  # Wrong password
@@ -1630,6 +1646,7 @@ def test_file_decryption_wrong_pw_v5(filename):
             f"\nDecryption correctly failed for {algorithm_name} (v5) with wrong password: {str(e)}"
         )
         # Test passes because the exception was raised as expected
+        pass
 
 
 def get_pqc_test_files_v5():
@@ -1664,7 +1681,7 @@ def test_file_decryption_wrong_algorithm_v5(filename):
     algorithm_name = filename.replace("test1_", "").replace(".txt", "")
 
     try:
-        _decrypted_data = decrypt_file(
+        decrypted_data = decrypt_file(
             input_file=f"{get_testfiles_dir()}/v5/{filename}",
             output_file=None,
             password=b"wrong_password",
@@ -1695,7 +1712,7 @@ def test_file_decryption_wrong_encryption_data_v5(filename):
     algorithm_name = filename.replace("test1_", "").replace(".txt", "")
 
     try:
-        _decrypted_data = decrypt_file(
+        decrypted_data = decrypt_file(
             input_file=f"{get_testfiles_dir()}/v5/{filename}",
             output_file=None,
             password=b"wrong_password",
@@ -1795,6 +1812,7 @@ class TestPQCErrorHandling(unittest.TestCase):
                                 )
                                 # If decryption succeeds with invalid key, that's potentially a security issue
                                 # However, some algorithms may have fallback mechanisms
+                                pass
                             except (
                                 DecryptionError,
                                 ValidationError,
@@ -2023,6 +2041,7 @@ class TestPQCErrorHandling(unittest.TestCase):
                             algorithm=decrypt_alg,
                         )
                         # Some cases might succeed due to algorithm compatibility or metadata override
+                        pass
                     except (DecryptionError, ValidationError, ValueError):
                         # Expected: should fail with wrong algorithm
                         pass
@@ -2100,6 +2119,7 @@ class TestConcurrentPQCExecutionSafety(unittest.TestCase):
     def test_concurrent_temp_file_isolation(self):
         """Test that concurrent tests use isolated temporary files."""
         import concurrent.futures
+        import threading
 
         def create_isolated_temp_files(thread_id):
             """Create temp files with thread isolation."""

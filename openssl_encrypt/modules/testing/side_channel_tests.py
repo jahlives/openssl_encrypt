@@ -9,9 +9,10 @@ import gc
 import os
 import statistics
 import tempfile
+import threading
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Tuple
 
 from ..crypt_core import decrypt_file, encrypt_file
 from .base_test import BaseSecurityTest, TestConfig, TestResult, TestResultLevel
@@ -148,7 +149,7 @@ class SideChannelTestSuite(BaseSecurityTest):
         # Warm up the operation (to reduce JIT compilation effects)
         try:
             operation_func(*args, **kwargs)
-        except Exception:
+        except:
             pass  # Ignore errors during warmup
 
         gc.collect()
@@ -159,7 +160,7 @@ class SideChannelTestSuite(BaseSecurityTest):
             operation_func(*args, **kwargs)
             end_time = time.perf_counter()
             return end_time - start_time
-        except Exception:
+        except Exception as e:
             # Return a sentinel value for failed operations
             return -1.0
 
@@ -222,7 +223,7 @@ class SideChannelTestSuite(BaseSecurityTest):
                         )
                         if timing > 0:  # Only count successful timing measurements
                             incorrect_timings.append(timing)
-                    except Exception:
+                    except:
                         # Expected to fail, but we want to measure the timing of the failure
                         pass
                     # Clean up
@@ -419,7 +420,7 @@ class SideChannelTestSuite(BaseSecurityTest):
             )
             memory_after = process.memory_info().rss
 
-            memory_after - memory_before
+            memory_used = memory_after - memory_before
 
             # Test multiple iterations to check consistency
             memory_measurements = []

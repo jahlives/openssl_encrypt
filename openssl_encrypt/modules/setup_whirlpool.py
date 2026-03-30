@@ -3,6 +3,7 @@ Module to handle the compatibility of Whirlpool hash library across Python versi
 """
 
 import glob
+import importlib.util
 import logging
 import os
 import platform
@@ -10,6 +11,7 @@ import site
 import subprocess
 import sys
 import sysconfig
+from pathlib import Path
 
 # Set up logging - let the parent module configure the level
 logger = logging.getLogger("setup_whirlpool")
@@ -108,7 +110,7 @@ def create_whirlpool_symlink():
     # Check if we already have a working module
     try:
         # Try to import whirlpool directly
-        pass
+        import whirlpool
 
         logger.debug("Whirlpool module already working, no action needed")
         return True
@@ -191,6 +193,7 @@ def create_whirlpool_symlink():
                 del sys.modules["whirlpool"]
 
             # Try importing again
+            import whirlpool
 
             logger.debug("Verified Whirlpool module can now be imported")
             return True

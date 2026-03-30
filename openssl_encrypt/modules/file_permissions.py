@@ -20,6 +20,7 @@ import stat
 import sys
 from enum import Enum
 from pathlib import Path
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,7 @@ _HAS_WIN32 = False
 if sys.platform == "win32":
     try:
         import ntsecuritycon as con
+        import pywintypes
         import win32api
         import win32security
 

@@ -5,6 +5,7 @@ Integration test for Integrity Plugin with live server.
 This tests the client plugin against the running integrity server.
 """
 
+import hashlib
 import sys
 from pathlib import Path
 
@@ -15,6 +16,7 @@ from openssl_encrypt.plugins.integrity import (
     IntegrityConfig,
     IntegrityPlugin,
     IntegrityPluginError,
+    IntegrityVerificationError,
 )
 
 
@@ -96,7 +98,7 @@ def test_integrity_client():
         try:
             # This will fail without proper mTLS setup, but demonstrates the API
             profile = plugin.get_profile()
-            print("✓ Profile retrieved:")
+            print(f"✓ Profile retrieved:")
             print(f"  Fingerprint: {profile['cert_fingerprint']}")
             print(f"  Name: {profile.get('name', 'Not set')}")
             print(f"  Hash Count: {profile['hash_count']}")
@@ -187,7 +189,7 @@ def test_integrity_client():
         # Test compute_metadata_hash
         test_metadata = b"test encrypted metadata"
         metadata_hash = IntegrityPlugin.compute_metadata_hash(test_metadata)
-        print("✓ compute_metadata_hash():")
+        print(f"✓ compute_metadata_hash():")
         print(f"  Input: {test_metadata}")
         print(f"  Hash: {metadata_hash}")
         print(f"  Length: {len(metadata_hash)} chars (expected: 64)")
@@ -196,7 +198,7 @@ def test_integrity_client():
         # Test compute_file_id
         test_file = Path("/path/to/test/file.enc")
         file_id = IntegrityPlugin.compute_file_id(test_file)
-        print("✓ compute_file_id():")
+        print(f"✓ compute_file_id():")
         print(f"  Input: {test_file}")
         print(f"  File ID: {file_id}")
         print(f"  Length: {len(file_id)} chars (expected: 64)")

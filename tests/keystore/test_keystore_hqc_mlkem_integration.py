@@ -13,6 +13,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest.mock import Mock, patch
 
 # Add parent directory to path for importing
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
@@ -20,8 +21,15 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../.
 from openssl_encrypt.modules.crypt_core import (
     LIBOQS_AVAILABLE,
     PQC_AVAILABLE,
+    decrypt_file,
+    encrypt_file,
 )
 from openssl_encrypt.modules.keystore_cli import KeystoreSecurityLevel, PQCKeystore
+from openssl_encrypt.modules.keystore_utils import (
+    extract_key_id_from_metadata,
+    get_pqc_key_for_decryption,
+)
+from openssl_encrypt.modules.pqc import PQCipher
 
 
 class TestHQCMLKEMKeystoreIntegration(unittest.TestCase):
@@ -155,11 +163,11 @@ class TestHQCMLKEMKeystoreIntegration(unittest.TestCase):
                 # Verify key metadata
                 keys = self.keystore.list_keys()
                 test_key = next((k for k in keys if k["key_id"] == key_id), None)
-                self.assertIsNotNone(test_key, "Test key should be found in listing")
+                self.assertIsNotNone(test_key, f"Test key should be found in listing")
                 self.assertEqual(
-                    test_key["algorithm"], algorithm, "Algorithm mismatch in metadata"
+                    test_key["algorithm"], algorithm, f"Algorithm mismatch in metadata"
                 )
-                self.assertIn("ml-kem", test_key["tags"], "ML-KEM tag should be present")
+                self.assertIn("ml-kem", test_key["tags"], f"ML-KEM tag should be present")
 
                 # Remove key for cleanup
                 self.keystore.remove_key(key_id)
@@ -224,7 +232,7 @@ class TestHQCMLKEMKeystoreIntegration(unittest.TestCase):
         # Verify dual encryption flag
         if hasattr(self.keystore, "key_has_dual_encryption"):
             is_dual = self.keystore.key_has_dual_encryption(key_id)
-            self.assertTrue(is_dual, "Key should be marked for dual encryption")
+            self.assertTrue(is_dual, f"Key should be marked for dual encryption")
 
         # Test key retrieval with file password
         retrieved_public, retrieved_private = self.keystore.get_key(
@@ -288,7 +296,8 @@ class TestHQCMLKEMKeystoreIntegration(unittest.TestCase):
         self.assertEqual(len(ml_kem_keys), 2, "Should find 2 ML-KEM keys")
 
         # Test key update operations
-        added_keys[0][0]
+        first_key_id = added_keys[0][0]
+        updated_description = "Updated description for integration test"
 
         # Update key description (if supported)
         try:
@@ -388,6 +397,7 @@ class TestHQCMLKEMKeystoreIntegration(unittest.TestCase):
     def test_concurrent_keystore_operations(self):
         """Test thread safety of keystore operations with multiple PQC algorithms."""
         import concurrent.futures
+        import threading
 
         def add_and_remove_key(algorithm, thread_id):
             """Add and remove a key in a separate thread."""

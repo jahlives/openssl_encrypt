@@ -12,6 +12,7 @@ IMPORTANT: This is a demonstration only. In production:
 4. Configure dead man's switch appropriately
 """
 
+import sys
 from pathlib import Path
 
 from openssl_encrypt.plugins.pepper import PepperConfig, PepperError, PepperPlugin

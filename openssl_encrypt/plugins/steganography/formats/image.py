@@ -9,7 +9,9 @@ adaptive techniques, and advanced security features.
 
 import io
 import logging
-from typing import List, Optional, Tuple
+import math
+import os
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 try:
     from PIL import Image, ImageStat
@@ -26,6 +28,7 @@ from ..core import (
     CapacityError,
     CoverMediaError,
     ExtractionError,
+    SecurityError,
     SteganographyBase,
     SteganographyConfig,
     SteganographyUtils,
@@ -382,7 +385,7 @@ class AdaptiveLSBStego(LSBImageStego):
         complexity = self._calculate_image_complexity(pixels)
 
         # Count suitable hiding locations
-        _suitable_pixels = np.sum(complexity >= self.complexity_threshold)
+        suitable_pixels = np.sum(complexity >= self.complexity_threshold)
         channels = len(image.getbands())
 
         # Calculate adaptive capacity (more bits in complex regions)

@@ -45,6 +45,7 @@ class HashBase(AlgorithmBase):
         Raises:
             ValidationError: If parameters are invalid
         """
+        pass
 
     @classmethod
     def get_output_size(cls) -> int:
@@ -381,7 +382,7 @@ class BLAKE3(HashBase):
     def is_available(cls) -> bool:
         if cls._available is None:
             try:
-                pass
+                import blake3
 
                 cls._available = True
             except ImportError:
@@ -543,7 +544,7 @@ class Whirlpool(HashBase):
         if cls._available is None:
             # Try modern whirlpool package
             try:
-                pass
+                import whirlpool
 
                 cls._available = True
                 return True
@@ -552,7 +553,7 @@ class Whirlpool(HashBase):
 
             # Try legacy pywhirlpool package
             try:
-                pass
+                import pywhirlpool
 
                 cls._available = True
                 return True

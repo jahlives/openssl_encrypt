@@ -8,7 +8,8 @@ Tests the polling-based flow:
 3. On confirmed → saves tokens automatically
 """
 
-from unittest.mock import MagicMock, patch
+import time
+from unittest.mock import MagicMock, PropertyMock, patch
 
 import pytest
 import requests
@@ -154,7 +155,7 @@ class TestPollingFlow:
         }
         plugin.session.get.side_effect = [pending_response, confirmed_response]
 
-        with patch.object(plugin.config, "save_api_token") as _mock_save:
+        with patch.object(plugin.config, "save_api_token") as mock_save:
             with patch("time.sleep"):  # Don't actually sleep in tests
                 result = plugin.register_with_email("user@example.com")
 
