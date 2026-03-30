@@ -164,9 +164,7 @@ class TestHQCMLKEMKeystoreIntegration(unittest.TestCase):
                 keys = self.keystore.list_keys()
                 test_key = next((k for k in keys if k["key_id"] == key_id), None)
                 self.assertIsNotNone(test_key, "Test key should be found in listing")
-                self.assertEqual(
-                    test_key["algorithm"], algorithm, "Algorithm mismatch in metadata"
-                )
+                self.assertEqual(test_key["algorithm"], algorithm, "Algorithm mismatch in metadata")
                 self.assertIn("ml-kem", test_key["tags"], "ML-KEM tag should be present")
 
                 # Remove key for cleanup
