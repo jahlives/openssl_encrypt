@@ -68,8 +68,8 @@ __all__ = [
     "unpad_pkcs7",
 ]
 
-# Cipher registry
-from .cipher_registry import (
+# Cipher registry — re-exports for public API
+from .cipher_registry import (  # noqa: F401
     AES256GCM,
     AESGCMSIV,
     AESOCB3,
@@ -102,8 +102,8 @@ __all__.extend(
     ]
 )
 
-# Hash registry
-from .hash_registry import (
+# Hash registry — re-exports for public API
+from .hash_registry import (  # noqa: F401
     BLAKE3,
     SHA3_256,
     SHA3_384,
@@ -142,8 +142,8 @@ __all__.extend(
     ]
 )
 
-# KDF registry
-from .kdf_registry import (
+# KDF registry — re-exports for public API
+from .kdf_registry import (  # noqa: F401
     HKDF,
     PBKDF2,
     Argon2d,
@@ -190,8 +190,8 @@ __all__.extend(
     ]
 )
 
-# KEM registry (Post-Quantum Key Encapsulation Mechanisms)
-from .kem_registry import (
+# KEM registry (Post-Quantum Key Encapsulation Mechanisms) — re-exports for public API
+from .kem_registry import (  # noqa: F401
     HQC128,
     HQC192,
     HQC256,
@@ -218,8 +218,8 @@ __all__.extend(
     ]
 )
 
-# Signature registry (Post-Quantum Digital Signatures)
-from .signature_registry import (
+# Signature registry (Post-Quantum Digital Signatures) — re-exports for public API
+from .signature_registry import (  # noqa: F401
     CROSS128,
     CROSS192,
     CROSS256,
@@ -265,8 +265,8 @@ __all__.extend(
 # Note: HybridRegistry not needed - hybrid encryption can be composed by
 # combining KEMs with ciphers at application level
 
-# CLI helper functions
-from .cli_helpers import (
+# CLI helper functions — re-exports for public API
+from .cli_helpers import (  # noqa: F401
     format_algorithm_help,
     get_available_ciphers,
     get_available_hashes,
