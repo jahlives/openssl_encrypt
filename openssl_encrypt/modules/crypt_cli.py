@@ -1166,7 +1166,7 @@ def output_available_algorithms_json(args):
         if proc.returncode == 0:
             libraries["randomx"]["available"] = True
             libraries["randomx"]["version"] = proc.stdout.decode().strip()
-    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+    except (subprocess.TimeoutExpired, OSError):
         pass
 
     # Check liboqs
@@ -5132,14 +5132,14 @@ def main_with_args(args=None):
                     else:
                         with open(password_file, "r") as f:
                             args.password = f.readline().rstrip("\n")
-                except (IOError, OSError) as e:
+                except OSError as e:
                     eprint(f"Error reading password file: {e}")
                     sys.exit(1)
             elif password_fd is not None:
                 try:
                     with os.fdopen(password_fd, "r", closefd=False) as f:
                         args.password = f.readline().rstrip("\n")
-                except (IOError, OSError) as e:
+                except OSError as e:
                     eprint(f"Error reading from fd {password_fd}: {e}")
                     sys.exit(1)
             elif env_pw:
@@ -5461,14 +5461,14 @@ def main_with_args(args=None):
                         else:
                             with open(password_file, "r") as f:
                                 args.password = f.readline().rstrip("\n")
-                    except (IOError, OSError) as e:
+                    except OSError as e:
                         eprint(f"Error reading password file: {e}", file=sys.stderr)
                         sys.exit(1)
                 elif password_fd is not None:
                     try:
                         with os.fdopen(password_fd, "r", closefd=False) as f:
                             args.password = f.readline().rstrip("\n")
-                    except (IOError, OSError) as e:
+                    except OSError as e:
                         eprint(f"Error reading from fd {password_fd}: {e}", file=sys.stderr)
                         sys.exit(1)
                 elif env_pw:
@@ -5807,7 +5807,7 @@ def main_with_args(args=None):
                             else:
                                 with open(rekey_pw_file, "r") as f:
                                     rekey_pw_arg = f.readline().rstrip("\n")
-                        except (IOError, OSError) as e:
+                        except OSError as e:
                             eprint(
                                 f"Error reading rekey password file: {e}",
                                 file=sys.stderr,
@@ -5817,7 +5817,7 @@ def main_with_args(args=None):
                         try:
                             with os.fdopen(rekey_pw_fd, "r", closefd=False) as f:
                                 rekey_pw_arg = f.readline().rstrip("\n")
-                        except (IOError, OSError) as e:
+                        except OSError as e:
                             eprint(
                                 f"Error reading from rekey fd {rekey_pw_fd}: {e}",
                                 file=sys.stderr,

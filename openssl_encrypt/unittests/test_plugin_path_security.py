@@ -587,7 +587,7 @@ class TestPlugin(PreProcessorPlugin):
         hardlink = os.path.join(self.plugin_data_dir, "hardlink")
         try:
             os.link(sensitive_file, hardlink)
-        except (OSError, PermissionError):
+        except OSError:
             pytest.skip("Cannot create hardlink")
 
         # Verify hardlink exists and points to same inode

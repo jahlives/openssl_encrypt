@@ -826,7 +826,7 @@ class RandomX(KDFBase):
                     env=_get_subprocess_env(),
                 )
                 cls._available = result.returncode == 0
-            except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+            except (subprocess.TimeoutExpired, OSError):
                 cls._available = False
         return cls._available
 

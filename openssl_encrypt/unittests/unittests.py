@@ -1408,7 +1408,7 @@ class TestEncryptionEdgeCases(unittest.TestCase):
                 quiet=True,
             )
             self.fail("Expected exception was not raised")
-        except (FileNotFoundError, ValidationError, OSError):
+        except (ValidationError, OSError):
             # Any of these exception types is acceptable
             # Don't test for specific message content as it varies by environment
             pass
@@ -1428,7 +1428,7 @@ class TestEncryptionEdgeCases(unittest.TestCase):
                 quiet=True,
             )
             self.fail("Expected exception was not raised")
-        except (FileNotFoundError, EncryptionError, ValidationError, OSError):
+        except (EncryptionError, ValidationError, OSError):
             # Any of these exception types is acceptable
             # The actual behavior varies between environments
             pass
