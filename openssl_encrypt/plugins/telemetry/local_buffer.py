@@ -211,9 +211,11 @@ class LocalBuffer:
                     "format_version": row["format_version"],
                     "hash_algorithms": json.loads(row["hash_algorithms"]),
                     "kdf_algorithms": json.loads(row["kdf_algorithms"]),
-                    "kdf_parameters": json.loads(row["kdf_parameters"])
-                    if row["kdf_parameters"]
-                    else {},
+                    "kdf_parameters": (
+                        json.loads(row["kdf_parameters"])
+                        if row["kdf_parameters"]
+                        else {}
+                    ),
                     "encryption_algorithm": row["encryption_algorithm"],
                     "cascade_enabled": bool(row["cascade_enabled"]),
                     "cascade_cipher_count": row["cascade_cipher_count"],
@@ -331,9 +333,11 @@ class LocalBuffer:
                     "format_version": row["format_version"],
                     "hash_algorithms": json.loads(row["hash_algorithms"]),
                     "kdf_algorithms": json.loads(row["kdf_algorithms"]),
-                    "kdf_parameters": json.loads(row["kdf_parameters"])
-                    if row["kdf_parameters"]
-                    else {},
+                    "kdf_parameters": (
+                        json.loads(row["kdf_parameters"])
+                        if row["kdf_parameters"]
+                        else {}
+                    ),
                     "encryption_algorithm": row["encryption_algorithm"],
                     "cascade_enabled": bool(row["cascade_enabled"]),
                     "cascade_cipher_count": row["cascade_cipher_count"],

@@ -32,22 +32,19 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from ...modules.plugin_system import (
-    MetadataHandlerPlugin,
-    PluginCapability,
-    PluginResult,
-    PluginSecurityContext,
-    PostProcessorPlugin,
-    PreProcessorPlugin,
-    UtilityPlugin,
-)
+from ...modules.plugin_system import (MetadataHandlerPlugin, PluginCapability,
+                                      PluginResult, PluginSecurityContext,
+                                      PostProcessorPlugin, PreProcessorPlugin,
+                                      UtilityPlugin)
 
 
 class AuditLogger:
     """Centralized audit logging functionality."""
 
     def __init__(self, log_dir: Optional[str] = None):
-        self.log_dir = Path(log_dir) if log_dir else Path.home() / ".openssl_encrypt_audit"
+        self.log_dir = (
+            Path(log_dir) if log_dir else Path.home() / ".openssl_encrypt_audit"
+        )
         self.log_dir.mkdir(parents=True, exist_ok=True)
 
         # Set secure permissions on log directory
@@ -67,7 +64,8 @@ class AuditLogger:
 
         # Format for structured logging
         formatter = logging.Formatter(
-            "%(asctime)s | %(levelname)s | %(name)s | %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
+            "%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
         )
         handler.setFormatter(formatter)
 
@@ -173,7 +171,9 @@ class EncryptionAuditPlugin(PreProcessorPlugin):
         except Exception as e:
             return PluginResult.error_result(f"Audit initialization failed: {str(e)}")
 
-    def process_file(self, file_path: str, context: PluginSecurityContext) -> PluginResult:
+    def process_file(
+        self, file_path: str, context: PluginSecurityContext
+    ) -> PluginResult:
         """Log encryption operation start."""
         try:
             if not self.audit_logger:
@@ -217,7 +217,11 @@ class EncryptionAuditPlugin(PreProcessorPlugin):
             if self.audit_logger:
                 self.audit_logger.log_event(
                     "audit_error",
-                    {"error": str(e), "plugin": self.plugin_id, "operation": "process_file"},
+                    {
+                        "error": str(e),
+                        "plugin": self.plugin_id,
+                        "operation": "process_file",
+                    },
                     "ERROR",
                 )
             return PluginResult.error_result(f"Audit logging failed: {str(e)}")
@@ -248,7 +252,9 @@ class EncryptionCompletionAuditor(PostProcessorPlugin):
             self.audit_logger = AuditLogger(log_dir)
             return PluginResult.success_result("Completion auditing initialized")
         except Exception as e:
-            return PluginResult.error_result(f"Completion audit initialization failed: {str(e)}")
+            return PluginResult.error_result(
+                f"Completion audit initialization failed: {str(e)}"
+            )
 
     def process_encrypted_file(
         self, encrypted_file_path: str, context: PluginSecurityContext
@@ -268,7 +274,9 @@ class EncryptionCompletionAuditor(PostProcessorPlugin):
                     },
                     "ERROR",
                 )
-                return PluginResult.error_result(f"Encrypted file not found: {encrypted_file_path}")
+                return PluginResult.error_result(
+                    f"Encrypted file not found: {encrypted_file_path}"
+                )
 
             # Calculate operation duration
             start_time = context.metadata.get("operation_start_time", 0)
@@ -289,7 +297,9 @@ class EncryptionCompletionAuditor(PostProcessorPlugin):
 
             # Calculate overhead if original size is available
             if completion_info["original_size"] > 0:
-                overhead = completion_info["encrypted_size"] - completion_info["original_size"]
+                overhead = (
+                    completion_info["encrypted_size"] - completion_info["original_size"]
+                )
                 completion_info["overhead_bytes"] = overhead
                 completion_info["overhead_percentage"] = (
                     overhead / completion_info["original_size"]
@@ -340,7 +350,9 @@ class SecurityEventMonitor(MetadataHandlerPlugin):
             self.audit_logger = AuditLogger(log_dir)
             return PluginResult.success_result("Security monitoring initialized")
         except Exception as e:
-            return PluginResult.error_result(f"Security monitor initialization failed: {str(e)}")
+            return PluginResult.error_result(
+                f"Security monitor initialization failed: {str(e)}"
+            )
 
     def process_metadata(
         self, metadata: Dict[str, Any], context: PluginSecurityContext
@@ -368,10 +380,15 @@ class SecurityEventMonitor(MetadataHandlerPlugin):
                     "security_events": security_events,
                     "operation": context.metadata.get("operation", "unknown"),
                     "file_count": len(context.file_paths),
-                    "session_info": {"plugin_id": context.plugin_id, "timestamp": time.time()},
+                    "session_info": {
+                        "plugin_id": context.plugin_id,
+                        "timestamp": time.time(),
+                    },
                 }
 
-                self.audit_logger.log_event("security_event_detected", event_info, "WARNING")
+                self.audit_logger.log_event(
+                    "security_event_detected", event_info, "WARNING"
+                )
 
                 # Add security metadata for other plugins
                 context.add_metadata("security_events_detected", security_events)
@@ -386,7 +403,11 @@ class SecurityEventMonitor(MetadataHandlerPlugin):
             if self.audit_logger:
                 self.audit_logger.log_event(
                     "audit_error",
-                    {"error": str(e), "plugin": self.plugin_id, "operation": "process_metadata"},
+                    {
+                        "error": str(e),
+                        "plugin": self.plugin_id,
+                        "operation": "process_metadata",
+                    },
                     "ERROR",
                 )
             return PluginResult.error_result(f"Security monitoring failed: {str(e)}")
@@ -442,7 +463,9 @@ class AuditUtilityPlugin(UtilityPlugin):
             "get_audit_statistics": self.get_audit_statistics,
         }
 
-    def analyze_audit_logs(self, log_dir: Optional[str] = None, days: int = 7) -> Dict[str, Any]:
+    def analyze_audit_logs(
+        self, log_dir: Optional[str] = None, days: int = 7
+    ) -> Dict[str, Any]:
         """Analyze audit logs for patterns and statistics."""
         try:
             if not log_dir:
@@ -468,7 +491,9 @@ class AuditUtilityPlugin(UtilityPlugin):
                                 timestamp_str, level, logger_name, message = parts
 
                                 # Parse timestamp
-                                timestamp = datetime.strptime(timestamp_str, "%Y-%m-%d %H:%M:%S")
+                                timestamp = datetime.strptime(
+                                    timestamp_str, "%Y-%m-%d %H:%M:%S"
+                                )
 
                                 # Skip old entries
                                 if timestamp.timestamp() < cutoff_time:
@@ -506,7 +531,9 @@ class AuditUtilityPlugin(UtilityPlugin):
             for event in events:
                 # Count event types
                 event_type = event.get("event_type", "unknown")
-                analysis["event_types"][event_type] = analysis["event_types"].get(event_type, 0) + 1
+                analysis["event_types"][event_type] = (
+                    analysis["event_types"].get(event_type, 0) + 1
+                )
 
                 # Count log levels
                 level = event.get("level", "INFO")
@@ -563,7 +590,9 @@ class AuditUtilityPlugin(UtilityPlugin):
                     try:
                         if " | " in line:
                             timestamp_str = line.strip().split(" | ")[0]
-                            timestamp = datetime.strptime(timestamp_str, "%Y-%m-%d %H:%M:%S")
+                            timestamp = datetime.strptime(
+                                timestamp_str, "%Y-%m-%d %H:%M:%S"
+                            )
 
                             if timestamp.timestamp() >= cutoff_time:
                                 kept_lines.append(line)
@@ -588,7 +617,9 @@ class AuditUtilityPlugin(UtilityPlugin):
         except Exception as e:
             return {"error": f"Log cleanup failed: {str(e)}"}
 
-    def export_audit_report(self, log_dir: Optional[str] = None, days: int = 30) -> Dict[str, Any]:
+    def export_audit_report(
+        self, log_dir: Optional[str] = None, days: int = 30
+    ) -> Dict[str, Any]:
         """Export comprehensive audit report."""
         try:
             analysis = self.analyze_audit_logs(log_dir, days)
@@ -616,7 +647,10 @@ class AuditUtilityPlugin(UtilityPlugin):
             else:
                 log_dir = Path(log_dir)
 
-            report_file = log_dir / f"audit_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+            report_file = (
+                log_dir
+                / f"audit_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+            )
 
             with open(report_file, "w") as f:
                 json.dump(report, f, indent=2, default=str)

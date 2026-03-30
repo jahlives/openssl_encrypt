@@ -25,15 +25,9 @@ except ImportError:
 
 import numpy as np
 
-from ..core import (
-    CapacityError,
-    CoverMediaError,
-    ExtractionError,
-    SecurityError,
-    SteganographyBase,
-    SteganographyConfig,
-    SteganographyUtils,
-)
+from ..core import (CapacityError, CoverMediaError, ExtractionError,
+                    SecurityError, SteganographyBase, SteganographyConfig,
+                    SteganographyUtils)
 
 # Set up module logger
 logger = logging.getLogger(__name__)
@@ -103,7 +97,8 @@ class TIFFSteganography(SteganographyBase):
 
         if not PIL_AVAILABLE:
             raise ImportError(
-                "PIL/Pillow is required for TIFF steganography. " "Install with: pip install Pillow"
+                "PIL/Pillow is required for TIFF steganography. "
+                "Install with: pip install Pillow"
             )
 
         # Validate parameters
@@ -277,7 +272,9 @@ class TIFFSteganography(SteganographyBase):
             }
 
             # Get compression information
-            compression = getattr(image, "tag_v2", {}).get(TAG_COMPRESSION, TIFF_COMPRESSION_NONE)
+            compression = getattr(image, "tag_v2", {}).get(
+                TAG_COMPRESSION, TIFF_COMPRESSION_NONE
+            )
             tiff_info["compression"] = compression
             tiff_info["compression_name"] = SUPPORTED_COMPRESSIONS.get(
                 compression, f"Unknown ({compression})"
@@ -293,7 +290,9 @@ class TIFFSteganography(SteganographyBase):
             tiff_info["samples_per_pixel"] = getattr(image, "tag_v2", {}).get(
                 TAG_SAMPLES_PER_PIXEL, 1
             )
-            tiff_info["photometric"] = getattr(image, "tag_v2", {}).get(TAG_PHOTOMETRIC, 1)
+            tiff_info["photometric"] = getattr(image, "tag_v2", {}).get(
+                TAG_PHOTOMETRIC, 1
+            )
 
             return tiff_info
 
@@ -327,7 +326,9 @@ class TIFFSteganography(SteganographyBase):
             # Generate pixel order (crypto shuffle if password provided)
             pixel_indices = list(range(len(flat_pixels)))
             if self.password and self.config.randomize_pixel_order:
-                SteganographyUtils.crypto_seeded_shuffle(pixel_indices, self.shuffle_key)
+                SteganographyUtils.crypto_seeded_shuffle(
+                    pixel_indices, self.shuffle_key
+                )
 
             # Hide data in pixels
             data_index = 0
@@ -360,7 +361,9 @@ class TIFFSteganography(SteganographyBase):
                 # PIL handles 16-bit TIFF specially
                 modified_image = Image.fromarray(final_array, mode=image.mode)
             else:
-                modified_image = Image.fromarray(final_array.astype(np.uint8), mode=image.mode)
+                modified_image = Image.fromarray(
+                    final_array.astype(np.uint8), mode=image.mode
+                )
 
             return modified_image
 
@@ -388,7 +391,9 @@ class TIFFSteganography(SteganographyBase):
             # Generate same pixel order as hiding
             pixel_indices = list(range(len(flat_pixels)))
             if self.password and self.config.randomize_pixel_order:
-                SteganographyUtils.crypto_seeded_shuffle(pixel_indices, self.shuffle_key)
+                SteganographyUtils.crypto_seeded_shuffle(
+                    pixel_indices, self.shuffle_key
+                )
 
             # Extract LSBs
             binary_bits = []
@@ -418,7 +423,9 @@ class TIFFSteganography(SteganographyBase):
             else:
                 # Default to uncompressed for unsupported compression
                 save_params["compression"] = "raw"
-                logger.warning(f"Unsupported compression {compression}, using uncompressed")
+                logger.warning(
+                    f"Unsupported compression {compression}, using uncompressed"
+                )
         else:
             # Default to LZW compression for good balance of size and compatibility
             save_params["compression"] = "lzw"
@@ -458,7 +465,9 @@ class TIFFAnalyzer:
             image_info = self._analyze_tiff_properties(tiff_data)
 
             # Steganography suitability assessment
-            stego_assessment = self._assess_tiff_steganography_suitability(header_info, image_info)
+            stego_assessment = self._assess_tiff_steganography_suitability(
+                header_info, image_info
+            )
 
             return {
                 "format": "TIFF",
@@ -583,7 +592,9 @@ class TIFFAnalyzer:
             assessment["size_score"] = 0.6
         else:
             assessment["size_score"] = 0.3
-            assessment["recommendations"].append("Small image - limited hiding capacity")
+            assessment["recommendations"].append(
+                "Small image - limited hiding capacity"
+            )
 
         # Bit depth assessment
         bits_per_sample = image_info.get("bits_per_sample", (8,))
@@ -594,13 +605,19 @@ class TIFFAnalyzer:
 
         if max_bits >= 16:
             assessment["bit_depth_score"] = 1.0
-            assessment["recommendations"].append("High bit depth - excellent hiding capacity")
+            assessment["recommendations"].append(
+                "High bit depth - excellent hiding capacity"
+            )
         elif max_bits >= 8:
             assessment["bit_depth_score"] = 0.8
-            assessment["recommendations"].append("Standard bit depth - good hiding capacity")
+            assessment["recommendations"].append(
+                "Standard bit depth - good hiding capacity"
+            )
         else:
             assessment["bit_depth_score"] = 0.4
-            assessment["recommendations"].append("Low bit depth - limited hiding capacity")
+            assessment["recommendations"].append(
+                "Low bit depth - limited hiding capacity"
+            )
 
         # Calculate overall score
         assessment["overall_score"] = (
@@ -611,9 +628,13 @@ class TIFFAnalyzer:
 
         # Overall recommendations
         if assessment["overall_score"] >= 0.8:
-            assessment["recommendations"].insert(0, "Excellent TIFF file for steganography")
+            assessment["recommendations"].insert(
+                0, "Excellent TIFF file for steganography"
+            )
         elif assessment["overall_score"] >= 0.6:
-            assessment["recommendations"].insert(0, "Good TIFF file with minor limitations")
+            assessment["recommendations"].insert(
+                0, "Good TIFF file with minor limitations"
+            )
         else:
             assessment["recommendations"].insert(
                 0, "Limited suitability - consider different image"

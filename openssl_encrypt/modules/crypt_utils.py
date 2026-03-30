@@ -21,7 +21,7 @@ import time
 
 def eprint(*args, **kwargs):
     """Print to stderr. Drop-in replacement for print() for non-data output."""
-    kwargs.setdefault('file', sys.stderr)
+    kwargs.setdefault("file", sys.stderr)
     print(*args, **kwargs)
 
 
@@ -369,10 +369,14 @@ def safe_open_file(file_path, mode, secure_mode=False, allow_special_files=True)
     # Attempt to open the file with O_NOFOLLOW protection
     try:
         # On POSIX systems, O_NOFOLLOW will cause open() to fail with ELOOP if path is a symlink
-        fd = os.open(file_path, flags, 0o600)  # Secure permissions: owner read/write only
+        fd = os.open(
+            file_path, flags, 0o600
+        )  # Secure permissions: owner read/write only
         # On Windows, os.open() mode bits are insufficient — apply real ACLs
         if sys.platform == "win32":
-            from openssl_encrypt.modules.file_permissions import PermissionLevel, set_permissions
+            from openssl_encrypt.modules.file_permissions import (
+                PermissionLevel, set_permissions)
+
             try:
                 set_permissions(file_path, PermissionLevel.OWNER_ONLY)
             except Exception:
@@ -380,7 +384,9 @@ def safe_open_file(file_path, mode, secure_mode=False, allow_special_files=True)
     except OSError as e:
         # ELOOP (errno 40): Too many symbolic links (triggered by O_NOFOLLOW on symlink)
         # ENOENT (errno 2): File not found (may occur on some systems for symlinks)
-        if e.errno == errno.ELOOP or (e.errno == errno.ENOENT and os.path.islink(file_path)):
+        if e.errno == errno.ELOOP or (
+            e.errno == errno.ENOENT and os.path.islink(file_path)
+        ):
             raise ValidationError(
                 f"Symlink attack blocked: '{file_path}' is a symbolic link. "
                 f"D-Bus service does not follow symlinks for security reasons."
@@ -429,9 +435,11 @@ def secure_shred_file(file_path, passes=3, quiet=False, secure_mode=False):
         bool: True if file was successfully shredded, False otherwise
     """
     # Skip special device files (stdin, stdout, stderr, pipes, etc.)
-    if file_path in ("/dev/stdin", "/dev/stdout", "/dev/stderr") or file_path.startswith(
-        "/dev/fd/"
-    ):
+    if file_path in (
+        "/dev/stdin",
+        "/dev/stdout",
+        "/dev/stderr",
+    ) or file_path.startswith("/dev/fd/"):
         if not quiet:
             eprint(f"Skipping shred for special device file: {file_path}")
         return False
@@ -610,14 +618,20 @@ def show_security_recommendations():
     eprint("   side-channel attacks and GPU-based attacks. Winner of the Password")
     eprint("   Hashing Competition in 2015.")
     eprint("   - Recommended parameters:")
-    eprint("     --enable-argon2 --argon2-time 3 --argon2-memory 65536 --argon2-parallelism 4\n")
+    eprint(
+        "     --enable-argon2 --argon2-time 3 --argon2-memory 65536 --argon2-parallelism 4\n"
+    )
 
     eprint("2. Scrypt: Strong memory-hard function that offers good protection")
     eprint("   against custom hardware attacks.")
     eprint("   - Recommended: --scrypt-n 16384 --scrypt-r 8 --scrypt-p 1\n")
 
-    eprint("3. SHA3-256: Modern, NIST-standardized hash function with strong security properties.")
-    eprint("   More resistant to length extension attacks than SHA-2 family (SHA-256/SHA-512).")
+    eprint(
+        "3. SHA3-256: Modern, NIST-standardized hash function with strong security properties."
+    )
+    eprint(
+        "   More resistant to length extension attacks than SHA-2 family (SHA-256/SHA-512)."
+    )
     eprint("   - Recommended: --sha3-256-rounds 10000 to 50000 for good security\n")
 
     eprint("4. PBKDF2: Widely compatible but less resistant to hardware attacks.")
@@ -636,7 +650,9 @@ def show_security_recommendations():
     argon2_available, version, supported_types = check_argon2_support()
     if argon2_available:
         eprint(f"Argon2 Status: AVAILABLE (version {version})")
-        eprint(f"Supported variants: {', '.join('Argon2' + t for t in supported_types)}")
+        eprint(
+            f"Supported variants: {', '.join('Argon2' + t for t in supported_types)}"
+        )
     else:
         eprint("Argon2 Status: NOT AVAILABLE")
         eprint("To enable Argon2 support, install the argon2-cffi package:")
@@ -682,7 +698,9 @@ def parse_metadata(encrypted_data):
     # Security: Maximum metadata size to prevent DoS attacks
     # Note: PQC private keys can be large (ML-KEM-1024 ~3KB, HQC-256 ~7KB+, base64 encoded +33%)
     # Allow generous limit for legitimate PQC use while preventing massive DoS attacks
-    MAX_METADATA_SIZE = 512 * 1024  # 512KB limit for metadata (accommodates large PQC keys)
+    MAX_METADATA_SIZE = (
+        512 * 1024
+    )  # 512KB limit for metadata (accommodates large PQC keys)
     MAX_SEARCH_RANGE = 2 * 1024 * 1024  # Search first 2MB of file for metadata
 
     try:
@@ -732,16 +750,16 @@ def parse_metadata(encrypted_data):
 
         # Security: Validate JSON structure and size
         if len(metadata_json) > MAX_METADATA_SIZE:
-            eprint(f"Warning: Metadata JSON too large ({len(metadata_json)} characters)")
+            eprint(
+                f"Warning: Metadata JSON too large ({len(metadata_json)} characters)"
+            )
             return {}
 
         # Security: Parse JSON with comprehensive validation (MED-8 fix)
         try:
-            from .json_validator import (
-                JSONSecurityError,
-                JSONValidationError,
-                secure_metadata_loads,
-            )
+            from .json_validator import (JSONSecurityError,
+                                         JSONValidationError,
+                                         secure_metadata_loads)
 
             metadata = secure_metadata_loads(metadata_json)
         except (JSONSecurityError, JSONValidationError) as e:

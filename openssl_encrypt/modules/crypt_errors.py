@@ -281,7 +281,8 @@ class SecureError(Exception):
 
         # Determine if we're in test/debug mode
         self.debug_mode = (
-            os.environ.get("PYTEST_CURRENT_TEST") is not None or os.environ.get("DEBUG") == "1"
+            os.environ.get("PYTEST_CURRENT_TEST") is not None
+            or os.environ.get("DEBUG") == "1"
         )
 
         # Build the error message based on environment
@@ -469,7 +470,9 @@ def secure_error_handler(func=None, error_category=None):
                             # Only pass through raw errors if explicitly requested
                             raise
                         # Otherwise wrap in a secure authentication error
-                        raise AuthenticationError("Authentication failed", original_exception=e)
+                        raise AuthenticationError(
+                            "Authentication failed", original_exception=e
+                        )
 
                     # Allow FileNotFoundError to pass through for directory tests
                     if isinstance(e, FileNotFoundError):
@@ -644,6 +647,7 @@ def constant_time_pkcs7_unpad(padded_data, block_size=16):
     """
     # Use the centralized implementation in secure_ops to ensure consistency
     # Import locally to avoid circular imports
-    from .secure_ops import constant_time_pkcs7_unpad as _constant_time_pkcs7_unpad
+    from .secure_ops import \
+        constant_time_pkcs7_unpad as _constant_time_pkcs7_unpad
 
     return _constant_time_pkcs7_unpad(padded_data, block_size)

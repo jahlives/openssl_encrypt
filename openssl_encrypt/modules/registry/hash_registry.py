@@ -12,14 +12,8 @@ import hashlib
 from abc import abstractmethod
 from typing import ClassVar, Optional
 
-from .base import (
-    AlgorithmBase,
-    AlgorithmCategory,
-    AlgorithmInfo,
-    RegistryBase,
-    SecurityLevel,
-    ValidationError,
-)
+from .base import (AlgorithmBase, AlgorithmCategory, AlgorithmInfo,
+                   RegistryBase, SecurityLevel, ValidationError)
 
 
 class HashBase(AlgorithmBase):
@@ -272,7 +266,9 @@ class BLAKE2b(HashBase):
 
         return hashlib.blake2b(data, digest_size=digest_size).digest()
 
-    def hash_keyed(self, data: bytes, key: bytes, output_length: Optional[int] = None) -> bytes:
+    def hash_keyed(
+        self, data: bytes, key: bytes, output_length: Optional[int] = None
+    ) -> bytes:
         """
         Computes keyed hash using BLAKE2b.
 
@@ -328,7 +324,9 @@ class BLAKE2s(HashBase):
 
         return hashlib.blake2s(data, digest_size=digest_size).digest()
 
-    def hash_keyed(self, data: bytes, key: bytes, output_length: Optional[int] = None) -> bytes:
+    def hash_keyed(
+        self, data: bytes, key: bytes, output_length: Optional[int] = None
+    ) -> bytes:
         """
         Computes keyed hash using BLAKE2s.
 
@@ -401,7 +399,9 @@ class BLAKE3(HashBase):
 
         return blake3.blake3(data).digest(output_len)
 
-    def hash_keyed(self, data: bytes, key: bytes, output_length: Optional[int] = None) -> bytes:
+    def hash_keyed(
+        self, data: bytes, key: bytes, output_length: Optional[int] = None
+    ) -> bytes:
         """
         Computes keyed hash using BLAKE3.
 

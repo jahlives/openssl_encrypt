@@ -10,13 +10,11 @@ import os
 import tempfile
 import unittest
 
-from openssl_encrypt.modules.crypt_core import (
-    decrypt_file,
-    encrypt_file,
-    extract_file_metadata,
-    generate_key_independent_xor,
-)
-from openssl_encrypt.modules.parallel_kdf import generate_key_independent_xor_parallel
+from openssl_encrypt.modules.crypt_core import (decrypt_file, encrypt_file,
+                                                extract_file_metadata,
+                                                generate_key_independent_xor)
+from openssl_encrypt.modules.parallel_kdf import \
+    generate_key_independent_xor_parallel
 
 
 class TestParallelKDF(unittest.TestCase):

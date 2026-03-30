@@ -41,7 +41,9 @@ def load_pepper_config() -> Optional[Dict]:
     Returns:
         Config dict or None if not found
     """
-    config_path = Path.home() / ".openssl_encrypt" / "plugins" / "pepper" / "pepper.json"
+    config_path = (
+        Path.home() / ".openssl_encrypt" / "plugins" / "pepper" / "pepper.json"
+    )
 
     if not config_path.exists():
         print(f"✗ Config file not found: {config_path}")
@@ -93,7 +95,9 @@ def test_get_profile(base_url: str, cert: tuple) -> Dict:
         if response.status_code == 200:
             data = response.json()
             print(f"✓ Profile retrieved")
-            print(f"  Certificate fingerprint: {data.get('cert_fingerprint', 'N/A')[:40]}...")
+            print(
+                f"  Certificate fingerprint: {data.get('cert_fingerprint', 'N/A')[:40]}..."
+            )
             print(f"  Name: {data.get('name', 'N/A')}")
             print(f"  Pepper count: {data.get('pepper_count', 0)}")
             print(f"  TOTP enabled: {data.get('totp_enabled', False)}")
@@ -117,7 +121,7 @@ def test_create_pepper(base_url: str, cert: tuple) -> Dict:
 
     # Create test pepper (encrypted blob)
     test_data = b"This is a test pepper value - keep it secret!"
-    encrypted_blob = base64.b64encode(test_data).decode('ascii')
+    encrypted_blob = base64.b64encode(test_data).decode("ascii")
 
     payload = {
         "name": "test-pepper",
@@ -163,10 +167,12 @@ def test_list_peppers(base_url: str, cert: tuple) -> Dict:
             print(f"✓ Peppers listed")
             print(f"  Total count: {data.get('total', 0)}")
 
-            if data.get('peppers'):
+            if data.get("peppers"):
                 print(f"  Peppers:")
-                for p in data['peppers'][:5]:  # Show first 5
-                    print(f"    - {p['name']}: {p.get('description', 'No description')}")
+                for p in data["peppers"][:5]:  # Show first 5
+                    print(
+                        f"    - {p['name']}: {p.get('description', 'No description')}"
+                    )
 
             return data
         else:
@@ -196,7 +202,9 @@ def test_get_pepper(base_url: str, cert: tuple, name: str) -> Dict:
             print(f"  Description: {data.get('description')}")
             print(f"  Access count: {data.get('access_count', 0)}")
             print(f"  Last accessed: {data.get('last_accessed_at', 'Never')}")
-            print(f"  Encrypted pepper size: {len(data.get('pepper_encrypted', ''))} chars")
+            print(
+                f"  Encrypted pepper size: {len(data.get('pepper_encrypted', ''))} chars"
+            )
             return data
         else:
             print(f"✗ Failed: {response.status_code}")
@@ -217,11 +225,11 @@ def test_update_pepper(base_url: str, cert: tuple, name: str) -> Dict:
 
     # Update with new encrypted blob and description
     updated_data = b"This is an updated test pepper value!"
-    encrypted_blob = base64.b64encode(updated_data).decode('ascii')
+    encrypted_blob = base64.b64encode(updated_data).decode("ascii")
 
     payload = {
         "pepper_encrypted": encrypted_blob,
-        "description": "Updated test pepper description"
+        "description": "Updated test pepper description",
     }
 
     try:

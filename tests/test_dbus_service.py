@@ -279,7 +279,9 @@ class TestDBusServiceStructure(unittest.TestCase):
 
     def test_interface_xml_exists(self):
         """Test that interface XML file exists"""
-        xml_path = Path(__file__).parent.parent / "openssl_encrypt" / "dbus" / "interface.xml"
+        xml_path = (
+            Path(__file__).parent.parent / "openssl_encrypt" / "dbus" / "interface.xml"
+        )
         self.assertTrue(xml_path.exists(), "Interface XML file not found")
 
         # Check XML is valid
@@ -309,7 +311,12 @@ class TestDBusServiceStructure(unittest.TestCase):
 
     def test_documentation_exists(self):
         """Test that documentation exists"""
-        doc_path = Path(__file__).parent.parent / "openssl_encrypt" / "docs" / "dbus-service.md"
+        doc_path = (
+            Path(__file__).parent.parent
+            / "openssl_encrypt"
+            / "docs"
+            / "dbus-service.md"
+        )
         self.assertTrue(doc_path.exists(), "Documentation not found")
 
 

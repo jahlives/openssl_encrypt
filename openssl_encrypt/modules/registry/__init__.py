@@ -32,21 +32,13 @@ Usage:
 """
 
 # Base classes and types
-from .base import (
-    AlgorithmBase,
-    AlgorithmCategory,
-    AlgorithmError,
-    AlgorithmInfo,
-    AlgorithmNotAvailableError,
-    AlgorithmNotFoundError,
-    AuthenticationError,
-    RegistryBase,
-    SecurityLevel,
-    ValidationError,
-)
-
+from .base import (AlgorithmBase, AlgorithmCategory, AlgorithmError,
+                   AlgorithmInfo, AlgorithmNotAvailableError,
+                   AlgorithmNotFoundError, AuthenticationError, RegistryBase,
+                   SecurityLevel, ValidationError)
 # Utilities
-from .utils import constant_time_compare, generate_random_bytes, pad_pkcs7, unpad_pkcs7
+from .utils import (constant_time_compare, generate_random_bytes, pad_pkcs7,
+                    unpad_pkcs7)
 
 __all__ = [
     # Base classes
@@ -69,20 +61,10 @@ __all__ = [
 ]
 
 # Cipher registry
-from .cipher_registry import (
-    AES256GCM,
-    AESGCMSIV,
-    AESOCB3,
-    AESSIV,
-    ChaCha20Poly1305,
-    CipherBase,
-    CipherParams,
-    CipherRegistry,
-    Threefish512,
-    Threefish1024,
-    XChaCha20Poly1305,
-    get_cipher,
-)
+from .cipher_registry import (AES256GCM, AESGCMSIV, AESOCB3, AESSIV,
+                              ChaCha20Poly1305, CipherBase, CipherParams,
+                              CipherRegistry, Threefish512, Threefish1024,
+                              XChaCha20Poly1305, get_cipher)
 
 __all__.extend(
     [
@@ -103,23 +85,10 @@ __all__.extend(
 )
 
 # Hash registry
-from .hash_registry import (
-    BLAKE3,
-    SHA3_256,
-    SHA3_384,
-    SHA3_512,
-    SHA256,
-    SHA384,
-    SHA512,
-    SHAKE128,
-    SHAKE256,
-    BLAKE2b,
-    BLAKE2s,
-    HashBase,
-    HashRegistry,
-    Whirlpool,
-    get_hash,
-)
+from .hash_registry import (BLAKE3, SHA3_256, SHA3_384, SHA3_512, SHA256,
+                            SHA384, SHA512, SHAKE128, SHAKE256, BLAKE2b,
+                            BLAKE2s, HashBase, HashRegistry, Whirlpool,
+                            get_hash)
 
 __all__.extend(
     [
@@ -143,27 +112,11 @@ __all__.extend(
 )
 
 # KDF registry
-from .kdf_registry import (
-    HKDF,
-    PBKDF2,
-    Argon2d,
-    Argon2i,
-    Argon2id,
-    Argon2Params,
-    Argon2Type,
-    Balloon,
-    BalloonParams,
-    HKDFParams,
-    KDFBase,
-    KDFParams,
-    KDFRegistry,
-    PBKDF2Params,
-    RandomX,
-    RandomXParams,
-    Scrypt,
-    ScryptParams,
-    get_kdf,
-)
+from .kdf_registry import (HKDF, PBKDF2, Argon2d, Argon2i, Argon2id,
+                           Argon2Params, Argon2Type, Balloon, BalloonParams,
+                           HKDFParams, KDFBase, KDFParams, KDFRegistry,
+                           PBKDF2Params, RandomX, RandomXParams, Scrypt,
+                           ScryptParams, get_kdf)
 
 __all__.extend(
     [
@@ -191,17 +144,8 @@ __all__.extend(
 )
 
 # KEM registry (Post-Quantum Key Encapsulation Mechanisms)
-from .kem_registry import (
-    HQC128,
-    HQC192,
-    HQC256,
-    MLKEM512,
-    MLKEM768,
-    MLKEM1024,
-    KEMBase,
-    KEMRegistry,
-    get_kem,
-)
+from .kem_registry import (HQC128, HQC192, HQC256, MLKEM512, MLKEM768,
+                           MLKEM1024, KEMBase, KEMRegistry, get_kem)
 
 __all__.extend(
     [
@@ -219,25 +163,11 @@ __all__.extend(
 )
 
 # Signature registry (Post-Quantum Digital Signatures)
-from .signature_registry import (
-    CROSS128,
-    CROSS192,
-    CROSS256,
-    FNDSA512,
-    FNDSA1024,
-    MAYO1,
-    MAYO3,
-    MAYO5,
-    MLDSA44,
-    MLDSA65,
-    MLDSA87,
-    SLHDSASHA2128F,
-    SLHDSASHA2192F,
-    SLHDSASHA2256F,
-    SignatureBase,
-    SignatureRegistry,
-    get_signature,
-)
+from .signature_registry import (CROSS128, CROSS192, CROSS256, FNDSA512,
+                                 FNDSA1024, MAYO1, MAYO3, MAYO5, MLDSA44,
+                                 MLDSA65, MLDSA87, SLHDSASHA2128F,
+                                 SLHDSASHA2192F, SLHDSASHA2256F, SignatureBase,
+                                 SignatureRegistry, get_signature)
 
 __all__.extend(
     [
@@ -266,23 +196,14 @@ __all__.extend(
 # combining KEMs with ciphers at application level
 
 # CLI helper functions
-from .cli_helpers import (
-    format_algorithm_help,
-    get_available_ciphers,
-    get_available_hashes,
-    get_available_kdfs,
-    get_available_kems,
-    get_available_signatures,
-    get_cipher_aliases,
-    get_cipher_info_dict,
-    get_kdf_info_dict,
-    get_recommended_cipher,
-    get_recommended_hash,
-    get_recommended_kdf,
-    get_recommended_kem,
-    get_recommended_signature,
-    validate_algorithm_name,
-)
+from .cli_helpers import (format_algorithm_help, get_available_ciphers,
+                          get_available_hashes, get_available_kdfs,
+                          get_available_kems, get_available_signatures,
+                          get_cipher_aliases, get_cipher_info_dict,
+                          get_kdf_info_dict, get_recommended_cipher,
+                          get_recommended_hash, get_recommended_kdf,
+                          get_recommended_kem, get_recommended_signature,
+                          validate_algorithm_name)
 
 __all__.extend(
     [

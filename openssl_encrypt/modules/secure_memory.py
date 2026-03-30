@@ -17,6 +17,7 @@ import random
 import secrets
 import sys
 import time
+
 from .crypt_utils import eprint
 
 
@@ -89,7 +90,13 @@ def verify_memory_zeroed(data, full_check=True, sample_size=16):
             # - Start of buffer (often contains headers)
             # - End of buffer (often contains padding)
             # - Quarter points (ensure even distribution)
-            critical_points = [0, data_len // 4, data_len // 2, (3 * data_len) // 4, data_len - 1]
+            critical_points = [
+                0,
+                data_len // 4,
+                data_len // 2,
+                (3 * data_len) // 4,
+                data_len - 1,
+            ]
 
             # Add evenly distributed sampling points throughout the buffer
             stride_points = []
@@ -111,7 +118,9 @@ def verify_memory_zeroed(data, full_check=True, sample_size=16):
                 attempts = 0
                 max_attempts = remaining_samples * 10  # Avoid infinite loops
 
-                while len(random_points) < remaining_samples and attempts < max_attempts:
+                while (
+                    len(random_points) < remaining_samples and attempts < max_attempts
+                ):
                     attempts += 1
                     idx = secrets.randbelow(data_len - 2) + 1
                     if idx not in excluded:
@@ -260,7 +269,9 @@ def secure_memzero(data, full_verification=True):
                             # Modern libc versions provide explicit_bzero (similar to memset_s)
                             if hasattr(libc, "explicit_bzero"):
                                 buf = (ctypes.c_byte * length).from_buffer(target_data)
-                                libc.explicit_bzero(ctypes.byref(buf), ctypes.c_size_t(length))
+                                libc.explicit_bzero(
+                                    ctypes.byref(buf), ctypes.c_size_t(length)
+                                )
                                 zeroing_successful = True
                             # Try POSIX memset_s if available
                             elif hasattr(libc, "memset_s"):
@@ -288,19 +299,24 @@ def secure_memzero(data, full_verification=True):
                         libc = ctypes.CDLL(None)
                         if hasattr(libc, "msync"):
                             try:
-                                addr = ctypes.addressof(ctypes.c_char.from_buffer(target_data))
+                                addr = ctypes.addressof(
+                                    ctypes.c_char.from_buffer(target_data)
+                                )
                                 page_size = get_memory_page_size()
                                 # Round address down to page boundary
                                 page_addr = (addr // page_size) * page_size
                                 # Round size up to page boundary
                                 page_len = (
-                                    (length + (addr - page_addr) + page_size - 1) // page_size
+                                    (length + (addr - page_addr) + page_size - 1)
+                                    // page_size
                                 ) * page_size
 
                                 # MS_SYNC: Synchronous flush (2 on most systems)
                                 MS_SYNC = 2
                                 libc.msync(
-                                    ctypes.c_void_p(page_addr), ctypes.c_size_t(page_len), MS_SYNC
+                                    ctypes.c_void_p(page_addr),
+                                    ctypes.c_size_t(page_len),
+                                    MS_SYNC,
                                 )
                             except:
                                 pass
@@ -314,7 +330,9 @@ def secure_memzero(data, full_verification=True):
             target_data[:] = bytearray(length)
 
             # Verify that memory has been properly zeroed
-            zeroing_successful = verify_memory_zeroed(target_data, full_check=full_verification)
+            zeroing_successful = verify_memory_zeroed(
+                target_data, full_check=full_verification
+            )
 
     except Exception:
         # Last resort zeroing attempt
@@ -389,7 +407,8 @@ class SecureMemoryAllocator:
 
         # Debug mode (disabled by default)
         self.debug_mode = (
-            os.environ.get("DEBUG") == "1" or os.environ.get("PYTEST_CURRENT_TEST") is not None
+            os.environ.get("DEBUG") == "1"
+            or os.environ.get("PYTEST_CURRENT_TEST") is not None
         )
         self.quiet = not self.debug_mode  # Quiet mode is the opposite of debug mode
 
@@ -611,13 +630,17 @@ class SecureMemoryAllocator:
                             # MADV_DONTDUMP (16) - exclude from core dumps
                             MADV_DONTDUMP = 16
                             libc.madvise(
-                                ctypes.c_void_p(addr), ctypes.c_size_t(size), MADV_DONTDUMP
+                                ctypes.c_void_p(addr),
+                                ctypes.c_size_t(size),
+                                MADV_DONTDUMP,
                             )
 
                             # MADV_DONTFORK (10) - don't share with child processes
                             MADV_DONTFORK = 10
                             libc.madvise(
-                                ctypes.c_void_p(addr), ctypes.c_size_t(size), MADV_DONTFORK
+                                ctypes.c_void_p(addr),
+                                ctypes.c_size_t(size),
+                                MADV_DONTFORK,
                             )
                         except:
                             pass
@@ -634,7 +657,11 @@ class SecureMemoryAllocator:
 
                         # VM_INHERIT_NONE (2) - memory not inherited by child processes
                         VM_INHERIT_NONE = 2
-                        libc.minherit(ctypes.c_void_p(addr), ctypes.c_size_t(size), VM_INHERIT_NONE)
+                        libc.minherit(
+                            ctypes.c_void_p(addr),
+                            ctypes.c_size_t(size),
+                            VM_INHERIT_NONE,
+                        )
                 except:
                     pass
 
@@ -708,7 +735,9 @@ class SecureMemoryAllocator:
                             size = buffer_len
 
                             # Validate address and size
-                            if addr <= 0 or size <= 0 or size > 1_000_000_000:  # 1GB max for safety
+                            if (
+                                addr <= 0 or size <= 0 or size > 1_000_000_000
+                            ):  # 1GB max for safety
                                 return False
 
                             # Call mlock with proper error checking
@@ -721,7 +750,9 @@ class SecureMemoryAllocator:
                                 if hasattr(ctypes, "get_errno"):
                                     errno = ctypes.get_errno()
                                     if not self.quiet:
-                                        eprint(f"Memory locking failed with error code: {errno}")
+                                        eprint(
+                                            f"Memory locking failed with error code: {errno}"
+                                        )
 
                         except (TypeError, ValueError, BufferError) as e:
                             if not self.quiet:
@@ -753,18 +784,24 @@ class SecureMemoryAllocator:
                             size = buffer_len
 
                             # Validate address and size
-                            if addr <= 0 or size <= 0 or size > 1_000_000_000:  # 1GB max for safety
+                            if (
+                                addr <= 0 or size <= 0 or size > 1_000_000_000
+                            ):  # 1GB max for safety
                                 return False
 
                             # Call VirtualLock with proper error handling
                             result = kernel32.VirtualLock(addr, size)
-                            lock_success = result != 0  # Windows API returns non-zero on success
+                            lock_success = (
+                                result != 0
+                            )  # Windows API returns non-zero on success
 
                             # Check for errors
                             if not lock_success:
                                 error_code = ctypes.get_last_error()
                                 if not self.quiet:
-                                    eprint(f"Memory locking failed with error code: {error_code}")
+                                    eprint(
+                                        f"Memory locking failed with error code: {error_code}"
+                                    )
 
                         except (TypeError, ValueError, BufferError) as e:
                             if not self.quiet:
@@ -869,7 +906,9 @@ class SecureMemoryAllocator:
                             size = buffer_len
 
                             # Validate address and size
-                            if addr <= 0 or size <= 0 or size > 1_000_000_000:  # 1GB max for safety
+                            if (
+                                addr <= 0 or size <= 0 or size > 1_000_000_000
+                            ):  # 1GB max for safety
                                 return False
 
                             # Call munlock with proper error checking
@@ -878,7 +917,9 @@ class SecureMemoryAllocator:
 
                         except (TypeError, ValueError, BufferError) as e:
                             if not self.quiet:
-                                eprint(f"Buffer conversion error during unlock: {str(e)}")
+                                eprint(
+                                    f"Buffer conversion error during unlock: {str(e)}"
+                                )
                             return False
 
                 except (ImportError, AttributeError, OSError) as e:
@@ -907,22 +948,30 @@ class SecureMemoryAllocator:
                             size = buffer_len
 
                             # Validate address and size
-                            if addr <= 0 or size <= 0 or size > 1_000_000_000:  # 1GB max for safety
+                            if (
+                                addr <= 0 or size <= 0 or size > 1_000_000_000
+                            ):  # 1GB max for safety
                                 return False
 
                             # Call VirtualUnlock with proper error handling
                             result = kernel32.VirtualUnlock(addr, size)
-                            unlock_success = result != 0  # Windows API returns non-zero on success
+                            unlock_success = (
+                                result != 0
+                            )  # Windows API returns non-zero on success
 
                             # Check for errors
                             if not unlock_success:
                                 error_code = ctypes.get_last_error()
                                 if not self.quiet:
-                                    eprint(f"Memory unlocking failed with error code: {error_code}")
+                                    eprint(
+                                        f"Memory unlocking failed with error code: {error_code}"
+                                    )
 
                         except (TypeError, ValueError, BufferError) as e:
                             if not self.quiet:
-                                eprint(f"Buffer conversion error during unlock: {str(e)}")
+                                eprint(
+                                    f"Buffer conversion error during unlock: {str(e)}"
+                                )
                             return False
 
                 except (AttributeError, OSError) as e:
@@ -984,7 +1033,9 @@ def free_secure_buffer(buffer, full_verification=True):
         # Handle error cases
         try:
             # Last resort zeroing attempt if allocator's free method fails
-            zeroing_success = secure_memzero(buffer, full_verification=full_verification)
+            zeroing_success = secure_memzero(
+                buffer, full_verification=full_verification
+            )
             return zeroing_success
         except:
             return False
@@ -1199,10 +1250,15 @@ def secure_buffer(size, zero=True, verify_zeroing=True):
     finally:
         # Free secure buffer with verification
         if verify_zeroing:
-            zeroing_verified = free_secure_buffer(buffer, full_verification=verify_zeroing)
+            zeroing_verified = free_secure_buffer(
+                buffer, full_verification=verify_zeroing
+            )
 
             # If in a critical security context and verification failed, raise exception
-            if not zeroing_verified and os.environ.get("CRITICAL_SECURITY_CONTEXT") == "1":
+            if (
+                not zeroing_verified
+                and os.environ.get("CRITICAL_SECURITY_CONTEXT") == "1"
+            ):
                 raise RuntimeError("Failed to verify memory zeroing in secure buffer")
         else:
             # Basic free without verification
@@ -1318,7 +1374,8 @@ def secure_erase_system_memory(trigger_gc=True, full_sweep=False):
                 # Allocate a large buffer and fill with random data to overwrite free memory
                 # This helps against memory dump attacks
                 memory_size = min(
-                    1024 * 1024 * 32, os.sysconf("SC_PHYS_PAGES") * os.sysconf("SC_PAGE_SIZE") // 4
+                    1024 * 1024 * 32,
+                    os.sysconf("SC_PHYS_PAGES") * os.sysconf("SC_PAGE_SIZE") // 4,
                 )
 
                 # Break this into smaller chunks to avoid OOM killer

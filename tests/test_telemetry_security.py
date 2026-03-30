@@ -20,7 +20,8 @@ If ANY of these tests fail, the telemetry system is NOT safe to deploy.
 
 import pytest
 
-from openssl_encrypt.modules.telemetry_filter import TelemetryDataFilter, TelemetryEvent
+from openssl_encrypt.modules.telemetry_filter import (TelemetryDataFilter,
+                                                      TelemetryEvent)
 
 
 class TestTelemetrySecurityGuarantees:
@@ -178,7 +179,11 @@ class TestTelemetrySecurityGuarantees:
             "format_version": 8,
             "encryption": {
                 "cascade": True,
-                "cipher_chain": ["aes-256-gcm", "chacha20-poly1305", "camellia-256-gcm"],
+                "cipher_chain": [
+                    "aes-256-gcm",
+                    "chacha20-poly1305",
+                    "camellia-256-gcm",
+                ],
                 "cascade_salt": "base64cascadesalt==",  # Should be ignored
             },
         }

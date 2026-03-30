@@ -23,15 +23,17 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), ".")))
 from openssl_encrypt.modules.keystore_cli import PQCKeystore
 from openssl_encrypt.modules.keystore_utils import extract_key_id_from_metadata
 from openssl_encrypt.modules.keystore_wrapper import (
-    decrypt_file_with_keystore,
-    encrypt_file_with_keystore,
-)
+    decrypt_file_with_keystore, encrypt_file_with_keystore)
 
 
 def main():
     # Parse command-line arguments
-    parser = argparse.ArgumentParser(description="Test dual encryption with keystore integration")
-    parser.add_argument("--input", help="Input file to encrypt", default="test_input.txt")
+    parser = argparse.ArgumentParser(
+        description="Test dual encryption with keystore integration"
+    )
+    parser.add_argument(
+        "--input", help="Input file to encrypt", default="test_input.txt"
+    )
     parser.add_argument("--output", help="Output file", default="test_encrypted.enc")
     parser.add_argument("--keystore", help="Keystore file", default="test_keystore.pqc")
     parser.add_argument("--clean", action="store_true", help="Clean up test files")
@@ -63,8 +65,12 @@ def main():
     # Create input file if it doesn't exist
     if not os.path.exists(args.input):
         with open(args.input, "w") as f:
-            f.write("This is a test file for dual encryption with keystore integration.\n")
-            f.write("The contents should be recoverable with both keystore and file passwords.\n")
+            f.write(
+                "This is a test file for dual encryption with keystore integration.\n"
+            )
+            f.write(
+                "The contents should be recoverable with both keystore and file passwords.\n"
+            )
         print(f"Created input file: {args.input}")
 
     # Create or load keystore
@@ -185,15 +191,25 @@ def main():
             metadata = json.loads(metadata_json)
 
             # Verify key ID is in metadata
-            if "hash_config" in metadata and "pqc_keystore_key_id" in metadata["hash_config"]:
-                print(f"Key ID in metadata: {metadata['hash_config']['pqc_keystore_key_id']}")
-                assert metadata["hash_config"]["pqc_keystore_key_id"] == key_id, "Key ID mismatch"
+            if (
+                "hash_config" in metadata
+                and "pqc_keystore_key_id" in metadata["hash_config"]
+            ):
+                print(
+                    f"Key ID in metadata: {metadata['hash_config']['pqc_keystore_key_id']}"
+                )
+                assert (
+                    metadata["hash_config"]["pqc_keystore_key_id"] == key_id
+                ), "Key ID mismatch"
             else:
                 print("ERROR: Key ID not found in metadata")
                 return 1
 
             # Verify dual encryption flag is in metadata
-            if "hash_config" in metadata and "dual_encryption" in metadata["hash_config"]:
+            if (
+                "hash_config" in metadata
+                and "dual_encryption" in metadata["hash_config"]
+            ):
                 print(
                     f"Dual encryption flag in metadata: {metadata['hash_config']['dual_encryption']}"
                 )
@@ -202,7 +218,10 @@ def main():
                 return 1
 
             # Verify private key is NOT in metadata
-            if "hash_config" in metadata and "pqc_private_key" in metadata["hash_config"]:
+            if (
+                "hash_config" in metadata
+                and "pqc_private_key" in metadata["hash_config"]
+            ):
                 print("ERROR: Private key found in metadata, should have been removed")
                 return 1
             else:
@@ -241,7 +260,9 @@ def main():
 
         # Try to access the key directly first
         try:
-            public_key, private_key = keystore.get_key(key_id, file_password=file_password)
+            public_key, private_key = keystore.get_key(
+                key_id, file_password=file_password
+            )
             print("Debug: Successfully retrieved key from keystore directly!")
         except Exception as ke:
             print(f"Debug: Failed to get key directly from keystore: {ke}")
@@ -330,7 +351,9 @@ def main():
     # Manually verify the private key was actually removed from metadata
     print("\nVerifying private key removal from metadata")
     with open(args.output, "rb") as f:
-        content = f.read(16384)  # Read a larger chunk to make sure we get the full header
+        content = f.read(
+            16384
+        )  # Read a larger chunk to make sure we get the full header
 
     # Find the colon separator
     colon_pos = content.find(b":")
@@ -341,7 +364,10 @@ def main():
             metadata = json.loads(metadata_json)
 
             # Check if private key was properly removed
-            if "hash_config" in metadata and "pqc_private_key" in metadata["hash_config"]:
+            if (
+                "hash_config" in metadata
+                and "pqc_private_key" in metadata["hash_config"]
+            ):
                 print("ERROR: Private key still found in metadata! Our removal failed.")
                 # Try to manually fix it for the test
                 print("Attempting to fix metadata manually for testing...")
@@ -355,7 +381,9 @@ def main():
 
                 # Write clean metadata back
                 fixed_metadata_json = json.dumps(metadata)
-                fixed_metadata_b64 = base64.b64encode(fixed_metadata_json.encode("utf-8"))
+                fixed_metadata_b64 = base64.b64encode(
+                    fixed_metadata_json.encode("utf-8")
+                )
 
                 # Get encrypted data part
                 encrypted_data = content[colon_pos:]
@@ -412,7 +440,10 @@ def main():
             metadata_json = base64.b64decode(metadata_b64).decode("utf-8")
             metadata = json.loads(metadata_json)
 
-            if "hash_config" in metadata and "pqc_private_key" in metadata["hash_config"]:
+            if (
+                "hash_config" in metadata
+                and "pqc_private_key" in metadata["hash_config"]
+            ):
                 raise RuntimeError(
                     "Private key still found in metadata. This is why decryption succeeded without keystore."
                 )

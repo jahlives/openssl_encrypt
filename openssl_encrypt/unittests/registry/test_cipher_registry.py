@@ -8,22 +8,13 @@ All code in English as per project requirements.
 
 import pytest
 
-from openssl_encrypt.modules.registry import (
-    AES256GCM,
-    AESGCMSIV,
-    AESOCB3,
-    AESSIV,
-    AlgorithmCategory,
-    AuthenticationError,
-    ChaCha20Poly1305,
-    CipherRegistry,
-    SecurityLevel,
-    Threefish512,
-    Threefish1024,
-    ValidationError,
-    XChaCha20Poly1305,
-    get_cipher,
-)
+from openssl_encrypt.modules.registry import (AES256GCM, AESGCMSIV, AESOCB3,
+                                              AESSIV, AlgorithmCategory,
+                                              AuthenticationError,
+                                              ChaCha20Poly1305, CipherRegistry,
+                                              SecurityLevel, Threefish512,
+                                              Threefish1024, ValidationError,
+                                              XChaCha20Poly1305, get_cipher)
 
 
 class TestCipherRegistry:
@@ -435,7 +426,9 @@ threefish_available = pytest.importorskip(
 )
 
 
-@pytest.mark.skipif(not Threefish512.is_available(), reason="threefish_native not available")
+@pytest.mark.skipif(
+    not Threefish512.is_available(), reason="threefish_native not available"
+)
 class TestThreefish512:
     """Tests for Threefish-512 cipher."""
 
@@ -556,7 +549,9 @@ class TestThreefish512:
         assert decrypted == plaintext
 
 
-@pytest.mark.skipif(not Threefish1024.is_available(), reason="threefish_native not available")
+@pytest.mark.skipif(
+    not Threefish1024.is_available(), reason="threefish_native not available"
+)
 class TestThreefish1024:
     """Tests for Threefish-1024 cipher."""
 
@@ -614,7 +609,9 @@ class TestThreefish1024:
         key = threefish_native.generate_key_1024()
         nonce = threefish_native.generate_nonce_1024()
 
-        ciphertext = cipher.encrypt(key, b"Secret", nonce=nonce, associated_data=b"correct_aad")
+        ciphertext = cipher.encrypt(
+            key, b"Secret", nonce=nonce, associated_data=b"correct_aad"
+        )
 
         with pytest.raises(AuthenticationError):
             cipher.decrypt(key, ciphertext, associated_data=b"wrong_aad")

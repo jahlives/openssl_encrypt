@@ -35,7 +35,9 @@ def test_qr_payload_creation():
         # Test payload preparation
         from qr_distribution import SecureBytes
 
-        payload = qr_dist._prepare_key_payload(SecureBytes(test_key), key_name, compression=True)
+        payload = qr_dist._prepare_key_payload(
+            SecureBytes(test_key), key_name, compression=True
+        )
 
         print(f"✅ Payload created: {len(payload)} bytes")
 
@@ -107,7 +109,9 @@ def test_multi_qr_splitting():
         chunk_size = qr_dist.MAX_SINGLE_QR_SIZE - metadata_overhead
 
         # Split into chunks (simulate multi-QR creation logic)
-        chunks = [payload[i : i + chunk_size] for i in range(0, len(payload), chunk_size)]
+        chunks = [
+            payload[i : i + chunk_size] for i in range(0, len(payload), chunk_size)
+        ]
         total_chunks = len(chunks)
 
         print(f"Would create {total_chunks} QR codes")

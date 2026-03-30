@@ -25,9 +25,10 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 import yaml
 
-from .config_analyzer import ConfigurationAnalyzer, analyze_configuration_from_args
-from .security_scorer import SecurityLevel
+from .config_analyzer import (ConfigurationAnalyzer,
+                              analyze_configuration_from_args)
 from .crypt_utils import eprint
+from .security_scorer import SecurityLevel
 
 
 class TemplateCategory(Enum):
@@ -57,8 +58,12 @@ class TemplateMetadata:
     category: TemplateCategory = TemplateCategory.USER_CREATED
     author: str = ""
     version: str = "1.0"
-    created_date: str = field(default_factory=lambda: time.strftime("%Y-%m-%d %H:%M:%S"))
-    modified_date: str = field(default_factory=lambda: time.strftime("%Y-%m-%d %H:%M:%S"))
+    created_date: str = field(
+        default_factory=lambda: time.strftime("%Y-%m-%d %H:%M:%S")
+    )
+    modified_date: str = field(
+        default_factory=lambda: time.strftime("%Y-%m-%d %H:%M:%S")
+    )
     use_cases: List[str] = field(default_factory=list)
     security_score: float = 0.0
     security_level: str = ""
@@ -198,10 +203,16 @@ class TemplateManager:
             try:
                 analysis = self.analyzer.analyze_configuration(config)
                 template_data["metadata"]["security_score"] = analysis.overall_score
-                template_data["metadata"]["security_level"] = analysis.security_level.name
+                template_data["metadata"][
+                    "security_level"
+                ] = analysis.security_level.name
                 template_data["metadata"]["compatibility"] = {
-                    "score": analysis.compatibility_matrix["overall_compatibility_score"],
-                    "platforms": analysis.compatibility_matrix["platform_compatibility"],
+                    "score": analysis.compatibility_matrix[
+                        "overall_compatibility_score"
+                    ],
+                    "platforms": analysis.compatibility_matrix[
+                        "platform_compatibility"
+                    ],
                     "libraries": analysis.compatibility_matrix["library_compatibility"],
                 }
             except Exception:
@@ -331,7 +342,9 @@ class TemplateManager:
             if format == TemplateFormat.JSON:
                 json.dump(template_data, f, indent=2, ensure_ascii=False)
             else:  # YAML
-                yaml.dump(template_data, f, default_flow_style=False, allow_unicode=True)
+                yaml.dump(
+                    template_data, f, default_flow_style=False, allow_unicode=True
+                )
 
         return filepath
 
@@ -387,7 +400,9 @@ class TemplateManager:
             # Try to analyze legacy template
             try:
                 if "hash_config" in config:
-                    analysis = self.analyzer.analyze_configuration(config["hash_config"])
+                    analysis = self.analyzer.analyze_configuration(
+                        config["hash_config"]
+                    )
                     metadata.security_score = analysis.overall_score
                     metadata.security_level = analysis.security_level.name
             except Exception:
@@ -399,14 +414,18 @@ class TemplateManager:
 
         return template
 
-    def list_templates(self, category: Optional[TemplateCategory] = None) -> List[EnhancedTemplate]:
+    def list_templates(
+        self, category: Optional[TemplateCategory] = None
+    ) -> List[EnhancedTemplate]:
         """List all available templates."""
         templates = []
 
         # Add built-in templates
         for name, data in self.BUILT_IN_TEMPLATES.items():
             metadata = TemplateMetadata(**data["metadata"])
-            template = EnhancedTemplate(metadata=metadata, config=data["config"], is_built_in=True)
+            template = EnhancedTemplate(
+                metadata=metadata, config=data["config"], is_built_in=True
+            )
             templates.append(template)
 
         # Add file-based templates
@@ -436,7 +455,9 @@ class TemplateManager:
         if name in self.BUILT_IN_TEMPLATES:
             data = self.BUILT_IN_TEMPLATES[name]
             metadata = TemplateMetadata(**data["metadata"])
-            return EnhancedTemplate(metadata=metadata, config=data["config"], is_built_in=True)
+            return EnhancedTemplate(
+                metadata=metadata, config=data["config"], is_built_in=True
+            )
 
         # Check file-based templates
         all_templates = self.list_templates()
@@ -471,7 +492,9 @@ class TemplateManager:
         }
 
         # Security comparison
-        score_diff = template1.metadata.security_score - template2.metadata.security_score
+        score_diff = (
+            template1.metadata.security_score - template2.metadata.security_score
+        )
         if abs(score_diff) < 0.5:
             comparison["security_comparison"]["verdict"] = "Similar security levels"
         elif score_diff > 0:
@@ -487,8 +510,12 @@ class TemplateManager:
 
         # Analyze configurations to get performance data
         try:
-            analysis1 = self.analyzer.analyze_configuration(template1.config.get("hash_config", {}))
-            analysis2 = self.analyzer.analyze_configuration(template2.config.get("hash_config", {}))
+            analysis1 = self.analyzer.analyze_configuration(
+                template1.config.get("hash_config", {})
+            )
+            analysis2 = self.analyzer.analyze_configuration(
+                template2.config.get("hash_config", {})
+            )
 
             perf1 = analysis1.performance_assessment["overall_score"]
             perf2 = analysis2.performance_assessment["overall_score"]
@@ -510,7 +537,9 @@ class TemplateManager:
                 ] = f"{template2.metadata.name} offers better performance"
 
         except Exception:
-            comparison["performance_comparison"]["verdict"] = "Performance comparison unavailable"
+            comparison["performance_comparison"][
+                "verdict"
+            ] = "Performance comparison unavailable"
 
         return comparison
 
@@ -534,14 +563,21 @@ class TemplateManager:
                 reason_parts.append("related use case")
 
             # Security level appropriateness
-            if use_case in ["compliance", "archival"] and template.metadata.security_score >= 7.0:
+            if (
+                use_case in ["compliance", "archival"]
+                and template.metadata.security_score >= 7.0
+            ):
                 score += 8
                 reason_parts.append("high security for sensitive use case")
-            elif use_case == "personal" and 4.0 <= template.metadata.security_score <= 7.0:
+            elif (
+                use_case == "personal"
+                and 4.0 <= template.metadata.security_score <= 7.0
+            ):
                 score += 6
                 reason_parts.append("balanced security for personal use")
             elif (
-                use_case in ["business", "development"] and template.metadata.security_score >= 5.0
+                use_case in ["business", "development"]
+                and template.metadata.security_score >= 5.0
             ):
                 score += 7
                 reason_parts.append("good security for business use")
@@ -560,7 +596,9 @@ class TemplateManager:
             matching_tags = set(template.metadata.tags) & set(relevant_tags)
             if matching_tags:
                 score += len(matching_tags) * 2
-                reason_parts.append(f"suitable characteristics: {', '.join(matching_tags)}")
+                reason_parts.append(
+                    f"suitable characteristics: {', '.join(matching_tags)}"
+                )
 
             if score > 0:
                 reason = "; ".join(reason_parts).capitalize()
@@ -568,7 +606,9 @@ class TemplateManager:
 
         # Sort by score (descending) and take top results
         recommendations.sort(key=lambda x: x[2], reverse=True)
-        return [(template, reason) for template, reason, _ in recommendations[:max_results]]
+        return [
+            (template, reason) for template, reason, _ in recommendations[:max_results]
+        ]
 
     def validate_template(self, template: EnhancedTemplate) -> Tuple[bool, List[str]]:
         """Validate template configuration."""
@@ -591,9 +631,11 @@ class TemplateManager:
             for h in ["sha256", "sha512", "blake2b", "blake3"]
         )
         has_kdf = any(
-            hash_config.get(kdf, {}).get("enabled", False)
-            if isinstance(hash_config.get(kdf), dict)
-            else False
+            (
+                hash_config.get(kdf, {}).get("enabled", False)
+                if isinstance(hash_config.get(kdf), dict)
+                else False
+            )
             for kdf in ["argon2", "scrypt", "balloon"]
         )
         has_pbkdf2 = (
@@ -602,7 +644,9 @@ class TemplateManager:
         )
 
         if not (has_hash or has_kdf or has_pbkdf2):
-            errors.append("Template must have at least one enabled hash function or KDF")
+            errors.append(
+                "Template must have at least one enabled hash function or KDF"
+            )
 
         # Check algorithm if specified
         algorithm = hash_config.get("algorithm")
@@ -657,7 +701,9 @@ class TemplateManager:
         # Analyze template
         try:
             if "hash_config" in template.config:
-                analysis = self.analyzer.analyze_configuration(template.config["hash_config"])
+                analysis = self.analyzer.analyze_configuration(
+                    template.config["hash_config"]
+                )
                 report["analysis"] = {
                     "overall_score": analysis.overall_score,
                     "security_level": analysis.security_level.name,

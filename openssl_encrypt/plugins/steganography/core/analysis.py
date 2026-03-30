@@ -67,11 +67,17 @@ class CapacityAnalyzer:
                 # Calculate practical capacity (accounting for overhead)
                 eof_marker_size = 4  # Standard EOF marker size
                 header_overhead = 16  # Estimated metadata overhead
-                practical_bytes = max(0, theoretical_bytes - eof_marker_size - header_overhead)
+                practical_bytes = max(
+                    0, theoretical_bytes - eof_marker_size - header_overhead
+                )
 
                 # Efficiency metrics
-                efficiency = practical_bytes / theoretical_bytes if theoretical_bytes > 0 else 0
-                bits_per_pixel = theoretical_bits / total_pixels if total_pixels > 0 else 0
+                efficiency = (
+                    practical_bytes / theoretical_bytes if theoretical_bytes > 0 else 0
+                )
+                bits_per_pixel = (
+                    theoretical_bits / total_pixels if total_pixels > 0 else 0
+                )
 
                 # Quality impact assessment
                 quality_impact = self._assess_quality_impact(bits_per_channel, channels)
@@ -154,13 +160,17 @@ class CapacityAnalyzer:
         recommendations = []
 
         if capacity_bytes < 1024:
-            recommendations.append("Consider using a larger cover image for better capacity")
+            recommendations.append(
+                "Consider using a larger cover image for better capacity"
+            )
 
         if quality_impact in ["moderate", "high"]:
             recommendations.append("Reduce bits per channel to improve visual quality")
 
         if security_level in ["low", "critical"]:
-            recommendations.append("Use password-based pixel selection for better security")
+            recommendations.append(
+                "Use password-based pixel selection for better security"
+            )
             recommendations.append("Consider enabling decoy data injection")
 
         if quality_impact == "minimal" and security_level == "high":
@@ -289,13 +299,23 @@ class SecurityAnalyzer:
         else:
             return "critical"
 
-    def _assess_threat_models(self, security_scores: Dict[str, float]) -> Dict[str, str]:
+    def _assess_threat_models(
+        self, security_scores: Dict[str, float]
+    ) -> Dict[str, str]:
         """Assess resistance against different threat models"""
         return {
-            "casual_observer": "high" if security_scores["visual_analysis"] > 0.7 else "low",
-            "forensic_analyst": "high" if security_scores["statistical_analysis"] > 0.7 else "low",
-            "automated_detection": "high" if security_scores["machine_learning"] > 0.6 else "low",
-            "academic_researcher": "medium" if min(security_scores.values()) > 0.5 else "low",
+            "casual_observer": (
+                "high" if security_scores["visual_analysis"] > 0.7 else "low"
+            ),
+            "forensic_analyst": (
+                "high" if security_scores["statistical_analysis"] > 0.7 else "low"
+            ),
+            "automated_detection": (
+                "high" if security_scores["machine_learning"] > 0.6 else "low"
+            ),
+            "academic_researcher": (
+                "medium" if min(security_scores.values()) > 0.5 else "low"
+            ),
             "nation_state": "low",  # Conservative assumption for highest-level threats
         }
 
@@ -408,7 +428,9 @@ class SteganalysisResistance:
         except Exception as e:
             return {"status": "error", "message": str(e)}
 
-    def _histogram_pairs_test(self, cover_data: bytes, stego_data: bytes) -> Dict[str, Any]:
+    def _histogram_pairs_test(
+        self, cover_data: bytes, stego_data: bytes
+    ) -> Dict[str, Any]:
         """Histogram pairs analysis for LSB detection"""
         try:
             # Analyze byte value distributions
@@ -425,7 +447,9 @@ class SteganalysisResistance:
             hist_diff = sum(abs(c - s) for c, s in zip(cover_hist, stego_hist))
             max_possible_diff = len(cover_data) + len(stego_data)
 
-            normalized_diff = hist_diff / max_possible_diff if max_possible_diff > 0 else 1.0
+            normalized_diff = (
+                hist_diff / max_possible_diff if max_possible_diff > 0 else 1.0
+            )
             resistance_score = max(0.0, 1.0 - normalized_diff * 2)
 
             return {
@@ -437,7 +461,9 @@ class SteganalysisResistance:
         except Exception as e:
             return {"status": "error", "message": str(e)}
 
-    def _sample_pairs_test(self, cover_data: bytes, stego_data: bytes) -> Dict[str, Any]:
+    def _sample_pairs_test(
+        self, cover_data: bytes, stego_data: bytes
+    ) -> Dict[str, Any]:
         """Sample pairs analysis"""
         try:
             # Simplified sample pairs test

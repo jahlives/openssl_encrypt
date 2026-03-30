@@ -175,7 +175,11 @@ class SmartRecommendationEngine:
                 "compliance_required": {
                     "recommended": ["aes-gcm", "aes-gcm-siv"],
                     "acceptable": ["aes-siv"],
-                    "discouraged": ["fernet", "chacha20-poly1305", "xchacha20-poly1305"],
+                    "discouraged": [
+                        "fernet",
+                        "chacha20-poly1305",
+                        "xchacha20-poly1305",
+                    ],
                 },
                 "archival_storage": {
                     "recommended": ["xchacha20-poly1305", "aes-gcm-siv"],
@@ -215,7 +219,9 @@ class SmartRecommendationEngine:
         current_analysis = None
         if current_config:
             try:
-                current_analysis = self.config_analyzer.analyze_configuration(current_config)
+                current_analysis = self.config_analyzer.analyze_configuration(
+                    current_config
+                )
             except Exception:
                 pass
 
@@ -236,7 +242,9 @@ class SmartRecommendationEngine:
         recommendations.extend(
             self._generate_performance_recommendations(user_context, current_analysis)
         )
-        recommendations.extend(self._generate_best_practice_recommendations(user_context))
+        recommendations.extend(
+            self._generate_best_practice_recommendations(user_context)
+        )
 
         # Apply user preferences and historical feedback
         recommendations = self._apply_user_preferences(recommendations, user_context)
@@ -329,7 +337,9 @@ class SmartRecommendationEngine:
 
         # Determine best algorithms for user context
         primary_use_case = (
-            user_context.primary_use_cases[0] if user_context.primary_use_cases else "personal"
+            user_context.primary_use_cases[0]
+            if user_context.primary_use_cases
+            else "personal"
         )
 
         # Map use cases to knowledge base categories
@@ -341,9 +351,9 @@ class SmartRecommendationEngine:
         }
 
         kb_category = use_case_mapping.get(primary_use_case, "personal_files")
-        recommended_algorithms = self.knowledge_base["algorithm_recommendations"][kb_category][
-            "recommended"
-        ]
+        recommended_algorithms = self.knowledge_base["algorithm_recommendations"][
+            kb_category
+        ]["recommended"]
 
         current_algorithm = None
         if current_config and "algorithm" in current_config:
@@ -382,7 +392,9 @@ class SmartRecommendationEngine:
 
         # Performance-based algorithm recommendations
         if user_context.typical_file_sizes == "large":
-            fast_algorithms = self.knowledge_base["performance_considerations"]["large_files"]
+            fast_algorithms = self.knowledge_base["performance_considerations"][
+                "large_files"
+            ]
             if current_algorithm and current_algorithm not in fast_algorithms:
                 recommendations.append(
                     SmartRecommendation(
@@ -420,11 +432,15 @@ class SmartRecommendationEngine:
         recommendations = []
 
         primary_use_case = (
-            user_context.primary_use_cases[0] if user_context.primary_use_cases else "personal"
+            user_context.primary_use_cases[0]
+            if user_context.primary_use_cases
+            else "personal"
         )
 
         # Get template recommendations from template manager
-        template_recs = self.template_manager.recommend_templates(primary_use_case, max_results=2)
+        template_recs = self.template_manager.recommend_templates(
+            primary_use_case, max_results=2
+        )
 
         for i, (template, reason) in enumerate(template_recs):
             recommendations.append(
@@ -503,7 +519,9 @@ class SmartRecommendationEngine:
         if user_context.compliance_requirements:
             for framework in user_context.compliance_requirements:
                 if framework in self.knowledge_base["compliance_mappings"]:
-                    compliant_algorithms = self.knowledge_base["compliance_mappings"][framework]
+                    compliant_algorithms = self.knowledge_base["compliance_mappings"][
+                        framework
+                    ]
 
                     recommendations.append(
                         SmartRecommendation(
@@ -662,18 +680,29 @@ class SmartRecommendationEngine:
 
         return recommendations
 
-    def _determine_required_security_level(self, user_context: UserContext) -> Dict[str, float]:
+    def _determine_required_security_level(
+        self, user_context: UserContext
+    ) -> Dict[str, float]:
         """Determine required security levels based on user context."""
         base_requirements = self.knowledge_base["security_thresholds"]
 
         # Start with base requirements for user type
         primary_use_case = (
-            user_context.primary_use_cases[0] if user_context.primary_use_cases else "personal"
+            user_context.primary_use_cases[0]
+            if user_context.primary_use_cases
+            else "personal"
         )
-        requirements = base_requirements.get(primary_use_case, base_requirements["personal"]).copy()
+        requirements = base_requirements.get(
+            primary_use_case, base_requirements["personal"]
+        ).copy()
 
         # Adjust based on data sensitivity
-        sensitivity_multipliers = {"low": 0.8, "medium": 1.0, "high": 1.2, "top_secret": 1.5}
+        sensitivity_multipliers = {
+            "low": 0.8,
+            "medium": 1.0,
+            "high": 1.2,
+            "top_secret": 1.5,
+        }
 
         multiplier = sensitivity_multipliers.get(user_context.data_sensitivity, 1.0)
         requirements["minimum_score"] *= multiplier
@@ -792,7 +821,9 @@ class SmartRecommendationEngine:
     ) -> List[str]:
         """Get quick text recommendations for immediate use."""
         user_context = UserContext(
-            user_type="general", experience_level=experience_level, primary_use_cases=[use_case]
+            user_type="general",
+            experience_level=experience_level,
+            primary_use_cases=[use_case],
         )
 
         recommendations = self.generate_recommendations(user_context)
@@ -806,6 +837,8 @@ class SmartRecommendationEngine:
         return quick_recs
 
 
-def create_smart_recommendation_engine(data_dir: Optional[str] = None) -> SmartRecommendationEngine:
+def create_smart_recommendation_engine(
+    data_dir: Optional[str] = None,
+) -> SmartRecommendationEngine:
     """Factory function to create a smart recommendation engine."""
     return SmartRecommendationEngine(data_dir)

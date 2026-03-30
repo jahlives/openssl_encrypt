@@ -15,14 +15,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import ClassVar, Optional, Union
 
-from .base import (
-    AlgorithmBase,
-    AlgorithmCategory,
-    AlgorithmInfo,
-    RegistryBase,
-    SecurityLevel,
-    ValidationError,
-)
+from .base import (AlgorithmBase, AlgorithmCategory, AlgorithmInfo,
+                   RegistryBase, SecurityLevel, ValidationError)
 
 # Import secure memory handling
 try:
@@ -174,7 +168,10 @@ class KDFBase(AlgorithmBase):
 
     @abstractmethod
     def derive(
-        self, password: Union[bytes, "SecureBytes"], salt: bytes, params: Optional[KDFParams] = None
+        self,
+        password: Union[bytes, "SecureBytes"],
+        salt: bytes,
+        params: Optional[KDFParams] = None,
     ) -> "SecureBytes":
         """
         Derives a key from a password and salt.
@@ -299,7 +296,9 @@ class Argon2id(KDFBase):
         from argon2.low_level import Type
 
         # Convert password to bytes if needed (SecureBytes is a bytearray subclass)
-        password_bytes = bytes(password) if isinstance(password, SecureBytes) else password
+        password_bytes = (
+            bytes(password) if isinstance(password, SecureBytes) else password
+        )
 
         # Map variant string to Type enum
         type_map = {
@@ -478,7 +477,9 @@ class PBKDF2(KDFBase):
         from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
         # Convert password to bytes if needed
-        password_bytes = bytes(password) if isinstance(password, SecureBytes) else password
+        password_bytes = (
+            bytes(password) if isinstance(password, SecureBytes) else password
+        )
 
         # Map hash function name to cryptography hash algorithm
         hash_map = {
@@ -538,7 +539,8 @@ class Scrypt(KDFBase):
     def is_available(cls) -> bool:
         if cls._available is None:
             try:
-                from cryptography.hazmat.primitives.kdf.scrypt import Scrypt as CryptoScrypt
+                from cryptography.hazmat.primitives.kdf.scrypt import \
+                    Scrypt as CryptoScrypt
 
                 cls._available = True
             except ImportError:
@@ -577,10 +579,13 @@ class Scrypt(KDFBase):
             raise ValidationError("Scrypt p must be at least 1")
 
         from cryptography.hazmat.backends import default_backend
-        from cryptography.hazmat.primitives.kdf.scrypt import Scrypt as CryptoScrypt
+        from cryptography.hazmat.primitives.kdf.scrypt import \
+            Scrypt as CryptoScrypt
 
         # Convert password to bytes if needed
-        password_bytes = bytes(password) if isinstance(password, SecureBytes) else password
+        password_bytes = (
+            bytes(password) if isinstance(password, SecureBytes) else password
+        )
 
         kdf = CryptoScrypt(
             salt=salt,
@@ -663,7 +668,9 @@ class Balloon(KDFBase):
         from openssl_encrypt.modules.balloon import balloon_m
 
         # Convert password to bytes if needed
-        password_bytes = bytes(password) if isinstance(password, SecureBytes) else password
+        password_bytes = (
+            bytes(password) if isinstance(password, SecureBytes) else password
+        )
 
         try:
             # Balloon expects salt as string
@@ -722,7 +729,8 @@ class HKDF(KDFBase):
     def is_available(cls) -> bool:
         if cls._available is None:
             try:
-                from cryptography.hazmat.primitives.kdf.hkdf import HKDF as CryptoHKDF
+                from cryptography.hazmat.primitives.kdf.hkdf import \
+                    HKDF as CryptoHKDF
 
                 cls._available = True
             except ImportError:
@@ -739,7 +747,10 @@ class HKDF(KDFBase):
         )
 
     def derive(
-        self, password: Union[bytes, SecureBytes], salt: bytes, params: Optional[HKDFParams] = None
+        self,
+        password: Union[bytes, SecureBytes],
+        salt: bytes,
+        params: Optional[HKDFParams] = None,
     ) -> SecureBytes:
         self.check_available()
 
@@ -753,7 +764,9 @@ class HKDF(KDFBase):
         from cryptography.hazmat.primitives.kdf.hkdf import HKDF as CryptoHKDF
 
         # Convert password to bytes if needed
-        password_bytes = bytes(password) if isinstance(password, SecureBytes) else password
+        password_bytes = (
+            bytes(password) if isinstance(password, SecureBytes) else password
+        )
 
         # Map hash function name
         hash_map = {
@@ -856,7 +869,9 @@ class RandomX(KDFBase):
         import randomx
 
         # Convert password to bytes if needed
-        password_bytes = bytes(password) if isinstance(password, SecureBytes) else password
+        password_bytes = (
+            bytes(password) if isinstance(password, SecureBytes) else password
+        )
 
         try:
             # Initial hash with salt

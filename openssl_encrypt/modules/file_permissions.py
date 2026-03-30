@@ -28,9 +28,9 @@ logger = logging.getLogger(__name__)
 _HAS_WIN32 = False
 if sys.platform == "win32":
     try:
-        import win32api
         import ntsecuritycon as con
         import pywintypes
+        import win32api
         import win32security
 
         _HAS_WIN32 = True
@@ -46,7 +46,9 @@ class PermissionLevel(Enum):
 
     OWNER_ONLY = "owner_only"  # 0o600 / owner RW only
     OWNER_FULL = "owner_full"  # 0o700 / owner RWX only
-    OWNER_WRITE_PUBLIC_READ = "owner_write_public_read"  # 0o644 / owner RW, everyone read
+    OWNER_WRITE_PUBLIC_READ = (
+        "owner_write_public_read"  # 0o644 / owner RW, everyone read
+    )
 
 
 # POSIX mode mapping
@@ -407,9 +409,7 @@ def create_secure_file(
         umask_val = 0o777 & ~posix_mode
         old_umask = os.umask(umask_val)
         try:
-            fd = os.open(
-                path_str, os.O_CREAT | os.O_WRONLY | os.O_TRUNC, posix_mode
-            )
+            fd = os.open(path_str, os.O_CREAT | os.O_WRONLY | os.O_TRUNC, posix_mode)
         finally:
             os.umask(old_umask)
 

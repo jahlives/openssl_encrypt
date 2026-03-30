@@ -15,6 +15,7 @@ import re
 import zlib
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+
 from .crypt_utils import eprint
 
 # Import from local modules
@@ -51,7 +52,9 @@ class PasswordPolicy:
     LEVEL_MINIMAL = "minimal"  # Just minimum length
     LEVEL_BASIC = "basic"  # Length + basic complexity
     LEVEL_STANDARD = "standard"  # Length + full complexity + entropy
-    LEVEL_PARANOID = "paranoid"  # Length + full complexity + entropy + common password check
+    LEVEL_PARANOID = (
+        "paranoid"  # Length + full complexity + entropy + common password check
+    )
 
     def __init__(
         self,
@@ -145,7 +148,9 @@ class PasswordPolicy:
             # Default to standard if unknown level
             self._apply_policy_level(self.LEVEL_STANDARD)
 
-    def validate_password(self, password: str, quiet: bool = False) -> Tuple[bool, List[str]]:
+    def validate_password(
+        self, password: str, quiet: bool = False
+    ) -> Tuple[bool, List[str]]:
         """
         Validate a password against the policy.
 
@@ -161,7 +166,9 @@ class PasswordPolicy:
 
         # Always validate: check length
         if len(password) < self.min_length:
-            msgs.append(f"Password is too short (minimum {self.min_length} characters required)")
+            msgs.append(
+                f"Password is too short (minimum {self.min_length} characters required)"
+            )
             valid = False
 
         # Check character classes requirements
@@ -197,7 +204,9 @@ class PasswordPolicy:
                 strength = "VERY STRONG"
 
             if not quiet:
-                msgs.append(f"Password strength: {strength} (entropy: {entropy:.1f} bits)")
+                msgs.append(
+                    f"Password strength: {strength} (entropy: {entropy:.1f} bits)"
+                )
 
             if entropy < self.min_entropy:
                 msgs.append(
@@ -256,14 +265,18 @@ class PasswordPolicy:
         # Create more detailed feedback
         if not valid:
             feedback = "Password does not meet requirements:\n"
-            feedback += "\n".join([f"- {msg}" for msg in msgs if "Password strength:" not in msg])
+            feedback += "\n".join(
+                [f"- {msg}" for msg in msgs if "Password strength:" not in msg]
+            )
             feedback += f"\n\nPassword strength: {entropy:.1f} bits"
         else:
             # Password is valid, but provide additional feedback
             feedback = "Password meets basic requirements, but consider:\n"
 
             if len(password) < 16:
-                feedback += "- Using a longer password (16+ characters) for better security\n"
+                feedback += (
+                    "- Using a longer password (16+ characters) for better security\n"
+                )
 
             if len(set(password)) < len(password) * 0.7:
                 feedback += "- Using more unique characters (avoid repetition)\n"
@@ -290,7 +303,11 @@ class CommonPasswordChecker:
     # Default paths to check for common password lists
     DEFAULT_PATHS = [
         # Package resource path (modern importlib.resources approach)
-        str(importlib.resources.files("openssl_encrypt").joinpath("data/common_passwords.txt")),
+        str(
+            importlib.resources.files("openssl_encrypt").joinpath(
+                "data/common_passwords.txt"
+            )
+        ),
         # Local module directory
         os.path.join(os.path.dirname(__file__), "../data/common_passwords.txt"),
         # Local project directory
@@ -378,9 +395,13 @@ class CommonPasswordChecker:
             with open(path, "r", encoding="utf-8", errors="ignore") as f:
                 for line in f:
                     password = line.strip()
-                    if password and len(password) >= 6:  # Only store reasonably sized passwords
+                    if (
+                        password and len(password) >= 6
+                    ):  # Only store reasonably sized passwords
                         # Store SHA-256 hash of the password to save memory
-                        self.password_hashes.add(hashlib.sha256(password.encode("utf-8")).digest())
+                        self.password_hashes.add(
+                            hashlib.sha256(password.encode("utf-8")).digest()
+                        )
         except Exception as e:
             # Don't raise exception if loading fails - just continue with what we have
             eprint(f"Warning: Could not load common password list from {path}: {e}")
@@ -392,7 +413,9 @@ class CommonPasswordChecker:
             for password in self.EMBEDDED_PASSWORDS.splitlines():
                 password = password.strip()
                 if password and len(password) >= 6:
-                    self.password_hashes.add(hashlib.sha256(password.encode("utf-8")).digest())
+                    self.password_hashes.add(
+                        hashlib.sha256(password.encode("utf-8")).digest()
+                    )
         except Exception as e:
             # If loading fails, just continue with an empty set
             eprint(f"Warning: Could not load embedded common password list: {e}")

@@ -16,13 +16,9 @@ import uuid
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 
-from .crypt_errors import (
-    KeyNotFoundError,
-    KeystoreCorruptedError,
-    KeystoreError,
-    KeystorePasswordError,
-    KeystoreVersionError,
-)
+from .crypt_errors import (KeyNotFoundError, KeystoreCorruptedError,
+                           KeystoreError, KeystorePasswordError,
+                           KeystoreVersionError)
 
 # Import secure_delete_file only if it's available
 try:
@@ -45,16 +41,10 @@ from .secure_memory import SecureBytes, secure_memzero
 
 # Import portable media modules
 try:
-    from .portable_media import (
-        QRKeyDistribution,
-        QRKeyError,
-        QRKeyFormat,
-        USBCreationError,
-        USBDriveCreator,
-        USBSecurityProfile,
-        create_portable_usb,
-        verify_usb_integrity,
-    )
+    from .portable_media import (QRKeyDistribution, QRKeyError, QRKeyFormat,
+                                 USBCreationError, USBDriveCreator,
+                                 USBSecurityProfile, create_portable_usb,
+                                 verify_usb_integrity)
 
     QR_AVAILABLE = True
     USB_AVAILABLE = True
@@ -141,7 +131,9 @@ class PQCKeystore:
         self.close()
 
     def create_keystore(
-        self, password: str, security_level: KeystoreSecurityLevel = KeystoreSecurityLevel.STANDARD
+        self,
+        password: str,
+        security_level: KeystoreSecurityLevel = KeystoreSecurityLevel.STANDARD,
     ) -> None:
         """
         Create a new keystore with the given password
@@ -163,7 +155,8 @@ class PQCKeystore:
         self.keystore_data = {
             "version": self.KEYSTORE_VERSION,
             "created": datetime.datetime.now(datetime.timezone.utc).isoformat() + "Z",
-            "last_modified": datetime.datetime.now(datetime.timezone.utc).isoformat() + "Z",
+            "last_modified": datetime.datetime.now(datetime.timezone.utc).isoformat()
+            + "Z",
             "security_level": security_level.value,
             "encryption": {
                 "salt": base64.b64encode(salt).decode("utf-8"),
@@ -199,15 +192,15 @@ class PQCKeystore:
                 # MED-8 Security fix: Use secure JSON validation for keystore loading
                 json_content = f.read()
                 try:
-                    from .json_validator import (
-                        JSONSecurityError,
-                        JSONValidationError,
-                        secure_keystore_loads,
-                    )
+                    from .json_validator import (JSONSecurityError,
+                                                 JSONValidationError,
+                                                 secure_keystore_loads)
 
                     self.keystore_data = secure_keystore_loads(json_content)
                 except (JSONSecurityError, JSONValidationError) as e:
-                    raise KeystoreCorruptedError(f"Keystore file validation failed: {e}")
+                    raise KeystoreCorruptedError(
+                        f"Keystore file validation failed: {e}"
+                    )
                 except ImportError:
                     # Fallback to basic JSON loading if validator not available
                     try:
@@ -238,7 +231,9 @@ class PQCKeystore:
         salt = base64.b64decode(encryption["salt"])
 
         # Determine security level
-        security_level = KeystoreSecurityLevel(self.keystore_data.get("security_level", "standard"))
+        security_level = KeystoreSecurityLevel(
+            self.keystore_data.get("security_level", "standard")
+        )
 
         # Derive master key
         self.master_key = self._derive_master_key(password, salt, security_level)
@@ -281,6 +276,7 @@ class PQCKeystore:
 
         # Create a temporary file with secure permissions first
         from .file_permissions import PermissionLevel, create_secure_file
+
         temp_path = self.keystore_path + ".tmp"
         fd = create_secure_file(temp_path, PermissionLevel.OWNER_ONLY)
         with os.fdopen(fd, "w") as f:
@@ -421,7 +417,9 @@ class PQCKeystore:
             security_level = KeystoreSecurityLevel(
                 self.keystore_data.get("security_level", "standard")
             )
-            key_encryption_key = self._derive_key(key_password, key_salt, security_level)
+            key_encryption_key = self._derive_key(
+                key_password, key_salt, security_level
+            )
 
             # Encrypt with key-specific encryption key
             encrypted_private_key = self._encrypt_data_with_key(
@@ -445,14 +443,16 @@ class PQCKeystore:
 
         # Add salt if using separate password
         if not use_master_password:
-            self.keystore_data["keys"][key_id]["salt"] = base64.b64encode(key_salt).decode("utf-8")
+            self.keystore_data["keys"][key_id]["salt"] = base64.b64encode(
+                key_salt
+            ).decode("utf-8")
 
         # Add dual encryption flag and salt if using dual encryption
         if dual_encryption:
             self.keystore_data["keys"][key_id]["dual_encryption"] = True
-            self.keystore_data["keys"][key_id]["dual_encryption_salt"] = base64.b64encode(
-                dual_encryption_salt
-            ).decode("utf-8")
+            self.keystore_data["keys"][key_id]["dual_encryption_salt"] = (
+                base64.b64encode(dual_encryption_salt).decode("utf-8")
+            )
 
         return key_id
 
@@ -540,11 +540,15 @@ class PQCKeystore:
             )
 
             # Derive key-specific encryption key
-            key_encryption_key = self._derive_key(key_password, key_salt, security_level)
+            key_encryption_key = self._derive_key(
+                key_password, key_salt, security_level
+            )
 
             # Decrypt with key-specific encryption key
             try:
-                private_key = self._decrypt_data_with_key(encrypted_private_key, key_encryption_key)
+                private_key = self._decrypt_data_with_key(
+                    encrypted_private_key, key_encryption_key
+                )
             except Exception:
                 # Clean up and raise error
                 secure_memzero(key_encryption_key)
@@ -570,7 +574,9 @@ class PQCKeystore:
                 )
 
                 # Derive file encryption key from file_password
-                file_encryption_key = self._derive_key(file_password, dual_salt, security_level)
+                file_encryption_key = self._derive_key(
+                    file_password, dual_salt, security_level
+                )
 
                 # Import necessary AEAD cipher for decryption
                 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -594,7 +600,9 @@ class PQCKeystore:
                 except Exception:
                     # Clean up and raise error - this is a file password error
                     secure_memzero(file_encryption_key)
-                    raise KeystorePasswordError("Incorrect file password for dual-encrypted key")
+                    raise KeystorePasswordError(
+                        "Incorrect file password for dual-encrypted key"
+                    )
 
                 # Clean up
                 secure_memzero(file_encryption_key)
@@ -664,7 +672,9 @@ class PQCKeystore:
         new_salt = os.urandom(16)
 
         # Get security level
-        security_level = KeystoreSecurityLevel(self.keystore_data.get("security_level", "standard"))
+        security_level = KeystoreSecurityLevel(
+            self.keystore_data.get("security_level", "standard")
+        )
 
         # Derive new master key
         new_master_key = self._derive_master_key(new_password, new_salt, security_level)
@@ -678,7 +688,9 @@ class PQCKeystore:
                 keys_to_reencrypt.append((key_id, public_key, private_key))
 
         # Update encryption parameters
-        self.keystore_data["encryption"]["salt"] = base64.b64encode(new_salt).decode("utf-8")
+        self.keystore_data["encryption"]["salt"] = base64.b64encode(new_salt).decode(
+            "utf-8"
+        )
 
         # Switch to new master key
         old_master_key = self.master_key
@@ -707,7 +719,11 @@ class PQCKeystore:
         self.save_keystore()
 
     def change_key_password(
-        self, key_id: str, old_password: str, new_password: str, use_master_password: bool = None
+        self,
+        key_id: str,
+        old_password: str,
+        new_password: str,
+        use_master_password: bool = None,
     ) -> None:
         """
         Change the password for a specific key
@@ -735,7 +751,9 @@ class PQCKeystore:
         # Check if we're changing how the key is encrypted
         current_uses_master = key_data.get("use_master_password", True)
         new_uses_master = (
-            use_master_password if use_master_password is not None else current_uses_master
+            use_master_password
+            if use_master_password is not None
+            else current_uses_master
         )
 
         # Get the key with the old password
@@ -772,10 +790,14 @@ class PQCKeystore:
             )
 
             # Derive key-specific encryption key
-            key_encryption_key = self._derive_key(new_password, key_salt, security_level)
+            key_encryption_key = self._derive_key(
+                new_password, key_salt, security_level
+            )
 
             # Encrypt with key-specific encryption key
-            encrypted_private_key = self._encrypt_data_with_key(private_key, key_encryption_key)
+            encrypted_private_key = self._encrypt_data_with_key(
+                private_key, key_encryption_key
+            )
 
             # Clean up
             secure_memzero(key_encryption_key)
@@ -785,7 +807,9 @@ class PQCKeystore:
 
         # Update keystore
         key_data["use_master_password"] = new_uses_master
-        key_data["private_key"] = base64.b64encode(encrypted_private_key).decode("utf-8")
+        key_data["private_key"] = base64.b64encode(encrypted_private_key).decode(
+            "utf-8"
+        )
 
         # Remove from cache
         if key_id in self._key_cache:
@@ -880,7 +904,9 @@ class PQCKeystore:
                 try:
                     # Generate a salt for file password key derivation or use existing
                     if "dual_encryption_salt" in key_data:
-                        dual_encryption_salt = base64.b64decode(key_data["dual_encryption_salt"])
+                        dual_encryption_salt = base64.b64decode(
+                            key_data["dual_encryption_salt"]
+                        )
                     else:
                         dual_encryption_salt = os.urandom(16)
 
@@ -895,7 +921,8 @@ class PQCKeystore:
                     )
 
                     # Use AES-GCM to encrypt the private key with the file key
-                    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+                    from cryptography.hazmat.primitives.ciphers.aead import \
+                        AESGCM
 
                     # Generate a nonce for AES-GCM
                     nonce = os.urandom(12)
@@ -925,7 +952,9 @@ class PQCKeystore:
             encrypted_private_key = self._encrypt_data(private_key_to_encrypt)
 
             # Update the private key
-            key_data["private_key"] = base64.b64encode(encrypted_private_key).decode("utf-8")
+            key_data["private_key"] = base64.b64encode(encrypted_private_key).decode(
+                "utf-8"
+            )
 
             # Remove from cache
             if key_id in self._key_cache:
@@ -996,7 +1025,9 @@ class PQCKeystore:
         self.keystore_data["keys"][key_id]["from_dual_encrypted_file"] = value
         self.save_keystore()
 
-    def get_default_key(self, algorithm: str, key_password: str = None) -> Tuple[str, bytes, bytes]:
+    def get_default_key(
+        self, algorithm: str, key_password: str = None
+    ) -> Tuple[str, bytes, bytes]:
         """
         Get the default key for an algorithm
 
@@ -1015,7 +1046,10 @@ class PQCKeystore:
             raise KeystoreError("Keystore not loaded")
 
         # Check if default exists
-        if "defaults" not in self.keystore_data or algorithm not in self.keystore_data["defaults"]:
+        if (
+            "defaults" not in self.keystore_data
+            or algorithm not in self.keystore_data["defaults"]
+        ):
             raise KeyNotFoundError(f"No default key for algorithm: {algorithm}")
 
         key_id = self.keystore_data["defaults"][algorithm]
@@ -1191,7 +1225,11 @@ class PQCKeystore:
                 "for keystore key derivation. Install argon2-cffi for stronger protection."
             )
             key = hashlib.pbkdf2_hmac(
-                "sha256", password.encode("utf-8"), salt, params["pbkdf2_iterations"], dklen=32
+                "sha256",
+                password.encode("utf-8"),
+                salt,
+                params["pbkdf2_iterations"],
+                dklen=32,
             )
             return key
 
@@ -1442,10 +1480,16 @@ def main():
     parser = argparse.ArgumentParser(description="PQC Keystore Management")
 
     # Common arguments
-    parser.add_argument("--keystore", help="Path to the keystore file", default="keystore.pqc")
+    parser.add_argument(
+        "--keystore", help="Path to the keystore file", default="keystore.pqc"
+    )
     parser.add_argument("--keystore-password", help="Password for the keystore")
-    parser.add_argument("--keystore-password-file", help="File containing the keystore password")
-    parser.add_argument("--quiet", action="store_true", help="Suppress non-error output")
+    parser.add_argument(
+        "--keystore-password-file", help="File containing the keystore password"
+    )
+    parser.add_argument(
+        "--quiet", action="store_true", help="Suppress non-error output"
+    )
 
     # Subcommands
     subparsers = parser.add_subparsers(dest="command", help="Command to execute")
@@ -1453,15 +1497,23 @@ def main():
     # Create keystore
     create_parser = subparsers.add_parser("create", help="Create a new keystore")
     create_parser.add_argument(
-        "--keystore-standard", action="store_true", help="Use standard security settings (default)"
+        "--keystore-standard",
+        action="store_true",
+        help="Use standard security settings (default)",
     )
     create_parser.add_argument(
-        "--keystore-high-security", action="store_true", help="Use high security settings"
+        "--keystore-high-security",
+        action="store_true",
+        help="Use high security settings",
     )
     create_parser.add_argument(
-        "--keystore-paranoid", action="store_true", help="Use paranoid security settings"
+        "--keystore-paranoid",
+        action="store_true",
+        help="Use paranoid security settings",
     )
-    create_parser.add_argument("--force", action="store_true", help="Overwrite existing keystore")
+    create_parser.add_argument(
+        "--force", action="store_true", help="Overwrite existing keystore"
+    )
 
     # Add key
     add_parser = subparsers.add_parser("add-key", help="Add a key to the keystore")
@@ -1469,16 +1521,22 @@ def main():
     add_parser.add_argument("--key-description", help="Description of the key")
     add_parser.add_argument("--key-tags", help="Comma-separated list of tags")
     add_parser.add_argument(
-        "--prompt-key-password", action="store_true", help="Use a separate password for the key"
+        "--prompt-key-password",
+        action="store_true",
+        help="Use a separate password for the key",
     )
-    add_parser.add_argument("--key-password-file", help="File containing the key password")
+    add_parser.add_argument(
+        "--key-password-file", help="File containing the key password"
+    )
 
     # List keys
     list_parser = subparsers.add_parser("list-keys", help="List keys in the keystore")
     list_parser.add_argument("--json", action="store_true", help="Output as JSON")
 
     # Remove key
-    remove_parser = subparsers.add_parser("remove-key", help="Remove a key from the keystore")
+    remove_parser = subparsers.add_parser(
+        "remove-key", help="Remove a key from the keystore"
+    )
     remove_parser.add_argument("key_id", help="The key ID to remove")
 
     # Set default key
@@ -1493,10 +1551,14 @@ def main():
     )
 
     # Change key password
-    chkey_parser = subparsers.add_parser("change-key-password", help="Change a key password")
+    chkey_parser = subparsers.add_parser(
+        "change-key-password", help="Change a key password"
+    )
     chkey_parser.add_argument("key_id", help="The key ID to change")
     chkey_parser.add_argument(
-        "--convert-key-to-master", action="store_true", help="Convert to using the master password"
+        "--convert-key-to-master",
+        action="store_true",
+        help="Convert to using the master password",
     )
     chkey_parser.add_argument(
         "--convert-key-to-separate",
@@ -1511,12 +1573,18 @@ def main():
     import_parser = subparsers.add_parser("import-key", help="Import a key from a file")
     import_parser.add_argument("key_file", help="Path to the key file")
     import_parser.add_argument("--key-file-password", help="Password for the key file")
-    import_parser.add_argument("--key-description", help="Description for the imported key")
+    import_parser.add_argument(
+        "--key-description", help="Description for the imported key"
+    )
     import_parser.add_argument("--key-tags", help="Comma-separated list of tags")
     import_parser.add_argument(
-        "--prompt-key-password", action="store_true", help="Use a separate password for the key"
+        "--prompt-key-password",
+        action="store_true",
+        help="Use a separate password for the key",
     )
-    import_parser.add_argument("--key-password-file", help="File containing the key password")
+    import_parser.add_argument(
+        "--key-password-file", help="File containing the key password"
+    )
 
     # Export key
     export_parser = subparsers.add_parser("export-key", help="Export a key to a file")
@@ -1525,10 +1593,14 @@ def main():
     export_parser.add_argument(
         "--public-only", action="store_true", help="Export only the public key"
     )
-    export_parser.add_argument("--key-password-file", help="File containing the key password")
+    export_parser.add_argument(
+        "--key-password-file", help="File containing the key password"
+    )
 
     # Export key to QR code
-    export_qr_parser = subparsers.add_parser("export-qr", help="Export a key as QR code(s)")
+    export_qr_parser = subparsers.add_parser(
+        "export-qr", help="Export a key as QR code(s)"
+    )
     export_qr_parser.add_argument("key_id", help="The key ID to export")
     export_qr_parser.add_argument("output_path", help="Path to save QR image(s)")
     export_qr_parser.add_argument(
@@ -1537,7 +1609,9 @@ def main():
     export_qr_parser.add_argument(
         "--multi-qr", action="store_true", help="Allow multi-QR for large keys"
     )
-    export_qr_parser.add_argument("--key-password-file", help="File containing the key password")
+    export_qr_parser.add_argument(
+        "--key-password-file", help="File containing the key password"
+    )
     export_qr_parser.add_argument(
         "--compression",
         action="store_true",
@@ -1546,26 +1620,44 @@ def main():
     )
 
     # Import key from QR code
-    import_qr_parser = subparsers.add_parser("import-qr", help="Import a key from QR code(s)")
-    import_qr_parser.add_argument("qr_images", nargs="+", help="Path(s) to QR image file(s)")
-    import_qr_parser.add_argument("--key-description", help="Description for the imported key")
+    import_qr_parser = subparsers.add_parser(
+        "import-qr", help="Import a key from QR code(s)"
+    )
+    import_qr_parser.add_argument(
+        "qr_images", nargs="+", help="Path(s) to QR image file(s)"
+    )
+    import_qr_parser.add_argument(
+        "--key-description", help="Description for the imported key"
+    )
     import_qr_parser.add_argument("--key-tags", help="Comma-separated list of tags")
     import_qr_parser.add_argument(
-        "--prompt-key-password", action="store_true", help="Use a separate password for the key"
+        "--prompt-key-password",
+        action="store_true",
+        help="Use a separate password for the key",
     )
-    import_qr_parser.add_argument("--key-password-file", help="File containing the key password")
+    import_qr_parser.add_argument(
+        "--key-password-file", help="File containing the key password"
+    )
 
     # Create portable USB drive
     create_usb_parser = subparsers.add_parser(
         "create-usb", help="Create encrypted portable USB drive"
     )
-    create_usb_parser.add_argument("usb_path", help="Path to USB drive (e.g., /dev/sdb1, E:\\)")
-    create_usb_parser.add_argument("--password", help="Master password for USB encryption")
-    create_usb_parser.add_argument("--password-file", help="File containing the master password")
+    create_usb_parser.add_argument(
+        "usb_path", help="Path to USB drive (e.g., /dev/sdb1, E:\\)"
+    )
+    create_usb_parser.add_argument(
+        "--password", help="Master password for USB encryption"
+    )
+    create_usb_parser.add_argument(
+        "--password-file", help="File containing the master password"
+    )
     create_usb_parser.add_argument(
         "--executable", help="Path to OpenSSL Encrypt executable to include"
     )
-    create_usb_parser.add_argument("--include-keystore", help="Path to keystore file to include")
+    create_usb_parser.add_argument(
+        "--include-keystore", help="Path to keystore file to include"
+    )
     create_usb_parser.add_argument(
         "--security-profile",
         choices=["standard", "high-security", "paranoid"],
@@ -1580,10 +1672,16 @@ def main():
     _add_hash_arguments_to_parser(create_usb_parser)
 
     # Verify USB drive integrity
-    verify_usb_parser = subparsers.add_parser("verify-usb", help="Verify USB drive integrity")
+    verify_usb_parser = subparsers.add_parser(
+        "verify-usb", help="Verify USB drive integrity"
+    )
     verify_usb_parser.add_argument("usb_path", help="Path to USB drive to verify")
-    verify_usb_parser.add_argument("--password", help="Master password for verification")
-    verify_usb_parser.add_argument("--password-file", help="File containing the master password")
+    verify_usb_parser.add_argument(
+        "--password", help="Master password for verification"
+    )
+    verify_usb_parser.add_argument(
+        "--password-file", help="File containing the master password"
+    )
 
     # Add hash chaining arguments to verify-usb
     _add_hash_arguments_to_parser(verify_usb_parser)
@@ -1615,7 +1713,9 @@ def main():
 
             # Check if keystore exists
             if os.path.exists(args.keystore) and not args.force:
-                eprint(f"Keystore already exists at {args.keystore}. Use --force to overwrite.")
+                eprint(
+                    f"Keystore already exists at {args.keystore}. Use --force to overwrite."
+                )
                 return 1
 
             # Prompt for password if not provided
@@ -1668,7 +1768,9 @@ def main():
                         eprint(f"  Created: {key.get('created', 'unknown')}")
                         eprint(f"  Description: {key.get('description', '')}")
                         eprint(f"  Tags: {tags}")
-                        eprint(f"  Uses master password: {key.get('use_master_password', True)}")
+                        eprint(
+                            f"  Uses master password: {key.get('use_master_password', True)}"
+                        )
                         eprint()
 
         elif args.command == "remove-key":
@@ -1707,7 +1809,9 @@ def main():
                 key_info = next((k for k in keys if k["key_id"] == args.key_id), None)
                 if key_info:
                     algorithm = key_info.get("algorithm", "unknown")
-                    eprint(f"Key {args.key_id} set as default for algorithm {algorithm}")
+                    eprint(
+                        f"Key {args.key_id} set as default for algorithm {algorithm}"
+                    )
                 else:
                     eprint(f"Key {args.key_id} set as default")
 
@@ -1735,7 +1839,9 @@ def main():
         elif args.command == "change-key-password":
             # Determine how to handle the key
             if args.convert_key_to_master and args.convert_key_to_separate:
-                eprint("Cannot specify both --convert-key-to-master and --convert-key-to-separate")
+                eprint(
+                    "Cannot specify both --convert-key-to-master and --convert-key-to-separate"
+                )
                 return 1
 
             use_master_password = None
@@ -1778,7 +1884,9 @@ def main():
             # Get new key password if needed
             new_password = None
             new_uses_master = (
-                use_master_password if use_master_password is not None else current_uses_master
+                use_master_password
+                if use_master_password is not None
+                else current_uses_master
             )
 
             if not new_uses_master:
@@ -1921,7 +2029,9 @@ def handle_export_qr_command(args, keystore_password):
 
         # Create QR code(s)
         qr_dist = QRKeyDistribution()
-        qr_images = qr_dist.create_key_qr(key_json, args.key_id, qr_format, args.compression)
+        qr_images = qr_dist.create_key_qr(
+            key_json, args.key_id, qr_format, args.compression
+        )
 
         # Save QR image(s)
         if isinstance(qr_images, list):
@@ -1985,7 +2095,9 @@ def handle_import_qr_command(args, keystore_password):
         # Get key password if needed
         key_password = None
         if args.prompt_key_password:
-            key_password = getpass.getpass(f"Enter password for key '{original_key_name}': ")
+            key_password = getpass.getpass(
+                f"Enter password for key '{original_key_name}': "
+            )
         elif args.key_password_file:
             with open(args.key_password_file, "r") as f:
                 key_password = f.read().strip()
@@ -2076,11 +2188,15 @@ def _add_hash_arguments_to_parser(parser):
     scrypt_group.add_argument(
         "--enable-scrypt", action="store_true", help="Use Scrypt password hashing"
     )
-    scrypt_group.add_argument("--scrypt-rounds", type=int, default=0, help="Scrypt iterations")
+    scrypt_group.add_argument(
+        "--scrypt-rounds", type=int, default=0, help="Scrypt iterations"
+    )
     scrypt_group.add_argument(
         "--scrypt-n", type=int, default=16384, help="Scrypt CPU/memory cost parameter"
     )
-    scrypt_group.add_argument("--scrypt-r", type=int, default=8, help="Scrypt block size parameter")
+    scrypt_group.add_argument(
+        "--scrypt-r", type=int, default=8, help="Scrypt block size parameter"
+    )
     scrypt_group.add_argument(
         "--scrypt-p", type=int, default=1, help="Scrypt parallelization parameter"
     )
@@ -2092,7 +2208,9 @@ def _add_hash_arguments_to_parser(parser):
     argon2_group.add_argument(
         "--enable-argon2", action="store_true", help="Use Argon2 password hashing"
     )
-    argon2_group.add_argument("--argon2-rounds", type=int, default=0, help="Argon2 iterations")
+    argon2_group.add_argument(
+        "--argon2-rounds", type=int, default=0, help="Argon2 iterations"
+    )
     argon2_group.add_argument(
         "--argon2-time", type=int, default=3, help="Argon2 time cost parameter"
     )
@@ -2114,7 +2232,9 @@ def _add_hash_arguments_to_parser(parser):
     balloon_group.add_argument(
         "--balloon-rounds", type=int, default=0, help="Balloon hashing iterations"
     )
-    balloon_group.add_argument("--balloon-time-cost", type=int, default=4, help="Balloon time cost")
+    balloon_group.add_argument(
+        "--balloon-time-cost", type=int, default=4, help="Balloon time cost"
+    )
     balloon_group.add_argument(
         "--balloon-space-cost", type=int, default=16, help="Balloon space cost"
     )
@@ -2124,9 +2244,15 @@ def _add_hash_arguments_to_parser(parser):
 
     # HKDF group
     hkdf_group = parser.add_argument_group("HKDF Options")
-    hkdf_group.add_argument("--enable-hkdf", action="store_true", help="Enable HKDF key derivation")
-    hkdf_group.add_argument("--hkdf-rounds", type=int, default=0, help="HKDF iterations")
-    hkdf_group.add_argument("--hkdf-algorithm", default="sha256", help="HKDF hash algorithm")
+    hkdf_group.add_argument(
+        "--enable-hkdf", action="store_true", help="Enable HKDF key derivation"
+    )
+    hkdf_group.add_argument(
+        "--hkdf-rounds", type=int, default=0, help="HKDF iterations"
+    )
+    hkdf_group.add_argument(
+        "--hkdf-algorithm", default="sha256", help="HKDF hash algorithm"
+    )
     hkdf_group.add_argument("--hkdf-info", default="", help="HKDF info parameter")
 
 
@@ -2256,7 +2382,9 @@ def handle_create_usb_command(args):
             eprint(
                 f"   Workspace: {result['workspace']['path']} ({result['workspace']['encryption']})"
             )
-            eprint(f"   Auto-run files: {', '.join(result['autorun']['files_created'])}")
+            eprint(
+                f"   Auto-run files: {', '.join(result['autorun']['files_created'])}"
+            )
             eprint(
                 f"   Integrity protection: {result['integrity']['files_verified']} files verified"
             )
@@ -2293,7 +2421,9 @@ def handle_verify_usb_command(args):
             with open(args.password_file, "r") as f:
                 usb_password = f.read().strip()
         else:
-            usb_password = getpass.getpass("Enter master password for USB verification: ")
+            usb_password = getpass.getpass(
+                "Enter master password for USB verification: "
+            )
 
         if not usb_password:
             eprint("USB master password is required")
@@ -2307,10 +2437,14 @@ def handle_verify_usb_command(args):
             eprint("Using custom hash chaining configuration for verification")
 
         # Verify USB integrity
-        result = verify_usb_integrity(args.usb_path, usb_password, hash_config=hash_config)
+        result = verify_usb_integrity(
+            args.usb_path, usb_password, hash_config=hash_config
+        )
 
         eprint(f"📊 Verification Results:")
-        eprint(f"   Overall integrity: {'✅ PASSED' if result['integrity_ok'] else '❌ FAILED'}")
+        eprint(
+            f"   Overall integrity: {'✅ PASSED' if result['integrity_ok'] else '❌ FAILED'}"
+        )
         eprint(f"   Files verified: {result['verified_files']}")
         eprint(f"   Files failed: {result['failed_files']}")
         eprint(f"   Files missing: {result['missing_files']}")

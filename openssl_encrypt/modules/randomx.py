@@ -15,6 +15,7 @@ import hashlib
 import logging
 import secrets
 from typing import Optional
+
 from .crypt_utils import eprint
 
 # Set up module-level logger
@@ -133,13 +134,21 @@ except (ImportError, SystemError, OSError, Exception) as e:
         RANDOMX_AVAILABLE = False
         RANDOMX_LIBRARY = None
         randomx = None
-        logger.warning(f"RandomX library not available or incompatible with CPU architecture: {e}")
+        logger.warning(
+            f"RandomX library not available or incompatible with CPU architecture: {e}"
+        )
         logger.warning("Install with: pip install RandomX")
 
 # RandomX mode configurations
 RANDOMX_MODES = {
-    "light": {"memory_mb": 256, "description": "Low memory usage (256MB), slower performance"},
-    "fast": {"memory_mb": 2080, "description": "High memory usage (2GB), faster performance"},
+    "light": {
+        "memory_mb": 256,
+        "description": "Low memory usage (256MB), slower performance",
+    },
+    "fast": {
+        "memory_mb": 2080,
+        "description": "High memory usage (2GB), faster performance",
+    },
 }
 
 # Default configuration
@@ -257,7 +266,9 @@ def randomx_kdf(
         RuntimeError: If RandomX operation fails
     """
     if not RANDOMX_AVAILABLE:
-        raise ImportError("RandomX (pyrx) library not available. Install with: pip install pyrx")
+        raise ImportError(
+            "RandomX (pyrx) library not available. Install with: pip install pyrx"
+        )
 
     # Validate parameters
     if not isinstance(password, bytes):
@@ -303,10 +314,14 @@ def randomx_kdf(
                     # Using pyrx library (fallback)
                     # Note: pyrx.get_rx_hash takes (message, seed_hash, height) parameters
                     current_hash = randomx.get_rx_hash(
-                        current_hash, seed_hash, height  # message  # seed_hash  # height
+                        current_hash,
+                        seed_hash,
+                        height,  # message  # seed_hash  # height
                     )
             except Exception as e:
-                logger.error(f"RandomX hash generation failed in round {round_num + 1}: {e}")
+                logger.error(
+                    f"RandomX hash generation failed in round {round_num + 1}: {e}"
+                )
                 raise RuntimeError(f"RandomX operation failed: {e}")
 
             logger.debug(f"RandomX round {round_num + 1}/{rounds} completed")
@@ -317,7 +332,9 @@ def randomx_kdf(
 
     # Return truncated hash of requested length
     result = current_hash[:hash_len]
-    logger.info(f"RandomX KDF completed successfully, output length: {len(result)} bytes")
+    logger.info(
+        f"RandomX KDF completed successfully, output length: {len(result)} bytes"
+    )
 
     return result
 
@@ -401,7 +418,9 @@ def get_randomx_info() -> dict:
             info["error"] = "RandomX library not installed"
             info["install_command"] = "pip install RandomX"
         else:
-            info["error"] = "Wrong pyrx library installed (schema validator instead of RandomX)"
+            info["error"] = (
+                "Wrong pyrx library installed (schema validator instead of RandomX)"
+            )
             info["install_command"] = "pip uninstall pyrx && pip install RandomX"
 
     return info

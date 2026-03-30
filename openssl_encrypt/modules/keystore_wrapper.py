@@ -13,8 +13,9 @@ from typing import Any, Dict, Optional, Tuple, Union
 
 from .crypt_core import decrypt_file as original_decrypt_file
 from .crypt_core import encrypt_file as original_encrypt_file
-from .keystore_utils import extract_key_id_from_metadata, get_pqc_key_for_decryption
 from .crypt_utils import eprint
+from .keystore_utils import (extract_key_id_from_metadata,
+                             get_pqc_key_for_decryption)
 
 
 def encrypt_file_with_keystore(
@@ -96,12 +97,16 @@ def encrypt_file_with_keystore(
                 pw_verify_bytes = password
             else:
                 pw_verify_bytes = password.encode("utf-8")
-            pw_hash = hashlib.pbkdf2_hmac("sha256", pw_verify_bytes, pw_verify_salt, 10000)
+            pw_hash = hashlib.pbkdf2_hmac(
+                "sha256", pw_verify_bytes, pw_verify_salt, 10000
+            )
             # Store in metadata (encoded as base64)
             hash_config_copy["pqc_dual_encrypt_verify_salt"] = base64.b64encode(
                 pw_verify_salt
             ).decode("utf-8")
-            hash_config_copy["pqc_dual_encrypt_verify"] = base64.b64encode(pw_hash).decode("utf-8")
+            hash_config_copy["pqc_dual_encrypt_verify"] = base64.b64encode(
+                pw_hash
+            ).decode("utf-8")
             if not quiet:
                 eprint("Adding password verification hash to metadata")
 
@@ -134,7 +139,12 @@ def encrypt_file_with_keystore(
 
     # If dual encryption is enabled for PQC keys, store the key in keystore and remove from metadata
     # Skip this when the keypair was provided (key is already in keystore, not in metadata)
-    if use_dual_encryption and key_id is not None and keystore_file is not None and not pqc_keypair:
+    if (
+        use_dual_encryption
+        and key_id is not None
+        and keystore_file is not None
+        and not pqc_keypair
+    ):
         if not quiet:
             eprint("Storing PQC key in keystore and removing from metadata")
 
@@ -160,7 +170,10 @@ def encrypt_file_with_keystore(
                     pqc_private_key_present = False
                     if format_version in [4, 5, 6, 7, 8, 9, 10]:
                         # Format version 4/5/6/7/8/9/10 - check in encryption section
-                        if "encryption" in metadata and "pqc_private_key" in metadata["encryption"]:
+                        if (
+                            "encryption" in metadata
+                            and "pqc_private_key" in metadata["encryption"]
+                        ):
                             pqc_private_key_present = True
                     else:
                         # Legacy format - check in root level
@@ -173,7 +186,11 @@ def encrypt_file_with_keystore(
 
                         # Store the key in the keystore - passing the complete metadata
                         store_pqc_key_in_keystore(
-                            metadata, keystore_file, keystore_password, key_id=key_id, quiet=quiet
+                            metadata,
+                            keystore_file,
+                            keystore_password,
+                            key_id=key_id,
+                            quiet=quiet,
                         )
 
                         # Create a clean copy of the metadata to avoid any reference issues
@@ -198,9 +215,9 @@ def encrypt_file_with_keystore(
 
                                 # Ensure the public key is preserved
                                 if "pqc_public_key" in metadata["encryption"]:
-                                    clean_metadata["encryption"]["pqc_public_key"] = metadata[
-                                        "encryption"
-                                    ]["pqc_public_key"]
+                                    clean_metadata["encryption"]["pqc_public_key"] = (
+                                        metadata["encryption"]["pqc_public_key"]
+                                    )
 
                             # Ensure dual encryption flag is set in kdf_config
                             if (
@@ -224,10 +241,14 @@ def encrypt_file_with_keystore(
                                 ):
                                     clean_metadata["derivation_config"]["kdf_config"][
                                         "pqc_dual_encrypt_verify"
-                                    ] = metadata["hash_config"]["pqc_dual_encrypt_verify"]
+                                    ] = metadata["hash_config"][
+                                        "pqc_dual_encrypt_verify"
+                                    ]
                                     clean_metadata["derivation_config"]["kdf_config"][
                                         "pqc_dual_encrypt_verify_salt"
-                                    ] = metadata["hash_config"]["pqc_dual_encrypt_verify_salt"]
+                                    ] = metadata["hash_config"][
+                                        "pqc_dual_encrypt_verify_salt"
+                                    ]
                         else:
                             # Format version 1-3 structure
                             # Remove the private key from the metadata using a completely new metadata object
@@ -244,7 +265,9 @@ def encrypt_file_with_keystore(
                                 "format_version": metadata.get("format_version", 3),
                                 "salt": metadata.get("salt", ""),
                                 "hash_config": {},
-                                "pbkdf2_iterations": metadata.get("pbkdf2_iterations", 100000),
+                                "pbkdf2_iterations": metadata.get(
+                                    "pbkdf2_iterations", 100000
+                                ),
                                 "original_hash": metadata.get("original_hash", ""),
                                 "encrypted_hash": metadata.get("encrypted_hash", ""),
                                 "algorithm": metadata.get("algorithm", ""),
@@ -262,23 +285,27 @@ def encrypt_file_with_keystore(
                                     "pqc_dual_encrypt_key" in metadata["hash_config"]
                                     or dual_encryption
                                 ):
-                                    clean_metadata["hash_config"]["dual_encryption"] = True
+                                    clean_metadata["hash_config"][
+                                        "dual_encryption"
+                                    ] = True
 
                                 # Ensure key ID is preserved
                                 if "pqc_keystore_key_id" in metadata["hash_config"]:
-                                    clean_metadata["hash_config"]["pqc_keystore_key_id"] = metadata[
-                                        "hash_config"
-                                    ]["pqc_keystore_key_id"]
+                                    clean_metadata["hash_config"][
+                                        "pqc_keystore_key_id"
+                                    ] = metadata["hash_config"]["pqc_keystore_key_id"]
 
                                 # Copy the public key
                                 if "pqc_public_key" in metadata["hash_config"]:
-                                    clean_metadata["hash_config"]["pqc_public_key"] = metadata[
-                                        "hash_config"
-                                    ]["pqc_public_key"]
+                                    clean_metadata["hash_config"]["pqc_public_key"] = (
+                                        metadata["hash_config"]["pqc_public_key"]
+                                    )
 
                         # Write the updated metadata back to the file
                         new_metadata_json = json.dumps(clean_metadata)
-                        new_metadata_b64 = base64.b64encode(new_metadata_json.encode("utf-8"))
+                        new_metadata_b64 = base64.b64encode(
+                            new_metadata_json.encode("utf-8")
+                        )
 
                         with open(output_file, "wb") as f:
                             f.write(new_metadata_b64)
@@ -288,8 +315,12 @@ def encrypt_file_with_keystore(
                         with open(output_file, "rb") as f:
                             verify_content = f.read(8192)
 
-                        verify_metadata_b64 = verify_content[: verify_content.find(b":")]
-                        verify_metadata_json = base64.b64decode(verify_metadata_b64).decode("utf-8")
+                        verify_metadata_b64 = verify_content[
+                            : verify_content.find(b":")
+                        ]
+                        verify_metadata_json = base64.b64decode(
+                            verify_metadata_b64
+                        ).decode("utf-8")
                         verify_metadata = json.loads(verify_metadata_json)
 
                         private_key_still_present = False
@@ -303,7 +334,8 @@ def encrypt_file_with_keystore(
                         else:
                             # Check hash_config for older versions
                             if "hash_config" in verify_metadata and any(
-                                key in verify_metadata["hash_config"] for key in keys_to_remove
+                                key in verify_metadata["hash_config"]
+                                for key in keys_to_remove
                             ):
                                 private_key_still_present = True
 
@@ -329,7 +361,9 @@ def encrypt_file_with_keystore(
     if key_id is not None:
         # Open the encrypted file and check metadata
         with open(output_file, "rb") as f:
-            content = f.read(8192)  # Read enough for the header - increased for large keys
+            content = f.read(
+                8192
+            )  # Read enough for the header - increased for large keys
 
         # Find the colon separator
         colon_pos = content.find(b":")
@@ -358,7 +392,9 @@ def encrypt_file_with_keystore(
                             or kdf_config["pqc_keystore_key_id"] != key_id
                         ):
                             if not quiet:
-                                eprint("Key ID not found in metadata, adding it to kdf_config (v5)")
+                                eprint(
+                                    "Key ID not found in metadata, adding it to kdf_config (v5)"
+                                )
                             kdf_config["pqc_keystore_key_id"] = key_id
                             need_update = True
 
@@ -385,7 +421,9 @@ def encrypt_file_with_keystore(
                             or kdf_config["pqc_keystore_key_id"] != key_id
                         ):
                             if not quiet:
-                                eprint("Key ID not found in metadata, adding it to kdf_config")
+                                eprint(
+                                    "Key ID not found in metadata, adding it to kdf_config"
+                                )
                             kdf_config["pqc_keystore_key_id"] = key_id
                             need_update = True
 
@@ -405,7 +443,9 @@ def encrypt_file_with_keystore(
                             or metadata["hash_config"]["pqc_keystore_key_id"] != key_id
                         ):
                             if not quiet:
-                                eprint("Key ID not found in metadata, adding it manually")
+                                eprint(
+                                    "Key ID not found in metadata, adding it manually"
+                                )
 
                             # Key ID is missing from metadata, add it
                             if "hash_config" not in metadata:
@@ -420,7 +460,9 @@ def encrypt_file_with_keystore(
                             and "dual_encryption" not in metadata["hash_config"]
                         ):
                             if not quiet:
-                                eprint("Dual encryption flag missing from metadata, adding it")
+                                eprint(
+                                    "Dual encryption flag missing from metadata, adding it"
+                                )
 
                             if "hash_config" not in metadata:
                                 metadata["hash_config"] = {}
@@ -432,7 +474,9 @@ def encrypt_file_with_keystore(
                     if need_update:
                         # Convert back to JSON and base64
                         new_metadata_json = json.dumps(metadata)
-                        new_metadata_b64 = base64.b64encode(new_metadata_json.encode("utf-8"))
+                        new_metadata_b64 = base64.b64encode(
+                            new_metadata_json.encode("utf-8")
+                        )
 
                         # Rewrite the file with updated metadata
                         with open(output_file, "rb") as f:
@@ -444,7 +488,9 @@ def encrypt_file_with_keystore(
 
                         if not quiet:
                             if dual_encryption:
-                                eprint("Updated metadata with key ID and dual encryption flag")
+                                eprint(
+                                    "Updated metadata with key ID and dual encryption flag"
+                                )
                             else:
                                 eprint("Updated metadata with key ID")
                 except json.JSONDecodeError:
@@ -529,15 +575,22 @@ def decrypt_file_with_keystore(
                     and "kdf_config" in metadata["derivation_config"]
                     and "dual_encryption" in metadata["derivation_config"]["kdf_config"]
                 ):
-                    dual_encryption = metadata["derivation_config"]["kdf_config"]["dual_encryption"]
+                    dual_encryption = metadata["derivation_config"]["kdf_config"][
+                        "dual_encryption"
+                    ]
                     if dual_encryption and not quiet:
-                        version_label = f" (v{format_version})" if format_version != 4 else ""
+                        version_label = (
+                            f" (v{format_version})" if format_version != 4 else ""
+                        )
                         eprint(
                             f"File uses dual encryption - requires both keystore and file passwords{version_label}"
                         )
             else:
                 # Version 3 format - check in hash_config
-                if "hash_config" in metadata and "dual_encryption" in metadata["hash_config"]:
+                if (
+                    "hash_config" in metadata
+                    and "dual_encryption" in metadata["hash_config"]
+                ):
                     dual_encryption = metadata["hash_config"]["dual_encryption"]
                     if dual_encryption and not quiet:
                         eprint(
@@ -564,14 +617,17 @@ def decrypt_file_with_keystore(
                             if (
                                 "derivation_config" in metadata
                                 and "kdf_config" in metadata["derivation_config"]
-                                and "dual_encryption" in metadata["derivation_config"]["kdf_config"]
+                                and "dual_encryption"
+                                in metadata["derivation_config"]["kdf_config"]
                             ):
-                                dual_encryption = metadata["derivation_config"]["kdf_config"][
-                                    "dual_encryption"
-                                ]
+                                dual_encryption = metadata["derivation_config"][
+                                    "kdf_config"
+                                ]["dual_encryption"]
                                 if dual_encryption and not quiet:
                                     version_label = (
-                                        f" (v{format_version})" if format_version != 4 else ""
+                                        f" (v{format_version})"
+                                        if format_version != 4
+                                        else ""
                                     )
                                     eprint(
                                         f"File uses dual encryption - requires both keystore and file passwords{version_label}"
@@ -582,7 +638,9 @@ def decrypt_file_with_keystore(
                                 "hash_config" in metadata
                                 and "dual_encryption" in metadata["hash_config"]
                             ):
-                                dual_encryption = metadata["hash_config"]["dual_encryption"]
+                                dual_encryption = metadata["hash_config"][
+                                    "dual_encryption"
+                                ]
                                 if dual_encryption and not quiet:
                                     eprint(
                                         "File uses dual encryption - requires both keystore and file passwords"
@@ -636,16 +694,21 @@ def decrypt_file_with_keystore(
                 if (
                     "derivation_config" in metadata
                     and "kdf_config" in metadata["derivation_config"]
-                    and "pqc_dual_encrypt_verify" in metadata["derivation_config"]["kdf_config"]
+                    and "pqc_dual_encrypt_verify"
+                    in metadata["derivation_config"]["kdf_config"]
                     and "pqc_dual_encrypt_verify_salt"
                     in metadata["derivation_config"]["kdf_config"]
                 ):
                     # Get stored values
                     verify_hash = base64.b64decode(
-                        metadata["derivation_config"]["kdf_config"]["pqc_dual_encrypt_verify"]
+                        metadata["derivation_config"]["kdf_config"][
+                            "pqc_dual_encrypt_verify"
+                        ]
                     )
                     verify_salt = base64.b64decode(
-                        metadata["derivation_config"]["kdf_config"]["pqc_dual_encrypt_verify_salt"]
+                        metadata["derivation_config"]["kdf_config"][
+                            "pqc_dual_encrypt_verify_salt"
+                        ]
                     )
             else:
                 # Version 3 format - check in hash_config
@@ -667,7 +730,9 @@ def decrypt_file_with_keystore(
                 # Calculate hash with current password
                 import hashlib
 
-                current_pw_hash = hashlib.pbkdf2_hmac("sha256", pw_verify_bytes, verify_salt, 10000)
+                current_pw_hash = hashlib.pbkdf2_hmac(
+                    "sha256", pw_verify_bytes, verify_salt, 10000
+                )
 
                 # Verify hash matches - use specialized MAC verification to prevent timing attacks
                 from .secure_ops import verify_mac
@@ -686,7 +751,9 @@ def decrypt_file_with_keystore(
                     eprint(
                         "WARNING: Dual encryption flag set but no password verification data found in metadata"
                     )
-                    eprint("Password verification skipped - proceeding with provided password")
+                    eprint(
+                        "Password verification skipped - proceeding with provided password"
+                    )
 
         except ValueError as ve:
             # Re-raise these as they're expected for validation failures
@@ -705,7 +772,11 @@ def decrypt_file_with_keystore(
             key_id = extracted_key_id
 
     # Try to get the PQC key using our improved helper function
-    if keystore_file is not None and key_id is not None and key_id != "EMBEDDED_PRIVATE_KEY":
+    if (
+        keystore_file is not None
+        and key_id is not None
+        and key_id != "EMBEDDED_PRIVATE_KEY"
+    ):
         import getpass
 
         from .keystore_utils import get_pqc_key_for_decryption
@@ -723,14 +794,16 @@ def decrypt_file_with_keystore(
         args.verbose = kwargs.get("verbose", False)
 
         # Get the key using our improved helper, passing the metadata we already extracted
-        pqc_keypair, retrieved_private_key, extracted_key_id = get_pqc_key_for_decryption(
-            args, None, metadata
+        pqc_keypair, retrieved_private_key, extracted_key_id = (
+            get_pqc_key_for_decryption(args, None, metadata)
         )
 
         # Only update the private key if we got one
         if retrieved_private_key:
             if not quiet:
-                eprint(f"Successfully retrieved PQC key for decryption using helper function")
+                eprint(
+                    f"Successfully retrieved PQC key for decryption using helper function"
+                )
             pqc_private_key = retrieved_private_key
 
             # Update the key_id in case it was found by the helper
@@ -768,7 +841,9 @@ def decrypt_file_with_keystore(
                         if not quiet:
                             eprint(f"Keys in keystore: {len(keys)}")
                             for k in keys:
-                                eprint(f"  - {k['key_id']} ({k.get('algorithm', 'unknown')})")
+                                eprint(
+                                    f"  - {k['key_id']} ({k.get('algorithm', 'unknown')})"
+                                )
 
                         # Check if key ID exists
                         if key_id not in [k["key_id"] for k in keys]:
@@ -797,11 +872,15 @@ def decrypt_file_with_keystore(
 
                     # Verify the file password format
                     if not file_password_for_key:
-                        raise ValueError("File password is required for dual-encrypted files")
+                        raise ValueError(
+                            "File password is required for dual-encrypted files"
+                        )
 
                 # Get the key with file password for dual encryption
                 try:
-                    _, private_key = keystore.get_key(key_id, None, file_password_for_key)
+                    _, private_key = keystore.get_key(
+                        key_id, None, file_password_for_key
+                    )
                 except Exception as e:
                     error_msg = str(e).lower()
                     # Check for various password/decryption error messages
@@ -824,7 +903,9 @@ def decrypt_file_with_keystore(
                 if not quiet:
                     eprint(f"Retrieved private key for key ID {key_id} from keystore")
                     if dual_encryption:
-                        eprint("Key successfully decrypted with both keystore and file passwords")
+                        eprint(
+                            "Key successfully decrypted with both keystore and file passwords"
+                        )
 
                 pqc_private_key = private_key
             except Exception as e:
@@ -832,7 +913,9 @@ def decrypt_file_with_keystore(
                     eprint(f"Error retrieving key from keystore: {e}")
                 # Re-raise for dual-encrypted files that require keystore access
                 if dual_encryption:
-                    raise ValueError("Failed to retrieve key from keystore for dual-encrypted file")
+                    raise ValueError(
+                        "Failed to retrieve key from keystore for dual-encrypted file"
+                    )
 
     # First check if we need a keystore but couldn't get the key
     if (
@@ -915,7 +998,9 @@ def decrypt_file_with_keystore(
         ):
             if not quiet:
                 eprint(f"Decryption failed - possible invalid file password: {e}")
-            raise ValueError(f"Password verification failed for decryption - invalid password")
+            raise ValueError(
+                f"Password verification failed for decryption - invalid password"
+            )
         else:
             # Re-raise the original error
             raise

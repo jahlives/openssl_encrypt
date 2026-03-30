@@ -5,19 +5,17 @@ Integration test for Integrity Plugin with live server.
 This tests the client plugin against the running integrity server.
 """
 
-import sys
 import hashlib
+import sys
 from pathlib import Path
 
 # Add openssl_encrypt to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from openssl_encrypt.plugins.integrity import (
-    IntegrityPlugin,
-    IntegrityConfig,
-    IntegrityPluginError,
-    IntegrityVerificationError,
-)
+from openssl_encrypt.plugins.integrity import (IntegrityConfig,
+                                               IntegrityPlugin,
+                                               IntegrityPluginError,
+                                               IntegrityVerificationError)
 
 
 def test_integrity_client():
@@ -35,11 +33,14 @@ def test_integrity_client():
     # Try to determine config path
     try:
         import os
-        home = os.environ.get('HOME') or os.environ.get('USERPROFILE')
+
+        home = os.environ.get("HOME") or os.environ.get("USERPROFILE")
         if home:
             config_path = Path(home) / ".openssl_encrypt" / "plugins" / "integrity.json"
         else:
-            config_path = Path.home() / ".openssl_encrypt" / "plugins" / "integrity.json"
+            config_path = (
+                Path.home() / ".openssl_encrypt" / "plugins" / "integrity.json"
+            )
     except Exception:
         # Fallback if home directory cannot be determined
         config_path = Path("/tmp/.openssl_encrypt/plugins/integrity.json")
@@ -139,7 +140,9 @@ def test_integrity_client():
         print(f"✓ Configuration loaded from {test_config_path}")
         print(f"  Server URL: {loaded_config.server_url}")
         print(f"  Enabled: {loaded_config.enabled}")
-        print(f"  Timeouts: {loaded_config.connect_timeout_seconds}s / {loaded_config.read_timeout_seconds}s")
+        print(
+            f"  Timeouts: {loaded_config.connect_timeout_seconds}s / {loaded_config.read_timeout_seconds}s"
+        )
         print()
         print(f"  Note: Standard config location is {config_path}")
         print()
@@ -152,9 +155,17 @@ def test_integrity_client():
     print("-" * 70)
     print("Available methods:")
     methods = [
-        "get_profile", "update_profile",
-        "store_hash", "get_hash", "list_hashes", "update_hash", "delete_hash", "delete_all_hashes",
-        "verify", "verify_batch", "get_stats"
+        "get_profile",
+        "update_profile",
+        "store_hash",
+        "get_hash",
+        "list_hashes",
+        "update_hash",
+        "delete_hash",
+        "delete_all_hashes",
+        "verify",
+        "verify_batch",
+        "get_stats",
     ]
     if plugin:
         for method in methods:
@@ -250,7 +261,8 @@ def test_integrity_client():
     print("=" * 70)
     print("Usage Example (with proper mTLS setup):")
     print("=" * 70)
-    print("""
+    print(
+        """
 from openssl_encrypt.plugins.integrity import IntegrityPlugin, IntegrityConfig
 from pathlib import Path
 
@@ -320,13 +332,15 @@ with IntegrityPlugin(config) as plugin:
     plugin.delete_hash(file_id)
 
 # Automatic cleanup when exiting context manager
-""")
+"""
+    )
 
     print()
     print("=" * 70)
     print("Additional Features:")
     print("=" * 70)
-    print("""
+    print(
+        """
 Profile Management:
   - Update display name: plugin.update_profile("My Computer")
 
@@ -349,7 +363,8 @@ Security:
   - No sensitive data transmitted (only SHA-256 hashes)
   - Auto-registration on first connection
   - OPT-IN by default (enabled=false)
-""")
+"""
+    )
 
     return True
 

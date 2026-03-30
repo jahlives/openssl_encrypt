@@ -20,7 +20,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, Mock, patch
 
-from openssl_encrypt.modules.crypt_core import EncryptionAlgorithm, decrypt_file, encrypt_file
+from openssl_encrypt.modules.crypt_core import (EncryptionAlgorithm,
+                                                decrypt_file, encrypt_file)
 from openssl_encrypt.modules.crypt_errors import DecryptionError
 
 
@@ -122,7 +123,9 @@ class TestIntegrityFileIDConsistency(unittest.TestCase):
     @patch("openssl_encrypt.modules.crypt_core._INTEGRITY_PLUGIN_AVAILABLE", True)
     @patch("openssl_encrypt.modules.crypt_core.IntegrityConfig")
     @patch("openssl_encrypt.modules.crypt_core.IntegrityPlugin")
-    def test_file_id_matches_encryption_and_decryption(self, mock_plugin_class, mock_config_class):
+    def test_file_id_matches_encryption_and_decryption(
+        self, mock_plugin_class, mock_config_class
+    ):
         """
         Test that encryption and decryption compute the same file_id.
 
@@ -162,7 +165,9 @@ class TestIntegrityFileIDConsistency(unittest.TestCase):
 
         # Get the file_id used during encryption
         self.assertEqual(
-            len(self.mock_storage.store_calls), 1, "store_hash should be called exactly once"
+            len(self.mock_storage.store_calls),
+            1,
+            "store_hash should be called exactly once",
         )
         encryption_file_id, encryption_hash = self.mock_storage.store_calls[0]
 
@@ -177,7 +182,9 @@ class TestIntegrityFileIDConsistency(unittest.TestCase):
 
         # Get the file_id used during decryption
         self.assertEqual(
-            len(self.mock_storage.verify_calls), 1, "verify should be called exactly once"
+            len(self.mock_storage.verify_calls),
+            1,
+            "verify should be called exactly once",
         )
         decryption_file_id, decryption_hash = self.mock_storage.verify_calls[0]
 
@@ -205,7 +212,9 @@ class TestIntegrityFileIDConsistency(unittest.TestCase):
     @patch("openssl_encrypt.modules.crypt_core._INTEGRITY_PLUGIN_AVAILABLE", True)
     @patch("openssl_encrypt.modules.crypt_core.IntegrityConfig")
     @patch("openssl_encrypt.modules.crypt_core.IntegrityPlugin")
-    def test_file_id_uses_input_not_temp_file(self, mock_plugin_class, mock_config_class):
+    def test_file_id_uses_input_not_temp_file(
+        self, mock_plugin_class, mock_config_class
+    ):
         """
         Test that file_id is computed from input file, not temporary output file.
 
@@ -259,7 +268,9 @@ class TestIntegrityFileIDConsistency(unittest.TestCase):
         # Ensure it's not a temp file path (no .tmp extension)
         for path in file_id_paths:
             self.assertNotIn(
-                ".tmp", path.lower(), msg=f"File ID should not be computed from temp file: {path}"
+                ".tmp",
+                path.lower(),
+                msg=f"File ID should not be computed from temp file: {path}",
             )
 
 
@@ -332,12 +343,16 @@ class TestIntegrityHashStorageAndRetrieval(unittest.TestCase):
 
         # Verify it's in storage
         self.assertIn("static_file_id_abc123", self.mock_storage.hashes)
-        self.assertEqual(self.mock_storage.hashes["static_file_id_abc123"], "static_hash_def456")
+        self.assertEqual(
+            self.mock_storage.hashes["static_file_id_abc123"], "static_hash_def456"
+        )
 
     @patch("openssl_encrypt.modules.crypt_core._INTEGRITY_PLUGIN_AVAILABLE", True)
     @patch("openssl_encrypt.modules.crypt_core.IntegrityConfig")
     @patch("openssl_encrypt.modules.crypt_core.IntegrityPlugin")
-    def test_hash_verified_during_decryption(self, mock_plugin_class, mock_config_class):
+    def test_hash_verified_during_decryption(
+        self, mock_plugin_class, mock_config_class
+    ):
         """Test that metadata hash is verified during decryption."""
         # First encrypt without integrity to create encrypted file
         encrypt_file(
@@ -382,7 +397,9 @@ class TestIntegrityHashStorageAndRetrieval(unittest.TestCase):
     @patch("openssl_encrypt.modules.crypt_core._INTEGRITY_PLUGIN_AVAILABLE", True)
     @patch("openssl_encrypt.modules.crypt_core.IntegrityConfig")
     @patch("openssl_encrypt.modules.crypt_core.IntegrityPlugin")
-    def test_end_to_end_encrypt_decrypt_with_integrity(self, mock_plugin_class, mock_config_class):
+    def test_end_to_end_encrypt_decrypt_with_integrity(
+        self, mock_plugin_class, mock_config_class
+    ):
         """
         Full end-to-end test: encrypt with --integrity, decrypt with --verify-integrity.
 
@@ -590,7 +607,9 @@ class TestIntegrityTamperingDetection(unittest.TestCase):
 
         # Hashes should differ
         self.assertNotEqual(
-            original_hash, tampered_hash, msg="Hash should change when metadata is tampered with"
+            original_hash,
+            tampered_hash,
+            msg="Hash should change when metadata is tampered with",
         )
 
 
@@ -667,7 +686,9 @@ class TestIntegrityEdgeCases(unittest.TestCase):
         hash1 = IntegrityPlugin.compute_metadata_hash(metadata1)
         hash2 = IntegrityPlugin.compute_metadata_hash(metadata2)
 
-        self.assertNotEqual(hash1, hash2, msg="Different metadata should have different hashes")
+        self.assertNotEqual(
+            hash1, hash2, msg="Different metadata should have different hashes"
+        )
 
     def test_file_id_is_64_char_hex(self):
         """Test that file_id is always 64-character hex string (SHA-256)."""
@@ -676,9 +697,12 @@ class TestIntegrityEdgeCases(unittest.TestCase):
         test_file = Path(self.temp_dir) / "test.txt"
         file_id = IntegrityPlugin.compute_file_id(test_file)
 
-        self.assertEqual(len(file_id), 64, msg="File ID should be 64 characters (SHA-256)")
+        self.assertEqual(
+            len(file_id), 64, msg="File ID should be 64 characters (SHA-256)"
+        )
         self.assertTrue(
-            all(c in "0123456789abcdef" for c in file_id), msg="File ID should be lowercase hex"
+            all(c in "0123456789abcdef" for c in file_id),
+            msg="File ID should be lowercase hex",
         )
 
     def test_metadata_hash_is_64_char_hex(self):
@@ -688,9 +712,12 @@ class TestIntegrityEdgeCases(unittest.TestCase):
         metadata = b"test metadata"
         metadata_hash = IntegrityPlugin.compute_metadata_hash(metadata)
 
-        self.assertEqual(len(metadata_hash), 64, msg="Hash should be 64 characters (SHA-256)")
+        self.assertEqual(
+            len(metadata_hash), 64, msg="Hash should be 64 characters (SHA-256)"
+        )
         self.assertTrue(
-            all(c in "0123456789abcdef" for c in metadata_hash), msg="Hash should be lowercase hex"
+            all(c in "0123456789abcdef" for c in metadata_hash),
+            msg="Hash should be lowercase hex",
         )
 
 
@@ -763,7 +790,9 @@ class TestIntegrityAEADAndNonAEAD(unittest.TestCase):
     @patch("openssl_encrypt.modules.crypt_core._INTEGRITY_PLUGIN_AVAILABLE", True)
     @patch("openssl_encrypt.modules.crypt_core.IntegrityConfig")
     @patch("openssl_encrypt.modules.crypt_core.IntegrityPlugin")
-    def test_integrity_with_non_aead_algorithm(self, mock_plugin_class, mock_config_class):
+    def test_integrity_with_non_aead_algorithm(
+        self, mock_plugin_class, mock_config_class
+    ):
         """Test integrity works with non-AEAD algorithm (e.g., Fernet)."""
         mock_config = Mock()
         mock_config.enabled = True

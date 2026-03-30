@@ -7,13 +7,8 @@ steganographic operations.
 
 from .base import SteganographyBase
 from .config import SteganographyConfig
-from .exceptions import (
-    CapacityError,
-    CoverMediaError,
-    ExtractionError,
-    SecurityError,
-    SteganographyError,
-)
+from .exceptions import (CapacityError, CoverMediaError, ExtractionError,
+                         SecurityError, SteganographyError)
 from .utils import SteganographyUtils
 
 __all__ = [

@@ -35,14 +35,8 @@ import numpy as np
 
 # Import core steganography components
 from ....modules.crypt_utils import eprint
-from ..core import (
-    CapacityError,
-    CoverMediaError,
-    ExtractionError,
-    SteganographyBase,
-    SteganographyError,
-    SteganographyUtils,
-)
+from ..core import (CapacityError, CoverMediaError, ExtractionError,
+                    SteganographyBase, SteganographyError, SteganographyUtils)
 
 # Set up module logger
 logger = logging.getLogger(__name__)
@@ -89,7 +83,24 @@ class MP3Steganography(SteganographyBase):
 
     # MP3 constants
     BITRATES = {
-        "MPEG1_L3": [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0],
+        "MPEG1_L3": [
+            0,
+            32,
+            40,
+            48,
+            56,
+            64,
+            80,
+            96,
+            112,
+            128,
+            160,
+            192,
+            224,
+            256,
+            320,
+            0,
+        ],
         "MPEG2_L3": [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 0],
     }
 
@@ -135,9 +146,15 @@ class MP3Steganography(SteganographyBase):
 
         # Configuration
         if config:
-            self.coefficient_bits = getattr(config, "coefficient_bits", self.coefficient_bits)
-            self.use_bit_reservoir = getattr(config, "use_bit_reservoir", self.use_bit_reservoir)
-            self.preserve_quality = getattr(config, "preserve_quality", self.preserve_quality)
+            self.coefficient_bits = getattr(
+                config, "coefficient_bits", self.coefficient_bits
+            )
+            self.use_bit_reservoir = getattr(
+                config, "use_bit_reservoir", self.use_bit_reservoir
+            )
+            self.preserve_quality = getattr(
+                config, "preserve_quality", self.preserve_quality
+            )
 
         logger.debug(
             f"MP3 steganography initialized: {self.coefficient_bits} coeff bits, "
@@ -161,7 +178,9 @@ class MP3Steganography(SteganographyBase):
             # Calculate capacity from frames and bit reservoir
             frame_capacity = self._calculate_frame_capacity(mp3_info)
             reservoir_capacity = (
-                self._calculate_reservoir_capacity(mp3_info) if self.use_bit_reservoir else 0
+                self._calculate_reservoir_capacity(mp3_info)
+                if self.use_bit_reservoir
+                else 0
             )
 
             total_capacity = frame_capacity + reservoir_capacity
@@ -196,7 +215,9 @@ class MP3Steganography(SteganographyBase):
             # Check capacity
             capacity = self.calculate_capacity(mp3_data)
             if len(secret_data) > capacity:
-                raise CapacityError(f"Secret data too large: {len(secret_data)} > {capacity}")
+                raise CapacityError(
+                    f"Secret data too large: {len(secret_data)} > {capacity}"
+                )
 
             # Analyze MP3 structure
             mp3_info = self._analyze_mp3_structure(mp3_data)
@@ -283,7 +304,9 @@ class MP3Steganography(SteganographyBase):
                 analysis["audio_offset"] = 10 + tag_size
                 analysis["audio_size"] = len(mp3_data) - analysis["audio_offset"]
 
-                logger.debug(f"Found ID3v2.{version_major}.{version_minor} tag, size: {tag_size}")
+                logger.debug(
+                    f"Found ID3v2.{version_major}.{version_minor} tag, size: {tag_size}"
+                )
 
             # Check for ID3v1 tag
             if len(mp3_data) >= 128 and mp3_data[-128:-125] == b"TAG":
@@ -298,7 +321,9 @@ class MP3Steganography(SteganographyBase):
 
                 # Parse first frame header for global info
                 if frame_start + 4 <= len(mp3_data):
-                    header = self._parse_frame_header(mp3_data[frame_start : frame_start + 4])
+                    header = self._parse_frame_header(
+                        mp3_data[frame_start : frame_start + 4]
+                    )
                     if header:
                         analysis["bitrate"] = header.bitrate
                         analysis["sample_rate"] = header.sample_rate
@@ -310,7 +335,9 @@ class MP3Steganography(SteganographyBase):
                             audio_bytes = analysis["audio_size"] - (
                                 frame_start - analysis["audio_offset"]
                             )
-                            analysis["duration_seconds"] = (audio_bytes * 8) / header.bitrate
+                            analysis["duration_seconds"] = (
+                                audio_bytes * 8
+                            ) / header.bitrate
 
             logger.debug(
                 f"MP3 analysis: {analysis['bitrate']} kbps, "
@@ -419,7 +446,9 @@ class MP3Steganography(SteganographyBase):
 
             # Calculate frame size
             samples_per_frame = self.SAMPLES_PER_FRAME.get(f"{version_key}_L3", 1152)
-            frame_size = int((samples_per_frame / 8 * bitrate * 1000) / sample_rate) + padding
+            frame_size = (
+                int((samples_per_frame / 8 * bitrate * 1000) / sample_rate) + padding
+            )
 
             return MP3FrameHeader(
                 sync_word=sync_word,
@@ -493,7 +522,9 @@ class MP3Steganography(SteganographyBase):
         # Bit reservoir provides additional capacity
         # Typically 7680 bits maximum per frame
         audio_size = mp3_info["audio_size"]
-        frame_size_avg = 144000 if mp3_info.get("bitrate", 128) else 1152  # Rough estimate
+        frame_size_avg = (
+            144000 if mp3_info.get("bitrate", 128) else 1152
+        )  # Rough estimate
 
         if frame_size_avg > 0:
             estimated_frames = audio_size // frame_size_avg
@@ -527,7 +558,9 @@ class MP3Steganography(SteganographyBase):
 
             for frame_idx, frame in enumerate(frames):
                 frame_payload = frame["payload"]
-                coefficients_available = min(len(frame_payload) // 4, 200)  # Conservative
+                coefficients_available = min(
+                    len(frame_payload) // 4, 200
+                )  # Conservative
                 frame_coeff_counts.append(coefficients_available)
 
                 # Generate coefficient indices for this frame
@@ -546,7 +579,9 @@ class MP3Steganography(SteganographyBase):
                         _hl.sha256,
                     ).digest()
                     seed_int = int.from_bytes(frame_key[:16], byteorder="big")
-                    rng = np.random.Generator(np.random.PCG64(np.random.SeedSequence(seed_int)))
+                    rng = np.random.Generator(
+                        np.random.PCG64(np.random.SeedSequence(seed_int))
+                    )
                     rng.shuffle(coeff_indices)
 
                 for coeff_idx in coeff_indices:
@@ -565,7 +600,9 @@ class MP3Steganography(SteganographyBase):
                     continue
 
                 # Find positions for this frame
-                frame_positions = [(idx, pos) for idx, pos in all_positions if idx == frame_idx]
+                frame_positions = [
+                    (idx, pos) for idx, pos in all_positions if idx == frame_idx
+                ]
 
                 for _, byte_pos in frame_positions:
                     if bit_index >= len(binary_data):
@@ -594,7 +631,9 @@ class MP3Steganography(SteganographyBase):
             # Secure cleanup
             binary_data.clear() if hasattr(binary_data, "clear") else None
 
-            logger.debug(f"Modified {len(modified_frames)} frames, embedded {bit_index} bits")
+            logger.debug(
+                f"Modified {len(modified_frames)} frames, embedded {bit_index} bits"
+            )
             return modified_frames
 
         except Exception as e:
@@ -615,7 +654,9 @@ class MP3Steganography(SteganographyBase):
 
             for frame_idx, frame in enumerate(frames):
                 frame_payload = frame["payload"]
-                coefficients_available = min(len(frame_payload) // 4, 200)  # Conservative
+                coefficients_available = min(
+                    len(frame_payload) // 4, 200
+                )  # Conservative
 
                 # Generate coefficient indices for this frame
                 coeff_indices = list(range(coefficients_available))
@@ -633,7 +674,9 @@ class MP3Steganography(SteganographyBase):
                         _hl.sha256,
                     ).digest()
                     seed_int = int.from_bytes(frame_key[:16], byteorder="big")
-                    rng = np.random.Generator(np.random.PCG64(np.random.SeedSequence(seed_int)))
+                    rng = np.random.Generator(
+                        np.random.PCG64(np.random.SeedSequence(seed_int))
+                    )
                     rng.shuffle(coeff_indices)
 
                 for coeff_idx in coeff_indices:
@@ -703,11 +746,15 @@ class MP3Steganography(SteganographyBase):
                 )
 
             # Convert all bits to bytes
-            binary_string = "".join(str(bit) for bit in extracted_bits[:total_bits_needed])
+            binary_string = "".join(
+                str(bit) for bit in extracted_bits[:total_bits_needed]
+            )
             extracted_bytes = SteganographyUtils.binary_to_bytes(binary_string)
 
             # Verify and extract payload
-            if len(extracted_bytes) < 6:  # 4 bytes length + at least 2 bytes data + end marker
+            if (
+                len(extracted_bytes) < 6
+            ):  # 4 bytes length + at least 2 bytes data + end marker
                 raise ExtractionError("Extracted data too short")
 
             # Skip the length field, get the actual data
@@ -717,9 +764,13 @@ class MP3Steganography(SteganographyBase):
             if len(extracted_bytes) >= 4 + data_length + 2:
                 end_marker = extracted_bytes[4 + data_length : 4 + data_length + 2]
                 if end_marker != b"\xFF\xFE":
-                    logger.warning(f"End marker mismatch: expected \\xFF\\xFE, got {end_marker}")
+                    logger.warning(
+                        f"End marker mismatch: expected \\xFF\\xFE, got {end_marker}"
+                    )
 
-            logger.debug(f"Extracted payload length: {len(payload)}, expected: {data_length}")
+            logger.debug(
+                f"Extracted payload length: {len(payload)}, expected: {data_length}"
+            )
 
             logger.debug(f"Successfully extracted {len(payload)} bytes from MP3")
             return payload
@@ -810,7 +861,8 @@ class MP3Analyzer:
                 },
                 "frames": {
                     "total_frames": len(frames),
-                    "avg_frame_size": sum(f["size"] for f in frames) // max(len(frames), 1),
+                    "avg_frame_size": sum(f["size"] for f in frames)
+                    // max(len(frames), 1),
                     "first_frame_offset": basic_info.get("first_frame_offset", 0),
                 },
                 "tags": {
@@ -822,8 +874,12 @@ class MP3Analyzer:
                     "frame_capacity": frame_capacity,
                     "reservoir_capacity": reservoir_capacity,
                     "total_capacity": frame_capacity + reservoir_capacity,
-                    "quality_impact": "Low" if basic_info.get("bitrate", 0) >= 192 else "Medium",
-                    "recommended_coefficient_bits": 1 if basic_info.get("bitrate", 0) < 192 else 2,
+                    "quality_impact": (
+                        "Low" if basic_info.get("bitrate", 0) >= 192 else "Medium"
+                    ),
+                    "recommended_coefficient_bits": (
+                        1 if basic_info.get("bitrate", 0) < 192 else 2
+                    ),
                 },
             }
 

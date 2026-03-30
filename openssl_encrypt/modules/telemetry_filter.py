@@ -258,7 +258,9 @@ class TelemetryDataFilter:
             algo_normalized = algo.lower()
 
             # Check if algorithm is allowed
-            if algo_normalized in cls.ALLOWED_KDF_ALGOS or algo_normalized.startswith("argon2"):
+            if algo_normalized in cls.ALLOWED_KDF_ALGOS or algo_normalized.startswith(
+                "argon2"
+            ):
                 kdf_algos.append(algo_normalized)
 
                 # Extract only safe numeric parameters (no keys, no salts)
@@ -280,7 +282,9 @@ class TelemetryDataFilter:
                     }
 
                     for param_name, param_value in config.items():
-                        if param_name in safe_param_names and isinstance(param_value, (int, float)):
+                        if param_name in safe_param_names and isinstance(
+                            param_value, (int, float)
+                        ):
                             safe_params[param_name] = int(param_value)
 
                     if safe_params:

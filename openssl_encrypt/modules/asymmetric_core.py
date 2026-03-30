@@ -22,10 +22,10 @@ from typing import Dict, Tuple
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
+from .crypt_utils import eprint
 from .crypto_secure_memory import CryptoKey
 from .pqc import PQCAlgorithm, PQCipher
 from .secure_memory import SecureBytes, secure_memzero
-from .crypt_utils import eprint
 
 # Set up module-level logger
 logger = logging.getLogger(__name__)
@@ -121,7 +121,9 @@ class PasswordWrapper:
         try:
             # Use PQCipher's encapsulate_only method
             # Returns: (shared_secret, encapsulated_key)
-            shared_secret, encapsulated_key = self.cipher.encapsulate_only(recipient_public_key)
+            shared_secret, encapsulated_key = self.cipher.encapsulate_only(
+                recipient_public_key
+            )
 
             if not self.quiet:
                 logger.debug(
@@ -135,7 +137,9 @@ class PasswordWrapper:
             logger.error(f"KEM encapsulation failed: {e}")
             raise PasswordWrapperError(f"Failed to encapsulate: {e}")
 
-    def decapsulate(self, encapsulated_key: bytes, recipient_private_key: bytes) -> bytes:
+    def decapsulate(
+        self, encapsulated_key: bytes, recipient_private_key: bytes
+    ) -> bytes:
         """
         Perform KEM decapsulation to recover shared secret.
 
@@ -161,10 +165,14 @@ class PasswordWrapper:
 
         try:
             # Use PQCipher's decapsulate_only method
-            shared_secret = self.cipher.decapsulate_only(encapsulated_key, recipient_private_key)
+            shared_secret = self.cipher.decapsulate_only(
+                encapsulated_key, recipient_private_key
+            )
 
             if not self.quiet:
-                logger.debug(f"KEM decapsulation: shared_secret={len(shared_secret)} bytes")
+                logger.debug(
+                    f"KEM decapsulation: shared_secret={len(shared_secret)} bytes"
+                )
 
             return shared_secret
 
@@ -204,8 +212,8 @@ class PasswordWrapper:
 
         try:
             # Derive 32-byte key from shared secret using HKDF
-            from cryptography.hazmat.primitives.kdf.hkdf import HKDF
             from cryptography.hazmat.primitives import hashes as crypto_hashes
+            from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
             hkdf = HKDF(
                 algorithm=crypto_hashes.SHA256(),
@@ -285,8 +293,8 @@ class PasswordWrapper:
             ciphertext_with_tag = encrypted_password[12:]
 
             # Try HKDF-based derivation first (v2), fall back to SHA-256 (v1 legacy)
-            from cryptography.hazmat.primitives.kdf.hkdf import HKDF
             from cryptography.hazmat.primitives import hashes as crypto_hashes
+            from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
             hkdf = HKDF(
                 algorithm=crypto_hashes.SHA256(),
@@ -326,7 +334,9 @@ class PasswordWrapper:
         except Exception:
             # Don't leak information about why decryption failed
             logger.error("Password unwrapping failed (invalid key or corrupted data)")
-            raise PasswordWrapperError("Failed to unwrap password: authentication failed")
+            raise PasswordWrapperError(
+                "Failed to unwrap password: authentication failed"
+            )
 
         finally:
             # Secure cleanup
@@ -422,7 +432,9 @@ class MetadataCanonicalizer:
             }
         elif isinstance(obj, list):
             # Recursively copy list elements
-            return [MetadataCanonicalizer._deep_copy_without_signature(item) for item in obj]
+            return [
+                MetadataCanonicalizer._deep_copy_without_signature(item) for item in obj
+            ]
         else:
             # Primitives (str, int, float, bool, None) are copied by value
             return obj
@@ -554,7 +566,9 @@ if __name__ == "__main__":
     cipher = PQCipher("ML-KEM-768")
     recipient_pubkey, recipient_privkey = cipher.generate_keypair()
 
-    eprint(f"Recipient keys: pub={len(recipient_pubkey)} bytes, priv={len(recipient_privkey)} bytes")
+    eprint(
+        f"Recipient keys: pub={len(recipient_pubkey)} bytes, priv={len(recipient_privkey)} bytes"
+    )
 
     # Generate random password
     password = secrets.token_bytes(32)
@@ -565,17 +579,23 @@ if __name__ == "__main__":
         encapsulated_key, shared_secret_raw = wrapper.encapsulate(recipient_pubkey)
 
         with SecureBytes(shared_secret_raw) as shared_secret:
-            encrypted_password = wrapper.wrap_password(bytes(secure_password), bytes(shared_secret))
+            encrypted_password = wrapper.wrap_password(
+                bytes(secure_password), bytes(shared_secret)
+            )
 
     eprint(f"Encapsulated key: {len(encapsulated_key)} bytes")
     eprint(f"Encrypted password: {len(encrypted_password)} bytes")
 
     # Unwrap password
     with CryptoKey(key_data=recipient_privkey) as priv_crypto:
-        shared_secret_raw2 = wrapper.decapsulate(encapsulated_key, priv_crypto.get_bytes())
+        shared_secret_raw2 = wrapper.decapsulate(
+            encapsulated_key, priv_crypto.get_bytes()
+        )
 
         with SecureBytes(shared_secret_raw2) as shared_secret2:
-            password_recovered = wrapper.unwrap_password(encrypted_password, bytes(shared_secret2))
+            password_recovered = wrapper.unwrap_password(
+                encrypted_password, bytes(shared_secret2)
+            )
 
     # Verify (wrap recovered password in SecureBytes for secure cleanup)
     with SecureBytes(password_recovered) as recovered:

@@ -40,7 +40,10 @@ def convert_ml_kem_to_kyber(algorithm_name: str) -> str:
         return algorithm_name
 
     # Convert ML-KEM-hybrid to Kyber-hybrid for CLI
-    if algorithm_name.lower().startswith("ml-kem-") and "-hybrid" in algorithm_name.lower():
+    if (
+        algorithm_name.lower().startswith("ml-kem-")
+        and "-hybrid" in algorithm_name.lower()
+    ):
         security_level = _get_security_level(algorithm_name)
         if security_level:
             return f"kyber{security_level}-hybrid"
@@ -82,7 +85,9 @@ def apply_patches():
             if original_ml_kem_algorithm:
                 import os
 
-                os.environ["OPENSSL_ENCRYPT_ORIGINAL_MLKEM_ALGORITHM"] = original_ml_kem_algorithm
+                os.environ["OPENSSL_ENCRYPT_ORIGINAL_MLKEM_ALGORITHM"] = (
+                    original_ml_kem_algorithm
+                )
 
             # Call the original main function
             return original_main()

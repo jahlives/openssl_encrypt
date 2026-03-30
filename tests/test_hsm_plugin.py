@@ -18,13 +18,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import pytest
 
 try:
-    from openssl_encrypt.modules.plugin_system import (
-        HSMPlugin,
-        PluginCapability,
-        PluginResult,
-        PluginSecurityContext,
-        PluginType,
-    )
+    from openssl_encrypt.modules.plugin_system import (HSMPlugin,
+                                                       PluginCapability,
+                                                       PluginResult,
+                                                       PluginSecurityContext,
+                                                       PluginType)
 except ImportError:
     pytest.skip("Plugin system not available", allow_module_level=True)
 
@@ -33,7 +31,9 @@ class MockYubikeyHSMPlugin(HSMPlugin):
     """Mock Yubikey plugin for testing without hardware."""
 
     def __init__(self):
-        super().__init__(plugin_id="mock_yubikey", name="Mock Yubikey HSM", version="1.0.0")
+        super().__init__(
+            plugin_id="mock_yubikey", name="Mock Yubikey HSM", version="1.0.0"
+        )
 
     def get_required_capabilities(self):
         return {PluginCapability.ACCESS_CONFIG}
@@ -195,7 +195,8 @@ class TestRealYubikey:
     def test_yubikey_challenge_response_auto_detect(self):
         """Test actual Yubikey Challenge-Response with auto-detection."""
         try:
-            from openssl_encrypt.plugins.hsm.yubikey_challenge_response import YubikeyHSMPlugin
+            from openssl_encrypt.plugins.hsm.yubikey_challenge_response import \
+                YubikeyHSMPlugin
         except ImportError:
             pytest.skip("Yubikey plugin not available")
 
@@ -216,7 +217,8 @@ class TestRealYubikey:
     def test_yubikey_challenge_response_slot2(self):
         """Test actual Yubikey Challenge-Response with explicit slot 2."""
         try:
-            from openssl_encrypt.plugins.hsm.yubikey_challenge_response import YubikeyHSMPlugin
+            from openssl_encrypt.plugins.hsm.yubikey_challenge_response import \
+                YubikeyHSMPlugin
         except ImportError:
             pytest.skip("Yubikey plugin not available")
 
@@ -234,12 +236,15 @@ class TestRealYubikey:
         assert "hsm_pepper" in result.data
         assert result.data.get("slot") == 2
         assert len(result.data["hsm_pepper"]) == 20  # HMAC-SHA1 = 20 bytes
-        print(f"\n✅ Slot 2 test successful, pepper length: {len(result.data['hsm_pepper'])} bytes")
+        print(
+            f"\n✅ Slot 2 test successful, pepper length: {len(result.data['hsm_pepper'])} bytes"
+        )
 
     def test_yubikey_deterministic_pepper(self):
         """Test that same salt produces same pepper on real Yubikey."""
         try:
-            from openssl_encrypt.plugins.hsm.yubikey_challenge_response import YubikeyHSMPlugin
+            from openssl_encrypt.plugins.hsm.yubikey_challenge_response import \
+                YubikeyHSMPlugin
         except ImportError:
             pytest.skip("Yubikey plugin not available")
 

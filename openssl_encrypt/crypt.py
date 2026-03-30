@@ -8,7 +8,6 @@ modules and providing a simple interface for the CLI.
 
 import argparse
 import logging
-
 # Import the CLI module to execute the main function
 import os
 import sys

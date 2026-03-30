@@ -37,6 +37,7 @@ except ImportError:
     # Dummy Image class so type annotations and isinstance() don't raise NameError
     class _DummyImage:
         """Placeholder when PIL is not installed."""
+
         Image = type(None)
 
     Image = _DummyImage  # type: ignore[misc,assignment]
@@ -48,7 +49,8 @@ try:
 except ImportError:
     # Fallback for standalone testing
     from openssl_encrypt.modules.crypt_errors import KeystoreError
-    from openssl_encrypt.modules.secure_memory import SecureBytes, secure_memzero
+    from openssl_encrypt.modules.secure_memory import (SecureBytes,
+                                                       secure_memzero)
 
 # Set up module logger
 logger = logging.getLogger(__name__)
@@ -78,7 +80,9 @@ class QRKeyDistribution:
     # QR Code configuration
     MAX_SINGLE_QR_SIZE = 2048  # Max bytes for single QR (Version 40)
     MAX_QR_DATA_SIZE = 2953  # Theoretical max for Version 40 QR
-    QR_ERROR_CORRECTION = qrcode.constants.ERROR_CORRECT_M if QR_AVAILABLE else 0  # 15% error correction
+    QR_ERROR_CORRECTION = (
+        qrcode.constants.ERROR_CORRECT_M if QR_AVAILABLE else 0
+    )  # 15% error correction
 
     # Protocol constants
     PROTOCOL_VERSION = "1.0"
@@ -95,7 +99,9 @@ class QRKeyDistribution:
             border: QR code border size
         """
         if not QR_AVAILABLE:
-            raise QRKeyError("QR code dependencies not available. Install: pip install qrcode[pil]")
+            raise QRKeyError(
+                "QR code dependencies not available. Install: pip install qrcode[pil]"
+            )
 
         self.error_correction = error_correction or self.QR_ERROR_CORRECTION
         self.box_size = box_size
@@ -132,10 +138,15 @@ class QRKeyDistribution:
 
         try:
             # Prepare key data with metadata
-            key_payload = self._prepare_key_payload(secure_key_data, key_name, compression)
+            key_payload = self._prepare_key_payload(
+                secure_key_data, key_name, compression
+            )
 
             # Determine if we need multi-QR
-            if len(key_payload) <= self.MAX_SINGLE_QR_SIZE or format_type == QRKeyFormat.V1_SINGLE:
+            if (
+                len(key_payload) <= self.MAX_SINGLE_QR_SIZE
+                or format_type == QRKeyFormat.V1_SINGLE
+            ):
                 if (
                     len(key_payload) > self.MAX_SINGLE_QR_SIZE
                     and format_type == QRKeyFormat.V1_SINGLE
@@ -218,7 +229,9 @@ class QRKeyDistribution:
             }
 
             # JSON encode
-            json_payload = json.dumps(payload_data, separators=(",", ":"))  # Compact JSON
+            json_payload = json.dumps(
+                payload_data, separators=(",", ":")
+            )  # Compact JSON
             return json_payload.encode("utf-8")
 
         except Exception as e:
@@ -243,7 +256,9 @@ class QRKeyDistribution:
             # Generate image
             qr_image = qr.make_image(fill_color="black", back_color="white")
 
-            logger.info(f"Created single QR code (version {qr.version}, {len(qr_content)} chars)")
+            logger.info(
+                f"Created single QR code (version {qr.version}, {len(qr_content)} chars)"
+            )
             return qr_image
 
         except Exception as e:
@@ -258,12 +273,15 @@ class QRKeyDistribution:
 
             # Split payload into chunks
             chunks = [
-                payload_data[i : i + chunk_size] for i in range(0, len(payload_data), chunk_size)
+                payload_data[i : i + chunk_size]
+                for i in range(0, len(payload_data), chunk_size)
             ]
             total_chunks = len(chunks)
 
             if total_chunks > 99:
-                raise QRKeyError(f"Key too large, would require {total_chunks} QR codes (max 99)")
+                raise QRKeyError(
+                    f"Key too large, would require {total_chunks} QR codes (max 99)"
+                )
 
             # Create overall checksum
             overall_checksum = hashlib.sha256(payload_data).hexdigest()[:16]
@@ -297,7 +315,9 @@ class QRKeyDistribution:
                 qr_image = qr.make_image(fill_color="black", back_color="white")
                 qr_images.append(qr_image)
 
-                logger.debug(f"Created multi-QR part {i}/{total_chunks} (version {qr.version})")
+                logger.debug(
+                    f"Created multi-QR part {i}/{total_chunks} (version {qr.version})"
+                )
 
             logger.info(f"Created {total_chunks} QR codes for large key '{key_name}'")
             return qr_images
@@ -335,7 +355,9 @@ class QRKeyDistribution:
             return qr_data
 
         except ImportError:
-            raise QRKeyError("QR code reading requires pyzbar. Install: pip install pyzbar")
+            raise QRKeyError(
+                "QR code reading requires pyzbar. Install: pip install pyzbar"
+            )
         except Exception as e:
             raise QRKeyError(f"Failed to decode QR image: {e}")
 
@@ -369,7 +391,9 @@ class QRKeyDistribution:
                 key_data = key_content
 
             # Verify checksum
-            expected_checksum = base64.b64decode(payload.get("checksum", "").encode("ascii"))
+            expected_checksum = base64.b64decode(
+                payload.get("checksum", "").encode("ascii")
+            )
             actual_checksum = hashlib.sha256(key_data).digest()[: self.CHECKSUM_LENGTH]
 
             if expected_checksum != actual_checksum:
@@ -381,7 +405,9 @@ class QRKeyDistribution:
                     f"Key size mismatch: expected {original_size}, got {len(key_data)}"
                 )
 
-            logger.info(f"Successfully parsed single QR key '{key_name}' ({len(key_data)} bytes)")
+            logger.info(
+                f"Successfully parsed single QR key '{key_name}' ({len(key_data)} bytes)"
+            )
             return key_data, key_name
 
         except json.JSONDecodeError as e:
@@ -405,14 +431,18 @@ class QRKeyDistribution:
 
                 # Validate header
                 if part_data.get("header") != f"{self.MAGIC_HEADER}_multi":
-                    raise QRKeyError(f"Invalid multi-QR header: {part_data.get('header')}")
+                    raise QRKeyError(
+                        f"Invalid multi-QR header: {part_data.get('header')}"
+                    )
 
                 # Extract part info
                 part_num = part_data.get("part")
                 part_total = part_data.get("total")
                 part_key_name = part_data.get("key_name")
                 part_checksum = part_data.get("overall_checksum")
-                part_content = base64.b64decode(part_data.get("data", "").encode("ascii"))
+                part_content = base64.b64decode(
+                    part_data.get("data", "").encode("ascii")
+                )
 
                 # Validate consistency
                 if key_name is None:
@@ -421,9 +451,13 @@ class QRKeyDistribution:
                     overall_checksum = part_checksum
                 else:
                     if key_name != part_key_name:
-                        raise QRKeyError(f"Key name mismatch: '{key_name}' vs '{part_key_name}'")
+                        raise QRKeyError(
+                            f"Key name mismatch: '{key_name}' vs '{part_key_name}'"
+                        )
                     if total_parts != part_total:
-                        raise QRKeyError(f"Total parts mismatch: {total_parts} vs {part_total}")
+                        raise QRKeyError(
+                            f"Total parts mismatch: {total_parts} vs {part_total}"
+                        )
                     if overall_checksum != part_checksum:
                         raise QRKeyError("Overall checksum mismatch between parts")
 

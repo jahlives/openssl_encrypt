@@ -10,7 +10,8 @@ from dataclasses import dataclass
 from enum import Enum, auto
 from typing import List, Optional
 
-from .registry.cipher_families import are_related_families, get_design_type, get_family_name
+from .registry.cipher_families import (are_related_families, get_design_type,
+                                       get_family_name)
 
 
 class DiversityWarningLevel(Enum):
@@ -75,9 +76,11 @@ class CascadeDiversityValidator:
         if self.strict:
             warnings = [
                 DiversityWarning(
-                    level=DiversityWarningLevel.ERROR
-                    if w.level == DiversityWarningLevel.WARNING
-                    else w.level,
+                    level=(
+                        DiversityWarningLevel.ERROR
+                        if w.level == DiversityWarningLevel.WARNING
+                        else w.level
+                    ),
                     message=w.message,
                     ciphers_involved=w.ciphers_involved,
                     suggestion=w.suggestion,
@@ -131,7 +134,9 @@ class CascadeDiversityValidator:
 
         return warnings
 
-    def _check_related_families(self, cipher_names: List[str]) -> List[DiversityWarning]:
+    def _check_related_families(
+        self, cipher_names: List[str]
+    ) -> List[DiversityWarning]:
         """
         Check if ciphers are from related families.
 
@@ -152,8 +157,12 @@ class CascadeDiversityValidator:
             for family2 in families[i + 1 :]:
                 if are_related_families(family1, family2):
                     # Find which ciphers belong to these families
-                    ciphers1 = [c for c in cipher_names if get_family_name(c) == family1]
-                    ciphers2 = [c for c in cipher_names if get_family_name(c) == family2]
+                    ciphers1 = [
+                        c for c in cipher_names if get_family_name(c) == family1
+                    ]
+                    ciphers2 = [
+                        c for c in cipher_names if get_family_name(c) == family2
+                    ]
 
                     warnings.append(
                         DiversityWarning(
@@ -172,7 +181,9 @@ class CascadeDiversityValidator:
 
         return warnings
 
-    def _check_design_diversity(self, cipher_names: List[str]) -> List[DiversityWarning]:
+    def _check_design_diversity(
+        self, cipher_names: List[str]
+    ) -> List[DiversityWarning]:
         """
         Check if cascade has design-level diversity.
 

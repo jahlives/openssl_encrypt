@@ -15,17 +15,15 @@ from typing import Any, Optional, Union
 
 # Import from local modules
 from .crypt_errors import add_timing_jitter
-from .secure_ops_core import (
-    constant_time_bytes_eq,
-    constant_time_compare_core,
-    constant_time_mac_verify,
-    is_zeroed_constant_time,
-    secure_value_wipe,
-)
+from .secure_ops_core import (constant_time_bytes_eq,
+                              constant_time_compare_core,
+                              constant_time_mac_verify,
+                              is_zeroed_constant_time, secure_value_wipe)
 
 
 def constant_time_compare(
-    a: Union[bytes, bytearray, memoryview, str], b: Union[bytes, bytearray, memoryview, str]
+    a: Union[bytes, bytearray, memoryview, str],
+    b: Union[bytes, bytearray, memoryview, str],
 ) -> bool:
     """
     Perform a constant-time comparison of two byte sequences.
@@ -142,7 +140,9 @@ def constant_time_pkcs7_unpad(padded_data: bytes, block_size: int = 16) -> tuple
                 if idx >= 0 and idx < data_len:
                     # XOR will be non-zero if bytes don't match
                     # Use logical OR to accumulate any mismatches
-                    byte_mismatch = padded_data[idx] ^ last_byte if is_padding_pos else 0
+                    byte_mismatch = (
+                        padded_data[idx] ^ last_byte if is_padding_pos else 0
+                    )
                     mismatch |= byte_mismatch
 
             # Update valid state - only valid if no mismatches found
@@ -241,7 +241,9 @@ class SecureContainer:
     It supports various data types and implements basic context manager protocol.
     """
 
-    def __init__(self, data: Optional[Union[bytes, bytearray, str, int, list, dict]] = None):
+    def __init__(
+        self, data: Optional[Union[bytes, bytearray, str, int, list, dict]] = None
+    ):
         """
         Initialize a secure container for sensitive data.
 

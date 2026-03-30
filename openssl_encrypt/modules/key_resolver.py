@@ -21,9 +21,9 @@ import logging
 import os
 from typing import TYPE_CHECKING, Callable, Optional
 
+from .crypt_utils import eprint
 from .identity import Identity, IdentityStore
 from .key_bundle import InvalidFingerprintError, InvalidSignatureError
-from .crypt_utils import eprint
 
 if TYPE_CHECKING:
     from ..plugins.keyserver.keyserver_plugin import KeyserverPlugin
@@ -158,11 +158,15 @@ class KeyResolver:
                     logger.debug(f"Prompting user to trust '{bundle.name}'")
                     if not self.trust_callback(bundle):
                         logger.info(f"User declined to trust '{bundle.name}'")
-                        raise TrustDeclinedError(f"User declined to trust '{identifier}'")
+                        raise TrustDeclinedError(
+                            f"User declined to trust '{identifier}'"
+                        )
 
                     # Import to local store (as contact)
                     identity = bundle.to_identity()
-                    self.identity_store.add_identity(identity, passphrase=None, overwrite=False)
+                    self.identity_store.add_identity(
+                        identity, passphrase=None, overwrite=False
+                    )
                     logger.info(
                         f"Imported '{bundle.name}' to local store from keyserver (fp: {bundle.fingerprint[:20]}...)"
                     )
@@ -243,12 +247,16 @@ def silent_trust_callback(bundle: "PublicKeyBundle") -> bool:
     Raises:
         RuntimeError: If called outside of a test environment
     """
-    if not os.environ.get("PYTEST_CURRENT_TEST") and not os.environ.get("OPENSSL_ENCRYPT_TESTING"):
+    if not os.environ.get("PYTEST_CURRENT_TEST") and not os.environ.get(
+        "OPENSSL_ENCRYPT_TESTING"
+    ):
         raise RuntimeError(
             "silent_trust_callback is only allowed in test environments. "
             "Set OPENSSL_ENCRYPT_TESTING=1 to override."
         )
-    logger.warning("Using silent trust callback - automatically trusting all keys (TESTING ONLY)")
+    logger.warning(
+        "Using silent trust callback - automatically trusting all keys (TESTING ONLY)"
+    )
     return True
 
 

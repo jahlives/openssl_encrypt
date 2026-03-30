@@ -22,8 +22,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-from ...modules.plugin_system.plugin_config import ensure_plugin_data_dir
 from ...modules.crypt_utils import eprint
+from ...modules.plugin_system.plugin_config import ensure_plugin_data_dir
 
 logger = logging.getLogger(__name__)
 
@@ -87,9 +87,13 @@ class IntegrityConfig:
         """Validate configuration after initialization."""
         # Convert string paths to Path objects
         if isinstance(self.client_cert, str):
-            self.client_cert = Path(self.client_cert).expanduser() if self.client_cert else None
+            self.client_cert = (
+                Path(self.client_cert).expanduser() if self.client_cert else None
+            )
         if isinstance(self.client_key, str):
-            self.client_key = Path(self.client_key).expanduser() if self.client_key else None
+            self.client_key = (
+                Path(self.client_key).expanduser() if self.client_key else None
+            )
         if isinstance(self.ca_cert, str):
             self.ca_cert = Path(self.ca_cert).expanduser() if self.ca_cert else None
 
@@ -120,7 +124,9 @@ class IntegrityConfig:
 
             # Warn if CA cert specified but doesn't exist
             if self.ca_cert and not self.ca_cert.exists():
-                logger.warning(f"CA certificate not found: {self.ca_cert} (server cert verification may fail)")
+                logger.warning(
+                    f"CA certificate not found: {self.ca_cert} (server cert verification may fail)"
+                )
 
     @classmethod
     def from_file(cls, config_path: Optional[Path] = None) -> "IntegrityConfig":
@@ -140,7 +146,9 @@ class IntegrityConfig:
             config_path = _get_default_config_path()
 
         if not config_path.exists():
-            logger.info(f"Integrity config not found at {config_path}, using defaults (disabled)")
+            logger.info(
+                f"Integrity config not found at {config_path}, using defaults (disabled)"
+            )
             return cls()
 
         try:
@@ -156,7 +164,9 @@ class IntegrityConfig:
                 data["ca_cert"] = Path(data["ca_cert"]).expanduser()
 
             config = cls(**data)
-            logger.info(f"Loaded integrity config from {config_path} (enabled={config.enabled})")
+            logger.info(
+                f"Loaded integrity config from {config_path} (enabled={config.enabled})"
+            )
             return config
 
         except json.JSONDecodeError as e:

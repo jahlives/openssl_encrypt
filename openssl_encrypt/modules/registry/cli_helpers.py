@@ -257,7 +257,10 @@ def validate_algorithm_name(name: str, category: str) -> Tuple[bool, str]:
 
     # Check if algorithm is available on this system
     if not registry.is_available(name):
-        return False, f"Algorithm '{name}' is not available (requires additional package)"
+        return (
+            False,
+            f"Algorithm '{name}' is not available (requires additional package)",
+        )
 
     return True, ""
 

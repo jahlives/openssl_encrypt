@@ -113,7 +113,9 @@ def mix(
 
     # Check buffer size matches space_cost parameter
     if len(buf) != space_cost:
-        raise ValueError(f"Buffer length ({len(buf)}) must match space_cost ({space_cost})")
+        raise ValueError(
+            f"Buffer length ({len(buf)}) must match space_cost ({space_cost})"
+        )
 
     # Set reasonable limits to prevent excessive resource usage
     max_delta = 100
@@ -139,7 +141,9 @@ def mix(
                         # Ensure we have at least 4 bytes for conversion
                         if len(hash_bytes) >= 4:
                             # Use only first 4 bytes for conversion to int
-                            other = int.from_bytes(hash_bytes[:4], "little") % space_cost
+                            other = (
+                                int.from_bytes(hash_bytes[:4], "little") % space_cost
+                            )
 
                             # Validate other index is in bounds
                             if 0 <= other < len(buf):
@@ -151,9 +155,13 @@ def mix(
                                     f"Generated index {other} out of bounds for buffer size {len(buf)}"
                                 )
                         else:
-                            raise ValueError("Hash function returned insufficient bytes")
+                            raise ValueError(
+                                "Hash function returned insufficient bytes"
+                            )
                     except Exception as e:
-                        raise ValueError(f"Error processing random index in mix function: {str(e)}")
+                        raise ValueError(
+                            f"Error processing random index in mix function: {str(e)}"
+                        )
             else:
                 raise IndexError(
                     f"Buffer index {s} or {s-1} out of bounds (buffer size: {len(buf)})"
@@ -183,7 +191,9 @@ def extract(buf: list[bytes]) -> bytes:
         raise IndexError(f"Buffer index {last_index} out of bounds")
 
 
-def balloon(password: str, salt: str, space_cost: int, time_cost: int, delta: int = 3) -> bytes:
+def balloon(
+    password: str, salt: str, space_cost: int, time_cost: int, delta: int = 3
+) -> bytes:
     """Main function that collects all the substeps. As
        previously mentioned, first expand, then mix, and
        finally extract. Note the result is returned as bytes,
@@ -204,7 +214,9 @@ def balloon(password: str, salt: str, space_cost: int, time_cost: int, delta: in
     return _balloon(password, salt.encode("utf-8"), space_cost, time_cost, delta)
 
 
-def _balloon(password: str, salt: bytes, space_cost: int, time_cost: int, delta: int = 3) -> bytes:
+def _balloon(
+    password: str, salt: bytes, space_cost: int, time_cost: int, delta: int = 3
+) -> bytes:
     """For internal use. Implements steps outlined in `balloon`.
 
     Args:
@@ -314,7 +326,9 @@ def balloon_m_hash(password: str, salt: str) -> str:
     time_cost = 20
     space_cost = 16
     parallel_cost = 4
-    return balloon_m(password, salt, space_cost, time_cost, parallel_cost, delta=delta).hex()
+    return balloon_m(
+        password, salt, space_cost, time_cost, parallel_cost, delta=delta
+    ).hex()
 
 
 def verify(
@@ -337,7 +351,9 @@ def verify(
     from .secure_ops import verify_mac
 
     # Compute the hash for the provided password
-    computed_hash = balloon(password, salt, space_cost, time_cost, delta).hex().encode("utf-8")
+    computed_hash = (
+        balloon(password, salt, space_cost, time_cost, delta).hex().encode("utf-8")
+    )
 
     # Convert hash to bytes if it's a string
     expected_hash = hash.encode("utf-8") if isinstance(hash, str) else hash
@@ -375,7 +391,9 @@ def verify_m(
 
     # Compute the hash for the provided password
     computed_hash = (
-        balloon_m(password, salt, space_cost, time_cost, parallel_cost, delta).hex().encode("utf-8")
+        balloon_m(password, salt, space_cost, time_cost, parallel_cost, delta)
+        .hex()
+        .encode("utf-8")
     )
 
     # Convert hash to bytes if it's a string

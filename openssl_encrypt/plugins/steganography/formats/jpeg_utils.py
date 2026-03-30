@@ -264,7 +264,9 @@ class JPEGAnalyzer:
             suitability["quality_score"] = 0.6
         else:
             suitability["quality_score"] = 0.3
-            suitability["recommendations"].append("JPEG quality too low for reliable steganography")
+            suitability["recommendations"].append(
+                "JPEG quality too low for reliable steganography"
+            )
 
         # Size assessment
         pixels = image_info.get("total_pixels", 0)
@@ -276,7 +278,9 @@ class JPEGAnalyzer:
             suitability["size_score"] = 0.6
         else:
             suitability["size_score"] = 0.3
-            suitability["recommendations"].append("Image too small for significant data hiding")
+            suitability["recommendations"].append(
+                "Image too small for significant data hiding"
+            )
 
         # Calculate overall score
         suitability["overall_score"] = (
@@ -285,11 +289,17 @@ class JPEGAnalyzer:
 
         # General recommendations
         if suitability["overall_score"] >= 0.8:
-            suitability["recommendations"].append("Excellent candidate for JPEG steganography")
+            suitability["recommendations"].append(
+                "Excellent candidate for JPEG steganography"
+            )
         elif suitability["overall_score"] >= 0.6:
-            suitability["recommendations"].append("Good candidate with minor limitations")
+            suitability["recommendations"].append(
+                "Good candidate with minor limitations"
+            )
         else:
-            suitability["recommendations"].append("Consider using different image or format")
+            suitability["recommendations"].append(
+                "Consider using different image or format"
+            )
 
         return suitability
 
@@ -461,7 +471,9 @@ class DCTUtils:
         ]
 
 
-def create_jpeg_test_image(width: int = 512, height: int = 512, quality: int = 85) -> bytes:
+def create_jpeg_test_image(
+    width: int = 512, height: int = 512, quality: int = 85
+) -> bytes:
     """
     Create a test JPEG image for steganography testing
 

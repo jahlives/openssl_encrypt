@@ -24,33 +24,18 @@ import unittest
 
 import pytest
 
-from openssl_encrypt.modules.crypt_core import (
-    EncryptionAlgorithm,
-    decrypt_file,
-    encrypt_file,
-    extract_file_metadata,
-)
-from openssl_encrypt.modules.crypt_errors import (
-    AuthenticationError,
-    DecryptionError,
-    ValidationError,
-)
+from openssl_encrypt.modules.crypt_core import (EncryptionAlgorithm,
+                                                decrypt_file, encrypt_file,
+                                                extract_file_metadata)
+from openssl_encrypt.modules.crypt_errors import (AuthenticationError,
+                                                  DecryptionError,
+                                                  ValidationError)
 from openssl_encrypt.modules.streaming import (
-    DEFAULT_CHUNK_SIZE,
-    DEFAULT_STREAMING_THRESHOLD,
-    STREAMING_MAGIC,
-    STREAMING_SUPPORTED_ALGORITHMS,
-    STREAMING_UNSUPPORTED_ALGORITHMS,
-    StreamingDecryptor,
-    StreamingEncryptor,
-    build_chunk_aad,
-    calculate_hash_streaming,
-    decrypt_chunk,
-    derive_chunk_nonce,
-    encrypt_chunk,
-    parse_size_string,
-    should_use_streaming,
-)
+    DEFAULT_CHUNK_SIZE, DEFAULT_STREAMING_THRESHOLD, STREAMING_MAGIC,
+    STREAMING_SUPPORTED_ALGORITHMS, STREAMING_UNSUPPORTED_ALGORITHMS,
+    StreamingDecryptor, StreamingEncryptor, build_chunk_aad,
+    calculate_hash_streaming, decrypt_chunk, derive_chunk_nonce, encrypt_chunk,
+    parse_size_string, should_use_streaming)
 
 # ============================================================
 # Helper functions
@@ -295,7 +280,9 @@ class TestShouldUseStreaming(unittest.TestCase):
 
     def test_below_threshold_returns_false(self):
         """Files below threshold should not use streaming."""
-        self.assertFalse(should_use_streaming(1024, "aes-gcm", threshold=10 * 1024 * 1024))
+        self.assertFalse(
+            should_use_streaming(1024, "aes-gcm", threshold=10 * 1024 * 1024)
+        )
 
     def test_above_threshold_returns_true(self):
         """Files above threshold should use streaming for supported algorithms."""
@@ -303,7 +290,9 @@ class TestShouldUseStreaming(unittest.TestCase):
 
     def test_no_streaming_flag(self):
         """no_streaming=True should always return False."""
-        self.assertFalse(should_use_streaming(100 * 1024 * 1024, "aes-gcm", no_streaming=True))
+        self.assertFalse(
+            should_use_streaming(100 * 1024 * 1024, "aes-gcm", no_streaming=True)
+        )
 
     def test_unsupported_algorithm(self):
         """Unsupported algorithms (fernet, camellia, PQC) return False."""
@@ -315,7 +304,9 @@ class TestShouldUseStreaming(unittest.TestCase):
 
     def test_in_memory_bytes_returns_false(self):
         """In-memory bytes input should not use streaming."""
-        self.assertFalse(should_use_streaming(100 * 1024 * 1024, "aes-gcm", input_is_bytes=True))
+        self.assertFalse(
+            should_use_streaming(100 * 1024 * 1024, "aes-gcm", input_is_bytes=True)
+        )
 
     def test_exact_threshold_returns_true(self):
         """File exactly at threshold should use streaming."""
@@ -375,7 +366,9 @@ class TestStreamingEncryptorDecryptor(unittest.TestCase):
 
         try:
             # Encrypt
-            enc = StreamingEncryptor(key=key, algorithm=algorithm, chunk_size=chunk_size)
+            enc = StreamingEncryptor(
+                key=key, algorithm=algorithm, chunk_size=chunk_size
+            )
             original_hash = enc.hash_file(input_path)
             chunk_count = enc.get_chunk_count(len(data))
 
@@ -491,7 +484,9 @@ class TestStreamingEncryptorDecryptor(unittest.TestCase):
         output_enc = _create_temp_file(b"")
 
         try:
-            enc = StreamingEncryptor(key=key, algorithm="aes-gcm", chunk_size=chunk_size)
+            enc = StreamingEncryptor(
+                key=key, algorithm="aes-gcm", chunk_size=chunk_size
+            )
             original_hash = enc.hash_file(input_path)
             chunk_count = enc.get_chunk_count(len(data))
 
@@ -508,7 +503,9 @@ class TestStreamingEncryptorDecryptor(unittest.TestCase):
             }
             metadata_b64 = base64.b64encode(json.dumps(metadata).encode("utf-8"))
 
-            enc.encrypt_file(input_path, output_enc, metadata_b64, chunk_count, quiet=True)
+            enc.encrypt_file(
+                input_path, output_enc, metadata_b64, chunk_count, quiet=True
+            )
 
             dec = StreamingDecryptor(
                 key=key,
@@ -542,7 +539,9 @@ class TestStreamingEncryptorDecryptor(unittest.TestCase):
         output_enc = _create_temp_file(b"")
 
         try:
-            enc = StreamingEncryptor(key=key, algorithm="aes-gcm", chunk_size=chunk_size)
+            enc = StreamingEncryptor(
+                key=key, algorithm="aes-gcm", chunk_size=chunk_size
+            )
             original_hash = enc.hash_file(input_path)
             chunk_count = enc.get_chunk_count(len(data))
 
@@ -622,8 +621,8 @@ class TestStreamingAdversarial(unittest.TestCase):
     def test_chunk_corruption(self):
         """Tampering with ciphertext of one chunk causes decryption failure."""
         data = secrets.token_bytes(3000)
-        enc_path, key, metadata_b64, enc_obj, chunk_count, original_hash = self._encrypt_to_file(
-            data
+        enc_path, key, metadata_b64, enc_obj, chunk_count, original_hash = (
+            self._encrypt_to_file(data)
         )
 
         try:
@@ -663,8 +662,8 @@ class TestStreamingAdversarial(unittest.TestCase):
     def test_trailer_hmac_corruption(self):
         """Corrupting the trailer HMAC causes verification failure."""
         data = secrets.token_bytes(3000)
-        enc_path, key, metadata_b64, enc_obj, chunk_count, original_hash = self._encrypt_to_file(
-            data
+        enc_path, key, metadata_b64, enc_obj, chunk_count, original_hash = (
+            self._encrypt_to_file(data)
         )
 
         try:
@@ -699,8 +698,8 @@ class TestStreamingAdversarial(unittest.TestCase):
     def test_chunk_truncation(self):
         """Removing the last chunk causes verification failure."""
         data = secrets.token_bytes(3000)
-        enc_path, key, metadata_b64, enc_obj, chunk_count, original_hash = self._encrypt_to_file(
-            data
+        enc_path, key, metadata_b64, enc_obj, chunk_count, original_hash = (
+            self._encrypt_to_file(data)
         )
 
         try:
@@ -744,8 +743,8 @@ class TestStreamingAdversarial(unittest.TestCase):
     def test_aad_metadata_tampering(self):
         """Modifying metadata post-encryption causes all chunks to fail."""
         data = secrets.token_bytes(3000)
-        enc_path, key, metadata_b64, enc_obj, chunk_count, original_hash = self._encrypt_to_file(
-            data
+        enc_path, key, metadata_b64, enc_obj, chunk_count, original_hash = (
+            self._encrypt_to_file(data)
         )
 
         try:
@@ -756,12 +755,16 @@ class TestStreamingAdversarial(unittest.TestCase):
                     "enabled": True,
                     "chunk_size": 1024,
                     "chunk_count": chunk_count,
-                    "nonce_prefix": base64.b64encode(enc_obj.nonce_prefix).decode("ascii"),
+                    "nonce_prefix": base64.b64encode(enc_obj.nonce_prefix).decode(
+                        "ascii"
+                    ),
                 },
                 "hashes": {"original_hash": "tampered_hash_value"},
                 "encryption": {"cascade": False, "algorithm": "aes-gcm"},
             }
-            tampered_b64 = base64.b64encode(json.dumps(tampered_metadata).encode("utf-8"))
+            tampered_b64 = base64.b64encode(
+                json.dumps(tampered_metadata).encode("utf-8")
+            )
 
             dec = StreamingDecryptor(
                 key=key,
@@ -1148,7 +1151,9 @@ class TestStreamingHMACKeyDerivation(unittest.TestCase):
     def test_v12_hmac_key_differs_from_legacy(self):
         """v12+ HMAC key should differ from legacy."""
         enc_legacy = StreamingEncryptor(key=self.key, algorithm="aes-gcm")
-        enc_v12 = StreamingEncryptor(key=self.key, algorithm="aes-gcm", format_version=12)
+        enc_v12 = StreamingEncryptor(
+            key=self.key, algorithm="aes-gcm", format_version=12
+        )
 
         legacy_hmac_key = enc_legacy._derive_hmac_key()
         v12_hmac_key = enc_v12._derive_hmac_key()
@@ -1186,8 +1191,10 @@ class TestStreamingHMACKeyDerivation(unittest.TestCase):
         """Decryptor and encryptor should derive the same HMAC key."""
         enc = StreamingEncryptor(key=self.key, algorithm="aes-gcm", format_version=12)
         dec = StreamingDecryptor(
-            key=self.key, algorithm="aes-gcm", nonce_prefix=enc.nonce_prefix,
-            format_version=12
+            key=self.key,
+            algorithm="aes-gcm",
+            nonce_prefix=enc.nonce_prefix,
+            format_version=12,
         )
 
         self.assertEqual(enc._derive_hmac_key(), dec._derive_hmac_key())

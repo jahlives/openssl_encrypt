@@ -128,7 +128,8 @@ class SteganographyBase(abc.ABC):
 
         if len(cover_data) < min_size:
             raise CoverMediaError(
-                f"Cover data too small: {len(cover_data)} bytes " f"(minimum: {min_size} bytes)"
+                f"Cover data too small: {len(cover_data)} bytes "
+                f"(minimum: {min_size} bytes)"
             )
 
     def _generate_security_metadata(self) -> Dict[str, Any]:

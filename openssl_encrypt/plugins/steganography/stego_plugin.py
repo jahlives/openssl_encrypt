@@ -9,13 +9,10 @@ within various media formats (images and audio files).
 import logging
 from typing import Any, Dict, Optional, Set
 
-from ...modules.plugin_system.plugin_base import (
-    BasePlugin,
-    PluginCapability,
-    PluginResult,
-    PluginSecurityContext,
-    PluginType,
-)
+from ...modules.plugin_system.plugin_base import (BasePlugin, PluginCapability,
+                                                  PluginResult,
+                                                  PluginSecurityContext,
+                                                  PluginType)
 from .core import CapacityError, CoverMediaError, SteganographyError
 from .transport import SteganographyTransport
 
@@ -39,7 +36,9 @@ class SteganographyPlugin(BasePlugin):
     """
 
     def __init__(self):
-        super().__init__(plugin_id="steganography", name="Steganography", version="1.0.0")
+        super().__init__(
+            plugin_id="steganography", name="Steganography", version="1.0.0"
+        )
         self._transport = None
 
     def get_plugin_type(self) -> PluginType:
@@ -125,7 +124,9 @@ class SteganographyPlugin(BasePlugin):
 
         functions = self.get_utility_functions()
         if function_name not in functions:
-            return PluginResult.error_result(f"Unknown utility function: {function_name}")
+            return PluginResult.error_result(
+                f"Unknown utility function: {function_name}"
+            )
 
         try:
             function = functions[function_name]
@@ -167,7 +168,10 @@ class SteganographyPlugin(BasePlugin):
 
             # Create transport with specified options
             transport = SteganographyTransport(
-                method=method, bits_per_channel=bits_per_channel, password=password, **options
+                method=method,
+                bits_per_channel=bits_per_channel,
+                password=password,
+                **options,
             )
 
             # Hide data in media
@@ -215,7 +219,10 @@ class SteganographyPlugin(BasePlugin):
 
             # Create transport with specified options
             transport = SteganographyTransport(
-                method=method, bits_per_channel=bits_per_channel, password=password, **options
+                method=method,
+                bits_per_channel=bits_per_channel,
+                password=password,
+                **options,
             )
 
             # Extract data from media
@@ -237,7 +244,9 @@ class SteganographyPlugin(BasePlugin):
             self.logger.error(f"Unexpected error extracting data: {e}")
             return PluginResult.error_result(f"Extract operation failed: {e}")
 
-    def analyze_media(self, media_path: str, method: str = "lsb", **options) -> PluginResult:
+    def analyze_media(
+        self, media_path: str, method: str = "lsb", **options
+    ) -> PluginResult:
         """
         Analyze capacity and security of cover media.
 
@@ -257,7 +266,10 @@ class SteganographyPlugin(BasePlugin):
             password = options.get("password", None)
 
             transport = SteganographyTransport(
-                method=method, bits_per_channel=bits_per_channel, password=password, **options
+                method=method,
+                bits_per_channel=bits_per_channel,
+                password=password,
+                **options,
             )
 
             # Get capacity
@@ -281,7 +293,9 @@ class SteganographyPlugin(BasePlugin):
             self.logger.error(f"Unexpected error analyzing media: {e}")
             return PluginResult.error_result(f"Analysis failed: {e}")
 
-    def get_capacity(self, media_path: str, method: str = "lsb", **options) -> PluginResult:
+    def get_capacity(
+        self, media_path: str, method: str = "lsb", **options
+    ) -> PluginResult:
         """
         Get embedding capacity for a media file.
 
@@ -301,7 +315,10 @@ class SteganographyPlugin(BasePlugin):
             password = options.get("password", None)
 
             transport = SteganographyTransport(
-                method=method, bits_per_channel=bits_per_channel, password=password, **options
+                method=method,
+                bits_per_channel=bits_per_channel,
+                password=password,
+                **options,
             )
 
             # Get capacity

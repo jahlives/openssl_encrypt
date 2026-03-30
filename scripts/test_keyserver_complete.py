@@ -26,8 +26,8 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from openssl_encrypt.modules.identity import Identity
 from openssl_encrypt.modules.key_bundle import PublicKeyBundle
-from openssl_encrypt.plugins.keyserver.keyserver_plugin import KeyserverPlugin
 from openssl_encrypt.plugins.keyserver.config import KeyserverConfig
+from openssl_encrypt.plugins.keyserver.keyserver_plugin import KeyserverPlugin
 
 
 def print_section(title: str):
@@ -101,7 +101,9 @@ def test_keyserver_complete():
         bundle = PublicKeyBundle.from_identity(identity)
         print(f"✓ Bundle created")
         print(f"  Fingerprint: {bundle.fingerprint}")
-        print(f"  Algorithms: {bundle.encryption_algorithm} / {bundle.signing_algorithm}")
+        print(
+            f"  Algorithms: {bundle.encryption_algorithm} / {bundle.signing_algorithm}"
+        )
 
     except Exception as e:
         print(f"✗ Failed to create bundle: {e}")
@@ -136,7 +138,9 @@ def test_keyserver_complete():
     try:
         print(f"Uploading '{bundle.name}' to {config.servers[0]}...")
         signing_private_key_bytes = identity.signing_private_key.get_bytes()
-        success = plugin.upload_key(bundle, signing_private_key_bytes=signing_private_key_bytes)
+        success = plugin.upload_key(
+            bundle, signing_private_key_bytes=signing_private_key_bytes
+        )
 
         if success:
             print("✓ Upload successful")
@@ -150,6 +154,7 @@ def test_keyserver_complete():
     except Exception as e:
         print(f"✗ Upload error: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
@@ -254,8 +259,10 @@ def test_keyserver_complete():
         print(f"  Expired entries: {stats['expired_entries']}")
         print(f"  Total accesses: {stats['total_accesses']}")
         if stats.get("most_accessed"):
-            print(f"  Most accessed: {stats['most_accessed']['name']} "
-                  f"({stats['most_accessed']['count']} times)")
+            print(
+                f"  Most accessed: {stats['most_accessed']['name']} "
+                f"({stats['most_accessed']['count']} times)"
+            )
 
     except Exception as e:
         print(f"✗ Failed to get cache statistics: {e}")
@@ -295,6 +302,7 @@ def main():
     except Exception as e:
         print(f"\n\n✗ FATAL ERROR: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)
 

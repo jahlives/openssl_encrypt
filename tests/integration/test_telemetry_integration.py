@@ -21,13 +21,12 @@ from unittest.mock import MagicMock, Mock, patch
 import pytest
 
 # Import telemetry components
-from openssl_encrypt.modules.telemetry_filter import TelemetryDataFilter, TelemetryEvent
+from openssl_encrypt.modules.telemetry_filter import (TelemetryDataFilter,
+                                                      TelemetryEvent)
 from openssl_encrypt.plugins.telemetry.api_key_manager import APIKeyManager
 from openssl_encrypt.plugins.telemetry.local_buffer import LocalBuffer
 from openssl_encrypt.plugins.telemetry.telemetry_plugin import (
-    OpenSSLEncryptTelemetryPlugin,
-    TelemetryPluginConfig,
-)
+    OpenSSLEncryptTelemetryPlugin, TelemetryPluginConfig)
 from openssl_encrypt.plugins.telemetry.uploader import TelemetryUploader
 
 
@@ -570,7 +569,11 @@ class TestEndToEndTelemetryFlow:
             },
             "encryption": {
                 "cascade": True,
-                "cipher_chain": ["aes-256-gcm", "chacha20-poly1305", "xchacha20-poly1305"],
+                "cipher_chain": [
+                    "aes-256-gcm",
+                    "chacha20-poly1305",
+                    "xchacha20-poly1305",
+                ],
                 "hkdf_hash": "sha256",
             },
             "hashes": {},

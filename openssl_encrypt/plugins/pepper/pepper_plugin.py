@@ -25,7 +25,8 @@ from typing import Dict, List, Optional
 
 import requests
 
-from ...modules.plugin_system.plugin_base import BasePlugin, PluginCapability, PluginType
+from ...modules.plugin_system.plugin_base import (BasePlugin, PluginCapability,
+                                                  PluginType)
 from .config import PepperConfig
 
 logger = logging.getLogger(__name__)
@@ -165,7 +166,9 @@ class PepperPlugin(BasePlugin):
             PepperError: If certificates not configured
         """
         if not self.config.client_cert or not self.config.client_key:
-            raise PepperError("Client certificate and key must be configured for mTLS authentication")
+            raise PepperError(
+                "Client certificate and key must be configured for mTLS authentication"
+            )
 
         session = requests.Session()
 
@@ -179,7 +182,10 @@ class PepperPlugin(BasePlugin):
             session.verify = True  # Use system CA bundle
 
         # Configure timeouts
-        session.timeout = (self.config.connect_timeout_seconds, self.config.read_timeout_seconds)
+        session.timeout = (
+            self.config.connect_timeout_seconds,
+            self.config.read_timeout_seconds,
+        )
 
         return session
 
@@ -225,7 +231,10 @@ class PepperPlugin(BasePlugin):
                 url=url,
                 json=json_data,
                 headers=headers,
-                timeout=(self.config.connect_timeout_seconds, self.config.read_timeout_seconds),
+                timeout=(
+                    self.config.connect_timeout_seconds,
+                    self.config.read_timeout_seconds,
+                ),
             )
 
             # Handle authentication errors
@@ -240,7 +249,9 @@ class PepperPlugin(BasePlugin):
 
             # Handle other errors
             if response.status_code >= 400:
-                error_detail = response.json().get("detail", f"HTTP {response.status_code}")
+                error_detail = response.json().get(
+                    "detail", f"HTTP {response.status_code}"
+                )
                 raise PepperError(f"Server error: {error_detail}")
 
             return response.json()
@@ -365,7 +376,9 @@ class PepperPlugin(BasePlugin):
 
     # Pepper Storage Operations
 
-    def store_pepper(self, name: str, pepper_encrypted: bytes, description: str = "") -> Dict:
+    def store_pepper(
+        self, name: str, pepper_encrypted: bytes, description: str = ""
+    ) -> Dict:
         """
         Store encrypted pepper on server.
 
@@ -423,7 +436,9 @@ class PepperPlugin(BasePlugin):
         response = self._make_request("GET", "/peppers")
         return response["peppers"]
 
-    def update_pepper(self, name: str, pepper_encrypted: bytes, description: Optional[str] = None) -> Dict:
+    def update_pepper(
+        self, name: str, pepper_encrypted: bytes, description: Optional[str] = None
+    ) -> Dict:
         """
         Update existing pepper.
 
@@ -474,7 +489,9 @@ class PepperPlugin(BasePlugin):
         """
         return self._make_request("GET", "/deadman")
 
-    def configure_deadman(self, interval: str, grace_period: str, enabled: bool = True) -> Dict:
+    def configure_deadman(
+        self, interval: str, grace_period: str, enabled: bool = True
+    ) -> Dict:
         """
         Configure dead man's switch.
 

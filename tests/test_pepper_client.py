@@ -11,13 +11,9 @@ from pathlib import Path
 # Add openssl_encrypt to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from openssl_encrypt.plugins.pepper import (
-    PepperPlugin,
-    PepperConfig,
-    PepperError,
-    NetworkError,
-    AuthenticationError,
-)
+from openssl_encrypt.plugins.pepper import (AuthenticationError, NetworkError,
+                                            PepperConfig, PepperError,
+                                            PepperPlugin)
 
 
 def test_pepper_client():
@@ -35,7 +31,8 @@ def test_pepper_client():
     # Try to determine config path
     try:
         import os
-        home = os.environ.get('HOME') or os.environ.get('USERPROFILE')
+
+        home = os.environ.get("HOME") or os.environ.get("USERPROFILE")
         if home:
             config_path = Path(home) / ".openssl_encrypt" / "plugins" / "pepper.json"
         else:
@@ -138,11 +135,12 @@ def test_pepper_client():
     print("-" * 70)
     print("Available methods:")
     methods = [
-        attr for attr in dir(plugin)
-        if not attr.startswith('_') and callable(getattr(plugin, attr))
+        attr
+        for attr in dir(plugin)
+        if not attr.startswith("_") and callable(getattr(plugin, attr))
     ]
     for method in sorted(methods):
-        if not method.startswith('get_'):  # Filter out base class methods
+        if not method.startswith("get_"):  # Filter out base class methods
             continue
         print(f"  - {method}()")
     print()
@@ -151,7 +149,8 @@ def test_pepper_client():
     print("=" * 70)
     print("Usage Example (with proper mTLS setup):")
     print("=" * 70)
-    print("""
+    print(
+        """
 # 1. Get profile (auto-registers)
 profile = plugin.get_profile()
 
@@ -177,7 +176,8 @@ plugin.configure_deadman(interval="7d", grace_period="24h")
 
 # 7. Check in
 plugin.checkin()
-""")
+"""
+    )
 
     return True
 

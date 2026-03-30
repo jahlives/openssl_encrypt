@@ -16,7 +16,8 @@ from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from ..crypt_core import decrypt_file, encrypt_file
-from .base_test import BaseSecurityTest, TestConfig, TestResult, TestResultLevel
+from .base_test import (BaseSecurityTest, TestConfig, TestResult,
+                        TestResultLevel)
 
 
 @dataclass
@@ -63,7 +64,9 @@ class PerformanceAnalyzer:
 
     @staticmethod
     def detect_regression(
-        current_result: BenchmarkResult, baseline: BaselineData, regression_threshold: float = 20.0
+        current_result: BenchmarkResult,
+        baseline: BaselineData,
+        regression_threshold: float = 20.0,
     ) -> Tuple[bool, float]:
         """
         Detect performance regression compared to baseline.
@@ -82,7 +85,9 @@ class PerformanceAnalyzer:
         current_throughput = current_result.throughput_mbps
         baseline_throughput = baseline.baseline_throughput
 
-        percentage_change = ((current_throughput - baseline_throughput) / baseline_throughput) * 100
+        percentage_change = (
+            (current_throughput - baseline_throughput) / baseline_throughput
+        ) * 100
 
         # Negative percentage change indicates performance degradation
         is_regression = percentage_change < -regression_threshold
@@ -125,7 +130,8 @@ class PerformanceAnalyzer:
             "outlier_count": len(outliers),
             "outlier_percentage": (len(outliers) / len(timings)) * 100,
             "timing_consistent": cv < 15.0,  # Less than 15% variation
-            "performance_stable": len(outliers) < len(timings) * 0.2,  # Less than 20% outliers
+            "performance_stable": len(outliers)
+            < len(timings) * 0.2,  # Less than 20% outliers
         }
 
 
@@ -198,7 +204,9 @@ class BenchmarkTestSuite(BaseSecurityTest):
                 end_time = time.perf_counter()
                 timings.append(end_time - start_time)
             except Exception as e:
-                self.logger.warning(f"Operation failed during benchmark iteration {i}: {e}")
+                self.logger.warning(
+                    f"Operation failed during benchmark iteration {i}: {e}"
+                )
                 # Don't include failed operations in timing
                 continue
 
@@ -215,7 +223,9 @@ class BenchmarkTestSuite(BaseSecurityTest):
             5 * 1024 * 1024,  # 5 MB
         ]
 
-        algorithms = config.get("algorithms", ["fernet", "aes-gcm", "chacha20-poly1305"])
+        algorithms = config.get(
+            "algorithms", ["fernet", "aes-gcm", "chacha20-poly1305"]
+        )
 
         for algorithm in algorithms:
             for file_size in file_sizes:
@@ -234,7 +244,9 @@ class BenchmarkTestSuite(BaseSecurityTest):
         """Benchmark specific algorithm with specific file size."""
         try:
             # Create test file
-            input_file = os.path.join(self.temp_dir, f"benchmark_{algorithm}_{file_size}.bin")
+            input_file = os.path.join(
+                self.temp_dir, f"benchmark_{algorithm}_{file_size}.bin"
+            )
             encrypted_file = os.path.join(
                 self.temp_dir, f"benchmark_{algorithm}_{file_size}_enc.bin"
             )
@@ -260,9 +272,13 @@ class BenchmarkTestSuite(BaseSecurityTest):
             def encrypt_operation():
                 if os.path.exists(encrypted_file):
                     os.remove(encrypted_file)
-                encrypt_file(input_file, encrypted_file, password, hash_config=config_dict)
+                encrypt_file(
+                    input_file, encrypted_file, password, hash_config=config_dict
+                )
 
-            encrypt_timings = self._measure_operation_performance(encrypt_operation, iterations)
+            encrypt_timings = self._measure_operation_performance(
+                encrypt_operation, iterations
+            )
 
             if not encrypt_timings:
                 return TestResult(
@@ -277,7 +293,9 @@ class BenchmarkTestSuite(BaseSecurityTest):
                     os.remove(decrypted_file)
                 decrypt_file(encrypted_file, decrypted_file, password)
 
-            decrypt_timings = self._measure_operation_performance(decrypt_operation, iterations)
+            decrypt_timings = self._measure_operation_performance(
+                decrypt_operation, iterations
+            )
 
             if not decrypt_timings:
                 return TestResult(
@@ -383,7 +401,9 @@ class BenchmarkTestSuite(BaseSecurityTest):
         """Benchmark and compare different algorithms."""
 
         result = self.run_single_test(
-            self._algorithm_comparison_benchmark, "algorithm_comparison_benchmark", config
+            self._algorithm_comparison_benchmark,
+            "algorithm_comparison_benchmark",
+            config,
         )
         self.add_result(result)
 
@@ -403,17 +423,30 @@ class BenchmarkTestSuite(BaseSecurityTest):
             password = "comparison_password_123"
 
             for algorithm in algorithms:
-                encrypted_file = os.path.join(self.temp_dir, f"comparison_{algorithm}_enc.bin")
-                decrypted_file = os.path.join(self.temp_dir, f"comparison_{algorithm}_dec.bin")
+                encrypted_file = os.path.join(
+                    self.temp_dir, f"comparison_{algorithm}_enc.bin"
+                )
+                decrypted_file = os.path.join(
+                    self.temp_dir, f"comparison_{algorithm}_dec.bin"
+                )
 
-                config_dict = {"algorithm": algorithm, "hash_algorithm": "SHA256", "kdf": "pbkdf2"}
+                config_dict = {
+                    "algorithm": algorithm,
+                    "hash_algorithm": "SHA256",
+                    "kdf": "pbkdf2",
+                }
 
                 try:
                     # Measure encryption
                     def encrypt_op():
                         if os.path.exists(encrypted_file):
                             os.remove(encrypted_file)
-                        encrypt_file(input_file, encrypted_file, password, hash_config=config_dict)
+                        encrypt_file(
+                            input_file,
+                            encrypted_file,
+                            password,
+                            hash_config=config_dict,
+                        )
 
                     encrypt_timings = self._measure_operation_performance(encrypt_op, 3)
 
@@ -436,7 +469,9 @@ class BenchmarkTestSuite(BaseSecurityTest):
 
             # Analyze results
             successful_algorithms = [
-                alg for alg, result in algorithm_results.items() if result.get("success", False)
+                alg
+                for alg, result in algorithm_results.items()
+                if result.get("success", False)
             ]
 
             if len(successful_algorithms) < 2:
@@ -448,7 +483,8 @@ class BenchmarkTestSuite(BaseSecurityTest):
 
             # Find fastest and slowest algorithms
             throughputs = {
-                alg: algorithm_results[alg]["encrypt_throughput"] for alg in successful_algorithms
+                alg: algorithm_results[alg]["encrypt_throughput"]
+                for alg in successful_algorithms
             }
 
             fastest_alg = max(throughputs.keys(), key=lambda x: throughputs[x])
@@ -508,14 +544,23 @@ class BenchmarkTestSuite(BaseSecurityTest):
             for i, kdf_config in enumerate(kdf_configs):
                 encrypted_file = os.path.join(self.temp_dir, f"kdf_{i}_enc.bin")
 
-                config_dict = {"algorithm": "fernet", "hash_algorithm": "SHA256", **kdf_config}
+                config_dict = {
+                    "algorithm": "fernet",
+                    "hash_algorithm": "SHA256",
+                    **kdf_config,
+                }
 
                 try:
 
                     def kdf_encrypt_op():
                         if os.path.exists(encrypted_file):
                             os.remove(encrypted_file)
-                        encrypt_file(input_file, encrypted_file, password, hash_config=config_dict)
+                        encrypt_file(
+                            input_file,
+                            encrypted_file,
+                            password,
+                            hash_config=config_dict,
+                        )
 
                     timings = self._measure_operation_performance(kdf_encrypt_op, 3)
 
@@ -541,7 +586,9 @@ class BenchmarkTestSuite(BaseSecurityTest):
                     kdf_results[f"kdf_{i}"] = {"success": False, "error": str(e)}
 
             successful_kdfs = [
-                name for name, result in kdf_results.items() if result.get("success", False)
+                name
+                for name, result in kdf_results.items()
+                if result.get("success", False)
             ]
 
             if len(successful_kdfs) == 0:
@@ -553,7 +600,9 @@ class BenchmarkTestSuite(BaseSecurityTest):
 
             # Find fastest and slowest KDFs
             if len(successful_kdfs) > 1:
-                kdf_times = {name: kdf_results[name]["avg_time"] for name in successful_kdfs}
+                kdf_times = {
+                    name: kdf_results[name]["avg_time"] for name in successful_kdfs
+                }
                 fastest_kdf = min(kdf_times.keys(), key=lambda x: kdf_times[x])
                 slowest_kdf = max(kdf_times.keys(), key=lambda x: kdf_times[x])
                 time_ratio = kdf_times[slowest_kdf] / kdf_times[fastest_kdf]
@@ -602,7 +651,9 @@ class BenchmarkTestSuite(BaseSecurityTest):
 
             for file_size in file_sizes:
                 input_file = os.path.join(self.temp_dir, f"memory_{file_size}.bin")
-                encrypted_file = os.path.join(self.temp_dir, f"memory_{file_size}_enc.bin")
+                encrypted_file = os.path.join(
+                    self.temp_dir, f"memory_{file_size}_enc.bin"
+                )
 
                 # Create test file
                 test_data = os.urandom(file_size)
@@ -617,7 +668,10 @@ class BenchmarkTestSuite(BaseSecurityTest):
 
                 # Perform encryption
                 encrypt_file(
-                    input_file, encrypted_file, "memory_test_password", hash_config=config_dict
+                    input_file,
+                    encrypted_file,
+                    "memory_test_password",
+                    hash_config=config_dict,
                 )
 
                 # Measure memory after operation
@@ -635,13 +689,17 @@ class BenchmarkTestSuite(BaseSecurityTest):
                 }
 
             # Analyze memory usage patterns
-            memory_ratios = [result["memory_ratio"] for result in memory_results.values()]
+            memory_ratios = [
+                result["memory_ratio"] for result in memory_results.values()
+            ]
             avg_memory_ratio = statistics.mean(memory_ratios)
 
             # Memory usage is considered good if it's less than 3x the file size
             memory_efficient = avg_memory_ratio < 3.0
 
-            level = TestResultLevel.PASS if memory_efficient else TestResultLevel.WARNING
+            level = (
+                TestResultLevel.PASS if memory_efficient else TestResultLevel.WARNING
+            )
             message = f"Memory usage {'efficient' if memory_efficient else 'high'} (avg ratio: {avg_memory_ratio:.2f}x)"
 
             return TestResult(
@@ -742,7 +800,9 @@ class BenchmarkTestSuite(BaseSecurityTest):
                 for key, data in baseline_data.items():
                     self.baselines[key] = BaselineData(**data)
 
-                self.logger.info(f"Loaded {len(self.baselines)} baseline performance records")
+                self.logger.info(
+                    f"Loaded {len(self.baselines)} baseline performance records"
+                )
             except Exception as e:
                 self.logger.warning(f"Could not load baselines: {e}")
 
@@ -766,6 +826,8 @@ class BenchmarkTestSuite(BaseSecurityTest):
             with open(baseline_file, "w") as f:
                 json.dump(baseline_data, f, indent=2)
 
-            self.logger.info(f"Saved {len(self.baselines)} baseline performance records")
+            self.logger.info(
+                f"Saved {len(self.baselines)} baseline performance records"
+            )
         except Exception as e:
             self.logger.warning(f"Could not save baselines: {e}")

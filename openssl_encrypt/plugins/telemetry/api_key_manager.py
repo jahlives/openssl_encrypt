@@ -159,7 +159,9 @@ class APIKeyManager:
         if self._cached_key_data and not self._is_key_expired(
             self._cached_key_data.get("expires", "")
         ):
-            return self._cached_key_data.get("token") or self._cached_key_data.get("api_key")
+            return self._cached_key_data.get("token") or self._cached_key_data.get(
+                "api_key"
+            )
 
         # Load from disk
         data = self._load_key_data()

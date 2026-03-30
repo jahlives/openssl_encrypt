@@ -17,6 +17,7 @@ import secrets
 import sys
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple, Union, cast
+
 from .crypt_utils import eprint
 
 # Configure logger
@@ -132,7 +133,9 @@ def check_liboqs_support(quiet: bool = False) -> Tuple[bool, Optional[str], List
 
     if not LIBOQS_AVAILABLE:
         if not should_be_quiet:
-            logger.warning("liboqs-python is not available. Install with: pip install liboqs")
+            logger.warning(
+                "liboqs-python is not available. Install with: pip install liboqs"
+            )
         return False, None, []
 
     try:
@@ -244,7 +247,9 @@ class PQEncapsulator:
         ciphertext, shared_secret = self.kem.encap_secret(public_key)
         return ciphertext, shared_secret
 
-    def decapsulate(self, ciphertext: bytes, secret_key: Optional[bytes] = None) -> bytes:
+    def decapsulate(
+        self, ciphertext: bytes, secret_key: Optional[bytes] = None
+    ) -> bytes:
         """
         Decapsulate a shared secret using the secret key.
 
@@ -259,7 +264,9 @@ class PQEncapsulator:
             # Create a new KEM instance with the secret key for decapsulation
             # Use a completely isolated approach to prevent segfaults
             try:
-                kem_with_secret = oqs.KeyEncapsulation(self.liboqs_algorithm, secret_key)
+                kem_with_secret = oqs.KeyEncapsulation(
+                    self.liboqs_algorithm, secret_key
+                )
                 shared_secret = kem_with_secret.decap_secret(ciphertext)
                 kem_with_secret.free()
                 return shared_secret
@@ -399,7 +406,9 @@ def example_usage():
         return
 
     eprint(f"liboqs version {version} available")
-    eprint(f"Supported algorithms: {', '.join(algorithms[:5])}... (and {len(algorithms)-5} more)")
+    eprint(
+        f"Supported algorithms: {', '.join(algorithms[:5])}... (and {len(algorithms)-5} more)"
+    )
 
     # Example with KEM
     try:

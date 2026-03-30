@@ -22,8 +22,8 @@ from typing import Any, Dict, Optional
 from argon2.low_level import Type, hash_secret_raw
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-from .secure_memory import SecureBytes, secure_memzero
 from .crypt_utils import eprint, tty_write
+from .secure_memory import SecureBytes, secure_memzero
 
 
 class ProtectionLevel(Enum):
@@ -113,11 +113,17 @@ class IdentityProtection:
 
     def requires_password(self) -> bool:
         """Check if password is required for this protection level."""
-        return self.level in (ProtectionLevel.PASSWORD_ONLY, ProtectionLevel.PASSWORD_AND_HSM)
+        return self.level in (
+            ProtectionLevel.PASSWORD_ONLY,
+            ProtectionLevel.PASSWORD_AND_HSM,
+        )
 
     def requires_hsm(self) -> bool:
         """Check if HSM is required for this protection level."""
-        return self.level in (ProtectionLevel.HSM_ONLY, ProtectionLevel.PASSWORD_AND_HSM)
+        return self.level in (
+            ProtectionLevel.HSM_ONLY,
+            ProtectionLevel.PASSWORD_AND_HSM,
+        )
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -215,7 +221,8 @@ class IdentityKeyProtectionService:
         if self._hsm_plugin is None and not self._hsm_checked:
             self._hsm_checked = True
             try:
-                from openssl_encrypt.plugins.hsm.yubikey_challenge_response import YubikeyHSMPlugin
+                from openssl_encrypt.plugins.hsm.yubikey_challenge_response import \
+                    YubikeyHSMPlugin
 
                 self._hsm_plugin = YubikeyHSMPlugin()
             except ImportError:
@@ -242,7 +249,9 @@ class IdentityKeyProtectionService:
         except Exception:
             return None
 
-    def _generate_hsm_challenge(self, challenge_salt: bytes, identity_name: str) -> bytes:
+    def _generate_hsm_challenge(
+        self, challenge_salt: bytes, identity_name: str
+    ) -> bytes:
         """
         Generate HSM challenge.
 
@@ -263,7 +272,9 @@ class IdentityKeyProtectionService:
         # Yubikey Challenge-Response expects 16-byte challenge
         return full_challenge[:16]
 
-    def _get_hsm_pepper(self, hsm_config: HSMProtectionConfig, identity_name: str) -> bytes:
+    def _get_hsm_pepper(
+        self, hsm_config: HSMProtectionConfig, identity_name: str
+    ) -> bytes:
         """
         Get HSM pepper via Challenge-Response.
 
@@ -294,7 +305,9 @@ class IdentityKeyProtectionService:
             )
 
         # Generate challenge
-        challenge = self._generate_hsm_challenge(hsm_config.challenge_salt, identity_name)
+        challenge = self._generate_hsm_challenge(
+            hsm_config.challenge_salt, identity_name
+        )
 
         # Determine slot
         slot = hsm_config.slot
@@ -314,9 +327,7 @@ class IdentityKeyProtectionService:
         # Perform Challenge-Response
         try:
             from openssl_encrypt.modules.plugin_system.plugin_base import (
-                PluginCapability,
-                PluginSecurityContext,
-            )
+                PluginCapability, PluginSecurityContext)
 
             context = PluginSecurityContext(
                 plugin_id=plugin.plugin_id,
@@ -448,7 +459,11 @@ class IdentityKeyProtectionService:
 
         try:
             # Build AAD to bind ciphertext to identity and key purpose
-            aad = f"identity:{identity_name}:purpose:{key_purpose}".encode("utf-8") if identity_name and key_purpose else None
+            aad = (
+                f"identity:{identity_name}:purpose:{key_purpose}".encode("utf-8")
+                if identity_name and key_purpose
+                else None
+            )
 
             # Encrypt with AES-256-GCM
             nonce = secrets.token_bytes(self.NONCE_SIZE)
@@ -518,7 +533,11 @@ class IdentityKeyProtectionService:
             ciphertext = encrypted_data[self.NONCE_SIZE :]
 
             # Build AAD to bind ciphertext to identity and key purpose
-            aad = f"identity:{identity_name}:purpose:{key_purpose}".encode("utf-8") if identity_name and key_purpose else None
+            aad = (
+                f"identity:{identity_name}:purpose:{key_purpose}".encode("utf-8")
+                if identity_name and key_purpose
+                else None
+            )
 
             # Decrypt with AES-256-GCM
             aesgcm = AESGCM(encryption_key)
@@ -544,7 +563,10 @@ class IdentityKeyProtectionService:
                 secure_memzero(bytearray(hsm_pepper))
 
     def create_protection_config(
-        self, level: ProtectionLevel, hsm_slot: Optional[int] = None, require_touch: bool = True
+        self,
+        level: ProtectionLevel,
+        hsm_slot: Optional[int] = None,
+        require_touch: bool = True,
     ) -> IdentityProtection:
         """
         Create a new protection configuration.
@@ -561,13 +583,17 @@ class IdentityKeyProtectionService:
             HSMNotAvailableError: If HSM required but not available
         """
         # Create password config (always needed for salt storage)
-        password_config = PasswordProtectionConfig(salt=secrets.token_bytes(self.SALT_SIZE))
+        password_config = PasswordProtectionConfig(
+            salt=secrets.token_bytes(self.SALT_SIZE)
+        )
 
         # Create HSM config if required
         hsm_config = None
         if level in (ProtectionLevel.PASSWORD_AND_HSM, ProtectionLevel.HSM_ONLY):
             if not self.is_hsm_available():
-                raise HSMNotAvailableError("HSM protection requested but no Yubikey available")
+                raise HSMNotAvailableError(
+                    "HSM protection requested but no Yubikey available"
+                )
 
             hsm_config = HSMProtectionConfig(
                 hsm_type="yubikey",

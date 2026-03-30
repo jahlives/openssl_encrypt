@@ -151,7 +151,11 @@ class DangerousPatternVisitor(ast.NodeVisitor):
         self.imported_names: Set[str] = set()
 
     def add_violation(
-        self, node: ast.AST, violation_type: str, description: str, severity: str = "critical"
+        self,
+        node: ast.AST,
+        violation_type: str,
+        description: str,
+        severity: str = "critical",
     ):
         """Add a security violation"""
         self.violations.append(
@@ -269,7 +273,10 @@ class DangerousPatternVisitor(ast.NodeVisitor):
                 if isinstance(node.args[1], ast.Constant):
                     attr_name = node.args[1].value
                     # Check for dangerous dunder access via getattr
-                    if isinstance(attr_name, str) and attr_name in self.DANGEROUS_DUNDER_ATTRIBUTES:
+                    if (
+                        isinstance(attr_name, str)
+                        and attr_name in self.DANGEROUS_DUNDER_ATTRIBUTES
+                    ):
                         self.add_violation(
                             node,
                             "getattr_dunder_bypass",
@@ -281,7 +288,10 @@ class DangerousPatternVisitor(ast.NodeVisitor):
                     if isinstance(node.args[0], ast.Name):
                         obj_name = node.args[0].id
                         if obj_name in ("__builtins__", "__builtin__", "builtins"):
-                            if isinstance(attr_name, str) and attr_name in self.DANGEROUS_FUNCTIONS:
+                            if (
+                                isinstance(attr_name, str)
+                                and attr_name in self.DANGEROUS_FUNCTIONS
+                            ):
                                 self.add_violation(
                                     node,
                                     "getattr_bypass",

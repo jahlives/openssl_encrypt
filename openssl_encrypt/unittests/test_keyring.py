@@ -13,10 +13,11 @@ import tempfile
 import unittest
 from unittest import mock
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+sys.path.insert(
+    0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+)
 
 from openssl_encrypt.modules.crypt_cli import main as cli_main
-
 
 KEYRING_SERVICE = "openssl_encrypt"
 
@@ -73,6 +74,7 @@ class TestKeyringStoreAndLoad(unittest.TestCase):
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     @mock.patch.dict("sys.modules", {"keyring": mock.MagicMock()})
@@ -91,25 +93,38 @@ class TestKeyringStoreAndLoad(unittest.TestCase):
         fake_keyring.get_password = mock_get
 
         # Encrypt with --keyring-store
-        exit_code, _, stderr = run_cli([
-            "--quiet", "encrypt",
-            "--input", self.test_file,
-            "--output", self.enc_file,
-            "--password", "keyring_test_pw!",
-            "--force-password",
-            "--keyring-store", "mytest",
-        ])
+        exit_code, _, stderr = run_cli(
+            [
+                "--quiet",
+                "encrypt",
+                "--input",
+                self.test_file,
+                "--output",
+                self.enc_file,
+                "--password",
+                "keyring_test_pw!",
+                "--force-password",
+                "--keyring-store",
+                "mytest",
+            ]
+        )
         self.assertEqual(exit_code, 0, f"Encrypt failed: {stderr}")
         self.assertIn(("openssl_encrypt", "mytest"), stored)
         self.assertEqual(stored[("openssl_encrypt", "mytest")], "keyring_test_pw!")
 
         # Decrypt with --keyring-load
-        exit_code, _, stderr = run_cli([
-            "--quiet", "decrypt",
-            "--input", self.enc_file,
-            "--output", self.dec_file,
-            "--keyring-load", "mytest",
-        ])
+        exit_code, _, stderr = run_cli(
+            [
+                "--quiet",
+                "decrypt",
+                "--input",
+                self.enc_file,
+                "--output",
+                self.dec_file,
+                "--keyring-load",
+                "mytest",
+            ]
+        )
         self.assertEqual(exit_code, 0, f"Decrypt failed: {stderr}")
 
         with open(self.dec_file) as f:
@@ -123,13 +138,19 @@ class TestKeyringStoreAndLoad(unittest.TestCase):
 
         # Should fall through to getpass prompt; mock that too
         with mock.patch("getpass.getpass", return_value="fallback_pw"):
-            exit_code, _, stderr = run_cli([
-                "--quiet", "encrypt",
-                "--input", self.test_file,
-                "--output", self.enc_file,
-                "--force-password",
-                "--keyring-load", "nonexistent_label",
-            ])
+            exit_code, _, stderr = run_cli(
+                [
+                    "--quiet",
+                    "encrypt",
+                    "--input",
+                    self.test_file,
+                    "--output",
+                    self.enc_file,
+                    "--force-password",
+                    "--keyring-load",
+                    "nonexistent_label",
+                ]
+            )
         self.assertIn("No password found in keyring", stderr)
 
 
@@ -142,11 +163,16 @@ class TestKeyringRemove(unittest.TestCase):
         fake_keyring = sys.modules["keyring"]
         fake_keyring.delete_password = mock.MagicMock()
 
-        exit_code, _, stderr = run_cli([
-            "--keyring-remove", "mytest",
-        ])
+        exit_code, _, stderr = run_cli(
+            [
+                "--keyring-remove",
+                "mytest",
+            ]
+        )
         self.assertEqual(exit_code, 0)
-        fake_keyring.delete_password.assert_called_once_with("openssl_encrypt", "mytest")
+        fake_keyring.delete_password.assert_called_once_with(
+            "openssl_encrypt", "mytest"
+        )
         self.assertIn("removed from keyring", stderr)
 
     @mock.patch.dict("sys.modules", {"keyring": mock.MagicMock()})
@@ -162,9 +188,12 @@ class TestKeyringRemove(unittest.TestCase):
         fake_keyring.errors.PasswordDeleteError = PasswordDeleteError
         fake_keyring.delete_password = mock.MagicMock(side_effect=PasswordDeleteError)
 
-        exit_code, _, stderr = run_cli([
-            "--keyring-remove", "nonexistent",
-        ])
+        exit_code, _, stderr = run_cli(
+            [
+                "--keyring-remove",
+                "nonexistent",
+            ]
+        )
         self.assertIn("No password found in keyring", stderr)
 
 
@@ -175,7 +204,14 @@ class TestKeyringNotInstalled(unittest.TestCase):
         """--keyring-load without keyring package prints clear error."""
         # Temporarily remove keyring from sys.modules if present
         with mock.patch.dict("sys.modules", {"keyring": None}):
-            with mock.patch("builtins.__import__", side_effect=lambda name, *a, **kw: (_ for _ in ()).throw(ImportError("No module named 'keyring'")) if name == "keyring" else original_import(name, *a, **kw)):
+            with mock.patch(
+                "builtins.__import__",
+                side_effect=lambda name, *a, **kw: (
+                    (_ for _ in ()).throw(ImportError("No module named 'keyring'"))
+                    if name == "keyring"
+                    else original_import(name, *a, **kw)
+                ),
+            ):
                 # This approach is fragile; use a simpler mock
                 pass
 
@@ -186,18 +222,25 @@ class TestKeyringNotInstalled(unittest.TestCase):
             f.write("test")
 
         try:
-            exit_code, _, stderr = run_cli([
-                "--quiet", "encrypt",
-                "--input", test_file,
-                "--output", os.path.join(temp_dir, "test.enc"),
-                "--force-password",
-                "--keyring-load", "mytest",
-            ])
+            exit_code, _, stderr = run_cli(
+                [
+                    "--quiet",
+                    "encrypt",
+                    "--input",
+                    test_file,
+                    "--output",
+                    os.path.join(temp_dir, "test.enc"),
+                    "--force-password",
+                    "--keyring-load",
+                    "mytest",
+                ]
+            )
             # If keyring is actually not installed, we get the error
             # If it is installed (in test env), the test still passes
             # because keyring.get_password returns None for unknown labels
         finally:
             import shutil
+
             shutil.rmtree(temp_dir, ignore_errors=True)
 
 

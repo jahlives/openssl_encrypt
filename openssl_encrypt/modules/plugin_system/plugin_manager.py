@@ -24,13 +24,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Type
 
 from .plugin_ast_analyzer import analyze_plugin_code
-from .plugin_base import (
-    BasePlugin,
-    PluginCapability,
-    PluginResult,
-    PluginSecurityContext,
-    PluginType,
-)
+from .plugin_base import (BasePlugin, PluginCapability, PluginResult,
+                          PluginSecurityContext, PluginType)
 from .plugin_config import PluginConfigManager, ensure_plugin_data_dir
 from .plugin_sandbox import PluginSandbox
 
@@ -102,10 +97,16 @@ class PluginManager:
         self.audit_log = []
 
         # Plugin validation security settings
-        self.strict_security_mode = strict_security_mode  # Default: block dangerous patterns
+        self.strict_security_mode = (
+            strict_security_mode  # Default: block dangerous patterns
+        )
         self.allowed_unsafe_plugins: Set[str] = set()  # Whitelist for trusted plugins
-        self.builtin_plugin_root: Optional[str] = None  # Built-in plugins skip AST analysis
-        self._validated_source_hashes: Dict[str, str] = {}  # TOCTOU: hash at validation time
+        self.builtin_plugin_root: Optional[str] = (
+            None  # Built-in plugins skip AST analysis
+        )
+        self._validated_source_hashes: Dict[str, str] = (
+            {}
+        )  # TOCTOU: hash at validation time
 
     def add_plugin_directory(self, directory: str) -> None:
         """Add directory to scan for plugins."""
@@ -171,7 +172,9 @@ class PluginManager:
             # We need: .../openssl_encrypt (repo root)
             # So go up 4 levels: plugin_system -> modules -> openssl_encrypt (package) -> openssl_encrypt (repo)
             project_root = os.path.dirname(
-                os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+                os.path.dirname(
+                    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                )
             )
             original_path = sys.path.copy()
             if project_root not in sys.path:
@@ -186,7 +189,9 @@ class PluginManager:
 
                 spec = importlib.util.spec_from_file_location(module_name, file_path)
                 if spec is None or spec.loader is None:
-                    return PluginResult.error_result(f"Could not load plugin spec: {file_path}")
+                    return PluginResult.error_result(
+                        f"Could not load plugin spec: {file_path}"
+                    )
 
                 module = importlib.util.module_from_spec(spec)
 
@@ -212,7 +217,9 @@ class PluginManager:
                                 __import__(parent_name)
                             except ImportError:
                                 # Parent package might not exist as importable module, that's OK
-                                logger.debug(f"Could not import parent package: {parent_name}")
+                                logger.debug(
+                                    f"Could not import parent package: {parent_name}"
+                                )
 
                 # TOCTOU mitigation: re-read source and verify hash matches
                 # what was validated by _validate_plugin_file
@@ -222,7 +229,9 @@ class PluginManager:
                     import hashlib as _hashlib
 
                     with open(real_path, "r", encoding="utf-8") as _f:
-                        current_hash = _hashlib.sha256(_f.read().encode("utf-8")).hexdigest()
+                        current_hash = _hashlib.sha256(
+                            _f.read().encode("utf-8")
+                        ).hexdigest()
                     if current_hash != expected_hash:
                         return PluginResult.error_result(
                             f"Plugin file modified after validation (TOCTOU): {file_path}"
@@ -237,7 +246,9 @@ class PluginManager:
             # Find plugin class
             plugin_class = self._find_plugin_class(module)
             if plugin_class is None:
-                return PluginResult.error_result(f"No valid plugin class found in: {file_path}")
+                return PluginResult.error_result(
+                    f"No valid plugin class found in: {file_path}"
+                )
 
             # Instantiate plugin
             plugin = plugin_class()
@@ -262,7 +273,9 @@ class PluginManager:
             # Register plugin
             with self.lock:
                 if plugin.plugin_id in self.plugins:
-                    logger.warning(f"Plugin {plugin.plugin_id} already registered, replacing")
+                    logger.warning(
+                        f"Plugin {plugin.plugin_id} already registered, replacing"
+                    )
 
                 # Pass file_path as-is to PluginRegistration
                 # For packages (__init__.py), PluginRegistration will correctly extract the package directory
@@ -290,7 +303,9 @@ class PluginManager:
                         "plugin_id": plugin.plugin_id,
                         "plugin_type": plugin.get_plugin_type().value,
                         "file_path": file_path,
-                        "capabilities": [cap.value for cap in plugin.get_required_capabilities()],
+                        "capabilities": [
+                            cap.value for cap in plugin.get_required_capabilities()
+                        ],
                     },
                 )
 
@@ -406,7 +421,9 @@ class PluginManager:
             return PluginResult.error_result(error_msg)
 
         # Check capabilities (use immutable capabilities from registration, not from plugin object)
-        capability_check = self._check_capabilities(plugin_id, registration.capabilities, context)
+        capability_check = self._check_capabilities(
+            plugin_id, registration.capabilities, context
+        )
         if not capability_check.success:
             self._audit_log(
                 f"SECURITY: Capability check failed for plugin {plugin_id}: {capability_check.message}"
@@ -444,7 +461,9 @@ class PluginManager:
             registration.record_usage(result.success)
 
             if result.success:
-                logger.info(f"Plugin {plugin_id} executed successfully in {execution_time:.2f}s")
+                logger.info(
+                    f"Plugin {plugin_id} executed successfully in {execution_time:.2f}s"
+                )
             else:
                 logger.warning(f"Plugin {plugin_id} execution failed: {result.message}")
 
@@ -459,7 +478,9 @@ class PluginManager:
             registration.record_usage(False)
             error_msg = f"Plugin {plugin_id} execution error: {str(e)}"
             logger.error(error_msg)
-            self._audit_log(f"ERROR: {error_msg} (execution time: {execution_time:.2f}s)")
+            self._audit_log(
+                f"ERROR: {error_msg} (execution time: {execution_time:.2f}s)"
+            )
             return PluginResult.error_result(error_msg)
 
     def get_plugins_by_type(self, plugin_type: PluginType) -> List[PluginRegistration]:
@@ -468,7 +489,8 @@ class PluginManager:
             return [
                 registration
                 for registration in self.plugins.values()
-                if registration.plugin.get_plugin_type() == plugin_type and registration.enabled
+                if registration.plugin.get_plugin_type() == plugin_type
+                and registration.enabled
             ]
 
     def get_plugin_info(self, plugin_id: str) -> Optional[Dict[str, Any]]:
@@ -517,7 +539,9 @@ class PluginManager:
     def list_plugins(self) -> List[Dict[str, Any]]:
         """List all registered plugins with their information."""
         with self.lock:
-            return [self.get_plugin_info(plugin_id) for plugin_id in self.plugins.keys()]
+            return [
+                self.get_plugin_info(plugin_id) for plugin_id in self.plugins.keys()
+            ]
 
     def enable_plugin(self, plugin_id: str) -> PluginResult:
         """Enable plugin by ID."""
@@ -594,7 +618,9 @@ class PluginManager:
             context.config.update(config)
 
         # Execute plugin
-        result = self.execute_plugin(plugin.plugin_id, context, use_process_isolation=False)
+        result = self.execute_plugin(
+            plugin.plugin_id, context, use_process_isolation=False
+        )
 
         if not result.success:
             raise KeyDerivationError(f"HSM plugin execution failed: {result.message}")
@@ -634,7 +660,9 @@ class PluginManager:
             f"Plugin security mode changed: {'strict' if enabled else 'permissive'} "
             f"(was: {'strict' if old_mode else 'permissive'})"
         )
-        self._audit_log(f"Security mode changed to {'strict' if enabled else 'permissive'}")
+        self._audit_log(
+            f"Security mode changed to {'strict' if enabled else 'permissive'}"
+        )
 
     def allow_unsafe_plugin(self, plugin_id: str) -> None:
         """
@@ -707,13 +735,17 @@ class PluginManager:
                 real_file = os.path.realpath(file_path)
                 real_root = os.path.realpath(self.builtin_plugin_root)
                 if real_file.startswith(real_root + os.sep):
-                    logger.debug(f"Built-in plugin trusted, skipping AST analysis: {file_path}")
+                    logger.debug(
+                        f"Built-in plugin trusted, skipping AST analysis: {file_path}"
+                    )
                     return True
 
             # Check file size (prevent huge files)
             file_size = os.path.getsize(file_path)
             if file_size > 1024 * 1024:  # 1MB limit
-                logger.warning(f"Plugin file too large: {file_path} ({file_size} bytes)")
+                logger.warning(
+                    f"Plugin file too large: {file_path} ({file_size} bytes)"
+                )
                 return False
 
             # AST-based content validation
@@ -763,7 +795,9 @@ class PluginManager:
                             )
                     else:
                         # In permissive mode or for non-critical violations, only warn
-                        logger.warning(f"Plugin file contains security violation: {file_path}")
+                        logger.warning(
+                            f"Plugin file contains security violation: {file_path}"
+                        )
                         logger.warning(f"  {violation_msg}")
                         logger.warning(
                             "Security violation allowed (strict_security_mode=False). "
@@ -848,14 +882,18 @@ class PluginManager:
             ]
             for method in required_methods:
                 if not hasattr(plugin, method) or not callable(getattr(plugin, method)):
-                    return PluginResult.error_result(f"Plugin missing required method: {method}")
+                    return PluginResult.error_result(
+                        f"Plugin missing required method: {method}"
+                    )
 
             # Validate plugin ID
             if not hasattr(plugin, "plugin_id") or not plugin.plugin_id:
                 return PluginResult.error_result("Plugin missing plugin_id")
 
             if not isinstance(plugin.plugin_id, str) or len(plugin.plugin_id) > 50:
-                return PluginResult.error_result("Plugin ID must be string with max 50 characters")
+                return PluginResult.error_result(
+                    "Plugin ID must be string with max 50 characters"
+                )
 
             # Validate capabilities
             capabilities = plugin.get_required_capabilities()
@@ -866,7 +904,9 @@ class PluginManager:
                 if not isinstance(cap, PluginCapability):
                     return PluginResult.error_result(f"Invalid capability type: {cap}")
                 if cap not in self.allowed_capabilities:
-                    return PluginResult.error_result(f"Capability not allowed: {cap.value}")
+                    return PluginResult.error_result(
+                        f"Capability not allowed: {cap.value}"
+                    )
 
             # Validate plugin type
             plugin_type = plugin.get_plugin_type()
@@ -879,7 +919,10 @@ class PluginManager:
             return PluginResult.error_result(f"Plugin validation error: {str(e)}")
 
     def _check_capabilities(
-        self, plugin_id: str, required_capabilities: frozenset, context: PluginSecurityContext
+        self,
+        plugin_id: str,
+        required_capabilities: frozenset,
+        context: PluginSecurityContext,
     ) -> PluginResult:
         """Check if plugin has required capabilities in context.
 
@@ -943,6 +986,8 @@ class PluginManager:
                 try:
                     self.unload_plugin(plugin_id)
                 except Exception as e:
-                    logger.error(f"Error unloading plugin {plugin_id} during shutdown: {e}")
+                    logger.error(
+                        f"Error unloading plugin {plugin_id} during shutdown: {e}"
+                    )
 
         logger.info("Plugin manager shutdown complete")

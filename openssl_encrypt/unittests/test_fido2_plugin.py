@@ -8,26 +8,23 @@ FIDO2 hardware. Tests use mocks for hardware interactions to enable CI/CD testin
 import json
 import os
 import secrets
-import unittest
-from pathlib import Path
-from unittest.mock import Mock, MagicMock, patch
-from datetime import datetime
-
 # Mock FIDO2 availability before import
 import sys
-sys.modules['fido2'] = MagicMock()
-sys.modules['fido2.hid'] = MagicMock()
-sys.modules['fido2.client'] = MagicMock()
-sys.modules['fido2.webauthn'] = MagicMock()
-sys.modules['fido2.ctap2'] = MagicMock()
-sys.modules['fido2.ctap2.extensions'] = MagicMock()
+import unittest
+from datetime import datetime
+from pathlib import Path
+from unittest.mock import MagicMock, Mock, patch
 
-from openssl_encrypt.plugins.hsm.fido2_pepper import FIDO2HSMPlugin
+sys.modules["fido2"] = MagicMock()
+sys.modules["fido2.hid"] = MagicMock()
+sys.modules["fido2.client"] = MagicMock()
+sys.modules["fido2.webauthn"] = MagicMock()
+sys.modules["fido2.ctap2"] = MagicMock()
+sys.modules["fido2.ctap2.extensions"] = MagicMock()
+
 from openssl_encrypt.modules.plugin_system.plugin_base import (
-    PluginResult,
-    PluginSecurityContext,
-    PluginCapability,
-)
+    PluginCapability, PluginResult, PluginSecurityContext)
+from openssl_encrypt.plugins.hsm.fido2_pepper import FIDO2HSMPlugin
 
 
 class TestFIDO2CredentialStorage(unittest.TestCase):
@@ -69,7 +66,9 @@ class TestFIDO2CredentialStorage(unittest.TestCase):
 
         # Verify file exists with correct permissions
         self.assertTrue(self.credential_file.exists())
-        from openssl_encrypt.modules.file_permissions import PermissionLevel, check_permissions
+        from openssl_encrypt.modules.file_permissions import (
+            PermissionLevel, check_permissions)
+
         self.assertTrue(
             check_permissions(self.credential_file, PermissionLevel.OWNER_ONLY),
             "Credential file should have OWNER_ONLY (0o600) permissions",
@@ -81,8 +80,12 @@ class TestFIDO2CredentialStorage(unittest.TestCase):
         # Verify loaded data matches saved data
         self.assertEqual(len(loaded_credentials), 1)
         self.assertEqual(loaded_credentials[0]["id"], credential_data["id"])
-        self.assertEqual(loaded_credentials[0]["credential_id"], credential_data["credential_id"])
-        self.assertEqual(loaded_credentials[0]["description"], credential_data["description"])
+        self.assertEqual(
+            loaded_credentials[0]["credential_id"], credential_data["credential_id"]
+        )
+        self.assertEqual(
+            loaded_credentials[0]["description"], credential_data["description"]
+        )
 
     def test_multiple_credentials(self):
         """Test storing multiple credentials (primary + backups)."""
@@ -215,7 +218,7 @@ class TestFIDO2PepperValidation(unittest.TestCase):
         """Test rejection of salt that's too short."""
         context = PluginSecurityContext(
             plugin_id=self.plugin.plugin_id,
-            capabilities=self.plugin.get_required_capabilities()
+            capabilities=self.plugin.get_required_capabilities(),
         )
 
         # Try with 8-byte salt (should be 16 bytes)
@@ -229,7 +232,7 @@ class TestFIDO2PepperValidation(unittest.TestCase):
         """Test rejection of salt that's too long."""
         context = PluginSecurityContext(
             plugin_id=self.plugin.plugin_id,
-            capabilities=self.plugin.get_required_capabilities()
+            capabilities=self.plugin.get_required_capabilities(),
         )
 
         # Try with 32-byte salt (should be 16 bytes)
@@ -243,7 +246,7 @@ class TestFIDO2PepperValidation(unittest.TestCase):
         """Test error when no credentials are registered."""
         context = PluginSecurityContext(
             plugin_id=self.plugin.plugin_id,
-            capabilities=self.plugin.get_required_capabilities()
+            capabilities=self.plugin.get_required_capabilities(),
         )
 
         # Valid salt but no credentials
@@ -287,10 +290,12 @@ class TestFIDO2MockPepperDerivation(unittest.TestCase):
         if self.test_dir.exists():
             self.test_dir.rmdir()
 
-    @patch('openssl_encrypt.plugins.hsm.fido2_pepper.CtapHidDevice')
-    @patch('openssl_encrypt.plugins.hsm.fido2_pepper.Fido2Client')
-    @patch('openssl_encrypt.plugins.hsm.fido2_pepper.Ctap2')
-    def test_mock_pepper_derivation(self, mock_ctap2, mock_client_class, mock_device_class):
+    @patch("openssl_encrypt.plugins.hsm.fido2_pepper.CtapHidDevice")
+    @patch("openssl_encrypt.plugins.hsm.fido2_pepper.Fido2Client")
+    @patch("openssl_encrypt.plugins.hsm.fido2_pepper.Ctap2")
+    def test_mock_pepper_derivation(
+        self, mock_ctap2, mock_client_class, mock_device_class
+    ):
         """Test successful pepper derivation with mocked FIDO2."""
         # Mock device detection
         mock_device = Mock()
@@ -298,7 +303,7 @@ class TestFIDO2MockPepperDerivation(unittest.TestCase):
 
         # Mock hmac-secret support check
         mock_info = Mock()
-        mock_info.extensions = ['hmac-secret']
+        mock_info.extensions = ["hmac-secret"]
         mock_ctap2.return_value.get_info.return_value = mock_info
 
         # Mock FIDO2 client and assertion
@@ -308,9 +313,7 @@ class TestFIDO2MockPepperDerivation(unittest.TestCase):
         # Mock assertion result with hmac-secret output (v1.2+ API)
         mock_auth_response = Mock()
         mock_auth_response.client_extension_results = {
-            "hmac-secret": {
-                "output1": secrets.token_bytes(32)  # 32-byte pepper
-            }
+            "hmac-secret": {"output1": secrets.token_bytes(32)}  # 32-byte pepper
         }
         mock_assertion_selection = Mock()
         mock_assertion_selection.get_response.return_value = mock_auth_response
@@ -319,7 +322,7 @@ class TestFIDO2MockPepperDerivation(unittest.TestCase):
         # Test pepper derivation
         context = PluginSecurityContext(
             plugin_id=self.plugin.plugin_id,
-            capabilities=self.plugin.get_required_capabilities()
+            capabilities=self.plugin.get_required_capabilities(),
         )
         salt = secrets.token_bytes(16)
         result = self.plugin.get_hsm_pepper(salt, context)
@@ -422,8 +425,8 @@ class TestFIDO2DeviceListing(unittest.TestCase):
         """Set up test environment."""
         self.plugin = FIDO2HSMPlugin()
 
-    @patch('openssl_encrypt.plugins.hsm.fido2_pepper.CtapHidDevice')
-    @patch('openssl_encrypt.plugins.hsm.fido2_pepper.Ctap2')
+    @patch("openssl_encrypt.plugins.hsm.fido2_pepper.CtapHidDevice")
+    @patch("openssl_encrypt.plugins.hsm.fido2_pepper.Ctap2")
     def test_list_devices_with_mock(self, mock_ctap2, mock_device_class):
         """Test listing connected devices with mocked hardware."""
         # Mock device
@@ -449,7 +452,7 @@ class TestFIDO2DeviceListing(unittest.TestCase):
         self.assertIn("hmac-secret", devices[0]["extensions"])
         self.assertTrue(devices[0]["hmac_secret_support"])
 
-    @patch('openssl_encrypt.plugins.hsm.fido2_pepper.CtapHidDevice')
+    @patch("openssl_encrypt.plugins.hsm.fido2_pepper.CtapHidDevice")
     def test_list_devices_none_found(self, mock_device_class):
         """Test listing devices when none are connected."""
         mock_device_class.list_devices.return_value = []
@@ -488,7 +491,9 @@ class TestFIDO2ConfigDirectory(unittest.TestCase):
         self.assertTrue(self.test_dir.exists())
 
         # Check permissions
-        from openssl_encrypt.modules.file_permissions import PermissionLevel, check_permissions
+        from openssl_encrypt.modules.file_permissions import (
+            PermissionLevel, check_permissions)
+
         self.assertTrue(
             check_permissions(self.test_dir, PermissionLevel.OWNER_FULL),
             "Config directory should have OWNER_FULL (0o700) permissions",

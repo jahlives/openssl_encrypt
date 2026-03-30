@@ -9,21 +9,18 @@ Uses file_permissions helper for cross-platform permission checks.
 """
 
 import os
-import sys
 import stat
+import sys
 import tempfile
-import pytest
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
-from openssl_encrypt.modules.file_permissions import (
-    PermissionLevel,
-    check_permissions,
-)
+import pytest
+
+from openssl_encrypt.modules.file_permissions import (PermissionLevel,
+                                                      check_permissions)
 from openssl_encrypt.modules.plugin_system.plugin_config import (
-    ensure_plugin_data_dir,
-    PluginConfigManager,
-)
+    PluginConfigManager, ensure_plugin_data_dir)
 
 
 class TestEnsurePluginDataDir:
@@ -33,44 +30,47 @@ class TestEnsurePluginDataDir:
         """Directory should be created with 0o700 permissions"""
         with tempfile.TemporaryDirectory() as tmpdir:
             # Mock home directory
-            with patch('pathlib.Path.home', return_value=Path(tmpdir)):
+            with patch("pathlib.Path.home", return_value=Path(tmpdir)):
                 result = ensure_plugin_data_dir("test_plugin")
 
                 assert result is not None
                 assert result.exists()
 
                 # Check permissions using cross-platform helper
-                assert check_permissions(result, PermissionLevel.OWNER_FULL), \
-                    "Directory should have OWNER_FULL (0o700) permissions"
+                assert check_permissions(
+                    result, PermissionLevel.OWNER_FULL
+                ), "Directory should have OWNER_FULL (0o700) permissions"
 
     def test_subdirectory_created_with_0700_permissions(self):
         """Subdirectory should also have 0o700 permissions"""
         with tempfile.TemporaryDirectory() as tmpdir:
-            with patch('pathlib.Path.home', return_value=Path(tmpdir)):
+            with patch("pathlib.Path.home", return_value=Path(tmpdir)):
                 result = ensure_plugin_data_dir("test_plugin", "cache")
 
                 assert result is not None
                 assert result.exists()
 
                 # Check subdirectory permissions
-                assert check_permissions(result, PermissionLevel.OWNER_FULL), \
-                    "Subdirectory should have OWNER_FULL (0o700) permissions"
+                assert check_permissions(
+                    result, PermissionLevel.OWNER_FULL
+                ), "Subdirectory should have OWNER_FULL (0o700) permissions"
 
     def test_parent_directory_secured(self):
         """Parent directory should also be secured when creating subdirectory"""
         with tempfile.TemporaryDirectory() as tmpdir:
-            with patch('pathlib.Path.home', return_value=Path(tmpdir)):
+            with patch("pathlib.Path.home", return_value=Path(tmpdir)):
                 result = ensure_plugin_data_dir("test_plugin", "cache")
 
                 # Check parent directory permissions
                 parent = result.parent
-                assert check_permissions(parent, PermissionLevel.OWNER_FULL), \
-                    "Parent directory should have OWNER_FULL (0o700) permissions"
+                assert check_permissions(
+                    parent, PermissionLevel.OWNER_FULL
+                ), "Parent directory should have OWNER_FULL (0o700) permissions"
 
     def test_existing_directory_permissions_verified(self):
         """Existing directory permissions should be verified"""
         with tempfile.TemporaryDirectory() as tmpdir:
-            with patch('pathlib.Path.home', return_value=Path(tmpdir)):
+            with patch("pathlib.Path.home", return_value=Path(tmpdir)):
                 # Create first time
                 result1 = ensure_plugin_data_dir("test_plugin")
                 assert result1 is not None
@@ -89,7 +89,7 @@ class TestEnsurePluginDataDir:
         os.umask(original_umask)  # Restore it
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            with patch('pathlib.Path.home', return_value=Path(tmpdir)):
+            with patch("pathlib.Path.home", return_value=Path(tmpdir)):
                 ensure_plugin_data_dir("test_plugin")
 
                 # Check umask is restored
@@ -100,10 +100,10 @@ class TestEnsurePluginDataDir:
     def test_permission_failure_returns_none(self):
         """Should return None if permissions cannot be set correctly"""
         with tempfile.TemporaryDirectory() as tmpdir:
-            with patch('pathlib.Path.home', return_value=Path(tmpdir)):
+            with patch("pathlib.Path.home", return_value=Path(tmpdir)):
                 # Mock check_permissions to return False (permission failure)
                 with patch(
-                    'openssl_encrypt.modules.file_permissions.check_permissions',
+                    "openssl_encrypt.modules.file_permissions.check_permissions",
                     return_value=False,
                 ):
                     result = ensure_plugin_data_dir("test_plugin")
@@ -126,8 +126,9 @@ class TestPluginConfigFileSecurity:
             config_file = Path(tmpdir) / "test_plugin" / "config.json"
             assert config_file.exists()
 
-            assert check_permissions(config_file, PermissionLevel.OWNER_ONLY), \
-                "Config file should have OWNER_ONLY (0o600) permissions"
+            assert check_permissions(
+                config_file, PermissionLevel.OWNER_ONLY
+            ), "Config file should have OWNER_ONLY (0o600) permissions"
 
     def test_config_directory_created_with_0700_permissions(self):
         """Config plugin directory should have 0o700 permissions"""
@@ -140,8 +141,9 @@ class TestPluginConfigFileSecurity:
 
             # Check plugin directory permissions
             plugin_dir = Path(tmpdir) / "test_plugin"
-            assert check_permissions(plugin_dir, PermissionLevel.OWNER_FULL), \
-                "Config directory should have OWNER_FULL (0o700) permissions"
+            assert check_permissions(
+                plugin_dir, PermissionLevel.OWNER_FULL
+            ), "Config directory should have OWNER_FULL (0o700) permissions"
 
     def test_config_root_directory_secured(self):
         """Root config directory should be secured"""
@@ -151,8 +153,9 @@ class TestPluginConfigFileSecurity:
 
             # Check root directory permissions
             assert config_dir.exists()
-            assert check_permissions(config_dir, PermissionLevel.OWNER_FULL), \
-                "Root config directory should have OWNER_FULL (0o700) permissions"
+            assert check_permissions(
+                config_dir, PermissionLevel.OWNER_FULL
+            ), "Root config directory should have OWNER_FULL (0o700) permissions"
 
     def test_file_update_preserves_permissions(self):
         """Updating config file should preserve secure permissions"""
@@ -171,8 +174,9 @@ class TestPluginConfigFileSecurity:
             manager.set_plugin_config("test_plugin", config2)
 
             # Permissions should still be secure
-            assert check_permissions(config_file, PermissionLevel.OWNER_ONLY), \
-                "Permissions should be preserved after update"
+            assert check_permissions(
+                config_file, PermissionLevel.OWNER_ONLY
+            ), "Permissions should be preserved after update"
 
     @pytest.mark.skipif(sys.platform == "win32", reason="umask is a POSIX concept")
     def test_umask_restored_on_file_creation_error(self):
@@ -185,7 +189,7 @@ class TestPluginConfigFileSecurity:
 
             # Try to save config with invalid data that will cause error
             with pytest.raises(Exception):
-                with patch('os.open', side_effect=OSError("Mocked error")):
+                with patch("os.open", side_effect=OSError("Mocked error")):
                     manager.set_plugin_config("test_plugin", {"test": "data"})
 
             # umask should be restored
@@ -200,13 +204,14 @@ class TestAtomicPermissionSetting:
     def test_directory_has_correct_permissions_after_creation(self):
         """Directory should have correct permissions after creation"""
         with tempfile.TemporaryDirectory() as tmpdir:
-            with patch('pathlib.Path.home', return_value=Path(tmpdir)):
+            with patch("pathlib.Path.home", return_value=Path(tmpdir)):
                 result = ensure_plugin_data_dir("test_plugin")
                 assert result is not None
 
                 # Verify permissions are correct
-                assert check_permissions(result, PermissionLevel.OWNER_FULL), \
-                    "Directory permissions should be correct after creation"
+                assert check_permissions(
+                    result, PermissionLevel.OWNER_FULL
+                ), "Directory permissions should be correct after creation"
 
     def test_file_has_correct_permissions_after_creation(self):
         """File should have correct permissions after creation"""
@@ -215,8 +220,9 @@ class TestAtomicPermissionSetting:
             manager.set_plugin_config("test_plugin", {"test": "value"})
 
             config_file = Path(tmpdir) / "test_plugin" / "config.json"
-            assert check_permissions(config_file, PermissionLevel.OWNER_ONLY), \
-                "File permissions should be correct after creation"
+            assert check_permissions(
+                config_file, PermissionLevel.OWNER_ONLY
+            ), "File permissions should be correct after creation"
 
     @pytest.mark.skipif(sys.platform == "win32", reason="umask is a POSIX concept")
     def test_umask_mechanism_used(self):
@@ -234,11 +240,13 @@ class TestAtomicPermissionSetting:
                 # Call real umask to actually set it
                 return real_umask(mask)
 
-            with patch('os.umask', side_effect=tracked_umask):
-                with patch('pathlib.Path.home', return_value=Path(tmpdir)):
+            with patch("os.umask", side_effect=tracked_umask):
+                with patch("pathlib.Path.home", return_value=Path(tmpdir)):
                     ensure_plugin_data_dir("test_plugin")
 
             # Should have called umask(0o077) and then restored
             assert 0o077 in umask_values, "Should set umask to 0o077"
             # Should restore original umask
-            assert original_umask in umask_values, f"Should restore original umask {oct(original_umask)}"
+            assert (
+                original_umask in umask_values
+            ), f"Should restore original umask {oct(original_umask)}"

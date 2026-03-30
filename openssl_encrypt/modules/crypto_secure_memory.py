@@ -17,15 +17,12 @@ from typing import Any, BinaryIO, Callable, Dict, List, Optional, Tuple, Union
 # Import secure error handling
 from .crypt_errors import KeyDerivationError
 from .crypt_errors import MemoryError as SecureMemoryError
-from .crypt_errors import secure_key_derivation_error_handler, secure_memory_error_handler
-
+from .crypt_errors import (secure_key_derivation_error_handler,
+                           secure_memory_error_handler)
 # Import from secure_allocator module
-from .secure_allocator import (
-    SecureBytes,
-    allocate_secure_crypto_buffer,
-    check_all_crypto_buffer_integrity,
-    free_secure_crypto_buffer,
-)
+from .secure_allocator import (SecureBytes, allocate_secure_crypto_buffer,
+                               check_all_crypto_buffer_integrity,
+                               free_secure_crypto_buffer)
 from .secure_memory import secure_memzero
 
 
@@ -40,7 +37,9 @@ class CryptoSecureBuffer:
 
     @secure_memory_error_handler
     def __init__(
-        self, size: Optional[int] = None, data: Optional[Union[bytes, bytearray, str]] = None
+        self,
+        size: Optional[int] = None,
+        data: Optional[Union[bytes, bytearray, str]] = None,
     ):
         """
         Initialize a secure cryptographic buffer.
@@ -66,7 +65,8 @@ class CryptoSecureBuffer:
                 size = len(byte_data)
             else:
                 raise SecureMemoryError(
-                    "Invalid data type", f"Data must be bytes, bytearray, or str, got {type(data)}"
+                    "Invalid data type",
+                    f"Data must be bytes, bytearray, or str, got {type(data)}",
                 )
         else:
             if size is None:
@@ -76,7 +76,9 @@ class CryptoSecureBuffer:
             byte_data = None
 
         # Allocate the secure buffer
-        self.block_id, self.buffer = allocate_secure_crypto_buffer(size, zero=(data is None))
+        self.block_id, self.buffer = allocate_secure_crypto_buffer(
+            size, zero=(data is None)
+        )
 
         # If data was provided, copy it to the buffer
         if byte_data is not None:
@@ -92,7 +94,11 @@ class CryptoSecureBuffer:
 
     def clear(self):
         """Explicitly clear and free the buffer."""
-        if hasattr(self, "block_id") and hasattr(self, "buffer") and self.buffer is not None:
+        if (
+            hasattr(self, "block_id")
+            and hasattr(self, "buffer")
+            and self.buffer is not None
+        ):
             try:
                 # Clear the buffer data
                 for i in range(len(self.buffer)):
@@ -196,7 +202,9 @@ class CryptoKey(CryptoSecureBuffer):
         finally:
             secure_memzero(random_data)
 
-    def derive_subkey(self, info: bytes, length: int, salt: bytes = None) -> "CryptoKey":
+    def derive_subkey(
+        self, info: bytes, length: int, salt: bytes = None
+    ) -> "CryptoKey":
         """
         Derive a subkey from this key using HKDF-SHA256.
 
@@ -289,7 +297,8 @@ def secure_crypto_buffer(size: int) -> CryptoSecureBuffer:
 
 @contextlib.contextmanager
 def secure_crypto_key(
-    key_data: Optional[Union[bytes, bytearray, str]] = None, key_size: Optional[int] = None
+    key_data: Optional[Union[bytes, bytearray, str]] = None,
+    key_size: Optional[int] = None,
 ) -> CryptoKey:
     """
     Context manager for a secure cryptographic key.

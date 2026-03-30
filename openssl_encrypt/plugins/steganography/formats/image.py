@@ -24,15 +24,9 @@ except ImportError:
 
 import numpy as np
 
-from ..core import (
-    CapacityError,
-    CoverMediaError,
-    ExtractionError,
-    SecurityError,
-    SteganographyBase,
-    SteganographyConfig,
-    SteganographyUtils,
-)
+from ..core import (CapacityError, CoverMediaError, ExtractionError,
+                    SecurityError, SteganographyBase, SteganographyConfig,
+                    SteganographyUtils)
 
 # Set up module logger
 logger = logging.getLogger(__name__)
@@ -253,10 +247,14 @@ class LSBImageStego(ImageSteganography):
 
         # Add decoy data to remaining capacity if enabled
         if self.config.enable_decoy_data and data_bit_index < len(binary_data):
-            self._add_decoy_data(modified_pixels, pixel_indices[len(pixels) :], channels)
+            self._add_decoy_data(
+                modified_pixels, pixel_indices[len(pixels) :], channels
+            )
 
         # Create modified image
-        stego_image = self._create_image_from_pixels(modified_pixels, image.size, image.mode)
+        stego_image = self._create_image_from_pixels(
+            modified_pixels, image.size, image.mode
+        )
 
         result_bytes = self._image_to_bytes(stego_image, image.format or "PNG")
 

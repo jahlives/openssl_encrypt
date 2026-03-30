@@ -20,9 +20,7 @@ class TestRandomXImportSubprocess(unittest.TestCase):
         from openssl_encrypt.modules.randomx import _test_randomx_import
 
         with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(
-                returncode=0, stdout="SUCCESS\n"
-            )
+            mock_run.return_value = MagicMock(returncode=0, stdout="SUCCESS\n")
             _test_randomx_import()
 
             call_kwargs = mock_run.call_args
@@ -39,9 +37,7 @@ class TestRandomXImportSubprocess(unittest.TestCase):
         from openssl_encrypt.modules.randomx import _test_pyrx_import
 
         with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(
-                returncode=0, stdout="SUCCESS\n"
-            )
+            mock_run.return_value = MagicMock(returncode=0, stdout="SUCCESS\n")
             _test_pyrx_import()
 
             call_kwargs = mock_run.call_args
@@ -57,9 +53,7 @@ class TestRandomXImportSubprocess(unittest.TestCase):
         from openssl_encrypt.modules.randomx import _test_randomx_import
 
         with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(
-                returncode=0, stdout="SUCCESS\n"
-            )
+            mock_run.return_value = MagicMock(returncode=0, stdout="SUCCESS\n")
             with patch.dict(os.environ, {"FLATPAK_ID": "com.test.App"}):
                 _test_randomx_import()
 
@@ -123,8 +117,9 @@ class TestGetSubprocessEnv(unittest.TestCase):
         from openssl_encrypt.modules.randomx import _get_subprocess_env
 
         # Simulate being inside a virtualenv (prefix != base_prefix)
-        with patch.object(sys, "prefix", "/app/venv"), \
-             patch.object(sys, "base_prefix", "/usr"):
+        with patch.object(sys, "prefix", "/app/venv"), patch.object(
+            sys, "base_prefix", "/usr"
+        ):
             env = _get_subprocess_env()
             self.assertEqual(env["VIRTUAL_ENV"], "/app/venv")
 
@@ -133,9 +128,9 @@ class TestGetSubprocessEnv(unittest.TestCase):
         from openssl_encrypt.modules.randomx import _get_subprocess_env
 
         # Simulate system Python (prefix == base_prefix)
-        with patch.object(sys, "prefix", "/usr"), \
-             patch.object(sys, "base_prefix", "/usr"), \
-             patch.dict(os.environ, {}, clear=True):
+        with patch.object(sys, "prefix", "/usr"), patch.object(
+            sys, "base_prefix", "/usr"
+        ), patch.dict(os.environ, {}, clear=True):
             env = _get_subprocess_env()
             self.assertNotIn("VIRTUAL_ENV", env)
 

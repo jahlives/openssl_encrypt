@@ -33,13 +33,10 @@ from urllib3.poolmanager import PoolManager
 
 from ...modules.crypt_utils import eprint
 from ...modules.key_bundle import PublicKeyBundle, create_pop_signature
-from ...modules.plugin_system.plugin_base import (
-    BasePlugin,
-    PluginCapability,
-    PluginResult,
-    PluginSecurityContext,
-    PluginType,
-)
+from ...modules.plugin_system.plugin_base import (BasePlugin, PluginCapability,
+                                                  PluginResult,
+                                                  PluginSecurityContext,
+                                                  PluginType)
 from .cache import KeyserverCache
 from .config import KeyserverConfig
 
@@ -61,7 +58,9 @@ class CertPinningAdapter(HTTPAdapter):
         Args:
             expected_fingerprints: List of SHA-256 fingerprints (hex strings)
         """
-        self.expected_fingerprints = [fp.lower().replace(":", "") for fp in expected_fingerprints]
+        self.expected_fingerprints = [
+            fp.lower().replace(":", "") for fp in expected_fingerprints
+        ]
         super().__init__(*args, **kwargs)
 
     def init_poolmanager(self, *args, **kwargs):
@@ -255,7 +254,10 @@ class KeyserverPlugin(BasePlugin):
                 response = self.session.post(
                     refresh_url,
                     json={"refresh_token": refresh_token},
-                    timeout=(self.config.connect_timeout_seconds, self.config.read_timeout_seconds),
+                    timeout=(
+                        self.config.connect_timeout_seconds,
+                        self.config.read_timeout_seconds,
+                    ),
                 )
 
                 if response.status_code == 200:
@@ -284,7 +286,9 @@ class KeyserverPlugin(BasePlugin):
         logger.error("Token refresh failed on all servers")
         return None
 
-    def _authenticated_request(self, method: str, url: str, **kwargs) -> requests.Response:
+    def _authenticated_request(
+        self, method: str, url: str, **kwargs
+    ) -> requests.Response:
         """
         Make an authenticated HTTP request with automatic token refresh.
 
@@ -408,10 +412,14 @@ class KeyserverPlugin(BasePlugin):
                             self.cache.put(bundle)
                         except Exception as e:
                             logger.warning(f"Failed to cache bundle: {e}")
-                        logger.info(f"Fetched and verified bundle for '{identifier}' from {server}")
+                        logger.info(
+                            f"Fetched and verified bundle for '{identifier}' from {server}"
+                        )
                         return bundle
                     else:
-                        logger.warning(f"Signature verification failed for bundle from {server}")
+                        logger.warning(
+                            f"Signature verification failed for bundle from {server}"
+                        )
 
             except NetworkError as e:
                 logger.warning(f"Failed to fetch from {server}: {e}")
@@ -425,7 +433,9 @@ class KeyserverPlugin(BasePlugin):
 
     _FINGERPRINT_PATTERN = re.compile(r"^[0-9a-f]{2}(:[0-9a-f]{2})+$")
 
-    def _fetch_from_server(self, server_url: str, identifier: str) -> Optional[PublicKeyBundle]:
+    def _fetch_from_server(
+        self, server_url: str, identifier: str
+    ) -> Optional[PublicKeyBundle]:
         """
         Fetch bundle from specific keyserver.
 
@@ -447,7 +457,10 @@ class KeyserverPlugin(BasePlugin):
                 url = f"{server_url}/api/v1/keys/{identifier}"
                 response = self.session.get(
                     url,
-                    timeout=(self.config.connect_timeout_seconds, self.config.read_timeout_seconds),
+                    timeout=(
+                        self.config.connect_timeout_seconds,
+                        self.config.read_timeout_seconds,
+                    ),
                 )
 
                 if response.status_code == 200:
@@ -468,7 +481,10 @@ class KeyserverPlugin(BasePlugin):
                 response = self.session.get(
                     search_url,
                     params=params,
-                    timeout=(self.config.connect_timeout_seconds, self.config.read_timeout_seconds),
+                    timeout=(
+                        self.config.connect_timeout_seconds,
+                        self.config.read_timeout_seconds,
+                    ),
                 )
 
                 if response.status_code == 200:
@@ -530,7 +546,10 @@ class KeyserverPlugin(BasePlugin):
                 response = self.session.get(
                     search_url,
                     params=params,
-                    timeout=(self.config.connect_timeout_seconds, self.config.read_timeout_seconds),
+                    timeout=(
+                        self.config.connect_timeout_seconds,
+                        self.config.read_timeout_seconds,
+                    ),
                 )
 
                 if response.status_code == 404:
@@ -560,7 +579,9 @@ class KeyserverPlugin(BasePlugin):
                                 f"from {server}"
                             )
                     except Exception as e:
-                        logger.error(f"search_keys: error processing bundle from {server}: {e}")
+                        logger.error(
+                            f"search_keys: error processing bundle from {server}: {e}"
+                        )
 
             except requests.exceptions.Timeout:
                 logger.warning(f"search_keys: timeout on {server}")
@@ -578,7 +599,10 @@ class KeyserverPlugin(BasePlugin):
         return list(seen.values())
 
     def login(
-        self, client_id: str, password: Optional[str] = None, server_url: Optional[str] = None
+        self,
+        client_id: str,
+        password: Optional[str] = None,
+        server_url: Optional[str] = None,
     ) -> dict:
         """
         Login with client_id and password to obtain JWT access and refresh tokens.
@@ -624,7 +648,10 @@ class KeyserverPlugin(BasePlugin):
             response = self.session.post(
                 login_url,
                 json=body,
-                timeout=(self.config.connect_timeout_seconds, self.config.read_timeout_seconds),
+                timeout=(
+                    self.config.connect_timeout_seconds,
+                    self.config.read_timeout_seconds,
+                ),
             )
 
             if response.status_code == 200:
@@ -646,7 +673,9 @@ class KeyserverPlugin(BasePlugin):
                 try:
                     data = response.json()
                     if data.get("status") == "password_required":
-                        raise PasswordRequiredError(data.get("message", "Password setup required."))
+                        raise PasswordRequiredError(
+                            data.get("message", "Password setup required.")
+                        )
                 except (ValueError, KeyError):
                     pass
                 raise AuthenticationError(f"Login forbidden: {response.text}")
@@ -704,7 +733,10 @@ class KeyserverPlugin(BasePlugin):
             # HTTP POST (no authentication required for registration)
             response = self.session.post(
                 register_url,
-                timeout=(self.config.connect_timeout_seconds, self.config.read_timeout_seconds),
+                timeout=(
+                    self.config.connect_timeout_seconds,
+                    self.config.read_timeout_seconds,
+                ),
             )
 
             if response.status_code == 200:
@@ -768,7 +800,10 @@ class KeyserverPlugin(BasePlugin):
             response = self.session.post(
                 register_url,
                 json={"email": email},
-                timeout=(self.config.connect_timeout_seconds, self.config.read_timeout_seconds),
+                timeout=(
+                    self.config.connect_timeout_seconds,
+                    self.config.read_timeout_seconds,
+                ),
             )
         except requests.exceptions.Timeout:
             raise NetworkError("Request timeout")
@@ -802,7 +837,10 @@ class KeyserverPlugin(BasePlugin):
             try:
                 status_response = self.session.get(
                     status_url,
-                    timeout=(self.config.connect_timeout_seconds, self.config.read_timeout_seconds),
+                    timeout=(
+                        self.config.connect_timeout_seconds,
+                        self.config.read_timeout_seconds,
+                    ),
                 )
             except requests.exceptions.RequestException:
                 # Transient network error during polling — retry
@@ -827,13 +865,17 @@ class KeyserverPlugin(BasePlugin):
                 # Save refresh token if provided
                 if status_data.get("refresh_token"):
                     self.config.save_refresh_token(status_data["refresh_token"])
-                logger.info(f"Email registration confirmed, client_id={status_data['client_id']}")
+                logger.info(
+                    f"Email registration confirmed, client_id={status_data['client_id']}"
+                )
                 return status_data
 
             # Still pending — wait and poll again
             time.sleep(poll_interval)
 
-    def _request_challenge(self, server_url: str, fingerprint_hint: Optional[str] = None) -> dict:
+    def _request_challenge(
+        self, server_url: str, fingerprint_hint: Optional[str] = None
+    ) -> dict:
         """
         Request a PoP challenge nonce from the keyserver.
 
@@ -858,7 +900,9 @@ class KeyserverPlugin(BasePlugin):
             )
         return response.json()
 
-    def upload_key(self, bundle: PublicKeyBundle, signing_private_key_bytes: bytes = None) -> bool:
+    def upload_key(
+        self, bundle: PublicKeyBundle, signing_private_key_bytes: bytes = None
+    ) -> bool:
         """
         Upload public key bundle to keyserver.
 
@@ -926,7 +970,9 @@ class KeyserverPlugin(BasePlugin):
                 elif response.status_code == 409:
                     logger.warning("Key already exists on server")
                 else:
-                    logger.warning(f"Upload failed on {server} with status {response.status_code}")
+                    logger.warning(
+                        f"Upload failed on {server} with status {response.status_code}"
+                    )
 
             except Exception as e:
                 logger.error(f"Failed to upload to {server}: {e}")

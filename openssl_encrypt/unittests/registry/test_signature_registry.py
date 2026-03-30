@@ -8,27 +8,15 @@ All code in English as per project requirements.
 
 import pytest
 
-from openssl_encrypt.modules.registry import (
-    CROSS128,
-    CROSS192,
-    CROSS256,
-    FNDSA512,
-    FNDSA1024,
-    MAYO1,
-    MAYO3,
-    MAYO5,
-    MLDSA44,
-    MLDSA65,
-    MLDSA87,
-    SLHDSASHA2128F,
-    SLHDSASHA2192F,
-    SLHDSASHA2256F,
-    AlgorithmCategory,
-    AlgorithmNotAvailableError,
-    SecurityLevel,
-    SignatureRegistry,
-    get_signature,
-)
+from openssl_encrypt.modules.registry import (CROSS128, CROSS192, CROSS256,
+                                              FNDSA512, FNDSA1024, MAYO1,
+                                              MAYO3, MAYO5, MLDSA44, MLDSA65,
+                                              MLDSA87, SLHDSASHA2128F,
+                                              SLHDSASHA2192F, SLHDSASHA2256F,
+                                              AlgorithmCategory,
+                                              AlgorithmNotAvailableError,
+                                              SecurityLevel, SignatureRegistry,
+                                              get_signature)
 from openssl_encrypt.modules.secure_memory import SecureBytes
 
 # Check if liboqs is available

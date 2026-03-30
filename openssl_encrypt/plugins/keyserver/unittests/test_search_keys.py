@@ -16,12 +16,9 @@ from unittest.mock import MagicMock, call, patch
 import pytest
 import requests
 
-from openssl_encrypt.plugins.keyserver.keyserver_plugin import (
-    KeyserverPlugin,
-    NetworkError,
-)
 from openssl_encrypt.plugins.keyserver.config import KeyserverConfig
-
+from openssl_encrypt.plugins.keyserver.keyserver_plugin import (
+    KeyserverPlugin, NetworkError)
 
 # ---------------------------------------------------------------------------
 # Shared fixtures and helpers
@@ -122,10 +119,13 @@ class TestSearchKeysMethod:
     def test_calls_get_search_endpoint(self, plugin):
         """search_keys calls GET /api/v1/keys/search?q=<query>."""
         bundle_dict = _make_bundle_dict()
-        plugin.session.get.return_value = _make_response(200, {
-            "keys": [bundle_dict],
-            "count": 1,
-        })
+        plugin.session.get.return_value = _make_response(
+            200,
+            {
+                "keys": [bundle_dict],
+                "count": 1,
+            },
+        )
 
         with patch(
             "openssl_encrypt.plugins.keyserver.keyserver_plugin.PublicKeyBundle"
@@ -146,16 +146,21 @@ class TestSearchKeysMethod:
         plugin.search_keys("alice@example.com")
 
         call_args = plugin.session.get.call_args
-        params = call_args[1].get("params") or (call_args[0][1] if len(call_args[0]) > 1 else {})
+        params = call_args[1].get("params") or (
+            call_args[0][1] if len(call_args[0]) > 1 else {}
+        )
         assert params.get("q") == "alice@example.com"
 
     def test_returns_list_of_public_key_bundles(self, plugin):
         """search_keys returns a list of PublicKeyBundle objects."""
         bundle_dict = _make_bundle_dict()
-        plugin.session.get.return_value = _make_response(200, {
-            "keys": [bundle_dict],
-            "count": 1,
-        })
+        plugin.session.get.return_value = _make_response(
+            200,
+            {
+                "keys": [bundle_dict],
+                "count": 1,
+            },
+        )
 
         from openssl_encrypt.modules.key_bundle import PublicKeyBundle
 
@@ -176,7 +181,9 @@ class TestSearchKeysMethod:
 
     def test_returns_empty_list_on_404(self, plugin):
         """search_keys returns [] when server responds with 404."""
-        plugin.session.get.return_value = _make_response(404, {"detail": "Key not found"})
+        plugin.session.get.return_value = _make_response(
+            404, {"detail": "Key not found"}
+        )
 
         result = plugin.search_keys("nobody@example.com")
 
@@ -201,10 +208,13 @@ class TestSearchKeysMethod:
     def test_verifies_each_bundle_before_returning(self, plugin):
         """search_keys calls verify_signature() on each bundle."""
         bundle_dict = _make_bundle_dict()
-        plugin.session.get.return_value = _make_response(200, {
-            "keys": [bundle_dict],
-            "count": 1,
-        })
+        plugin.session.get.return_value = _make_response(
+            200,
+            {
+                "keys": [bundle_dict],
+                "count": 1,
+            },
+        )
 
         from openssl_encrypt.modules.key_bundle import PublicKeyBundle
 
@@ -218,10 +228,13 @@ class TestSearchKeysMethod:
         """Bundles that fail verify_signature() are not included in the result."""
         bundle_dict1 = _make_bundle_dict(fingerprint="aa:bb:cc", name="Alice")
         bundle_dict2 = _make_bundle_dict(fingerprint="dd:ee:ff", name="Bob")
-        plugin.session.get.return_value = _make_response(200, {
-            "keys": [bundle_dict1, bundle_dict2],
-            "count": 2,
-        })
+        plugin.session.get.return_value = _make_response(
+            200,
+            {
+                "keys": [bundle_dict1, bundle_dict2],
+                "count": 2,
+            },
+        )
 
         from openssl_encrypt.modules.key_bundle import PublicKeyBundle
 
@@ -284,10 +297,13 @@ class TestSearchKeysMethod:
     def test_does_not_cache_results(self, plugin):
         """search_keys does NOT cache results (caching is for single-bundle fetch_key only)."""
         bundle_dict = _make_bundle_dict()
-        plugin.session.get.return_value = _make_response(200, {
-            "keys": [bundle_dict],
-            "count": 1,
-        })
+        plugin.session.get.return_value = _make_response(
+            200,
+            {
+                "keys": [bundle_dict],
+                "count": 1,
+            },
+        )
 
         from openssl_encrypt.modules.key_bundle import PublicKeyBundle
 
@@ -357,11 +373,11 @@ class TestFetchKeyUsesFingerprint:
         "alice@example.com",
         "Alice",
         "Bob Smith",
-        "AA:BB:CC",           # uppercase — not fingerprint pattern
-        "aabb",               # no colons
-        "aa:bb:cc:",          # trailing colon
-        ":aa:bb",             # leading colon
-        "aa:bbb:cc",          # non-pair (3 hex chars in middle)
+        "AA:BB:CC",  # uppercase — not fingerprint pattern
+        "aabb",  # no colons
+        "aa:bb:cc:",  # trailing colon
+        ":aa:bb",  # leading colon
+        "aa:bbb:cc",  # non-pair (3 hex chars in middle)
     ]
 
     def test_fetch_key_uses_fingerprint_endpoint_for_fingerprint_query(self, plugin):
@@ -378,9 +394,9 @@ class TestFetchKeyUsesFingerprint:
 
         call_url = plugin.session.get.call_args[0][0]
         expected_path = f"/api/v1/keys/{fp}"
-        assert expected_path in call_url, (
-            f"Expected URL containing '{expected_path}', got '{call_url}'"
-        )
+        assert (
+            expected_path in call_url
+        ), f"Expected URL containing '{expected_path}', got '{call_url}'"
 
     def test_fetch_key_does_not_use_search_for_fingerprint(self, plugin):
         """fetch_key() does NOT call /search when the identifier is a fingerprint."""
@@ -437,9 +453,9 @@ class TestFetchKeyUsesFingerprint:
     def test_fingerprint_pattern_does_not_match_non_fingerprints(self, identifier):
         """The fingerprint regex does NOT match non-fingerprint identifiers."""
         pattern = re.compile(r"^[0-9a-f]{2}(:[0-9a-f]{2})+$")
-        assert not pattern.match(identifier), (
-            f"Expected '{identifier}' to NOT match fingerprint pattern"
-        )
+        assert not pattern.match(
+            identifier
+        ), f"Expected '{identifier}' to NOT match fingerprint pattern"
 
     def test_fetch_key_returns_bundle_for_fingerprint(self, plugin):
         """fetch_key() returns a PublicKeyBundle when fingerprint lookup succeeds."""
@@ -458,7 +474,9 @@ class TestFetchKeyUsesFingerprint:
     def test_fetch_key_returns_none_on_fingerprint_404(self, plugin):
         """fetch_key() returns None when fingerprint endpoint returns 404."""
         fp = "aa:bb:cc:dd"
-        plugin.session.get.return_value = _make_response(404, {"detail": "Key not found"})
+        plugin.session.get.return_value = _make_response(
+            404, {"detail": "Key not found"}
+        )
 
         result = plugin.fetch_key(fp)
 

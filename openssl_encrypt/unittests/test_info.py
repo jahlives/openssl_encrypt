@@ -21,12 +21,10 @@ import unittest
 from io import StringIO
 from unittest import mock
 
-from openssl_encrypt.modules.crypt_core import (
-    EncryptionAlgorithm,
-    encrypt_file,
-    extract_file_metadata,
-    print_file_info,
-)
+from openssl_encrypt.modules.crypt_core import (EncryptionAlgorithm,
+                                                encrypt_file,
+                                                extract_file_metadata,
+                                                print_file_info)
 
 
 class TestPrintFileInfo(unittest.TestCase):

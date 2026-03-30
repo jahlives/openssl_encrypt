@@ -181,7 +181,9 @@ class TelemetryUploader:
             bool: True if server is reachable, False otherwise
         """
         try:
-            response = requests.get(f"{self.server_url}/health", timeout=10, verify=True)
+            response = requests.get(
+                f"{self.server_url}/health", timeout=10, verify=True
+            )
             return response.status_code == 200
         except requests.RequestException:
             return False

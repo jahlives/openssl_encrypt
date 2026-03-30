@@ -95,7 +95,9 @@ class SimpleRepetitionEncoder:
 
             # Majority vote
             if byte_repetitions:
-                most_common_byte = max(set(byte_repetitions), key=byte_repetitions.count)
+                most_common_byte = max(
+                    set(byte_repetitions), key=byte_repetitions.count
+                )
                 decoded.append(most_common_byte)
 
         return bytes(decoded)
@@ -190,7 +192,9 @@ class HammingEncoder:
         p3 = d2 ^ d3 ^ d4
 
         # Pack into 7-bit codeword: p1 p2 d1 p3 d2 d3 d4
-        codeword = (p1 << 6) | (p2 << 5) | (d1 << 4) | (p3 << 3) | (d2 << 2) | (d3 << 1) | d4
+        codeword = (
+            (p1 << 6) | (p2 << 5) | (d1 << 4) | (p3 << 3) | (d2 << 2) | (d3 << 1) | d4
+        )
         return codeword & 0x7F
 
     def _decode_byte(self, codeword: int) -> int:
@@ -232,9 +236,13 @@ class AdaptiveSimpleErrorCorrection:
 
     def __init__(self):
         """Initialize adaptive error correction."""
-        self.high_quality_encoder = SimpleRepetitionEncoder(repetitions=3)  # Light correction
+        self.high_quality_encoder = SimpleRepetitionEncoder(
+            repetitions=3
+        )  # Light correction
         self.medium_quality_encoder = HammingEncoder()  # Medium correction
-        self.low_quality_encoder = SimpleRepetitionEncoder(repetitions=5)  # Heavy correction
+        self.low_quality_encoder = SimpleRepetitionEncoder(
+            repetitions=5
+        )  # Heavy correction
 
         self.encoders = {
             "high": self.high_quality_encoder,

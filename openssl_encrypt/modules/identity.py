@@ -34,15 +34,11 @@ from typing import Dict, List, Optional
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from .crypto_secure_memory import CryptoKey
-
 # Import protection classes
-from .identity_protection import (
-    HSMNotAvailableError,
-    IdentityKeyProtectionService,
-    IdentityProtection,
-    InvalidCredentialsError,
-    ProtectionLevel,
-)
+from .identity_protection import (HSMNotAvailableError,
+                                  IdentityKeyProtectionService,
+                                  IdentityProtection, InvalidCredentialsError,
+                                  ProtectionLevel)
 from .pqc import PQCipher
 from .pqc_signing import PQCSigner, calculate_fingerprint
 from .secure_memory import secure_memzero
@@ -78,6 +74,7 @@ class IdentityExistsError(IdentityError):
 
 
 import re
+
 from .crypt_utils import eprint
 
 # Strict pattern for identity names: alphanumeric, hyphens, underscores, dots.
@@ -191,7 +188,9 @@ class Identity:
             HSMNotAvailableError: If HSM required but not available
         """
         validate_identity_name(name)
-        logger.info(f"Generating identity '{name}' with {kem_algorithm} + {sig_algorithm}")
+        logger.info(
+            f"Generating identity '{name}' with {kem_algorithm} + {sig_algorithm}"
+        )
 
         try:
             # Generate encryption keypair (KEM)
@@ -218,14 +217,18 @@ class Identity:
             if protection_level != ProtectionLevel.PASSWORD_ONLY:
                 protection_service = IdentityKeyProtectionService()
                 protection = protection_service.create_protection_config(
-                    level=protection_level, hsm_slot=hsm_slot, require_touch=require_touch
+                    level=protection_level,
+                    hsm_slot=hsm_slot,
+                    require_touch=require_touch,
                 )
 
             identity = cls(
                 name=name,
                 email=email,
                 fingerprint=fingerprint,
-                created_at=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                created_at=datetime.now(timezone.utc)
+                .isoformat()
+                .replace("+00:00", "Z"),
                 encryption_algorithm=kem_algorithm,
                 signing_algorithm=sig_algorithm,
                 encryption_public_key=enc_public_key,
@@ -236,7 +239,9 @@ class Identity:
                 protection=protection,
             )
 
-            logger.info(f"Generated identity '{name}' with fingerprint {fingerprint[:40]}...")
+            logger.info(
+                f"Generated identity '{name}' with fingerprint {fingerprint[:40]}..."
+            )
             return identity
 
         except Exception as e:
@@ -312,7 +317,9 @@ class Identity:
 
         if load_private_keys and has_private_keys:
             # Allow None passphrase for HSM_ONLY protection
-            if not passphrase and (not protection or protection.level != ProtectionLevel.HSM_ONLY):
+            if not passphrase and (
+                not protection or protection.level != ProtectionLevel.HSM_ONLY
+            ):
                 raise ValueError("Passphrase required to load private keys")
 
             # Load encrypted private keys
@@ -323,10 +330,18 @@ class Identity:
 
             # Decrypt private keys (pass protection and identity name)
             enc_private_key = _decrypt_private_key(
-                enc_priv_encrypted, passphrase, protection, name, key_purpose="encryption",
+                enc_priv_encrypted,
+                passphrase,
+                protection,
+                name,
+                key_purpose="encryption",
             )
             sig_private_key = _decrypt_private_key(
-                sig_priv_encrypted, passphrase, protection, name, key_purpose="signing",
+                sig_priv_encrypted,
+                passphrase,
+                protection,
+                name,
+                key_purpose="signing",
             )
 
         identity = cls(
@@ -373,11 +388,9 @@ class Identity:
 
         # Create directory with secure permissions
         from openssl_encrypt.modules.file_permissions import (
-            PermissionLevel,
-            create_secure_directory,
-            create_secure_file,
-            set_permissions,
-        )
+            PermissionLevel, create_secure_directory, create_secure_file,
+            set_permissions)
+
         if overwrite and path.exists():
             # create_secure_directory uses exist_ok=True, just ensure permissions
             create_secure_directory(path, level=PermissionLevel.OWNER_FULL)
@@ -430,7 +443,10 @@ class Identity:
 
             if self.encryption_private_key:
                 enc_priv_encrypted = _encrypt_private_key(
-                    self.encryption_private_key.get_bytes(), passphrase, self.protection, self.name,
+                    self.encryption_private_key.get_bytes(),
+                    passphrase,
+                    self.protection,
+                    self.name,
                     key_purpose="encryption",
                 )
                 enc_priv_path = path / "encryption_private.pem"
@@ -440,7 +456,10 @@ class Identity:
 
             if self.signing_private_key:
                 sig_priv_encrypted = _encrypt_private_key(
-                    self.signing_private_key.get_bytes(), passphrase, self.protection, self.name,
+                    self.signing_private_key.get_bytes(),
+                    passphrase,
+                    self.protection,
+                    self.name,
                     key_purpose="signing",
                 )
                 sig_priv_path = path / "signing_private.pem"
@@ -468,7 +487,9 @@ class Identity:
             "created_at": self.created_at,
             "encryption_algorithm": self.encryption_algorithm,
             "signing_algorithm": self.signing_algorithm,
-            "encryption_public_key": base64.b64encode(self.encryption_public_key).decode(),
+            "encryption_public_key": base64.b64encode(
+                self.encryption_public_key
+            ).decode(),
             "signing_public_key": base64.b64encode(self.signing_public_key).decode(),
         }
 
@@ -825,7 +846,11 @@ def _encrypt_private_key(
     )
 
     # Build AAD to bind ciphertext to identity and key purpose
-    aad = f"identity:{identity_name}:purpose:{key_purpose}".encode("utf-8") if identity_name and key_purpose else None
+    aad = (
+        f"identity:{identity_name}:purpose:{key_purpose}".encode("utf-8")
+        if identity_name and key_purpose
+        else None
+    )
 
     # Encrypt with AES-256-GCM
     nonce = secrets.token_bytes(12)
@@ -884,7 +909,9 @@ def _decrypt_private_key(
             secure_memzero(private_key_bytes)
             return crypto_key
         except InvalidCredentialsError:
-            raise ValueError("Failed to decrypt private key: Invalid password or HSM response")
+            raise ValueError(
+                "Failed to decrypt private key: Invalid password or HSM response"
+            )
 
     # Legacy password-only decryption (backward compatible)
     if not passphrase:
@@ -914,7 +941,11 @@ def _decrypt_private_key(
         cipher = AESGCM(key)
 
         # Build AAD to bind ciphertext to identity and key purpose
-        aad = f"identity:{identity_name}:purpose:{key_purpose}".encode("utf-8") if identity_name and key_purpose else None
+        aad = (
+            f"identity:{identity_name}:purpose:{key_purpose}".encode("utf-8")
+            if identity_name and key_purpose
+            else None
+        )
 
         # Try with AAD first (new format), fall back to no-AAD (legacy)
         try:

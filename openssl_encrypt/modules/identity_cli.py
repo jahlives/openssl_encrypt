@@ -16,13 +16,14 @@ import getpass
 import json
 import os
 import sys
-
-from .crypt_utils import eprint
 from pathlib import Path
 from typing import Optional
 
+from .crypt_utils import eprint
 from .identity import Identity, IdentityError, IdentityStore
-from .identity_protection import HSMNotAvailableError, IdentityKeyProtectionService, ProtectionLevel
+from .identity_protection import (HSMNotAvailableError,
+                                  IdentityKeyProtectionService,
+                                  ProtectionLevel)
 from .pqc_signing import LIBOQS_AVAILABLE
 
 
@@ -107,10 +108,16 @@ def cmd_create(args) -> int:
             return 1
 
         # Check HSM availability if required
-        if protection_level in (ProtectionLevel.PASSWORD_AND_HSM, ProtectionLevel.HSM_ONLY):
+        if protection_level in (
+            ProtectionLevel.PASSWORD_AND_HSM,
+            ProtectionLevel.HSM_ONLY,
+        ):
             protection_service = IdentityKeyProtectionService()
             if not protection_service.is_hsm_available():
-                eprint("ERROR: Yubikey not found. Please insert your Yubikey.", file=sys.stderr)
+                eprint(
+                    "ERROR: Yubikey not found. Please insert your Yubikey.",
+                    file=sys.stderr,
+                )
                 return 1
 
             detected_slot = protection_service.detect_hsm_slot()
@@ -130,7 +137,9 @@ def cmd_create(args) -> int:
         # Get passphrase (not required for HSM_ONLY)
         passphrase = None
         if protection_level != ProtectionLevel.HSM_ONLY:
-            passphrase = prompt_passphrase("Passphrase for new identity: ", confirm=True)
+            passphrase = prompt_passphrase(
+                "Passphrase for new identity: ", confirm=True
+            )
 
             if len(passphrase) < 8:
                 eprint(
@@ -146,7 +155,10 @@ def cmd_create(args) -> int:
         # Generate identity
         eprint(f"Generating identity for '{args.name}'...")
 
-        if protection_level in (ProtectionLevel.PASSWORD_AND_HSM, ProtectionLevel.HSM_ONLY):
+        if protection_level in (
+            ProtectionLevel.PASSWORD_AND_HSM,
+            ProtectionLevel.HSM_ONLY,
+        ):
             eprint("Touch your Yubikey to generate keys...")
 
         hsm_slot_arg = getattr(args, "hsm_slot", None)
@@ -165,7 +177,9 @@ def cmd_create(args) -> int:
 
         # Save to store
         store = get_identity_store(getattr(args, "identity_store", None))
-        store.add_identity(identity, passphrase, overwrite=getattr(args, "overwrite", False))
+        store.add_identity(
+            identity, passphrase, overwrite=getattr(args, "overwrite", False)
+        )
 
         eprint("\nIdentity created successfully!")
         eprint(f"Name: {identity.name}")
@@ -285,7 +299,9 @@ def cmd_show(args) -> int:
         store = get_identity_store(getattr(args, "identity_store", None))
 
         # Try to load identity
-        identity = store.get_by_name(args.identity_name, passphrase=None, load_private_keys=False)
+        identity = store.get_by_name(
+            args.identity_name, passphrase=None, load_private_keys=False
+        )
 
         if identity is None:
             eprint(
@@ -330,10 +346,14 @@ def cmd_show(args) -> int:
                 if identity.protection.requires_password():
                     eprint("  Password: Required")
                 if identity.protection.requires_hsm():
-                    eprint(f"  HSM: Required ({identity.protection.hsm_config.hsm_type})")
+                    eprint(
+                        f"  HSM: Required ({identity.protection.hsm_config.hsm_type})"
+                    )
                     if identity.protection.hsm_config.slot:
                         eprint(f"    Slot: {identity.protection.hsm_config.slot}")
-                    eprint(f"    Touch required: {identity.protection.hsm_config.require_touch}")
+                    eprint(
+                        f"    Touch required: {identity.protection.hsm_config.require_touch}"
+                    )
             else:
                 eprint()
                 eprint("Protection: password_only (default)")
@@ -359,7 +379,9 @@ def cmd_export(args) -> int:
         store = get_identity_store(getattr(args, "identity_store", None))
 
         # Load identity
-        identity = store.get_by_name(args.identity_name, passphrase=None, load_private_keys=False)
+        identity = store.get_by_name(
+            args.identity_name, passphrase=None, load_private_keys=False
+        )
 
         if identity is None:
             eprint(
@@ -380,7 +402,8 @@ def cmd_export(args) -> int:
         # Check if file exists
         if output_file.exists() and not getattr(args, "overwrite", False):
             error_msg = (
-                f"ERROR: Output file '{output_file}' already exists. " "Use --overwrite to replace."
+                f"ERROR: Output file '{output_file}' already exists. "
+                "Use --overwrite to replace."
             )
             eprint(error_msg, file=sys.stderr)
             return 1
@@ -464,7 +487,9 @@ def cmd_delete(args) -> int:
         store = get_identity_store(getattr(args, "identity_store", None))
 
         # Check if identity exists
-        identity = store.get_by_name(args.identity_name, passphrase=None, load_private_keys=False)
+        identity = store.get_by_name(
+            args.identity_name, passphrase=None, load_private_keys=False
+        )
 
         if identity is None:
             eprint(

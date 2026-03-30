@@ -19,14 +19,10 @@ CASCADE_PRESETS = {
 
 # Import registry helper functions
 try:
-    from .registry import (  # noqa: F401
-        format_algorithm_help,
-        get_available_ciphers,
-        get_available_hashes,
-        get_available_kdfs,
-        get_available_kems,
-        get_available_signatures,
-    )
+    from .registry import (format_algorithm_help,  # noqa: F401
+                           get_available_ciphers, get_available_hashes,
+                           get_available_kdfs, get_available_kems,
+                           get_available_signatures)
 
     REGISTRY_AVAILABLE = True
 except ImportError:
@@ -207,20 +203,23 @@ def _add_hash_kdf_arguments(subparser):
         default=0,
         help="Use scrypt rounds for iterating (default when enabled: 10)",
     )
-    scrypt_group.add_argument("--scrypt-n", type=int, help="Scrypt N parameter (CPU/memory cost)")
+    scrypt_group.add_argument(
+        "--scrypt-n", type=int, help="Scrypt N parameter (CPU/memory cost)"
+    )
     scrypt_group.add_argument(
         "--scrypt-r", type=int, default=8, help="Scrypt r parameter (block size)"
     )
     scrypt_group.add_argument(
-        "--scrypt-p", type=int, default=1, help="Scrypt p parameter (parallelization factor)"
+        "--scrypt-p",
+        type=int,
+        default=1,
+        help="Scrypt p parameter (parallelization factor)",
     )
 
     # Argon2 options
     argon2_description = "Configure Argon2 memory-hard function parameters"
     if REGISTRY_AVAILABLE:
-        argon2_description += (
-            ". Use 'list-algorithms --category=kdfs' to see all available KDF algorithms."
-        )
+        argon2_description += ". Use 'list-algorithms --category=kdfs' to see all available KDF algorithms."
     argon2_group = subparser.add_argument_group("Argon2 Options", argon2_description)
     argon2_group.add_argument(
         "--enable-argon2",
@@ -393,9 +392,7 @@ def setup_encrypt_parser(subparser):
     # Build help text with deprecated warnings (only for 1.0.0 algorithms)
     algorithm_help_text = "Encryption algorithm to use:\n"
     if REGISTRY_AVAILABLE:
-        algorithm_help_text += (
-            "(Use 'list-algorithms' command to see available ciphers, KDFs, and hashes)\n\n"
-        )
+        algorithm_help_text += "(Use 'list-algorithms' command to see available ciphers, KDFs, and hashes)\n\n"
     for algo in sorted(all_algorithms):
         if algo == EncryptionAlgorithm.FERNET.value:
             description = "default, AES-128-CBC with authentication"
@@ -410,7 +407,9 @@ def setup_encrypt_parser(subparser):
         elif algo == EncryptionAlgorithm.CHACHA20_POLY1305.value:
             description = "modern AEAD cipher with 12-byte nonce"
         elif algo == EncryptionAlgorithm.XCHACHA20_POLY1305.value:
-            description = "ChaCha20-Poly1305 with 24-byte nonce, safer for high-volume encryption"
+            description = (
+                "ChaCha20-Poly1305 with 24-byte nonce, safer for high-volume encryption"
+            )
         elif algo == EncryptionAlgorithm.CAMELLIA.value:
             description = "Camellia in CBC mode (DEPRECATED)"
         elif algo == EncryptionAlgorithm.ML_KEM_512_HYBRID.value:
@@ -438,7 +437,9 @@ def setup_encrypt_parser(subparser):
         elif algo == "hqc-256-hybrid":
             description = "HQC-256 hybrid mode (post-quantum)"
         elif algo == EncryptionAlgorithm.THREEFISH_512.value:
-            description = "Threefish-512 with Poly1305 (256-bit PQ security, high security)"
+            description = (
+                "Threefish-512 with Poly1305 (256-bit PQ security, high security)"
+            )
         elif algo == EncryptionAlgorithm.THREEFISH_1024.value:
             description = "Threefish-1024 with Poly1305 (512-bit PQ security, paranoid)"
         else:
@@ -690,7 +691,9 @@ def setup_encrypt_parser(subparser):
         help="Randomize pixel selection order (requires --stego-password)",
     )
     stego_group.add_argument(
-        "--stego-decoy-data", action="store_true", help="Fill unused capacity with decoy data"
+        "--stego-decoy-data",
+        action="store_true",
+        help="Fill unused capacity with decoy data",
     )
     stego_group.add_argument(
         "--jpeg-quality",
@@ -702,7 +705,9 @@ def setup_encrypt_parser(subparser):
     )
 
     # Video-specific steganography options
-    video_stego_group = subparser.add_argument_group("Video steganography options (MP4)")
+    video_stego_group = subparser.add_argument_group(
+        "Video steganography options (MP4)"
+    )
     video_stego_group.add_argument(
         "--video-quantization-step",
         type=float,
@@ -744,7 +749,9 @@ def setup_encrypt_parser(subparser):
     )
 
     # HSM plugin arguments for hardware-bound key derivation
-    hsm_group = subparser.add_argument_group("HSM Options", "Hardware Security Module integration")
+    hsm_group = subparser.add_argument_group(
+        "HSM Options", "Hardware Security Module integration"
+    )
     hsm_group.add_argument(
         "--hsm",
         metavar="PLUGIN",
@@ -876,7 +883,9 @@ def setup_decrypt_parser(subparser):
 
     # PQC options for decryption
     pqc_group = subparser.add_argument_group("Post-Quantum Cryptography options")
-    pqc_group.add_argument("--pqc-keyfile", help="Path to load the PQC key file for decryption")
+    pqc_group.add_argument(
+        "--pqc-keyfile", help="Path to load the PQC key file for decryption"
+    )
     pqc_group.add_argument(
         "--pqc-allow-mixed-operations",
         action="store_true",
@@ -956,7 +965,9 @@ def setup_decrypt_parser(subparser):
     )
 
     # Video-specific steganography options (for extraction)
-    video_stego_group = subparser.add_argument_group("Video steganography options (MP4)")
+    video_stego_group = subparser.add_argument_group(
+        "Video steganography options (MP4)"
+    )
     video_stego_group.add_argument(
         "--video-quantization-step",
         type=float,
@@ -998,7 +1009,9 @@ def setup_decrypt_parser(subparser):
     )
 
     # HSM plugin arguments for hardware-bound key derivation
-    hsm_group = subparser.add_argument_group("HSM Options", "Hardware Security Module integration")
+    hsm_group = subparser.add_argument_group(
+        "HSM Options", "Hardware Security Module integration"
+    )
     hsm_group.add_argument(
         "--hsm",
         metavar="PLUGIN",
@@ -1286,12 +1299,17 @@ def setup_rekey_parser(subparser):
         default=0,
         help="Use scrypt rounds for iterating (default when enabled: 10)",
     )
-    scrypt_group.add_argument("--scrypt-n", type=int, help="Scrypt N parameter (CPU/memory cost)")
+    scrypt_group.add_argument(
+        "--scrypt-n", type=int, help="Scrypt N parameter (CPU/memory cost)"
+    )
     scrypt_group.add_argument(
         "--scrypt-r", type=int, default=8, help="Scrypt r parameter (block size)"
     )
     scrypt_group.add_argument(
-        "--scrypt-p", type=int, default=1, help="Scrypt p parameter (parallelization factor)"
+        "--scrypt-p",
+        type=int,
+        default=1,
+        help="Scrypt p parameter (parallelization factor)",
     )
 
     # Argon2 options
@@ -1466,7 +1484,9 @@ def setup_rekey_parser(subparser):
     )
 
     # HSM plugin arguments
-    hsm_group = subparser.add_argument_group("HSM Options", "Hardware Security Module integration")
+    hsm_group = subparser.add_argument_group(
+        "HSM Options", "Hardware Security Module integration"
+    )
     hsm_group.add_argument(
         "--hsm",
         metavar="PLUGIN",
@@ -1933,11 +1953,15 @@ def setup_template_parser(subparser):
     """Set up arguments specific to the template command"""
     # Create subparsers for template operations
     template_subparsers = subparser.add_subparsers(
-        dest="template_action", help="Template management operations", metavar="operation"
+        dest="template_action",
+        help="Template management operations",
+        metavar="operation",
     )
 
     # List templates
-    list_parser = template_subparsers.add_parser("list", help="List available templates")
+    list_parser = template_subparsers.add_parser(
+        "list", help="List available templates"
+    )
     list_parser.add_argument(
         "--use-case",
         choices=["personal", "business", "compliance", "archival"],
@@ -1963,7 +1987,10 @@ def setup_template_parser(subparser):
         help="Use cases this template is suitable for",
     )
     create_parser.add_argument(
-        "--format", choices=["json", "yaml"], default="json", help="Template format (default: json)"
+        "--format",
+        choices=["json", "yaml"],
+        default="json",
+        help="Template format (default: json)",
     )
     create_parser.add_argument(
         "--overwrite", action="store_true", help="Overwrite existing template"
@@ -1987,7 +2014,9 @@ def setup_template_parser(subparser):
     )
 
     # Compare templates
-    compare_parser = template_subparsers.add_parser("compare", help="Compare two templates")
+    compare_parser = template_subparsers.add_parser(
+        "compare", help="Compare two templates"
+    )
     compare_parser.add_argument("template1", help="First template name or file path")
     compare_parser.add_argument("template2", help="Second template name or file path")
     compare_parser.add_argument(
@@ -2007,7 +2036,10 @@ def setup_template_parser(subparser):
         help="Use case to recommend templates for",
     )
     recommend_parser.add_argument(
-        "--max-results", type=int, default=3, help="Maximum number of recommendations (default: 3)"
+        "--max-results",
+        type=int,
+        default=3,
+        help="Maximum number of recommendations (default: 3)",
     )
 
     # Delete template
@@ -2022,11 +2054,15 @@ def setup_smart_recommendations_parser(subparser):
     """Set up arguments specific to the smart-recommendations command."""
     # Create subparsers for smart recommendations operations
     recs_subparsers = subparser.add_subparsers(
-        dest="recommendations_action", help="Smart recommendations operations", metavar="operation"
+        dest="recommendations_action",
+        help="Smart recommendations operations",
+        metavar="operation",
     )
 
     # Get recommendations
-    get_parser = recs_subparsers.add_parser("get", help="Get personalized recommendations")
+    get_parser = recs_subparsers.add_parser(
+        "get", help="Get personalized recommendations"
+    )
     get_parser.add_argument(
         "--user-id",
         default="default",
@@ -2075,13 +2111,17 @@ def setup_smart_recommendations_parser(subparser):
         "profile", help="Manage user profiles for personalized recommendations"
     )
     profile_parser.add_argument(
-        "--user-id", default="default", help="User ID for profile operations (default: default)"
+        "--user-id",
+        default="default",
+        help="User ID for profile operations (default: default)",
     )
     profile_group = profile_parser.add_mutually_exclusive_group(required=True)
     profile_group.add_argument(
         "--create", action="store_true", help="Create new user profile interactively"
     )
-    profile_group.add_argument("--show", action="store_true", help="Show existing user profile")
+    profile_group.add_argument(
+        "--show", action="store_true", help="Show existing user profile"
+    )
 
     # Feedback system
     feedback_parser = recs_subparsers.add_parser(
@@ -2091,12 +2131,16 @@ def setup_smart_recommendations_parser(subparser):
         "recommendation_id", help="ID of the recommendation to provide feedback on"
     )
     feedback_parser.add_argument(
-        "accepted", type=bool, help="Whether the recommendation was accepted (True/False)"
+        "accepted",
+        type=bool,
+        help="Whether the recommendation was accepted (True/False)",
     )
     feedback_parser.add_argument(
         "--user-id", default="default", help="User ID for feedback (default: default)"
     )
-    feedback_parser.add_argument("--comment", help="Optional comment about the recommendation")
+    feedback_parser.add_argument(
+        "--comment", help="Optional comment about the recommendation"
+    )
 
     # Quick recommendations
     quick_parser = recs_subparsers.add_parser(
@@ -2127,7 +2171,9 @@ def setup_identity_parser(subparser):
 
     # Create subparsers for identity subcommands
     identity_subparsers = subparser.add_subparsers(
-        dest="identity_action", help="Identity management operations", metavar="operation"
+        dest="identity_action",
+        help="Identity management operations",
+        metavar="operation",
     )
 
     # Create identity
@@ -2184,13 +2230,21 @@ def setup_identity_parser(subparser):
     show_parser.add_argument("identity_name", help="Identity name to show")
 
     # Export public identity
-    export_parser = identity_subparsers.add_parser("export", help="Export public identity")
+    export_parser = identity_subparsers.add_parser(
+        "export", help="Export public identity"
+    )
     export_parser.add_argument("identity_name", help="Identity name to export")
-    export_parser.add_argument("--output", "-o", help="Output file (default: <name>_public.json)")
-    export_parser.add_argument("--overwrite", action="store_true", help="Overwrite existing file")
+    export_parser.add_argument(
+        "--output", "-o", help="Output file (default: <name>_public.json)"
+    )
+    export_parser.add_argument(
+        "--overwrite", action="store_true", help="Overwrite existing file"
+    )
 
     # Import public identity
-    import_parser = identity_subparsers.add_parser("import", help="Import public identity")
+    import_parser = identity_subparsers.add_parser(
+        "import", help="Import public identity"
+    )
     import_parser.add_argument("--file", required=True, help="JSON file to import")
     import_parser.add_argument(
         "--overwrite", action="store_true", help="Overwrite existing identity"
@@ -2217,9 +2271,13 @@ def setup_test_parser(subparser):
 
     # Fuzz testing
     fuzz_parser = test_subparsers.add_parser("fuzz", help="Run fuzzing tests")
-    fuzz_parser.add_argument("--iterations", type=int, default=5, help="Number of test iterations")
+    fuzz_parser.add_argument(
+        "--iterations", type=int, default=5, help="Number of test iterations"
+    )
     fuzz_parser.add_argument("--algorithm", help="Test specific algorithm")
-    fuzz_parser.add_argument("--seed", type=int, help="Random seed for reproducible tests")
+    fuzz_parser.add_argument(
+        "--seed", type=int, help="Random seed for reproducible tests"
+    )
 
     # Side-channel testing
     sidechannel_parser = test_subparsers.add_parser(
@@ -2243,8 +2301,12 @@ def setup_test_parser(subparser):
     )
 
     # Benchmark testing
-    benchmark_parser = test_subparsers.add_parser("benchmark", help="Run performance benchmarks")
-    benchmark_parser.add_argument("--algorithms", nargs="+", help="Algorithms to benchmark")
+    benchmark_parser = test_subparsers.add_parser(
+        "benchmark", help="Run performance benchmarks"
+    )
+    benchmark_parser.add_argument(
+        "--algorithms", nargs="+", help="Algorithms to benchmark"
+    )
     benchmark_parser.add_argument(
         "--file-sizes", nargs="+", type=int, help="File sizes to test (in bytes)"
     )
@@ -2260,7 +2322,10 @@ def setup_test_parser(subparser):
     # Memory testing
     memory_parser = test_subparsers.add_parser("memory", help="Run memory safety tests")
     memory_parser.add_argument(
-        "--test-iterations", type=int, default=10, help="Number of memory test iterations"
+        "--test-iterations",
+        type=int,
+        default=10,
+        help="Number of memory test iterations",
     )
     memory_parser.add_argument(
         "--leak-threshold", type=float, default=1.0, help="Memory leak threshold in MB"
@@ -2268,8 +2333,12 @@ def setup_test_parser(subparser):
 
     # Run all tests
     all_parser = test_subparsers.add_parser("all", help="Run all test suites")
-    all_parser.add_argument("--parallel", action="store_true", help="Run test suites in parallel")
-    all_parser.add_argument("--max-workers", type=int, default=3, help="Maximum parallel workers")
+    all_parser.add_argument(
+        "--parallel", action="store_true", help="Run test suites in parallel"
+    )
+    all_parser.add_argument(
+        "--max-workers", type=int, default=3, help="Maximum parallel workers"
+    )
 
     # Common test arguments
     for parser in [
@@ -2290,7 +2359,9 @@ def setup_test_parser(subparser):
             default=["json", "html"],
             help="Output format(s) for test reports",
         )
-        parser.add_argument("--quiet", action="store_true", help="Suppress test progress output")
+        parser.add_argument(
+            "--quiet", action="store_true", help="Suppress test progress output"
+        )
 
 
 def setup_list_algorithms_parser(subparser):
@@ -2319,7 +2390,8 @@ def setup_hsm_parser(subparser):
 
     # FIDO2 registration subcommand
     fido2_register_parser = hsm_subparsers.add_parser(
-        "fido2-register", help="Register new FIDO2 credential for hardware-bound encryption"
+        "fido2-register",
+        help="Register new FIDO2 credential for hardware-bound encryption",
     )
     fido2_register_parser.add_argument(
         "--description",
@@ -2338,7 +2410,8 @@ def setup_hsm_parser(subparser):
 
     # FIDO2 status subcommand
     fido2_status_parser = hsm_subparsers.add_parser(
-        "fido2-status", help="Show FIDO2 registration status and list registered credentials"
+        "fido2-status",
+        help="Show FIDO2 registration status and list registered credentials",
     )
     fido2_status_parser.add_argument(
         "--rp-id",
@@ -2401,7 +2474,9 @@ def setup_keyserver_parser(subparser):
     keyserver_subparsers.add_parser("disable", help="Disable keyserver plugin")
 
     # Status subcommand
-    keyserver_subparsers.add_parser("status", help="Show keyserver status and configuration")
+    keyserver_subparsers.add_parser(
+        "status", help="Show keyserver status and configuration"
+    )
 
     # Register subcommand (no auth required)
     register_parser = keyserver_subparsers.add_parser(
@@ -2430,16 +2505,24 @@ def setup_keyserver_parser(subparser):
     search_parser = keyserver_subparsers.add_parser(
         "search", help="Search for public key on keyserver"
     )
-    search_parser.add_argument("identifier", help="Fingerprint, name, or email to search for")
-    search_parser.add_argument("--json", action="store_true", help="Output in JSON format")
+    search_parser.add_argument(
+        "identifier", help="Fingerprint, name, or email to search for"
+    )
+    search_parser.add_argument(
+        "--json", action="store_true", help="Output in JSON format"
+    )
 
     # Import subcommand (public, no auth)
     import_parser = keyserver_subparsers.add_parser(
         "import", help="Import public key from keyserver to local store"
     )
-    import_parser.add_argument("identifier", help="Fingerprint, name, or email to import")
     import_parser.add_argument(
-        "--no-trust-prompt", action="store_true", help="Skip trust confirmation (dangerous)"
+        "identifier", help="Fingerprint, name, or email to import"
+    )
+    import_parser.add_argument(
+        "--no-trust-prompt",
+        action="store_true",
+        help="Skip trust confirmation (dangerous)",
     )
 
     # Upload subcommand (requires API token)
@@ -2460,7 +2543,9 @@ def setup_keyserver_parser(subparser):
     )
     set_token_parser.add_argument("token", help="API token (Bearer token)")
 
-    keyserver_subparsers.add_parser("show-token", help="Show current API token (masked)")
+    keyserver_subparsers.add_parser(
+        "show-token", help="Show current API token (masked)"
+    )
 
     keyserver_subparsers.add_parser("clear-token", help="Delete API token")
 
@@ -2468,7 +2553,9 @@ def setup_keyserver_parser(subparser):
     cache_clear_parser = keyserver_subparsers.add_parser(
         "cache-clear", help="Clear local keyserver cache"
     )
-    cache_clear_parser.add_argument("--force", action="store_true", help="Skip confirmation prompt")
+    cache_clear_parser.add_argument(
+        "--force", action="store_true", help="Skip confirmation prompt"
+    )
 
     keyserver_subparsers.add_parser("cache-stats", help="Show cache statistics")
 
@@ -2482,31 +2569,44 @@ def setup_telemetry_parser(subparser):
     )
 
     # Status subcommand
-    telemetry_subparsers.add_parser("status", help="Show telemetry status and statistics")
+    telemetry_subparsers.add_parser(
+        "status", help="Show telemetry status and statistics"
+    )
 
     # Show pending events subcommand
     show_pending_parser = telemetry_subparsers.add_parser(
         "show-pending", help="Show pending telemetry events (transparency)"
     )
-    show_pending_parser.add_argument("--json", action="store_true", help="Output in JSON format")
     show_pending_parser.add_argument(
-        "--limit", type=int, default=100, help="Maximum number of events to show (default: 100)"
+        "--json", action="store_true", help="Output in JSON format"
+    )
+    show_pending_parser.add_argument(
+        "--limit",
+        type=int,
+        default=100,
+        help="Maximum number of events to show (default: 100)",
     )
 
     # Flush subcommand
-    telemetry_subparsers.add_parser("flush", help="Upload all pending events immediately")
+    telemetry_subparsers.add_parser(
+        "flush", help="Upload all pending events immediately"
+    )
 
     # Clear subcommand
     clear_parser = telemetry_subparsers.add_parser(
         "clear", help="Delete all pending events without uploading"
     )
-    clear_parser.add_argument("--force", action="store_true", help="Skip confirmation prompt")
+    clear_parser.add_argument(
+        "--force", action="store_true", help="Skip confirmation prompt"
+    )
 
     # Opt-out subcommand
     opt_out_parser = telemetry_subparsers.add_parser(
         "opt-out", help="Completely disable telemetry and delete all data"
     )
-    opt_out_parser.add_argument("--force", action="store_true", help="Skip confirmation prompt")
+    opt_out_parser.add_argument(
+        "--force", action="store_true", help="Skip confirmation prompt"
+    )
 
 
 def create_subparser_main():

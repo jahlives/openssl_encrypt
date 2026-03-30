@@ -8,6 +8,7 @@ delegating to the actual CLI implementation in modules.crypt_cli or launching GU
 
 import argparse
 import sys
+
 from .modules.crypt_utils import eprint
 
 
@@ -29,7 +30,9 @@ def main():
             description="Encrypt or decrypt files with a password",
             add_help=False,
         )
-        parser.add_argument("--gui", action="store_true", help="Launch graphical user interface")
+        parser.add_argument(
+            "--gui", action="store_true", help="Launch graphical user interface"
+        )
         parser.add_argument(
             "--help", "-h", action="store_true", help="Show this help message and exit"
         )
@@ -52,8 +55,12 @@ def main():
             eprint("  version             Show version information")
             eprint("")
             eprint("Steganography:")
-            eprint("  Use --stego-hide with encrypt command to hide encrypted data in images")
-            eprint("  Use --stego-extract with decrypt command to extract data from images")
+            eprint(
+                "  Use --stego-hide with encrypt command to hide encrypted data in images"
+            )
+            eprint(
+                "  Use --stego-extract with decrypt command to extract data from images"
+            )
             eprint("")
             eprint("Global options:")
             eprint("  --gui               Launch graphical user interface")

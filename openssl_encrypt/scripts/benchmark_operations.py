@@ -20,6 +20,7 @@ import sys
 import time
 import tracemalloc
 from typing import Dict, Tuple
+
 from openssl_encrypt.modules.crypt_utils import eprint
 
 # Add parent directory to path for imports
@@ -61,7 +62,8 @@ except ImportError:
     eprint("Warning: whirlpool not available, skipping Whirlpool benchmark")
 
 try:
-    from openssl_encrypt.modules.randomx import check_randomx_support, randomx_kdf
+    from openssl_encrypt.modules.randomx import (check_randomx_support,
+                                                 randomx_kdf)
 
     RANDOMX_AVAILABLE = check_randomx_support()
     if not RANDOMX_AVAILABLE:
@@ -150,13 +152,21 @@ def benchmark_hash_algorithms() -> Dict[str, Dict]:
     results = {}
 
     # SHA-2 family
-    results["sha224"] = {"time_per_10k_rounds": benchmark_hash_algorithm("SHA-224", hashlib.sha224)}
+    results["sha224"] = {
+        "time_per_10k_rounds": benchmark_hash_algorithm("SHA-224", hashlib.sha224)
+    }
 
-    results["sha256"] = {"time_per_10k_rounds": benchmark_hash_algorithm("SHA-256", hashlib.sha256)}
+    results["sha256"] = {
+        "time_per_10k_rounds": benchmark_hash_algorithm("SHA-256", hashlib.sha256)
+    }
 
-    results["sha384"] = {"time_per_10k_rounds": benchmark_hash_algorithm("SHA-384", hashlib.sha384)}
+    results["sha384"] = {
+        "time_per_10k_rounds": benchmark_hash_algorithm("SHA-384", hashlib.sha384)
+    }
 
-    results["sha512"] = {"time_per_10k_rounds": benchmark_hash_algorithm("SHA-512", hashlib.sha512)}
+    results["sha512"] = {
+        "time_per_10k_rounds": benchmark_hash_algorithm("SHA-512", hashlib.sha512)
+    }
 
     # SHA-3 family
     results["sha3_224"] = {
@@ -186,7 +196,9 @@ def benchmark_hash_algorithms() -> Dict[str, Dict]:
         def blake3_hash(data):
             return blake3.blake3(data)
 
-        results["blake3"] = {"time_per_10k_rounds": benchmark_hash_algorithm("BLAKE3", blake3_hash)}
+        results["blake3"] = {
+            "time_per_10k_rounds": benchmark_hash_algorithm("BLAKE3", blake3_hash)
+        }
     else:
         # Fallback: BLAKE3 is typically ~20% faster than BLAKE2b
         results["blake3"] = {
@@ -238,7 +250,9 @@ def benchmark_hash_algorithms() -> Dict[str, Dict]:
             return WhirlpoolWrapper(pywhirlpool.new(data))
 
         results["whirlpool"] = {
-            "time_per_10k_rounds": benchmark_hash_algorithm("Whirlpool", whirlpool_hash),
+            "time_per_10k_rounds": benchmark_hash_algorithm(
+                "Whirlpool", whirlpool_hash
+            ),
             "optional": True,
         }
 
@@ -305,7 +319,9 @@ def benchmark_argon2() -> Dict:
         )
         return ph.hash(b"password")
 
-    higher_time, _ = benchmark_kdf_with_memory("Argon2 (time_cost=4)", argon2_func_higher)
+    higher_time, _ = benchmark_kdf_with_memory(
+        "Argon2 (time_cost=4)", argon2_func_higher
+    )
 
     time_per_timecost = higher_time - base_time
 
@@ -345,7 +361,9 @@ def benchmark_scrypt() -> Dict:
             dklen=32,
         )
 
-    time_double, memory_double = benchmark_kdf_with_memory("Scrypt (n=32768)", scrypt_func_double)
+    time_double, memory_double = benchmark_kdf_with_memory(
+        "Scrypt (n=32768)", scrypt_func_double
+    )
 
     time_multiplier = time_double / time_sec if time_sec > 0 else 2.0
 
@@ -422,16 +440,24 @@ def benchmark_randomx() -> Dict:
 
     # Light mode
     def randomx_light_func():
-        return randomx_kdf(password=b"password", salt=b"salt" * 4, mode="light", rounds=1)
+        return randomx_kdf(
+            password=b"password", salt=b"salt" * 4, mode="light", rounds=1
+        )
 
-    light_time, light_memory = benchmark_kdf_with_memory("RandomX (light)", randomx_light_func)
+    light_time, light_memory = benchmark_kdf_with_memory(
+        "RandomX (light)", randomx_light_func
+    )
 
     # Fast mode (if memory available)
     def randomx_fast_func():
-        return randomx_kdf(password=b"password", salt=b"salt" * 4, mode="fast", rounds=1)
+        return randomx_kdf(
+            password=b"password", salt=b"salt" * 4, mode="fast", rounds=1
+        )
 
     try:
-        fast_time, fast_memory = benchmark_kdf_with_memory("RandomX (fast)", randomx_fast_func)
+        fast_time, fast_memory = benchmark_kdf_with_memory(
+            "RandomX (fast)", randomx_fast_func
+        )
     except Exception:  # Fallback if fast mode fails (e.g., insufficient memory)
         fast_time, fast_memory = light_time * 4, 2097152  # Estimate
 

@@ -31,12 +31,9 @@ import sys
 from typing import Any, Dict, Set
 
 from ....modules.crypt_utils import tty_clear_line, tty_write
-from ....modules.plugin_system.plugin_base import (
-    HSMPlugin,
-    PluginCapability,
-    PluginResult,
-    PluginSecurityContext,
-)
+from ....modules.plugin_system.plugin_base import (HSMPlugin, PluginCapability,
+                                                   PluginResult,
+                                                   PluginSecurityContext)
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +45,9 @@ class YubikeyHSMPlugin(HSMPlugin):
 
     def __init__(self):
         super().__init__(
-            plugin_id="yubikey_hsm", name="Yubikey Challenge-Response HSM", version="1.0.0"
+            plugin_id="yubikey_hsm",
+            name="Yubikey Challenge-Response HSM",
+            version="1.0.0",
         )
         self._ykman_available = None
         self._cached_slot = None
@@ -97,7 +96,9 @@ class YubikeyHSMPlugin(HSMPlugin):
 
             # Use first device - handle tuple format (device, device_info)
             device_entry = devices[0]
-            device = device_entry[0] if isinstance(device_entry, tuple) else device_entry
+            device = (
+                device_entry[0] if isinstance(device_entry, tuple) else device_entry
+            )
 
             # Open connection and check slots via OTP (HID) interface
             with device.open_connection(OtpConnection) as conn:
@@ -165,7 +166,9 @@ class YubikeyHSMPlugin(HSMPlugin):
 
             # Use first device - handle tuple format (device, device_info)
             device_entry = devices[0]
-            device = device_entry[0] if isinstance(device_entry, tuple) else device_entry
+            device = (
+                device_entry[0] if isinstance(device_entry, tuple) else device_entry
+            )
 
             # Perform Challenge-Response via OTP (HID) interface
             with device.open_connection(OtpConnection) as conn:
@@ -202,7 +205,9 @@ class YubikeyHSMPlugin(HSMPlugin):
             self.logger.error(f"Challenge-Response exception details: {error_details}")
             raise RuntimeError(f"Yubikey Challenge-Response failed: {str(e)}") from e
 
-    def get_hsm_pepper(self, salt: bytes, context: PluginSecurityContext) -> PluginResult:
+    def get_hsm_pepper(
+        self, salt: bytes, context: PluginSecurityContext
+    ) -> PluginResult:
         """
         Derive HSM pepper from salt using Yubikey Challenge-Response.
 
@@ -256,7 +261,9 @@ class YubikeyHSMPlugin(HSMPlugin):
                     self.logger.info(f"Auto-detected slot {slot}")
 
             # Perform Challenge-Response
-            self.logger.info(f"Performing Challenge-Response with Yubikey slot {slot}...")
+            self.logger.info(
+                f"Performing Challenge-Response with Yubikey slot {slot}..."
+            )
             # Write touch prompt directly to the terminal (bypasses stdout/stderr
             # redirection) so it's always visible to the user.
             tty_write(f"👆 Touch your Yubikey now (slot {slot})...\n")

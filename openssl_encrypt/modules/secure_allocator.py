@@ -34,11 +34,11 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 # Import secure error handling
 from .crypt_errors import MemoryError as SecureMemoryError
 from .crypt_errors import secure_memory_error_handler
-
+from .crypt_utils import eprint
 # Import secure memory utility functions
 from .secure_memory import SecureBytes as BaseSecureBytes
-from .secure_memory import get_memory_page_size, secure_memzero, verify_memory_zeroed
-from .crypt_utils import eprint
+from .secure_memory import (get_memory_page_size, secure_memzero,
+                            verify_memory_zeroed)
 
 
 class SecureHeapBlock:
@@ -81,7 +81,9 @@ class SecureHeapBlock:
         self.buffer[:canary_size] = self.header_canary
         # Front canary (before user data)
         front_canary_pos = canary_size
-        self.buffer[front_canary_pos : front_canary_pos + canary_size] = self.front_canary
+        self.buffer[front_canary_pos : front_canary_pos + canary_size] = (
+            self.front_canary
+        )
         # End canary (after user data)
         end_canary_pos = canary_size + canary_size + size
         self.buffer[end_canary_pos:] = self.end_canary
@@ -103,7 +105,9 @@ class SecureHeapBlock:
     @property
     def data(self) -> memoryview:
         """Get a memoryview of just the usable portion of the block."""
-        return memoryview(self.buffer)[self.data_offset : self.data_offset + self.requested_size]
+        return memoryview(self.buffer)[
+            self.data_offset : self.data_offset + self.requested_size
+        ]
 
     def check_canaries(self) -> bool:
         """
@@ -147,7 +151,9 @@ class SecureHeapBlock:
         # First check canaries to detect any overflow before wiping
         canaries_intact = self.check_canaries()
         if not canaries_intact and os.environ.get("DEBUG_SECURE_ALLOCATOR") == "1":
-            eprint(f"WARNING: Canary violation detected in block {self.block_id} before wiping")
+            eprint(
+                f"WARNING: Canary violation detected in block {self.block_id} before wiping"
+            )
             # Still continue with wiping to clean up what we can
 
         # Securely wipe the entire buffer
@@ -409,13 +415,18 @@ class SecureHeap:
                 # Raise a secure error for non-existent blocks
                 if not isinstance(block_id, str):
                     raise SecureMemoryError(
-                        "Invalid block ID type", f"Block ID must be a string, got {type(block_id)}"
+                        "Invalid block ID type",
+                        f"Block ID must be a string, got {type(block_id)}",
                     )
-                raise SecureMemoryError("Block not found", f"No block with ID {block_id} exists")
+                raise SecureMemoryError(
+                    "Block not found", f"No block with ID {block_id} exists"
+                )
 
             # Check canaries before wiping
             if not block.check_canaries() and not self.quiet:
-                eprint(f"Warning: Canary violation detected in block {block_id} during free")
+                eprint(
+                    f"Warning: Canary violation detected in block {block_id} during free"
+                )
 
             # Wipe the block
             success = block.wipe(verification_level)
@@ -451,12 +462,16 @@ class SecureHeap:
         with self.lock:
             # Count blocks and sizes
             block_count = len(self.blocks)
-            total_requested = sum(block.requested_size for block in self.blocks.values())
+            total_requested = sum(
+                block.requested_size for block in self.blocks.values()
+            )
             total_overhead = self.current_size - total_requested
 
             # Calculate average time since allocation to detect potential leaks
             now = time.time()
-            block_ages = [(now - block.allocation_time) for block in self.blocks.values()]
+            block_ages = [
+                (now - block.allocation_time) for block in self.blocks.values()
+            ]
             avg_age = sum(block_ages) / len(block_ages) if block_ages else 0
 
             return {
@@ -464,12 +479,16 @@ class SecureHeap:
                 "current_size": self.current_size,
                 "max_size": self.max_size,
                 "utilization_percent": (
-                    (self.current_size / self.max_size) * 100 if self.max_size > 0 else 0
+                    (self.current_size / self.max_size) * 100
+                    if self.max_size > 0
+                    else 0
                 ),
                 "total_requested": total_requested,
                 "total_overhead": total_overhead,
                 "overhead_percent": (
-                    (total_overhead / self.current_size) * 100 if self.current_size > 0 else 0
+                    (total_overhead / self.current_size) * 100
+                    if self.current_size > 0
+                    else 0
                 ),
                 "average_block_age_seconds": avg_age,
             }
@@ -522,7 +541,9 @@ def allocate_secure_memory(size: int) -> Tuple[str, memoryview]:
 
 
 @secure_memory_error_handler
-def allocate_secure_crypto_buffer(size: int, zero: bool = True) -> Tuple[str, SecureBytes]:
+def allocate_secure_crypto_buffer(
+    size: int, zero: bool = True
+) -> Tuple[str, SecureBytes]:
     """
     Allocate a secure buffer specifically for cryptographic operations.
 

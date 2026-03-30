@@ -19,15 +19,13 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from openssl_encrypt.modules.file_permissions import (
-    PermissionLevel,
-    check_permissions,
-    copy_permissions,
-    create_secure_directory,
-    create_secure_file,
-    get_posix_mode,
-    set_permissions,
-)
+from openssl_encrypt.modules.file_permissions import (PermissionLevel,
+                                                      check_permissions,
+                                                      copy_permissions,
+                                                      create_secure_directory,
+                                                      create_secure_file,
+                                                      get_posix_mode,
+                                                      set_permissions)
 
 
 class TestSetAndCheckPermissions(unittest.TestCase):
@@ -341,9 +339,7 @@ class TestWindowsSpecific(unittest.TestCase):
         import win32security
 
         from openssl_encrypt.modules.file_permissions import (
-            _get_system_sid,
-            _get_windows_owner_sid,
-        )
+            _get_system_sid, _get_windows_owner_sid)
 
         f = os.path.join(self.tmpdir, "test.txt")
         with open(f, "w") as fh:
@@ -351,9 +347,7 @@ class TestWindowsSpecific(unittest.TestCase):
 
         set_permissions(f, PermissionLevel.OWNER_ONLY)
 
-        sd = win32security.GetFileSecurity(
-            f, win32security.DACL_SECURITY_INFORMATION
-        )
+        sd = win32security.GetFileSecurity(f, win32security.DACL_SECURITY_INFORMATION)
         dacl = sd.GetSecurityDescriptorDacl()
 
         owner_sid = _get_windows_owner_sid()
@@ -373,16 +367,15 @@ class TestWindowsSpecific(unittest.TestCase):
         import ntsecuritycon as con
         import win32security
 
-        from openssl_encrypt.modules.file_permissions import _get_windows_owner_sid
+        from openssl_encrypt.modules.file_permissions import \
+            _get_windows_owner_sid
 
         d = os.path.join(self.tmpdir, "testdir")
         os.makedirs(d)
 
         set_permissions(d, PermissionLevel.OWNER_FULL)
 
-        sd = win32security.GetFileSecurity(
-            d, win32security.DACL_SECURITY_INFORMATION
-        )
+        sd = win32security.GetFileSecurity(d, win32security.DACL_SECURITY_INFORMATION)
         dacl = sd.GetSecurityDescriptorDacl()
 
         owner_sid = _get_windows_owner_sid()
@@ -405,9 +398,7 @@ class TestWindowsSpecific(unittest.TestCase):
 
         set_permissions(f, PermissionLevel.OWNER_WRITE_PUBLIC_READ)
 
-        sd = win32security.GetFileSecurity(
-            f, win32security.DACL_SECURITY_INFORMATION
-        )
+        sd = win32security.GetFileSecurity(f, win32security.DACL_SECURITY_INFORMATION)
         dacl = sd.GetSecurityDescriptorDacl()
 
         everyone_sid = _get_everyone_sid()
@@ -431,9 +422,7 @@ class TestWindowsSpecific(unittest.TestCase):
 
         set_permissions(f, PermissionLevel.OWNER_ONLY)
 
-        sd = win32security.GetFileSecurity(
-            f, win32security.DACL_SECURITY_INFORMATION
-        )
+        sd = win32security.GetFileSecurity(f, win32security.DACL_SECURITY_INFORMATION)
         dacl = sd.GetSecurityDescriptorDacl()
 
         for i in range(dacl.GetAceCount()):
@@ -441,9 +430,7 @@ class TestWindowsSpecific(unittest.TestCase):
             # ace[0] is (ace_type, ace_flags)
             ace_flags = ace[0][1]
             # INHERITED_ACE = 0x10
-            self.assertFalse(
-                ace_flags & 0x10, "No ACEs should be inherited"
-            )
+            self.assertFalse(ace_flags & 0x10, "No ACEs should be inherited")
 
     def test_synthetic_posix_mode(self):
         """get_posix_mode returns synthetic modes on Windows."""

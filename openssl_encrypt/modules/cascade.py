@@ -193,7 +193,9 @@ class CascadeKeyDerivation:
         Returns:
             List of (key, nonce) tuples for each layer in order
         """
-        use_per_layer_salt = self.format_version is not None and self.format_version >= 12
+        use_per_layer_salt = (
+            self.format_version is not None and self.format_version >= 12
+        )
 
         layers = []
         previous_key_prefix = b""  # Empty for first layer
@@ -204,11 +206,17 @@ class CascadeKeyDerivation:
             cipher_info = cipher.info()
 
             # Derive per-layer salt for v12+, or use master salt for legacy
-            layer_salt = self._derive_layer_salt(salt, i) if use_per_layer_salt else salt
+            layer_salt = (
+                self._derive_layer_salt(salt, i) if use_per_layer_salt else salt
+            )
 
             # Construct info parameter with chain prefix
-            key_info = KEY_INFO_PREFIX + cipher_name.encode("utf-8") + previous_key_prefix
-            nonce_info = NONCE_INFO_PREFIX + cipher_name.encode("utf-8") + previous_key_prefix
+            key_info = (
+                KEY_INFO_PREFIX + cipher_name.encode("utf-8") + previous_key_prefix
+            )
+            nonce_info = (
+                NONCE_INFO_PREFIX + cipher_name.encode("utf-8") + previous_key_prefix
+            )
 
             # Derive key
             kdf_key = HKDF(
@@ -277,7 +285,9 @@ class CascadeEncryption:
         """
         self.config = config
         self.format_version = format_version
-        self.key_derivation = CascadeKeyDerivation(config, format_version=format_version)
+        self.key_derivation = CascadeKeyDerivation(
+            config, format_version=format_version
+        )
 
         # Validate all ciphers are available
         self.ciphers = []
@@ -286,7 +296,9 @@ class CascadeEncryption:
                 cipher = get_cipher(cipher_name)
                 self.ciphers.append(cipher)
             except Exception as e:
-                raise CascadeConfigError(f"Cipher '{cipher_name}' is not available: {e}")
+                raise CascadeConfigError(
+                    f"Cipher '{cipher_name}' is not available: {e}"
+                )
 
     def encrypt(
         self,
@@ -328,7 +340,9 @@ class CascadeEncryption:
                 try:
                     # v12+: AAD on all layers; legacy: only first layer (M12)
                     aad = associated_data if (use_aad_all_layers or i == 0) else None
-                    data = cipher.encrypt(bytes(key), data, nonce=nonce, associated_data=aad)
+                    data = cipher.encrypt(
+                        bytes(key), data, nonce=nonce, associated_data=aad
+                    )
                 except Exception as e:
                     raise CascadeError(
                         f"Encryption failed at layer {i + 1} ({self.config.cipher_names[i]}): {e}"
@@ -384,7 +398,9 @@ class CascadeEncryption:
                     aad = associated_data if (use_aad_all_layers or i == 0) else None
                     # Don't pass nonce - let cipher extract it from ciphertext
                     # (The nonce was prepended during encryption)
-                    data = cipher.decrypt(bytes(key), data, nonce=None, associated_data=aad)
+                    data = cipher.decrypt(
+                        bytes(key), data, nonce=None, associated_data=aad
+                    )
                 except Exception as e:
                     # Check if it's an authentication error
                     if "authentication" in str(e).lower() or "tag" in str(e).lower():

@@ -51,7 +51,9 @@ def test_usb_creation():
             assert (portable_root / "logs").exists(), "Logs directory not created"
 
             # Check autorun files
-            assert (usb_path / "autorun.inf").exists(), "Windows autorun.inf not created"
+            assert (
+                usb_path / "autorun.inf"
+            ).exists(), "Windows autorun.inf not created"
             assert (usb_path / "autorun.sh").exists(), "Linux autorun.sh not created"
             assert (usb_path / ".autorun").exists(), "macOS .autorun not created"
 
@@ -63,7 +65,9 @@ def test_usb_creation():
                 config = json.load(f)
 
             assert config["portable_mode"] == True, "Portable mode not enabled"
-            assert config["security_profile"] == "standard", "Security profile incorrect"
+            assert (
+                config["security_profile"] == "standard"
+            ), "Security profile incorrect"
             assert config["network_disabled"] == True, "Network not disabled"
 
             print("✅ Directory structure validation passed")
@@ -94,7 +98,9 @@ def test_usb_verification():
             password = "verification_test_password_456"
 
             # Create USB drive
-            creation_result = creator.create_portable_usb(usb_path=usb_path, password=password)
+            creation_result = creator.create_portable_usb(
+                usb_path=usb_path, password=password
+            )
 
             assert creation_result["success"], "USB creation failed"
 
@@ -107,7 +113,9 @@ def test_usb_verification():
             print(f"   Files missing: {verification_result['missing_files']}")
 
             assert verification_result["integrity_ok"], "Integrity check failed"
-            assert verification_result["failed_files"] == 0, "Some files failed verification"
+            assert (
+                verification_result["failed_files"] == 0
+            ), "Some files failed verification"
             assert verification_result["missing_files"] == 0, "Some files are missing"
 
             print("✅ Integrity verification passed")
@@ -142,7 +150,9 @@ def test_usb_security_profiles():
                     usb_path=usb_path, password=f"test_password_for_{profile.value}"
                 )
 
-                assert result["success"], f"Failed to create USB with {profile.value} profile"
+                assert result[
+                    "success"
+                ], f"Failed to create USB with {profile.value} profile"
                 assert (
                     result["security_profile"] == profile.value
                 ), f"Security profile mismatch for {profile.value}"

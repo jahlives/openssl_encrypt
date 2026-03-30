@@ -20,7 +20,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 # Import the modules to test
-from openssl_encrypt.modules.asymmetric_core import PasswordWrapper, PasswordWrapperError
+from openssl_encrypt.modules.asymmetric_core import (PasswordWrapper,
+                                                     PasswordWrapperError)
 from openssl_encrypt.modules.crypt_utils import generate_strong_password
 from openssl_encrypt.modules.pqc import LIBOQS_AVAILABLE, PQCipher
 
@@ -51,35 +52,55 @@ class TestPasswordGeneration(unittest.TestCase):
         """Test password generation with different character sets."""
         # Only lowercase
         password = generate_strong_password(
-            16, use_lowercase=True, use_uppercase=False, use_digits=False, use_special=False
+            16,
+            use_lowercase=True,
+            use_uppercase=False,
+            use_digits=False,
+            use_special=False,
         )
         self.assertEqual(len(password), 16)
         self.assertTrue(all(c.islower() for c in password))
 
         # Only uppercase
         password = generate_strong_password(
-            16, use_lowercase=False, use_uppercase=True, use_digits=False, use_special=False
+            16,
+            use_lowercase=False,
+            use_uppercase=True,
+            use_digits=False,
+            use_special=False,
         )
         self.assertEqual(len(password), 16)
         self.assertTrue(all(c.isupper() for c in password))
 
         # Only digits
         password = generate_strong_password(
-            16, use_lowercase=False, use_uppercase=False, use_digits=True, use_special=False
+            16,
+            use_lowercase=False,
+            use_uppercase=False,
+            use_digits=True,
+            use_special=False,
         )
         self.assertEqual(len(password), 16)
         self.assertTrue(all(c.isdigit() for c in password))
 
         # Only special characters
         password = generate_strong_password(
-            16, use_lowercase=False, use_uppercase=False, use_digits=False, use_special=True
+            16,
+            use_lowercase=False,
+            use_uppercase=False,
+            use_digits=False,
+            use_special=True,
         )
         self.assertEqual(len(password), 16)
         self.assertTrue(all(c in string.punctuation for c in password))
 
         # Mix of uppercase and digits
         password = generate_strong_password(
-            16, use_lowercase=False, use_uppercase=True, use_digits=True, use_special=False
+            16,
+            use_lowercase=False,
+            use_uppercase=True,
+            use_digits=True,
+            use_special=False,
         )
         self.assertEqual(len(password), 16)
         self.assertTrue(all(c.isupper() or c.isdigit() for c in password))
@@ -88,7 +109,11 @@ class TestPasswordGeneration(unittest.TestCase):
         """Test default behavior when no character sets are specified."""
         # When no character sets are specified, should default to using all
         password = generate_strong_password(
-            16, use_lowercase=False, use_uppercase=False, use_digits=False, use_special=False
+            16,
+            use_lowercase=False,
+            use_uppercase=False,
+            use_digits=False,
+            use_special=False,
         )
         self.assertEqual(len(password), 16)
 
@@ -118,10 +143,16 @@ class TestPasswordGeneration(unittest.TestCase):
 
         # Each character type should be present in reasonable numbers
         # Further relax the constraints based on true randomness
-        self.assertGreater(lower_count, 50, "Expected more than 50 lowercase characters")
-        self.assertGreater(upper_count, 50, "Expected more than 50 uppercase characters")
+        self.assertGreater(
+            lower_count, 50, "Expected more than 50 lowercase characters"
+        )
+        self.assertGreater(
+            upper_count, 50, "Expected more than 50 uppercase characters"
+        )
         self.assertGreater(digit_count, 50, "Expected more than 50 digits")
-        self.assertGreater(special_count, 50, "Expected more than 50 special characters")
+        self.assertGreater(
+            special_count, 50, "Expected more than 50 special characters"
+        )
 
         # Verify that all character types combined add up to the total length
         self.assertEqual(lower_count + upper_count + digit_count + special_count, 1000)
@@ -171,10 +202,14 @@ class TestPasswordWrapper(unittest.TestCase):
 
     def test_decapsulate(self):
         """Test KEM decapsulation"""
-        encapsulated_key, shared_secret_original = self.wrapper.encapsulate(self.public_key)
+        encapsulated_key, shared_secret_original = self.wrapper.encapsulate(
+            self.public_key
+        )
 
         # Decapsulate with private key
-        shared_secret_recovered = self.wrapper.decapsulate(encapsulated_key, self.private_key)
+        shared_secret_recovered = self.wrapper.decapsulate(
+            encapsulated_key, self.private_key
+        )
 
         # Should recover same shared secret
         self.assertEqual(shared_secret_original, shared_secret_recovered)
@@ -214,7 +249,9 @@ class TestPasswordWrapper(unittest.TestCase):
         encrypted_password = self.wrapper.wrap_password(password, shared_secret)
 
         # Unwrap password
-        password_recovered = self.wrapper.unwrap_password(encrypted_password, shared_secret)
+        password_recovered = self.wrapper.unwrap_password(
+            encrypted_password, shared_secret
+        )
 
         # Should recover original password
         self.assertEqual(password, password_recovered)
@@ -230,7 +267,9 @@ class TestPasswordWrapper(unittest.TestCase):
         encrypted_password = self.wrapper.wrap_password(password, shared_secret)
 
         # Decapsulate to recover shared secret
-        shared_secret_recovered = self.wrapper.decapsulate(encapsulated_key, self.private_key)
+        shared_secret_recovered = self.wrapper.decapsulate(
+            encapsulated_key, self.private_key
+        )
 
         # Unwrap password
         password_recovered = self.wrapper.unwrap_password(

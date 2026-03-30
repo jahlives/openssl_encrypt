@@ -15,7 +15,8 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
 from ..crypt_core import decrypt_file, encrypt_file
-from .base_test import BaseSecurityTest, TestConfig, TestResult, TestResultLevel
+from .base_test import (BaseSecurityTest, TestConfig, TestResult,
+                        TestResultLevel)
 
 
 @dataclass
@@ -33,7 +34,9 @@ class StatisticalAnalyzer:
     """Performs statistical analysis on timing measurements."""
 
     @staticmethod
-    def analyze_timing_consistency(measurements: List[float], operation: str) -> Dict[str, Any]:
+    def analyze_timing_consistency(
+        measurements: List[float], operation: str
+    ) -> Dict[str, Any]:
         """Analyze timing measurements for consistency."""
         if len(measurements) < 3:
             return {
@@ -68,12 +71,15 @@ class StatisticalAnalyzer:
             "max": max(measurements),
             "outliers_count": len(outliers),
             "outliers_percentage": (len(outliers) / len(measurements)) * 100,
-            "timing_consistent": cv < 10.0,  # Less than 10% variation is considered consistent
+            "timing_consistent": cv
+            < 10.0,  # Less than 10% variation is considered consistent
             "has_outliers": len(outliers) > 0,
         }
 
     @staticmethod
-    def compare_timing_distributions(group1: List[float], group2: List[float]) -> Dict[str, Any]:
+    def compare_timing_distributions(
+        group1: List[float], group2: List[float]
+    ) -> Dict[str, Any]:
         """Compare two groups of timing measurements."""
         if len(group1) < 3 or len(group2) < 3:
             return {"error": "Insufficient samples for comparison"}
@@ -192,7 +198,9 @@ class SideChannelTestSuite(BaseSecurityTest):
             }
 
             # Encrypt with correct password
-            encrypt_file(input_file, encrypted_file, correct_password, hash_config=config_dict)
+            encrypt_file(
+                input_file, encrypted_file, correct_password, hash_config=config_dict
+            )
 
             # Test decryption timing with correct password
             correct_timings = []
@@ -303,7 +311,9 @@ class SideChannelTestSuite(BaseSecurityTest):
             for size in file_sizes:
                 # Create file of specific size
                 input_file = os.path.join(self.temp_dir, f"size_test_{size}.bin")
-                encrypted_file = os.path.join(self.temp_dir, f"size_test_{size}_enc.bin")
+                encrypted_file = os.path.join(
+                    self.temp_dir, f"size_test_{size}_enc.bin"
+                )
 
                 test_data = b"A" * size
                 with open(input_file, "wb") as f:
@@ -313,7 +323,11 @@ class SideChannelTestSuite(BaseSecurityTest):
                 timings = []
                 for i in range(5):  # Multiple measurements
                     timing = self._measure_operation_timing(
-                        encrypt_file, input_file, encrypted_file, "test_password", config_dict
+                        encrypt_file,
+                        input_file,
+                        encrypted_file,
+                        "test_password",
+                        config_dict,
                     )
                     if timing > 0:
                         timings.append(timing)
@@ -355,7 +369,9 @@ class SideChannelTestSuite(BaseSecurityTest):
                     correlation_good = False
                     break
 
-            level = TestResultLevel.PASS if correlation_good else TestResultLevel.WARNING
+            level = (
+                TestResultLevel.PASS if correlation_good else TestResultLevel.WARNING
+            )
             message = f"File size timing correlation {'as expected' if correlation_good else 'shows anomalies'}"
 
             return TestResult(
@@ -381,7 +397,9 @@ class SideChannelTestSuite(BaseSecurityTest):
     def _test_memory_access_patterns(self, config: TestConfig) -> None:
         """Test for consistent memory access patterns."""
 
-        result = self.run_single_test(self._memory_pattern_test, "memory_access_patterns", config)
+        result = self.run_single_test(
+            self._memory_pattern_test, "memory_access_patterns", config
+        )
         self.add_result(result)
 
     def _memory_pattern_test(self, config: TestConfig) -> TestResult:
@@ -409,7 +427,10 @@ class SideChannelTestSuite(BaseSecurityTest):
 
             memory_before = process.memory_info().rss
             encrypt_file(
-                input_file, encrypted_file, "memory_test_password", hash_config=config_dict
+                input_file,
+                encrypted_file,
+                "memory_test_password",
+                hash_config=config_dict,
             )
             memory_after = process.memory_info().rss
 
@@ -423,7 +444,10 @@ class SideChannelTestSuite(BaseSecurityTest):
 
                 memory_before = process.memory_info().rss
                 encrypt_file(
-                    input_file, encrypted_file, "memory_test_password", hash_config=config_dict
+                    input_file,
+                    encrypted_file,
+                    "memory_test_password",
+                    hash_config=config_dict,
                 )
                 memory_after = process.memory_info().rss
 
@@ -436,7 +460,11 @@ class SideChannelTestSuite(BaseSecurityTest):
                 )
 
                 consistent_memory = memory_analysis.get("timing_consistent", False)
-                level = TestResultLevel.PASS if consistent_memory else TestResultLevel.WARNING
+                level = (
+                    TestResultLevel.PASS
+                    if consistent_memory
+                    else TestResultLevel.WARNING
+                )
                 message = f"Memory access patterns {'consistent' if consistent_memory else 'inconsistent'}"
             else:
                 level = TestResultLevel.WARNING
@@ -496,7 +524,9 @@ class SideChannelTestSuite(BaseSecurityTest):
 
             for pattern_name, pattern_data in patterns.items():
                 input_file = os.path.join(self.temp_dir, f"cache_{pattern_name}.bin")
-                encrypted_file = os.path.join(self.temp_dir, f"cache_{pattern_name}_enc.bin")
+                encrypted_file = os.path.join(
+                    self.temp_dir, f"cache_{pattern_name}_enc.bin"
+                )
 
                 with open(input_file, "wb") as f:
                     f.write(pattern_data)
@@ -508,7 +538,11 @@ class SideChannelTestSuite(BaseSecurityTest):
                         os.remove(encrypted_file)
 
                     timing = self._measure_operation_timing(
-                        encrypt_file, input_file, encrypted_file, "cache_test_password", config_dict
+                        encrypt_file,
+                        input_file,
+                        encrypted_file,
+                        "cache_test_password",
+                        config_dict,
                     )
                     if timing > 0:
                         timings.append(timing)
@@ -581,7 +615,9 @@ class SideChannelTestSuite(BaseSecurityTest):
                 f.write(test_data)
 
             for algorithm in algorithms:
-                encrypted_file = os.path.join(self.temp_dir, f"algo_{algorithm}_enc.bin")
+                encrypted_file = os.path.join(
+                    self.temp_dir, f"algo_{algorithm}_enc.bin"
+                )
 
                 config_dict = {
                     "algorithm": algorithm,
@@ -595,13 +631,19 @@ class SideChannelTestSuite(BaseSecurityTest):
                         os.remove(encrypted_file)
 
                     timing = self._measure_operation_timing(
-                        encrypt_file, input_file, encrypted_file, "algo_test_password", config_dict
+                        encrypt_file,
+                        input_file,
+                        encrypted_file,
+                        "algo_test_password",
+                        config_dict,
                     )
                     if timing > 0:
                         timings.append(timing)
 
                 if timings and len(timings) >= 3:
-                    analysis = self.analyzer.analyze_timing_consistency(timings, algorithm)
+                    analysis = self.analyzer.analyze_timing_consistency(
+                        timings, algorithm
+                    )
                     algorithm_results[algorithm] = analysis
 
             if not algorithm_results:
@@ -629,9 +671,7 @@ class SideChannelTestSuite(BaseSecurityTest):
                 message = f"{len(consistent_algorithms)} consistent, {len(inconsistent_algorithms)} inconsistent algorithms"
             else:
                 level = TestResultLevel.ERROR
-                message = (
-                    f"Most algorithms ({len(inconsistent_algorithms)}) show timing inconsistencies"
-                )
+                message = f"Most algorithms ({len(inconsistent_algorithms)}) show timing inconsistencies"
 
             return TestResult(
                 "algorithm_timing_consistency",

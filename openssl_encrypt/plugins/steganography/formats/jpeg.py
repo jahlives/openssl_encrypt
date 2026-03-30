@@ -25,15 +25,9 @@ except ImportError:
     ImageFile = None
     TAGS = None
 
-from ..core import (
-    CapacityError,
-    CoverMediaError,
-    ExtractionError,
-    SecurityError,
-    SteganographyBase,
-    SteganographyConfig,
-    SteganographyUtils,
-)
+from ..core import (CapacityError, CoverMediaError, ExtractionError,
+                    SecurityError, SteganographyBase, SteganographyConfig,
+                    SteganographyUtils)
 
 # Set up module logger
 logger = logging.getLogger(__name__)
@@ -77,7 +71,8 @@ class JPEGSteganography(SteganographyBase):
 
         if not PIL_AVAILABLE:
             raise ImportError(
-                "PIL/Pillow is required for JPEG steganography. " "Install with: pip install Pillow"
+                "PIL/Pillow is required for JPEG steganography. "
+                "Install with: pip install Pillow"
             )
 
         # Validate parameters
@@ -419,14 +414,22 @@ class JPEGSteganalysisResistance:
             "dct_histogram_analysis",
         ]
 
-    def assess_jpeg_security(self, cover_jpeg: bytes, stego_jpeg: bytes) -> Dict[str, Any]:
+    def assess_jpeg_security(
+        self, cover_jpeg: bytes, stego_jpeg: bytes
+    ) -> Dict[str, Any]:
         """Assess JPEG steganography security"""
         try:
             # Perform security analysis
             results = {
-                "calibration_resistance": self._calibration_attack_test(cover_jpeg, stego_jpeg),
-                "blockiness_preservation": self._blockiness_analysis(cover_jpeg, stego_jpeg),
-                "histogram_preservation": self._histogram_analysis(cover_jpeg, stego_jpeg),
+                "calibration_resistance": self._calibration_attack_test(
+                    cover_jpeg, stego_jpeg
+                ),
+                "blockiness_preservation": self._blockiness_analysis(
+                    cover_jpeg, stego_jpeg
+                ),
+                "histogram_preservation": self._histogram_analysis(
+                    cover_jpeg, stego_jpeg
+                ),
                 "dct_statistics": self._dct_analysis(cover_jpeg, stego_jpeg),
             }
 
@@ -445,7 +448,9 @@ class JPEGSteganalysisResistance:
             logger.warning(f"JPEG security assessment failed: {e}")
             return {"overall_score": 0.0, "security_level": "unknown", "error": str(e)}
 
-    def _calibration_attack_test(self, cover_data: bytes, stego_data: bytes) -> Dict[str, Any]:
+    def _calibration_attack_test(
+        self, cover_data: bytes, stego_data: bytes
+    ) -> Dict[str, Any]:
         """Test resistance against calibration attacks"""
         # Simplified implementation
         return {
@@ -454,11 +459,19 @@ class JPEGSteganalysisResistance:
             "status": "good",
         }
 
-    def _blockiness_analysis(self, cover_data: bytes, stego_data: bytes) -> Dict[str, Any]:
+    def _blockiness_analysis(
+        self, cover_data: bytes, stego_data: bytes
+    ) -> Dict[str, Any]:
         """Analyze DCT blocking artifacts"""
-        return {"test_name": "Blockiness Artifact Analysis", "score": 0.7, "status": "acceptable"}
+        return {
+            "test_name": "Blockiness Artifact Analysis",
+            "score": 0.7,
+            "status": "acceptable",
+        }
 
-    def _histogram_analysis(self, cover_data: bytes, stego_data: bytes) -> Dict[str, Any]:
+    def _histogram_analysis(
+        self, cover_data: bytes, stego_data: bytes
+    ) -> Dict[str, Any]:
         """Analyze histogram changes"""
         return {"test_name": "Histogram Preservation", "score": 0.75, "status": "good"}
 
@@ -489,11 +502,15 @@ class JPEGSteganalysisResistance:
                         "Consider using F5 algorithm for better calibration resistance"
                     )
                 elif "blockiness" in test_name.lower():
-                    recommendations.append("Reduce embedding rate to minimize blocking artifacts")
+                    recommendations.append(
+                        "Reduce embedding rate to minimize blocking artifacts"
+                    )
                 elif "histogram" in test_name.lower():
                     recommendations.append("Enable histogram preservation techniques")
 
         if not recommendations:
-            recommendations.append("Current JPEG steganography parameters appear secure")
+            recommendations.append(
+                "Current JPEG steganography parameters appear secure"
+            )
 
         return recommendations

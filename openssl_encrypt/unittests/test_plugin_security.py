@@ -26,20 +26,16 @@ from pathlib import Path
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
-from openssl_encrypt.modules.plugin_system import (
-    BasePlugin,
-    PluginCapability,
-    PluginManager,
-    PluginResult,
-    PluginSecurityContext,
-    PluginType,
-    PreProcessorPlugin,
-)
-from openssl_encrypt.modules.plugin_system.plugin_config import PluginConfigManager
+from openssl_encrypt.modules.plugin_system import (BasePlugin,
+                                                   PluginCapability,
+                                                   PluginManager, PluginResult,
+                                                   PluginSecurityContext,
+                                                   PluginType,
+                                                   PreProcessorPlugin)
+from openssl_encrypt.modules.plugin_system.plugin_config import \
+    PluginConfigManager
 from openssl_encrypt.modules.plugin_system.plugin_sandbox import (
-    PluginSandbox,
-    SandboxViolationError,
-)
+    PluginSandbox, SandboxViolationError)
 
 
 class TestSensitiveDataProtection(unittest.TestCase):
@@ -129,7 +125,9 @@ class TestSensitiveDataProtection(unittest.TestCase):
 
         for key in sensitive_keys:
             context.add_metadata(key, "sensitive_value")
-            self.assertNotIn(key, context.metadata, f"Sensitive key '{key}' was not blocked")
+            self.assertNotIn(
+                key, context.metadata, f"Sensitive key '{key}' was not blocked"
+            )
 
 
 class TestStaticCodeAnalysis(unittest.TestCase):
@@ -192,14 +190,18 @@ class MaliciousPlugin(PreProcessorPlugin):
 
     def test_subprocess_pattern_blocked(self):
         """Verify subprocess usage is detected and blocked"""
-        plugin_path = self._create_malicious_plugin("import subprocess; subprocess.call(['ls'])")
+        plugin_path = self._create_malicious_plugin(
+            "import subprocess; subprocess.call(['ls'])"
+        )
         result = self.plugin_manager.load_plugin(plugin_path)
         self.assertFalse(result.success)
         self.assertIn("security validation", result.message.lower())
 
     def test_compile_pattern_blocked(self):
         """Verify compile() usage is detected and blocked"""
-        plugin_path = self._create_malicious_plugin("compile('1+1', '<string>', 'eval')")
+        plugin_path = self._create_malicious_plugin(
+            "compile('1+1', '<string>', 'eval')"
+        )
         result = self.plugin_manager.load_plugin(plugin_path)
         self.assertFalse(result.success)
         self.assertIn("security validation", result.message.lower())
@@ -287,7 +289,8 @@ class NetworkPlugin(PreProcessorPlugin):
 
         try:
             context = PluginSecurityContext(
-                "network_test", capabilities={PluginCapability.READ_FILES}  # NO NETWORK_ACCESS
+                "network_test",
+                capabilities={PluginCapability.READ_FILES},  # NO NETWORK_ACCESS
             )
             context.file_paths = [test_file.name]
 
@@ -550,7 +553,8 @@ class TestCapabilityValidation(unittest.TestCase):
 
         # Create context with ALL required capabilities
         context = PluginSecurityContext(
-            "test", capabilities={PluginCapability.READ_FILES, PluginCapability.WRITE_LOGS}
+            "test",
+            capabilities={PluginCapability.READ_FILES, PluginCapability.WRITE_LOGS},
         )
 
         # Validation should succeed
@@ -706,8 +710,10 @@ class TestConfigDirectoryPermissions(unittest.TestCase):
 
     def test_ensure_plugin_data_dir_creates_with_0o700(self):
         """Verify directories are created with 0o700 permissions."""
-        from openssl_encrypt.modules.file_permissions import PermissionLevel, check_permissions
-        from openssl_encrypt.modules.plugin_system.plugin_config import ensure_plugin_data_dir
+        from openssl_encrypt.modules.file_permissions import (
+            PermissionLevel, check_permissions)
+        from openssl_encrypt.modules.plugin_system.plugin_config import \
+            ensure_plugin_data_dir
 
         test_dir = ensure_plugin_data_dir("test_security_plugin", "")
         self.assertIsNotNone(test_dir, "Directory creation should succeed")
@@ -721,8 +727,10 @@ class TestConfigDirectoryPermissions(unittest.TestCase):
 
     def test_ensure_plugin_data_dir_with_subdir(self):
         """Verify subdirectories are created with 0o700 permissions."""
-        from openssl_encrypt.modules.file_permissions import PermissionLevel, check_permissions
-        from openssl_encrypt.modules.plugin_system.plugin_config import ensure_plugin_data_dir
+        from openssl_encrypt.modules.file_permissions import (
+            PermissionLevel, check_permissions)
+        from openssl_encrypt.modules.plugin_system.plugin_config import \
+            ensure_plugin_data_dir
 
         test_dir = ensure_plugin_data_dir("test_security_plugin", "subdir")
         self.assertIsNotNone(test_dir, "Subdirectory creation should succeed")
@@ -743,11 +751,9 @@ class TestConfigDirectoryPermissions(unittest.TestCase):
     def test_ensure_plugin_data_dir_fixes_existing_permissions(self):
         """Verify existing directories have permissions corrected."""
         from openssl_encrypt.modules.file_permissions import (
-            PermissionLevel,
-            check_permissions,
-            set_permissions,
-        )
-        from openssl_encrypt.modules.plugin_system.plugin_config import ensure_plugin_data_dir
+            PermissionLevel, check_permissions, set_permissions)
+        from openssl_encrypt.modules.plugin_system.plugin_config import \
+            ensure_plugin_data_dir
 
         # First create with correct permissions
         test_dir = ensure_plugin_data_dir("test_security_plugin2", "")
@@ -772,7 +778,8 @@ class TestConfigDirectoryPermissions(unittest.TestCase):
         """Verify plugins don't load if config dir permissions cannot be secured."""
         from unittest.mock import patch
 
-        from openssl_encrypt.modules.plugin_system.plugin_config import PluginConfigManager
+        from openssl_encrypt.modules.plugin_system.plugin_config import \
+            PluginConfigManager
 
         # Create temporary directories for both plugin and config
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -812,7 +819,8 @@ class TestPlugin(PreProcessorPlugin):
 
                     # Should fail to load on all platforms
                     self.assertFalse(
-                        result.success, "Plugin load should fail with insecure permissions"
+                        result.success,
+                        "Plugin load should fail with insecure permissions",
                     )
                     self.assertIn("insecure permissions", result.message.lower())
 
@@ -921,8 +929,12 @@ class PackagePlugin(PreProcessorPlugin):
         discovered = self.plugin_manager.discover_plugins()
 
         # Should find both
-        self.assertTrue(any("flat_plugin.py" in p for p in discovered), "Flat plugin not found")
-        self.assertTrue(any("package_plugin" in p for p in discovered), "Package plugin not found")
+        self.assertTrue(
+            any("flat_plugin.py" in p for p in discovered), "Flat plugin not found"
+        )
+        self.assertTrue(
+            any("package_plugin" in p for p in discovered), "Package plugin not found"
+        )
 
     def test_package_plugin_file_directory_correct(self):
         """Verify PluginRegistration.file_directory points to package dir, not __init__.py."""
@@ -992,7 +1004,9 @@ class TestBuiltinPluginTrust(unittest.TestCase):
     def test_builtin_plugin_with_blocked_import_passes_validation(self):
         """A plugin under builtin_plugin_root that imports pathlib must pass validation."""
         plugin_file = self.test_dir / "test_builtin.py"
-        plugin_file.write_text("from pathlib import Path\nimport io\ndef execute(): pass\n")
+        plugin_file.write_text(
+            "from pathlib import Path\nimport io\ndef execute(): pass\n"
+        )
 
         # Without builtin trust, strict mode should block it
         self.plugin_manager.strict_security_mode = True
@@ -1013,7 +1027,9 @@ class TestBuiltinPluginTrust(unittest.TestCase):
             self.plugin_manager.builtin_plugin_root = str(self.test_dir)
             self.plugin_manager.strict_security_mode = True
 
-            self.assertFalse(self.plugin_manager._validate_plugin_file(str(plugin_file)))
+            self.assertFalse(
+                self.plugin_manager._validate_plugin_file(str(plugin_file))
+            )
         finally:
             import shutil
 
@@ -1029,7 +1045,9 @@ class TestBuiltinPluginTrust(unittest.TestCase):
 
         self.assertFalse(self.plugin_manager._validate_plugin_file(str(plugin_file)))
 
-    @unittest.skipIf(sys.platform == "win32", "Symlink creation requires privileges on Windows")
+    @unittest.skipIf(
+        sys.platform == "win32", "Symlink creation requires privileges on Windows"
+    )
     def test_symlink_into_builtin_root_does_not_bypass_validation(self):
         """A symlink inside builtin_plugin_root pointing outside must NOT bypass AST analysis.
 
@@ -1050,7 +1068,9 @@ class TestBuiltinPluginTrust(unittest.TestCase):
             self.plugin_manager.strict_security_mode = True
 
             # The symlink resolves to a file outside builtin root — must be AST-checked and blocked
-            self.assertFalse(self.plugin_manager._validate_plugin_file(str(symlink_path)))
+            self.assertFalse(
+                self.plugin_manager._validate_plugin_file(str(symlink_path))
+            )
         finally:
             import shutil
 
@@ -1080,9 +1100,13 @@ class TestUnifiedConfigPaths(unittest.TestCase):
         """Verify config files are at plugins/<plugin_id>/config.json."""
         config_path = self.config_manager._get_config_file_path("test_plugin")
 
-        expected = Path.home() / ".openssl_encrypt" / "plugins" / "test_plugin" / "config.json"
+        expected = (
+            Path.home() / ".openssl_encrypt" / "plugins" / "test_plugin" / "config.json"
+        )
         self.assertEqual(
-            config_path, expected, f"Config path should be {expected}, got {config_path}"
+            config_path,
+            expected,
+            f"Config path should be {expected}, got {config_path}",
         )
 
         # Clean up
@@ -1091,22 +1115,29 @@ class TestUnifiedConfigPaths(unittest.TestCase):
 
     def test_plugin_data_dir_under_plugins(self):
         """Verify ensure_plugin_data_dir creates under plugins/<plugin_id>/."""
-        from openssl_encrypt.modules.plugin_system.plugin_config import ensure_plugin_data_dir
+        from openssl_encrypt.modules.plugin_system.plugin_config import \
+            ensure_plugin_data_dir
 
         test_dir = ensure_plugin_data_dir("unified_test_plugin", "data")
         self.assertIsNotNone(test_dir)
         self.test_dirs.append(test_dir.parent)
 
-        expected_base = Path.home() / ".openssl_encrypt" / "plugins" / "unified_test_plugin"
+        expected_base = (
+            Path.home() / ".openssl_encrypt" / "plugins" / "unified_test_plugin"
+        )
         expected_full = expected_base / "data"
 
         self.assertEqual(
-            test_dir, expected_full, f"Data dir should be {expected_full}, got {test_dir}"
+            test_dir,
+            expected_full,
+            f"Data dir should be {expected_full}, got {test_dir}",
         )
 
         # Verify parent is also under plugins/
         self.assertTrue(
-            str(test_dir.parent).startswith(str(Path.home() / ".openssl_encrypt" / "plugins")),
+            str(test_dir.parent).startswith(
+                str(Path.home() / ".openssl_encrypt" / "plugins")
+            ),
             "Plugin data should be under ~/.openssl_encrypt/plugins/",
         )
 

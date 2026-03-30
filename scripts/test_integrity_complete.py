@@ -41,7 +41,9 @@ def load_integrity_config() -> Optional[Dict]:
     Returns:
         Config dict or None if not found
     """
-    config_path = Path.home() / ".openssl_encrypt" / "plugins" / "integrity" / "integrity.json"
+    config_path = (
+        Path.home() / ".openssl_encrypt" / "plugins" / "integrity" / "integrity.json"
+    )
 
     if not config_path.exists():
         print(f"✗ Config file not found: {config_path}")
@@ -93,7 +95,9 @@ def test_get_profile(base_url: str, cert: tuple) -> Dict:
         if response.status_code == 200:
             data = response.json()
             print(f"✓ Profile retrieved")
-            print(f"  Certificate fingerprint: {data.get('cert_fingerprint', 'N/A')[:40]}...")
+            print(
+                f"  Certificate fingerprint: {data.get('cert_fingerprint', 'N/A')[:40]}..."
+            )
             print(f"  Name: {data.get('name', 'N/A')}")
             print(f"  Hash count: {data.get('hash_count', 0)}")
             print(f"  Created: {data.get('created_at', 'N/A')}")
@@ -122,7 +126,7 @@ def test_store_hash(base_url: str, cert: tuple) -> Dict:
     payload = {
         "file_id": test_file_id,
         "metadata_hash": test_metadata_hash,
-        "description": "Test encrypted file for integration testing"
+        "description": "Test encrypted file for integration testing",
     }
 
     try:
@@ -137,7 +141,11 @@ def test_store_hash(base_url: str, cert: tuple) -> Dict:
             return data
         elif response.status_code == 409:
             print(f"⚠ Hash already exists (continuing...)")
-            return {"file_id": test_file_id, "metadata_hash": test_metadata_hash, "exists": True}
+            return {
+                "file_id": test_file_id,
+                "metadata_hash": test_metadata_hash,
+                "exists": True,
+            }
         else:
             print(f"✗ Failed: {response.status_code}")
             print(f"  Response: {response.text}")
@@ -163,11 +171,13 @@ def test_list_hashes(base_url: str, cert: tuple) -> Dict:
             print(f"✓ Hashes listed")
             print(f"  Total count: {data.get('total', 0)}")
 
-            if data.get('hashes'):
+            if data.get("hashes"):
                 print(f"  Hashes:")
-                for h in data['hashes'][:5]:  # Show first 5
-                    file_id_short = h['file_id'][:20] + "..."
-                    print(f"    - {file_id_short}: {h.get('description', 'No description')}")
+                for h in data["hashes"][:5]:  # Show first 5
+                    file_id_short = h["file_id"][:20] + "..."
+                    print(
+                        f"    - {file_id_short}: {h.get('description', 'No description')}"
+                    )
 
             return data
         else:
@@ -209,17 +219,16 @@ def test_get_hash(base_url: str, cert: tuple, file_id: str) -> Dict:
         return None
 
 
-def test_verify_hash(base_url: str, cert: tuple, file_id: str, metadata_hash: str) -> Dict:
+def test_verify_hash(
+    base_url: str, cert: tuple, file_id: str, metadata_hash: str
+) -> Dict:
     """Test: Verify hash."""
     print_subsection(f"Step 5: Verify Metadata Hash")
 
     url = f"{base_url}/api/v1/integrity/verify"
     print(f"POST {url}")
 
-    payload = {
-        "file_id": file_id,
-        "metadata_hash": metadata_hash
-    }
+    payload = {"file_id": file_id, "metadata_hash": metadata_hash}
 
     try:
         response = requests.post(url, json=payload, cert=cert, timeout=10)
@@ -252,7 +261,7 @@ def test_update_hash(base_url: str, cert: tuple, file_id: str) -> Dict:
 
     payload = {
         "metadata_hash": new_metadata_hash,
-        "description": "Updated test encrypted file"
+        "description": "Updated test encrypted file",
     }
 
     try:

@@ -23,12 +23,8 @@ from pathlib import Path
 from typing import List, Optional
 
 from ...modules.crypt_utils import eprint
-from ...modules.file_permissions import (
-    PermissionLevel,
-    check_permissions,
-    get_posix_mode,
-    set_permissions,
-)
+from ...modules.file_permissions import (PermissionLevel, check_permissions,
+                                         get_posix_mode, set_permissions)
 from ...modules.plugin_system.plugin_config import ensure_plugin_data_dir
 
 logger = logging.getLogger(__name__)
@@ -77,13 +73,17 @@ class KeyserverConfig:
     # Authentication for uploads (stored securely)
     api_token: Optional[str] = None  # Bearer token for uploads
     api_token_file: Path = field(default_factory=lambda: _get_default_token_path())
-    refresh_token_file: Path = field(default_factory=lambda: _get_default_refresh_token_path())
+    refresh_token_file: Path = field(
+        default_factory=lambda: _get_default_refresh_token_path()
+    )
 
     # Password storage for authenticated login
     password_file: Path = field(default_factory=lambda: _get_default_password_path())
 
     # Certificate pinning (SHA-256 fingerprints)
-    cert_fingerprints: Optional[List[str]] = None  # Expected cert fingerprints for pinning
+    cert_fingerprints: Optional[List[str]] = (
+        None  # Expected cert fingerprints for pinning
+    )
     enable_cert_pinning: bool = False  # Enable certificate pinning validation
 
     def __post_init__(self):

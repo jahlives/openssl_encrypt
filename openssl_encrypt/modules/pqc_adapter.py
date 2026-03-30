@@ -12,22 +12,14 @@ import logging
 import secrets
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-from .algorithm_warnings import (
-    get_recommended_replacement,
-    is_deprecated,
-    warn_deprecated_algorithm,
-)
+from .algorithm_warnings import (get_recommended_replacement, is_deprecated,
+                                 warn_deprecated_algorithm)
+from .crypt_utils import eprint
 from .pqc import PQCAlgorithm as CorePQCAlgorithm
 from .pqc import PQCipher, normalize_algorithm_name
-from .pqc_liboqs import (
-    LIBOQS_AVAILABLE,
-    PQAlgorithm,
-    PQEncapsulator,
-    PQSigner,
-    check_liboqs_support,
-)
+from .pqc_liboqs import (LIBOQS_AVAILABLE, PQAlgorithm, PQEncapsulator,
+                         PQSigner, check_liboqs_support)
 from .secure_memory import SecureBytes, secure_memzero
-from .crypt_utils import eprint
 
 # Configure logger
 logger = logging.getLogger(__name__)
@@ -224,12 +216,7 @@ class ExtendedPQCipher(PQCipher):
             # Import required symmetric encryption algorithms for hybrid mode
             try:
                 from cryptography.hazmat.primitives.ciphers.aead import (
-                    AESGCM,
-                    AESGCMSIV,
-                    AESOCB3,
-                    AESSIV,
-                    ChaCha20Poly1305,
-                )
+                    AESGCM, AESGCMSIV, AESOCB3, AESSIV, ChaCha20Poly1305)
 
                 self.AESGCM = AESGCM
                 self.ChaCha20Poly1305 = ChaCha20Poly1305
@@ -396,7 +383,9 @@ class ExtendedPQCipher(PQCipher):
             # Use secure memory for sensitive operations
             with SecureBytes(shared_secret) as secure_shared_secret:
                 # Derive symmetric key using secure memory
-                symmetric_key = SecureBytes(hashlib.sha256(secure_shared_secret).digest())
+                symmetric_key = SecureBytes(
+                    hashlib.sha256(secure_shared_secret).digest()
+                )
 
                 # Select the appropriate cipher based on encryption_data
                 if self.encryption_data == "aes-gcm":
@@ -514,7 +503,9 @@ def get_default_encryption_data(algorithm: str) -> str:
     return "aes-gcm"
 
 
-def get_available_pq_algorithms(include_legacy: bool = True, quiet: bool = False) -> List[str]:
+def get_available_pq_algorithms(
+    include_legacy: bool = True, quiet: bool = False
+) -> List[str]:
     """
     Get a list of available post-quantum algorithms
 
@@ -609,7 +600,9 @@ def test_extended_pqcipher():
             # Try with modified message
             modified = b"Hello, modified world!"
             is_valid = signer.verify(modified, signature, public_key)
-            eprint(f"  Valid signature for modified message: {is_valid} (should be False)")
+            eprint(
+                f"  Valid signature for modified message: {is_valid} (should be False)"
+            )
         except Exception as e:
             eprint(f"  Error: {e}")
 

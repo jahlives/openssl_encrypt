@@ -11,7 +11,8 @@ All code in English as per project requirements.
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Any, Callable, ClassVar, Dict, Generic, List, Optional, Tuple, Type, TypeVar
+from typing import (Any, Callable, ClassVar, Dict, Generic, List, Optional,
+                    Tuple, Type, TypeVar)
 
 
 class AlgorithmCategory(Enum):
@@ -213,7 +214,8 @@ class AlgorithmBase(ABC):
         if not cls.is_available():
             info = cls.info()
             raise AlgorithmNotAvailableError(
-                f"Algorithm '{info.name}' is not available. " f"Install required dependencies."
+                f"Algorithm '{info.name}' is not available. "
+                f"Install required dependencies."
             )
 
     @classmethod

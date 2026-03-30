@@ -44,7 +44,9 @@ class SteganographyUtils:
         padded_str = binary_str + "0" * padding
 
         # Convert to bytes
-        byte_values = [int(padded_str[i : i + 8], 2) for i in range(0, len(padded_str), 8)]
+        byte_values = [
+            int(padded_str[i : i + 8], 2) for i in range(0, len(padded_str), 8)
+        ]
 
         return bytes(byte_values)
 
@@ -76,7 +78,9 @@ class SteganographyUtils:
         return psnr
 
     @staticmethod
-    def generate_pseudorandom_sequence(seed: int, length: int, max_value: int) -> List[int]:
+    def generate_pseudorandom_sequence(
+        seed: int, length: int, max_value: int
+    ) -> List[int]:
         """
         Generate pseudorandom sequence for pixel/sample selection using
         HMAC-SHA256 as a deterministic CSPRNG.

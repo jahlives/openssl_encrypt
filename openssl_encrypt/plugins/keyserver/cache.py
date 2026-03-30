@@ -24,8 +24,8 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from ...modules.key_bundle import PublicKeyBundle
 from ...modules.crypt_utils import eprint
+from ...modules.key_bundle import PublicKeyBundle
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +60,9 @@ class KeyserverCache:
         access_count INTEGER DEFAULT 1 - Number of times accessed
     """
 
-    def __init__(self, cache_path: Path, max_entries: int = 1000, ttl_seconds: int = 86400):
+    def __init__(
+        self, cache_path: Path, max_entries: int = 1000, ttl_seconds: int = 86400
+    ):
         """
         Initialize cache.
 
@@ -234,7 +236,9 @@ class KeyserverCache:
 
             conn.commit()
 
-        logger.debug(f"Cached bundle for '{bundle.name}' (fp: {bundle.fingerprint[:20]}...)")
+        logger.debug(
+            f"Cached bundle for '{bundle.name}' (fp: {bundle.fingerprint[:20]}...)"
+        )
 
     def _cleanup_expired(self) -> int:
         """

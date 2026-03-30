@@ -16,9 +16,7 @@ import requests_mock
 
 from openssl_encrypt.modules.telemetry_filter import TelemetryDataFilter
 from openssl_encrypt.plugins.telemetry.telemetry_plugin import (
-    OpenSSLEncryptTelemetryPlugin,
-    TelemetryPluginConfig,
-)
+    OpenSSLEncryptTelemetryPlugin, TelemetryPluginConfig)
 
 
 class TestEndToEndFlow:
@@ -61,7 +59,9 @@ class TestEndToEndFlow:
                     "derivation_config": {
                         "salt": "dGVzdA==",
                         "hash_config": {"sha512": {"rounds": 10000}},
-                        "kdf_config": {"argon2": {"time_cost": 3, "memory_cost": 65536}},
+                        "kdf_config": {
+                            "argon2": {"time_cost": 3, "memory_cost": 65536}
+                        },
                     },
                     "encryption": {"algorithm": "aes-256-gcm"},
                     "hashes": {},
@@ -207,7 +207,9 @@ class TestEndToEndFlow:
                     "derivation_config": {
                         "salt": "test",
                         "hash_config": {"sha512": {"rounds": 10000}},
-                        "kdf_config": {"argon2": {"time_cost": 3, "memory_cost": 65536}},
+                        "kdf_config": {
+                            "argon2": {"time_cost": 3, "memory_cost": 65536}
+                        },
                     },
                     "encryption": {"algorithm": f"test-algo-{i}"},
                     "hashes": {},
@@ -249,7 +251,10 @@ class TestEndToEndFlow:
                 "https://test-telemetry.example.com/api/v1/telemetry",
                 [
                     {"status_code": 401},  # Expired key
-                    {"json": {"received": 1, "processed": 1}, "status_code": 200},  # After refresh
+                    {
+                        "json": {"received": 1, "processed": 1},
+                        "status_code": 200,
+                    },  # After refresh
                 ],
             )
 

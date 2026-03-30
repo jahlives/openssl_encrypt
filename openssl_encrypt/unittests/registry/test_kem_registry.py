@@ -8,19 +8,12 @@ All code in English as per project requirements.
 
 import pytest
 
-from openssl_encrypt.modules.registry import (
-    HQC128,
-    HQC192,
-    HQC256,
-    MLKEM512,
-    MLKEM768,
-    MLKEM1024,
-    AlgorithmCategory,
-    AlgorithmNotAvailableError,
-    KEMRegistry,
-    SecurityLevel,
-    get_kem,
-)
+from openssl_encrypt.modules.registry import (HQC128, HQC192, HQC256, MLKEM512,
+                                              MLKEM768, MLKEM1024,
+                                              AlgorithmCategory,
+                                              AlgorithmNotAvailableError,
+                                              KEMRegistry, SecurityLevel,
+                                              get_kem)
 from openssl_encrypt.modules.secure_memory import SecureBytes
 
 # Check if liboqs is available
@@ -305,8 +298,12 @@ class TestKEMComparison:
         info1024 = MLKEM1024.info()
 
         # Higher security = larger keys
-        assert info512.public_key_size < info768.public_key_size < info1024.public_key_size
-        assert info512.ciphertext_size < info768.ciphertext_size < info1024.ciphertext_size
+        assert (
+            info512.public_key_size < info768.public_key_size < info1024.public_key_size
+        )
+        assert (
+            info512.ciphertext_size < info768.ciphertext_size < info1024.ciphertext_size
+        )
 
     def test_security_level_classification(self):
         """Test security level classification."""

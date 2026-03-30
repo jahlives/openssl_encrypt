@@ -18,6 +18,7 @@ import logging
 import os
 import sys
 from typing import Any, Dict, Optional, Union
+
 from .crypt_utils import eprint
 
 _logger = logging.getLogger(__name__)
@@ -29,7 +30,9 @@ try:
     JSONSCHEMA_AVAILABLE = True
 except ImportError:
     JSONSCHEMA_AVAILABLE = False
-    _logger.warning("jsonschema library not available. Schema validation will raise errors.")
+    _logger.warning(
+        "jsonschema library not available. Schema validation will raise errors."
+    )
 
 
 class JSONSecurityError(Exception):
@@ -96,7 +99,9 @@ class SecureJSONValidator:
                             schema_content = f.read()
                             # Validate schema size
                             if len(schema_content) > self.MAX_JSON_SIZE:
-                                eprint(f"Warning: Schema file {filename} is too large, skipping")
+                                eprint(
+                                    f"Warning: Schema file {filename} is too large, skipping"
+                                )
                                 continue
 
                             schema_data = json.loads(schema_content)
@@ -137,7 +142,9 @@ class SecureJSONValidator:
                     f"Invalid control character found at position {i}: {repr(char)}"
                 )
 
-    def validate_json_structure(self, data: Any, path: str = "root", depth: int = 0) -> None:
+    def validate_json_structure(
+        self, data: Any, path: str = "root", depth: int = 0
+    ) -> None:
         """
         Recursively validate JSON structure against security limits.
 
@@ -168,10 +175,14 @@ class SecureJSONValidator:
             for key, value in data.items():
                 # Key validation
                 if not isinstance(key, str):
-                    raise JSONSecurityError(f"Non-string key found at {path}: {type(key)}")
+                    raise JSONSecurityError(
+                        f"Non-string key found at {path}: {type(key)}"
+                    )
 
                 if len(key) > 256:
-                    raise JSONSecurityError(f"Key too long at {path}: {len(key)} characters")
+                    raise JSONSecurityError(
+                        f"Key too long at {path}: {len(key)} characters"
+                    )
 
                 # Recursively validate value
                 self.validate_json_structure(value, f"{path}.{key}", depth + 1)
@@ -251,7 +262,9 @@ class SecureJSONValidator:
         except ValidationError as e:
             # Create user-friendly error message
             error_path = ".".join(str(x) for x in e.path) if e.path else "root"
-            raise JSONValidationError(f"Schema validation failed at {error_path}: {e.message}")
+            raise JSONValidationError(
+                f"Schema validation failed at {error_path}: {e.message}"
+            )
 
     def validate_metadata(self, json_string: str) -> Dict[str, Any]:
         """
@@ -358,7 +371,9 @@ def get_json_validator() -> SecureJSONValidator:
     return _validator_instance
 
 
-def secure_json_loads(json_string: str, schema_name: Optional[str] = None) -> Dict[str, Any]:
+def secure_json_loads(
+    json_string: str, schema_name: Optional[str] = None
+) -> Dict[str, Any]:
     """
     Securely load and validate JSON string.
 
