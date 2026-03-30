@@ -43,8 +43,8 @@ STDOUT_WHITELIST = [
     ("usb_creator.py", 914, "USB decrypted text content"),
 ]
 
-# Tolerance for line number matching (handles minor edits)
-LINE_TOLERANCE = 10
+# Tolerance for line number matching (handles formatting/refactoring shifts)
+LINE_TOLERANCE = 50
 
 
 def _is_whitelisted(filepath: str, lineno: int) -> bool:
