@@ -446,6 +446,7 @@ class TestSHAKE256:
 # ============================================================================
 
 
+@pytest.mark.skipif(not Whirlpool.is_available(), reason="Whirlpool module not available")
 class TestWhirlpool:
     """Tests for Whirlpool."""
 
