@@ -18,7 +18,6 @@ from openssl_encrypt.plugins.keyserver.keyserver_plugin import (
     KeyserverPlugin,
 )
 
-
 # ---------------------------------------------------------------------------
 # Password Storage Tests
 # ---------------------------------------------------------------------------

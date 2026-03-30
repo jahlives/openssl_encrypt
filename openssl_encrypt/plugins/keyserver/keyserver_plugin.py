@@ -34,7 +34,13 @@ from urllib3.poolmanager import PoolManager
 from openssl_encrypt.modules.crypt_utils import eprint
 
 from ...modules.key_bundle import PublicKeyBundle, create_pop_signature
-from ...modules.plugin_system.plugin_base import BasePlugin, PluginCapability, PluginResult, PluginSecurityContext, PluginType
+from ...modules.plugin_system.plugin_base import (
+    BasePlugin,
+    PluginCapability,
+    PluginResult,
+    PluginSecurityContext,
+    PluginType,
+)
 from .cache import KeyserverCache
 from .config import KeyserverConfig
 
