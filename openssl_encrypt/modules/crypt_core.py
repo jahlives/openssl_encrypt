@@ -6238,7 +6238,7 @@ def encrypt_file(
                 try:
                     aesgcm = AESGCM(pepper_key)
                     remote_pepper = aesgcm.decrypt(nonce, ciphertext_with_tag, None)
-                except Exception as e:
+                except Exception:
                     raise KeyDerivationError(
                         "Failed to decrypt pepper - wrong password or corrupted data"
                     )
@@ -8997,7 +8997,7 @@ def decrypt_file(
             try:
                 aesgcm = AESGCM(pepper_key)
                 remote_pepper = aesgcm.decrypt(nonce, ciphertext_with_tag, None)
-            except Exception as e:
+            except Exception:
                 # This could be wrong password or corrupted data
                 raise AuthenticationError(
                     "Failed to decrypt remote pepper - wrong password or corrupted pepper data"

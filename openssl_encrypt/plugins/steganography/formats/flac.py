@@ -1133,7 +1133,7 @@ def is_flac_steganography_available() -> bool:
         import numpy as np
 
         # Test basic functionality needed for FLAC steganography
-        test_array = np.array([1, 2, 3, 4], dtype=np.int16)
+        _test_array = np.array([1, 2, 3, 4], dtype=np.int16)
 
         return True
     except Exception as e:

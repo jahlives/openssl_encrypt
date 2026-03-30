@@ -436,7 +436,7 @@ class SecureMemoryAllocator:
             elif self.system == "windows":
                 try:
                     # Just check if we can load kernel32
-                    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+                    _kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
                     # Windows memory protection is handled during allocation/locking
                 except Exception:
                     pass

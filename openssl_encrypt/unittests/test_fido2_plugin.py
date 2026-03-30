@@ -478,7 +478,7 @@ class TestFIDO2ConfigDirectory(unittest.TestCase):
 
     def test_config_directory_creation(self):
         """Test automatic creation of config directory."""
-        plugin = FIDO2HSMPlugin(credential_file=self.credential_file)
+        _plugin = FIDO2HSMPlugin(credential_file=self.credential_file)
 
         # Directory should be created
         self.assertTrue(self.test_dir.exists())

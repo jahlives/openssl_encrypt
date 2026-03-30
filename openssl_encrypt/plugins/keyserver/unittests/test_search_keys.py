@@ -305,7 +305,7 @@ class TestSearchKeysMethod:
             plugin.search_keys("Alice")
 
         # Cache.put should not have been called
-        with patch.object(plugin.cache, "put") as mock_put:
+        with patch.object(plugin.cache, "put") as _mock_put:
             plugin.search_keys("Alice")
 
         # Calling again should still hit the network (not cache)

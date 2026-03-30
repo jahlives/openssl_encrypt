@@ -780,7 +780,7 @@ class TestRandomXIntegration(unittest.TestCase):
 
         try:
             # Attempt encryption with RandomX but no prior hashing (should trigger warning)
-            with self.assertLogs(level="INFO") as cm:
+            with self.assertLogs(level="INFO") as _cm:
                 encrypt_file(
                     self.test_file,
                     encrypted_file,

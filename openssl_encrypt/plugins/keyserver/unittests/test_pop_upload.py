@@ -228,7 +228,7 @@ class TestRequestChallenge:
             "_authenticated_request",
             wraps=lambda method, url, **kw: plugin.session.post(url, **kw),
         ):
-            result = plugin._request_challenge("https://keyserver.example.com", "3a:4b")
+            _result = plugin._request_challenge("https://keyserver.example.com", "3a:4b")
 
         called_url = plugin.session.post.call_args[0][0]
         assert called_url == "https://keyserver.example.com/api/v1/keys/challenge"

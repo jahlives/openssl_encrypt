@@ -943,7 +943,7 @@ class TestCLIAdvancedOperations(CLITestBase):
             self.assertGreater(len(stdout), 0, "No decrypted output received from stdin")
 
             # Verify that metadata extraction worked (this test proves our new implementation works)
-            combined_output = stdout.decode("utf-8", errors="ignore") + stderr.decode(
+            _combined_output = stdout.decode("utf-8", errors="ignore") + stderr.decode(
                 "utf-8", errors="ignore"
             )
 

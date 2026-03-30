@@ -1504,7 +1504,7 @@ def main():
     default_parser.add_argument("key_id", help="The key ID to set as default")
 
     # Change master password
-    chpass_parser = subparsers.add_parser(
+    _chpass_parser = subparsers.add_parser(
         "change-master-password", help="Change the master password"
     )
 
@@ -1523,7 +1523,7 @@ def main():
     )
 
     # Keystore info
-    info_parser = subparsers.add_parser("info", help="Show keystore information")
+    _info_parser = subparsers.add_parser("info", help="Show keystore information")
 
     # Import key
     import_parser = subparsers.add_parser("import-key", help="Import a key from a file")
@@ -2007,7 +2007,7 @@ def handle_import_qr_command(args, keystore_password):
         # Get key password if needed
         key_password = None
         if args.prompt_key_password:
-            key_password = getpass.getpass(f"Enter password for key '{original_key_name}': ")
+            _key_password = getpass.getpass(f"Enter password for key '{original_key_name}': ")
         elif args.key_password_file:
             with open(args.key_password_file, "r") as f:
                 f.read().strip()

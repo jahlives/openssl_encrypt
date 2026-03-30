@@ -628,7 +628,7 @@ class TestPlugin(PreProcessorPlugin):
             )
             context.file_paths = [test_file.name]
 
-            result = self.plugin_manager.execute_plugin(
+            _result = self.plugin_manager.execute_plugin(
                 "test_hardlink", context, use_process_isolation=False
             )
 

@@ -149,7 +149,7 @@ class TestPluginConfigFileSecurity:
         """Root config directory should be secured"""
         with tempfile.TemporaryDirectory() as tmpdir:
             config_dir = Path(tmpdir) / "config"
-            manager = PluginConfigManager(config_dir=str(config_dir))
+            _manager = PluginConfigManager(config_dir=str(config_dir))
 
             # Check root directory permissions
             assert config_dir.exists()

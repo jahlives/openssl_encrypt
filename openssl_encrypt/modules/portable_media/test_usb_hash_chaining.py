@@ -96,7 +96,7 @@ def test_usb_with_hash_chaining():
             different_hash_config["sha512"] = 3  # Different configuration
 
             try:
-                bad_verification = creator.verify_usb_integrity(
+                _bad_verification = creator.verify_usb_integrity(
                     usb_path, password, hash_config=different_hash_config
                 )
                 # This should fail or give different results

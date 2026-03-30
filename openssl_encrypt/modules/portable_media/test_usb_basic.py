@@ -167,7 +167,7 @@ def test_error_handling():
 
         # Test with non-existent path
         try:
-            result = creator.create_portable_usb(
+            _result = creator.create_portable_usb(
                 usb_path="/non/existent/path", password="test_password"
             )
             print("❌ Should have failed with non-existent path")

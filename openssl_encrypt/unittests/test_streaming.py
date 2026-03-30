@@ -706,7 +706,7 @@ class TestStreamingAdversarial(unittest.TestCase):
 
             # Find payload and remove last chunk by truncating before trailer
             colon_pos = content.index(b":")
-            payload = content[colon_pos + 1 :]
+            _payload = content[colon_pos + 1 :]
 
             # Read the payload structure to find chunk boundaries
             # We know the trailer is the last 36 bytes

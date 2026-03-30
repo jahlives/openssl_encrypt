@@ -382,7 +382,7 @@ class AdaptiveLSBStego(LSBImageStego):
         complexity = self._calculate_image_complexity(pixels)
 
         # Count suitable hiding locations
-        suitable_pixels = np.sum(complexity >= self.complexity_threshold)
+        _suitable_pixels = np.sum(complexity >= self.complexity_threshold)
         channels = len(image.getbands())
 
         # Calculate adaptive capacity (more bits in complex regions)

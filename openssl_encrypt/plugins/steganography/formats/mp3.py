@@ -960,8 +960,8 @@ def is_mp3_steganography_available() -> bool:
         import numpy as np
 
         # Test basic functionality needed for MP3 steganography
-        test_array = np.array([1, 2, 3, 4], dtype=np.int16)
-        test_header = struct.pack(">I", 0xFFFBD000)  # Sample MP3 header
+        _test_array = np.array([1, 2, 3, 4], dtype=np.int16)
+        _test_header = struct.pack(">I", 0xFFFBD000)  # Sample MP3 header
 
         return True
     except Exception as e:

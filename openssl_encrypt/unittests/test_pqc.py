@@ -349,7 +349,7 @@ class TestPostQuantumCrypto(unittest.TestCase):
             self.test_files.extend([encrypted_file, decrypted_file])
 
             # Create a test config with format_version 5
-            hash_config = {
+            _hash_config = {
                 "format_version": 5,
                 "encryption": {
                     "algorithm": "ml-kem-768-hybrid",
@@ -358,7 +358,7 @@ class TestPostQuantumCrypto(unittest.TestCase):
             }
 
             # Create args for key generation
-            args = type(
+            _args = type(
                 "Args",
                 (),
                 {
@@ -464,7 +464,7 @@ class TestPostQuantumCrypto(unittest.TestCase):
         self.test_files.extend([encrypted_file, decrypted_file])
 
         # Create a test config with format_version 5
-        hash_config = {
+        _hash_config = {
             "format_version": 5,
             "encryption": {
                 "algorithm": "ml-kem-768-hybrid",
@@ -473,7 +473,7 @@ class TestPostQuantumCrypto(unittest.TestCase):
         }
 
         # Create args for key generation
-        args = type(
+        _args = type(
             "Args",
             (),
             {
@@ -1364,7 +1364,7 @@ def test_file_decryption_wrong_pw_v3(filename):
     pqc_private_key = None
 
     try:
-        decrypted_data = decrypt_file(
+        _decrypted_data = decrypt_file(
             input_file=f"{get_testfiles_dir()}/v3/{filename}",
             output_file=None,
             password=b"12345",
@@ -1428,7 +1428,7 @@ def test_file_decryption_wrong_algorithm_v3(filename):
         wrong_algorithm = "fernet" if current_algorithm != "fernet" else "aes-gcm"
 
     try:
-        decrypted_data = decrypt_file(
+        _decrypted_data = decrypt_file(
             input_file=f"{get_testfiles_dir()}/v3/{filename}",
             output_file=None,
             password=b"wrong_password",
@@ -1499,7 +1499,7 @@ def test_file_decryption_wrong_pw_v4(filename):
 
     try:
         # Try to decrypt with an incorrect password (correct is '1234' but we use '12345')
-        decrypted_data = decrypt_file(
+        _decrypted_data = decrypt_file(
             input_file=f"{get_testfiles_dir()}/v4/{filename}",
             output_file=None,
             password=b"12345",  # Wrong password
@@ -1531,7 +1531,7 @@ def test_file_decryption_wrong_algorithm_v4(filename):
     algorithm_name = filename.replace("test1_", "").replace(".txt", "")
 
     try:
-        decrypted_data = decrypt_file(
+        _decrypted_data = decrypt_file(
             input_file=f"{get_testfiles_dir()}/v4/{filename}",
             output_file=None,
             password=b"wrong_password",
@@ -1613,7 +1613,7 @@ def test_file_decryption_wrong_pw_v5(filename):
 
     try:
         # Try to decrypt with an incorrect password (correct is '1234' but we use '12345')
-        decrypted_data = decrypt_file(
+        _decrypted_data = decrypt_file(
             input_file=f"{get_testfiles_dir()}/v5/{filename}",
             output_file=None,
             password=b"12345",  # Wrong password
@@ -1664,7 +1664,7 @@ def test_file_decryption_wrong_algorithm_v5(filename):
     algorithm_name = filename.replace("test1_", "").replace(".txt", "")
 
     try:
-        decrypted_data = decrypt_file(
+        _decrypted_data = decrypt_file(
             input_file=f"{get_testfiles_dir()}/v5/{filename}",
             output_file=None,
             password=b"wrong_password",
@@ -1695,7 +1695,7 @@ def test_file_decryption_wrong_encryption_data_v5(filename):
     algorithm_name = filename.replace("test1_", "").replace(".txt", "")
 
     try:
-        decrypted_data = decrypt_file(
+        _decrypted_data = decrypt_file(
             input_file=f"{get_testfiles_dir()}/v5/{filename}",
             output_file=None,
             password=b"wrong_password",

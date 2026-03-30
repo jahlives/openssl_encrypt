@@ -880,7 +880,7 @@ def auto_generate_pqc_key(args, hash_config, format_version=3):
             from .pqc import PQCipher, check_pqc_support
 
             # Get algorithm mapping
-            pqc_algorithms = check_pqc_support(quiet=getattr(args, "quiet", False))[2]
+            _pqc_algorithms = check_pqc_support(quiet=getattr(args, "quiet", False))[2]
 
             # Create the underlying algorithm name without -hybrid
             pqc_algorithm = args.algorithm.replace("-hybrid", "")

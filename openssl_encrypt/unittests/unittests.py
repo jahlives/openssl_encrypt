@@ -562,7 +562,7 @@ class TestCryptCore(unittest.TestCase):
             mock_decrypt.return_value = True
 
             # Attempt decryption
-            result = mock_decrypt(encrypted_file, decrypted_file, self.test_password, quiet=True)
+            _result = mock_decrypt(encrypted_file, decrypted_file, self.test_password, quiet=True)
 
             # Create a fake decrypted file with the original content
             with open(decrypted_file, "w", encoding="utf-8") as f:
@@ -1337,7 +1337,7 @@ class TestFileOperations(unittest.TestCase):
             self.assertEqual(encrypted_perms, 0o600)
 
             # Mock decryption and create the decrypted file
-            result = mock_decrypt(encrypted_file, decrypted_file, self.test_password, quiet=True)
+            _result = mock_decrypt(encrypted_file, decrypted_file, self.test_password, quiet=True)
 
             # Create a fake decrypted file with the original content
             with open(decrypted_file, "w", encoding="utf-8") as f:
@@ -3000,7 +3000,7 @@ class TestAdvancedTestingFramework(unittest.TestCase):
         self.assertIn("fuzz", fuzz_suite.description.lower())
 
         # Test with minimal config (avoiding actual file operations)
-        config = TestConfig(algorithm="fernet", test_mode=True)
+        _config = TestConfig(algorithm="fernet", test_mode=True)
 
         # Just test that the suite can be instantiated and configured
         self.assertIsNotNone(fuzz_suite.input_generator)
