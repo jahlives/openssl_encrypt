@@ -191,7 +191,7 @@ def ensure_plugin_data_dir(plugin_id: str, subdir: str = "") -> Optional[Path]:
 
         return data_dir
 
-    except (OSError, PermissionError) as e:
+    except OSError as e:
         logger.error(f"Failed to create or secure plugin data directory {data_dir}: {e}")
         return None
 
@@ -229,7 +229,7 @@ class PluginConfigManager:
         try:
             if not check_permissions(self.config_dir, PermissionLevel.OWNER_FULL):
                 logger.warning(f"Failed to set secure permissions (0o700) on {self.config_dir}")
-        except (OSError, PermissionError) as e:
+        except OSError as e:
             logger.warning(f"Failed to verify permissions on {self.config_dir}: {e}")
 
         # Load existing configurations
@@ -393,7 +393,7 @@ class PluginConfigManager:
         # Load configs from new directory structure: plugins/<plugin_id>/config.json
         try:
             entries = list(self.config_dir.iterdir())
-        except (OSError, PermissionError) as e:
+        except OSError as e:
             logger.error(f"Error reading plugin config directory {self.config_dir}: {e}")
             return
 
@@ -459,7 +459,7 @@ class PluginConfigManager:
             finally:
                 os.close(fd)
 
-        except (IOError, json.JSONEncodeError, OSError) as e:
+        except (json.JSONEncodeError, OSError) as e:
             logger.error(f"Error saving config file for plugin {plugin_id}: {e}")
             raise ConfigValidationError(f"Could not save configuration: {e}")
 

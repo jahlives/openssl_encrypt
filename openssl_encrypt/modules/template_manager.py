@@ -219,7 +219,7 @@ class TemplateManager:
         """Create a template from wizard configuration."""
         metadata = TemplateMetadata(
             name=name,
-            description=description or f"Template generated from configuration wizard",
+            description=description or "Template generated from configuration wizard",
             category=TemplateCategory.WIZARD_GENERATED,
             author="Configuration Wizard",
             use_cases=use_cases or [],
@@ -258,7 +258,7 @@ class TemplateManager:
 
         metadata = TemplateMetadata(
             name=name,
-            description=description or f"Template created from CLI configuration",
+            description=description or "Template created from CLI configuration",
             category=TemplateCategory.USER_CREATED,
             author="CLI Configuration",
             use_cases=use_cases or [],

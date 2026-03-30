@@ -367,7 +367,7 @@ class FuzzTestSuite(BaseSecurityTest):
 
                 # If it succeeds, that's okay (library uses defaults)
                 return TestResult(
-                    f"malformed_config",
+                    "malformed_config",
                     TestResultLevel.PASS,
                     "Malformed config handled gracefully (used defaults)",
                     details={"config": bad_config},
@@ -376,7 +376,7 @@ class FuzzTestSuite(BaseSecurityTest):
             except (ValueError, TypeError, KeyError) as expected_error:
                 # Expected behavior - library should reject invalid configs
                 return TestResult(
-                    f"malformed_config",
+                    "malformed_config",
                     TestResultLevel.PASS,
                     f"Malformed config properly rejected: {str(expected_error)}",
                     details={"config": bad_config, "error": str(expected_error)},
@@ -385,7 +385,7 @@ class FuzzTestSuite(BaseSecurityTest):
         except Exception as unexpected_error:
             # Unexpected errors indicate problems
             return TestResult(
-                f"malformed_config",
+                "malformed_config",
                 TestResultLevel.ERROR,
                 f"Unexpected error with malformed config: {str(unexpected_error)}",
                 details={"config": bad_config},
@@ -491,13 +491,13 @@ class FuzzTestSuite(BaseSecurityTest):
 
             if decrypted_data != test_data:
                 return TestResult(
-                    f"password_fuzz",
+                    "password_fuzz",
                     TestResultLevel.ERROR,
-                    f"Password case failed data integrity check",
+                    "Password case failed data integrity check",
                 )
 
             return TestResult(
-                f"password_fuzz",
+                "password_fuzz",
                 TestResultLevel.PASS,
                 "Password case handled successfully",
                 details={"password_length": len(password)},
@@ -505,7 +505,7 @@ class FuzzTestSuite(BaseSecurityTest):
 
         except Exception as e:
             return TestResult(
-                f"password_fuzz",
+                "password_fuzz",
                 TestResultLevel.ERROR,
                 f"Password case failed: {str(e)}",
                 exception=e,

@@ -494,7 +494,7 @@ def get_pqc_key_for_decryption(args, hash_config=None, metadata=None):
                 # For dual encryption, we need both the keystore password and the file password
                 file_password = args.password
                 if not getattr(args, "quiet", False):
-                    eprint(f"Using file password for dual-encrypted key")
+                    eprint("Using file password for dual-encrypted key")
 
             # Get key from keystore
             public_key, private_key = get_key_from_keystore(
@@ -510,7 +510,7 @@ def get_pqc_key_for_decryption(args, hash_config=None, metadata=None):
             pqc_private_key = private_key
 
             if not getattr(args, "quiet", False):
-                eprint(f"Successfully retrieved key from keystore using ID from metadata")
+                eprint("Successfully retrieved key from keystore using ID from metadata")
                 if dual_encryption:
                     eprint("Key was dual-encrypted with both keystore and file passwords")
 
@@ -808,11 +808,11 @@ def store_pqc_key_in_keystore(metadata, keystore_path, keystore_password, key_id
                 try:
                     # Use secure_memzero for byte arrays
                     secure_memzero(encrypted_private_key)
-                except:
+                except Exception:
                     # Fallback if secure_memzero fails
                     encrypted_private_key = b"\x00" * len(encrypted_private_key)
                 encrypted_private_key = None
-        except:
+        except Exception:
             # Last resort cleanup - just remove the reference
             encrypted_private_key = None
 

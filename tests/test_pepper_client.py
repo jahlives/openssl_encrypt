@@ -89,7 +89,7 @@ def test_pepper_client():
     try:
         # This will fail without proper mTLS setup, but demonstrates the API
         profile = plugin.get_profile()
-        print(f"✓ Profile retrieved:")
+        print("✓ Profile retrieved:")
         print(f"  Fingerprint: {profile['cert_fingerprint']}")
         print(f"  TOTP Enabled: {profile['totp_enabled']}")
         print(f"  Pepper Count: {profile['pepper_count']}")

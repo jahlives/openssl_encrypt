@@ -734,14 +734,14 @@ def decrypt_file_with_keystore(
         # Only update the private key if we got one
         if retrieved_private_key:
             if not quiet:
-                eprint(f"Successfully retrieved PQC key for decryption using helper function")
+                eprint("Successfully retrieved PQC key for decryption using helper function")
             pqc_private_key = retrieved_private_key
 
             # Update the key_id in case it was found by the helper
             if extracted_key_id and not key_id:
                 key_id = extracted_key_id
         elif not quiet:
-            eprint(f"Trying alternative approach to retrieve private key")
+            eprint("Trying alternative approach to retrieve private key")
 
     # If we don't have a private key yet, try the classic keystore approach
     if pqc_private_key is None and key_id is not None and keystore_file is not None:
@@ -797,7 +797,7 @@ def decrypt_file_with_keystore(
                         file_password_for_key = password
 
                     if not quiet:
-                        eprint(f"Using file password for dual-encrypted key")
+                        eprint("Using file password for dual-encrypted key")
 
                     # Verify the file password format
                     if not file_password_for_key:
@@ -819,7 +819,7 @@ def decrypt_file_with_keystore(
                         if not quiet:
                             eprint(f"Dual encryption verification failed: {e}")
                         raise ValueError(
-                            f"Invalid password for dual-encrypted key - password authentication failed"
+                            "Invalid password for dual-encrypted key - password authentication failed"
                         )
                     else:
                         # Pass through other errors
@@ -919,7 +919,7 @@ def decrypt_file_with_keystore(
         ):
             if not quiet:
                 eprint(f"Decryption failed - possible invalid file password: {e}")
-            raise ValueError(f"Password verification failed for decryption - invalid password")
+            raise ValueError("Password verification failed for decryption - invalid password")
         else:
             # Re-raise the original error
             raise

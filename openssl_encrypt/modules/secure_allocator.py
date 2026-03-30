@@ -162,7 +162,7 @@ class SecureHeapBlock:
             self.front_canary = None
             self.end_canary = None
             self.buffer = None
-        except:
+        except Exception:
             # Fail silently in __del__ to avoid exceptions during garbage collection
             pass
 
@@ -215,7 +215,7 @@ class SecureBytes(BaseSecureBytes):
         """Exit the context manager - securely clear memory."""
         try:
             secure_memzero(self)
-        except:
+        except Exception:
             pass  # Fail silently to avoid masking original exceptions
         return False  # Don't suppress exceptions
 
@@ -228,7 +228,7 @@ class SecureBytes(BaseSecureBytes):
             # If we have a secure block, let it handle its own cleanup
             # in its __del__ method
             self._secure_block = None
-        except:
+        except Exception:
             # Fail silently in __del__ to avoid exceptions during garbage collection
             pass
 
@@ -283,7 +283,7 @@ class SecureHeap:
                     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
                 except ImportError:
                     pass
-        except:
+        except Exception:
             if self.debug_mode:
                 eprint("Failed to set up core dump prevention")
 
@@ -300,7 +300,7 @@ class SecureHeap:
                     status = f.read()
                     if "TracerPid:\t0" not in status:
                         return True
-            except:
+            except Exception:
                 pass
         elif self.system == "windows":
             try:
@@ -308,7 +308,7 @@ class SecureHeap:
                 if hasattr(kernel32, "IsDebuggerPresent"):
                     if kernel32.IsDebuggerPresent():
                         return True
-            except:
+            except Exception:
                 pass
 
         return False
@@ -498,7 +498,7 @@ class SecureHeap:
         """Ensure all blocks are freed when the heap is destroyed."""
         try:
             self.cleanup()
-        except:
+        except Exception:
             # Fail silently in __del__ to avoid exceptions during garbage collection
             pass
 

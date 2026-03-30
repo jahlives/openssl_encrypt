@@ -163,11 +163,11 @@ class TestHQCMLKEMKeystoreIntegration(unittest.TestCase):
                 # Verify key metadata
                 keys = self.keystore.list_keys()
                 test_key = next((k for k in keys if k["key_id"] == key_id), None)
-                self.assertIsNotNone(test_key, f"Test key should be found in listing")
+                self.assertIsNotNone(test_key, "Test key should be found in listing")
                 self.assertEqual(
-                    test_key["algorithm"], algorithm, f"Algorithm mismatch in metadata"
+                    test_key["algorithm"], algorithm, "Algorithm mismatch in metadata"
                 )
-                self.assertIn("ml-kem", test_key["tags"], f"ML-KEM tag should be present")
+                self.assertIn("ml-kem", test_key["tags"], "ML-KEM tag should be present")
 
                 # Remove key for cleanup
                 self.keystore.remove_key(key_id)
@@ -232,7 +232,7 @@ class TestHQCMLKEMKeystoreIntegration(unittest.TestCase):
         # Verify dual encryption flag
         if hasattr(self.keystore, "key_has_dual_encryption"):
             is_dual = self.keystore.key_has_dual_encryption(key_id)
-            self.assertTrue(is_dual, f"Key should be marked for dual encryption")
+            self.assertTrue(is_dual, "Key should be marked for dual encryption")
 
         # Test key retrieval with file password
         retrieved_public, retrieved_private = self.keystore.get_key(

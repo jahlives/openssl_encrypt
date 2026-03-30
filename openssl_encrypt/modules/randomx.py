@@ -107,7 +107,7 @@ try:
         logger.info("RandomX library loaded successfully")
     else:
         raise ImportError("RandomX import test failed - likely CPU incompatibility")
-except (ImportError, SystemError, OSError, Exception) as e:
+except Exception as e:
     logger.warning(f"RandomX import failed: {e}")
     try:
         # Test if pyrx import is safe before attempting it
@@ -130,7 +130,7 @@ except (ImportError, SystemError, OSError, Exception) as e:
                 )
         else:
             raise ImportError("pyrx import test failed - likely CPU incompatibility")
-    except (ImportError, SystemError, OSError, Exception) as e:
+    except Exception as e:
         RANDOMX_AVAILABLE = False
         RANDOMX_LIBRARY = None
         randomx = None

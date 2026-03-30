@@ -224,7 +224,7 @@ def fido2_test(rp_id: Optional[str]):
 
     if result.success:
         pepper = result.data.get("hsm_pepper")
-        click.echo(f"\n✅ Test successful!")
+        click.echo("\n✅ Test successful!")
         click.echo(f"Pepper length: {len(pepper)} bytes")
         click.echo(f"Pepper (hex): {pepper.hex()}")
         click.echo("\nYour FIDO2 credential is working correctly.")
@@ -281,9 +281,9 @@ def fido2_list():
         # Highlight hmac-secret support
         hmac_support = device.get("hmac_secret_support", False)
         if hmac_support:
-            click.echo(f"  hmac-secret: ✅ Supported")
+            click.echo("  hmac-secret: ✅ Supported")
         else:
-            click.echo(f"  hmac-secret: ❌ Not supported")
+            click.echo("  hmac-secret: ❌ Not supported")
 
         click.echo()
 

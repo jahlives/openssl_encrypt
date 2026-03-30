@@ -338,5 +338,5 @@ class OpenSSLEncryptTelemetryPlugin(TelemetryPlugin):
         """
         try:
             self.stop()
-        except:
+        except Exception:
             pass

@@ -270,10 +270,10 @@ class PQEncapsulator:
                 error_msg = str(original_error)
                 try:
                     kem_with_secret.free()
-                except:
+                except Exception:
                     pass
                 # Create a clean RuntimeError without chaining to avoid oqs object references
-                raise RuntimeError(f"Can not decapsulate secret")
+                raise RuntimeError("Can not decapsulate secret")
         else:
             # Use the existing KEM instance (secret key should already be set)
             shared_secret = self.kem.decap_secret(ciphertext)
