@@ -707,7 +707,7 @@ class TelemetryPlugin(BasePlugin):
         }
 
     @abc.abstractmethod
-    def on_telemetry_event(self, event: "TelemetryEvent") -> None:
+    def on_telemetry_event(self, event: "TelemetryEvent") -> None:  # noqa: F821
         """
         Called after each encrypt/decrypt operation with filtered telemetry data.
 

@@ -2310,7 +2310,7 @@ def compute_kdf_independent(
             if i == 0:
                 round_salt = salt
             else:
-                round_salt = result[:32] if len(result) >= 32 else result
+                round_salt = result[:32] if len(result) >= 32 else result  # noqa: F821
             result = argon2.low_level.hash_secret_raw(
                 secret=current_input,
                 salt=round_salt,
