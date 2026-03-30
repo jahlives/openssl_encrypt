@@ -12,7 +12,6 @@ import os
 
 import pytest
 
-
 # Whitelisted print() calls that MUST remain on stdout (data output)
 # Format: (filename_suffix, line_number, description)
 # Line numbers are checked with a tolerance of ±5 to handle minor edits

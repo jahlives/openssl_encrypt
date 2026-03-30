@@ -117,7 +117,9 @@ class TestDefaultConfiguration(unittest.TestCase):
 
         # Check that default KDF configurations are applied
         kdf_config = inner_metadata["derivation_config"]["kdf_config"]
-        self.assertFalse(kdf_config.get("scrypt", {}).get("enabled", False), "Default should disable Scrypt")
+        self.assertFalse(
+            kdf_config.get("scrypt", {}).get("enabled", False), "Default should disable Scrypt"
+        )
         self.assertTrue(kdf_config["argon2"]["enabled"], "Default should enable Argon2")
         self.assertEqual(
             kdf_config["argon2"]["rounds"], 10, "Default should include 10 Argon2 rounds"
@@ -638,19 +640,20 @@ class SimpleTestPlugin(PreProcessorPlugin):
     def test_plugin_sandbox_execution_timeout(self):
         """Test plugin sandbox timeout functionality."""
         try:
+            import importlib.util
+            import tempfile
+            import textwrap
+
             from ..modules.plugin_system import (
                 PluginCapability,
                 PluginSandbox,
                 PluginSecurityContext,
             )
 
-            import importlib.util
-            import tempfile
-            import textwrap
-
             # Create a standalone slow plugin module in a temp file so the AST
             # analyzer only sees clean code (no blocked imports from test_config.py).
-            slow_plugin_source = textwrap.dedent("""\
+            slow_plugin_source = textwrap.dedent(
+                """\
                 import time
                 from openssl_encrypt.modules.plugin_system.plugin_base import (
                     PreProcessorPlugin,
@@ -675,7 +678,8 @@ class SimpleTestPlugin(PreProcessorPlugin):
                     def execute(self, context):
                         time.sleep(2)
                         return PluginResult.success_result("Should not reach here")
-            """)
+            """
+            )
 
             with tempfile.NamedTemporaryFile(
                 mode="w", suffix=".py", prefix="slow_plugin_", delete=False
@@ -701,8 +705,7 @@ class SimpleTestPlugin(PreProcessorPlugin):
                 # Should fail due to timeout or process crash
                 self.assertFalse(result.success)
                 self.assertTrue(
-                    "timed out" in result.message.lower()
-                    or "process" in result.message.lower(),
+                    "timed out" in result.message.lower() or "process" in result.message.lower(),
                     f"Expected timeout or process failure, got: {result.message}",
                 )
             finally:
@@ -1064,7 +1067,9 @@ class TestPluginIntegration(unittest.TestCase):
             self.assertTrue(os.path.exists(backup_path))
 
             # Verify backup content matches original
-            with open(self.text_file, "r", encoding="utf-8") as original, open(backup_path, "r", encoding="utf-8") as backup:
+            with open(self.text_file, "r", encoding="utf-8") as original, open(
+                backup_path, "r", encoding="utf-8"
+            ) as backup:
                 self.assertEqual(original.read(), backup.read())
 
             # Test backup verification

@@ -292,7 +292,6 @@ class KeyserverConfig:
             logger.error(f"Failed to delete API token: {e}")
             raise ConfigError(f"Failed to delete API token: {e}")
 
-
     def load_refresh_token(self) -> Optional[str]:
         """
         Load refresh token from secure file.

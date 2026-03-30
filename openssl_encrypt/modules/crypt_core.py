@@ -1188,14 +1188,18 @@ def set_secure_permissions(file_path):
     try:
         canonical_path = os.path.realpath(os.path.abspath(file_path))
         if not os.path.samefile(file_path, canonical_path):
-            eprint(f"Warning: Path canonicalization changed target: {file_path} -> {canonical_path}")
+            eprint(
+                f"Warning: Path canonicalization changed target: {file_path} -> {canonical_path}"
+            )
         file_path = canonical_path
     except (OSError, ValueError) as e:
         eprint(f"Error canonicalizing path '{file_path}': {e}")
         return
 
     # Set permissions to 0600 (read/write for owner only)
-    from openssl_encrypt.modules.file_permissions import PermissionLevel, set_permissions as _set_perms
+    from openssl_encrypt.modules.file_permissions import PermissionLevel
+    from openssl_encrypt.modules.file_permissions import set_permissions as _set_perms
+
     _set_perms(file_path, PermissionLevel.OWNER_ONLY)
 
 
@@ -1219,13 +1223,16 @@ def get_file_permissions(file_path):
     try:
         canonical_path = os.path.realpath(os.path.abspath(file_path))
         if not os.path.samefile(file_path, canonical_path):
-            eprint(f"Warning: Path canonicalization changed target: {file_path} -> {canonical_path}")
+            eprint(
+                f"Warning: Path canonicalization changed target: {file_path} -> {canonical_path}"
+            )
         file_path = canonical_path
     except (OSError, ValueError) as e:
         eprint(f"Error canonicalizing path '{file_path}': {e}")
         raise
 
     from openssl_encrypt.modules.file_permissions import get_posix_mode
+
     return get_posix_mode(file_path)
 
 
@@ -1241,6 +1248,7 @@ def copy_permissions(source_file, target_file):
     """
     try:
         from openssl_encrypt.modules.file_permissions import copy_permissions as _copy_perms
+
         _copy_perms(source_file, target_file)
     except Exception:
         # If we can't copy permissions, fall back to secure permissions
@@ -2477,7 +2485,9 @@ def compute_kdf_independent(
                 bar_len = 30
                 filled = int(bar_len * (i + 1) // rounds)
                 bar = "█" * filled + "░" * (bar_len - filled)
-                eprint(f"\rRandomX KDF: [{bar}] {percent:.1f}% ({i+1}/{rounds})", end="", flush=True)
+                eprint(
+                    f"\rRandomX KDF: [{bar}] {percent:.1f}% ({i+1}/{rounds})", end="", flush=True
+                )
         if progress and not quiet:
             eprint()
 
@@ -5617,7 +5627,9 @@ def encrypt_file_asymmetric(
                     )
 
                     if not quiet:
-                        eprint(f"Wrapped password for: {recipient.name} ({recipient.fingerprint}) ✅")
+                        eprint(
+                            f"Wrapped password for: {recipient.name} ({recipient.fingerprint}) ✅"
+                        )
 
                 finally:
                     secure_memzero(shared_secret_raw)
@@ -5760,12 +5772,14 @@ def _derive_pepper_key(password: bytes, format_version: int = None) -> bytearray
         from cryptography.hazmat.primitives import hashes as _hashes
         from cryptography.hazmat.primitives.kdf.hkdf import HKDF as _HKDF
 
-        return bytearray(_HKDF(
-            algorithm=_hashes.SHA256(),
-            length=32,
-            salt=None,
-            info=b"openssl_encrypt-pepper-key",
-        ).derive(password))
+        return bytearray(
+            _HKDF(
+                algorithm=_hashes.SHA256(),
+                length=32,
+                salt=None,
+                info=b"openssl_encrypt-pepper-key",
+            ).derive(password)
+        )
     else:
         return bytearray(hashlib.sha256(password).digest())
 
@@ -5794,12 +5808,14 @@ def _derive_pqc_sig_key(
     if salt is None:
         salt = b"OpenSSL-Encrypt-PQ-Signature-Hybrid"
 
-    return bytearray(_HKDF(
-        algorithm=_hashes.SHA256(),
-        length=32,
-        salt=salt,
-        info=f"encryption-key-{algorithm}".encode(),
-    ).derive(private_key))
+    return bytearray(
+        _HKDF(
+            algorithm=_hashes.SHA256(),
+            length=32,
+            salt=salt,
+            info=f"encryption-key-{algorithm}".encode(),
+        ).derive(private_key)
+    )
 
 
 @secure_encrypt_error_handler
@@ -7884,7 +7900,9 @@ def print_file_info(input_file: str, json_output: bool = False) -> dict:
                 rounds = config
             if rounds > 0:
                 display_name = algo.upper().replace("_", "-")
-                eprint(f"      {display_name}:{' ' * max(1, 13 - len(display_name))}{rounds} rounds")
+                eprint(
+                    f"      {display_name}:{' ' * max(1, 13 - len(display_name))}{rounds} rounds"
+                )
 
     if kdf_config:
         eprint("    KDFs:")
@@ -8345,9 +8363,7 @@ def decrypt_file(
     # Read metadata incrementally (avoids loading full file for streaming v12)
     file_content = None  # Only populated for non-streaming path (needed for secure cleanup)
     try:
-        metadata_b64, _fallback_content = _read_metadata_only(
-            input_file, secure_mode=secure_mode
-        )
+        metadata_b64, _fallback_content = _read_metadata_only(input_file, secure_mode=secure_mode)
         # MED-8 Security fix: Use secure JSON validation for metadata parsing
         metadata_json = base64.b64decode(metadata_b64).decode("utf-8")
         try:
@@ -8396,7 +8412,9 @@ def decrypt_file(
     # Extract and validate format_version
     format_version = metadata.get("format_version", 1)
     if not isinstance(format_version, int):
-        raise ValueError(f"Invalid format_version type: expected int, got {type(format_version).__name__}")
+        raise ValueError(
+            f"Invalid format_version type: expected int, got {type(format_version).__name__}"
+        )
 
     # Verify metadata integrity with remote server if enabled (BEFORE key derivation)
     if verify_integrity and _INTEGRITY_PLUGIN_AVAILABLE:

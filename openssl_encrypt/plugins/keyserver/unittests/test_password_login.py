@@ -13,11 +13,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from openssl_encrypt.plugins.keyserver.config import KeyserverConfig
-from openssl_encrypt.plugins.keyserver.keyserver_plugin import (
-    AuthenticationError,
-    KeyserverPlugin,
-)
-
+from openssl_encrypt.plugins.keyserver.keyserver_plugin import AuthenticationError, KeyserverPlugin
 
 # ---------------------------------------------------------------------------
 # Password Storage Tests

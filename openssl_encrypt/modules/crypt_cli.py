@@ -887,7 +887,9 @@ def analyze_current_security_configuration(args):
             f"Encryption: {analysis['cipher_analysis']['score']:.1f}/10 ({analysis['cipher_analysis']['description']})"
         )
         eprint(f"  Algorithm: {analysis['cipher_analysis']['algorithm']}")
-        eprint(f"  Authenticated: {'Yes' if analysis['cipher_analysis']['authenticated'] else 'No'}")
+        eprint(
+            f"  Authenticated: {'Yes' if analysis['cipher_analysis']['authenticated'] else 'No'}"
+        )
 
         if analysis["pqc_analysis"]["enabled"]:
             eprint(f"Post-Quantum: {analysis['pqc_analysis']['score']:.1f}/10 (Quantum-resistant)")
@@ -2926,7 +2928,9 @@ def handle_keyserver_command(args):
                 return
 
             if not identity.is_own_identity:
-                eprint(f"✗ Cannot upload '{identity_name}': not your own identity (no private keys)")
+                eprint(
+                    f"✗ Cannot upload '{identity_name}': not your own identity (no private keys)"
+                )
                 return
 
             # Create bundle
@@ -3351,7 +3355,7 @@ def main_with_args(args=None):
 
     # Register handlers for common termination signals
     _sigs = [signal.SIGINT, signal.SIGTERM]
-    if hasattr(signal, 'SIGHUP'):
+    if hasattr(signal, "SIGHUP"):
         _sigs.append(signal.SIGHUP)
     for sig in _sigs:
         try:
@@ -4788,7 +4792,9 @@ def main_with_args(args=None):
 
         eprint("\nUsage examples:")
         eprint("  Encrypt with Kyber-768 (NIST Level 3):")
-        eprint("    python -m openssl_encrypt.crypt encrypt -i file.txt --algorithm kyber768-hybrid")
+        eprint(
+            "    python -m openssl_encrypt.crypt encrypt -i file.txt --algorithm kyber768-hybrid"
+        )
         eprint("\n  Generate and save a key pair:")
         eprint(
             "    python -m openssl_encrypt.crypt encrypt -i file.txt --algorithm kyber768-hybrid --pqc-gen-key --pqc-keyfile key.pqc"
@@ -5245,7 +5251,9 @@ def main_with_args(args=None):
 
         try:
             key, _, _ = generate_key(
-                password=derive_password.encode("utf-8") if isinstance(derive_password, str) else derive_password,
+                password=derive_password.encode("utf-8")
+                if isinstance(derive_password, str)
+                else derive_password,
                 salt=salt,
                 hash_config=hash_config,
                 pbkdf2_iterations=pbkdf2_iters,
@@ -5268,6 +5276,7 @@ def main_with_args(args=None):
             print(derived.hex())
         elif output_format == "base64":
             import base64 as _b64
+
             print(_b64.b64encode(derived).decode("ascii"))
         elif output_format == "raw":
             sys.stdout.buffer.write(derived)
@@ -5449,7 +5458,9 @@ def main_with_args(args=None):
                     else:
                         eprint(f"No password found in keyring for label '{args.keyring_load}'")
                 except ImportError:
-                    eprint("Error: keyring package not installed. Install with: pip install keyring")
+                    eprint(
+                        "Error: keyring package not installed. Install with: pip install keyring"
+                    )
                     sys.exit(1)
 
             if (
@@ -5596,7 +5607,9 @@ def main_with_args(args=None):
                                     f"\nPassword strength: {strength} (entropy: {entropy:.1f} bits)"
                                 )
                                 eprint(f"Password validation failed: {str(e)}")
-                                eprint("Use --force-password to bypass validation (not recommended)")
+                                eprint(
+                                    "Use --force-password to bypass validation (not recommended)"
+                                )
                             sys.exit(1)
 
                     password_secure.extend(env_password.encode())
@@ -5646,7 +5659,9 @@ def main_with_args(args=None):
                                     f"\nPassword strength: {strength} (entropy: {entropy:.1f} bits)"
                                 )
                                 eprint(f"Password validation failed: {str(e)}")
-                                eprint("Use --force-password to bypass validation (not recommended)")
+                                eprint(
+                                    "Use --force-password to bypass validation (not recommended)"
+                                )
                             sys.exit(1)
 
                     password_secure.extend(args.password.encode())
@@ -6454,7 +6469,9 @@ def main_with_args(args=None):
                 # First load identity metadata to check protection level
                 sender_metadata = store.get_by_name(args.sign_with, load_private_keys=False)
                 if sender_metadata is None:
-                    eprint(f"ERROR: Sender identity '{args.sign_with}' not found ❌", file=sys.stderr)
+                    eprint(
+                        f"ERROR: Sender identity '{args.sign_with}' not found ❌", file=sys.stderr
+                    )
                     sys.exit(1)
 
                 # Determine if passphrase is needed
@@ -9025,9 +9042,13 @@ def main_with_args(args=None):
                                         )
 
                                         if not args.quiet:
-                                            eprint("Successfully decrypted private key from keyfile")
+                                            eprint(
+                                                "Successfully decrypted private key from keyfile"
+                                            )
                                     except Exception as e:
-                                        eprint(f"Error decrypting private key: {e}. Wrong password?")
+                                        eprint(
+                                            f"Error decrypting private key: {e}. Wrong password?"
+                                        )
                                         eprint("Decryption may fail without a valid private key.")
                                         pqc_private_key = None
                                 else:
