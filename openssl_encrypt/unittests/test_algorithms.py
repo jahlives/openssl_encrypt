@@ -20,6 +20,8 @@ import time
 import unittest
 import warnings
 from io import StringIO
+from unittest import mock
+from unittest.mock import MagicMock, patch
 
 
 # Import the modules to test
