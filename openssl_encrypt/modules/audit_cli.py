@@ -82,6 +82,12 @@ def _cmd_verify(args: argparse.Namespace) -> int:
     log_path = Path(args.log) if args.log else DEFAULT_LOG_DIR / "security-audit.log"
     seed_path = Path(args.seed) if args.seed else DEFAULT_LOG_DIR / "audit-seed.bin"
     state_path = Path(args.state) if args.state else DEFAULT_LOG_DIR / "audit-state.json"
+    if args.anchor_pubkey:
+        anchor_pubkey_path: Optional[Path] = Path(args.anchor_pubkey)
+    else:
+        # Auto-detect alongside the seed file; absence is fine (= no pinning).
+        candidate = seed_path.parent / "audit-anchor-pubkey.bin"
+        anchor_pubkey_path = candidate if candidate.exists() else None
 
     if not seed_path.exists():
         msg = f"audit verify: seed file not found at {seed_path}"
@@ -118,12 +124,28 @@ def _cmd_verify(args: argparse.Namespace) -> int:
             print(f"audit verify: log not found at {log_path}", file=sys.stderr)
         return EXIT_IO_ERROR
 
+    anchor_pubkey: Optional[bytes] = None
+    if anchor_pubkey_path is not None:
+        try:
+            anchor_pubkey = anchor_pubkey_path.read_bytes()
+        except OSError as exc:
+            if args.json:
+                print(json.dumps({"error": "anchor_pubkey_read_error", "message": str(exc)}))
+            else:
+                print(
+                    f"audit verify: cannot read anchor pubkey: {exc}",
+                    file=sys.stderr,
+                )
+            return EXIT_IO_ERROR
+
     log_paths = _default_log_paths(log_path)
     report = verify_chain(
         log_paths,
         seed=seed,
         expected_first_seq=args.from_seq,
         state=state,
+        anchor_pubkey=anchor_pubkey,
+        skip_anchors=args.skip_anchors,
     )
 
     if args.json:
@@ -195,6 +217,20 @@ def build_parser() -> argparse.ArgumentParser:
         default=0,
         metavar="N",
         help="Expected first seq number (default: 0).",
+    )
+    verify.add_argument(
+        "--anchor-pubkey",
+        dest="anchor_pubkey",
+        metavar="PATH",
+        help="Pin the anchor pubkey to the bytes in PATH (default: auto-detect "
+        "audit-anchor-pubkey.bin alongside the seed; absent = no pinning).",
+    )
+    verify.add_argument(
+        "--skip-anchors",
+        dest="skip_anchors",
+        action="store_true",
+        help="Verify chain fields (seq/prev_hash/mac) but skip Merkle/signature "
+        "checks on audit.anchor records (useful when liboqs is unavailable).",
     )
     verify.add_argument("--json", action="store_true", help="Emit a machine-readable JSON report.")
 

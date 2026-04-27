@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Union
 
+from .audit_anchor import ANCHOR_EVENT_TYPE, verify_anchor_payload
 from .audit_chain import (
     GENESIS_PREV_HASH,
     ChainState,
@@ -33,6 +34,9 @@ REASON_SEQ_GAP = "seq_gap"
 REASON_MISSING_FIELD = "missing_field"
 REASON_DECODE_ERROR = "decode_error"
 REASON_TAIL_TRUNCATED = "tail_truncated"
+REASON_ANCHOR_INVALID = "anchor_invalid"
+REASON_ANCHOR_PUBKEY_MISMATCH = "anchor_pubkey_mismatch"
+REASON_ANCHOR_WINDOW_INCOMPLETE = "anchor_window_incomplete"
 
 _REQUIRED_FIELDS = ("seq", "prev_hash", "mac")
 
@@ -76,6 +80,8 @@ def verify_chain(
     *,
     expected_first_seq: int = 0,
     state: Optional[ChainState] = None,
+    anchor_pubkey: Optional[bytes] = None,
+    skip_anchors: bool = False,
 ) -> VerificationReport:
     """Verify an audit chain spanning one or more log files.
 
@@ -87,6 +93,12 @@ def verify_chain(
             anchor seals records [0, N) and you're verifying the tail only).
         state: If supplied, the verifier additionally checks that the on-disk
             chain reaches state.current_seq - 1 (catches tail truncation).
+        anchor_pubkey: If supplied, every anchor's embedded pubkey must match
+            this byte-for-byte (trust-root pinning). Catches the case where an
+            attacker replaces both the anchor signature and the pubkey field.
+        skip_anchors: If True, audit.anchor records are still chained-verified
+            (seq/prev_hash/mac) but their Merkle/signature payload is not
+            re-validated. Useful when liboqs is unavailable on the verifier.
 
     Returns:
         ``VerificationReport`` with ``intact`` set to True iff every check
@@ -108,6 +120,11 @@ def verify_chain(
     # Skip evolution for any sealed records the caller said to start past.
     for _ in range(expected_first_seq):
         current_key = evolve_key(current_key)
+
+    # Buffer chain hashes by seq so anchor verification can recompute the
+    # Merkle root over its sealed window. We drop entries up to anchor_seq_end
+    # after a successful anchor to keep memory bounded.
+    chain_hashes_by_seq: dict = {}
 
     for path, line_no, raw in _iter_lines(paths):
         try:
@@ -196,8 +213,25 @@ def verify_chain(
         last_seq_seen = seq
         records_verified += 1
         expected_seq = seq + 1
-        expected_prev_hash = compute_record_hash(record)
+        record_hash = compute_record_hash(record)
+        expected_prev_hash = record_hash
+        chain_hashes_by_seq[seq] = record_hash
         current_key = evolve_key(current_key)
+
+        # Anchor validation (Merkle root + ML-DSA-65 signature).
+        if not skip_anchors and record.get("event_type") == ANCHOR_EVENT_TYPE:
+            anchor_failure = _verify_anchor_record(record, chain_hashes_by_seq, anchor_pubkey)
+            if anchor_failure is not None:
+                failures.append(anchor_failure)
+                return _finalize(failures, records_verified, first_seq_seen, last_seq_seen)
+            # Drop sealed window from the buffer to bound memory.
+            try:
+                end = int(record["details"]["anchor_seq_end"])
+            except (KeyError, TypeError, ValueError):
+                end = seq - 1
+            for sealed_seq in list(chain_hashes_by_seq.keys()):
+                if sealed_seq <= end:
+                    chain_hashes_by_seq.pop(sealed_seq, None)
 
     # Tail-truncation check (only if caller passed a state snapshot).
     if state is not None:
@@ -216,6 +250,71 @@ def verify_chain(
             )
 
     return _finalize(failures, records_verified, first_seq_seen, last_seq_seen)
+
+
+def _verify_anchor_record(
+    record: Dict[str, Any],
+    chain_hashes_by_seq: Dict[int, str],
+    anchor_pubkey: Optional[bytes],
+) -> Optional[VerificationFailure]:
+    """Validate one audit.anchor record. Returns a failure or None."""
+    try:
+        details = record["details"]
+        start = int(details["anchor_seq_start"])
+        end = int(details["anchor_seq_end"])
+    except (KeyError, TypeError, ValueError):
+        return VerificationFailure(
+            seq=int(record.get("seq", -1)),
+            reason=REASON_ANCHOR_INVALID,
+            message=f"anchor at seq={record.get('seq')} has malformed details",
+        )
+
+    # Reconstruct the leaf set the anchor claims to seal.
+    missing = [s for s in range(start, end + 1) if s not in chain_hashes_by_seq]
+    if missing:
+        return VerificationFailure(
+            seq=int(record["seq"]),
+            reason=REASON_ANCHOR_WINDOW_INCOMPLETE,
+            message=(
+                f"anchor at seq={record['seq']} seals window [{start}..{end}] but "
+                f"records for seqs {missing[:5]}{'...' if len(missing) > 5 else ''} "
+                f"are not present in the verifier's window buffer"
+            ),
+        )
+
+    # Optional pubkey pinning before the more expensive cryptographic check.
+    if anchor_pubkey is not None:
+        try:
+            import base64
+
+            embedded_pubkey = base64.b64decode(details["signature"]["pubkey_b64"])
+        except (KeyError, ValueError, TypeError):
+            return VerificationFailure(
+                seq=int(record["seq"]),
+                reason=REASON_ANCHOR_INVALID,
+                message=f"anchor at seq={record['seq']} has malformed signature block",
+            )
+        if embedded_pubkey != anchor_pubkey:
+            return VerificationFailure(
+                seq=int(record["seq"]),
+                reason=REASON_ANCHOR_PUBKEY_MISMATCH,
+                message=(
+                    f"anchor at seq={record['seq']} embeds a pubkey that does not "
+                    f"match the pinned trust root"
+                ),
+            )
+
+    leaves = [chain_hashes_by_seq[s] for s in range(start, end + 1)]
+    if not verify_anchor_payload(record, leaves):
+        return VerificationFailure(
+            seq=int(record["seq"]),
+            reason=REASON_ANCHOR_INVALID,
+            message=(
+                f"anchor at seq={record['seq']} failed Merkle/signature "
+                f"verification (window [{start}..{end}])"
+            ),
+        )
+    return None
 
 
 def _finalize(
@@ -253,4 +352,7 @@ __all__ = [
     "REASON_MISSING_FIELD",
     "REASON_DECODE_ERROR",
     "REASON_TAIL_TRUNCATED",
+    "REASON_ANCHOR_INVALID",
+    "REASON_ANCHOR_PUBKEY_MISMATCH",
+    "REASON_ANCHOR_WINDOW_INCOMPLETE",
 ]

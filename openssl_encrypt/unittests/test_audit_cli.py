@@ -28,6 +28,7 @@ class _ChainEnv:
     _VARS = (
         "OPENSSL_ENCRYPT_AUDIT_CHAIN",
         "OPENSSL_ENCRYPT_AUDIT_SEED_FILE",
+        "OPENSSL_ENCRYPT_AUDIT_ANCHOR_INTERVAL",
         "OPENSSL_ENCRYPT_DISABLE_AUDIT_LOG",
     )
 
@@ -159,6 +160,55 @@ class TestAuditVerifyCLI(_CLITestBase):
 
         code, _out, _ = self._run(*self._argv_for("verify", "--json"))
         self.assertEqual(code, 2)
+
+
+class TestAuditVerifyAnchorsCLI(_CLITestBase):
+    def _emit_with_anchors(self, count, interval=4):
+        from openssl_encrypt.modules.security_logger import SecurityAuditLogger
+
+        with _ChainEnv(
+            OPENSSL_ENCRYPT_AUDIT_CHAIN="1",
+            OPENSSL_ENCRYPT_AUDIT_ANCHOR_INTERVAL=str(interval),
+        ):
+            logger = SecurityAuditLogger(log_dir=str(self.dir), enabled=True)
+            for i in range(count):
+                logger.log_event(f"e{i}", "info")
+        _reset_singleton()
+
+    def test_verify_chain_with_anchors_intact(self):
+        self._emit_with_anchors(8, interval=4)
+        code, out, _ = self._run(*self._argv_for("verify"))
+        self.assertEqual(code, 0, msg=out)
+        self.assertIn("INTACT", out)
+
+    def test_verify_skip_anchors_flag_still_passes(self):
+        self._emit_with_anchors(8, interval=4)
+        code, out, _ = self._run(*self._argv_for("verify", "--skip-anchors"))
+        self.assertEqual(code, 0, msg=out)
+
+    def test_verify_anchor_pubkey_pin_succeeds(self):
+        self._emit_with_anchors(8, interval=4)
+        pubkey_path = self.dir / "audit-anchor-pubkey.bin"
+        self.assertTrue(pubkey_path.exists())
+        code, _out, _ = self._run(*self._argv_for("verify", "--anchor-pubkey", str(pubkey_path)))
+        self.assertEqual(code, 0)
+
+    def test_verify_anchor_pubkey_pin_fails_with_wrong_key(self):
+        from openssl_encrypt.modules.audit_anchor import AnchorSigner
+
+        self._emit_with_anchors(8, interval=4)
+        # Generate a foreign pubkey to use as the (mismatching) trust root.
+        wrong_pubkey, _ = AnchorSigner().generate_keypair()
+        wrong_path = self.dir / "wrong-pubkey.bin"
+        wrong_path.write_bytes(wrong_pubkey)
+
+        code, out, _ = self._run(
+            *self._argv_for("verify", "--anchor-pubkey", str(wrong_path), "--json")
+        )
+        self.assertEqual(code, 2)
+        report = json.loads(out)
+        self.assertFalse(report["intact"])
+        self.assertEqual(report["failures"][0]["reason"], "anchor_pubkey_mismatch")
 
 
 class TestAuditStatusCLI(_CLITestBase):

@@ -226,5 +226,141 @@ class TestVerifierStructuralErrors(_ChainHarness):
         self.assertEqual(report.failures[0].seq, 1)
 
 
+class _ChainEnv:
+    """Minimal env helper duplicated here to keep this test file self-contained."""
+
+    _VARS = (
+        "OPENSSL_ENCRYPT_AUDIT_CHAIN",
+        "OPENSSL_ENCRYPT_AUDIT_SEED_FILE",
+        "OPENSSL_ENCRYPT_AUDIT_ANCHOR_INTERVAL",
+        "OPENSSL_ENCRYPT_DISABLE_AUDIT_LOG",
+    )
+
+    def __init__(self, **overrides):
+        self.overrides = overrides
+        self.saved = {}
+
+    def __enter__(self):
+        import os
+
+        for var in self._VARS:
+            self.saved[var] = os.environ.pop(var, None)
+        for var, value in self.overrides.items():
+            os.environ[var] = value
+        return self
+
+    def __exit__(self, *args):
+        import os
+
+        for var in self._VARS:
+            os.environ.pop(var, None)
+        for var, value in self.saved.items():
+            if value is not None:
+                os.environ[var] = value
+
+
+def _reset_security_logger_singleton():
+    from openssl_encrypt.modules import security_logger as sl
+
+    sl.SecurityAuditLogger._instance = None
+    sl._security_logger = None
+
+
+class TestVerifierWithAnchors(unittest.TestCase):
+    """End-to-end: chained logger with anchors → offline verifier accepts."""
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp())
+        _reset_security_logger_singleton()
+
+    def tearDown(self):
+        _reset_security_logger_singleton()
+        shutil.rmtree(self.dir, ignore_errors=True)
+
+    def _emit(self, count, anchor_interval=4):
+        from openssl_encrypt.modules.security_logger import SecurityAuditLogger
+
+        with _ChainEnv(
+            OPENSSL_ENCRYPT_AUDIT_CHAIN="1",
+            OPENSSL_ENCRYPT_AUDIT_ANCHOR_INTERVAL=str(anchor_interval),
+        ):
+            logger = SecurityAuditLogger(log_dir=str(self.dir), enabled=True)
+            for i in range(count):
+                logger.log_event(f"e{i}", "info", {"i": i})
+            seed = logger._read_seed()
+            pubkey = logger._anchor_pubkey
+        return seed, pubkey
+
+    def test_intact_chain_with_anchors_verifies(self):
+        from openssl_encrypt.modules.audit_verifier import verify_chain
+
+        seed, _ = self._emit(12, anchor_interval=4)
+        report = verify_chain(self.dir / "security-audit.log", seed=seed)
+        self.assertTrue(report.intact, msg=str(report.failures))
+
+    def test_tampered_anchor_root_detected(self):
+        from openssl_encrypt.modules.audit_verifier import verify_chain
+
+        seed, _ = self._emit(8, anchor_interval=4)
+        log_path = self.dir / "security-audit.log"
+        lines = log_path.read_text(encoding="utf-8").splitlines()
+        # Anchor record sits at seq=4 (index 4 in the line list).
+        anchor = json.loads(lines[4])
+        self.assertEqual(anchor["event_type"], "audit.anchor")
+        anchor["details"]["merkle_root"] = "blake2b-256:" + "0" * 64
+        # Recompute MAC so the chain itself is still intact — only the
+        # *anchor* is tampered, isolating the failure to anchor verification.
+        from openssl_encrypt.modules.audit_chain import (
+            compute_record_mac,
+            derive_initial_key,
+            evolve_key,
+        )
+
+        key = derive_initial_key(seed)
+        for _ in range(4):  # advance to K_4
+            key = evolve_key(key)
+        without_mac = {k: v for k, v in anchor.items() if k != "mac"}
+        anchor["mac"] = compute_record_mac(without_mac, key)
+        lines[4] = json.dumps(anchor)
+        # Records after the anchor link via prev_hash to its content; we
+        # also need to refresh those. Simpler: truncate to just the
+        # tampered window so the verifier hits the anchor before any
+        # downstream prev_hash mismatch.
+        log_path.write_text("\n".join(lines[:5]) + "\n", encoding="utf-8")
+
+        report = verify_chain(log_path, seed=seed)
+        self.assertFalse(report.intact)
+        self.assertEqual(report.failures[0].reason, "anchor_invalid")
+        self.assertEqual(report.failures[0].seq, 4)
+
+    def test_anchor_pubkey_pin_succeeds(self):
+        from openssl_encrypt.modules.audit_verifier import verify_chain
+
+        seed, pubkey = self._emit(8, anchor_interval=4)
+        report = verify_chain(
+            self.dir / "security-audit.log",
+            seed=seed,
+            anchor_pubkey=pubkey,
+        )
+        self.assertTrue(report.intact, msg=str(report.failures))
+
+    def test_anchor_pubkey_pin_fails_with_wrong_pubkey(self):
+        from openssl_encrypt.modules.audit_anchor import AnchorSigner
+        from openssl_encrypt.modules.audit_verifier import verify_chain
+
+        seed, _ = self._emit(8, anchor_interval=4)
+        wrong_pubkey, _ = AnchorSigner().generate_keypair()
+        report = verify_chain(
+            self.dir / "security-audit.log",
+            seed=seed,
+            anchor_pubkey=wrong_pubkey,
+        )
+        self.assertFalse(report.intact)
+        # First anchor sits at seq=4; pin mismatch reported there.
+        anchor_failures = [f for f in report.failures if f.reason == "anchor_pubkey_mismatch"]
+        self.assertTrue(anchor_failures, msg=str(report.failures))
+        self.assertEqual(anchor_failures[0].seq, 4)
+
+
 if __name__ == "__main__":
     unittest.main()
