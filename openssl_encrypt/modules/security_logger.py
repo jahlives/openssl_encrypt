@@ -25,6 +25,7 @@ Usage:
 import json
 import logging
 import os
+import secrets
 import threading
 import time
 from datetime import datetime, timezone
@@ -63,13 +64,21 @@ class SecurityAuditLogger:
                     cls._instance = super().__new__(cls)
         return cls._instance
 
-    def __init__(self, log_dir: Optional[str] = None, enabled: bool = True):
+    def __init__(
+        self,
+        log_dir: Optional[str] = None,
+        enabled: bool = True,
+        chain_enabled: Optional[bool] = None,
+    ):
         """
         Initialize security audit logger.
 
         Args:
             log_dir: Directory for log files (default: ~/.openssl_encrypt/)
             enabled: Enable/disable logging (can be controlled via env var)
+            chain_enabled: If True, append-only hash-chained mode is active and
+                each event carries seq/prev_hash/mac fields. If None (default),
+                read OPENSSL_ENCRYPT_AUDIT_CHAIN env var (=="1" enables).
         """
         # Only initialize once
         if hasattr(self, "_initialized"):
@@ -77,6 +86,10 @@ class SecurityAuditLogger:
 
         self._initialized = True
         self._write_lock = threading.Lock()
+        self._chain_state = None
+        self.chain_enabled = False
+        self.seed_file: Optional[Path] = None
+        self.state_file: Optional[Path] = None
 
         # Check if logging is disabled via environment variable
         self.enabled = enabled and os.getenv("OPENSSL_ENCRYPT_DISABLE_AUDIT_LOG") != "1"
@@ -122,6 +135,16 @@ class SecurityAuditLogger:
                 self.syslog_enabled = False
 
         logger.info(f"Security audit logging initialized: {self.log_file}")
+
+        # Chain mode: opt-in via env var or constructor arg.
+        if chain_enabled is None:
+            chain_enabled = os.getenv("OPENSSL_ENCRYPT_AUDIT_CHAIN") == "1"
+        if chain_enabled:
+            try:
+                self._init_chain()
+            except Exception as e:
+                logger.error(f"Failed to initialize audit chain; disabling chain mode: {e}")
+                self.chain_enabled = False
 
     def log_event(
         self,
@@ -187,21 +210,33 @@ class SecurityAuditLogger:
             self._send_to_syslog(event)
 
     def _write_to_log(self, event: dict) -> None:
-        """Write event to log file (thread-safe)."""
+        """Write event to log file (thread-safe).
+
+        In chained mode the event is augmented with seq/prev_hash/mac via
+        ChainState.append_record before serialization, and the chain state is
+        persisted atomically after each successful append.
+        """
         with self._write_lock:
             try:
                 # Check if log rotation is needed
                 self._rotate_log_if_needed()
 
+                if self.chain_enabled and self._chain_state is not None:
+                    event = self._chain_state.append_record(event)
+
                 # Write event as JSON line (secure permissions on creation)
                 if not self.log_file.exists():
                     from .file_permissions import PermissionLevel, create_secure_file
+
                     fd = create_secure_file(self.log_file, PermissionLevel.OWNER_ONLY)
                     with os.fdopen(fd, "a", encoding="utf-8") as f:
                         f.write(json.dumps(event) + "\n")
                 else:
                     with open(self.log_file, "a", encoding="utf-8") as f:
                         f.write(json.dumps(event) + "\n")
+
+                if self.chain_enabled and self._chain_state is not None and self.state_file:
+                    self._chain_state.save_atomic(self.state_file)
             except Exception as e:
                 logger.error(f"Failed to write to audit log: {e}")
 
@@ -304,16 +339,32 @@ class SecurityAuditLogger:
 
         return events
 
-    def clear_logs(self) -> bool:
+    def clear_logs(self, break_glass: bool = False) -> bool:
         """
         Clear all security audit logs.
 
+        Args:
+            break_glass: In chained mode, this MUST be set True to confirm
+                that the operator accepts the loss of forensic continuity.
+                The chain seed and state are also reset, and a fresh chain
+                starts at seq=0 on the next event.
+
         Returns:
-            True if successful, False otherwise
+            True if successful, False otherwise.
+
+        Raises:
+            PermissionError: If chained mode is active and break_glass is False.
 
         Note:
             Use with caution - this removes forensic evidence!
         """
+        if self.chain_enabled and not break_glass:
+            raise PermissionError(
+                "clear_logs() refused: chained audit mode is active. "
+                "Pass break_glass=True to acknowledge that this destroys "
+                "forensic continuity (chain seed and state will be wiped, "
+                "and a fresh chain will start at seq=0)."
+            )
         try:
             if self.log_file.exists():
                 self.log_file.unlink()
@@ -324,11 +375,111 @@ class SecurityAuditLogger:
                 if rotated.exists():
                     rotated.unlink()
 
+            # If chained, reset seed and state so next event starts fresh.
+            if self.chain_enabled:
+                for path in (self.state_file, self.seed_file):
+                    if path is not None and path.exists():
+                        path.unlink()
+                self._chain_state = None
+                # Re-initialize so the next log_event resumes in chained mode.
+                try:
+                    self._init_chain()
+                except Exception as e:
+                    logger.error(f"Failed to re-init audit chain after clear: {e}")
+                    self.chain_enabled = False
+
             logger.info("Security audit logs cleared")
             return True
         except Exception as e:
             logger.error(f"Failed to clear audit logs: {e}")
             return False
+
+    # --- Chain mode helpers ---
+
+    def _init_chain(self) -> None:
+        """Set up chained mode: seed, state, and legacy-log migration.
+
+        Idempotent: safe to call again after a break-glass clear.
+        """
+        from .audit_chain import ChainState
+
+        # Seed file location (env override allowed for keystore/HSM follow-ups).
+        env_seed = os.getenv("OPENSSL_ENCRYPT_AUDIT_SEED_FILE")
+        self.seed_file = Path(env_seed) if env_seed else (self.log_dir / "audit-seed.bin")
+        self.state_file = self.log_dir / "audit-state.json"
+
+        seed = self._load_or_create_seed()
+        self._archive_legacy_log_if_needed()
+
+        if self.state_file.exists():
+            self._chain_state = ChainState.load(self.state_file)
+        else:
+            self._chain_state = ChainState.initial(seed=seed)
+            self._chain_state.save_atomic(self.state_file)
+
+        self.chain_enabled = True
+        logger.info(
+            "Audit chain enabled: seed=%s state=%s seq=%d",
+            self.seed_file,
+            self.state_file,
+            self._chain_state.current_seq,
+        )
+
+    def _load_or_create_seed(self) -> bytes:
+        """Read the seed file or create a fresh 32-byte seed with 0600 perms."""
+        assert self.seed_file is not None  # set by _init_chain
+        seed_path = self.seed_file
+        if seed_path.exists():
+            return seed_path.read_bytes()
+
+        seed_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        seed = secrets.token_bytes(32)
+        # O_EXCL guards against a TOCTOU race with another process.
+        fd = os.open(str(seed_path), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        try:
+            os.write(fd, seed)
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+        return seed
+
+    def _read_seed(self) -> bytes:
+        """Read the seed file. Used by the verifier and tests."""
+        if self.seed_file is None or not self.seed_file.exists():
+            raise FileNotFoundError("audit chain seed file not present")
+        return self.seed_file.read_bytes()
+
+    def _archive_legacy_log_if_needed(self) -> None:
+        """If the existing log is unchained, rename it to .legacy and start fresh.
+
+        We only treat the log as legacy when (a) it exists and is non-empty,
+        (b) its first JSON line is decodable, and (c) that line lacks a 'seq'
+        field. Malformed logs are left in place so a human can inspect.
+        """
+        if not self.log_file.exists():
+            return
+        try:
+            with open(self.log_file, "r", encoding="utf-8") as f:
+                first_line = f.readline().strip()
+        except OSError:
+            return
+        if not first_line:
+            return
+        try:
+            first_event = json.loads(first_line)
+        except json.JSONDecodeError:
+            logger.warning("audit log %s has malformed first line; not archiving", self.log_file)
+            return
+        if isinstance(first_event, dict) and "seq" in first_event:
+            return  # already chained
+
+        legacy_path = self.log_dir / "security-audit.log.legacy"
+        i = 0
+        while legacy_path.exists():
+            i += 1
+            legacy_path = self.log_dir / f"security-audit.log.legacy.{i}"
+        self.log_file.rename(legacy_path)
+        logger.info("Archived legacy unchained audit log to %s", legacy_path)
 
 
 # Global singleton instance
