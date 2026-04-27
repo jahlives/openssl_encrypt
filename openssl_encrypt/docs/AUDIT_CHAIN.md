@@ -56,11 +56,12 @@ consumers that ignore unknown fields keep working.
 
 | Defended                                                    | Not defended                                                       |
 | ----------------------------------------------------------- | ------------------------------------------------------------------ |
-| Retroactive modification of past records (chain + MAC break)| Compromise of the seed *before* it has evolved (root-of-trust)    |
+| Retroactive modification of past records (chain + MAC break)| Compromise of the anchor signing key *and* the seed simultaneously |
 | Silent deletion / reordering (seq + chain)                  | Real-world timestamp authenticity (no TSA — offline policy)        |
 | Front-truncation (seq doesn't start at 0)                   | Total destruction of both log and state file                       |
 | Tail-truncation between flushes (state-file mismatch)       |                                                                    |
 | Forgery without the live MAC key                            |                                                                    |
+| Forgery of past *windows* even after the live MAC key leaks (anchors give post-compromise integrity) | |
 
 The seed lives in `~/.openssl_encrypt/audit-seed.bin` (mode 0600). Future
 work will move this into the PQC-protected keystore or an HSM-derived
@@ -84,13 +85,66 @@ the old log is renamed to `security-audit.log.legacy` and a fresh chain
 starts at `seq=0`. Old records cannot be retroactively chained (no MAC
 to bind them).
 
+## Periodic Merkle anchors (ML-DSA-65)
+
+Every `OPENSSL_ENCRYPT_AUDIT_ANCHOR_INTERVAL` records (default **100**, set
+to `0` to disable), the logger emits an `audit.anchor` record:
+
+```json
+{
+  "seq": 100,
+  "prev_hash": "blake2b-256:...",
+  "mac": "hmac-sha256:...",
+  "event_type": "audit.anchor",
+  "severity": "info",
+  "details": {
+    "anchor_seq_start": 0,
+    "anchor_seq_end": 99,
+    "merkle_root": "blake2b-256:...",
+    "signature": {
+      "alg": "ML-DSA-65",
+      "value_b64": "...",
+      "pubkey_b64": "..."
+    }
+  }
+}
+```
+
+**Merkle construction** is RFC 6962-style: leaves hashed with
+`blake2b(0x00 || record_chain_hash, 32)`, internal nodes with
+`blake2b(0x01 || left || right, 32)`, odd levels duplicate the trailing
+node. The leaves are the per-record chain hashes already computed during
+chain append, so anchor cost is amortised.
+
+**Signature** is ML-DSA-65 (FIPS 204) over the canonical Merkle root
+string. The signing keypair is generated on first chain init:
+
+| Path                              | Mode | Notes                          |
+| --------------------------------- | ---- | ------------------------------ |
+| `audit-anchor-pubkey.bin`         | 0644 | World-readable; needed for verification. |
+| `audit-anchor-privkey.bin`        | 0600 | Owner-only.                    |
+
+The anchor record is itself part of the chain (it carries seq/prev_hash/mac
+like every other record), so tampering with an anchor breaks the chain at
+its seq even before the signature is checked. Anchors give **non-repudiation
+per window** so an attacker who obtains the current forward-secure MAC key
+*still* cannot rewrite past sealed windows without forging an ML-DSA
+signature.
+
+If liboqs is unavailable, anchor emission silently degrades to
+"chain-only" (a warning is logged); the verifier likewise accepts
+`--skip-anchors` for environments that can verify the chain but not the
+signatures.
+
 ## Files written
 
 | Path                              | Mode   | Purpose                                          |
 | --------------------------------- | ------ | ------------------------------------------------ |
 | `~/.openssl_encrypt/security-audit.log`        | 0600   | JSONL audit records (chained when enabled).     |
 | `~/.openssl_encrypt/audit-seed.bin`            | 0600   | 32-byte seed; root of forward-secure key chain. |
-| `~/.openssl_encrypt/audit-state.json`          | 0600   | `{current_seq, current_key_b64, last_record_hash, ...}` — persisted atomically (tempfile + `os.replace` + dir fsync). |
+| `~/.openssl_encrypt/audit-state.json`          | 0600   | `{current_seq, current_key_b64, last_record_hash, last_anchor_seq, pending_leaves, ...}` — persisted atomically (tempfile + `os.replace` + dir fsync). |
+| `~/.openssl_encrypt/audit-anchor-pubkey.bin`   | 0644   | ML-DSA-65 anchor public key.                    |
+| `~/.openssl_encrypt/audit-anchor-privkey.bin`  | 0600   | ML-DSA-65 anchor private key.                   |
 | `~/.openssl_encrypt/security-audit.log.legacy` | inherits | Archived pre-chain log (created on first activation if a legacy log exists). |
 
 ## CLI
@@ -98,8 +152,13 @@ to bind them).
 A standalone CLI is available immediately:
 
     python -m openssl_encrypt.modules.audit_cli verify [--log PATH] [--seed PATH]
-                                                       [--state PATH] [--json]
+        [--state PATH] [--anchor-pubkey PATH] [--skip-anchors] [--json]
     python -m openssl_encrypt.modules.audit_cli status [--log-dir PATH] [--json]
+
+`--anchor-pubkey PATH` pins the expected anchor public key (the verifier
+auto-detects `audit-anchor-pubkey.bin` alongside the seed when omitted).
+`--skip-anchors` keeps chain-field verification but skips Merkle/signature
+checks — useful when liboqs is unavailable on the verifier host.
 
 `verify` exit codes:
 
@@ -127,22 +186,27 @@ Use sparingly. Forensic continuity ends at the break-glass point.
 
 ## What's deferred
 
-* **Periodic Merkle anchors signed with ML-DSA-65** — provides non-repudiation
-  per window of records. Tracked as a v1.5.1 follow-up. The hash chain alone
-  already detects every tampering threat in the table above; anchors add
-  cryptographic non-repudiation against future seed compromise.
-* **Keystore-backed seed** — replace the `audit-seed.bin` file with a PQC-
-  protected entry in the existing keystore (`audit/chain-seed/v1`).
-* **HSM-derived seed** — derive the seed from a FIDO2 hmac-secret credential
-  so that the seed never lives at rest as cleartext.
+* **Keystore-backed seed and anchor private key** — replace the
+  `audit-seed.bin` and `audit-anchor-privkey.bin` files with PQC-protected
+  entries in the existing keystore (`audit/chain-seed/v1`,
+  `audit/anchor-signing/v1`).
+* **HSM-derived seed and anchor key** — derive the seed from a FIDO2
+  hmac-secret credential and keep the anchor signing key inside an HSM,
+  so neither lives at rest as cleartext.
 * **Integration with `openssl_encrypt audit ...`** — move the standalone CLI
-  into the main subparser tree.
+  into the main subparser tree (currently invokable only as
+  `python -m openssl_encrypt.modules.audit_cli`).
+* **Per-record fsync opt-out for high-volume environments** — current
+  default is durable (fsync each record + state); a `_FAST=1` env var to
+  defer fsync to the anchor boundary is on the table.
 
 ## See also
 
 * `openssl_encrypt/modules/audit_chain.py` — chain primitives.
+* `openssl_encrypt/modules/audit_anchor.py` — Merkle + ML-DSA-65 anchors.
 * `openssl_encrypt/modules/audit_verifier.py` — offline verifier.
 * `openssl_encrypt/modules/audit_cli.py` — standalone CLI.
 * `openssl_encrypt/modules/security_logger.py` — integration point.
 * `openssl_encrypt/unittests/test_audit_chain.py`, `test_audit_verifier.py`,
-  `test_security_logger_chained.py`, `test_audit_cli.py` — TDD test suite.
+  `test_audit_anchor.py`, `test_security_logger_chained.py`,
+  `test_audit_cli.py` — TDD test suite.
