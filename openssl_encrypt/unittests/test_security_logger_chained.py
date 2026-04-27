@@ -34,6 +34,7 @@ class _ChainEnv:
     _VARS = (
         "OPENSSL_ENCRYPT_AUDIT_CHAIN",
         "OPENSSL_ENCRYPT_AUDIT_SEED_FILE",
+        "OPENSSL_ENCRYPT_AUDIT_ANCHOR_INTERVAL",
         "OPENSSL_ENCRYPT_DISABLE_AUDIT_LOG",
     )
 
@@ -301,7 +302,12 @@ class TestConcurrentWrites(_BaseChainedLoggerTest):
         from openssl_encrypt.modules.audit_verifier import verify_chain
         from openssl_encrypt.modules.security_logger import SecurityAuditLogger
 
-        with _ChainEnv(OPENSSL_ENCRYPT_AUDIT_CHAIN="1"):
+        # Disable anchors here so the assertion below stays simple — anchor
+        # emission is exercised in TestAnchorEmission.
+        with _ChainEnv(
+            OPENSSL_ENCRYPT_AUDIT_CHAIN="1",
+            OPENSSL_ENCRYPT_AUDIT_ANCHOR_INTERVAL="0",
+        ):
             logger = SecurityAuditLogger(log_dir=self.dir, enabled=True)
 
             num_threads = 8
@@ -321,6 +327,183 @@ class TestConcurrentWrites(_BaseChainedLoggerTest):
             report = verify_chain(Path(self.dir) / "security-audit.log", seed=seed)
             self.assertTrue(report.intact, msg=str(report.failures[:5]))
             self.assertEqual(report.records_verified, num_threads * events_per_thread)
+
+
+class TestAnchorEmission(_BaseChainedLoggerTest):
+    """Verify periodic Merkle anchors are emitted and self-consistent."""
+
+    def test_anchor_emitted_after_n_records(self):
+        from openssl_encrypt.modules.audit_anchor import ANCHOR_EVENT_TYPE
+        from openssl_encrypt.modules.security_logger import SecurityAuditLogger
+
+        with _ChainEnv(
+            OPENSSL_ENCRYPT_AUDIT_CHAIN="1",
+            OPENSSL_ENCRYPT_AUDIT_ANCHOR_INTERVAL="5",
+        ):
+            logger = SecurityAuditLogger(log_dir=self.dir, enabled=True)
+            for i in range(5):
+                logger.log_event(f"e{i}", "info")
+
+            events = self._read_log_lines()
+            # 5 regular + 1 anchor = 6 records.
+            self.assertEqual(len(events), 6)
+            self.assertEqual([e["seq"] for e in events], [0, 1, 2, 3, 4, 5])
+            anchor = events[5]
+            self.assertEqual(anchor["event_type"], ANCHOR_EVENT_TYPE)
+
+    def test_anchor_record_has_chain_fields(self):
+        from openssl_encrypt.modules.security_logger import SecurityAuditLogger
+
+        with _ChainEnv(
+            OPENSSL_ENCRYPT_AUDIT_CHAIN="1",
+            OPENSSL_ENCRYPT_AUDIT_ANCHOR_INTERVAL="3",
+        ):
+            logger = SecurityAuditLogger(log_dir=self.dir, enabled=True)
+            for i in range(3):
+                logger.log_event(f"e{i}", "info")
+
+            events = self._read_log_lines()
+            anchor = events[3]
+            for f in ("seq", "prev_hash", "mac"):
+                self.assertIn(f, anchor)
+            self.assertEqual(anchor["seq"], 3)
+
+    def test_anchor_seq_indices_correct_for_first_window(self):
+        from openssl_encrypt.modules.security_logger import SecurityAuditLogger
+
+        with _ChainEnv(
+            OPENSSL_ENCRYPT_AUDIT_CHAIN="1",
+            OPENSSL_ENCRYPT_AUDIT_ANCHOR_INTERVAL="4",
+        ):
+            logger = SecurityAuditLogger(log_dir=self.dir, enabled=True)
+            for i in range(4):
+                logger.log_event(f"e{i}", "info")
+
+            events = self._read_log_lines()
+            anchor = events[4]
+            self.assertEqual(anchor["details"]["anchor_seq_start"], 0)
+            self.assertEqual(anchor["details"]["anchor_seq_end"], 3)
+
+    def test_two_anchors_in_a_row(self):
+        """Second anchor's window starts at the first anchor's seq."""
+        from openssl_encrypt.modules.audit_anchor import ANCHOR_EVENT_TYPE
+        from openssl_encrypt.modules.security_logger import SecurityAuditLogger
+
+        with _ChainEnv(
+            OPENSSL_ENCRYPT_AUDIT_CHAIN="1",
+            OPENSSL_ENCRYPT_AUDIT_ANCHOR_INTERVAL="3",
+        ):
+            logger = SecurityAuditLogger(log_dir=self.dir, enabled=True)
+            # 3 regular -> anchor; 2 more regular -> anchor again at 3 leaves
+            #   (1 anchor + 2 regular = 3)
+            for i in range(5):
+                logger.log_event(f"e{i}", "info")
+
+            events = self._read_log_lines()
+            anchors = [e for e in events if e["event_type"] == ANCHOR_EVENT_TYPE]
+            self.assertEqual(len(anchors), 2)
+            self.assertEqual(anchors[0]["details"]["anchor_seq_end"], 2)
+            # The first anchor (seq=3) is the first leaf of the next window,
+            # plus seq=4 and seq=5 (=second regular event after first anchor)
+            # gets us to 3 leaves; second anchor lands at seq=6 covering [3..5].
+            self.assertEqual(anchors[1]["details"]["anchor_seq_start"], 3)
+            self.assertEqual(anchors[1]["details"]["anchor_seq_end"], 5)
+
+    def test_anchor_signature_self_verifies(self):
+        from openssl_encrypt.modules.audit_anchor import verify_anchor_payload
+        from openssl_encrypt.modules.security_logger import SecurityAuditLogger
+
+        with _ChainEnv(
+            OPENSSL_ENCRYPT_AUDIT_CHAIN="1",
+            OPENSSL_ENCRYPT_AUDIT_ANCHOR_INTERVAL="4",
+        ):
+            logger = SecurityAuditLogger(log_dir=self.dir, enabled=True)
+            for i in range(4):
+                logger.log_event(f"e{i}", "info")
+
+            events = self._read_log_lines()
+            anchor = events[4]
+            # Reconstruct the leaves from the regular records' chain hashes.
+            from openssl_encrypt.modules.audit_chain import compute_record_hash
+
+            leaves = [compute_record_hash(events[i]) for i in range(4)]
+            self.assertTrue(verify_anchor_payload(anchor, leaves))
+
+    def test_anchor_disabled_when_interval_is_zero(self):
+        from openssl_encrypt.modules.security_logger import SecurityAuditLogger
+
+        with _ChainEnv(
+            OPENSSL_ENCRYPT_AUDIT_CHAIN="1",
+            OPENSSL_ENCRYPT_AUDIT_ANCHOR_INTERVAL="0",
+        ):
+            logger = SecurityAuditLogger(log_dir=self.dir, enabled=True)
+            for i in range(50):
+                logger.log_event(f"e{i}", "info")
+
+            events = self._read_log_lines()
+            self.assertEqual(len(events), 50)
+            self.assertFalse(any(e["event_type"] == "audit.anchor" for e in events))
+
+    def test_anchor_keypair_persisted_across_restarts(self):
+        from openssl_encrypt.modules.audit_anchor import ANCHOR_EVENT_TYPE
+        from openssl_encrypt.modules.security_logger import SecurityAuditLogger
+
+        with _ChainEnv(
+            OPENSSL_ENCRYPT_AUDIT_CHAIN="1",
+            OPENSSL_ENCRYPT_AUDIT_ANCHOR_INTERVAL="3",
+        ):
+            logger1 = SecurityAuditLogger(log_dir=self.dir, enabled=True)
+            for i in range(3):
+                logger1.log_event(f"a{i}", "info")
+            pubkey1 = logger1._anchor_pubkey
+
+            _reset_singleton()
+
+            logger2 = SecurityAuditLogger(log_dir=self.dir, enabled=True)
+            for i in range(3):
+                logger2.log_event(f"b{i}", "info")
+            pubkey2 = logger2._anchor_pubkey
+
+            self.assertEqual(pubkey1, pubkey2)
+
+            events = self._read_log_lines()
+            anchors = [e for e in events if e["event_type"] == ANCHOR_EVENT_TYPE]
+            # Two anchors, each with the same embedded pubkey.
+            self.assertEqual(len(anchors), 2)
+            self.assertEqual(
+                anchors[0]["details"]["signature"]["pubkey_b64"],
+                anchors[1]["details"]["signature"]["pubkey_b64"],
+            )
+
+    def test_anchor_privkey_file_perms_0600(self):
+        from openssl_encrypt.modules.security_logger import SecurityAuditLogger
+
+        with _ChainEnv(
+            OPENSSL_ENCRYPT_AUDIT_CHAIN="1",
+            OPENSSL_ENCRYPT_AUDIT_ANCHOR_INTERVAL="2",
+        ):
+            logger = SecurityAuditLogger(log_dir=self.dir, enabled=True)
+            logger.log_event("e", "info")
+
+            privkey = Path(self.dir) / "audit-anchor-privkey.bin"
+            self.assertTrue(privkey.exists())
+            mode = privkey.stat().st_mode & 0o777
+            self.assertEqual(mode, 0o600, oct(mode))
+
+    def test_pending_leaves_reset_after_anchor(self):
+        from openssl_encrypt.modules.security_logger import SecurityAuditLogger
+
+        with _ChainEnv(
+            OPENSSL_ENCRYPT_AUDIT_CHAIN="1",
+            OPENSSL_ENCRYPT_AUDIT_ANCHOR_INTERVAL="3",
+        ):
+            logger = SecurityAuditLogger(log_dir=self.dir, enabled=True)
+            for i in range(3):
+                logger.log_event(f"e{i}", "info")
+
+            # After 3 regular records emit an anchor. State.pending_leaves
+            # should now contain only the anchor's own chain hash.
+            self.assertEqual(len(logger._chain_state.pending_leaves), 1)
 
 
 class TestSeedFileOverride(_BaseChainedLoggerTest):

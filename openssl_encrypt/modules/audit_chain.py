@@ -27,7 +27,7 @@ import os
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
@@ -116,13 +116,16 @@ class ChainState:
     """Mutable state advanced by ``append_record`` and persisted atomically.
 
     Holds K_n (the key that will MAC the *next* record) plus the running
-    sequence number and the hash of the most recently emitted record.
+    sequence number, the hash of the most recently emitted record, and the
+    list of chain-hashes accumulated since the last anchor (used by
+    ``audit_anchor.merkle_root`` when the next anchor is emitted).
     """
 
     current_seq: int
     current_key: bytes
     last_record_hash: str
     last_anchor_seq: int = -1
+    pending_leaves: List[str] = field(default_factory=list)
     version: int = field(default=STATE_FILE_VERSION)
 
     @classmethod
@@ -132,6 +135,7 @@ class ChainState:
             current_key=bytearray(derive_initial_key(seed)),
             last_record_hash=GENESIS_PREV_HASH,
             last_anchor_seq=-1,
+            pending_leaves=[],
         )
 
     def append_record(self, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -155,6 +159,7 @@ class ChainState:
         self.current_key = bytearray(new_key)
         self.current_seq += 1
         self.last_record_hash = compute_record_hash(record)
+        self.pending_leaves.append(self.last_record_hash)
         return record
 
     # --- Serialization ---
@@ -166,6 +171,7 @@ class ChainState:
             "current_key_b64": base64.b64encode(bytes(self.current_key)).decode("ascii"),
             "last_record_hash": self.last_record_hash,
             "last_anchor_seq": self.last_anchor_seq,
+            "pending_leaves": list(self.pending_leaves),
         }
 
     def save_atomic(self, path: Path) -> None:
@@ -220,6 +226,7 @@ class ChainState:
             current_key=bytearray(base64.b64decode(data["current_key_b64"])),
             last_record_hash=str(data["last_record_hash"]),
             last_anchor_seq=int(data.get("last_anchor_seq", -1)),
+            pending_leaves=[str(x) for x in data.get("pending_leaves", [])],
             version=int(data["version"]),
         )
 

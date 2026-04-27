@@ -90,6 +90,12 @@ class SecurityAuditLogger:
         self.chain_enabled = False
         self.seed_file: Optional[Path] = None
         self.state_file: Optional[Path] = None
+        self.anchor_interval: int = 0
+        self.anchor_pubkey_file: Optional[Path] = None
+        self.anchor_privkey_file: Optional[Path] = None
+        self._anchor_signer = None
+        self._anchor_pubkey: Optional[bytes] = None
+        self._anchor_privkey: Optional[bytes] = None
 
         # Check if logging is disabled via environment variable
         self.enabled = enabled and os.getenv("OPENSSL_ENCRYPT_DISABLE_AUDIT_LOG") != "1"
@@ -224,16 +230,11 @@ class SecurityAuditLogger:
                 if self.chain_enabled and self._chain_state is not None:
                     event = self._chain_state.append_record(event)
 
-                # Write event as JSON line (secure permissions on creation)
-                if not self.log_file.exists():
-                    from .file_permissions import PermissionLevel, create_secure_file
+                self._append_log_line(event)
 
-                    fd = create_secure_file(self.log_file, PermissionLevel.OWNER_ONLY)
-                    with os.fdopen(fd, "a", encoding="utf-8") as f:
-                        f.write(json.dumps(event) + "\n")
-                else:
-                    with open(self.log_file, "a", encoding="utf-8") as f:
-                        f.write(json.dumps(event) + "\n")
+                # Periodic Merkle anchor.
+                if self.chain_enabled and self._chain_state is not None:
+                    self._maybe_emit_anchor()
 
                 if self.chain_enabled and self._chain_state is not None and self.state_file:
                     self._chain_state.save_atomic(self.state_file)
@@ -375,12 +376,21 @@ class SecurityAuditLogger:
                 if rotated.exists():
                     rotated.unlink()
 
-            # If chained, reset seed and state so next event starts fresh.
+            # If chained, reset seed/state/anchor keypair so next event
+            # starts fresh.
             if self.chain_enabled:
-                for path in (self.state_file, self.seed_file):
+                for path in (
+                    self.state_file,
+                    self.seed_file,
+                    self.anchor_pubkey_file,
+                    self.anchor_privkey_file,
+                ):
                     if path is not None and path.exists():
                         path.unlink()
                 self._chain_state = None
+                self._anchor_signer = None
+                self._anchor_pubkey = None
+                self._anchor_privkey = None
                 # Re-initialize so the next log_event resumes in chained mode.
                 try:
                     self._init_chain()
@@ -397,7 +407,7 @@ class SecurityAuditLogger:
     # --- Chain mode helpers ---
 
     def _init_chain(self) -> None:
-        """Set up chained mode: seed, state, and legacy-log migration.
+        """Set up chained mode: seed, state, anchor keypair, legacy migration.
 
         Idempotent: safe to call again after a break-glass clear.
         """
@@ -407,6 +417,17 @@ class SecurityAuditLogger:
         env_seed = os.getenv("OPENSSL_ENCRYPT_AUDIT_SEED_FILE")
         self.seed_file = Path(env_seed) if env_seed else (self.log_dir / "audit-seed.bin")
         self.state_file = self.log_dir / "audit-state.json"
+        self.anchor_pubkey_file = self.log_dir / "audit-anchor-pubkey.bin"
+        self.anchor_privkey_file = self.log_dir / "audit-anchor-privkey.bin"
+
+        # Anchor cadence: env-driven so operators can disable anchors
+        # (interval=0) or tighten them. Default = 100 records.
+        try:
+            self.anchor_interval = int(os.getenv("OPENSSL_ENCRYPT_AUDIT_ANCHOR_INTERVAL", "100"))
+        except ValueError:
+            self.anchor_interval = 100
+        if self.anchor_interval < 0:
+            self.anchor_interval = 0
 
         seed = self._load_or_create_seed()
         self._archive_legacy_log_if_needed()
@@ -417,12 +438,20 @@ class SecurityAuditLogger:
             self._chain_state = ChainState.initial(seed=seed)
             self._chain_state.save_atomic(self.state_file)
 
+        if self.anchor_interval > 0:
+            try:
+                self._load_or_create_anchor_keypair()
+            except Exception as e:
+                logger.warning("Audit anchor keypair init failed; disabling anchors: %s", e)
+                self.anchor_interval = 0
+
         self.chain_enabled = True
         logger.info(
-            "Audit chain enabled: seed=%s state=%s seq=%d",
+            "Audit chain enabled: seed=%s state=%s seq=%d anchors=%s",
             self.seed_file,
             self.state_file,
             self._chain_state.current_seq,
+            "every %d" % self.anchor_interval if self.anchor_interval else "disabled",
         )
 
     def _load_or_create_seed(self) -> bytes:
@@ -448,6 +477,88 @@ class SecurityAuditLogger:
         if self.seed_file is None or not self.seed_file.exists():
             raise FileNotFoundError("audit chain seed file not present")
         return self.seed_file.read_bytes()
+
+    def _append_log_line(self, event: dict) -> None:
+        """Write a single chained or unchained event line to the log file."""
+        if not self.log_file.exists():
+            from .file_permissions import PermissionLevel, create_secure_file
+
+            fd = create_secure_file(self.log_file, PermissionLevel.OWNER_ONLY)
+            with os.fdopen(fd, "a", encoding="utf-8") as f:
+                f.write(json.dumps(event) + "\n")
+        else:
+            with open(self.log_file, "a", encoding="utf-8") as f:
+                f.write(json.dumps(event) + "\n")
+
+    def _load_or_create_anchor_keypair(self) -> None:
+        """Load the ML-DSA-65 anchor keypair from disk, or generate fresh."""
+        from .audit_anchor import AnchorSigner
+
+        self._anchor_signer = AnchorSigner()
+        assert self.anchor_pubkey_file is not None and self.anchor_privkey_file is not None
+
+        if self.anchor_pubkey_file.exists() and self.anchor_privkey_file.exists():
+            self._anchor_pubkey = self.anchor_pubkey_file.read_bytes()
+            self._anchor_privkey = self.anchor_privkey_file.read_bytes()
+            return
+
+        pubkey, privkey = self._anchor_signer.generate_keypair()
+
+        # Pubkey: world-readable (needed for verification by anyone holding
+        # the log + log_dir). Privkey: owner-only.
+        self.anchor_pubkey_file.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        fd = os.open(str(self.anchor_pubkey_file), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
+        try:
+            os.write(fd, pubkey)
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+
+        fd = os.open(str(self.anchor_privkey_file), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        try:
+            os.write(fd, privkey)
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+
+        self._anchor_pubkey = pubkey
+        self._anchor_privkey = privkey
+
+    def _maybe_emit_anchor(self) -> None:
+        """If the pending leaves window is full, emit a signed anchor record.
+
+        The anchor itself is appended via ChainState.append_record so it
+        carries seq/prev_hash/mac like every other record. After emission
+        the pending_leaves list contains only the anchor's own chain hash,
+        which becomes the first leaf of the next window.
+        """
+        if self.anchor_interval <= 0 or self._chain_state is None or self._anchor_signer is None:
+            return
+        if len(self._chain_state.pending_leaves) < self.anchor_interval:
+            return
+
+        from .audit_anchor import build_anchor_payload
+
+        leaves_snapshot = list(self._chain_state.pending_leaves)
+        start = self._chain_state.current_seq - len(leaves_snapshot)
+        end = self._chain_state.current_seq - 1
+
+        payload = build_anchor_payload(
+            anchor_seq_start=start,
+            anchor_seq_end=end,
+            leaves=leaves_snapshot,
+            signer=self._anchor_signer,
+            privkey=self._anchor_privkey,
+            pubkey=self._anchor_pubkey,
+        )
+
+        # Reset BEFORE appending so the anchor's own hash starts the next
+        # window and the verifier's leaf set matches the sealed snapshot.
+        self._chain_state.pending_leaves = []
+        self._chain_state.last_anchor_seq = self._chain_state.current_seq
+
+        anchor_record = self._chain_state.append_record(payload)
+        self._append_log_line(anchor_record)
 
     def _archive_legacy_log_if_needed(self) -> None:
         """If the existing log is unchained, rename it to .legacy and start fresh.
