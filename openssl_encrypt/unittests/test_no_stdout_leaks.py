@@ -62,6 +62,12 @@ STDOUT_WHITELIST = [
     ("modules/verify.py", "print(json.dumps(", "JSON data output"),
     # portable_media/usb_creator.py — decrypted content to stdout
     ("modules/portable_media/usb_creator.py", "sys.stdout.buffer.write(content)", "Decrypted data output"),
+    # audit_cli.py — verify/status are CLIs that emit JSON or human-readable
+    # reports on stdout (consumers pipe into jq, etc.). Diagnostic errors go
+    # to stderr; only the structured output is whitelisted here.
+    ("modules/audit_cli.py", "print(json.dumps(", "JSON data output for audit verify/status"),
+    ("modules/audit_cli.py", "print(_format_report_human", "Human-readable verify report"),
+    ("modules/audit_cli.py", 'print(f"{key}:', "Human-readable status fields"),
 ]
 
 
