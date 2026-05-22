@@ -91,5 +91,51 @@ class TestOnlykeyAvailabilityCheck(unittest.TestCase):
             self.assertFalse(plugin._check_libs_available())
 
 
+class TestOnlykeyDeviceEnumeration(unittest.TestCase):
+    """Discovering OnlyKey HID devices on the host."""
+
+    def test_constants_match_onlykey_usb_spec(self):
+        """VID 0x1D50 (OpenMoko), PID 0x60FC (OnlyKey-allocated)."""
+        plugin = OnlykeyHSMPlugin()
+        self.assertEqual(plugin.ONLYKEY_VID, 0x1D50)
+        self.assertEqual(plugin.ONLYKEY_PID, 0x60FC)
+
+    def test_list_devices_returns_empty_when_no_hidraw_matches(self):
+        plugin = OnlykeyHSMPlugin()
+        with patch.object(plugin, "_enumerate_hidraw", return_value=[]):
+            self.assertEqual(plugin._list_onlykey_devices(), [])
+
+    def test_list_devices_filters_to_only_onlykey_vid_pid(self):
+        plugin = OnlykeyHSMPlugin()
+        # Mixed enumeration: OnlyKey, YubiKey, random USB HID
+        synthetic = [
+            ("/dev/hidraw0", 0x1050, 0x0407),  # YubiKey OTP — excluded
+            ("/dev/hidraw1", plugin.ONLYKEY_VID, plugin.ONLYKEY_PID),  # OnlyKey
+            ("/dev/hidraw2", 0x046D, 0xC52B),  # Logitech receiver — excluded
+        ]
+        sentinel_device = object()
+        with patch.object(plugin, "_enumerate_hidraw", return_value=synthetic), patch.object(
+            plugin, "_make_otp_device", return_value=sentinel_device
+        ) as make_dev:
+            devices = plugin._list_onlykey_devices()
+        self.assertEqual(devices, [sentinel_device])
+        make_dev.assert_called_once_with("/dev/hidraw1", plugin.ONLYKEY_PID)
+
+    def test_list_devices_returns_multiple_when_fleet_attached(self):
+        plugin = OnlykeyHSMPlugin()
+        synthetic = [
+            ("/dev/hidraw1", plugin.ONLYKEY_VID, plugin.ONLYKEY_PID),
+            ("/dev/hidraw2", plugin.ONLYKEY_VID, plugin.ONLYKEY_PID),
+            ("/dev/hidraw3", plugin.ONLYKEY_VID, plugin.ONLYKEY_PID),
+        ]
+        with patch.object(
+            plugin, "_enumerate_hidraw", return_value=synthetic
+        ), patch.object(
+            plugin, "_make_otp_device", side_effect=lambda path, pid: (path, pid)
+        ):
+            devices = plugin._list_onlykey_devices()
+        self.assertEqual(len(devices), 3)
+
+
 if __name__ == "__main__":
     unittest.main()

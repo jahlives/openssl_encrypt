@@ -32,7 +32,8 @@ Usage:
 """
 
 import logging
-from typing import Set
+import sys
+from typing import Iterable, List, Set, Tuple
 
 from ....modules.plugin_system.plugin_base import (
     HSMPlugin,
@@ -95,6 +96,92 @@ class OnlykeyHSMPlugin(HSMPlugin):
             "pepper derivation in the same fleet as YubiKey devices loaded "
             "with the same 20-byte secret."
         )
+
+    def _enumerate_hidraw(self) -> Iterable[Tuple[str, int, int]]:
+        """
+        Yield (path, vid, pid) for every HID device on the current platform.
+
+        Reuses ykman's per-platform HID enumeration primitives so we benefit
+        from its existing handling of permissions, raw device parsing, and
+        path conventions across Linux / macOS / Windows / FreeBSD.
+
+        OnlyKey-specific filtering is done by the caller (_list_onlykey_devices).
+        """
+        platform = sys.platform
+        if platform == "linux":
+            import glob
+
+            from ykman.hid.linux import get_info
+
+            for hidraw in glob.glob("/dev/hidraw*"):
+                try:
+                    with open(hidraw, "rb") as f:
+                        _bustype, vid, pid = get_info(f)
+                    yield hidraw, vid, pid
+                except Exception:
+                    continue
+        elif platform == "darwin":
+            from ykman.hid.macos import list_paths  # type: ignore
+
+            for path, vid, pid in list_paths():
+                yield path, vid, pid
+        elif platform == "win32":
+            from ykman.hid.windows import list_paths  # type: ignore
+
+            for path, vid, pid in list_paths():
+                yield path, vid, pid
+        elif platform.startswith("freebsd"):
+            from ykman.hid.freebsd import list_paths  # type: ignore
+
+            for path, vid, pid in list_paths():
+                yield path, vid, pid
+        else:
+            raise NotImplementedError(
+                f"OnlyKey HID enumeration not implemented on platform {platform!r}"
+            )
+
+    def _make_otp_device(self, path: str, pid: int):
+        """
+        Construct an OtpYubiKeyDevice for a given HID path.
+
+        OnlyKey speaks the YubiKey HMAC-SHA1 wire protocol, so we reuse
+        ykman's OtpYubiKeyDevice + HidrawConnection (Linux) / equivalent
+        on other platforms. The PID is passed through because YubiOtpSession
+        consults it for protocol-version negotiation.
+        """
+        platform = sys.platform
+        if platform == "linux":
+            from ykman.hid.base import OtpYubiKeyDevice
+            from ykman.hid.linux import HidrawConnection
+
+            return OtpYubiKeyDevice(path, pid, HidrawConnection)
+        elif platform == "darwin":
+            from ykman.hid.base import OtpYubiKeyDevice
+            from ykman.hid.macos import MacHidOtpConnection  # type: ignore
+
+            return OtpYubiKeyDevice(path, pid, MacHidOtpConnection)
+        elif platform == "win32":
+            from ykman.hid.base import OtpYubiKeyDevice
+            from ykman.hid.windows import WinHidOtpConnection  # type: ignore
+
+            return OtpYubiKeyDevice(path, pid, WinHidOtpConnection)
+        elif platform.startswith("freebsd"):
+            from ykman.hid.base import OtpYubiKeyDevice
+            from ykman.hid.freebsd import FreeBsdHidOtpConnection  # type: ignore
+
+            return OtpYubiKeyDevice(path, pid, FreeBsdHidOtpConnection)
+        else:
+            raise NotImplementedError(
+                f"OnlyKey HID device construction not implemented on platform {platform!r}"
+            )
+
+    def _list_onlykey_devices(self) -> List:
+        """Return list of OnlyKey OtpYubiKeyDevice handles currently attached."""
+        devices = []
+        for path, vid, pid in self._enumerate_hidraw():
+            if vid == self.ONLYKEY_VID and pid == self.ONLYKEY_PID:
+                devices.append(self._make_otp_device(path, pid))
+        return devices
 
     def get_hsm_pepper(
         self, salt: bytes, context: PluginSecurityContext
