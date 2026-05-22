@@ -7336,7 +7336,49 @@ def _reconstruct_cli_from_metadata(metadata: dict) -> str:
     _append_hkdf_flags(lines, kdf_config.get("hkdf") or {})
     _append_randomx_flags(lines, kdf_config.get("randomx") or {})
 
+    hash_config = derivation.get("hash_config") or {}
+    _append_hash_rounds_flags(lines, hash_config)
+
     return " \\\n".join(lines)
+
+
+# Hash algorithms recognised by the encrypt CLI's *-rounds flags.
+# Metadata key form (with underscores) → CLI flag prefix (with hyphens).
+_SUPPORTED_HASH_KEYS = {
+    "sha512": "sha512",
+    "sha384": "sha384",
+    "sha256": "sha256",
+    "sha224": "sha224",
+    "sha3_512": "sha3-512",
+    "sha3_384": "sha3-384",
+    "sha3_256": "sha3-256",
+    "sha3_224": "sha3-224",
+    "blake2b": "blake2b",
+    "blake3": "blake3",
+    "shake256": "shake256",
+    "shake128": "shake128",
+}
+
+
+def _append_hash_rounds_flags(lines: list, hash_config: dict) -> None:
+    """
+    Append --<hash>-rounds N flags for each hash with rounds > 0.
+
+    Metadata may store rounds as either ``{"rounds": N}`` (current
+    format) or as a scalar ``N`` (older formats). Both are handled.
+    Algorithms not in :data:`_SUPPORTED_HASH_KEYS` are silently skipped
+    — newer formats may include hash names this code doesn't know yet.
+    """
+    for meta_key, flag_prefix in _SUPPORTED_HASH_KEYS.items():
+        cfg = hash_config.get(meta_key)
+        if cfg is None:
+            continue
+        if isinstance(cfg, dict):
+            rounds = cfg.get("rounds", 0)
+        else:
+            rounds = cfg
+        if rounds and rounds > 0:
+            lines.append(f"  --{flag_prefix}-rounds {rounds}")
 
 
 # Reverse map for argon2 type integers stored in metadata.
