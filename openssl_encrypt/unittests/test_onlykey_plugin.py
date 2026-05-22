@@ -25,10 +25,22 @@ sys.modules.setdefault("yubikit.yubiotp", MagicMock())
 
 from openssl_encrypt.modules.plugin_system.plugin_base import (  # noqa: E402
     PluginCapability,
+    PluginSecurityContext,
 )
 from openssl_encrypt.plugins.hsm.onlykey_challenge_response import (  # noqa: E402
     OnlykeyHSMPlugin,
 )
+
+
+def _make_context(plugin: OnlykeyHSMPlugin, slot=None) -> PluginSecurityContext:
+    """Build a PluginSecurityContext with the given slot in config."""
+    ctx = PluginSecurityContext(
+        plugin_id=plugin.plugin_id,
+        capabilities=plugin.get_required_capabilities(),
+    )
+    if slot is not None:
+        ctx.config["slot"] = slot
+    return ctx
 
 
 class TestOnlykeyPluginMetadata(unittest.TestCase):
@@ -280,6 +292,114 @@ class TestFindChallengeResponseSlot(unittest.TestCase):
             side_effect=RuntimeError("USB error"),
         ):
             self.assertIsNone(plugin._find_challenge_response_slot())
+
+
+class TestGetHsmPepper(unittest.TestCase):
+    """The plugin's primary public entrypoint."""
+
+    def test_happy_path_with_explicit_slot(self):
+        plugin = OnlykeyHSMPlugin()
+        expected_response = b"\x42" * 20
+        ctx = _make_context(plugin, slot=1)
+
+        with patch.object(
+            plugin, "_calculate_challenge_response", return_value=expected_response
+        ) as calc:
+            result = plugin.get_hsm_pepper(b"\x00" * 16, ctx)
+
+        self.assertTrue(result.success)
+        self.assertEqual(result.data.get("hsm_pepper"), expected_response)
+        self.assertEqual(result.data.get("slot"), 1)
+        calc.assert_called_once_with(b"\x00" * 16, 1)
+
+    def test_happy_path_with_high_slot(self):
+        """OnlyKey accepts slots up to 12, unlike YubiKey's 2-slot max."""
+        plugin = OnlykeyHSMPlugin()
+        expected = b"\x77" * 20
+        ctx = _make_context(plugin, slot=10)
+
+        with patch.object(
+            plugin, "_calculate_challenge_response", return_value=expected
+        ):
+            result = plugin.get_hsm_pepper(b"\x00" * 16, ctx)
+
+        self.assertTrue(result.success)
+        self.assertEqual(result.data.get("slot"), 10)
+
+    def test_invalid_salt_none_returns_error(self):
+        plugin = OnlykeyHSMPlugin()
+        ctx = _make_context(plugin)
+        result = plugin.get_hsm_pepper(None, ctx)
+        self.assertFalse(result.success)
+        self.assertIn("salt", result.message.lower())
+
+    def test_invalid_salt_wrong_length_returns_error(self):
+        plugin = OnlykeyHSMPlugin()
+        ctx = _make_context(plugin)
+        result = plugin.get_hsm_pepper(b"\x00" * 8, ctx)
+        self.assertFalse(result.success)
+        self.assertIn("salt", result.message.lower())
+
+    def test_invalid_slot_13_returns_error(self):
+        """Slot above OnlyKey's max (12) is rejected."""
+        plugin = OnlykeyHSMPlugin()
+        ctx = _make_context(plugin, slot=13)
+        result = plugin.get_hsm_pepper(b"\x00" * 16, ctx)
+        self.assertFalse(result.success)
+        self.assertIn("slot", result.message.lower())
+
+    def test_auto_detect_when_no_slot_specified(self):
+        plugin = OnlykeyHSMPlugin()
+        ctx = _make_context(plugin)  # no slot
+        expected = b"\x99" * 20
+
+        with patch.object(
+            plugin, "_find_challenge_response_slot", return_value=4
+        ), patch.object(
+            plugin, "_calculate_challenge_response", return_value=expected
+        ):
+            result = plugin.get_hsm_pepper(b"\x00" * 16, ctx)
+
+        self.assertTrue(result.success)
+        self.assertEqual(result.data.get("slot"), 4)
+
+    def test_auto_detect_failure_returns_error(self):
+        plugin = OnlykeyHSMPlugin()
+        ctx = _make_context(plugin)
+        with patch.object(
+            plugin, "_find_challenge_response_slot", return_value=None
+        ):
+            result = plugin.get_hsm_pepper(b"\x00" * 16, ctx)
+        self.assertFalse(result.success)
+        self.assertIn("OnlyKey", result.message)
+
+    def test_cached_slot_used_on_second_call(self):
+        plugin = OnlykeyHSMPlugin()
+        plugin._cached_slot = 7  # simulate prior auto-detection
+        expected = b"\x55" * 20
+        ctx = _make_context(plugin)  # no slot
+
+        with patch.object(
+            plugin, "_find_challenge_response_slot"
+        ) as find, patch.object(
+            plugin, "_calculate_challenge_response", return_value=expected
+        ):
+            result = plugin.get_hsm_pepper(b"\x00" * 16, ctx)
+
+        self.assertTrue(result.success)
+        self.assertEqual(result.data.get("slot"), 7)
+        # Auto-detect must NOT be re-invoked when a slot is already cached
+        find.assert_not_called()
+
+
+class TestPluginInitialize(unittest.TestCase):
+    """The initialize() lifecycle method."""
+
+    def test_initialize_success(self):
+        plugin = OnlykeyHSMPlugin()
+        result = plugin.initialize({})
+        self.assertTrue(result.success)
+        self.assertIn("initialized", result.message.lower())
 
 
 if __name__ == "__main__":
