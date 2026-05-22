@@ -8025,7 +8025,69 @@ def _reconstruct_cli_from_metadata(metadata: dict) -> str:
     encryption = metadata.get("encryption") or {}
     _append_cipher_flags(lines, encryption)
 
+    derivation = metadata.get("derivation_config") or {}
+    kdf_config = derivation.get("kdf_config") or {}
+    _append_argon2_flags(lines, kdf_config.get("argon2") or {})
+    _append_scrypt_flags(lines, kdf_config.get("scrypt") or {})
+    _append_balloon_flags(lines, kdf_config.get("balloon") or {})
+
     return " \\\n".join(lines)
+
+
+# Reverse map for argon2 type integers stored in metadata.
+_ARGON2_INT_TO_STR = {0: "d", 1: "i", 2: "id"}
+
+
+def _append_argon2_flags(lines: list, cfg: dict) -> None:
+    """Append --enable-argon2 + --argon2-* flags when argon2 is enabled."""
+    if not cfg.get("enabled"):
+        return
+    lines.append("  --enable-argon2")
+    if "rounds" in cfg:
+        lines.append(f"  --argon2-rounds {cfg['rounds']}")
+    if "time_cost" in cfg:
+        lines.append(f"  --argon2-time {cfg['time_cost']}")
+    if "memory_cost" in cfg:
+        lines.append(f"  --argon2-memory {cfg['memory_cost']}")
+    if "parallelism" in cfg:
+        lines.append(f"  --argon2-parallelism {cfg['parallelism']}")
+    if "hash_len" in cfg:
+        lines.append(f"  --argon2-hash-len {cfg['hash_len']}")
+    if "type" in cfg:
+        t = cfg["type"]
+        # Metadata stores type as int (0,1,2). CLI expects "d","i","id".
+        type_str = _ARGON2_INT_TO_STR.get(t, t) if isinstance(t, int) else t
+        lines.append(f"  --argon2-type {type_str}")
+
+
+def _append_scrypt_flags(lines: list, cfg: dict) -> None:
+    """Append --enable-scrypt + --scrypt-* flags when scrypt is enabled."""
+    if not cfg.get("enabled"):
+        return
+    lines.append("  --enable-scrypt")
+    if "rounds" in cfg:
+        lines.append(f"  --scrypt-rounds {cfg['rounds']}")
+    if "n" in cfg:
+        lines.append(f"  --scrypt-n {cfg['n']}")
+    if "r" in cfg:
+        lines.append(f"  --scrypt-r {cfg['r']}")
+    if "p" in cfg:
+        lines.append(f"  --scrypt-p {cfg['p']}")
+
+
+def _append_balloon_flags(lines: list, cfg: dict) -> None:
+    """Append --enable-balloon + --balloon-* flags when balloon is enabled."""
+    if not cfg.get("enabled"):
+        return
+    lines.append("  --enable-balloon")
+    if "rounds" in cfg:
+        lines.append(f"  --balloon-rounds {cfg['rounds']}")
+    if "time_cost" in cfg:
+        lines.append(f"  --balloon-time-cost {cfg['time_cost']}")
+    if "space_cost" in cfg:
+        lines.append(f"  --balloon-space-cost {cfg['space_cost']}")
+    if "parallelism" in cfg:
+        lines.append(f"  --balloon-parallelism {cfg['parallelism']}")
 
 
 def _append_cipher_flags(lines: list, encryption: dict) -> None:
