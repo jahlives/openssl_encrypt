@@ -2225,23 +2225,25 @@ def setup_identity_parser(subparser):
     )
     create_parser.add_argument(
         "--hsm",
-        choices=["none", "yubikey", "yubikey-only"],
+        choices=["none", "yubikey", "yubikey-only", "onlykey", "onlykey-only"],
         default="none",
         help="HSM protection for private keys: "
         "'none' (default, password only), "
-        "'yubikey' (password + Yubikey required), "
-        "'yubikey-only' (Yubikey only, no password)",
+        "'yubikey' (password + Yubikey required, slots 1..2), "
+        "'yubikey-only' (Yubikey only, no password), "
+        "'onlykey' (password + OnlyKey required, slots 1..12), "
+        "'onlykey-only' (OnlyKey only, no password)",
     )
     create_parser.add_argument(
         "--hsm-slot",
         type=int,
-        choices=[1, 2],
-        help="Yubikey slot (1 or 2, default: auto-detect)",
+        help="HSM slot for Challenge-Response. "
+        "YubiKey 1..2, OnlyKey 1..12. Default: auto-detect.",
     )
     create_parser.add_argument(
         "--no-touch",
         action="store_true",
-        help="Disable Yubikey touch requirement (less secure)",
+        help="Disable HSM touch / button-press requirement (less secure)",
     )
 
     # List identities

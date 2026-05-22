@@ -93,30 +93,47 @@ def cmd_create(args) -> int:
         return 1
 
     try:
-        # Determine protection level from --hsm argument
+        # Determine protection level + HSM type from --hsm argument
         hsm_option = getattr(args, "hsm", "none")
+        hsm_type = "yubikey"  # default — used only when protection_level requires HSM
         if hsm_option == "none" or hsm_option is None:
             protection_level = ProtectionLevel.PASSWORD_ONLY
         elif hsm_option == "yubikey":
             protection_level = ProtectionLevel.PASSWORD_AND_HSM
+            hsm_type = "yubikey"
         elif hsm_option == "yubikey-only":
             protection_level = ProtectionLevel.HSM_ONLY
+            hsm_type = "yubikey"
+        elif hsm_option == "onlykey":
+            protection_level = ProtectionLevel.PASSWORD_AND_HSM
+            hsm_type = "onlykey"
+        elif hsm_option == "onlykey-only":
+            protection_level = ProtectionLevel.HSM_ONLY
+            hsm_type = "onlykey"
         else:
             print(f"ERROR: Unknown HSM option: {hsm_option}", file=sys.stderr)
             return 1
 
         # Check HSM availability if required
-        if protection_level in (ProtectionLevel.PASSWORD_AND_HSM, ProtectionLevel.HSM_ONLY):
-            protection_service = IdentityKeyProtectionService()
+        if protection_level in (
+            ProtectionLevel.PASSWORD_AND_HSM,
+            ProtectionLevel.HSM_ONLY,
+        ):
+            protection_service = IdentityKeyProtectionService(hsm_type=hsm_type)
+            device_label = "OnlyKey" if hsm_type == "onlykey" else "Yubikey"
             if not protection_service.is_hsm_available():
-                print("ERROR: Yubikey not found. Please insert your Yubikey.", file=sys.stderr)
+                eprint(
+                    f"ERROR: {device_label} not found. Please insert your {device_label}.",
+                    file=sys.stderr,
+                )
                 return 1
 
             detected_slot = protection_service.detect_hsm_slot()
             if detected_slot is None:
+                slot_range = "1..12" if hsm_type == "onlykey" else "1 or 2"
                 eprint(
-                    "ERROR: No Challenge-Response slot configured on Yubikey.\n"
-                    "Please configure slot 1 or 2 for HMAC-SHA1 Challenge-Response.",
+                    f"ERROR: No Challenge-Response slot configured on {device_label}.\n"
+                    f"Please configure slot {slot_range} for HMAC-SHA1 Challenge-Response.",
                     file=sys.stderr,
                 )
                 return 1
@@ -124,7 +141,7 @@ def cmd_create(args) -> int:
             hsm_slot = getattr(args, "hsm_slot", None)
             if hsm_slot is None:
                 hsm_slot = detected_slot
-                eprint(f"Using Yubikey slot {hsm_slot} (auto-detected)")
+                eprint(f"Using {device_label} slot {hsm_slot} (auto-detected)")
 
         # Get passphrase (not required for HSM_ONLY)
         passphrase = None
