@@ -16,6 +16,7 @@ deterministic diceware passphrase would defeat its security purpose.
 from __future__ import annotations
 
 import importlib.resources
+import math
 import re
 import secrets
 import warnings
@@ -196,3 +197,33 @@ def generate_passphrase(
     rng = secrets.SystemRandom()
     chosen = [rng.choice(wordlist) for _ in range(count)]
     return sep.join(chosen)
+
+
+def passphrase_entropy(count: int, wordlist_size: int) -> float:
+    """
+    Compute the entropy in bits of a passphrase.
+
+    A Diceware passphrase of `count` words drawn uniformly at random
+    from a wordlist of `wordlist_size` distinct words carries
+    ``count * log2(wordlist_size)`` bits of entropy. This assumes
+    independent uniform draws — which our :func:`generate_passphrase`
+    guarantees by using :class:`secrets.SystemRandom.choice`.
+
+    Args:
+        count: Number of words in the passphrase (>= 1).
+        wordlist_size: Number of distinct words in the source wordlist
+            (>= 2 — a 1-word list has zero entropy).
+
+    Returns:
+        Entropy in bits.
+
+    Raises:
+        ValueError: on count < 1 or wordlist_size < 2.
+    """
+    if count < 1:
+        raise ValueError(f"count must be >= 1, got {count}")
+    if wordlist_size < 2:
+        raise ValueError(
+            f"wordlist_size must be >= 2 for nonzero entropy, got {wordlist_size}"
+        )
+    return count * math.log2(wordlist_size)
