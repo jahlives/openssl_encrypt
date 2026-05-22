@@ -8,6 +8,7 @@ encryption settings on a fresh file. Each test below exercises one
 slice of the reconstructor.
 """
 
+import sys
 import unittest
 
 
@@ -507,5 +508,78 @@ class TestReconstructLegacyAlgorithms(unittest.TestCase):
         self.assertIn("--whirlpool-rounds 5000", out)
 
 
+class TestPrintFileInfoIncludesReconstruction(unittest.TestCase):
+    """
+    print_file_info() must append the reconstructed CLI line to its
+    human-readable stderr output. JSON output mode is unchanged so any
+    script that parses --json is unaffected.
+    """
+
+    def _run_print_file_info_on_test_v4(self):
+        """Helper: print_file_info on a known v4 test fixture."""
+        import io
+        import os
+
+        from openssl_encrypt.modules.crypt_core import print_file_info
+
+        path = os.path.join(
+            os.path.dirname(__file__),
+            "testfiles",
+            "v4",
+            "test1_aes-gcm-siv.txt",
+        )
+        old_stderr = sys.stderr
+        capture = io.StringIO()
+        try:
+            sys.stderr = capture
+            print_file_info(path, json_output=False)
+        finally:
+            sys.stderr = old_stderr
+        return capture.getvalue()
+
+    def _run_print_file_info_json(self):
+        import io
+        import os
+
+        from openssl_encrypt.modules.crypt_core import print_file_info
+
+        path = os.path.join(
+            os.path.dirname(__file__),
+            "testfiles",
+            "v4",
+            "test1_aes-gcm-siv.txt",
+        )
+        old_stdout = sys.stdout
+        capture = io.StringIO()
+        try:
+            sys.stdout = capture
+            print_file_info(path, json_output=True)
+        finally:
+            sys.stdout = old_stdout
+        return capture.getvalue()
+
+    def test_human_output_appends_reconstruction_section(self):
+        stderr = self._run_print_file_info_on_test_v4()
+        # Section header + the reconstructed encrypt command must be present.
+        self.assertIn("Reconstructed CLI", stderr)
+        self.assertIn("openssl_encrypt encrypt", stderr)
+        # And the actual algorithm reconstructed for this file.
+        self.assertIn("--algorithm aes-gcm-siv", stderr)
+
+    def test_json_output_contains_no_reconstruction_text(self):
+        """JSON mode is unchanged: it must remain parseable as raw metadata."""
+        import json
+
+        out = self._run_print_file_info_json()
+        # Must be valid JSON …
+        parsed = json.loads(out)
+        # … and must NOT contain the human-readable reconstruction header.
+        self.assertNotIn("Reconstructed CLI", out)
+        self.assertNotIn("openssl_encrypt encrypt", out)
+        # And the metadata dict itself shouldn't have grown a new field.
+        self.assertNotIn("reconstructed_cli", parsed)
+
+
 if __name__ == "__main__":
+    import sys  # for sys.argv/stderr/stdout above
     unittest.main()

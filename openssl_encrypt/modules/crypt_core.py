@@ -7993,6 +7993,14 @@ def print_file_info(input_file: str, json_output: bool = False) -> dict:
         if pepper_name:
             eprint(f"    Name:            {pepper_name}")
 
+    # Reconstructed CLI — show users how they could re-encrypt with the
+    # same settings on a fresh file. Salt and per-file random values are
+    # NOT included; only the deterministic configuration.
+    eprint()
+    eprint("  Reconstructed CLI:")
+    for line in _reconstruct_cli_from_metadata(metadata).splitlines():
+        eprint(f"    {line}")
+
     return metadata
 
 
