@@ -7337,9 +7337,11 @@ def _reconstruct_cli_from_metadata(metadata: dict) -> str:
     _append_balloon_flags(lines, kdf_config.get("balloon") or {})
     _append_hkdf_flags(lines, kdf_config.get("hkdf") or {})
     _append_randomx_flags(lines, kdf_config.get("randomx") or {})
+    _append_pbkdf2_removed_comment(lines, kdf_config.get("pbkdf2") or {})
 
     hash_config = derivation.get("hash_config") or {}
     _append_hash_rounds_flags(lines, hash_config)
+    _append_whirlpool_removed_comment(lines, hash_config.get("whirlpool"))
 
     return " \\\n".join(lines)
 
@@ -7450,6 +7452,57 @@ def _append_hkdf_flags(lines: list, cfg: dict) -> None:
         lines.append(f"  --hkdf-algorithm {cfg['algorithm']}")
     if "info" in cfg:
         lines.append(f"  --hkdf-info {cfg['info']}")
+
+
+def _append_pbkdf2_removed_comment(lines: list, cfg: dict) -> None:
+    """
+    Emit a commented-out --pbkdf2-iterations N hint with migration target.
+
+    v1.5 removes PBKDF2 from the KDF chain entirely — the encrypt CLI no
+    longer accepts --pbkdf2-iterations, so a live flag would error.
+    Instead, we emit the value the user *would have needed* alongside a
+    pointer to the supported replacement so they can edit the
+    reconstructed command manually.
+
+    On v1.4 the corresponding _append_pbkdf2_flags() emits the working
+    flag instead — same metadata source, different output per branch.
+    """
+    if not cfg:
+        return
+    if isinstance(cfg, dict):
+        rounds = cfg.get("rounds", 0)
+    else:
+        rounds = cfg
+    if rounds and rounds > 0:
+        lines.append(
+            f"  # --pbkdf2-iterations {rounds}  "
+            f"(removed in v1.5.0 — replace with Argon2id, e.g. "
+            f"--enable-argon2 --argon2-rounds 10)"
+        )
+
+
+def _append_whirlpool_removed_comment(lines: list, cfg) -> None:
+    """
+    Emit a commented-out --whirlpool-rounds N hint with migration target.
+
+    Same treatment as PBKDF2 — v1.5 removes Whirlpool from new
+    encryptions (decryption still supported for legacy files via the
+    crypto registry), so reconstructing a live --whirlpool-rounds flag
+    would error on this branch.
+    """
+    if cfg is None:
+        return
+    if isinstance(cfg, dict):
+        rounds = cfg.get("rounds", 0)
+    else:
+        rounds = cfg
+    if rounds and rounds > 0:
+        lines.append(
+            f"  # --whirlpool-rounds {rounds}  "
+            f"(removed in v1.5.0 — replace with SHA-512 "
+            f"(--sha512-rounds), BLAKE2b (--blake2b-rounds), "
+            f"or BLAKE3 (--blake3-rounds))"
+        )
 
 
 def _append_randomx_flags(lines: list, cfg: dict) -> None:

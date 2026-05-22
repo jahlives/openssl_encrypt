@@ -459,5 +459,77 @@ class TestReconstructPepperFlags(unittest.TestCase):
         self.assertNotIn("--pepper", out)
 
 
+class TestReconstructRemovedAlgorithmsV15(unittest.TestCase):
+    """
+    v1.5 specific: algorithms removed in this release (PBKDF2 from KDF
+    chain, Whirlpool from hashes) must be emitted as commented-out
+    migration hints, NOT as live flags, because the v1.5 CLI no longer
+    accepts these flags. Per the approved plan Q6 (option a).
+    """
+
+    def test_pbkdf2_emitted_as_comment_with_migration_hint(self):
+        from openssl_encrypt.modules.crypt_core import _reconstruct_cli_from_metadata
+
+        meta = {
+            "derivation_config": {
+                "kdf_config": {"pbkdf2": {"rounds": 100000}}
+            }
+        }
+        out = _reconstruct_cli_from_metadata(meta)
+        # Must NOT emit a live --pbkdf2-iterations flag (would error on v1.5).
+        # The flag may appear in a comment; check for absence of a
+        # non-commented line containing it.
+        for line in out.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("--pbkdf2-iterations"):
+                self.fail(
+                    f"PBKDF2 should be commented out on v1.5, found live: {line!r}"
+                )
+        # Must include a comment with the original value AND the migration
+        # hint ("removed in v1.5" + replacement suggestion).
+        self.assertRegex(out, r"#\s*--pbkdf2-iterations 100000")
+        self.assertIn("removed in v1.5", out)
+        self.assertIn("Argon2", out)
+
+    def test_whirlpool_emitted_as_comment_with_migration_hint(self):
+        from openssl_encrypt.modules.crypt_core import _reconstruct_cli_from_metadata
+
+        meta = {
+            "derivation_config": {
+                "hash_config": {"whirlpool": {"rounds": 5000}}
+            }
+        }
+        out = _reconstruct_cli_from_metadata(meta)
+        for line in out.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("--whirlpool-rounds"):
+                self.fail(
+                    f"Whirlpool should be commented out on v1.5, found live: {line!r}"
+                )
+        self.assertRegex(out, r"#\s*--whirlpool-rounds 5000")
+        self.assertIn("removed in v1.5", out)
+        # Migration suggestion mentions a v1.5-supported hash.
+        self.assertTrue(
+            "SHA-512" in out or "BLAKE2b" in out or "BLAKE3" in out
+        )
+
+    def test_pbkdf2_zero_rounds_skipped_entirely(self):
+        """No comment if the algorithm wasn't actually used."""
+        from openssl_encrypt.modules.crypt_core import _reconstruct_cli_from_metadata
+
+        out = _reconstruct_cli_from_metadata(
+            {"derivation_config": {"kdf_config": {"pbkdf2": {"rounds": 0}}}}
+        )
+        self.assertNotIn("pbkdf2", out)
+
+    def test_whirlpool_zero_rounds_skipped_entirely(self):
+        from openssl_encrypt.modules.crypt_core import _reconstruct_cli_from_metadata
+
+        out = _reconstruct_cli_from_metadata(
+            {"derivation_config": {"hash_config": {"whirlpool": {"rounds": 0}}}}
+        )
+        self.assertNotIn("whirlpool", out)
+
+
 if __name__ == "__main__":
     unittest.main()
