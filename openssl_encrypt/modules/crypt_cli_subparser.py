@@ -737,16 +737,17 @@ def setup_encrypt_parser(subparser):
         "--hsm",
         metavar="PLUGIN",
         help="Enable HSM (Hardware Security Module) plugin for hardware-bound key derivation. "
-        "Supported: 'yubikey' (Yubikey Challenge-Response). "
+        "Supported: 'yubikey' (Yubikey Challenge-Response, slots 1..2), "
+        "'onlykey' (OnlyKey Challenge-Response, slots 1..12). "
         "The HSM adds a hardware-specific pepper to the key derivation, requiring the device "
         "for both encryption and decryption.",
     )
     hsm_group.add_argument(
         "--hsm-slot",
         type=int,
-        choices=[1, 2],
         metavar="SLOT",
-        help="Manually specify Yubikey slot (1 or 2) for Challenge-Response. "
+        help="Manually specify the Challenge-Response slot. Valid range is plugin-specific: "
+        "YubiKey 1..2, OnlyKey 1..12. "
         "If not specified, the plugin will auto-detect the configured slot.",
     )
 
@@ -991,15 +992,15 @@ def setup_decrypt_parser(subparser):
         "--hsm",
         metavar="PLUGIN",
         help="Enable HSM (Hardware Security Module) plugin for hardware-bound key derivation. "
-        "Supported: 'yubikey' (Yubikey Challenge-Response). "
+        "Supported: 'yubikey' (slots 1..2), 'onlykey' (slots 1..12). "
         "Required if the file was encrypted with an HSM plugin.",
     )
     hsm_group.add_argument(
         "--hsm-slot",
         type=int,
-        choices=[1, 2],
         metavar="SLOT",
-        help="Manually specify Yubikey slot (1 or 2) for Challenge-Response. "
+        help="Manually specify the Challenge-Response slot. Valid range is plugin-specific: "
+        "YubiKey 1..2, OnlyKey 1..12. "
         "If not specified, the slot will be read from file metadata or auto-detected.",
     )
 
@@ -1450,14 +1451,15 @@ def setup_rekey_parser(subparser):
         "--hsm",
         metavar="PLUGIN",
         help="Enable HSM plugin for hardware-bound key derivation. "
+        "Supported: 'yubikey' (slots 1..2), 'onlykey' (slots 1..12). "
         "Required if the file was encrypted with an HSM plugin.",
     )
     hsm_group.add_argument(
         "--hsm-slot",
         type=int,
-        choices=[1, 2],
         metavar="SLOT",
-        help="Manually specify Yubikey slot (1 or 2) for Challenge-Response.",
+        help="Manually specify the Challenge-Response slot. "
+        "YubiKey 1..2, OnlyKey 1..12.",
     )
 
     # Remote Pepper options
@@ -2223,23 +2225,25 @@ def setup_identity_parser(subparser):
     )
     create_parser.add_argument(
         "--hsm",
-        choices=["none", "yubikey", "yubikey-only"],
+        choices=["none", "yubikey", "yubikey-only", "onlykey", "onlykey-only"],
         default="none",
         help="HSM protection for private keys: "
         "'none' (default, password only), "
-        "'yubikey' (password + Yubikey required), "
-        "'yubikey-only' (Yubikey only, no password)",
+        "'yubikey' (password + Yubikey required, slots 1..2), "
+        "'yubikey-only' (Yubikey only, no password), "
+        "'onlykey' (password + OnlyKey required, slots 1..12), "
+        "'onlykey-only' (OnlyKey only, no password)",
     )
     create_parser.add_argument(
         "--hsm-slot",
         type=int,
-        choices=[1, 2],
-        help="Yubikey slot (1 or 2, default: auto-detect)",
+        help="HSM slot for Challenge-Response. "
+        "YubiKey 1..2, OnlyKey 1..12. Default: auto-detect.",
     )
     create_parser.add_argument(
         "--no-touch",
         action="store_true",
-        help="Disable Yubikey touch requirement (less secure)",
+        help="Disable HSM touch / button-press requirement (less secure)",
     )
 
     # List identities
@@ -2434,6 +2438,18 @@ def setup_hsm_parser(subparser):
     # FIDO2 list devices subcommand
     hsm_subparsers.add_parser(
         "fido2-list", help="List connected FIDO2 devices and their capabilities"
+    )
+
+    # OnlyKey list devices subcommand
+    hsm_subparsers.add_parser(
+        "onlykey-list",
+        help="List connected OnlyKey devices (USB VID 0x1d50:0x60fc)",
+    )
+
+    # OnlyKey test subcommand
+    hsm_subparsers.add_parser(
+        "onlykey-test",
+        help="Test OnlyKey Challenge-Response pepper derivation with a random salt",
     )
 
     # FIDO2 unregister subcommand

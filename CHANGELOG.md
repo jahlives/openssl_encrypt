@@ -5,6 +5,64 @@ All notable changes to the openssl_encrypt project will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - TBD
+
+### Added
+
+- **OnlyKey Challenge-Response HSM plugin**: New `OnlykeyHSMPlugin`
+  (`openssl_encrypt/plugins/hsm/onlykey_challenge_response/`) adds
+  hardware-bound pepper derivation via OnlyKey devices (USB VID/PID
+  `0x1d50:0x60fc`) using the same HMAC-SHA1 wire protocol as YubiKey.
+  CLI: `--hsm onlykey` for encrypt/decrypt, slots 1..12 via `--hsm-slot`,
+  auto-detected if omitted. Two new HSM management subcommands:
+  `openssl_encrypt hsm onlykey-list` and `openssl_encrypt hsm onlykey-test`.
+- **OnlyKey identity protection**: `openssl_encrypt identity create`
+  now accepts `--hsm onlykey` and `--hsm onlykey-only` alongside the
+  existing yubikey options. `IdentityKeyProtectionService` selects the
+  plugin via a new `hsm_type` constructor argument; the type is
+  serialised into the identity protection metadata so decrypt routes
+  to the correct plugin.
+- **Cross-device deterministic pepper guarantee**: A YubiKey and an
+  OnlyKey loaded with the same 20-byte HMAC-SHA1 secret produce
+  identical responses for identical challenges, allowing mixed fleets.
+  Verified by a new RFC 2202 parameterised determinism test
+  (`test_cr_cross_backend_determinism.py`).
+- **Documentation**: `docs/hardware-tokens.md` (combined YubiKey +
+  OnlyKey setup guide, fleet provisioning workflow, troubleshooting)
+  and `docs/migration-from-yubikey-only.md` (step-by-step for existing
+  users adding OnlyKey to their fleet).
+- **Regression test baseline for YubikeyHSMPlugin**
+  (`test_yubikey_plugin.py`, 24 tests) — locks in existing behaviour
+  prior to the OnlyKey work.
+
+### Changed
+
+- `--hsm-slot` no longer hard-restricted to `choices=[1, 2]` at the
+  argparse layer. YubiKey validates 1..2 inside its plugin; OnlyKey
+  validates 1..12. This is purely an internal validation move — no
+  user-visible behaviour change for existing YubiKey users; OnlyKey
+  users can now select any slot in 1..12.
+- `handle_hsm_command` no longer imports / requires FIDO2 unconditionally.
+  The fido2 availability gate is now scoped to `fido2-*` actions only,
+  so `onlykey-list` / `onlykey-test` work on machines without fido2.
+
+### Security
+
+- No changes to the cryptographic core. The OnlyKey plugin reuses
+  yubikit's `YubiOtpSession.calculate_hmac_sha1`; the only difference
+  vs the YubiKey plugin is USB device enumeration (additional VID/PID
+  filter). Existing YubiKey-encrypted files and YubiKey-protected
+  identities are bit-identical and unaffected.
+
+### Internal
+
+- No new Python dependencies. The `onlykey` PyPI package is **not**
+  required — HMAC-SHA1 is performed via yubikit (already pulled in
+  via `yubikey-manager`).
+- ~200 new unit tests across `test_onlykey_plugin.py`,
+  `test_onlykey_cli.py`, `test_onlykey_identity_protection.py`,
+  `test_cr_cross_backend_determinism.py`, and `test_yubikey_plugin.py`.
+
 ## [1.4.0b10] - 2026-01-11
 
 ### Added

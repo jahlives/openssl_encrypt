@@ -2461,27 +2461,31 @@ def handle_hsm_command(args):
     import getpass
     import secrets
 
-    # Import FIDO2 plugin
-    try:
-        from ..plugins.hsm.fido2_pepper import FIDO2_AVAILABLE, FIDO2HSMPlugin
-    except ImportError:
-        eprint("❌ Error: FIDO2 library not available")
-        eprint("Install with: pip install fido2>=1.1.0")
-        sys.exit(1)
-
-    if not FIDO2_AVAILABLE:
-        eprint("❌ Error: FIDO2 library not available")
-        eprint("Install with: pip install fido2>=1.1.0")
-        sys.exit(1)
-
-    # Get HSM action
+    # Determine action first so non-FIDO2 actions (e.g. onlykey-*) don't
+    # require the fido2 library to be installed.
     action = args.hsm_action
 
-    # Get optional rp_id
-    rp_id = getattr(args, "rp_id", None)
+    # FIDO2 plugin is only needed for fido2-* actions. Lazy-import to keep
+    # onlykey-* actions usable on machines without fido2.
+    plugin = None
+    if action.startswith("fido2-"):
+        try:
+            from ..plugins.hsm.fido2_pepper import FIDO2_AVAILABLE, FIDO2HSMPlugin
+        except ImportError:
+            eprint("❌ Error: FIDO2 library not available")
+            eprint("Install with: pip install fido2>=1.1.0")
+            sys.exit(1)
 
-    # Initialize plugin
-    plugin = FIDO2HSMPlugin(rp_id=rp_id) if rp_id else FIDO2HSMPlugin()
+        if not FIDO2_AVAILABLE:
+            eprint("❌ Error: FIDO2 library not available")
+            eprint("Install with: pip install fido2>=1.1.0")
+            sys.exit(1)
+
+        # Get optional rp_id
+        rp_id = getattr(args, "rp_id", None)
+
+        # Initialize plugin
+        plugin = FIDO2HSMPlugin(rp_id=rp_id) if rp_id else FIDO2HSMPlugin()
 
     if action == "fido2-register":
         # Register new FIDO2 credential
@@ -2669,6 +2673,89 @@ def handle_hsm_command(args):
                 eprint(f"Configuration updated: {plugin.credential_file}")
         else:
             eprint(f"\n❌ Removal failed: {result.message}")
+            sys.exit(1)
+
+    elif action == "onlykey-list":
+        # List connected OnlyKey devices (USB VID 0x1d50:0x60fc).
+        from ..plugins.hsm.onlykey_challenge_response import OnlykeyHSMPlugin
+
+        ok_plugin = OnlykeyHSMPlugin()
+
+        eprint("\n🔐 Connected OnlyKey Devices")
+        eprint("=" * 50)
+
+        try:
+            devices = ok_plugin._list_onlykey_devices()
+        except Exception as e:
+            eprint(f"❌ Error enumerating OnlyKey devices: {e}")
+            sys.exit(1)
+
+        if not devices:
+            eprint("❌ No OnlyKey devices found")
+            eprint(
+                "\nPlease connect an OnlyKey and ensure it is unlocked "
+                "(enter PIN on device buttons)."
+            )
+            eprint(
+                f"\nExpected USB IDs: VID 0x{ok_plugin.ONLYKEY_VID:04x}, "
+                f"PID 0x{ok_plugin.ONLYKEY_PID:04x}"
+            )
+            sys.exit(0)
+
+        eprint(f"Found {len(devices)} OnlyKey device(s):\n")
+        for i, device in enumerate(devices, 1):
+            # OtpYubiKeyDevice exposes .path on Linux/macOS/Windows
+            path = getattr(device, "path", "<unknown>")
+            eprint(f"Device #{i}: {path}")
+            eprint(
+                f"  USB IDs: VID 0x{ok_plugin.ONLYKEY_VID:04x}, "
+                f"PID 0x{ok_plugin.ONLYKEY_PID:04x}"
+            )
+            eprint()
+
+    elif action == "onlykey-test":
+        # Test OnlyKey Challenge-Response pepper derivation.
+        from ..plugins.hsm.onlykey_challenge_response import OnlykeyHSMPlugin
+        from .plugin_system.plugin_base import PluginSecurityContext
+
+        ok_plugin = OnlykeyHSMPlugin()
+
+        eprint("\n🔐 OnlyKey Pepper Derivation Test")
+        eprint("=" * 50)
+
+        # Optional manual slot override via --hsm-slot
+        slot_override = getattr(args, "hsm_slot", None)
+
+        test_salt = secrets.token_bytes(16)
+        eprint(f"Test salt: {test_salt.hex()}")
+        eprint(
+            "\nPlease connect your OnlyKey. If the device is locked, enter "
+            "your PIN on the OnlyKey buttons before continuing."
+        )
+        if slot_override:
+            eprint(f"Using manual slot: {slot_override}")
+        else:
+            eprint("Auto-detecting Challenge-Response slot (1..12)...")
+
+        context = PluginSecurityContext(
+            plugin_id=ok_plugin.plugin_id,
+            capabilities=ok_plugin.get_required_capabilities(),
+        )
+        if slot_override:
+            context.config["slot"] = slot_override
+
+        result = ok_plugin.get_hsm_pepper(test_salt, context)
+
+        if result.success:
+            pepper = result.data.get("hsm_pepper")
+            slot = result.data.get("slot")
+            eprint("\n✅ Test successful!")
+            eprint(f"Slot: {slot}")
+            eprint(f"Pepper length: {len(pepper)} bytes")
+            eprint(f"Pepper (hex): {pepper.hex()}")
+            eprint("\nYour OnlyKey Challenge-Response is working correctly.")
+        else:
+            eprint(f"\n❌ Test failed: {result.message}")
             sys.exit(1)
 
     else:
@@ -4150,16 +4237,18 @@ def main_with_args(args=None):
         "--hsm",
         metavar="PLUGIN",
         help="Enable HSM (Hardware Security Module) plugin for hardware-bound key derivation. "
-        "Supported: 'yubikey' (YubiKey Challenge-Response), 'fido2' (FIDO2 hmac-secret). "
+        "Supported: 'yubikey' (YubiKey Challenge-Response, slots 1..2), "
+        "'onlykey' (OnlyKey Challenge-Response, slots 1..12), "
+        "'fido2' (FIDO2 hmac-secret). "
         "The HSM adds a hardware-specific pepper to the key derivation, requiring the device "
         "for both encryption and decryption.",
     )
     plugin_group.add_argument(
         "--hsm-slot",
         type=int,
-        choices=[1, 2],
         metavar="SLOT",
-        help="Manually specify Yubikey slot (1 or 2) for Challenge-Response. "
+        help="Manually specify the Challenge-Response slot. Valid range is plugin-specific: "
+        "YubiKey 1..2, OnlyKey 1..12. "
         "If not specified, the plugin will auto-detect the configured slot.",
     )
 
@@ -6236,6 +6325,24 @@ def main_with_args(args=None):
                         else:
                             eprint("   Auto-detecting Challenge-Response slot")
 
+                elif args.hsm.lower() == "onlykey":
+                    from ..plugins.hsm.onlykey_challenge_response import OnlykeyHSMPlugin
+
+                    hsm_plugin_instance = OnlykeyHSMPlugin()
+
+                    # Initialize plugin
+                    init_result = hsm_plugin_instance.initialize({})
+                    if not init_result.success:
+                        eprint(f"Error initializing HSM plugin: {init_result.message}")
+                        sys.exit(1)
+
+                    if not args.quiet:
+                        eprint(f"✅ Loaded HSM plugin: {hsm_plugin_instance.name}")
+                        if hasattr(args, "hsm_slot") and args.hsm_slot:
+                            eprint(f"   Using manual slot: {args.hsm_slot}")
+                        else:
+                            eprint("   Auto-detecting Challenge-Response slot (1..12)")
+
                 elif args.hsm.lower() == "fido2":
                     from ..plugins.hsm.fido2_pepper import FIDO2HSMPlugin
 
@@ -6256,12 +6363,16 @@ def main_with_args(args=None):
                             )
 
                 else:
-                    eprint(f"Error: Unknown HSM plugin '{args.hsm}'. Supported: yubikey, fido2")
+                    eprint(f"Error: Unknown HSM plugin '{args.hsm}'. Supported: yubikey, onlykey, fido2")
                     sys.exit(1)
 
             except ImportError as e:
                 eprint(f"Error: Could not import HSM plugin: {e}")
                 if args.hsm.lower() == "yubikey":
+                    eprint(
+                        "Make sure yubikey-manager is installed: pip install -r requirements-hsm.txt"
+                    )
+                elif args.hsm.lower() == "onlykey":
                     eprint(
                         "Make sure yubikey-manager is installed: pip install -r requirements-hsm.txt"
                     )
