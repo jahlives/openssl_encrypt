@@ -277,5 +277,84 @@ class TestReconstructSecondaryKdfs(unittest.TestCase):
         self.assertNotIn("--enable-randomx", out)
 
 
+class TestReconstructHashRounds(unittest.TestCase):
+    """Reconstruct --shaXXX-rounds N from hash_config (rounds > 0 only)."""
+
+    def _meta(self, hash_config):
+        return {"derivation_config": {"hash_config": hash_config}}
+
+    def test_sha512_nonzero_rounds(self):
+        from openssl_encrypt.modules.crypt_core import _reconstruct_cli_from_metadata
+
+        out = _reconstruct_cli_from_metadata(
+            self._meta({"sha512": {"rounds": 100000}})
+        )
+        self.assertIn("--sha512-rounds 100000", out)
+
+    def test_sha512_zero_rounds_skipped(self):
+        from openssl_encrypt.modules.crypt_core import _reconstruct_cli_from_metadata
+
+        out = _reconstruct_cli_from_metadata(
+            self._meta({"sha512": {"rounds": 0}})
+        )
+        self.assertNotIn("--sha512-rounds", out)
+
+    def test_sha256_scalar_form(self):
+        """Older metadata stores rounds as a scalar, not a dict."""
+        from openssl_encrypt.modules.crypt_core import _reconstruct_cli_from_metadata
+
+        out = _reconstruct_cli_from_metadata(self._meta({"sha256": 10000}))
+        self.assertIn("--sha256-rounds 10000", out)
+
+    def test_sha3_512_underscore_to_hyphen(self):
+        """Metadata key 'sha3_512' must become flag prefix 'sha3-512'."""
+        from openssl_encrypt.modules.crypt_core import _reconstruct_cli_from_metadata
+
+        out = _reconstruct_cli_from_metadata(
+            self._meta({"sha3_512": {"rounds": 5}})
+        )
+        self.assertIn("--sha3-512-rounds 5", out)
+        self.assertNotIn("--sha3_512-rounds", out)
+
+    def test_blake2b_blake3(self):
+        from openssl_encrypt.modules.crypt_core import _reconstruct_cli_from_metadata
+
+        out = _reconstruct_cli_from_metadata(
+            self._meta(
+                {
+                    "blake2b": {"rounds": 20000},
+                    "blake3": {"rounds": 10000},
+                }
+            )
+        )
+        self.assertIn("--blake2b-rounds 20000", out)
+        self.assertIn("--blake3-rounds 10000", out)
+
+    def test_shake256_shake128(self):
+        from openssl_encrypt.modules.crypt_core import _reconstruct_cli_from_metadata
+
+        out = _reconstruct_cli_from_metadata(
+            self._meta(
+                {
+                    "shake256": {"rounds": 15000},
+                    "shake128": {"rounds": 7500},
+                }
+            )
+        )
+        self.assertIn("--shake256-rounds 15000", out)
+        self.assertIn("--shake128-rounds 7500", out)
+
+    def test_unknown_hash_algorithm_skipped(self):
+        """Hash names not in the supported set are silently skipped."""
+        from openssl_encrypt.modules.crypt_core import _reconstruct_cli_from_metadata
+
+        out = _reconstruct_cli_from_metadata(
+            self._meta({"some-future-hash": {"rounds": 100}})
+        )
+        # Should not appear in output (no flag for it).
+        self.assertNotIn("--some-future-hash-rounds", out)
+        self.assertNotIn("some-future-hash", out)
+
+
 if __name__ == "__main__":
     unittest.main()

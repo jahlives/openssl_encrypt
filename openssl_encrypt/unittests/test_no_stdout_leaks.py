@@ -34,9 +34,9 @@ STDOUT_WHITELIST = [
     # crypt_core.py — JSON data output
     ("crypt_core.py", 7866, "print_file_info JSON output"),
     # crypt_core.py — protected DO NOT CHANGE block
-    ("crypt_core.py", 9330, "PQC key decryption status (protected)"),
-    ("crypt_core.py", 9337, "PQC key decryption failure (protected)"),
-    ("crypt_core.py", 9343, "PQC key decryption error (protected)"),
+    ("crypt_core.py", 9402, "PQC key decryption status (protected)"),
+    ("crypt_core.py", 9409, "PQC key decryption failure (protected)"),
+    ("crypt_core.py", 9415, "PQC key decryption error (protected)"),
     # crypt_utils.py — eprint() helper's own print() call
     ("crypt_utils.py", 25, "eprint() helper implementation"),
     # usb_creator.py — decrypted text content
