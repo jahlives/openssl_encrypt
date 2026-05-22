@@ -7324,10 +7324,25 @@ def _reconstruct_cli_from_metadata(metadata: dict) -> str:
         Multi-line shell command starting with ``openssl_encrypt encrypt``.
     """
     lines = ["openssl_encrypt encrypt"]
-    # Subsequent commits will append per-category reconstruction lines
-    # to `lines` (each formatted like "  --argon2-time 3 \\"). For now,
-    # we emit the bare command as the placeholder.
+
+    encryption = metadata.get("encryption") or {}
+    _append_cipher_flags(lines, encryption)
+
     return " \\\n".join(lines)
+
+
+def _append_cipher_flags(lines: list, encryption: dict) -> None:
+    """Append --cascade / --algorithm flags from the encryption section."""
+    is_cascade = encryption.get("cascade", False)
+    if is_cascade:
+        chain = encryption.get("cipher_chain") or []
+        if chain:
+            lines.append("  --cascade")
+            lines.append(f"  --algorithm {','.join(chain)}")
+    else:
+        algorithm = encryption.get("algorithm")
+        if algorithm:
+            lines.append(f"  --algorithm {algorithm}")
 
 
 def _format_kdf_params(kdf_name: str, params: dict) -> str:
