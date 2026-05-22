@@ -167,5 +167,92 @@ class TestLoadWordlist(unittest.TestCase):
             load_wordlist("/nonexistent/path/that/does/not/exist.txt")
 
 
+class TestWordlistValidation(unittest.TestCase):
+    """
+    Per Q10: duplicates and whitespace-containing words must be rejected
+    outright. Silent dedup would mislead users about effective entropy;
+    embedded whitespace would break --dice-sep boundary semantics.
+    """
+
+    def _write(self, content: str):
+        import tempfile
+        from pathlib import Path
+
+        f = tempfile.NamedTemporaryFile(
+            mode="w", suffix=".txt", delete=False, encoding="utf-8"
+        )
+        f.write(content)
+        f.close()
+        return Path(f.name)
+
+    def test_duplicate_words_raise(self):
+        from openssl_encrypt.modules.diceware import (
+            WordlistValidationError,
+            load_wordlist,
+        )
+
+        tmp = self._write("alpha\nbravo\nalpha\ncharlie\n")
+        try:
+            with self.assertRaises(WordlistValidationError) as cm:
+                load_wordlist(tmp)
+            self.assertIn("duplicate", str(cm.exception).lower())
+            self.assertIn("alpha", str(cm.exception))
+        finally:
+            tmp.unlink()
+
+    def test_duplicate_in_eff_format_raises(self):
+        from openssl_encrypt.modules.diceware import (
+            WordlistValidationError,
+            load_wordlist,
+        )
+
+        tmp = self._write("11111\talpha\n11112\tbravo\n11113\talpha\n")
+        try:
+            with self.assertRaises(WordlistValidationError):
+                load_wordlist(tmp)
+        finally:
+            tmp.unlink()
+
+    def test_word_with_embedded_space_raises(self):
+        from openssl_encrypt.modules.diceware import (
+            WordlistValidationError,
+            load_wordlist,
+        )
+
+        # Plain-format file with a multi-word entry.
+        tmp = self._write("alpha\nfoo bar\ncharlie\n")
+        try:
+            with self.assertRaises(WordlistValidationError) as cm:
+                load_wordlist(tmp)
+            self.assertIn("whitespace", str(cm.exception).lower())
+        finally:
+            tmp.unlink()
+
+    def test_word_with_embedded_tab_raises(self):
+        from openssl_encrypt.modules.diceware import (
+            WordlistValidationError,
+            load_wordlist,
+        )
+
+        # A plain-format file where one "word" contains an embedded tab.
+        # We need this to not be misdetected as EFF format: first line is
+        # plain, then the bad line has the tab.
+        tmp = self._write("alpha\nfoo\tbar\ncharlie\n")
+        try:
+            with self.assertRaises(WordlistValidationError):
+                load_wordlist(tmp)
+        finally:
+            tmp.unlink()
+
+    def test_bundled_eff_wordlist_passes_validation(self):
+        """Sanity: the bundled EFF list has no dups and no whitespace-words."""
+        from openssl_encrypt.modules.diceware import load_wordlist
+
+        words = load_wordlist()
+        self.assertEqual(len(words), len(set(words)), "EFF list has duplicates?")
+        for w in words:
+            self.assertFalse(any(c.isspace() for c in w))
+
+
 if __name__ == "__main__":
     unittest.main()
