@@ -379,7 +379,12 @@ class TestGeneratePassphrase(unittest.TestCase):
         from openssl_encrypt.modules.diceware import generate_passphrase
 
         # 4 words → 3 separators in between (no leading/trailing).
-        phrase = generate_passphrase(count=4, sep="-")
+        # Use a controlled wordlist (no hyphens) so the count assertion is
+        # deterministic — the bundled EFF list contains 4 hyphenated words
+        # (drop-down, felt-tip, t-shirt, yo-yo) which would occasionally
+        # land in the random selection and inflate the separator count.
+        wl = [f"alpha{i:04d}" for i in range(2000)]
+        phrase = generate_passphrase(count=4, sep="-", wordlist=wl)
         self.assertEqual(phrase.count("-"), 3)
         self.assertFalse(phrase.startswith("-"))
         self.assertFalse(phrase.endswith("-"))
