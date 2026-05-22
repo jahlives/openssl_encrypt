@@ -303,7 +303,68 @@ class OnlykeyHSMPlugin(HSMPlugin):
     def get_hsm_pepper(
         self, salt: bytes, context: PluginSecurityContext
     ) -> PluginResult:
-        """Derive HSM pepper from salt. Implementation forthcoming."""
-        return PluginResult.error_result(
-            "OnlyKey HSM plugin not yet implemented"
-        )
+        """
+        Derive HSM pepper from salt using OnlyKey Challenge-Response.
+
+        Args:
+            salt: The encryption salt (16 bytes) to use as challenge
+            context: Security context with optional slot configuration
+
+        Returns:
+            PluginResult with hsm_pepper in data['hsm_pepper']
+        """
+        try:
+            if not self._check_libs_available():
+                return PluginResult.error_result(
+                    "yubikit library not installed. "
+                    "Install with: pip install yubikey-manager"
+                )
+
+            # Validate salt
+            if not salt or len(salt) != 16:
+                actual = len(salt) if salt else 0
+                return PluginResult.error_result(
+                    f"Invalid salt length: expected 16 bytes, got {actual}"
+                )
+
+            # Determine slot (manual or auto-detect)
+            slot = context.config.get("slot")
+
+            if slot:
+                # Manual slot specified — validate against OnlyKey range
+                if slot < self.MIN_SLOT or slot > self.MAX_SLOT:
+                    return PluginResult.error_result(
+                        f"Invalid OnlyKey slot: {slot}. "
+                        f"Must be {self.MIN_SLOT}..{self.MAX_SLOT}."
+                    )
+                logger.info(f"Using manually specified OnlyKey slot {slot}")
+            else:
+                # Auto-detect slot
+                if self._cached_slot:
+                    slot = self._cached_slot
+                    logger.info(f"Using cached OnlyKey slot {slot}")
+                else:
+                    logger.info("Auto-detecting OnlyKey Challenge-Response slot")
+                    slot = self._find_challenge_response_slot()
+                    if not slot:
+                        return PluginResult.error_result(
+                            "No OnlyKey with Challenge-Response found. "
+                            "Configure CR on slots 1..12 with the OnlyKey App, "
+                            "or specify the slot with --hsm-slot."
+                        )
+                    self._cached_slot = slot
+                    logger.info(f"Auto-detected OnlyKey slot {slot}")
+
+            # Perform Challenge-Response
+            logger.info(f"Performing Challenge-Response with OnlyKey slot {slot}")
+            response = self._calculate_challenge_response(salt, slot)
+
+            return PluginResult.success_result(
+                f"OnlyKey Challenge-Response successful (slot {slot})",
+                data={"hsm_pepper": response, "slot": slot},
+            )
+
+        except Exception as e:
+            error_msg = f"OnlyKey HSM plugin error: {e}"
+            logger.error(error_msg)
+            return PluginResult.error_result(error_msg)
