@@ -9,6 +9,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Diceware passphrase generation** for `generate-password`:
+  - `--dice` switches `generate-password` from character-based generation
+    to a Diceware-style passphrase (mutually exclusive with the
+    `--use-lowercase/uppercase/digits/special` flags).
+  - `--dice-count N` (default 10) — number of words. Defaults to 10 for a
+    conservative ~129 bits of entropy with the bundled EFF list.
+  - `--dice-sep SEP` (default `""`) — separator between words. Defaults to
+    empty for maximum compatibility with password fields that strip
+    whitespace.
+  - `--dice-list PATH` — custom wordlist; auto-detects EFF format
+    (`<dice>\t<word>`) vs plain one-word-per-line.
+  - `--force-wordlist` — override the 1024-word (10 bits/word) minimum
+    for custom wordlists. Default rejects undersized lists outright;
+    forcing emits a UserWarning but proceeds.
+  - The bundled
+    [EFF Large Wordlist](https://www.eff.org/dice) (7,776 words) ships
+    at `openssl_encrypt/data/eff_large_wordlist.txt` under
+    [CC BY 3.0 US](https://creativecommons.org/licenses/by/3.0/us/);
+    attribution lives in `openssl_encrypt/data/EFF_WORDLIST_LICENSE.txt`.
+  - Diceware mode prints `Passphrase entropy: X bits (N words)` to
+    stderr, then the passphrase via the existing display helper.
+  - Wordlist loader strict-validates: rejects duplicate words and
+    words containing whitespace (both would silently corrupt entropy
+    or boundary semantics).
+  - Policy interaction: in `--dice` mode only entropy- and length-based
+    policy checks apply; character-class and common-password checks are
+    skipped (they are orthogonal to passphrase security).
 - **OnlyKey Challenge-Response HSM plugin**: New `OnlykeyHSMPlugin`
   (`openssl_encrypt/plugins/hsm/onlykey_challenge_response/`) adds
   hardware-bound pepper derivation via OnlyKey devices (USB VID/PID

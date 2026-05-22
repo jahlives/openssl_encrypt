@@ -241,6 +241,28 @@ Centralized cryptographic algorithm registration and validation framework.
   [docs/migration-from-yubikey-only.md](docs/migration-from-yubikey-only.md)
   for adding OnlyKey to an existing YubiKey fleet.
 
+### Diceware Passphrase Generation
+
+`generate-password --dice` produces Diceware-style passphrases as an
+alternative to character-based generation:
+
+```bash
+# Default: 10 words from the bundled EFF Large Wordlist (~129 bits of entropy)
+openssl_encrypt generate-password --dice
+
+# Customize word count and separator
+openssl_encrypt generate-password --dice --dice-count 7 --dice-sep -
+
+# Bring your own wordlist (EFF format or plain text)
+openssl_encrypt generate-password --dice --dice-list ~/my-wordlist.txt
+```
+
+The bundled wordlist is the [EFF Large Wordlist for Passphrases](https://www.eff.org/dice)
+(7,776 words), redistributed under
+[Creative Commons Attribution 3.0 US](https://creativecommons.org/licenses/by/3.0/us/)
+with attribution in
+[`openssl_encrypt/data/EFF_WORDLIST_LICENSE.txt`](openssl_encrypt/data/EFF_WORDLIST_LICENSE.txt).
+
 ### Security Enhancements
 
 - SecureBytes implementation across all cryptographic registries (KDF, Cipher, Signature, KEM)
