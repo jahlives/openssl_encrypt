@@ -205,5 +205,82 @@ class TestCalculateChallengeResponse(unittest.TestCase):
         d3.open_connection.assert_not_called()
 
 
+class TestFindChallengeResponseSlot(unittest.TestCase):
+    """Auto-detection across OnlyKey's slot range (1..12)."""
+
+    def test_no_devices_returns_none(self):
+        plugin = OnlykeyHSMPlugin()
+        with patch.object(plugin, "_list_onlykey_devices", return_value=[]):
+            self.assertIsNone(plugin._find_challenge_response_slot())
+
+    def test_slot_1_responds_returns_1(self):
+        plugin = OnlykeyHSMPlugin()
+        device = _make_mock_device()
+        mock_session = MagicMock()
+        # Only slot 1 returns; all others raise
+        mock_session.calculate_hmac_sha1.side_effect = (
+            lambda slot, challenge: b"\x00" * 20
+            if slot == 1
+            else (_ for _ in ()).throw(RuntimeError("slot not configured"))
+        )
+        with patch.object(
+            plugin, "_list_onlykey_devices", return_value=[device]
+        ), patch("yubikit.yubiotp.YubiOtpSession", return_value=mock_session):
+            self.assertEqual(plugin._find_challenge_response_slot(), 1)
+
+    def test_slot_5_only_returns_5(self):
+        """Probe finds slot beyond YubiKey's 1..2 range (OnlyKey has 12)."""
+        plugin = OnlykeyHSMPlugin()
+        device = _make_mock_device()
+        mock_session = MagicMock()
+        mock_session.calculate_hmac_sha1.side_effect = (
+            lambda slot, challenge: b"\x55" * 20
+            if slot == 5
+            else (_ for _ in ()).throw(RuntimeError("not configured"))
+        )
+        with patch.object(
+            plugin, "_list_onlykey_devices", return_value=[device]
+        ), patch("yubikit.yubiotp.YubiOtpSession", return_value=mock_session):
+            self.assertEqual(plugin._find_challenge_response_slot(), 5)
+
+    def test_no_slot_configured_returns_none(self):
+        plugin = OnlykeyHSMPlugin()
+        device = _make_mock_device()
+        mock_session = MagicMock()
+        mock_session.calculate_hmac_sha1.side_effect = RuntimeError(
+            "slot not configured"
+        )
+        with patch.object(
+            plugin, "_list_onlykey_devices", return_value=[device]
+        ), patch("yubikit.yubiotp.YubiOtpSession", return_value=mock_session):
+            self.assertIsNone(plugin._find_challenge_response_slot())
+
+    def test_button_press_required_recognised_as_configured(self):
+        """If a slot times out waiting for OnlyKey button press, it IS CR."""
+        plugin = OnlykeyHSMPlugin()
+        device = _make_mock_device()
+        mock_session = MagicMock()
+        mock_session.calculate_hmac_sha1.side_effect = (
+            lambda slot, challenge: (_ for _ in ()).throw(
+                RuntimeError("timeout waiting for button press")
+            )
+            if slot == 3
+            else (_ for _ in ()).throw(RuntimeError("not configured"))
+        )
+        with patch.object(
+            plugin, "_list_onlykey_devices", return_value=[device]
+        ), patch("yubikit.yubiotp.YubiOtpSession", return_value=mock_session):
+            self.assertEqual(plugin._find_challenge_response_slot(), 3)
+
+    def test_enumeration_exception_returns_none(self):
+        plugin = OnlykeyHSMPlugin()
+        with patch.object(
+            plugin,
+            "_list_onlykey_devices",
+            side_effect=RuntimeError("USB error"),
+        ):
+            self.assertIsNone(plugin._find_challenge_response_slot())
+
+
 if __name__ == "__main__":
     unittest.main()
