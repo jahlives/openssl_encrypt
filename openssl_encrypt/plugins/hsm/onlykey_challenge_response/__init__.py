@@ -57,6 +57,10 @@ class OnlykeyHSMPlugin(HSMPlugin):
     ONLYKEY_VID = 0x1D50
     ONLYKEY_PID = 0x60FC
 
+    # OnlyKey supports 12 challenge-response slots (vs YubiKey's 2)
+    MIN_SLOT = 1
+    MAX_SLOT = 12
+
     def __init__(self):
         super().__init__(
             plugin_id="onlykey_hsm",
@@ -182,6 +186,68 @@ class OnlykeyHSMPlugin(HSMPlugin):
             if vid == self.ONLYKEY_VID and pid == self.ONLYKEY_PID:
                 devices.append(self._make_otp_device(path, pid))
         return devices
+
+    def _find_challenge_response_slot(self):
+        """
+        Auto-detect which OnlyKey slot has Challenge-Response configured.
+
+        Iterates slots MIN_SLOT..MAX_SLOT and probes each with a test
+        challenge. The first slot that responds (or that times out waiting
+        for the device button — which proves the slot IS configured for CR
+        but requires user interaction) is returned. If no slot responds,
+        returns None.
+
+        Returns:
+            Slot number (1..12) or None if no CR-configured slot found.
+        """
+        try:
+            from yubikit.yubiotp import YubiOtpSession
+        except ImportError:
+            return None
+
+        try:
+            devices = self._list_onlykey_devices()
+        except Exception as e:
+            logger.error(f"Error enumerating OnlyKey devices: {e}")
+            return None
+
+        if not devices:
+            logger.error("No OnlyKey device found")
+            return None
+
+        device = devices[0]
+        test_challenge = b"\x00" * 16
+
+        try:
+            with device.open_connection(None) as conn:
+                session = YubiOtpSession(conn)
+                for slot in range(self.MIN_SLOT, self.MAX_SLOT + 1):
+                    try:
+                        session.calculate_hmac_sha1(slot, test_challenge)
+                        logger.info(f"Challenge-Response found on slot {slot}")
+                        return slot
+                    except Exception as e:
+                        error_msg = str(e).lower()
+                        # A timeout / "press button" error means the slot IS
+                        # configured for CR (user just hasn't approved yet).
+                        if (
+                            "timeout" in error_msg
+                            or "touch" in error_msg
+                            or "button" in error_msg
+                            or "press" in error_msg
+                        ):
+                            logger.info(
+                                f"Challenge-Response found on slot {slot} "
+                                f"(requires button press)"
+                            )
+                            return slot
+                        logger.debug(f"Slot {slot} not configured for CR: {e}")
+                        continue
+        except Exception as e:
+            logger.error(f"Error probing OnlyKey slots: {e}")
+            return None
+
+        return None
 
     def _calculate_challenge_response(self, challenge: bytes, slot: int) -> bytes:
         """
