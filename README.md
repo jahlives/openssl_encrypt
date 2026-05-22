@@ -241,6 +241,36 @@ Centralized cryptographic algorithm registration and validation framework.
   [docs/migration-from-yubikey-only.md](docs/migration-from-yubikey-only.md)
   for adding OnlyKey to an existing YubiKey fleet.
 
+### `info` action — encrypted file inspection with CLI reconstruction
+
+`openssl_encrypt info <file>` reads the metadata of an encrypted file
+without decrypting it. In addition to the human-readable summary, the
+output now ends with a "Reconstructed CLI" section showing the
+`openssl_encrypt encrypt` command that would produce equivalent
+encryption settings on a fresh file. Salt and per-file random values
+are deliberately NOT reconstructed (only the deterministic
+configuration: cipher / cascade chain, KDFs, hash rounds, HSM binding,
+pepper).
+
+```bash
+$ openssl_encrypt info myfile.enc
+File Information:
+  Format Version:    9
+  ...
+
+  Reconstructed CLI:
+    openssl_encrypt encrypt \
+      --algorithm aes-gcm \
+      --enable-argon2 \
+      --argon2-rounds 10 \
+      --argon2-time 3 \
+      --argon2-memory 65536 \
+      ...
+```
+
+JSON mode (`--json`) is unchanged — the JSON payload remains the raw
+metadata dict so scripts piping into `jq` continue working.
+
 ### `derive-password` — HSM-aware deterministic derivation
 
 The `derive-password` action runs a user-supplied password through the
