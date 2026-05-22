@@ -577,5 +577,83 @@ class TestDerivePasswordHsm(unittest.TestCase):
         self.assertIn("hsm", err.lower())
 
 
+class TestDerivePasswordHsmRandomSaltReminder(unittest.TestCase):
+    """
+    When --hsm is set without --salt (random salt mode), emit a stderr
+    reminder so the user knows reproducing the output requires the same
+    password, the same salt, AND the same hardware-loaded secret.
+    """
+
+    def _mock_yubikey_plugin(self, pepper: bytes = b"\xaa" * 20):
+        from openssl_encrypt.modules.plugin_system.plugin_base import PluginResult
+
+        fake = mock.MagicMock()
+        fake.plugin_id = "yubikey_hsm"
+        fake.name = "Yubikey Challenge-Response HSM"
+        fake.get_required_capabilities.return_value = set()
+        fake.initialize.return_value = PluginResult.success_result("initialized")
+        fake.get_hsm_pepper.return_value = PluginResult.success_result(
+            "ok",
+            data={"hsm_pepper": pepper, "slot": 1},
+        )
+        return mock.patch(
+            "openssl_encrypt.plugins.hsm.yubikey_challenge_response.YubikeyHSMPlugin",
+            return_value=fake,
+        )
+
+    def _run(self, extra_args):
+        import contextlib
+
+        base = [
+            "crypt.py",
+            "--quiet",
+            "derive-password",
+            "--force-password",
+            "--password",
+            "testpassword123!",
+        ] + extra_args
+        sys.argv = base
+        stdout_capture, stderr_capture = io.StringIO(), io.StringIO()
+        old_stdout, old_stderr = sys.stdout, sys.stderr
+        exit_code = None
+        try:
+            sys.stdout, sys.stderr = stdout_capture, stderr_capture
+            with contextlib.ExitStack() as stack:
+                stack.enter_context(self._mock_yubikey_plugin())
+                with mock.patch("sys.exit") as mock_exit:
+                    mock_exit.side_effect = SystemExit
+                    try:
+                        cli_main()
+                    except SystemExit as e:
+                        exit_code = (
+                            e.code
+                            if e.code is not None
+                            else (mock_exit.call_args[0][0] if mock_exit.called else 0)
+                        )
+        finally:
+            sys.stdout, sys.stderr = old_stdout, old_stderr
+        return exit_code, stdout_capture.getvalue(), stderr_capture.getvalue()
+
+    def test_hsm_with_random_salt_emits_reminder(self):
+        """--hsm + no --salt → reminder about three reproducibility inputs."""
+        rc, _out, err = self._run(["--hsm", "yubikey"])
+        self.assertEqual(rc, 0)
+        err_lower = err.lower()
+        self.assertIn("hardware token", err_lower)
+        # The reminder must mention all three reproducibility inputs:
+        self.assertIn("password", err_lower)
+        self.assertIn("salt", err_lower)
+        self.assertIn("secret", err_lower)
+
+    def test_hsm_with_explicit_salt_does_not_emit_reminder(self):
+        """--hsm + explicit --salt → user already controls salt; no nag."""
+        rc, _out, err = self._run(
+            ["--hsm", "yubikey", "--salt", "bb" * 16]
+        )
+        self.assertEqual(rc, 0)
+        # The reminder phrase must not appear.
+        self.assertNotIn("hardware token", err.lower())
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -5432,6 +5432,7 @@ def main_with_args(args=None):
 
         # Resolve salt
         salt_hex = getattr(args, "salt", None)
+        salt_was_auto_generated = False
         if salt_hex:
             try:
                 salt = bytes.fromhex(salt_hex)
@@ -5441,11 +5442,26 @@ def main_with_args(args=None):
         else:
             salt_length = getattr(args, "salt_length", 16) or 16
             salt = secrets.token_bytes(salt_length)
+            salt_was_auto_generated = True
             # Always show auto-generated salt so user can reproduce
             eprint(f"Salt (hex): {salt.hex()}")
 
         if getattr(args, "show_salt", False):
             eprint(f"Salt (hex): {salt.hex()}")
+
+        # When --hsm is set without an explicit --salt, reproducing the
+        # output needs THREE inputs to match: password, the auto-generated
+        # salt (echoed above), AND the 20-byte secret loaded on the
+        # hardware token. The token-secret leg isn't visible from the host,
+        # so re-provisioning the device would silently change future
+        # outputs — emit a stderr reminder per Q17.
+        if getattr(args, "hsm", None) and salt_was_auto_generated:
+            eprint(
+                "Note: reproducing this output requires the same password, "
+                "the same salt (echoed above), AND the same HMAC-SHA1 secret "
+                "loaded on the hardware token. Re-provisioning the token will "
+                "silently change the output."
+            )
 
         # Build hash_config from args
         hash_config = {}
