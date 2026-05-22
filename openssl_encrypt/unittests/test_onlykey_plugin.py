@@ -481,5 +481,57 @@ class TestEdgeCaseChallengeSizes(unittest.TestCase):
         mock_session.calculate_hmac_sha1.assert_called_once_with(1, challenge)
 
 
+class TestEdgeCaseDeviceDisconnect(unittest.TestCase):
+    """Device unplugged mid-operation surfaces a clear error, not a crash."""
+
+    def test_disconnect_during_session_open(self):
+        """USB disconnect at connection open → user-facing error result."""
+        plugin = OnlykeyHSMPlugin()
+        device = MagicMock()
+        # open_connection raises (device gone between enumeration and open)
+        device.open_connection.side_effect = OSError(
+            "Errno 19: No such device"
+        )
+
+        ctx = _make_context(plugin, slot=1)
+        with patch.object(plugin, "_list_onlykey_devices", return_value=[device]):
+            result = plugin.get_hsm_pepper(b"\x00" * 16, ctx)
+
+        self.assertFalse(result.success)
+        self.assertIn("OnlyKey", result.message)
+
+    def test_disconnect_mid_hmac_call(self):
+        """USB disconnect during HMAC call → user-facing error result."""
+        plugin = OnlykeyHSMPlugin()
+        device = _make_mock_device()
+        mock_session = MagicMock()
+        mock_session.calculate_hmac_sha1.side_effect = IOError(
+            "device disconnected during transfer"
+        )
+
+        ctx = _make_context(plugin, slot=1)
+        with patch.object(
+            plugin, "_list_onlykey_devices", return_value=[device]
+        ), patch("yubikit.yubiotp.YubiOtpSession", return_value=mock_session):
+            result = plugin.get_hsm_pepper(b"\x00" * 16, ctx)
+
+        self.assertFalse(result.success)
+        # Generic CR-failed wrapper covers it (not a special-cased message)
+        self.assertIn("Challenge-Response", result.message)
+
+    def test_disconnect_between_enumerate_and_use(self):
+        """Race: device listed, then unplugged before HMAC call."""
+        plugin = OnlykeyHSMPlugin()
+        # First call lists one device; that device's open_connection then fails.
+        device = MagicMock()
+        device.open_connection.side_effect = RuntimeError("device removed")
+
+        ctx = _make_context(plugin, slot=1)
+        with patch.object(plugin, "_list_onlykey_devices", return_value=[device]):
+            result = plugin.get_hsm_pepper(b"\x00" * 16, ctx)
+
+        self.assertFalse(result.success)
+
+
 if __name__ == "__main__":
     unittest.main()
