@@ -148,5 +148,81 @@ class TestHsmSlotChoicesRemoved(unittest.TestCase):
         self.assertNotIn("choices=[1, 2]", m.group(0))
 
 
+class TestOnlykeySubcommands(unittest.TestCase):
+    """`openssl_encrypt hsm onlykey-list` and `hsm onlykey-test` subcommands."""
+
+    def test_subparser_defines_onlykey_list_subcommand(self):
+        src = _read(SUBPARSER)
+        self.assertRegex(
+            src,
+            r'add_parser\(\s*["\']onlykey-list["\']',
+            msg="setup_hsm_parser must define an onlykey-list subcommand "
+            "alongside fido2-list.",
+        )
+
+    def test_subparser_defines_onlykey_test_subcommand(self):
+        src = _read(SUBPARSER)
+        self.assertRegex(
+            src,
+            r'add_parser\(\s*["\']onlykey-test["\']',
+            msg="setup_hsm_parser must define an onlykey-test subcommand "
+            "alongside fido2-test.",
+        )
+
+    def test_dispatch_handles_onlykey_list(self):
+        src = _read(CRYPT_CLI)
+        self.assertRegex(
+            src,
+            r'elif\s+action\s*==\s*["\']onlykey-list["\']',
+            msg="handle_hsm_command must dispatch the onlykey-list action.",
+        )
+
+    def test_dispatch_handles_onlykey_test(self):
+        src = _read(CRYPT_CLI)
+        self.assertRegex(
+            src,
+            r'elif\s+action\s*==\s*["\']onlykey-test["\']',
+            msg="handle_hsm_command must dispatch the onlykey-test action.",
+        )
+
+    def test_handler_does_not_require_fido2_for_onlykey_actions(self):
+        """
+        The current handler exits if FIDO2 isn't available, even for
+        non-fido2 actions. The OnlyKey subcommands must work without
+        FIDO2 installed.
+        """
+        src = _read(CRYPT_CLI)
+        # Find handle_hsm_command function body
+        m = re.search(
+            r"def handle_hsm_command\(args\):.*?(?=^def )",
+            src,
+            re.DOTALL | re.MULTILINE,
+        )
+        self.assertIsNotNone(m, "Could not find handle_hsm_command")
+        body = m.group(0)
+        # Anywhere a "❌ Error: FIDO2 library not available" exit appears, it
+        # must be guarded by a check that the current action is a fido2-* one
+        # (not an unconditional top-of-function exit).
+        # Specifically: there should NOT be an early sys.exit before action
+        # is even known.
+        fido2_check_indices = [
+            m.start() for m in re.finditer(r"FIDO2 library not available", body)
+        ]
+        action_assign_index = body.find("args.hsm_action")
+        self.assertGreater(
+            action_assign_index,
+            0,
+            "Could not locate args.hsm_action read in handle_hsm_command",
+        )
+        for idx in fido2_check_indices:
+            self.assertGreater(
+                idx,
+                action_assign_index,
+                msg="FIDO2 availability check appears before action is read — "
+                "this would block onlykey-* subcommands from running on a "
+                "machine without fido2 installed.",
+            )
+
+
 if __name__ == "__main__":
     unittest.main()
