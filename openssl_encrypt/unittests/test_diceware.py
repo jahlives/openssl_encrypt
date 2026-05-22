@@ -73,5 +73,99 @@ class TestEffWordlistLicensePresent(unittest.TestCase):
         self.assertIn("CC BY 3.0 US", text)
 
 
+class TestLoadWordlist(unittest.TestCase):
+    """The load_wordlist() function: auto-detect EFF vs plain text format."""
+
+    def test_default_path_loads_bundled_eff_wordlist(self):
+        """load_wordlist() with no arguments returns the bundled EFF list."""
+        from openssl_encrypt.modules.diceware import load_wordlist
+
+        words = load_wordlist()
+        self.assertEqual(len(words), 7776)
+        # First and last words from EFF Large Wordlist
+        self.assertEqual(words[0], "abacus")
+        self.assertEqual(words[-1], "zoom")
+
+    def test_load_eff_format_strips_dice_prefix(self):
+        """EFF format '<5-digit>\\t<word>' yields just the word."""
+        import tempfile
+        from pathlib import Path
+
+        from openssl_encrypt.modules.diceware import load_wordlist
+
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".txt", delete=False
+        ) as f:
+            f.write("11111\talpha\n11112\tbravo\n11113\tcharlie\n")
+            tmp = Path(f.name)
+        try:
+            words = load_wordlist(tmp)
+            self.assertEqual(words, ["alpha", "bravo", "charlie"])
+        finally:
+            tmp.unlink()
+
+    def test_load_plain_format(self):
+        """Plain text: one word per line, no prefix."""
+        import tempfile
+        from pathlib import Path
+
+        from openssl_encrypt.modules.diceware import load_wordlist
+
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".txt", delete=False
+        ) as f:
+            f.write("alpha\nbravo\ncharlie\n")
+            tmp = Path(f.name)
+        try:
+            words = load_wordlist(tmp)
+            self.assertEqual(words, ["alpha", "bravo", "charlie"])
+        finally:
+            tmp.unlink()
+
+    def test_load_skips_blank_lines_and_strips_whitespace(self):
+        """Blank lines ignored; trailing whitespace stripped."""
+        import tempfile
+        from pathlib import Path
+
+        from openssl_encrypt.modules.diceware import load_wordlist
+
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".txt", delete=False
+        ) as f:
+            f.write("\nalpha  \n\nbravo\n   \ncharlie\n\n")
+            tmp = Path(f.name)
+        try:
+            words = load_wordlist(tmp)
+            self.assertEqual(words, ["alpha", "bravo", "charlie"])
+        finally:
+            tmp.unlink()
+
+    def test_load_accepts_str_path(self):
+        """Path can be str, not just Path object."""
+        import tempfile
+
+        from openssl_encrypt.modules.diceware import load_wordlist
+
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".txt", delete=False
+        ) as f:
+            f.write("apple\nbanana\n")
+            tmp_str = f.name
+        try:
+            words = load_wordlist(tmp_str)
+            self.assertEqual(words, ["apple", "banana"])
+        finally:
+            import os
+
+            os.unlink(tmp_str)
+
+    def test_load_nonexistent_path_raises(self):
+        """Clear error on missing file."""
+        from openssl_encrypt.modules.diceware import load_wordlist
+
+        with self.assertRaises((FileNotFoundError, OSError)):
+            load_wordlist("/nonexistent/path/that/does/not/exist.txt")
+
+
 if __name__ == "__main__":
     unittest.main()
