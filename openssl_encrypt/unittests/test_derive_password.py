@@ -473,7 +473,13 @@ class TestDerivePasswordHsm(unittest.TestCase):
     FIXED_SALT = "aa" * 16
 
     def _run(self, extra_args, password="testpassword123!", patches=()):
-        """Run derive-password with optional unittest.mock.patch contexts."""
+        """Run derive-password with optional unittest.mock.patch contexts.
+
+        Always enables Argon2 with minimal cost so generate_key actually
+        runs the KDF — without any KDF/hash flags, derive-password
+        short-circuits to ``password || salt`` and the HSM pepper would
+        be truncated off the end, defeating the test's purpose.
+        """
         import contextlib
 
         base = [
@@ -485,6 +491,15 @@ class TestDerivePasswordHsm(unittest.TestCase):
             password,
             "--salt",
             self.FIXED_SALT,
+            "--enable-argon2",
+            "--argon2-rounds",
+            "1",
+            "--argon2-time",
+            "1",
+            "--argon2-memory",
+            "8",
+            "--argon2-parallelism",
+            "1",
         ]
         sys.argv = base + extra_args
         stdout_capture, stderr_capture = io.StringIO(), io.StringIO()
