@@ -296,6 +296,12 @@ class OnlykeyHSMPlugin(HSMPlugin):
                 )
                 return response
         except Exception as e:
+            error_text = str(e).lower()
+            if "locked" in error_text:
+                raise RuntimeError(
+                    "OnlyKey is locked. Enter your PIN on the OnlyKey "
+                    "buttons to unlock it, then retry."
+                ) from e
             raise RuntimeError(
                 f"OnlyKey Challenge-Response failed: {e}"
             ) from e

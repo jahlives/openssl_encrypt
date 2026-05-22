@@ -402,5 +402,30 @@ class TestPluginInitialize(unittest.TestCase):
         self.assertIn("initialized", result.message.lower())
 
 
+class TestEdgeCaseLockedDevice(unittest.TestCase):
+    """OnlyKey locked-device handling (PIN must be entered on device buttons)."""
+
+    def test_locked_device_error_surfaces_unlock_hint(self):
+        plugin = OnlykeyHSMPlugin()
+        device = _make_mock_device()
+        mock_session = MagicMock()
+        mock_session.calculate_hmac_sha1.side_effect = RuntimeError(
+            "OnlyKey is locked, enter PIN to unlock"
+        )
+
+        ctx = _make_context(plugin, slot=1)
+        with patch.object(
+            plugin, "_list_onlykey_devices", return_value=[device]
+        ), patch("yubikit.yubiotp.YubiOtpSession", return_value=mock_session):
+            result = plugin.get_hsm_pepper(b"\x00" * 16, ctx)
+
+        self.assertFalse(result.success)
+        # The user-facing message must tell them to unlock on device buttons.
+        msg = result.message.lower()
+        self.assertIn("locked", msg)
+        self.assertIn("pin", msg)
+        self.assertIn("button", msg)
+
+
 if __name__ == "__main__":
     unittest.main()
