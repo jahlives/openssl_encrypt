@@ -137,5 +137,73 @@ class TestOnlykeyDeviceEnumeration(unittest.TestCase):
         self.assertEqual(len(devices), 3)
 
 
+def _make_mock_device():
+    """Build a device-like object whose open_connection yields a ctx manager."""
+    device = MagicMock()
+    ctx = MagicMock()
+    ctx.__enter__ = MagicMock(return_value=MagicMock())
+    ctx.__exit__ = MagicMock(return_value=False)
+    device.open_connection.return_value = ctx
+    return device
+
+
+class TestCalculateChallengeResponse(unittest.TestCase):
+    """The low-level HMAC-SHA1 call against an OnlyKey via YubiOtpSession."""
+
+    def test_returns_session_response_bytes(self):
+        plugin = OnlykeyHSMPlugin()
+        device = _make_mock_device()
+        expected = b"\xab" * 20
+
+        mock_session = MagicMock()
+        mock_session.calculate_hmac_sha1.return_value = expected
+
+        with patch.object(
+            plugin, "_list_onlykey_devices", return_value=[device]
+        ), patch("yubikit.yubiotp.YubiOtpSession", return_value=mock_session):
+            result = plugin._calculate_challenge_response(b"\x00" * 16, slot=1)
+
+        self.assertEqual(result, expected)
+        mock_session.calculate_hmac_sha1.assert_called_once_with(1, b"\x00" * 16)
+
+    def test_no_device_raises_runtime_error(self):
+        plugin = OnlykeyHSMPlugin()
+        with patch.object(plugin, "_list_onlykey_devices", return_value=[]):
+            with self.assertRaises(RuntimeError) as cm:
+                plugin._calculate_challenge_response(b"\x00" * 16, slot=1)
+        self.assertIn("OnlyKey", str(cm.exception))
+
+    def test_session_exception_wraps_into_runtime_error(self):
+        plugin = OnlykeyHSMPlugin()
+        device = _make_mock_device()
+        mock_session = MagicMock()
+        mock_session.calculate_hmac_sha1.side_effect = RuntimeError(
+            "device timeout"
+        )
+
+        with patch.object(
+            plugin, "_list_onlykey_devices", return_value=[device]
+        ), patch("yubikit.yubiotp.YubiOtpSession", return_value=mock_session):
+            with self.assertRaises(RuntimeError) as cm:
+                plugin._calculate_challenge_response(b"\x00" * 16, slot=1)
+        self.assertIn("OnlyKey Challenge-Response failed", str(cm.exception))
+
+    def test_uses_first_device_when_fleet_attached(self):
+        plugin = OnlykeyHSMPlugin()
+        d1, d2, d3 = _make_mock_device(), _make_mock_device(), _make_mock_device()
+        mock_session = MagicMock()
+        mock_session.calculate_hmac_sha1.return_value = b"\xcc" * 20
+
+        with patch.object(
+            plugin, "_list_onlykey_devices", return_value=[d1, d2, d3]
+        ), patch("yubikit.yubiotp.YubiOtpSession", return_value=mock_session):
+            plugin._calculate_challenge_response(b"\x00" * 16, slot=2)
+
+        # Only the first device should be opened
+        d1.open_connection.assert_called_once()
+        d2.open_connection.assert_not_called()
+        d3.open_connection.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

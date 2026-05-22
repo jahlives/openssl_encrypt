@@ -183,6 +183,57 @@ class OnlykeyHSMPlugin(HSMPlugin):
                 devices.append(self._make_otp_device(path, pid))
         return devices
 
+    def _calculate_challenge_response(self, challenge: bytes, slot: int) -> bytes:
+        """
+        Perform HMAC-SHA1 Challenge-Response against the first connected OnlyKey.
+
+        OnlyKey uses the YubiKey HMAC-SHA1 wire protocol, so we wrap an
+        OnlyKey HID device with yubikit's YubiOtpSession and call
+        calculate_hmac_sha1. The response is the 20-byte HMAC-SHA1(secret,
+        challenge), where `secret` is the 20-byte chalresp key the user has
+        loaded into the device's chosen slot via the OnlyKey App.
+
+        Args:
+            challenge: bytes to feed as HMAC input (typically the encryption salt)
+            slot: OnlyKey chalresp slot (1..12)
+
+        Returns:
+            20-byte HMAC-SHA1 response
+
+        Raises:
+            RuntimeError: if no device attached, device not responsive, etc.
+        """
+        try:
+            from yubikit.yubiotp import YubiOtpSession
+        except ImportError as e:
+            raise RuntimeError(
+                f"yubikit not installed: {e}. "
+                f"Install with: pip install yubikey-manager"
+            ) from e
+
+        devices = self._list_onlykey_devices()
+        if not devices:
+            raise RuntimeError("No OnlyKey device found")
+
+        device = devices[0]
+        try:
+            with device.open_connection(None) as conn:
+                session = YubiOtpSession(conn)
+                logger.info(
+                    f"Performing OnlyKey Challenge-Response on slot {slot}"
+                )
+                response = session.calculate_hmac_sha1(slot, challenge)
+                logger.info(
+                    f"OnlyKey Challenge-Response successful: "
+                    f"challenge={len(challenge)} bytes, "
+                    f"response={len(response)} bytes"
+                )
+                return response
+        except Exception as e:
+            raise RuntimeError(
+                f"OnlyKey Challenge-Response failed: {e}"
+            ) from e
+
     def get_hsm_pepper(
         self, salt: bytes, context: PluginSecurityContext
     ) -> PluginResult:
