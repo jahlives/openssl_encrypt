@@ -467,5 +467,115 @@ class TestDerivePasswordConfirm(unittest.TestCase):
         self.assertRegex(stdout_capture.getvalue().strip(), r"^[0-9a-f]+$")
 
 
+class TestDerivePasswordHsm(unittest.TestCase):
+    """The --hsm flag plumbs a hardware-derived pepper into the KDF cascade."""
+
+    FIXED_SALT = "aa" * 16
+
+    def _run(self, extra_args, password="testpassword123!", patches=()):
+        """Run derive-password with optional unittest.mock.patch contexts."""
+        import contextlib
+
+        base = [
+            "crypt.py",
+            "--quiet",
+            "derive-password",
+            "--force-password",
+            "--password",
+            password,
+            "--salt",
+            self.FIXED_SALT,
+        ]
+        sys.argv = base + extra_args
+        stdout_capture, stderr_capture = io.StringIO(), io.StringIO()
+        old_stdout, old_stderr = sys.stdout, sys.stderr
+        exit_code = None
+        try:
+            sys.stdout = stdout_capture
+            sys.stderr = stderr_capture
+            with contextlib.ExitStack() as stack:
+                for p in patches:
+                    stack.enter_context(p)
+                with mock.patch("sys.exit") as mock_exit:
+                    mock_exit.side_effect = SystemExit
+                    try:
+                        cli_main()
+                    except SystemExit as e:
+                        exit_code = (
+                            e.code
+                            if e.code is not None
+                            else (mock_exit.call_args[0][0] if mock_exit.called else 0)
+                        )
+        finally:
+            sys.stdout, sys.stderr = old_stdout, old_stderr
+        return exit_code, stdout_capture.getvalue(), stderr_capture.getvalue()
+
+    def _mock_yubikey_plugin(self, pepper: bytes):
+        """Patch YubikeyHSMPlugin so its get_hsm_pepper returns a fixed pepper."""
+        from openssl_encrypt.modules.plugin_system.plugin_base import PluginResult
+
+        fake_plugin = mock.MagicMock()
+        fake_plugin.plugin_id = "yubikey_hsm"
+        fake_plugin.name = "Yubikey Challenge-Response HSM"
+        fake_plugin.get_required_capabilities.return_value = set()
+        fake_plugin.initialize.return_value = PluginResult.success_result("initialized")
+        fake_plugin.get_hsm_pepper.return_value = PluginResult.success_result(
+            "ok",
+            data={"hsm_pepper": pepper, "slot": 1},
+        )
+        return mock.patch(
+            "openssl_encrypt.plugins.hsm.yubikey_challenge_response.YubikeyHSMPlugin",
+            return_value=fake_plugin,
+        )
+
+    def test_hsm_yubikey_alters_output(self):
+        """With same password+salt, --hsm yubikey produces a different output."""
+        # Run 1: no HSM
+        rc1, out1, _err1 = self._run([])
+        self.assertEqual(rc1, 0)
+
+        # Run 2: HSM yubikey with a fixed pepper
+        rc2, out2, _err2 = self._run(
+            ["--hsm", "yubikey"],
+            patches=[self._mock_yubikey_plugin(b"\xab" * 20)],
+        )
+        self.assertEqual(rc2, 0)
+        self.assertNotEqual(out1.strip(), out2.strip())
+
+    def test_hsm_yubikey_deterministic_for_same_pepper(self):
+        """Same pepper → same output (the property the use case needs)."""
+        pepper = b"\xcd" * 20
+        rc1, out1, _ = self._run(
+            ["--hsm", "yubikey"],
+            patches=[self._mock_yubikey_plugin(pepper)],
+        )
+        rc2, out2, _ = self._run(
+            ["--hsm", "yubikey"],
+            patches=[self._mock_yubikey_plugin(pepper)],
+        )
+        self.assertEqual(rc1, 0)
+        self.assertEqual(rc2, 0)
+        self.assertEqual(out1.strip(), out2.strip())
+
+    def test_hsm_yubikey_different_peppers_differ(self):
+        """Different peppers → different outputs."""
+        rc1, out1, _ = self._run(
+            ["--hsm", "yubikey"],
+            patches=[self._mock_yubikey_plugin(b"\x11" * 20)],
+        )
+        rc2, out2, _ = self._run(
+            ["--hsm", "yubikey"],
+            patches=[self._mock_yubikey_plugin(b"\x22" * 20)],
+        )
+        self.assertEqual(rc1, 0)
+        self.assertEqual(rc2, 0)
+        self.assertNotEqual(out1.strip(), out2.strip())
+
+    def test_unknown_hsm_value_errors(self):
+        rc, _out, err = self._run(["--hsm", "no-such-plugin"])
+        self.assertNotEqual(rc, 0)
+        self.assertIn("hsm", err.lower())
+
+
 if __name__ == "__main__":
     unittest.main()
