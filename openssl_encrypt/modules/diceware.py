@@ -17,8 +17,15 @@ from __future__ import annotations
 
 import importlib.resources
 import re
+import warnings
 from pathlib import Path
 from typing import List, Optional, Union
+
+
+# A wordlist smaller than this yields less than 10 bits of entropy per
+# word, which is widely considered the minimum for passphrase use. The
+# bundled EFF Large Wordlist (7776 words) provides ~12.92 bits/word.
+MIN_WORDLIST_SIZE = 1024
 
 
 _DEFAULT_WORDLIST_RESOURCE = "data/eff_large_wordlist.txt"
@@ -45,6 +52,8 @@ def _default_wordlist_path() -> Path:
 
 def load_wordlist(
     path: Optional[Union[str, Path]] = None,
+    *,
+    force_small: bool = False,
 ) -> List[str]:
     """
     Load a wordlist from disk, auto-detecting EFF vs plain text format.
@@ -52,6 +61,10 @@ def load_wordlist(
     Args:
         path: Path to the wordlist file. If ``None``, loads the bundled
             EFF Large Wordlist.
+        force_small: If True, allow wordlists smaller than
+            :data:`MIN_WORDLIST_SIZE` (1024 words) — generation proceeds
+            but a UserWarning is emitted. If False (default), a small
+            wordlist raises :class:`WordlistValidationError`.
 
     Returns:
         Words in file order, with blank lines skipped and surrounding
@@ -60,6 +73,8 @@ def load_wordlist(
 
     Raises:
         FileNotFoundError / OSError: if the path cannot be read.
+        WordlistValidationError: on duplicates, whitespace-words, or a
+            small list when ``force_small=False``.
     """
     if path is None:
         path = _default_wordlist_path()
@@ -95,17 +110,20 @@ def load_wordlist(
         else:
             words.append(stripped)
 
-    _validate_wordlist(words)
+    _validate_wordlist(words, force_small=force_small)
     return words
 
 
-def _validate_wordlist(words: List[str]) -> None:
+def _validate_wordlist(words: List[str], *, force_small: bool = False) -> None:
     """
     Reject wordlists with duplicates or whitespace-containing words.
 
     Silent dedup is dangerous: it changes effective entropy without the
     user noticing. Embedded whitespace breaks --dice-sep boundary
     semantics. Per Q10, both cases are hard errors.
+
+    Small wordlists (< :data:`MIN_WORDLIST_SIZE`) are rejected unless
+    ``force_small=True``; with the override they only emit a UserWarning.
     """
     # Whitespace-in-words: every character of every word must be non-space.
     for w in words:
@@ -125,3 +143,17 @@ def _validate_wordlist(words: List[str]) -> None:
                 f"Silent deduplication would mislead about effective entropy."
             )
         seen.add(w)
+
+    # Size threshold check (last so the more-specific errors above fire first).
+    if len(words) < MIN_WORDLIST_SIZE:
+        msg = (
+            f"wordlist is small ({len(words)} words, < {MIN_WORDLIST_SIZE} "
+            f"= 10 bits/word minimum). Passphrase entropy will be lower than "
+            f"a standard wordlist provides."
+        )
+        if not force_small:
+            raise WordlistValidationError(
+                msg + " Pass force_small=True (or the --force-wordlist CLI "
+                "flag) to allow this list anyway."
+            )
+        warnings.warn(msg, UserWarning, stacklevel=3)

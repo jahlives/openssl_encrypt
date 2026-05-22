@@ -99,7 +99,7 @@ class TestLoadWordlist(unittest.TestCase):
             f.write("11111\talpha\n11112\tbravo\n11113\tcharlie\n")
             tmp = Path(f.name)
         try:
-            words = load_wordlist(tmp)
+            words = load_wordlist(tmp, force_small=True)
             self.assertEqual(words, ["alpha", "bravo", "charlie"])
         finally:
             tmp.unlink()
@@ -117,7 +117,7 @@ class TestLoadWordlist(unittest.TestCase):
             f.write("alpha\nbravo\ncharlie\n")
             tmp = Path(f.name)
         try:
-            words = load_wordlist(tmp)
+            words = load_wordlist(tmp, force_small=True)
             self.assertEqual(words, ["alpha", "bravo", "charlie"])
         finally:
             tmp.unlink()
@@ -135,7 +135,7 @@ class TestLoadWordlist(unittest.TestCase):
             f.write("\nalpha  \n\nbravo\n   \ncharlie\n\n")
             tmp = Path(f.name)
         try:
-            words = load_wordlist(tmp)
+            words = load_wordlist(tmp, force_small=True)
             self.assertEqual(words, ["alpha", "bravo", "charlie"])
         finally:
             tmp.unlink()
@@ -152,7 +152,7 @@ class TestLoadWordlist(unittest.TestCase):
             f.write("apple\nbanana\n")
             tmp_str = f.name
         try:
-            words = load_wordlist(tmp_str)
+            words = load_wordlist(tmp_str, force_small=True)
             self.assertEqual(words, ["apple", "banana"])
         finally:
             import os
@@ -252,6 +252,102 @@ class TestWordlistValidation(unittest.TestCase):
         self.assertEqual(len(words), len(set(words)), "EFF list has duplicates?")
         for w in words:
             self.assertFalse(any(c.isspace() for c in w))
+
+
+class TestSmallWordlistThreshold(unittest.TestCase):
+    """
+    Per Q10: small wordlists (< 1024 words = < 10 bits/word) are rejected
+    by default; user must pass force_small=True to override (the CLI
+    layer exposes this as --force-wordlist).
+    """
+
+    def _write_small(self, n_words: int):
+        import tempfile
+        from pathlib import Path
+
+        f = tempfile.NamedTemporaryFile(
+            mode="w", suffix=".txt", delete=False, encoding="utf-8"
+        )
+        for i in range(n_words):
+            f.write(f"word{i:05d}\n")
+        f.close()
+        return Path(f.name)
+
+    def test_small_wordlist_raises_by_default(self):
+        from openssl_encrypt.modules.diceware import (
+            WordlistValidationError,
+            load_wordlist,
+        )
+
+        tmp = self._write_small(100)
+        try:
+            with self.assertRaises(WordlistValidationError) as cm:
+                load_wordlist(tmp)
+            msg = str(cm.exception).lower()
+            self.assertIn("small", msg)
+            self.assertIn("100", str(cm.exception))
+            self.assertIn("force_small", msg)
+        finally:
+            tmp.unlink()
+
+    def test_small_wordlist_warns_with_force_small(self):
+        """With force_small=True the load proceeds but emits a UserWarning."""
+        import warnings
+
+        from openssl_encrypt.modules.diceware import load_wordlist
+
+        tmp = self._write_small(100)
+        try:
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter("always")
+                words = load_wordlist(tmp, force_small=True)
+            self.assertEqual(len(words), 100)
+            # Exactly one warning about the small list size.
+            small_warnings = [
+                w for w in caught if "small" in str(w.message).lower()
+            ]
+            self.assertEqual(len(small_warnings), 1)
+        finally:
+            tmp.unlink()
+
+    def test_threshold_boundary_exactly_1024_words_ok(self):
+        """1024 words = log2(1024) = 10 bits/word — at the threshold, allow."""
+        from openssl_encrypt.modules.diceware import load_wordlist
+
+        tmp = self._write_small(1024)
+        try:
+            words = load_wordlist(tmp)
+            self.assertEqual(len(words), 1024)
+        finally:
+            tmp.unlink()
+
+    def test_threshold_just_below_1023_words_raises(self):
+        from openssl_encrypt.modules.diceware import (
+            WordlistValidationError,
+            load_wordlist,
+        )
+
+        tmp = self._write_small(1023)
+        try:
+            with self.assertRaises(WordlistValidationError):
+                load_wordlist(tmp)
+        finally:
+            tmp.unlink()
+
+    def test_bundled_eff_does_not_warn_or_raise(self):
+        import warnings
+
+        from openssl_encrypt.modules.diceware import load_wordlist
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            words = load_wordlist()
+        self.assertEqual(len(words), 7776)
+        self.assertEqual(
+            [w for w in caught if "small" in str(w.message).lower()],
+            [],
+            "the bundled 7776-word EFF list should NOT trigger small-list warning",
+        )
 
 
 if __name__ == "__main__":
