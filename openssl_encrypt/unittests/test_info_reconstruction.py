@@ -208,5 +208,74 @@ class TestReconstructPrimaryKdfs(unittest.TestCase):
         self.assertIn("--enable-balloon", out)
 
 
+class TestReconstructSecondaryKdfs(unittest.TestCase):
+    """Reconstruct --hkdf-* and --randomx-* from kdf_config."""
+
+    def _meta(self, kdf_name, kdf_params):
+        return {"derivation_config": {"kdf_config": {kdf_name: kdf_params}}}
+
+    def test_hkdf_enabled(self):
+        from openssl_encrypt.modules.crypt_core import _reconstruct_cli_from_metadata
+
+        meta = self._meta(
+            "hkdf",
+            {
+                "enabled": True,
+                "rounds": 5,
+                "algorithm": "sha256",
+                "info": "openssl_encrypt_hkdf",
+            },
+        )
+        out = _reconstruct_cli_from_metadata(meta)
+        self.assertIn("--enable-hkdf", out)
+        self.assertIn("--hkdf-rounds 5", out)
+        self.assertIn("--hkdf-algorithm sha256", out)
+        self.assertIn("--hkdf-info openssl_encrypt_hkdf", out)
+
+    def test_hkdf_disabled_skipped(self):
+        from openssl_encrypt.modules.crypt_core import _reconstruct_cli_from_metadata
+
+        out = _reconstruct_cli_from_metadata(
+            self._meta("hkdf", {"enabled": False, "rounds": 1})
+        )
+        self.assertNotIn("--enable-hkdf", out)
+
+    def test_randomx_enabled(self):
+        from openssl_encrypt.modules.crypt_core import _reconstruct_cli_from_metadata
+
+        meta = self._meta(
+            "randomx",
+            {
+                "enabled": True,
+                "rounds": 10,
+                "mode": "light",
+                "height": 1,
+                "hash_len": 32,
+            },
+        )
+        out = _reconstruct_cli_from_metadata(meta)
+        self.assertIn("--enable-randomx", out)
+        self.assertIn("--randomx-rounds 10", out)
+        self.assertIn("--randomx-mode light", out)
+        self.assertIn("--randomx-height 1", out)
+        self.assertIn("--randomx-hash-len 32", out)
+
+    def test_randomx_fast_mode(self):
+        from openssl_encrypt.modules.crypt_core import _reconstruct_cli_from_metadata
+
+        out = _reconstruct_cli_from_metadata(
+            self._meta("randomx", {"enabled": True, "rounds": 5, "mode": "fast"})
+        )
+        self.assertIn("--randomx-mode fast", out)
+
+    def test_randomx_disabled_skipped(self):
+        from openssl_encrypt.modules.crypt_core import _reconstruct_cli_from_metadata
+
+        out = _reconstruct_cli_from_metadata(
+            self._meta("randomx", {"enabled": False, "rounds": 1})
+        )
+        self.assertNotIn("--enable-randomx", out)
+
+
 if __name__ == "__main__":
     unittest.main()
