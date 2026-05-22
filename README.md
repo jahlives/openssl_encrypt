@@ -233,6 +233,13 @@ Centralized cryptographic algorithm registration and validation framework.
 - HSM_ONLY identities skip password prompts during encryption/decryption
 - Automatic HSM identity detection with `--with-key`
 - Save/load HSM identities without password requirements
+- **OnlyKey support** (`--hsm onlykey` / `--hsm onlykey-only`, slots 1..12)
+  alongside YubiKey. Same HMAC-SHA1 wire protocol — fleets mixing
+  YubiKey and OnlyKey devices loaded with the same 20-byte secret are
+  deterministic across either backend. See
+  [docs/hardware-tokens.md](docs/hardware-tokens.md) for setup and
+  [docs/migration-from-yubikey-only.md](docs/migration-from-yubikey-only.md)
+  for adding OnlyKey to an existing YubiKey fleet.
 
 ### Security Enhancements
 
