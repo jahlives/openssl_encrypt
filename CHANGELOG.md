@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`derive-password` gains HSM-aware deterministic derivation**:
+  - `--hsm yubikey` / `--hsm onlykey` (+ optional `--hsm-slot`) plumb
+    the hardware token's HMAC-SHA1 response into the KDF cascade. Same
+    password + same salt + same device-loaded secret = same output;
+    re-provisioning the device silently changes the output.
+  - When `--hsm` is set without explicit `--salt` (random-salt mode), a
+    stderr reminder fires explaining the three reproducibility inputs
+    (password, salt, hardware secret) so users don't get surprised when
+    re-running fails.
+  - `--confirm` prompts for the password twice and rejects on mismatch
+    — guards against typos that would silently produce a wrong derived
+    value. No-op when password comes from `--password` / `--password-file`
+    / `--password-fd` / `OPENSSL_ENCRYPT_PASSWORD` / `--keyring-load`.
 - **Diceware passphrase generation** for `generate-password`:
   - `--dice` switches `generate-password` from character-based generation
     to a Diceware-style passphrase (mutually exclusive with the

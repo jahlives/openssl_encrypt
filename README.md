@@ -241,6 +241,36 @@ Centralized cryptographic algorithm registration and validation framework.
   [docs/migration-from-yubikey-only.md](docs/migration-from-yubikey-only.md)
   for adding OnlyKey to an existing YubiKey fleet.
 
+### `derive-password` — HSM-aware deterministic derivation
+
+The `derive-password` action runs a user-supplied password through the
+full KDF cascade (Argon2id, scrypt, Balloon, RandomX, HKDF, hashes)
+and prints the derived bytes. Useful for generating a strong,
+reproducible password for third-party tools (password managers, disk
+encryption, encrypted archives) from a memorable input.
+
+```bash
+# Basic: derive a 32-byte key from a password (auto-generated salt
+# echoed to stderr so you can reproduce)
+openssl_encrypt derive-password --enable-argon2 --argon2-rounds 10
+
+# Reproducible (specify the salt)
+openssl_encrypt derive-password --salt 0123456789abcdef0123456789abcdef \
+    --enable-argon2 --argon2-rounds 10
+
+# Confirm the password twice — guards against typos that would
+# silently produce a wrong-but-valid-looking output
+openssl_encrypt derive-password --confirm --enable-argon2 --argon2-rounds 10
+
+# Mix in a hardware token: same password + same salt + same hardware
+# secret = same output. Re-provisioning the token changes the output
+# (a stderr reminder fires when --hsm is used without --salt).
+openssl_encrypt derive-password --hsm yubikey --salt 0123...abcdef \
+    --enable-argon2 --argon2-rounds 10
+openssl_encrypt derive-password --hsm onlykey --hsm-slot 3 --salt 0123...abcdef \
+    --enable-argon2 --argon2-rounds 10
+```
+
 ### Diceware Passphrase Generation
 
 `generate-password --dice` produces Diceware-style passphrases as an
