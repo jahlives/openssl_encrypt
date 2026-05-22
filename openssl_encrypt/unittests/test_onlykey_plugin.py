@@ -427,5 +427,59 @@ class TestEdgeCaseLockedDevice(unittest.TestCase):
         self.assertIn("button", msg)
 
 
+class TestEdgeCaseChallengeSizes(unittest.TestCase):
+    """
+    The low-level _calculate_challenge_response must pass any byte sequence
+    through to the device unchanged. Salt-shape validation is enforced at
+    get_hsm_pepper, but the lower-level API is general-purpose and used by
+    the RFC 2202 cross-backend determinism test.
+    """
+
+    def test_empty_challenge_passed_through(self):
+        plugin = OnlykeyHSMPlugin()
+        device = _make_mock_device()
+        mock_session = MagicMock()
+        mock_session.calculate_hmac_sha1.return_value = b"\x11" * 20
+
+        with patch.object(
+            plugin, "_list_onlykey_devices", return_value=[device]
+        ), patch("yubikit.yubiotp.YubiOtpSession", return_value=mock_session):
+            response = plugin._calculate_challenge_response(b"", slot=1)
+
+        self.assertEqual(response, b"\x11" * 20)
+        mock_session.calculate_hmac_sha1.assert_called_once_with(1, b"")
+
+    def test_64_byte_challenge_passed_through(self):
+        plugin = OnlykeyHSMPlugin()
+        device = _make_mock_device()
+        mock_session = MagicMock()
+        expected = b"\x22" * 20
+        mock_session.calculate_hmac_sha1.return_value = expected
+        challenge = bytes(range(64))
+
+        with patch.object(
+            plugin, "_list_onlykey_devices", return_value=[device]
+        ), patch("yubikit.yubiotp.YubiOtpSession", return_value=mock_session):
+            response = plugin._calculate_challenge_response(challenge, slot=2)
+
+        self.assertEqual(response, expected)
+        mock_session.calculate_hmac_sha1.assert_called_once_with(2, challenge)
+
+    def test_challenge_with_null_bytes_passed_through(self):
+        plugin = OnlykeyHSMPlugin()
+        device = _make_mock_device()
+        mock_session = MagicMock()
+        mock_session.calculate_hmac_sha1.return_value = b"\x33" * 20
+        challenge = b"\x00" * 8 + b"abcd" + b"\x00" * 4  # embedded nulls
+
+        with patch.object(
+            plugin, "_list_onlykey_devices", return_value=[device]
+        ), patch("yubikit.yubiotp.YubiOtpSession", return_value=mock_session):
+            response = plugin._calculate_challenge_response(challenge, slot=1)
+
+        self.assertEqual(response, b"\x33" * 20)
+        mock_session.calculate_hmac_sha1.assert_called_once_with(1, challenge)
+
+
 if __name__ == "__main__":
     unittest.main()
