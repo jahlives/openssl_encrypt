@@ -1563,27 +1563,74 @@ def setup_generate_password_parser(subparser):
         type=int,
         nargs="?",
         default=32,
-        help="Password length (default: 32)",
+        help="Password length (default: 32, character-based mode only)",
     )
     subparser.add_argument(
         "--use-lowercase",
         action="store_true",
-        help="Include lowercase letters",
+        help="Include lowercase letters (character-based mode)",
     )
     subparser.add_argument(
         "--use-uppercase",
         action="store_true",
-        help="Include uppercase letters",
+        help="Include uppercase letters (character-based mode)",
     )
     subparser.add_argument(
         "--use-digits",
         action="store_true",
-        help="Include digits",
+        help="Include digits (character-based mode)",
     )
     subparser.add_argument(
         "--use-special",
         action="store_true",
-        help="Include special characters",
+        help="Include special characters (character-based mode)",
+    )
+
+    # Diceware mode (mutually exclusive with character-based flags;
+    # mutex is enforced at runtime in the handler, not by argparse, so
+    # we can produce a more actionable error message than argparse's).
+    dice_group = subparser.add_argument_group(
+        "Diceware mode",
+        "Generate a passphrase by drawing words from a wordlist "
+        "(mutually exclusive with character-based generation).",
+    )
+    dice_group.add_argument(
+        "--dice",
+        action="store_true",
+        help="Generate a Diceware-style passphrase instead of a "
+        "character-based password",
+    )
+    dice_group.add_argument(
+        "--dice-count",
+        type=int,
+        default=10,
+        metavar="N",
+        help="Number of words in the passphrase (default: 10, ~129 bits with "
+        "the bundled EFF Large Wordlist)",
+    )
+    dice_group.add_argument(
+        "--dice-sep",
+        type=str,
+        default="",
+        metavar="SEP",
+        help='Separator between words (default: "" for maximum compatibility '
+        "with password fields that strip whitespace)",
+    )
+    dice_group.add_argument(
+        "--dice-list",
+        type=str,
+        default=None,
+        metavar="PATH",
+        help="Path to a custom wordlist (default: bundled EFF Large Wordlist). "
+        "Accepts both EFF format ('<dice>\\t<word>') and plain "
+        "one-word-per-line.",
+    )
+    dice_group.add_argument(
+        "--force-wordlist",
+        action="store_true",
+        help="Override the 1024-word minimum for custom wordlists "
+        "(small lists are otherwise rejected because they yield "
+        "less than 10 bits of entropy per word)",
     )
 
 
