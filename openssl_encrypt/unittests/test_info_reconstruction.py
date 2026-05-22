@@ -87,5 +87,126 @@ class TestReconstructCipher(unittest.TestCase):
         self.assertNotIn("--cascade", out)
 
 
+class TestReconstructPrimaryKdfs(unittest.TestCase):
+    """Reconstruct --argon2-* / --scrypt-* / --balloon-* from kdf_config."""
+
+    def _meta_with_kdf(self, kdf_name, kdf_params):
+        return {"derivation_config": {"kdf_config": {kdf_name: kdf_params}}}
+
+    def test_argon2_enabled(self):
+        from openssl_encrypt.modules.crypt_core import _reconstruct_cli_from_metadata
+
+        meta = self._meta_with_kdf(
+            "argon2",
+            {
+                "enabled": True,
+                "time_cost": 3,
+                "memory_cost": 65536,
+                "parallelism": 4,
+                "hash_len": 32,
+                "type": 2,  # 2 == "id"
+                "rounds": 10,
+            },
+        )
+        out = _reconstruct_cli_from_metadata(meta)
+        self.assertIn("--enable-argon2", out)
+        self.assertIn("--argon2-rounds 10", out)
+        self.assertIn("--argon2-time 3", out)
+        self.assertIn("--argon2-memory 65536", out)
+        self.assertIn("--argon2-parallelism 4", out)
+        self.assertIn("--argon2-hash-len 32", out)
+        self.assertIn("--argon2-type id", out)
+
+    def test_argon2_type_int_mapping(self):
+        """Metadata stores type as int; reconstruct must map back to string."""
+        from openssl_encrypt.modules.crypt_core import _reconstruct_cli_from_metadata
+
+        # type=1 -> "i", type=0 -> "d"
+        out_i = _reconstruct_cli_from_metadata(
+            self._meta_with_kdf("argon2", {"enabled": True, "type": 1, "rounds": 1})
+        )
+        self.assertIn("--argon2-type i", out_i)
+
+        out_d = _reconstruct_cli_from_metadata(
+            self._meta_with_kdf("argon2", {"enabled": True, "type": 0, "rounds": 1})
+        )
+        self.assertIn("--argon2-type d", out_d)
+
+    def test_argon2_disabled_skipped(self):
+        from openssl_encrypt.modules.crypt_core import _reconstruct_cli_from_metadata
+
+        meta = self._meta_with_kdf(
+            "argon2", {"enabled": False, "time_cost": 3}
+        )
+        out = _reconstruct_cli_from_metadata(meta)
+        self.assertNotIn("--enable-argon2", out)
+        self.assertNotIn("--argon2", out)
+
+    def test_scrypt_enabled(self):
+        from openssl_encrypt.modules.crypt_core import _reconstruct_cli_from_metadata
+
+        meta = self._meta_with_kdf(
+            "scrypt",
+            {"enabled": True, "n": 1024, "r": 8, "p": 1, "rounds": 3},
+        )
+        out = _reconstruct_cli_from_metadata(meta)
+        self.assertIn("--enable-scrypt", out)
+        self.assertIn("--scrypt-rounds 3", out)
+        self.assertIn("--scrypt-n 1024", out)
+        self.assertIn("--scrypt-r 8", out)
+        self.assertIn("--scrypt-p 1", out)
+
+    def test_scrypt_disabled_skipped(self):
+        from openssl_encrypt.modules.crypt_core import _reconstruct_cli_from_metadata
+
+        meta = self._meta_with_kdf("scrypt", {"enabled": False, "n": 1024})
+        out = _reconstruct_cli_from_metadata(meta)
+        self.assertNotIn("--enable-scrypt", out)
+
+    def test_balloon_enabled(self):
+        from openssl_encrypt.modules.crypt_core import _reconstruct_cli_from_metadata
+
+        meta = self._meta_with_kdf(
+            "balloon",
+            {
+                "enabled": True,
+                "time_cost": 3,
+                "space_cost": 65536,
+                "parallelism": 4,
+                "rounds": 2,
+            },
+        )
+        out = _reconstruct_cli_from_metadata(meta)
+        self.assertIn("--enable-balloon", out)
+        self.assertIn("--balloon-rounds 2", out)
+        self.assertIn("--balloon-time-cost 3", out)
+        self.assertIn("--balloon-space-cost 65536", out)
+        self.assertIn("--balloon-parallelism 4", out)
+
+    def test_balloon_disabled_skipped(self):
+        from openssl_encrypt.modules.crypt_core import _reconstruct_cli_from_metadata
+
+        meta = self._meta_with_kdf("balloon", {"enabled": False, "rounds": 1})
+        out = _reconstruct_cli_from_metadata(meta)
+        self.assertNotIn("--enable-balloon", out)
+
+    def test_all_three_kdfs_together(self):
+        from openssl_encrypt.modules.crypt_core import _reconstruct_cli_from_metadata
+
+        meta = {
+            "derivation_config": {
+                "kdf_config": {
+                    "argon2": {"enabled": True, "rounds": 5, "type": 2},
+                    "scrypt": {"enabled": True, "rounds": 1, "n": 1024, "r": 8, "p": 1},
+                    "balloon": {"enabled": True, "rounds": 2, "time_cost": 3},
+                }
+            }
+        }
+        out = _reconstruct_cli_from_metadata(meta)
+        self.assertIn("--enable-argon2", out)
+        self.assertIn("--enable-scrypt", out)
+        self.assertIn("--enable-balloon", out)
+
+
 if __name__ == "__main__":
     unittest.main()
