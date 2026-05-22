@@ -1,0 +1,67 @@
+EFF Large Wordlist — License & Attribution
+===========================================
+
+The file ``eff_large_wordlist.txt`` in this directory is the
+**EFF Large Wordlist for Passphrases** as published by the Electronic
+Frontier Foundation.
+
+Source
+------
+https://www.eff.org/dice
+https://www.eff.org/files/2016/07/18/eff_large_wordlist.txt
+
+Sha256 of the file as bundled with this project:
+  addd35536511597a02fa0a9ff1e5284677b8883b83e986e43f15a3db996b903e
+
+Author
+------
+Electronic Frontier Foundation (https://www.eff.org/).
+Created by Joseph Bonneau in 2016 for the EFF Diceware project.
+
+License
+-------
+This wordlist is licensed by the Electronic Frontier Foundation under the
+**Creative Commons Attribution 3.0 United States License (CC BY 3.0 US)**.
+
+To view a copy of this license, visit:
+  https://creativecommons.org/licenses/by/3.0/us/
+
+Or send a letter to:
+  Creative Commons
+  PO Box 1866
+  Mountain View
+  CA 94042
+  USA
+
+Summary of CC BY 3.0 US permissions and conditions
+--------------------------------------------------
+You are free to:
+  - Share — copy and redistribute the material in any medium or format
+  - Adapt — remix, transform, and build upon the material for any purpose,
+    even commercially
+
+Under the following terms:
+  - Attribution — You must give appropriate credit, provide a link to the
+    license, and indicate if changes were made. You may do so in any
+    reasonable manner, but not in any way that suggests the licensor
+    endorses you or your use.
+
+  - No additional restrictions — You may not apply legal terms or
+    technological measures that legally restrict others from doing anything
+    the license permits.
+
+Attribution as bundled here
+---------------------------
+The wordlist is redistributed with this project unmodified, with
+attribution to the Electronic Frontier Foundation. The EFF does not
+endorse this project; the wordlist is included solely as a public-domain
+quality wordlist for the project's Diceware passphrase-generation feature.
+
+Project license note
+--------------------
+openssl_encrypt itself is licensed under the Hippocratic License 2.1.
+Bundling CC BY 3.0 US data alongside the Hippocratic-licensed code is
+compatible: CC BY 3.0 US permits redistribution with attribution, and
+this file together with the README mention satisfies that attribution
+requirement. The wordlist itself remains under CC BY 3.0 US — only the
+surrounding project code is Hippocratic-licensed.
