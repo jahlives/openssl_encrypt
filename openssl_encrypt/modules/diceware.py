@@ -28,6 +28,10 @@ _DEFAULT_WORDLIST_RESOURCE = "data/eff_large_wordlist.txt"
 _EFF_LINE_RE = re.compile(r"^\d+\s+\S+")
 
 
+class WordlistValidationError(ValueError):
+    """Raised when a wordlist fails strict validation (dups, whitespace, etc.)."""
+
+
 def _default_wordlist_path() -> Path:
     """Return the filesystem path to the bundled EFF Large Wordlist."""
     return Path(
@@ -91,4 +95,33 @@ def load_wordlist(
         else:
             words.append(stripped)
 
+    _validate_wordlist(words)
     return words
+
+
+def _validate_wordlist(words: List[str]) -> None:
+    """
+    Reject wordlists with duplicates or whitespace-containing words.
+
+    Silent dedup is dangerous: it changes effective entropy without the
+    user noticing. Embedded whitespace breaks --dice-sep boundary
+    semantics. Per Q10, both cases are hard errors.
+    """
+    # Whitespace-in-words: every character of every word must be non-space.
+    for w in words:
+        if any(c.isspace() for c in w):
+            raise WordlistValidationError(
+                f"wordlist contains a word with embedded whitespace: {w!r}. "
+                f"Words must not contain spaces or tabs because that would "
+                f"break --dice-sep boundary semantics."
+            )
+
+    # Duplicates: a single pass over words catches the first repeat.
+    seen = set()
+    for w in words:
+        if w in seen:
+            raise WordlistValidationError(
+                f"wordlist contains duplicate word: {w!r}. "
+                f"Silent deduplication would mislead about effective entropy."
+            )
+        seen.add(w)
