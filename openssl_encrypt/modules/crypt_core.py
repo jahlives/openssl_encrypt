@@ -8025,6 +8025,7 @@ def _reconstruct_cli_from_metadata(metadata: dict) -> str:
     encryption = metadata.get("encryption") or {}
     _append_cipher_flags(lines, encryption)
     _append_hsm_flags(lines, encryption)
+    _append_pepper_flags(lines, encryption)
 
     derivation = metadata.get("derivation_config") or {}
     kdf_config = derivation.get("kdf_config") or {}
@@ -8161,6 +8162,24 @@ def _append_randomx_flags(lines: list, cfg: dict) -> None:
         lines.append(f"  --randomx-height {cfg['height']}")
     if "hash_len" in cfg:
         lines.append(f"  --randomx-hash-len {cfg['hash_len']}")
+
+
+def _append_pepper_flags(lines: list, encryption: dict) -> None:
+    """
+    Append --pepper / --pepper-name from metadata['encryption'].
+
+    Presence of metadata['encryption']['pepper_plugin'] indicates the
+    file was encrypted with a remote pepper plugin enabled — emit
+    ``--pepper`` to re-enable on the reconstructed command. If a
+    pepper_name is also stored, emit ``--pepper-name <name>`` so the
+    reconstructed encryption reuses the same named pepper.
+    """
+    if not encryption.get("pepper_plugin"):
+        return
+    lines.append("  --pepper")
+    pepper_name = encryption.get("pepper_name")
+    if pepper_name:
+        lines.append(f"  --pepper-name {pepper_name}")
 
 
 def _append_hsm_flags(lines: list, encryption: dict) -> None:
