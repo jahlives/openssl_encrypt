@@ -440,5 +440,49 @@ class TestGeneratePassphrase(unittest.TestCase):
         self.assertEqual(mock_rng.choice.call_count, 3)
 
 
+class TestPassphraseEntropy(unittest.TestCase):
+    """Entropy = count * log2(len(wordlist))."""
+
+    def test_eff_wordlist_default_count_entropy(self):
+        """7776 words, count=10 → 10 * log2(7776) ≈ 129.2 bits."""
+        from openssl_encrypt.modules.diceware import passphrase_entropy
+
+        bits = passphrase_entropy(count=10, wordlist_size=7776)
+        self.assertAlmostEqual(bits, 129.2, places=1)
+
+    def test_six_word_passphrase_entropy(self):
+        """EFF's recommended minimum: 6 words × ~12.92 bits ≈ 77.5."""
+        from openssl_encrypt.modules.diceware import passphrase_entropy
+
+        bits = passphrase_entropy(count=6, wordlist_size=7776)
+        self.assertAlmostEqual(bits, 77.5, places=1)
+
+    def test_threshold_wordlist_10_bits_per_word(self):
+        """A 1024-word wordlist gives exactly 10 bits per word."""
+        from openssl_encrypt.modules.diceware import passphrase_entropy
+
+        bits = passphrase_entropy(count=1, wordlist_size=1024)
+        self.assertAlmostEqual(bits, 10.0, places=6)
+
+    def test_scales_linearly_with_count(self):
+        from openssl_encrypt.modules.diceware import passphrase_entropy
+
+        b1 = passphrase_entropy(count=1, wordlist_size=4096)
+        b10 = passphrase_entropy(count=10, wordlist_size=4096)
+        self.assertAlmostEqual(b10, b1 * 10, places=6)
+
+    def test_invalid_inputs_raise(self):
+        from openssl_encrypt.modules.diceware import passphrase_entropy
+
+        with self.assertRaises(ValueError):
+            passphrase_entropy(count=0, wordlist_size=7776)
+        with self.assertRaises(ValueError):
+            passphrase_entropy(count=-1, wordlist_size=7776)
+        with self.assertRaises(ValueError):
+            passphrase_entropy(count=10, wordlist_size=0)
+        with self.assertRaises(ValueError):
+            passphrase_entropy(count=10, wordlist_size=1)  # log2(1) = 0
+
+
 if __name__ == "__main__":
     unittest.main()
