@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`info` action now reconstructs the `encrypt` CLI** from file metadata:
+  - The human-readable output of `openssl_encrypt info <file>` now ends
+    with a "Reconstructed CLI" section showing the full
+    `openssl_encrypt encrypt ...` command that would produce equivalent
+    encryption settings on a fresh file.
+  - Salt and per-file random values are NOT reconstructed — only the
+    deterministic configuration (cipher / cascade chain, all five KDFs
+    Argon2id/scrypt/Balloon/HKDF/RandomX, the 12 hash-rounds flags,
+    legacy PBKDF2 / Whirlpool flags, HSM binding via `--hsm` +
+    `--hsm-slot`, remote-pepper plugin via `--pepper` + `--pepper-name`).
+  - JSON output mode (`info --json`) is unchanged — the JSON payload
+    remains the raw metadata dict, so scripts piping into `jq` continue
+    to work without modification.
+  - Round-trip property covered by automated test
+    (`test_info_reconstruction.py::TestReconstructionRoundTrip`):
+    encrypting a fresh file with parameters X, extracting metadata, and
+    running the reconstructor yields a CLI flag string containing
+    every parameter value from X.
+  - Argon2's `type` field is auto-converted from the on-disk integer
+    representation (0/1/2) back to the CLI form (`d`/`i`/`id`).
+  - SHA-3 hash names use the metadata form (`sha3_512`) translated to
+    the CLI flag form (`--sha3-512-rounds`).
 - **`derive-password` gains HSM-aware deterministic derivation**:
   - `--hsm yubikey` / `--hsm onlykey` (+ optional `--hsm-slot`) plumb
     the hardware token's HMAC-SHA1 response into the KDF cascade. Same
