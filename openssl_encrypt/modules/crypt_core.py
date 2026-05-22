@@ -7333,6 +7333,8 @@ def _reconstruct_cli_from_metadata(metadata: dict) -> str:
     _append_argon2_flags(lines, kdf_config.get("argon2") or {})
     _append_scrypt_flags(lines, kdf_config.get("scrypt") or {})
     _append_balloon_flags(lines, kdf_config.get("balloon") or {})
+    _append_hkdf_flags(lines, kdf_config.get("hkdf") or {})
+    _append_randomx_flags(lines, kdf_config.get("randomx") or {})
 
     return " \\\n".join(lines)
 
@@ -7391,6 +7393,34 @@ def _append_balloon_flags(lines: list, cfg: dict) -> None:
         lines.append(f"  --balloon-space-cost {cfg['space_cost']}")
     if "parallelism" in cfg:
         lines.append(f"  --balloon-parallelism {cfg['parallelism']}")
+
+
+def _append_hkdf_flags(lines: list, cfg: dict) -> None:
+    """Append --enable-hkdf + --hkdf-* flags when hkdf is enabled."""
+    if not cfg.get("enabled"):
+        return
+    lines.append("  --enable-hkdf")
+    if "rounds" in cfg:
+        lines.append(f"  --hkdf-rounds {cfg['rounds']}")
+    if "algorithm" in cfg:
+        lines.append(f"  --hkdf-algorithm {cfg['algorithm']}")
+    if "info" in cfg:
+        lines.append(f"  --hkdf-info {cfg['info']}")
+
+
+def _append_randomx_flags(lines: list, cfg: dict) -> None:
+    """Append --enable-randomx + --randomx-* flags when randomx is enabled."""
+    if not cfg.get("enabled"):
+        return
+    lines.append("  --enable-randomx")
+    if "rounds" in cfg:
+        lines.append(f"  --randomx-rounds {cfg['rounds']}")
+    if "mode" in cfg:
+        lines.append(f"  --randomx-mode {cfg['mode']}")
+    if "height" in cfg:
+        lines.append(f"  --randomx-height {cfg['height']}")
+    if "hash_len" in cfg:
+        lines.append(f"  --randomx-hash-len {cfg['hash_len']}")
 
 
 def _append_cipher_flags(lines: list, encryption: dict) -> None:
