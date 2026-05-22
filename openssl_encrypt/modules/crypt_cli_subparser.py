@@ -1665,6 +1665,14 @@ def setup_derive_password_parser(subparser):
         action="store_true",
         help="Force acceptance of weak passwords (use with caution)",
     )
+    subparser.add_argument(
+        "--confirm",
+        action="store_true",
+        help="Prompt for the password twice and verify they match. Recommended "
+        "for derive-password since a typo would silently produce a wrong "
+        "but valid-looking derived value with no way to detect the mistake "
+        "until you try to reuse the output elsewhere.",
+    )
 
     # Salt options
     salt_group = subparser.add_argument_group("Salt options")
