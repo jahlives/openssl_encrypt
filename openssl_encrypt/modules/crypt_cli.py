@@ -3408,6 +3408,42 @@ def _get_steganography_plugin(quiet=False):
         return None
 
 
+def _run_dice_generation(args):
+    """
+    Generate a Diceware passphrase from parsed CLI args.
+
+    Bridges the argparse layer to the :mod:`diceware` module. Loads the
+    requested wordlist (custom path from ``--dice-list`` or the bundled
+    EFF Large Wordlist if None), generates a passphrase of
+    ``--dice-count`` words joined by ``--dice-sep``, and returns the
+    passphrase together with its computed entropy in bits.
+
+    The caller is responsible for any policy/length checks and for
+    output formatting; this helper has no side effects beyond reading
+    the wordlist file.
+
+    Args:
+        args: An object exposing the attributes ``dice_list``,
+            ``dice_count``, ``dice_sep``, ``force_wordlist``.
+
+    Returns:
+        Tuple ``(passphrase: str, entropy_bits: float)``.
+    """
+    from .diceware import generate_passphrase, load_wordlist, passphrase_entropy
+
+    wordlist = load_wordlist(
+        path=getattr(args, "dice_list", None),
+        force_small=getattr(args, "force_wordlist", False),
+    )
+    phrase = generate_passphrase(
+        count=args.dice_count,
+        sep=args.dice_sep,
+        wordlist=wordlist,
+    )
+    bits = passphrase_entropy(count=args.dice_count, wordlist_size=len(wordlist))
+    return phrase, bits
+
+
 def _validate_generate_password_args(
     *,
     dice: bool,
@@ -4221,6 +4257,45 @@ def main_with_args(args=None):
         "--use-special",
         action="store_true",
         help="Include special characters in generated password",
+    )
+
+    # Diceware mode (mutually exclusive with the character-based flags
+    # above; mutex enforced at runtime in the handler).
+    dice_group = parser.add_argument_group(
+        "Diceware Mode",
+        "Generate a passphrase by drawing words from a wordlist (use with generate-password). "
+        "Mutually exclusive with the character-based generation flags.",
+    )
+    dice_group.add_argument(
+        "--dice",
+        action="store_true",
+        help="Generate a Diceware-style passphrase instead of a character-based password",
+    )
+    dice_group.add_argument(
+        "--dice-count",
+        type=int,
+        default=10,
+        metavar="N",
+        help="Number of words in the Diceware passphrase (default: 10, ~129 bits with the bundled EFF list)",
+    )
+    dice_group.add_argument(
+        "--dice-sep",
+        type=str,
+        default="",
+        metavar="SEP",
+        help='Separator between Diceware words (default: "" for maximum compatibility)',
+    )
+    dice_group.add_argument(
+        "--dice-list",
+        type=str,
+        default=None,
+        metavar="PATH",
+        help="Path to a custom wordlist (EFF format or plain). Default: bundled EFF Large Wordlist",
+    )
+    dice_group.add_argument(
+        "--force-wordlist",
+        action="store_true",
+        help="Allow wordlists below the 1024-word minimum (otherwise rejected)",
     )
 
     # Password policy options
@@ -5162,6 +5237,42 @@ def main_with_args(args=None):
         except ValueError as e:
             eprint(f"Error: {e}")
             sys.exit(1)
+
+        # --dice mode: skip the character-based pipeline entirely.
+        # Per Q15, we apply only entropy-/length-based policy checks (not
+        # character-class or common-password checks, which are orthogonal
+        # to passphrase security).
+        if getattr(args, "dice", False):
+            try:
+                passphrase, entropy_bits = _run_dice_generation(args)
+            except Exception as e:
+                eprint(f"Error generating passphrase: {e}")
+                sys.exit(1)
+
+            min_entropy = getattr(args, "min_password_entropy", None)
+            if min_entropy is not None and entropy_bits < min_entropy:
+                eprint(
+                    f"Error: passphrase entropy {entropy_bits:.1f} bits < "
+                    f"required minimum {min_entropy} bits. Increase "
+                    f"--dice-count or pick a larger wordlist."
+                )
+                sys.exit(1)
+
+            min_length = getattr(args, "min_password_length", None)
+            if min_length is not None and len(passphrase) < min_length:
+                eprint(
+                    f"Error: passphrase length {len(passphrase)} chars < "
+                    f"required minimum {min_length} chars. Increase "
+                    f"--dice-count or pick longer words."
+                )
+                sys.exit(1)
+
+            eprint(
+                f"\nPassphrase entropy: {entropy_bits:.1f} bits "
+                f"({args.dice_count} words)"
+            )
+            display_password_with_timeout(passphrase)
+            sys.exit(0)
 
         # If no character sets are explicitly selected, use all by default
         if not (args.use_lowercase or args.use_uppercase or args.use_digits or args.use_special):
