@@ -421,5 +421,43 @@ class TestReconstructHsmFlags(unittest.TestCase):
         self.assertIn("--hsm newhsm", out)
 
 
+class TestReconstructPepperFlags(unittest.TestCase):
+    """Reconstruct --pepper / --pepper-name from metadata['encryption']."""
+
+    def test_pepper_plugin_present_emits_pepper_flag(self):
+        from openssl_encrypt.modules.crypt_core import _reconstruct_cli_from_metadata
+
+        meta = {
+            "encryption": {
+                "algorithm": "aes-gcm",
+                "pepper_plugin": "remote_pepper",
+            }
+        }
+        out = _reconstruct_cli_from_metadata(meta)
+        self.assertIn("--pepper", out)
+
+    def test_pepper_name_emitted(self):
+        from openssl_encrypt.modules.crypt_core import _reconstruct_cli_from_metadata
+
+        meta = {
+            "encryption": {
+                "algorithm": "aes-gcm",
+                "pepper_plugin": "remote_pepper",
+                "pepper_name": "my-shared-pepper",
+            }
+        }
+        out = _reconstruct_cli_from_metadata(meta)
+        self.assertIn("--pepper", out)
+        self.assertIn("--pepper-name my-shared-pepper", out)
+
+    def test_no_pepper_in_metadata(self):
+        from openssl_encrypt.modules.crypt_core import _reconstruct_cli_from_metadata
+
+        out = _reconstruct_cli_from_metadata(
+            {"encryption": {"algorithm": "aes-gcm"}}
+        )
+        self.assertNotIn("--pepper", out)
+
+
 if __name__ == "__main__":
     unittest.main()
