@@ -1708,6 +1708,30 @@ def setup_derive_password_parser(subparser):
         "until you try to reuse the output elsewhere.",
     )
 
+    # HSM options — mirror the encrypt-side --hsm/--hsm-slot flags so a
+    # hardware token can contribute a pepper to the derivation.
+    hsm_group = subparser.add_argument_group(
+        "HSM Options",
+        "Mix a hardware-derived pepper into the KDF cascade. Reproducing "
+        "the output then requires the same password, the same salt, AND "
+        "the same secret loaded on the hardware token.",
+    )
+    hsm_group.add_argument(
+        "--hsm",
+        metavar="PLUGIN",
+        help="Enable HSM (Hardware Security Module) plugin for hardware-bound "
+        "key derivation. Supported: 'yubikey' (slots 1..2), 'onlykey' "
+        "(slots 1..12).",
+    )
+    hsm_group.add_argument(
+        "--hsm-slot",
+        type=int,
+        metavar="SLOT",
+        help="Manually specify the Challenge-Response slot (YubiKey 1..2, "
+        "OnlyKey 1..12). If omitted, the plugin auto-detects the configured "
+        "slot.",
+    )
+
     # Salt options
     salt_group = subparser.add_argument_group("Salt options")
     salt_group.add_argument(

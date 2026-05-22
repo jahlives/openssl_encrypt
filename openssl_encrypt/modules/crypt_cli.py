@@ -5567,6 +5567,62 @@ def main_with_args(args=None):
                 "hash_len": getattr(args, "randomx_hash_len", 32),
             }
 
+        # Optional HSM pepper: when --hsm is set, load the corresponding
+        # plugin and derive a pepper from the salt. The pepper feeds into
+        # generate_key the same way the encrypt path uses it, so the
+        # derived value is reproducible iff the password, the salt AND the
+        # hardware-loaded secret all match.
+        hsm_pepper: bytes = None
+        if getattr(args, "hsm", None):
+            hsm_value = args.hsm.lower()
+            try:
+                if hsm_value == "yubikey":
+                    from ..plugins.hsm.yubikey_challenge_response import (
+                        YubikeyHSMPlugin,
+                    )
+
+                    hsm_plugin_instance = YubikeyHSMPlugin()
+                elif hsm_value == "onlykey":
+                    from ..plugins.hsm.onlykey_challenge_response import (
+                        OnlykeyHSMPlugin,
+                    )
+
+                    hsm_plugin_instance = OnlykeyHSMPlugin()
+                else:
+                    eprint(
+                        f"Error: Unknown --hsm value '{args.hsm}'. "
+                        f"Supported: yubikey, onlykey"
+                    )
+                    sys.exit(1)
+            except ImportError as e:
+                eprint(
+                    f"Error: HSM plugin import failed: {e}. "
+                    f"Install with: pip install -r requirements-hsm.txt"
+                )
+                sys.exit(1)
+
+            init_result = hsm_plugin_instance.initialize({})
+            if not init_result.success:
+                eprint(f"Error initializing HSM plugin: {init_result.message}")
+                sys.exit(1)
+
+            from .plugin_system.plugin_base import PluginSecurityContext
+
+            hsm_ctx = PluginSecurityContext(
+                plugin_id=hsm_plugin_instance.plugin_id,
+                capabilities=hsm_plugin_instance.get_required_capabilities(),
+            )
+            if getattr(args, "hsm_slot", None):
+                hsm_ctx.config["slot"] = args.hsm_slot
+            hsm_result = hsm_plugin_instance.get_hsm_pepper(salt, hsm_ctx)
+            if not hsm_result.success:
+                eprint(f"Error obtaining HSM pepper: {hsm_result.message}")
+                sys.exit(1)
+            hsm_pepper = hsm_result.data.get("hsm_pepper")
+            if not hsm_pepper:
+                eprint("Error: HSM plugin returned no pepper")
+                sys.exit(1)
+
         # Call generate_key to derive the key
         from .crypt_core import generate_key
 
@@ -5596,6 +5652,7 @@ def main_with_args(args=None):
                 algorithm=synth_algorithm,
                 progress=getattr(args, "progress", False),
                 debug=getattr(args, "debug", False),
+                hsm_pepper=hsm_pepper,
                 format_version=9,
             )
         except Exception as e:
