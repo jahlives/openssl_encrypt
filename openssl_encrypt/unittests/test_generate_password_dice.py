@@ -78,5 +78,148 @@ class TestGeneratePasswordDiceFlags(unittest.TestCase):
         self.assertFalse(args.force_wordlist)
 
 
+class TestGeneratePasswordRuntimeValidation(unittest.TestCase):
+    """
+    The handler must reject:
+    1. --dice combined with any character-class flag (mutually exclusive)
+    2. --dice-count / --dice-sep / --dice-list / --force-wordlist used
+       without --dice (those flags have no meaning otherwise)
+    """
+
+    def test_dice_combined_with_use_lowercase_errors(self):
+        """The handler validator (not argparse) rejects this combination."""
+        from openssl_encrypt.modules.crypt_cli import _validate_generate_password_args
+
+        with self.assertRaises(ValueError) as cm:
+            _validate_generate_password_args(
+                dice=True,
+                use_lowercase=True,
+                use_uppercase=False,
+                use_digits=False,
+                use_special=False,
+                dice_count=10,
+                dice_sep="",
+                dice_list=None,
+                force_wordlist=False,
+            )
+        msg = str(cm.exception).lower()
+        self.assertIn("--dice", msg)
+        self.assertIn("--use-lowercase", msg)
+
+    def test_dice_combined_with_use_special_errors(self):
+        from openssl_encrypt.modules.crypt_cli import _validate_generate_password_args
+
+        with self.assertRaises(ValueError):
+            _validate_generate_password_args(
+                dice=True,
+                use_lowercase=False,
+                use_uppercase=False,
+                use_digits=False,
+                use_special=True,
+                dice_count=10,
+                dice_sep="",
+                dice_list=None,
+                force_wordlist=False,
+            )
+
+    def test_dice_alone_ok(self):
+        from openssl_encrypt.modules.crypt_cli import _validate_generate_password_args
+
+        # No exception expected.
+        _validate_generate_password_args(
+            dice=True,
+            use_lowercase=False,
+            use_uppercase=False,
+            use_digits=False,
+            use_special=False,
+            dice_count=10,
+            dice_sep="",
+            dice_list=None,
+            force_wordlist=False,
+        )
+
+    def test_dice_count_without_dice_errors(self):
+        from openssl_encrypt.modules.crypt_cli import _validate_generate_password_args
+
+        with self.assertRaises(ValueError) as cm:
+            _validate_generate_password_args(
+                dice=False,
+                use_lowercase=False,
+                use_uppercase=False,
+                use_digits=False,
+                use_special=False,
+                dice_count=6,  # non-default
+                dice_sep="",
+                dice_list=None,
+                force_wordlist=False,
+            )
+        self.assertIn("--dice-count", str(cm.exception))
+        self.assertIn("--dice", str(cm.exception))
+
+    def test_dice_sep_non_default_without_dice_errors(self):
+        from openssl_encrypt.modules.crypt_cli import _validate_generate_password_args
+
+        with self.assertRaises(ValueError):
+            _validate_generate_password_args(
+                dice=False,
+                use_lowercase=False,
+                use_uppercase=False,
+                use_digits=False,
+                use_special=False,
+                dice_count=10,
+                dice_sep="-",  # non-default
+                dice_list=None,
+                force_wordlist=False,
+            )
+
+    def test_dice_list_without_dice_errors(self):
+        from openssl_encrypt.modules.crypt_cli import _validate_generate_password_args
+
+        with self.assertRaises(ValueError):
+            _validate_generate_password_args(
+                dice=False,
+                use_lowercase=False,
+                use_uppercase=False,
+                use_digits=False,
+                use_special=False,
+                dice_count=10,
+                dice_sep="",
+                dice_list="/tmp/wl.txt",
+                force_wordlist=False,
+            )
+
+    def test_force_wordlist_without_dice_errors(self):
+        from openssl_encrypt.modules.crypt_cli import _validate_generate_password_args
+
+        with self.assertRaises(ValueError):
+            _validate_generate_password_args(
+                dice=False,
+                use_lowercase=False,
+                use_uppercase=False,
+                use_digits=False,
+                use_special=False,
+                dice_count=10,
+                dice_sep="",
+                dice_list=None,
+                force_wordlist=True,
+            )
+
+    def test_default_args_no_dice_no_char_flag_ok(self):
+        """Bare `generate-password` (no flags) must validate cleanly."""
+        from openssl_encrypt.modules.crypt_cli import _validate_generate_password_args
+
+        _validate_generate_password_args(
+            dice=False,
+            use_lowercase=False,
+            use_uppercase=False,
+            use_digits=False,
+            use_special=False,
+            dice_count=10,
+            dice_sep="",
+            dice_list=None,
+            force_wordlist=False,
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

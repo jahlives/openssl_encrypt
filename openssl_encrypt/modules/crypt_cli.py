@@ -3408,6 +3408,74 @@ def _get_steganography_plugin(quiet=False):
         return None
 
 
+def _validate_generate_password_args(
+    *,
+    dice: bool,
+    use_lowercase: bool,
+    use_uppercase: bool,
+    use_digits: bool,
+    use_special: bool,
+    dice_count: int,
+    dice_sep: str,
+    dice_list,
+    force_wordlist: bool,
+) -> None:
+    """
+    Validate the flag combination passed to ``generate-password``.
+
+    Enforces two rules:
+
+    1. ``--dice`` is mutually exclusive with any character-class flag
+       (``--use-lowercase``, ``--use-uppercase``, ``--use-digits``,
+       ``--use-special``). A passphrase is shaped by its source wordlist,
+       not by character classes.
+
+    2. The Diceware-specific options (``--dice-count``, ``--dice-sep``,
+       ``--dice-list``, ``--force-wordlist``) are only meaningful when
+       ``--dice`` is set. Using them without ``--dice`` is a user error
+       and we reject loudly so the user notices.
+
+    Raises:
+        ValueError with a human-readable, actionable message on any rule
+        violation. The caller prints the message and exits.
+    """
+    if dice:
+        char_flags = []
+        if use_lowercase:
+            char_flags.append("--use-lowercase")
+        if use_uppercase:
+            char_flags.append("--use-uppercase")
+        if use_digits:
+            char_flags.append("--use-digits")
+        if use_special:
+            char_flags.append("--use-special")
+        if char_flags:
+            raise ValueError(
+                f"--dice is mutually exclusive with character-class flags "
+                f"({', '.join(char_flags)}). A Diceware passphrase is "
+                f"defined by its wordlist, not by character classes — drop "
+                f"the character-class flags, or drop --dice."
+            )
+        return
+
+    # --dice is not set; check that no Diceware-only options were passed.
+    leaked: list = []
+    if dice_count != 10:
+        leaked.append("--dice-count")
+    if dice_sep != "":
+        leaked.append("--dice-sep")
+    if dice_list is not None:
+        leaked.append("--dice-list")
+    if force_wordlist:
+        leaked.append("--force-wordlist")
+    if leaked:
+        raise ValueError(
+            f"the following flags require --dice: {', '.join(leaked)}. "
+            f"Add --dice to use Diceware passphrase generation, or drop "
+            f"these flags to use the default character-based generator."
+        )
+
+
 def main_with_args(args=None):
     """Main logic with pre-parsed arguments (or None to parse from command line)"""
     # Original main function continues below...
@@ -5075,6 +5143,26 @@ def main_with_args(args=None):
             sys.exit(1)
 
     elif args.action == "generate-password":
+        # Validate --dice mutual exclusion with character-class flags and
+        # reject --dice-* options used without --dice. The handler-level
+        # check (vs argparse mutex) lets us produce more actionable error
+        # messages and keeps the character flags freely combinable.
+        try:
+            _validate_generate_password_args(
+                dice=getattr(args, "dice", False),
+                use_lowercase=args.use_lowercase,
+                use_uppercase=args.use_uppercase,
+                use_digits=args.use_digits,
+                use_special=args.use_special,
+                dice_count=getattr(args, "dice_count", 10),
+                dice_sep=getattr(args, "dice_sep", ""),
+                dice_list=getattr(args, "dice_list", None),
+                force_wordlist=getattr(args, "force_wordlist", False),
+            )
+        except ValueError as e:
+            eprint(f"Error: {e}")
+            sys.exit(1)
+
         # If no character sets are explicitly selected, use all by default
         if not (args.use_lowercase or args.use_uppercase or args.use_digits or args.use_special):
             args.use_lowercase = True
