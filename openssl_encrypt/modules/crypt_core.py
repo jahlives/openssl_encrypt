@@ -8024,6 +8024,7 @@ def _reconstruct_cli_from_metadata(metadata: dict) -> str:
 
     encryption = metadata.get("encryption") or {}
     _append_cipher_flags(lines, encryption)
+    _append_hsm_flags(lines, encryption)
 
     derivation = metadata.get("derivation_config") or {}
     kdf_config = derivation.get("kdf_config") or {}
@@ -8160,6 +8161,26 @@ def _append_randomx_flags(lines: list, cfg: dict) -> None:
         lines.append(f"  --randomx-height {cfg['height']}")
     if "hash_len" in cfg:
         lines.append(f"  --randomx-hash-len {cfg['hash_len']}")
+
+
+def _append_hsm_flags(lines: list, encryption: dict) -> None:
+    """
+    Append --hsm <name> and --hsm-slot N from metadata['encryption'].
+
+    Plugin IDs follow the convention ``<name>_hsm`` (e.g. yubikey_hsm,
+    onlykey_hsm, fido2_hsm). Strip the trailing ``_hsm`` to get the
+    user-facing ``--hsm <name>`` value the CLI dispatch expects.
+    """
+    plugin = encryption.get("hsm_plugin")
+    if not plugin:
+        return
+    short = plugin[:-4] if plugin.endswith("_hsm") else plugin
+    lines.append(f"  --hsm {short}")
+
+    hsm_cfg = encryption.get("hsm_config") or {}
+    slot = hsm_cfg.get("slot")
+    if slot is not None:
+        lines.append(f"  --hsm-slot {slot}")
 
 
 def _append_cipher_flags(lines: list, encryption: dict) -> None:

@@ -356,5 +356,70 @@ class TestReconstructHashRounds(unittest.TestCase):
         self.assertNotIn("some-future-hash", out)
 
 
+class TestReconstructHsmFlags(unittest.TestCase):
+    """Reconstruct --hsm / --hsm-slot from metadata['encryption']."""
+
+    def test_yubikey_hsm_with_slot(self):
+        from openssl_encrypt.modules.crypt_core import _reconstruct_cli_from_metadata
+
+        meta = {
+            "encryption": {
+                "algorithm": "aes-gcm",
+                "hsm_plugin": "yubikey_hsm",
+                "hsm_config": {"slot": 1, "type": "yubikey"},
+            }
+        }
+        out = _reconstruct_cli_from_metadata(meta)
+        self.assertIn("--hsm yubikey", out)
+        self.assertIn("--hsm-slot 1", out)
+
+    def test_onlykey_hsm_with_slot(self):
+        from openssl_encrypt.modules.crypt_core import _reconstruct_cli_from_metadata
+
+        meta = {
+            "encryption": {
+                "algorithm": "aes-gcm",
+                "hsm_plugin": "onlykey_hsm",
+                "hsm_config": {"slot": 5, "type": "onlykey"},
+            }
+        }
+        out = _reconstruct_cli_from_metadata(meta)
+        self.assertIn("--hsm onlykey", out)
+        self.assertIn("--hsm-slot 5", out)
+
+    def test_fido2_hsm(self):
+        from openssl_encrypt.modules.crypt_core import _reconstruct_cli_from_metadata
+
+        meta = {"encryption": {"algorithm": "aes-gcm", "hsm_plugin": "fido2_hsm"}}
+        out = _reconstruct_cli_from_metadata(meta)
+        self.assertIn("--hsm fido2", out)
+
+    def test_hsm_without_slot(self):
+        """HSM plugin set but no slot in metadata — only --hsm emitted."""
+        from openssl_encrypt.modules.crypt_core import _reconstruct_cli_from_metadata
+
+        meta = {"encryption": {"algorithm": "aes-gcm", "hsm_plugin": "yubikey_hsm"}}
+        out = _reconstruct_cli_from_metadata(meta)
+        self.assertIn("--hsm yubikey", out)
+        self.assertNotIn("--hsm-slot", out)
+
+    def test_no_hsm_in_metadata(self):
+        from openssl_encrypt.modules.crypt_core import _reconstruct_cli_from_metadata
+
+        meta = {"encryption": {"algorithm": "aes-gcm"}}
+        out = _reconstruct_cli_from_metadata(meta)
+        self.assertNotIn("--hsm", out)
+
+    def test_unknown_hsm_plugin_name_passed_through(self):
+        """Future plugin like 'newhsm_hsm' → --hsm newhsm (suffix-stripped)."""
+        from openssl_encrypt.modules.crypt_core import _reconstruct_cli_from_metadata
+
+        meta = {
+            "encryption": {"algorithm": "aes-gcm", "hsm_plugin": "newhsm_hsm"}
+        }
+        out = _reconstruct_cli_from_metadata(meta)
+        self.assertIn("--hsm newhsm", out)
+
+
 if __name__ == "__main__":
     unittest.main()
