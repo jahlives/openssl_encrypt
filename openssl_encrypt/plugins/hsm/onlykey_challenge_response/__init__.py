@@ -52,12 +52,37 @@ class OnlykeyHSMPlugin(HSMPlugin):
     (VID/PID 0x1d50:0x60fc) and reuses the YubiKey HMAC-SHA1 wire protocol.
     """
 
+    # OnlyKey USB identifiers (https://docs.crp.to / hardware spec)
+    ONLYKEY_VID = 0x1D50
+    ONLYKEY_PID = 0x60FC
+
     def __init__(self):
         super().__init__(
             plugin_id="onlykey_hsm",
             name="OnlyKey Challenge-Response HSM",
             version="1.0.0",
         )
+        self._libs_available = None
+        self._cached_slot = None
+
+    def _check_libs_available(self) -> bool:
+        """
+        Memoized probe: are the underlying HID + yubikit libraries importable?
+
+        OnlyKey reuses YubiKey's HMAC-SHA1 wire protocol, so we depend on the
+        same yubikit OTP machinery the YubikeyHSMPlugin uses. The actual HID
+        device enumeration is done via ykman's per-platform HID helpers
+        because we need raw access to non-Yubico VID/PID devices.
+        """
+        if self._libs_available is None:
+            try:
+                import yubikit.core.otp  # noqa: F401
+                import yubikit.yubiotp  # noqa: F401
+
+                self._libs_available = True
+            except ImportError:
+                self._libs_available = False
+        return self._libs_available
 
     def get_required_capabilities(self) -> Set[PluginCapability]:
         """OnlyKey HSM requires no file system capabilities."""
