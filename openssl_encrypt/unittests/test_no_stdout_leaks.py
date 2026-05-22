@@ -20,17 +20,17 @@ STDOUT_WHITELIST = [
     ("crypt_cli.py", 1083, "JSON error response"),
     ("crypt_cli.py", 1280, "JSON algorithm result"),
     ("crypt_cli.py", 1797, "JSON smart-recommendations"),
-    ("crypt_cli.py", 2882, "JSON keyserver bundle"),
-    ("crypt_cli.py", 3113, "JSON telemetry events"),
+    ("crypt_cli.py", 2969, "JSON keyserver bundle"),
+    ("crypt_cli.py", 3200, "JSON telemetry events"),
     # crypt_cli.py — decrypted plaintext outputs
-    ("crypt_cli.py", 8648, "asymmetric decrypted plaintext"),
-    ("crypt_cli.py", 8651, "asymmetric decrypted plaintext (quiet)"),
-    ("crypt_cli.py", 8840, "asymmetric decrypted plaintext path 2"),
-    ("crypt_cli.py", 8843, "asymmetric decrypted plaintext path 2 (quiet)"),
-    ("crypt_cli.py", 9622, "symmetric decrypted text content"),
+    ("crypt_cli.py", 8759, "asymmetric decrypted plaintext"),
+    ("crypt_cli.py", 8762, "asymmetric decrypted plaintext (quiet)"),
+    ("crypt_cli.py", 8951, "asymmetric decrypted plaintext path 2"),
+    ("crypt_cli.py", 8954, "asymmetric decrypted plaintext path 2 (quiet)"),
+    ("crypt_cli.py", 9733, "symmetric decrypted text content"),
     # crypt_cli.py — derive-password output to stdout
-    ("crypt_cli.py", 5304, "derive-password hex output"),
-    ("crypt_cli.py", 5308, "derive-password base64 output"),
+    ("crypt_cli.py", 5393, "derive-password hex output"),
+    ("crypt_cli.py", 5397, "derive-password base64 output"),
     # crypt_core.py — JSON data output
     ("crypt_core.py", 7866, "print_file_info JSON output"),
     # crypt_core.py — protected DO NOT CHANGE block

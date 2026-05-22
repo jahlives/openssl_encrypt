@@ -205,27 +205,45 @@ class IdentityKeyProtectionService:
     NONCE_SIZE = 12
     KEY_SIZE = 32  # AES-256
 
-    def __init__(self, hsm_plugin=None):
+    def __init__(self, hsm_plugin=None, hsm_type: str = "yubikey"):
         """
         Initialize the protection service.
 
         Args:
-            hsm_plugin: Optional Yubikey plugin instance (lazy loaded if not provided)
+            hsm_plugin: Optional explicit plugin instance — bypasses
+                hsm_type-based lookup. Useful for tests and direct injection.
+            hsm_type: Which HSM plugin to load when none is injected.
+                Supported: "yubikey" (default, preserves existing behavior),
+                "onlykey". Other values cause _get_hsm_plugin to return None.
         """
         self._hsm_plugin = hsm_plugin
+        self._hsm_type = hsm_type
         self._hsm_checked = False
         self._cached_pepper = None  # Cache pepper for single operation
 
     def _get_hsm_plugin(self):
-        """Lazy-load the HSM plugin."""
-        if self._hsm_plugin is None and not self._hsm_checked:
-            self._hsm_checked = True
-            try:
-                from openssl_encrypt.plugins.hsm.yubikey_challenge_response import YubikeyHSMPlugin
+        """Lazy-load the HSM plugin according to self._hsm_type."""
+        if self._hsm_plugin is not None:
+            return self._hsm_plugin
+        if self._hsm_checked:
+            return self._hsm_plugin  # may be None — already attempted
+        self._hsm_checked = True
+        try:
+            if self._hsm_type == "yubikey":
+                from openssl_encrypt.plugins.hsm.yubikey_challenge_response import (
+                    YubikeyHSMPlugin,
+                )
 
                 self._hsm_plugin = YubikeyHSMPlugin()
-            except ImportError:
-                pass
+            elif self._hsm_type == "onlykey":
+                from openssl_encrypt.plugins.hsm.onlykey_challenge_response import (
+                    OnlykeyHSMPlugin,
+                )
+
+                self._hsm_plugin = OnlykeyHSMPlugin()
+            # Other hsm_type values → leave self._hsm_plugin as None
+        except ImportError:
+            pass
         return self._hsm_plugin
 
     def is_hsm_available(self) -> bool:
@@ -587,7 +605,7 @@ class IdentityKeyProtectionService:
                 raise HSMNotAvailableError("HSM protection requested but no Yubikey available")
 
             hsm_config = HSMProtectionConfig(
-                hsm_type="yubikey",
+                hsm_type=self._hsm_type,
                 slot=hsm_slot or self.detect_hsm_slot(),
                 challenge_salt=secrets.token_bytes(self.CHALLENGE_SALT_SIZE),
                 require_touch=require_touch,
