@@ -13,7 +13,7 @@ OnlyKey HID device.
 
 import sys
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 # Stub hardware libraries at import time so the plugin can be imported
 # regardless of whether the real libraries are installed.
@@ -56,6 +56,39 @@ class TestOnlykeyPluginMetadata(unittest.TestCase):
         self.assertIn("OnlyKey", desc)
         self.assertIn("Challenge-Response", desc)
         self.assertIn("hardware-bound", desc.lower())
+
+
+class TestOnlykeyAvailabilityCheck(unittest.TestCase):
+    """The _check_libs_available probe (mirrors YubikeyHSMPlugin pattern)."""
+
+    def test_returns_true_when_libs_importable(self):
+        plugin = OnlykeyHSMPlugin()
+        # In the test environment the libs are stubbed via sys.modules so
+        # imports succeed.
+        self.assertTrue(plugin._check_libs_available())
+
+    def test_result_is_cached(self):
+        plugin = OnlykeyHSMPlugin()
+        first = plugin._check_libs_available()
+        second = plugin._check_libs_available()
+        self.assertEqual(first, second)
+        self.assertIs(plugin._libs_available, first)
+
+    def test_returns_false_when_yubikit_import_fails(self):
+        plugin = OnlykeyHSMPlugin()
+        # Force the probe to encounter an ImportError by temporarily removing
+        # yubikit from sys.modules and blocking re-import.
+        import builtins
+
+        real_import = builtins.__import__
+
+        def blocking_import(name, *args, **kwargs):
+            if name.startswith("yubikit"):
+                raise ImportError(f"blocked: {name}")
+            return real_import(name, *args, **kwargs)
+
+        with patch("builtins.__import__", side_effect=blocking_import):
+            self.assertFalse(plugin._check_libs_available())
 
 
 if __name__ == "__main__":
