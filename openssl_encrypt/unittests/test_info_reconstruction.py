@@ -532,6 +532,119 @@ class TestReconstructRemovedAlgorithmsV15(unittest.TestCase):
         self.assertNotIn("whirlpool", out)
 
 
+class TestReconstructionRoundTrip(unittest.TestCase):
+    """
+    Property test: encrypt a file with known parameters, extract metadata,
+    run the reconstructor, and verify the reconstructed CLI contains the
+    same parameter values that were used to encrypt — i.e. the
+    "reconstructed command would produce equivalent settings" guarantee.
+
+    Doesn't actually re-run the reconstructed CLI (that would require
+    a subprocess + the full encrypt pipeline). The weaker but well-defined
+    property: every KDF/hash/cipher parameter present in the metadata
+    must appear in the reconstructed flag string.
+    """
+
+    def _encrypt_tmp_file(self, **kdf_args):
+        """Encrypt a small payload with specified KDF params; return metadata."""
+        import os
+        import tempfile
+
+        from openssl_encrypt.modules.crypt_core import (
+            encrypt_file,
+            extract_file_metadata,
+        )
+
+        with tempfile.NamedTemporaryFile(
+            mode="wb", delete=False, suffix=".txt"
+        ) as f:
+            f.write(b"round-trip property test payload\n")
+            in_path = f.name
+        out_path = in_path + ".enc"
+        try:
+            hash_config = kdf_args.pop("hash_config", {})
+            encrypt_file(
+                in_path,
+                out_path,
+                password=b"round-trip-test-password",
+                hash_config=hash_config,
+                pbkdf2_iterations=0,
+                quiet=True,
+                algorithm="aes-gcm",
+                progress=False,
+                **kdf_args,
+            )
+            return extract_file_metadata(out_path)["metadata"]
+        finally:
+            for p in (in_path, out_path):
+                try:
+                    os.unlink(p)
+                except OSError:
+                    pass
+
+    def test_roundtrip_argon2_params_preserved(self):
+        from openssl_encrypt.modules.crypt_core import _reconstruct_cli_from_metadata
+
+        hash_config = {
+            "argon2": {
+                "enabled": True,
+                "rounds": 2,
+                "time_cost": 1,
+                "memory_cost": 8192,
+                "parallelism": 1,
+                "hash_len": 32,
+                "type": "id",
+            }
+        }
+        metadata = self._encrypt_tmp_file(hash_config=hash_config)
+        reconstructed = _reconstruct_cli_from_metadata(metadata)
+
+        # All argon2 parameter values must appear in the reconstructed CLI.
+        self.assertIn("--enable-argon2", reconstructed)
+        self.assertIn("--argon2-rounds 2", reconstructed)
+        self.assertIn("--argon2-time 1", reconstructed)
+        self.assertIn("--argon2-memory 8192", reconstructed)
+        self.assertIn("--argon2-parallelism 1", reconstructed)
+        self.assertIn("--argon2-hash-len 32", reconstructed)
+        self.assertIn("--argon2-type id", reconstructed)
+        # And the cipher.
+        self.assertIn("--algorithm aes-gcm", reconstructed)
+
+    def test_roundtrip_scrypt_params_preserved(self):
+        from openssl_encrypt.modules.crypt_core import _reconstruct_cli_from_metadata
+
+        hash_config = {
+            "scrypt": {
+                "enabled": True,
+                "rounds": 1,
+                "n": 1024,
+                "r": 8,
+                "p": 1,
+            }
+        }
+        metadata = self._encrypt_tmp_file(hash_config=hash_config)
+        reconstructed = _reconstruct_cli_from_metadata(metadata)
+
+        self.assertIn("--enable-scrypt", reconstructed)
+        self.assertIn("--scrypt-rounds 1", reconstructed)
+        self.assertIn("--scrypt-n 1024", reconstructed)
+        self.assertIn("--scrypt-r 8", reconstructed)
+        self.assertIn("--scrypt-p 1", reconstructed)
+
+    def test_roundtrip_sha_rounds_preserved(self):
+        from openssl_encrypt.modules.crypt_core import _reconstruct_cli_from_metadata
+
+        hash_config = {
+            "sha512": 100,
+            "sha256": 50,
+        }
+        metadata = self._encrypt_tmp_file(hash_config=hash_config)
+        reconstructed = _reconstruct_cli_from_metadata(metadata)
+
+        self.assertIn("--sha512-rounds 100", reconstructed)
+        self.assertIn("--sha256-rounds 50", reconstructed)
+
+
 class TestPrintFileInfoIncludesReconstruction(unittest.TestCase):
     """
     print_file_info() must append the reconstructed CLI line to its
