@@ -350,5 +350,95 @@ class TestSmallWordlistThreshold(unittest.TestCase):
         )
 
 
+class TestGeneratePassphrase(unittest.TestCase):
+    """Diceware passphrase generation against the EFF wordlist."""
+
+    def test_returns_string(self):
+        from openssl_encrypt.modules.diceware import generate_passphrase
+
+        self.assertIsInstance(generate_passphrase(count=6), str)
+
+    def test_count_words_with_separator(self):
+        from openssl_encrypt.modules.diceware import generate_passphrase
+
+        phrase = generate_passphrase(count=10, sep=" ")
+        self.assertEqual(len(phrase.split(" ")), 10)
+
+    def test_count_words_with_empty_separator_via_supplied_wordlist(self):
+        """With empty separator, count is verifiable by intersecting words."""
+        from openssl_encrypt.modules.diceware import generate_passphrase
+
+        # Fixed wordlist of equal-length distinct words so we can chunk
+        # and recover the count even with sep="".
+        wl = [f"word{i:04d}" for i in range(2000)]
+        phrase = generate_passphrase(count=5, sep="", wordlist=wl)
+        # Each word is 8 chars; phrase total length = 40.
+        self.assertEqual(len(phrase), 40)
+
+    def test_separator_is_applied_between_words_only(self):
+        from openssl_encrypt.modules.diceware import generate_passphrase
+
+        # 4 words → 3 separators in between (no leading/trailing).
+        phrase = generate_passphrase(count=4, sep="-")
+        self.assertEqual(phrase.count("-"), 3)
+        self.assertFalse(phrase.startswith("-"))
+        self.assertFalse(phrase.endswith("-"))
+
+    def test_uses_provided_wordlist_exclusively(self):
+        from openssl_encrypt.modules.diceware import generate_passphrase
+
+        wl = [f"only{i:04d}" for i in range(2000)]
+        phrase = generate_passphrase(count=8, sep=" ", wordlist=wl)
+        for w in phrase.split(" "):
+            self.assertIn(w, wl)
+
+    def test_uses_default_wordlist_when_none_supplied(self):
+        from openssl_encrypt.modules.diceware import generate_passphrase, load_wordlist
+
+        eff_words = set(load_wordlist())
+        phrase = generate_passphrase(count=10, sep=" ")
+        for w in phrase.split(" "):
+            self.assertIn(w, eff_words)
+
+    def test_invalid_count_raises_value_error(self):
+        from openssl_encrypt.modules.diceware import generate_passphrase
+
+        with self.assertRaises(ValueError):
+            generate_passphrase(count=0)
+        with self.assertRaises(ValueError):
+            generate_passphrase(count=-1)
+
+    def test_two_calls_produce_different_passphrases(self):
+        """Trivially unlikely otherwise (12.92 × 10 = 129 bits of entropy)."""
+        from openssl_encrypt.modules.diceware import generate_passphrase
+
+        a = generate_passphrase(count=10, sep=" ")
+        b = generate_passphrase(count=10, sep=" ")
+        self.assertNotEqual(a, b)
+
+    def test_uses_secrets_systemrandom_not_random_random(self):
+        """
+        Guard against any future refactor switching to non-CSPRNG.
+        Patch secrets.SystemRandom and assert the patched object is used.
+        """
+        from unittest.mock import MagicMock, patch
+
+        from openssl_encrypt.modules.diceware import generate_passphrase
+
+        wl = [f"w{i}" for i in range(1024)]
+        mock_rng = MagicMock()
+        mock_rng.choice.side_effect = lambda seq: seq[0]
+
+        with patch(
+            "openssl_encrypt.modules.diceware.secrets.SystemRandom",
+            return_value=mock_rng,
+        ):
+            phrase = generate_passphrase(count=3, sep="-", wordlist=wl)
+
+        # All-zero indices → first word ("w0") three times.
+        self.assertEqual(phrase, "w0-w0-w0")
+        self.assertEqual(mock_rng.choice.call_count, 3)
+
+
 if __name__ == "__main__":
     unittest.main()

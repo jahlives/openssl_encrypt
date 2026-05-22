@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import importlib.resources
 import re
+import secrets
 import warnings
 from pathlib import Path
 from typing import List, Optional, Union
@@ -157,3 +158,41 @@ def _validate_wordlist(words: List[str], *, force_small: bool = False) -> None:
                 "flag) to allow this list anyway."
             )
         warnings.warn(msg, UserWarning, stacklevel=3)
+
+
+def generate_passphrase(
+    count: int,
+    sep: str = "",
+    wordlist: Optional[List[str]] = None,
+) -> str:
+    """
+    Generate a Diceware-style passphrase.
+
+    Args:
+        count: Number of words in the passphrase. Must be >= 1.
+        sep: Separator placed between words (empty string by default —
+            matches the approved plan's Q14 decision for maximum
+            compatibility with password fields that strip whitespace).
+        wordlist: Optional list of words to draw from. If ``None``, uses
+            the bundled EFF Large Wordlist (loaded fresh on each call).
+
+    Returns:
+        The generated passphrase as a single string.
+
+    Raises:
+        ValueError: if ``count`` is not a positive integer.
+
+    Randomness source:
+        :class:`secrets.SystemRandom`, which delegates to the OS CSPRNG.
+        This module deliberately does NOT expose any seedable interface
+        — a deterministic Diceware passphrase would defeat its purpose.
+    """
+    if count < 1:
+        raise ValueError(f"count must be >= 1, got {count}")
+
+    if wordlist is None:
+        wordlist = load_wordlist()
+
+    rng = secrets.SystemRandom()
+    chosen = [rng.choice(wordlist) for _ in range(count)]
+    return sep.join(chosen)
