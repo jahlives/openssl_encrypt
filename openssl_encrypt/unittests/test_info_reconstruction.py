@@ -459,5 +459,53 @@ class TestReconstructPepperFlags(unittest.TestCase):
         self.assertNotIn("--pepper", out)
 
 
+class TestReconstructLegacyAlgorithms(unittest.TestCase):
+    """
+    Legacy algorithms still supported by v1.4 for decryption (PBKDF2 in
+    kdf_config, Whirlpool in hash_config). On v1.4 the reconstruction
+    simply emits the working flag — the v1.5 port re-routes these to
+    commented-out migration hints since v1.5 removes these from the CLI.
+    """
+
+    def test_pbkdf2_iterations_emitted(self):
+        from openssl_encrypt.modules.crypt_core import _reconstruct_cli_from_metadata
+
+        meta = {
+            "derivation_config": {
+                "kdf_config": {"pbkdf2": {"rounds": 100000}}
+            }
+        }
+        out = _reconstruct_cli_from_metadata(meta)
+        self.assertIn("--pbkdf2-iterations 100000", out)
+
+    def test_pbkdf2_zero_rounds_skipped(self):
+        from openssl_encrypt.modules.crypt_core import _reconstruct_cli_from_metadata
+
+        meta = {
+            "derivation_config": {"kdf_config": {"pbkdf2": {"rounds": 0}}}
+        }
+        out = _reconstruct_cli_from_metadata(meta)
+        self.assertNotIn("--pbkdf2-iterations", out)
+
+    def test_whirlpool_rounds_emitted(self):
+        from openssl_encrypt.modules.crypt_core import _reconstruct_cli_from_metadata
+
+        meta = {
+            "derivation_config": {
+                "hash_config": {"whirlpool": {"rounds": 5000}}
+            }
+        }
+        out = _reconstruct_cli_from_metadata(meta)
+        self.assertIn("--whirlpool-rounds 5000", out)
+
+    def test_whirlpool_scalar_form(self):
+        from openssl_encrypt.modules.crypt_core import _reconstruct_cli_from_metadata
+
+        out = _reconstruct_cli_from_metadata(
+            {"derivation_config": {"hash_config": {"whirlpool": 5000}}}
+        )
+        self.assertIn("--whirlpool-rounds 5000", out)
+
+
 if __name__ == "__main__":
     unittest.main()

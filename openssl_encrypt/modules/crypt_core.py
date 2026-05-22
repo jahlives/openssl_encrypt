@@ -8034,9 +8034,11 @@ def _reconstruct_cli_from_metadata(metadata: dict) -> str:
     _append_balloon_flags(lines, kdf_config.get("balloon") or {})
     _append_hkdf_flags(lines, kdf_config.get("hkdf") or {})
     _append_randomx_flags(lines, kdf_config.get("randomx") or {})
+    _append_pbkdf2_flags(lines, kdf_config.get("pbkdf2") or {})
 
     hash_config = derivation.get("hash_config") or {}
     _append_hash_rounds_flags(lines, hash_config)
+    _append_whirlpool_flags(lines, hash_config.get("whirlpool"))
 
     return " \\\n".join(lines)
 
@@ -8147,6 +8149,43 @@ def _append_hkdf_flags(lines: list, cfg: dict) -> None:
         lines.append(f"  --hkdf-algorithm {cfg['algorithm']}")
     if "info" in cfg:
         lines.append(f"  --hkdf-info {cfg['info']}")
+
+
+def _append_pbkdf2_flags(lines: list, cfg: dict) -> None:
+    """
+    Append --pbkdf2-iterations N when PBKDF2 is configured.
+
+    PBKDF2 is a legacy KDF that v1.5 removes from the CLI entirely.
+    On v1.4 we still emit the flag normally (the CLI accepts it).
+    The v1.5 port re-routes this to a commented migration hint
+    (``# --pbkdf2-iterations N  (removed in v1.5.0 — use Argon2id)``)
+    since the flag no longer exists there.
+    """
+    if not cfg:
+        return
+    if isinstance(cfg, dict):
+        rounds = cfg.get("rounds", 0)
+    else:
+        rounds = cfg
+    if rounds and rounds > 0:
+        lines.append(f"  --pbkdf2-iterations {rounds}")
+
+
+def _append_whirlpool_flags(lines: list, cfg) -> None:
+    """
+    Append --whirlpool-rounds N when Whirlpool is configured.
+
+    Same legacy treatment as PBKDF2 — supported on v1.4, removed in
+    v1.5 (the port will switch this to a commented migration hint).
+    """
+    if cfg is None:
+        return
+    if isinstance(cfg, dict):
+        rounds = cfg.get("rounds", 0)
+    else:
+        rounds = cfg
+    if rounds and rounds > 0:
+        lines.append(f"  --whirlpool-rounds {rounds}")
 
 
 def _append_randomx_flags(lines: list, cfg: dict) -> None:
