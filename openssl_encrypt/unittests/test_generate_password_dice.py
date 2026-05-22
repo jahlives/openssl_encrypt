@@ -221,5 +221,150 @@ class TestGeneratePasswordRuntimeValidation(unittest.TestCase):
         )
 
 
+class TestRunDiceGeneration(unittest.TestCase):
+    """The _run_dice_generation helper that ties the diceware module to the CLI."""
+
+    def _make_args(self, **overrides):
+        """Build a SimpleNamespace mimicking parsed CLI args."""
+        from types import SimpleNamespace
+
+        defaults = dict(
+            dice_list=None,
+            dice_count=10,
+            dice_sep="",
+            force_wordlist=False,
+        )
+        defaults.update(overrides)
+        return SimpleNamespace(**defaults)
+
+    def test_returns_passphrase_and_entropy(self):
+        from openssl_encrypt.modules.crypt_cli import _run_dice_generation
+
+        phrase, bits = _run_dice_generation(self._make_args())
+        self.assertIsInstance(phrase, str)
+        self.assertIsInstance(bits, float)
+
+    def test_default_uses_bundled_eff_list(self):
+        from openssl_encrypt.modules.crypt_cli import _run_dice_generation
+        from openssl_encrypt.modules.diceware import load_wordlist
+
+        bundled = set(load_wordlist())
+        phrase, bits = _run_dice_generation(
+            self._make_args(dice_count=10, dice_sep=" ")
+        )
+        for w in phrase.split(" "):
+            self.assertIn(w, bundled)
+        # 10 words × log2(7776) ≈ 129.2 bits
+        self.assertAlmostEqual(bits, 129.2, places=1)
+
+    def test_custom_wordlist_used(self):
+        import tempfile
+
+        from openssl_encrypt.modules.crypt_cli import _run_dice_generation
+
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".txt", delete=False
+        ) as f:
+            for i in range(2000):
+                f.write(f"customword{i:04d}\n")
+            tmp = f.name
+        try:
+            phrase, bits = _run_dice_generation(
+                self._make_args(dice_list=tmp, dice_count=5, dice_sep=" ")
+            )
+            for w in phrase.split(" "):
+                self.assertTrue(w.startswith("customword"))
+            # Custom 2000-word list → 5 * log2(2000) ≈ 54.83 bits
+            import math
+            self.assertAlmostEqual(bits, 5 * math.log2(2000), places=3)
+        finally:
+            import os
+            os.unlink(tmp)
+
+    def test_force_wordlist_passed_to_loader(self):
+        """A small custom list must work with --force-wordlist."""
+        import tempfile
+
+        from openssl_encrypt.modules.crypt_cli import _run_dice_generation
+
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".txt", delete=False
+        ) as f:
+            for i in range(100):
+                f.write(f"tiny{i:03d}\n")
+            tmp = f.name
+        try:
+            # Without force_wordlist, this would raise WordlistValidationError
+            phrase, _bits = _run_dice_generation(
+                self._make_args(dice_list=tmp, dice_count=3, force_wordlist=True)
+            )
+            self.assertTrue(phrase.startswith("tiny"))
+        finally:
+            import os
+            os.unlink(tmp)
+
+    def test_dice_count_one_produces_one_word_no_separator(self):
+        from openssl_encrypt.modules.crypt_cli import _run_dice_generation
+
+        phrase, _bits = _run_dice_generation(
+            self._make_args(dice_count=1, dice_sep="-")
+        )
+        self.assertNotIn("-", phrase)
+
+
+class TestGeneratePasswordDiceHandlerIntegration(unittest.TestCase):
+    """
+    End-to-end-ish: invoke the generate-password handler with --dice
+    and confirm it dispatches to the dice path, prints the entropy
+    line on stderr, and exits 0.
+    """
+
+    def _run_main_with(self, argv_after_action):
+        """Invoke main_with_args via subprocess capturing stderr/stdout."""
+        import os
+        import subprocess
+        import sys
+
+        env = os.environ.copy()
+        env["PYTHONPATH"] = os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+        cmd = [
+            sys.executable,
+            "-c",
+            "from openssl_encrypt.modules.crypt_cli import main_with_args; "
+            "main_with_args()",
+            "generate-password",
+        ] + argv_after_action
+        return subprocess.run(
+            cmd, env=env, capture_output=True, text=True, timeout=30
+        )
+
+    def test_dice_smoke_runs_and_prints_entropy(self):
+        """--dice mode runs to completion and emits entropy line on stderr."""
+        # Use 3 words with sep="-" so the output is easy to inspect.
+        result = self._run_main_with(
+            ["--dice", "--dice-count", "3", "--dice-sep", "-"]
+        )
+        self.assertEqual(
+            result.returncode,
+            0,
+            f"unexpected exit: rc={result.returncode}\nstderr={result.stderr}",
+        )
+        self.assertIn("Passphrase entropy:", result.stderr)
+        self.assertIn("3 words", result.stderr)
+
+    def test_dice_combined_with_use_lowercase_exits_nonzero(self):
+        result = self._run_main_with(["--dice", "--use-lowercase"])
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("--dice", result.stderr)
+        self.assertIn("--use-lowercase", result.stderr)
+
+    def test_dice_count_without_dice_exits_nonzero(self):
+        result = self._run_main_with(["--dice-count", "6"])
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("require --dice", result.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()
