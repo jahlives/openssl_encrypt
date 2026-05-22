@@ -568,7 +568,6 @@ class TestReconstructionRoundTrip(unittest.TestCase):
                 out_path,
                 password=b"round-trip-test-password",
                 hash_config=hash_config,
-                pbkdf2_iterations=0,
                 quiet=True,
                 algorithm="aes-gcm",
                 progress=False,
@@ -662,8 +661,8 @@ class TestPrintFileInfoIncludesReconstruction(unittest.TestCase):
         path = os.path.join(
             os.path.dirname(__file__),
             "testfiles",
-            "v4",
-            "test1_aes-gcm-siv.txt",
+            "v12",
+            "test_v12_aes-gcm-siv_blake2b=2_argon2=2.txt",
         )
         old_stderr = sys.stderr
         capture = io.StringIO()
@@ -683,8 +682,8 @@ class TestPrintFileInfoIncludesReconstruction(unittest.TestCase):
         path = os.path.join(
             os.path.dirname(__file__),
             "testfiles",
-            "v4",
-            "test1_aes-gcm-siv.txt",
+            "v12",
+            "test_v12_aes-gcm-siv_blake2b=2_argon2=2.txt",
         )
         old_stdout = sys.stdout
         capture = io.StringIO()
