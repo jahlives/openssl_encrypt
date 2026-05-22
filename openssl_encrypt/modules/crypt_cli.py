@@ -3824,6 +3824,13 @@ def main_with_args(args=None):
         help="Password (will prompt if not provided, or use CRYPT_PASSWORD environment variable)",
     )
     parser.add_argument(
+        "--confirm",
+        action="store_true",
+        help="(derive-password only) Prompt for the password twice and verify "
+        "they match before deriving — guards against typos that would yield "
+        "a silent, irreproducible output.",
+    )
+    parser.add_argument(
         "--random",
         type=int,
         metavar="LENGTH",
@@ -5452,8 +5459,20 @@ def main_with_args(args=None):
                 sys.exit(1)
 
         if not getattr(args, "password", None):
-            # Prompt for password
+            # Prompt for password. With --confirm, prompt twice and reject
+            # on mismatch — guards against typos that would silently produce
+            # a different (wrong-but-valid-looking) derived value.
             args.password = getpass.getpass("Password for key derivation: ")
+            if getattr(args, "confirm", False):
+                confirm_pw = getpass.getpass("Confirm password: ")
+                if confirm_pw != args.password:
+                    eprint(
+                        "Error: passwords do not match. Re-run without typos; "
+                        "derive-password produces a different output for every "
+                        "distinct input, so a typo would silently waste your "
+                        "downstream use."
+                    )
+                    sys.exit(1)
 
         if not args.password:
             eprint("Error: password is required for derive-password")

@@ -496,5 +496,100 @@ class TestDerivePasswordKDFIntegration(unittest.TestCase):
         self.assertRegex(output, r"^[0-9a-f]+$")
 
 
+class TestDerivePasswordConfirm(unittest.TestCase):
+    """The new --confirm flag: prompt twice and verify the two entries match."""
+
+    FIXED_SALT = "aa" * 16
+
+    def _run_with_two_prompts(self, first: str, second: str, extra_args=None):
+        """Run derive-password --confirm with two mocked getpass returns."""
+        extra_args = extra_args or []
+        base_args = [
+            "crypt.py",
+            "--quiet",
+            "derive-password",
+            "--force-password",
+            "--confirm",
+            "--salt",
+            self.FIXED_SALT,
+        ] + extra_args
+        sys.argv = base_args
+
+        stdout_capture = io.StringIO()
+        stderr_capture = io.StringIO()
+        old_stdout, old_stderr = sys.stdout, sys.stderr
+        exit_code = None
+        try:
+            sys.stdout = stdout_capture
+            sys.stderr = stderr_capture
+            with mock.patch("getpass.getpass", side_effect=[first, second]):
+                with mock.patch("sys.exit") as mock_exit:
+                    mock_exit.side_effect = SystemExit
+                    try:
+                        cli_main()
+                    except SystemExit as e:
+                        exit_code = (
+                            e.code
+                            if e.code is not None
+                            else (mock_exit.call_args[0][0] if mock_exit.called else 0)
+                        )
+        finally:
+            sys.stdout, sys.stderr = old_stdout, old_stderr
+        return exit_code, stdout_capture.getvalue(), stderr_capture.getvalue()
+
+    def test_confirm_matching_passwords_succeeds(self):
+        exit_code, stdout, stderr = self._run_with_two_prompts(
+            "samepass!", "samepass!"
+        )
+        self.assertEqual(exit_code, 0, f"stderr: {stderr}")
+        self.assertRegex(stdout.strip(), r"^[0-9a-f]+$")
+
+    def test_confirm_mismatched_passwords_errors(self):
+        exit_code, _stdout, stderr = self._run_with_two_prompts(
+            "first-typo", "second-typo"
+        )
+        self.assertNotEqual(exit_code, 0)
+        self.assertIn("match", stderr.lower())
+
+    def test_confirm_with_password_flag_no_double_prompt(self):
+        """--password set on CLI: --confirm is harmless no-op (no prompt)."""
+        sys.argv = [
+            "crypt.py",
+            "--quiet",
+            "derive-password",
+            "--force-password",
+            "--confirm",
+            "--password",
+            "supplied-on-cli",
+            "--salt",
+            self.FIXED_SALT,
+        ]
+        stdout_capture = io.StringIO()
+        stderr_capture = io.StringIO()
+        old_stdout, old_stderr = sys.stdout, sys.stderr
+        exit_code = None
+        try:
+            sys.stdout = stdout_capture
+            sys.stderr = stderr_capture
+            # If --confirm were to prompt despite --password being set,
+            # getpass would be called and our (intentional) empty
+            # side_effect list would raise StopIteration.
+            with mock.patch("getpass.getpass", side_effect=[]):
+                with mock.patch("sys.exit") as mock_exit:
+                    mock_exit.side_effect = SystemExit
+                    try:
+                        cli_main()
+                    except SystemExit as e:
+                        exit_code = (
+                            e.code
+                            if e.code is not None
+                            else (mock_exit.call_args[0][0] if mock_exit.called else 0)
+                        )
+        finally:
+            sys.stdout, sys.stderr = old_stdout, old_stderr
+        self.assertEqual(exit_code, 0, f"stderr: {stderr_capture.getvalue()}")
+        self.assertRegex(stdout_capture.getvalue().strip(), r"^[0-9a-f]+$")
+
+
 if __name__ == "__main__":
     unittest.main()
