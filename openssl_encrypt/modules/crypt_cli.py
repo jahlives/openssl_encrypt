@@ -4150,16 +4150,18 @@ def main_with_args(args=None):
         "--hsm",
         metavar="PLUGIN",
         help="Enable HSM (Hardware Security Module) plugin for hardware-bound key derivation. "
-        "Supported: 'yubikey' (YubiKey Challenge-Response), 'fido2' (FIDO2 hmac-secret). "
+        "Supported: 'yubikey' (YubiKey Challenge-Response, slots 1..2), "
+        "'onlykey' (OnlyKey Challenge-Response, slots 1..12), "
+        "'fido2' (FIDO2 hmac-secret). "
         "The HSM adds a hardware-specific pepper to the key derivation, requiring the device "
         "for both encryption and decryption.",
     )
     plugin_group.add_argument(
         "--hsm-slot",
         type=int,
-        choices=[1, 2],
         metavar="SLOT",
-        help="Manually specify Yubikey slot (1 or 2) for Challenge-Response. "
+        help="Manually specify the Challenge-Response slot. Valid range is plugin-specific: "
+        "YubiKey 1..2, OnlyKey 1..12. "
         "If not specified, the plugin will auto-detect the configured slot.",
     )
 
@@ -6236,6 +6238,24 @@ def main_with_args(args=None):
                         else:
                             eprint("   Auto-detecting Challenge-Response slot")
 
+                elif args.hsm.lower() == "onlykey":
+                    from ..plugins.hsm.onlykey_challenge_response import OnlykeyHSMPlugin
+
+                    hsm_plugin_instance = OnlykeyHSMPlugin()
+
+                    # Initialize plugin
+                    init_result = hsm_plugin_instance.initialize({})
+                    if not init_result.success:
+                        eprint(f"Error initializing HSM plugin: {init_result.message}")
+                        sys.exit(1)
+
+                    if not args.quiet:
+                        eprint(f"✅ Loaded HSM plugin: {hsm_plugin_instance.name}")
+                        if hasattr(args, "hsm_slot") and args.hsm_slot:
+                            eprint(f"   Using manual slot: {args.hsm_slot}")
+                        else:
+                            eprint("   Auto-detecting Challenge-Response slot (1..12)")
+
                 elif args.hsm.lower() == "fido2":
                     from ..plugins.hsm.fido2_pepper import FIDO2HSMPlugin
 
@@ -6256,12 +6276,16 @@ def main_with_args(args=None):
                             )
 
                 else:
-                    eprint(f"Error: Unknown HSM plugin '{args.hsm}'. Supported: yubikey, fido2")
+                    eprint(f"Error: Unknown HSM plugin '{args.hsm}'. Supported: yubikey, onlykey, fido2")
                     sys.exit(1)
 
             except ImportError as e:
                 eprint(f"Error: Could not import HSM plugin: {e}")
                 if args.hsm.lower() == "yubikey":
+                    eprint(
+                        "Make sure yubikey-manager is installed: pip install -r requirements-hsm.txt"
+                    )
+                elif args.hsm.lower() == "onlykey":
                     eprint(
                         "Make sure yubikey-manager is installed: pip install -r requirements-hsm.txt"
                     )

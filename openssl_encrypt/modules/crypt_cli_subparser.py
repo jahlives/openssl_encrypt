@@ -737,16 +737,17 @@ def setup_encrypt_parser(subparser):
         "--hsm",
         metavar="PLUGIN",
         help="Enable HSM (Hardware Security Module) plugin for hardware-bound key derivation. "
-        "Supported: 'yubikey' (Yubikey Challenge-Response). "
+        "Supported: 'yubikey' (Yubikey Challenge-Response, slots 1..2), "
+        "'onlykey' (OnlyKey Challenge-Response, slots 1..12). "
         "The HSM adds a hardware-specific pepper to the key derivation, requiring the device "
         "for both encryption and decryption.",
     )
     hsm_group.add_argument(
         "--hsm-slot",
         type=int,
-        choices=[1, 2],
         metavar="SLOT",
-        help="Manually specify Yubikey slot (1 or 2) for Challenge-Response. "
+        help="Manually specify the Challenge-Response slot. Valid range is plugin-specific: "
+        "YubiKey 1..2, OnlyKey 1..12. "
         "If not specified, the plugin will auto-detect the configured slot.",
     )
 
@@ -991,15 +992,15 @@ def setup_decrypt_parser(subparser):
         "--hsm",
         metavar="PLUGIN",
         help="Enable HSM (Hardware Security Module) plugin for hardware-bound key derivation. "
-        "Supported: 'yubikey' (Yubikey Challenge-Response). "
+        "Supported: 'yubikey' (slots 1..2), 'onlykey' (slots 1..12). "
         "Required if the file was encrypted with an HSM plugin.",
     )
     hsm_group.add_argument(
         "--hsm-slot",
         type=int,
-        choices=[1, 2],
         metavar="SLOT",
-        help="Manually specify Yubikey slot (1 or 2) for Challenge-Response. "
+        help="Manually specify the Challenge-Response slot. Valid range is plugin-specific: "
+        "YubiKey 1..2, OnlyKey 1..12. "
         "If not specified, the slot will be read from file metadata or auto-detected.",
     )
 
@@ -1450,14 +1451,15 @@ def setup_rekey_parser(subparser):
         "--hsm",
         metavar="PLUGIN",
         help="Enable HSM plugin for hardware-bound key derivation. "
+        "Supported: 'yubikey' (slots 1..2), 'onlykey' (slots 1..12). "
         "Required if the file was encrypted with an HSM plugin.",
     )
     hsm_group.add_argument(
         "--hsm-slot",
         type=int,
-        choices=[1, 2],
         metavar="SLOT",
-        help="Manually specify Yubikey slot (1 or 2) for Challenge-Response.",
+        help="Manually specify the Challenge-Response slot. "
+        "YubiKey 1..2, OnlyKey 1..12.",
     )
 
     # Remote Pepper options
