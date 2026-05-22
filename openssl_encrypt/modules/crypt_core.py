@@ -7996,6 +7996,37 @@ def print_file_info(input_file: str, json_output: bool = False) -> dict:
     return metadata
 
 
+def _reconstruct_cli_from_metadata(metadata: dict) -> str:
+    """
+    Reconstruct an ``openssl_encrypt encrypt`` CLI line from file metadata.
+
+    Given the metadata extracted from an encrypted file, return a
+    multi-line shell command (with ``\\`` continuations) whose execution
+    would produce equivalent encryption settings on a fresh file. The
+    salt, file paths, and per-file random values are NOT included — only
+    the deterministic configuration (cipher, KDFs, hash rounds, HSM
+    binding, etc.).
+
+    This is the helper backing the CLI-reconstruction output of the
+    ``info`` action. It is intentionally additive — each commit in the
+    series adds one slice of the reconstruction (cipher, KDF group N,
+    hashes, HSM, pepper, removed-flag handling). Until a slice lands,
+    the helper simply skips that part of the metadata.
+
+    Args:
+        metadata: The file metadata dict as returned by
+            :func:`extract_file_metadata`.
+
+    Returns:
+        Multi-line shell command starting with ``openssl_encrypt encrypt``.
+    """
+    lines = ["openssl_encrypt encrypt"]
+    # Subsequent commits will append per-category reconstruction lines
+    # to `lines` (each formatted like "  --argon2-time 3 \\"). For now,
+    # we emit the bare command as the placeholder.
+    return " \\\n".join(lines)
+
+
 def _format_kdf_params(kdf_name: str, params: dict) -> str:
     """Format KDF parameters for display."""
     if kdf_name == "argon2":
