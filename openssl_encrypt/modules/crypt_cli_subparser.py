@@ -2438,6 +2438,18 @@ def setup_hsm_parser(subparser):
         "fido2-list", help="List connected FIDO2 devices and their capabilities"
     )
 
+    # OnlyKey list devices subcommand
+    hsm_subparsers.add_parser(
+        "onlykey-list",
+        help="List connected OnlyKey devices (USB VID 0x1d50:0x60fc)",
+    )
+
+    # OnlyKey test subcommand
+    hsm_subparsers.add_parser(
+        "onlykey-test",
+        help="Test OnlyKey Challenge-Response pepper derivation with a random salt",
+    )
+
     # FIDO2 unregister subcommand
     fido2_unregister_parser = hsm_subparsers.add_parser(
         "fido2-unregister", help="Remove FIDO2 credential registration"

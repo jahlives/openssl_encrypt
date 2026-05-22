@@ -2461,27 +2461,31 @@ def handle_hsm_command(args):
     import getpass
     import secrets
 
-    # Import FIDO2 plugin
-    try:
-        from ..plugins.hsm.fido2_pepper import FIDO2_AVAILABLE, FIDO2HSMPlugin
-    except ImportError:
-        eprint("❌ Error: FIDO2 library not available")
-        eprint("Install with: pip install fido2>=1.1.0")
-        sys.exit(1)
-
-    if not FIDO2_AVAILABLE:
-        eprint("❌ Error: FIDO2 library not available")
-        eprint("Install with: pip install fido2>=1.1.0")
-        sys.exit(1)
-
-    # Get HSM action
+    # Determine action first so non-FIDO2 actions (e.g. onlykey-*) don't
+    # require the fido2 library to be installed.
     action = args.hsm_action
 
-    # Get optional rp_id
-    rp_id = getattr(args, "rp_id", None)
+    # FIDO2 plugin is only needed for fido2-* actions. Lazy-import to keep
+    # onlykey-* actions usable on machines without fido2.
+    plugin = None
+    if action.startswith("fido2-"):
+        try:
+            from ..plugins.hsm.fido2_pepper import FIDO2_AVAILABLE, FIDO2HSMPlugin
+        except ImportError:
+            eprint("❌ Error: FIDO2 library not available")
+            eprint("Install with: pip install fido2>=1.1.0")
+            sys.exit(1)
 
-    # Initialize plugin
-    plugin = FIDO2HSMPlugin(rp_id=rp_id) if rp_id else FIDO2HSMPlugin()
+        if not FIDO2_AVAILABLE:
+            eprint("❌ Error: FIDO2 library not available")
+            eprint("Install with: pip install fido2>=1.1.0")
+            sys.exit(1)
+
+        # Get optional rp_id
+        rp_id = getattr(args, "rp_id", None)
+
+        # Initialize plugin
+        plugin = FIDO2HSMPlugin(rp_id=rp_id) if rp_id else FIDO2HSMPlugin()
 
     if action == "fido2-register":
         # Register new FIDO2 credential
@@ -2669,6 +2673,89 @@ def handle_hsm_command(args):
                 eprint(f"Configuration updated: {plugin.credential_file}")
         else:
             eprint(f"\n❌ Removal failed: {result.message}")
+            sys.exit(1)
+
+    elif action == "onlykey-list":
+        # List connected OnlyKey devices (USB VID 0x1d50:0x60fc).
+        from ..plugins.hsm.onlykey_challenge_response import OnlykeyHSMPlugin
+
+        ok_plugin = OnlykeyHSMPlugin()
+
+        eprint("\n🔐 Connected OnlyKey Devices")
+        eprint("=" * 50)
+
+        try:
+            devices = ok_plugin._list_onlykey_devices()
+        except Exception as e:
+            eprint(f"❌ Error enumerating OnlyKey devices: {e}")
+            sys.exit(1)
+
+        if not devices:
+            eprint("❌ No OnlyKey devices found")
+            eprint(
+                "\nPlease connect an OnlyKey and ensure it is unlocked "
+                "(enter PIN on device buttons)."
+            )
+            eprint(
+                f"\nExpected USB IDs: VID 0x{ok_plugin.ONLYKEY_VID:04x}, "
+                f"PID 0x{ok_plugin.ONLYKEY_PID:04x}"
+            )
+            sys.exit(0)
+
+        eprint(f"Found {len(devices)} OnlyKey device(s):\n")
+        for i, device in enumerate(devices, 1):
+            # OtpYubiKeyDevice exposes .path on Linux/macOS/Windows
+            path = getattr(device, "path", "<unknown>")
+            eprint(f"Device #{i}: {path}")
+            eprint(
+                f"  USB IDs: VID 0x{ok_plugin.ONLYKEY_VID:04x}, "
+                f"PID 0x{ok_plugin.ONLYKEY_PID:04x}"
+            )
+            eprint()
+
+    elif action == "onlykey-test":
+        # Test OnlyKey Challenge-Response pepper derivation.
+        from ..plugins.hsm.onlykey_challenge_response import OnlykeyHSMPlugin
+        from .plugin_system.plugin_base import PluginSecurityContext
+
+        ok_plugin = OnlykeyHSMPlugin()
+
+        eprint("\n🔐 OnlyKey Pepper Derivation Test")
+        eprint("=" * 50)
+
+        # Optional manual slot override via --hsm-slot
+        slot_override = getattr(args, "hsm_slot", None)
+
+        test_salt = secrets.token_bytes(16)
+        eprint(f"Test salt: {test_salt.hex()}")
+        eprint(
+            "\nPlease connect your OnlyKey. If the device is locked, enter "
+            "your PIN on the OnlyKey buttons before continuing."
+        )
+        if slot_override:
+            eprint(f"Using manual slot: {slot_override}")
+        else:
+            eprint("Auto-detecting Challenge-Response slot (1..12)...")
+
+        context = PluginSecurityContext(
+            plugin_id=ok_plugin.plugin_id,
+            capabilities=ok_plugin.get_required_capabilities(),
+        )
+        if slot_override:
+            context.config["slot"] = slot_override
+
+        result = ok_plugin.get_hsm_pepper(test_salt, context)
+
+        if result.success:
+            pepper = result.data.get("hsm_pepper")
+            slot = result.data.get("slot")
+            eprint("\n✅ Test successful!")
+            eprint(f"Slot: {slot}")
+            eprint(f"Pepper length: {len(pepper)} bytes")
+            eprint(f"Pepper (hex): {pepper.hex()}")
+            eprint("\nYour OnlyKey Challenge-Response is working correctly.")
+        else:
+            eprint(f"\n❌ Test failed: {result.message}")
             sys.exit(1)
 
     else:
