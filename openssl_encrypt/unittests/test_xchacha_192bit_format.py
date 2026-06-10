@@ -277,6 +277,43 @@ class TestNewFormatCascade(unittest.TestCase):
             self._encrypt_cascade()
         self.assertIn(24, calls, "real XChaCha primitive not used in cascade layer")
 
+    def test_streaming_cascade_round_trip(self):
+        """Streaming + cascade + XChaCha must round-trip with the real
+        construction.
+
+        format_version=12 is required here: streaming metadata always says
+        v12, and the cascade encryptor gates per-layer salts and AAD scope
+        on the *passed* version — any other value desynchronizes encrypt
+        and decrypt (pre-existing bug, present for all cipher chains)."""
+        import tempfile
+
+        data = PLAINTEXT * 3000
+        with tempfile.TemporaryDirectory() as tmpdir:
+            plain_path = f"{tmpdir}/plain.bin"
+            enc_path = f"{tmpdir}/enc.bin"
+            Path(plain_path).write_bytes(data)
+            self.assertTrue(
+                encrypt_file(
+                    input_file=plain_path,
+                    output_file=enc_path,
+                    password=PASSWORD,
+                    algorithm="cascade",
+                    cascade=True,
+                    cipher_names=["aes-gcm", "xchacha20-poly1305"],
+                    quiet=True,
+                    format_version=12,
+                    chunk_size=16384,
+                    streaming_threshold=1024,
+                )
+            )
+            meta = _parse_metadata(Path(enc_path).read_bytes())
+            self.assertTrue(meta.get("streaming", {}).get("enabled"))
+            self.assertEqual(meta.get("encryption", {}).get("xchacha_nonce_format"), 2)
+            decrypted = decrypt_file(
+                input_file=enc_path, output_file=None, password=PASSWORD, quiet=True
+            )
+            self.assertEqual(decrypted, data)
+
 
 class TestRegistryCipherModes(unittest.TestCase):
     """The registry XChaCha cipher must support both nonce derivations."""

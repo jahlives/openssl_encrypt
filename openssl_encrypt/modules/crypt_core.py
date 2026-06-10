@@ -5722,7 +5722,9 @@ def encrypt_file(
 
             cascade_config = CascadeConfig(cipher_names=cipher_names, hkdf_hash=cascade_hash)
             _cascade_enc_streaming = CascadeEncryption(
-                cascade_config, format_version=format_version
+                cascade_config,
+                format_version=format_version,
+                xchacha_nonce_format=2,  # New files use real 192-bit XChaCha nonces
             )
             _cascade_salt_streaming = secrets.token_bytes(32)
 
@@ -6472,7 +6474,11 @@ def encrypt_file(
             cascade_config = CascadeConfig(cipher_names=cipher_names, hkdf_hash=cascade_hash)
 
             # Create cascade encryption instance
-            cascade_enc = CascadeEncryption(cascade_config, format_version=format_version)
+            cascade_enc = CascadeEncryption(
+                cascade_config,
+                format_version=format_version,
+                xchacha_nonce_format=2,  # New files use real 192-bit XChaCha nonces
+            )
 
             # Generate cascade salt
             cascade_salt_bytes = secrets.token_bytes(32)
@@ -8814,7 +8820,10 @@ def decrypt_file(
                 cipher_names=cascade_cipher_chain, hkdf_hash=cascade_hkdf_hash
             )
             _cascade_dec_streaming = CascadeEncryption(
-                cascade_config, format_version=format_version
+                cascade_config,
+                format_version=format_version,
+                # Legacy cascade files lack the flag and used the HKDF funnel
+                xchacha_nonce_format=metadata.get("encryption", {}).get("xchacha_nonce_format", 1),
             )
             _cascade_salt_streaming = cascade_salt_decrypt
 
@@ -8917,7 +8926,12 @@ def decrypt_file(
             cascade_config = CascadeConfig(
                 cipher_names=cascade_cipher_chain, hkdf_hash=cascade_hkdf_hash
             )
-            cascade_dec = CascadeEncryption(cascade_config, format_version=format_version)
+            cascade_dec = CascadeEncryption(
+                cascade_config,
+                format_version=format_version,
+                # Legacy cascade files lack the flag and used the HKDF funnel
+                xchacha_nonce_format=metadata.get("encryption", {}).get("xchacha_nonce_format", 1),
+            )
 
             # Decrypt using cascade
             decrypted_data = cascade_dec.decrypt(
