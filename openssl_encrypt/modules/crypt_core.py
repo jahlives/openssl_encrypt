@@ -3979,6 +3979,10 @@ def create_metadata_v6(
         "encryption": {"algorithm": algorithm, "encryption_data": encryption_data},
     }
 
+    # Real 192-bit XChaCha nonces (1.5+); absent on legacy files
+    if algorithm == EncryptionAlgorithm.XCHACHA20_POLY1305.value:
+        metadata["encryption"]["xchacha_nonce_format"] = 2
+
     # Add AAD binding marker if in AAD mode
     if aad_mode:
         metadata["aead_binding"] = True
@@ -4186,6 +4190,7 @@ def create_metadata_v8(
             "total_overhead": total_overhead or 0,
             "pq_security_bits": pq_security_bits or 128,
         }
+        uses_xchacha = "xchacha20-poly1305" in cipher_chain
     else:
         # Single-cipher mode
         encryption_metadata = {
@@ -4194,6 +4199,12 @@ def create_metadata_v8(
             "encryption_data": encryption_data,
             "pq_security_bits": pq_security_bits or 128,
         }
+        uses_xchacha = algorithm == EncryptionAlgorithm.XCHACHA20_POLY1305.value
+
+    # Real 192-bit XChaCha nonces (1.5+). Absent on legacy files and on PQC
+    # hybrid files, whose data layer keeps 12-byte nonces under per-file keys.
+    if uses_xchacha:
+        encryption_metadata["xchacha_nonce_format"] = 2
 
     # Create basic metadata structure
     metadata = {
@@ -5900,18 +5911,11 @@ def encrypt_file(
             else:
                 return secrets.token_bytes(12), 12
         elif alg == EncryptionAlgorithm.XCHACHA20_POLY1305:
-            # XChaCha20-Poly1305 is designed to use a 24-byte nonce
-            # The cryptography library's implementation expects a 12-byte nonce
-            # We store 24 bytes in the file header for security but use 12 for actual encryption
-            if test_mode:
-                # In test mode, we use 12-byte nonces for compatibility with existing tests
-                return secrets.token_bytes(12), 12
-            else:
-                # In production, we store 24 bytes but use only first 12 for actual encryption
-                # This achieves the security benefit of 24-byte nonces while maintaining compatibility
-                # with the cryptography library which expects 12-byte nonces
-                nonce = secrets.token_bytes(24)
-                return nonce, 12
+            # Real 192-bit XChaCha20-Poly1305 (since 1.5): the full 24-byte
+            # nonce is stored AND used via HChaCha20 subkey derivation.
+            # Signaled by encryption.xchacha_nonce_format=2 in the metadata;
+            # legacy files (no flag) used only the first 12 bytes.
+            return secrets.token_bytes(24), 24
         elif alg == EncryptionAlgorithm.THREEFISH_512:
             # Threefish-512 requires 32-byte nonce
             return secrets.token_bytes(32), 32
@@ -8656,12 +8660,15 @@ def decrypt_file(
             else:
                 return [(12, 12)]
         elif alg == EncryptionAlgorithm.XCHACHA20_POLY1305.value:
+            # Real 192-bit XChaCha (1.5+) is signaled by the metadata flag;
+            # the full 24-byte stored nonce is used via HChaCha20.
+            if metadata.get("encryption", {}).get("xchacha_nonce_format") == 2:
+                return [(24, 24)]
             if include_legacy:
-                # Try 24-byte first (correct stored size, use first 12 bytes for actual encryption),
-                # then fallback to legacy 12-byte format
+                # Legacy files: 24 bytes stored but only the first 12 used,
+                # with a fallback to the even older 12-byte stored format
                 return [(24, 12), (12, 12)]
             else:
-                # Even with 24-byte stored nonce, we use 12 bytes for actual encryption with the library
                 return [(24, 12)]
         elif alg == EncryptionAlgorithm.THREEFISH_512.value:
             # Threefish-512 requires 32-byte nonce
