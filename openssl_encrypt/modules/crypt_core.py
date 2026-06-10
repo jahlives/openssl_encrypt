@@ -5735,6 +5735,7 @@ def encrypt_file(
             cascade_encryptor=_cascade_enc_streaming,
             cascade_salt=_cascade_salt_streaming,
             format_version=12,
+            xchacha_nonce_format=2,  # New files use real 192-bit XChaCha nonces
         )
 
         chunk_count = streaming_enc.get_chunk_count(file_size)
@@ -8825,6 +8826,8 @@ def decrypt_file(
             cascade_decryptor=_cascade_dec_streaming,
             cascade_salt=_cascade_salt_streaming,
             format_version=format_version,
+            # Legacy streaming files lack the flag and used 12-byte nonces
+            xchacha_nonce_format=metadata.get("encryption", {}).get("xchacha_nonce_format", 1),
         )
 
         if not quiet:

@@ -97,7 +97,7 @@ def _get_nonce_size(algorithm: str) -> int:
     nonce_sizes = {
         "aes-gcm": 12,
         "chacha20-poly1305": 12,
-        "xchacha20-poly1305": 12,  # We derive 12-byte nonces for the underlying cipher
+        "xchacha20-poly1305": 12,  # Legacy streaming files; 24 when xchacha_nonce_format=2
         "aes-gcm-siv": 12,
         "aes-ocb3": 12,
         "aes-siv": 16,
@@ -395,6 +395,7 @@ class StreamingEncryptor:
         cascade_encryptor=None,
         cascade_salt: Optional[bytes] = None,
         format_version: Optional[int] = None,
+        xchacha_nonce_format: int = 1,
     ):
         """Initialize the streaming encryptor.
 
@@ -405,6 +406,8 @@ class StreamingEncryptor:
             cascade_encryptor: CascadeEncryption instance for cascade mode.
             cascade_salt: Salt for cascade key derivation.
             format_version: File format version. For v12+, HMAC key uses HKDF.
+            xchacha_nonce_format: 2 = real 192-bit XChaCha nonces (1.5+);
+                1 = legacy 12-byte chunk nonces.
         """
         self.key = key
         self.algorithm = algorithm
@@ -413,7 +416,10 @@ class StreamingEncryptor:
         self.cascade_salt = cascade_salt
         self.format_version = format_version
         self.nonce_prefix = secrets.token_bytes(8)
-        self.nonce_size = _get_nonce_size(algorithm)
+        if algorithm == "xchacha20-poly1305" and xchacha_nonce_format == 2:
+            self.nonce_size = 24
+        else:
+            self.nonce_size = _get_nonce_size(algorithm)
 
     def _derive_hmac_key(self) -> bytearray:
         """Derive the HMAC key for trailer authentication.
@@ -425,12 +431,14 @@ class StreamingEncryptor:
             32-byte HMAC key as bytearray (mutable so caller can secure_memzero it)
         """
         if self.format_version is not None and self.format_version >= 12:
-            return bytearray(HKDF(
-                algorithm=hashes.SHA256(),
-                length=32,
-                salt=None,
-                info=b"openssl_encrypt-streaming-hmac-key",
-            ).derive(self.key))
+            return bytearray(
+                HKDF(
+                    algorithm=hashes.SHA256(),
+                    length=32,
+                    salt=None,
+                    info=b"openssl_encrypt-streaming-hmac-key",
+                ).derive(self.key)
+            )
         else:
             return bytearray(hashlib.sha256(self.key + b"oesc-trailer-hmac").digest())
 
@@ -568,6 +576,7 @@ class StreamingDecryptor:
         cascade_decryptor=None,
         cascade_salt: Optional[bytes] = None,
         format_version: Optional[int] = None,
+        xchacha_nonce_format: int = 1,
     ):
         """Initialize the streaming decryptor.
 
@@ -579,12 +588,17 @@ class StreamingDecryptor:
             cascade_decryptor: CascadeEncryption instance for cascade mode.
             cascade_salt: Salt for cascade key derivation.
             format_version: File format version. For v12+, HMAC key uses HKDF.
+            xchacha_nonce_format: 2 = real 192-bit XChaCha nonces (1.5+);
+                1 = legacy 12-byte chunk nonces.
         """
         self.key = key
         self.algorithm = algorithm
         self.nonce_prefix = nonce_prefix
         self.chunk_size = chunk_size
-        self.nonce_size = _get_nonce_size(algorithm)
+        if algorithm == "xchacha20-poly1305" and xchacha_nonce_format == 2:
+            self.nonce_size = 24
+        else:
+            self.nonce_size = _get_nonce_size(algorithm)
         self.cascade_decryptor = cascade_decryptor
         self.cascade_salt = cascade_salt
         self.format_version = format_version
@@ -599,12 +613,14 @@ class StreamingDecryptor:
             32-byte HMAC key as bytearray (mutable so caller can secure_memzero it)
         """
         if self.format_version is not None and self.format_version >= 12:
-            return bytearray(HKDF(
-                algorithm=hashes.SHA256(),
-                length=32,
-                salt=None,
-                info=b"openssl_encrypt-streaming-hmac-key",
-            ).derive(self.key))
+            return bytearray(
+                HKDF(
+                    algorithm=hashes.SHA256(),
+                    length=32,
+                    salt=None,
+                    info=b"openssl_encrypt-streaming-hmac-key",
+                ).derive(self.key)
+            )
         else:
             return bytearray(hashlib.sha256(self.key + b"oesc-trailer-hmac").digest())
 
@@ -675,9 +691,7 @@ class StreamingDecryptor:
 
             payload_version = struct.unpack("<I", header[4:8])[0]
             if payload_version != PAYLOAD_VERSION:
-                raise DecryptionError(
-                    f"Unsupported streaming payload version: {payload_version}"
-                )
+                raise DecryptionError(f"Unsupported streaming payload version: {payload_version}")
 
             # --- Read trailer (last 36 bytes of file) ---
             file_size = fin.seek(0, 2)  # seek to end
@@ -758,9 +772,7 @@ class StreamingDecryptor:
                             ciphertext, self.key, self.cascade_salt, associated_data=aad
                         )
                     else:
-                        plaintext = decrypt_chunk(
-                            self.key, nonce, ciphertext, aad, self.algorithm
-                        )
+                        plaintext = decrypt_chunk(self.key, nonce, ciphertext, aad, self.algorithm)
 
                     # Write / collect plaintext
                     if fout is not None:
@@ -811,9 +823,7 @@ class StreamingDecryptor:
             if computed_hash != original_hash:
                 if output_file is not None and os.path.exists(output_file):
                     os.remove(output_file)
-                raise AuthenticationError(
-                    "Original content hash mismatch after decryption"
-                )
+                raise AuthenticationError("Original content hash mismatch after decryption")
 
         # Return result
         if output_file is None:
