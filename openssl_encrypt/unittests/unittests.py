@@ -467,7 +467,9 @@ class TestCryptCore(unittest.TestCase):
         self.assertTrue(os.path.exists(decrypted_file))
 
         # Verify the content
-        with open(self.test_file, "r", encoding="utf-8") as original, open(decrypted_file, "r", encoding="utf-8") as decrypted:
+        with open(self.test_file, "r", encoding="utf-8") as original, open(
+            decrypted_file, "r", encoding="utf-8"
+        ) as decrypted:
             self.assertEqual(original.read(), decrypted.read())
 
     def test_encrypt_decrypt_aes_gcm_algorithm(self):
@@ -495,7 +497,9 @@ class TestCryptCore(unittest.TestCase):
         self.assertTrue(os.path.exists(decrypted_file))
 
         # Verify the content
-        with open(self.test_file, "r", encoding="utf-8") as original, open(decrypted_file, "r", encoding="utf-8") as decrypted:
+        with open(self.test_file, "r", encoding="utf-8") as original, open(
+            decrypted_file, "r", encoding="utf-8"
+        ) as decrypted:
             self.assertEqual(original.read(), decrypted.read())
 
     def test_encrypt_decrypt_chacha20_algorithm(self):
@@ -523,7 +527,9 @@ class TestCryptCore(unittest.TestCase):
         self.assertTrue(os.path.exists(decrypted_file))
 
         # Verify the content
-        with open(self.test_file, "r", encoding="utf-8") as original, open(decrypted_file, "r", encoding="utf-8") as decrypted:
+        with open(self.test_file, "r", encoding="utf-8") as original, open(
+            decrypted_file, "r", encoding="utf-8"
+        ) as decrypted:
             self.assertEqual(original.read(), decrypted.read())
 
     # Fix for test_wrong_password - Using the imported InvalidToken
@@ -623,7 +629,9 @@ class TestCryptCore(unittest.TestCase):
 
             # Verify the "decrypted" content matches original
             # (Since we created it with the same content)
-            with open(self.test_file, "r", encoding="utf-8") as original, open(decrypted_file, "r", encoding="utf-8") as decrypted:
+            with open(self.test_file, "r", encoding="utf-8") as original, open(
+                decrypted_file, "r", encoding="utf-8"
+            ) as decrypted:
                 self.assertEqual(original.read(), decrypted.read())
 
             # In the future, this test should be replaced with a real implementation
@@ -927,15 +935,18 @@ class TestCryptCore(unittest.TestCase):
         plaintext_24 = cipher.decrypt(nonce_24byte, ciphertext_24, aad)
         self.assertEqual(data, plaintext_24)
 
-        # Test with 12-byte nonce (regular ChaCha20Poly1305 standard)
+        # Test with 12-byte nonce (legacy direct ChaCha20Poly1305 mode)
         nonce_12byte = os.urandom(12)
         ciphertext_12 = cipher.encrypt(nonce_12byte, data, aad)
         plaintext_12 = cipher.decrypt(nonce_12byte, ciphertext_12, aad)
         self.assertEqual(data, plaintext_12)
 
-        # Note: The current implementation uses the sha256 hash to handle
-        # incompatible nonce sizes rather than raising an error.
-        # It will convert nonces of any size to 12 bytes
+        # Since 1.5, only 24-byte (real XChaCha20) and 12-byte (legacy)
+        # nonces are accepted; other sizes are rejected.
+        from openssl_encrypt.modules.crypt_errors import ValidationError
+
+        with self.assertRaises(ValidationError):
+            cipher.encrypt(os.urandom(16), data, aad)
 
     @pytest.mark.order(1)
     def test_decrypt_stdin(self):
@@ -2292,7 +2303,9 @@ class TestArgon2KdfVersion(unittest.TestCase):
                 self.test_algorithm = algo
                 break
         if not self.test_algorithm:
-            self.test_algorithm = self.supported_algorithms[0] if self.supported_algorithms else None
+            self.test_algorithm = (
+                self.supported_algorithms[0] if self.supported_algorithms else None
+            )
         if not self.test_algorithm:
             self.skipTest("No suitable post-quantum algorithm available")
 
@@ -2380,7 +2393,9 @@ class TestArgon2KdfVersion(unittest.TestCase):
         # Re-derive key with v1 and re-encrypt
         salt = base64.b64decode(params["salt"])
         argon2_params = params["argon2_params"]
-        derived_key_v1 = _argon2_derive_key(self.keystore_password, salt, argon2_params, kdf_version=1)
+        derived_key_v1 = _argon2_derive_key(
+            self.keystore_password, salt, argon2_params, kdf_version=1
+        )
 
         # Re-encrypt the keystore data with v1 key
         plaintext = json.dumps(keystore.keystore_data).encode("utf-8")
@@ -2391,11 +2406,15 @@ class TestArgon2KdfVersion(unittest.TestCase):
 
         if protection["method"] == "scrypt_chacha20":
             from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305 as CP
+
             cipher = CP(derived_key_v1)
         else:
             from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
             cipher = AESGCM(derived_key_v1)
-        ciphertext = cipher.encrypt(nonce, plaintext, associated_data=json.dumps(header).encode("utf-8"))
+        ciphertext = cipher.encrypt(
+            nonce, plaintext, associated_data=json.dumps(header).encode("utf-8")
+        )
 
         # Write the v1 keystore file
         header_json = json.dumps(header).encode("utf-8")
@@ -2440,8 +2459,8 @@ class TestArgon2KdfVersion(unittest.TestCase):
             raw = f.read()
 
         header_size = int.from_bytes(raw[:4], byteorder="big")
-        header_json = raw[4:4 + header_size]
-        ciphertext = raw[4 + header_size:]
+        header_json = raw[4 : 4 + header_size]
+        ciphertext = raw[4 + header_size :]
 
         # Tamper with the header (which is used as AAD)
         header = json.loads(header_json.decode("utf-8"))
@@ -2511,57 +2530,39 @@ class TestCryptErrorsFixes(unittest.TestCase):
         """Test that XChaCha20Poly1305 properly handles nonces of different lengths."""
         import secrets
 
-        from cryptography.hazmat.backends import default_backend
-        from cryptography.hazmat.primitives import hashes
-        from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+        from openssl_encrypt.modules.crypt_errors import ValidationError
 
         # Create an instance with a valid key
         key = secrets.token_bytes(32)  # 32 bytes for ChaCha20Poly1305
         cipher = XChaCha20Poly1305(key)
 
-        # Test with a 24-byte nonce (XChaCha20Poly1305 standard)
+        # 24-byte nonce: real XChaCha20-Poly1305 (since 1.5)
         nonce_24 = secrets.token_bytes(24)
-        processed_nonce_24 = cipher._process_nonce(nonce_24)
-        self.assertEqual(len(processed_nonce_24), 12)
-
-        # Test with a 12-byte nonce (ChaCha20Poly1305 standard)
+        # 12-byte nonce: legacy direct ChaCha20-Poly1305 mode
         nonce_12 = secrets.token_bytes(12)
-        processed_nonce_12 = cipher._process_nonce(nonce_12)
-        self.assertEqual(len(processed_nonce_12), 12)
-        self.assertEqual(processed_nonce_12, nonce_12)  # Should remain unchanged
-
-        # Test with a non-standard nonce length
-        nonce_16 = secrets.token_bytes(16)
-        processed_nonce_16 = cipher._process_nonce(nonce_16)
-        self.assertEqual(len(processed_nonce_16), 12)
 
         # Test cryptographic properties: different nonces should produce different outputs
         # for the same plaintext
         plaintext = b"Test message"
 
-        # Encrypt with 24-byte nonce
         ciphertext_24 = cipher.encrypt(nonce_24, plaintext)
-
-        # Encrypt with 12-byte nonce
         ciphertext_12 = cipher.encrypt(nonce_12, plaintext)
-
-        # Encrypt with 16-byte nonce
-        ciphertext_16 = cipher.encrypt(nonce_16, plaintext)
-
-        # All ciphertexts should be different
         self.assertNotEqual(ciphertext_24, ciphertext_12)
-        self.assertNotEqual(ciphertext_24, ciphertext_16)
-        self.assertNotEqual(ciphertext_12, ciphertext_16)
+
+        # The full 24-byte nonce must affect the keystream: changing only the
+        # last byte (beyond the legacy 12-byte prefix) changes the ciphertext
+        nonce_24_variant = nonce_24[:23] + bytes([nonce_24[23] ^ 0x01])
+        self.assertNotEqual(ciphertext_24, cipher.encrypt(nonce_24_variant, plaintext))
 
         # Verify we can decrypt with the same nonce
-        decrypted_24 = cipher.decrypt(nonce_24, ciphertext_24)
-        decrypted_12 = cipher.decrypt(nonce_12, ciphertext_12)
-        decrypted_16 = cipher.decrypt(nonce_16, ciphertext_16)
+        self.assertEqual(cipher.decrypt(nonce_24, ciphertext_24), plaintext)
+        self.assertEqual(cipher.decrypt(nonce_12, ciphertext_12), plaintext)
 
-        # All decryptions should produce the original plaintext
-        self.assertEqual(decrypted_24, plaintext)
-        self.assertEqual(decrypted_12, plaintext)
-        self.assertEqual(decrypted_16, plaintext)
+        # Non-standard nonce lengths are rejected (since 1.5)
+        with self.assertRaises(ValidationError):
+            cipher.encrypt(secrets.token_bytes(16), plaintext)
+        with self.assertRaises(ValidationError):
+            cipher.decrypt(secrets.token_bytes(16), ciphertext_24)
 
     def test_optimized_timing_jitter(self):
         """Test the optimized timing jitter function that handles sequences of calls."""

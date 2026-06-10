@@ -269,86 +269,38 @@ class XChaCha20Poly1305:
             # Convert any other errors to validation errors
             raise ValidationError("Invalid key material", original_exception=e)
 
-    def _process_nonce(self, nonce):
+    def _validate_nonce(self, nonce):
         """
-        Process and validate nonce to ensure proper length and format.
-        The cryptography library's ChaCha20Poly1305 expects 12-byte nonces,
-        while XChaCha20Poly1305 is designed for 24-byte nonces.
+        Validate nonce type and length.
 
-        We use the HChaCha20 construction to derive a ChaCha20 key and nonce
-        from the XChaCha20 nonce, following the XChaCha20 specification.
+        A 24-byte nonce selects the real XChaCha20-Poly1305 construction
+        (HChaCha20 subkey derivation per draft-irtf-cfrg-xchacha-03); a
+        12-byte nonce selects direct ChaCha20-Poly1305 under the same key,
+        which is the behavior every pre-1.5 file format and the PQC hybrid
+        path rely on.
 
         Args:
             nonce (bytes): Input nonce
 
         Returns:
-            bytes: Properly formatted 12-byte nonce for use with the ChaCha20Poly1305 library
+            bytes: The validated nonce
 
         Raises:
             ValidationError: If nonce validation fails
         """
-        # Import required libraries just once at the method level
-        from cryptography.hazmat.primitives import hashes
-        from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-
-        # Validate nonce
         if nonce is None:
             raise ValidationError("Nonce cannot be None")
 
-        # Ensure nonce is bytes
         if not isinstance(nonce, (bytes, bytearray, memoryview)):
             raise ValidationError(f"Nonce must be bytes-like object, got {type(nonce).__name__}")
 
-        # Check if nonce is empty
-        if len(nonce) == 0:
-            raise ValidationError("Nonce cannot be empty")
-
-        # Process based on length
-        if len(nonce) == 24:
-            # For XChaCha20Poly1305, use a proper derivation algorithm
-            # The 24-byte nonce is split into a 16-byte nonce and an 8-byte block counter
-            # First, use the HChaCha20 function to mix the key with the first 16 bytes
-            # Since we don't have direct access to HChaCha20, we'll use HKDF with BLAKE2b
-            # to derive a secure 12-byte nonce from the original 24-byte nonce
-
-            # Use the first 16 bytes of the nonce as the HKDF salt (mimicking HChaCha20 input)
-            # and the remaining 8 bytes as the info parameter to ensure uniqueness
-            hkdf = HKDF(
-                algorithm=hashes.SHA256(),  # Use SHA256 which is universally available
-                length=12,  # We need 12 bytes for ChaCha20Poly1305
-                salt=nonce[:16],
-                info=nonce[16:],
-                backend=default_backend(),
-            )
-
-            # Use the original key as input key material
-            truncated_nonce = hkdf.derive(self.key)
-        elif len(nonce) == 12:
-            # Already correct size for ChaCha20Poly1305
-            truncated_nonce = nonce
-        else:
-            # For any other size, use a strong deterministic process to create a 12-byte nonce
-            # Use HKDF with SHA256 for better security than simple truncation
-
-            # Use the nonce as the info parameter to ensure uniqueness
-            hkdf = HKDF(
-                algorithm=hashes.SHA256(),  # Use SHA256 which is universally available
-                length=12,  # We need 12 bytes for ChaCha20Poly1305
-                salt=None,
-                info=nonce,
-                backend=default_backend(),
-            )
-
-            # Use the original key as input key material
-            truncated_nonce = hkdf.derive(self.key)
-
-        # Final validation of the processed nonce
-        if len(truncated_nonce) != 12:
+        if len(nonce) not in (12, 24):
             raise ValidationError(
-                f"Failed to generate 12-byte nonce, got {len(truncated_nonce)} bytes"
+                f"XChaCha20Poly1305 nonce must be 24 bytes (or 12 for legacy "
+                f"compatibility), got {len(nonce)}"
             )
 
-        return truncated_nonce
+        return bytes(nonce)
 
     def _validate_data(self, data):
         """
@@ -385,7 +337,7 @@ class XChaCha20Poly1305:
         """
         # Validate inputs
         self._validate_data(data)
-        truncated_nonce = self._process_nonce(nonce)
+        nonce = self._validate_nonce(nonce)
 
         # Process associated data
         if associated_data is not None and not isinstance(
@@ -395,9 +347,14 @@ class XChaCha20Poly1305:
                 f"Associated data must be bytes-like object, got {type(associated_data).__name__}"
             )
 
-        # Encrypt using the underlying cipher
+        # 24-byte nonce: real XChaCha20-Poly1305; 12-byte: legacy direct mode
+        if len(nonce) == 24:
+            from .xchacha import xchacha20poly1305_encrypt
+
+            return xchacha20poly1305_encrypt(self.key, nonce, data, associated_data)
+
         try:
-            return self.cipher.encrypt(truncated_nonce, data, associated_data)
+            return self.cipher.encrypt(nonce, data, associated_data)
         except Exception as e:
             # Specific error message will be standardized by the decorator
             raise EncryptionError(original_exception=e)
@@ -422,7 +379,7 @@ class XChaCha20Poly1305:
         """
         # Validate inputs
         self._validate_data(data)
-        truncated_nonce = self._process_nonce(nonce)
+        nonce = self._validate_nonce(nonce)
 
         # Process associated data
         if associated_data is not None and not isinstance(
@@ -436,9 +393,14 @@ class XChaCha20Poly1305:
         if len(data) < 16:
             raise ValidationError("Ciphertext too short - missing authentication tag")
 
-        # Decrypt using the underlying cipher
+        # 24-byte nonce: real XChaCha20-Poly1305; 12-byte: legacy direct mode
+        if len(nonce) == 24:
+            from .xchacha import xchacha20poly1305_decrypt
+
+            return xchacha20poly1305_decrypt(self.key, nonce, data, associated_data)
+
         try:
-            return self.cipher.decrypt(truncated_nonce, data, associated_data)
+            return self.cipher.decrypt(nonce, data, associated_data)
         except cryptography.exceptions.InvalidTag:
             # Use a standardized authentication error
             raise AuthenticationError("Integrity verification failed")
@@ -888,7 +850,9 @@ def set_secure_permissions(file_path):
     try:
         canonical_path = os.path.realpath(os.path.abspath(file_path))
         if not os.path.samefile(file_path, canonical_path):
-            eprint(f"Warning: Path canonicalization changed target: {file_path} -> {canonical_path}")
+            eprint(
+                f"Warning: Path canonicalization changed target: {file_path} -> {canonical_path}"
+            )
         file_path = canonical_path
     except (OSError, ValueError) as e:
         eprint(f"Error canonicalizing path '{file_path}': {e}")
@@ -896,6 +860,7 @@ def set_secure_permissions(file_path):
 
     # Set permissions to 0600 (read/write for owner only)
     from openssl_encrypt.modules.file_permissions import PermissionLevel, set_permissions
+
     set_permissions(file_path, PermissionLevel.OWNER_ONLY)
 
 
@@ -919,13 +884,16 @@ def get_file_permissions(file_path):
     try:
         canonical_path = os.path.realpath(os.path.abspath(file_path))
         if not os.path.samefile(file_path, canonical_path):
-            eprint(f"Warning: Path canonicalization changed target: {file_path} -> {canonical_path}")
+            eprint(
+                f"Warning: Path canonicalization changed target: {file_path} -> {canonical_path}"
+            )
         file_path = canonical_path
     except (OSError, ValueError) as e:
         eprint(f"Error canonicalizing path '{file_path}': {e}")
         raise
 
     from openssl_encrypt.modules.file_permissions import get_posix_mode
+
     return get_posix_mode(file_path)
 
 
@@ -941,6 +909,7 @@ def copy_permissions(source_file, target_file):
     """
     try:
         from openssl_encrypt.modules import file_permissions as fp_mod
+
         fp_mod.copy_permissions(source_file, target_file)
     except Exception:
         # If we can't copy permissions, fall back to secure permissions
@@ -2070,7 +2039,9 @@ def compute_kdf_independent(
                 bar_len = 30
                 filled = int(bar_len * (i + 1) // rounds)
                 bar = "█" * filled + "░" * (bar_len - filled)
-                eprint(f"\rRandomX KDF: [{bar}] {percent:.1f}% ({i+1}/{rounds})", end="", flush=True)
+                eprint(
+                    f"\rRandomX KDF: [{bar}] {percent:.1f}% ({i+1}/{rounds})", end="", flush=True
+                )
         if progress and not quiet:
             eprint()
 
@@ -5074,12 +5045,14 @@ def _derive_pepper_key(password: bytes, format_version: int = None) -> bytearray
         from cryptography.hazmat.primitives import hashes as _hashes
         from cryptography.hazmat.primitives.kdf.hkdf import HKDF as _HKDF
 
-        return bytearray(_HKDF(
-            algorithm=_hashes.SHA256(),
-            length=32,
-            salt=None,
-            info=b"openssl_encrypt-pepper-key",
-        ).derive(password))
+        return bytearray(
+            _HKDF(
+                algorithm=_hashes.SHA256(),
+                length=32,
+                salt=None,
+                info=b"openssl_encrypt-pepper-key",
+            ).derive(password)
+        )
     else:
         return bytearray(hashlib.sha256(password).digest())
 
@@ -5108,12 +5081,14 @@ def _derive_pqc_sig_key(
     if salt is None:
         salt = b"OpenSSL-Encrypt-PQ-Signature-Hybrid"
 
-    return bytearray(_HKDF(
-        algorithm=_hashes.SHA256(),
-        length=32,
-        salt=salt,
-        info=f"encryption-key-{algorithm}".encode(),
-    ).derive(private_key))
+    return bytearray(
+        _HKDF(
+            algorithm=_hashes.SHA256(),
+            length=32,
+            salt=salt,
+            info=f"encryption-key-{algorithm}".encode(),
+        ).derive(private_key)
+    )
 
 
 @secure_encrypt_error_handler
@@ -7209,7 +7184,9 @@ def print_file_info(input_file: str, json_output: bool = False, list_files: bool
                 rounds = config
             if rounds > 0:
                 display_name = algo.upper().replace("_", "-")
-                eprint(f"      {display_name}:{' ' * max(1, 13 - len(display_name))}{rounds} rounds")
+                eprint(
+                    f"      {display_name}:{' ' * max(1, 13 - len(display_name))}{rounds} rounds"
+                )
 
     if kdf_config:
         eprint("    KDFs:")
@@ -7980,9 +7957,7 @@ def decrypt_file(
     # Read metadata incrementally (avoids loading full file for streaming v12)
     file_content = None  # Only populated for non-streaming path (needed for secure cleanup)
     try:
-        metadata_b64, _fallback_content = _read_metadata_only(
-            input_file, secure_mode=secure_mode
-        )
+        metadata_b64, _fallback_content = _read_metadata_only(input_file, secure_mode=secure_mode)
         # MED-8 Security fix: Use secure JSON validation for metadata parsing
         metadata_json = base64.b64decode(metadata_b64).decode("utf-8")
         try:
