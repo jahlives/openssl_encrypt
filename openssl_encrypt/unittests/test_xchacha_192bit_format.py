@@ -33,6 +33,12 @@ LEGACY_DIR = TESTFILES_DIR / "xchacha_legacy"
 LEGACY_PLAINTEXT = b"Legacy XChaCha fixture: pre-1.5 nonce format\n"
 LEGACY_STREAMING_PLAINTEXT = LEGACY_PLAINTEXT * 4000
 
+# Fixtures generated with the 1.5 real-192-bit code; pin the new format
+# so later changes cannot silently alter it.
+V2_DIR = TESTFILES_DIR / "xchacha_v2"
+V2_PLAINTEXT = b"Real 192-bit XChaCha fixture: 1.5 nonce format\n"
+V2_STREAMING_PLAINTEXT = V2_PLAINTEXT * 4000
+
 PASSWORD = b"xchacha_format_test_pw"
 PLAINTEXT = b"The quick brown fox jumps over the lazy dog, 192 bits at a time."
 
@@ -182,6 +188,29 @@ class TestLegacyCompatibility(unittest.TestCase):
             quiet=True,
         )
         self.assertEqual(decrypted, LEGACY_STREAMING_PLAINTEXT)
+
+
+class TestV2FixtureCompatibility(unittest.TestCase):
+    """Committed real-192-bit fixtures pin the new format across releases."""
+
+    def _check(self, name: str, expected: bytes):
+        path = V2_DIR / name
+        self.assertTrue(path.exists(), f"fixture missing: {path}")
+        meta = _parse_metadata(path.read_bytes())
+        self.assertEqual(meta.get("encryption", {}).get("xchacha_nonce_format"), 2)
+        decrypted = decrypt_file(
+            input_file=str(path), output_file=None, password=LEGACY_PASSWORD, quiet=True
+        )
+        self.assertEqual(decrypted, expected)
+
+    def test_oneshot_v2_fixture(self):
+        self._check("oneshot_xchacha_v2.bin", V2_PLAINTEXT)
+
+    def test_cascade_v2_fixture(self):
+        self._check("cascade_xchacha_v2.bin", V2_PLAINTEXT)
+
+    def test_streaming_v2_fixture(self):
+        self._check("streaming_xchacha_v2.bin", V2_STREAMING_PLAINTEXT)
 
 
 class TestNewFormatStreaming(unittest.TestCase):

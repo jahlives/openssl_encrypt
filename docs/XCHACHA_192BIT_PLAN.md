@@ -3,6 +3,9 @@
 Target release: **1.5** (branch `feature/xchacha-192bit-nonce`, based on
 `feature/v1.5.x-development`).
 
+**Status: implemented** — see CHANGELOG 1.5.0 and `test_xchacha_primitives.py`,
+`test_xchacha_wrapper.py`, `test_xchacha_192bit_format.py`.
+
 ## 1. Problem Statement
 
 The current "XChaCha20-Poly1305" implementation stores a 24-byte nonce in the
