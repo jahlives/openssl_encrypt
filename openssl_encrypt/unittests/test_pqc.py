@@ -857,6 +857,51 @@ class TestPostQuantumCrypto(unittest.TestCase):
             except Exception as e:
                 self.fail(f"Failed with algorithm variant '{variant}': {e}")
 
+    @unittest.skipUnless(LIBOQS_AVAILABLE, "liboqs not available")
+    def test_unresolvable_algorithm_raises_no_silent_downgrade(self):
+        """Security (H3): an unresolvable/unavailable KEM name must fail loudly,
+        never silently downgrade to a different (weaker) algorithm.
+
+        Regression for the prior behaviour where e.g. a bogus name resolved to
+        'Kyber512' (the weakest available level) with only an optional stderr line.
+        """
+        # A name that cannot be matched to any supported algorithm must raise,
+        # not fall back to supported[0]/first KEM.
+        with self.assertRaises(ValueError):
+            PQCipher("totally-bogus-algo", quiet=True)
+
+        # A plausible-looking but unavailable security level must also raise
+        # rather than be downgraded to whatever level happens to be available.
+        with self.assertRaises(ValueError):
+            PQCipher("ML-KEM-9999", quiet=True)
+
+    @unittest.skipUnless(LIBOQS_AVAILABLE, "liboqs not available")
+    def test_legacy_names_still_resolve_to_same_level(self):
+        """Security (H3) guard: legacy ML-KEM (Kyber*) names must keep working and
+        resolve to the SAME security level, not be rejected or downgraded."""
+        expected = {
+            "Kyber512": "512",
+            "Kyber-768": "768",
+            "kyber1024-hybrid": "1024",
+            "ML-KEM-768": "768",
+            "MLKEM1024": "1024",
+        }
+        supported = check_pqc_support(quiet=True)[2]
+        for requested, level in expected.items():
+            # Only assert for levels actually available in this liboqs build.
+            if not any(
+                level in s and ("kem" in s.lower() or "kyber" in s.lower()) for s in supported
+            ):
+                continue
+            cipher = PQCipher(requested, quiet=True)
+            resolved_level = "".join(c for c in cipher.algorithm_name if c.isdigit())
+            self.assertEqual(
+                resolved_level,
+                level,
+                f"Legacy name '{requested}' resolved to '{cipher.algorithm_name}' "
+                f"(level {resolved_level}), expected level {level}",
+            )
+
     def test_pqc_dual_encryption(self):
         """Test PQC key dual encryption with keystore integration."""
         # Skip if we can't import the necessary modules

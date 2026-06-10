@@ -460,33 +460,51 @@ class PQCipher:
                             break
 
                 if not matched:
-                    # Default to a standard KEM algorithm if available
-                    kyber_algs = [
-                        alg
-                        for alg in supported
-                        if "kyber" in alg.lower() or "ml-kem" in alg.lower()
-                    ]
-                    if kyber_algs:
-                        self.algorithm_name = kyber_algs[0]
-                    else:
-                        # Last resort - use the first KEM algorithm
-                        self.algorithm_name = supported[0]
+                    # SECURITY (H3): never silently downgrade to a different
+                    # (potentially weaker) algorithm. A request we cannot resolve
+                    # exactly must fail loudly so the caller can correct it, rather
+                    # than be served an arbitrary "first available" KEM.
+                    kem_supported = sorted(
+                        {
+                            alg
+                            for alg in supported
+                            if any(x in alg.lower() for x in ["kyber", "ml-kem", "hqc"])
+                        }
+                    )
+                    raise ValueError(
+                        f"Unsupported or unavailable post-quantum algorithm: "
+                        f"'{requested_algo}'. Refusing to silently downgrade to a "
+                        f"different algorithm. Available KEM algorithms: "
+                        f"{', '.join(kem_supported) or '(none)'}"
+                    )
 
         elif isinstance(algorithm, PQCAlgorithm):
             # Enum value
             if algorithm.value in supported:
                 self.algorithm_name = algorithm.value
             else:
-                # Look for variants
-                for supported_algo in supported:
-                    if algorithm.value.lower().replace("-", "") == supported_algo.lower().replace(
-                        "-", ""
-                    ):
-                        self.algorithm_name = supported_algo
-                        break
+                # Legacy enum values (e.g. Kyber768) must still resolve to their
+                # standardized equivalent (ML-KEM-768) at the SAME security level.
+                standard_name = normalize_algorithm_name(algorithm.value, use_standard=True)
+                if standard_name in supported:
+                    self.algorithm_name = standard_name
                 else:
-                    # Use the enum value and hope for the best
-                    self.algorithm_name = algorithm.value
+                    # Look for variants (normalized, case/hyphen-insensitive)
+                    for supported_algo in supported:
+                        if algorithm.value.lower().replace(
+                            "-", ""
+                        ) == supported_algo.lower().replace("-", ""):
+                            self.algorithm_name = supported_algo
+                            break
+                    else:
+                        # SECURITY (H3): do not "hope for the best" with an
+                        # unsupported enum value — fail loudly rather than risk a
+                        # silent downgrade or an opaque downstream failure.
+                        raise ValueError(
+                            f"Unsupported or unavailable post-quantum algorithm: "
+                            f"'{algorithm.value}'. Refusing to silently downgrade. "
+                            f"Available algorithms: {', '.join(sorted(set(supported))) or '(none)'}"
+                        )
 
         # Report the actual algorithm being used
         if not self.quiet and verbose:
