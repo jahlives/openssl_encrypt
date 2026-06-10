@@ -888,7 +888,9 @@ def set_secure_permissions(file_path):
     try:
         canonical_path = os.path.realpath(os.path.abspath(file_path))
         if not os.path.samefile(file_path, canonical_path):
-            eprint(f"Warning: Path canonicalization changed target: {file_path} -> {canonical_path}")
+            eprint(
+                f"Warning: Path canonicalization changed target: {file_path} -> {canonical_path}"
+            )
         file_path = canonical_path
     except (OSError, ValueError) as e:
         eprint(f"Error canonicalizing path '{file_path}': {e}")
@@ -896,6 +898,7 @@ def set_secure_permissions(file_path):
 
     # Set permissions to 0600 (read/write for owner only)
     from openssl_encrypt.modules.file_permissions import PermissionLevel, set_permissions
+
     set_permissions(file_path, PermissionLevel.OWNER_ONLY)
 
 
@@ -919,13 +922,16 @@ def get_file_permissions(file_path):
     try:
         canonical_path = os.path.realpath(os.path.abspath(file_path))
         if not os.path.samefile(file_path, canonical_path):
-            eprint(f"Warning: Path canonicalization changed target: {file_path} -> {canonical_path}")
+            eprint(
+                f"Warning: Path canonicalization changed target: {file_path} -> {canonical_path}"
+            )
         file_path = canonical_path
     except (OSError, ValueError) as e:
         eprint(f"Error canonicalizing path '{file_path}': {e}")
         raise
 
     from openssl_encrypt.modules.file_permissions import get_posix_mode
+
     return get_posix_mode(file_path)
 
 
@@ -941,6 +947,7 @@ def copy_permissions(source_file, target_file):
     """
     try:
         from openssl_encrypt.modules import file_permissions as fp_mod
+
         fp_mod.copy_permissions(source_file, target_file)
     except Exception:
         # If we can't copy permissions, fall back to secure permissions
@@ -2070,7 +2077,9 @@ def compute_kdf_independent(
                 bar_len = 30
                 filled = int(bar_len * (i + 1) // rounds)
                 bar = "█" * filled + "░" * (bar_len - filled)
-                eprint(f"\rRandomX KDF: [{bar}] {percent:.1f}% ({i+1}/{rounds})", end="", flush=True)
+                eprint(
+                    f"\rRandomX KDF: [{bar}] {percent:.1f}% ({i+1}/{rounds})", end="", flush=True
+                )
         if progress and not quiet:
             eprint()
 
@@ -5074,12 +5083,14 @@ def _derive_pepper_key(password: bytes, format_version: int = None) -> bytearray
         from cryptography.hazmat.primitives import hashes as _hashes
         from cryptography.hazmat.primitives.kdf.hkdf import HKDF as _HKDF
 
-        return bytearray(_HKDF(
-            algorithm=_hashes.SHA256(),
-            length=32,
-            salt=None,
-            info=b"openssl_encrypt-pepper-key",
-        ).derive(password))
+        return bytearray(
+            _HKDF(
+                algorithm=_hashes.SHA256(),
+                length=32,
+                salt=None,
+                info=b"openssl_encrypt-pepper-key",
+            ).derive(password)
+        )
     else:
         return bytearray(hashlib.sha256(password).digest())
 
@@ -5108,12 +5119,14 @@ def _derive_pqc_sig_key(
     if salt is None:
         salt = b"OpenSSL-Encrypt-PQ-Signature-Hybrid"
 
-    return bytearray(_HKDF(
-        algorithm=_hashes.SHA256(),
-        length=32,
-        salt=salt,
-        info=f"encryption-key-{algorithm}".encode(),
-    ).derive(private_key))
+    return bytearray(
+        _HKDF(
+            algorithm=_hashes.SHA256(),
+            length=32,
+            salt=salt,
+            info=f"encryption-key-{algorithm}".encode(),
+        ).derive(private_key)
+    )
 
 
 @secure_encrypt_error_handler
@@ -5500,6 +5513,49 @@ def encrypt_file(
         except Exception as e:
             raise KeyDerivationError(f"HSM operation failed: {str(e)}")
 
+    # --- Streaming decision (must precede ALL format_version-dependent
+    # derivation: pepper keys, the main key, and cascade setup) ---
+    # Streaming files always record format_version=12 in their metadata, and
+    # decryption reconstructs every derivation from that metadata version.
+    # Encrypting with any other version therefore produced files that failed
+    # authentication on decrypt (data loss), so the version is forced to 12
+    # here, before anything derives from it.
+    _use_streaming = False
+    _streaming_chunk_size = None
+    _streaming_threshold = None
+    if not input_is_bytes and not no_streaming and output_file is not None:
+        from .streaming import (
+            DEFAULT_CHUNK_SIZE,
+            DEFAULT_STREAMING_THRESHOLD,
+            should_use_streaming,
+        )
+
+        _streaming_chunk_size = chunk_size if chunk_size else DEFAULT_CHUNK_SIZE
+        _streaming_threshold = (
+            streaming_threshold if streaming_threshold else DEFAULT_STREAMING_THRESHOLD
+        )
+
+        try:
+            _streaming_file_size = os.path.getsize(input_file)
+        except OSError:
+            _streaming_file_size = 0
+
+        _use_streaming = should_use_streaming(
+            file_size=_streaming_file_size,
+            algorithm=algorithm_value,
+            threshold=_streaming_threshold,
+            no_streaming=no_streaming,
+            input_is_bytes=input_is_bytes,
+        )
+
+    if _use_streaming and format_version != 12:
+        if debug:
+            logger.debug(
+                f"STREAMING: forcing format_version {format_version} -> 12 "
+                f"(streaming metadata is always v12 and decryption derives from it)"
+            )
+        format_version = 12
+
     # Remote pepper generation/retrieval if pepper plugin provided
     remote_pepper = None
     remote_pepper_name = None
@@ -5687,36 +5743,12 @@ def encrypt_file(
             format_version=format_version,  # v10: Sequential XOR, v9: Secure chained salt
         )
     # --- Streaming encryption path ---
-    # Check if streaming should be used (large files with AEAD algorithms)
-    _use_streaming = False
-    if not input_is_bytes and not no_streaming and output_file is not None:
-        from .streaming import (
-            DEFAULT_CHUNK_SIZE,
-            DEFAULT_STREAMING_THRESHOLD,
-            StreamingEncryptor,
-            calculate_hash_streaming,
-            should_use_streaming,
-        )
-
-        _streaming_chunk_size = chunk_size if chunk_size else DEFAULT_CHUNK_SIZE
-        _streaming_threshold = (
-            streaming_threshold if streaming_threshold else DEFAULT_STREAMING_THRESHOLD
-        )
-
-        try:
-            file_size = os.path.getsize(input_file)
-        except OSError:
-            file_size = 0
-
-        _use_streaming = should_use_streaming(
-            file_size=file_size,
-            algorithm=algorithm_value,
-            threshold=_streaming_threshold,
-            no_streaming=no_streaming,
-            input_is_bytes=input_is_bytes,
-        )
-
+    # The streaming decision was made BEFORE key derivation (see above) so
+    # that format_version-dependent derivation matches the v12 metadata.
     if _use_streaming:
+        from .streaming import StreamingEncryptor, calculate_hash_streaming
+
+        file_size = _streaming_file_size
         # Streaming path: two-pass encryption for large files
         if not quiet:
             eprint(f"Using streaming encryption (chunk size: {_streaming_chunk_size} bytes)")
@@ -7209,7 +7241,9 @@ def print_file_info(input_file: str, json_output: bool = False, list_files: bool
                 rounds = config
             if rounds > 0:
                 display_name = algo.upper().replace("_", "-")
-                eprint(f"      {display_name}:{' ' * max(1, 13 - len(display_name))}{rounds} rounds")
+                eprint(
+                    f"      {display_name}:{' ' * max(1, 13 - len(display_name))}{rounds} rounds"
+                )
 
     if kdf_config:
         eprint("    KDFs:")
@@ -7980,9 +8014,7 @@ def decrypt_file(
     # Read metadata incrementally (avoids loading full file for streaming v12)
     file_content = None  # Only populated for non-streaming path (needed for secure cleanup)
     try:
-        metadata_b64, _fallback_content = _read_metadata_only(
-            input_file, secure_mode=secure_mode
-        )
+        metadata_b64, _fallback_content = _read_metadata_only(input_file, secure_mode=secure_mode)
         # MED-8 Security fix: Use secure JSON validation for metadata parsing
         metadata_json = base64.b64decode(metadata_b64).decode("utf-8")
         try:

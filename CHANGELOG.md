@@ -97,6 +97,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`test_yubikey_plugin.py`, 24 tests) — locks in existing behaviour
   prior to the OnlyKey work.
 
+### Fixed
+
+- **Streaming encryption data-loss bug**: streaming files always record
+  `format_version: 12` in their metadata, but the encryption key, pepper
+  derivation, and cascade setup were built with the *caller's*
+  format_version (library default 10; the CLI passes 9/10/11 depending
+  on XOR flags). Decryption re-derives everything from the metadata
+  version, so freshly encrypted streaming files failed authentication
+  and could not be decrypted. format_version=11 worked for plain
+  ciphers only by coincidence (its key derivation matches v12), which
+  is why the integration tests — pinned to fv=11 — never caught it;
+  cascade + streaming was broken for every version except an explicit
+  12. The streaming decision now happens before any version-dependent
+  derivation and forces format_version=12 for the whole streaming
+  encrypt path. One-shot files keep the caller's version unchanged.
+  Regression-tested across fv 9/10/11/12/default, plain and cascade
+  (`test_streaming_format_version.py`).
+
 ### Changed
 
 - `--hsm-slot` no longer hard-restricted to `choices=[1, 2]` at the
