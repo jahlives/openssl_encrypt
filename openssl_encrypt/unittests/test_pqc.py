@@ -1108,6 +1108,118 @@ class TestPostQuantumCrypto(unittest.TestCase):
             or "keystore" in error_msg
         )
 
+    def _read_file_metadata(self, encrypted_file):
+        """Parse the JSON metadata header from an encrypted file (b64:payload)."""
+        with open(encrypted_file, "rb") as f:
+            content = f.read(16384)
+        colon_pos = content.find(b":")
+        self.assertGreater(colon_pos, 0, "metadata header separator not found")
+        metadata_json = base64.b64decode(content[:colon_pos]).decode("utf-8")
+        return json.loads(metadata_json)
+
+    def test_pqc_dual_encryption_no_pbkdf2_verifier_in_metadata(self):
+        """M7: dual-encrypted files must NOT store the weak 10k-PBKDF2 hash of
+        the file password in metadata; the AES-GCM tag already authenticates
+        the password. The verifier was a redundant offline brute-force oracle."""
+        try:
+            from openssl_encrypt.modules.keystore_cli import KeystoreSecurityLevel, PQCKeystore
+            from openssl_encrypt.modules.keystore_wrapper import (
+                decrypt_file_with_keystore,
+                encrypt_file_with_keystore,
+            )
+        except ImportError:
+            self.skipTest("Keystore modules not available")
+
+        keystore_file = os.path.join(self.test_dir, "ks_m7.pqc")
+        keystore_password = "keystore_test_password"
+        file_password = b"file_test_password_m7"
+        wrong_password = b"wrong_password_m7_xyz"
+
+        keystore = PQCKeystore(keystore_file)
+        keystore.create_keystore(keystore_password, KeystoreSecurityLevel.STANDARD)
+
+        encrypted_file = os.path.join(self.test_dir, "enc_m7.bin")
+        decrypted_file = os.path.join(self.test_dir, "dec_m7.txt")
+        self.test_files.extend([encrypted_file, decrypted_file])
+
+        cipher = PQCipher("ml-kem-768")
+        public_key, private_key = cipher.generate_keypair()
+        key_id = keystore.add_key(
+            algorithm="ml-kem-768",
+            public_key=public_key,
+            private_key=private_key,
+            description="M7 verifier removal",
+            dual_encryption=True,
+            file_password=file_password.decode("utf-8"),
+        )
+        keystore.save_keystore()
+
+        hash_config = {
+            "sha512": 100,
+            "sha256": 0,
+            "sha3_256": 0,
+            "sha3_512": 0,
+            "blake2b": 0,
+            "shake256": 0,
+            "whirlpool": 0,
+            "scrypt": {"enabled": False, "n": 1024, "r": 8, "p": 1},
+            "argon2": {"enabled": False},
+            "pbkdf2_iterations": 1000,
+        }
+
+        result = encrypt_file_with_keystore(
+            input_file=self.test_file,
+            output_file=encrypted_file,
+            password=file_password,
+            hash_config=hash_config,
+            keystore_file=keystore_file,
+            keystore_password=keystore_password,
+            key_id=key_id,
+            algorithm="ml-kem-768-hybrid",
+            dual_encryption=True,
+            quiet=True,
+            pqc_keypair=(public_key, private_key),
+        )
+        self.assertTrue(result)
+
+        # The verifier fields must be absent everywhere in the metadata.
+        metadata = self._read_file_metadata(encrypted_file)
+        flat = json.dumps(metadata)
+        self.assertNotIn("pqc_dual_encrypt_verify", flat)
+        self.assertNotIn("pqc_dual_encrypt_verify_salt", flat)
+
+        # Correct password still decrypts (round-trip intact).
+        self.assertTrue(
+            decrypt_file_with_keystore(
+                input_file=encrypted_file,
+                output_file=decrypted_file,
+                password=file_password,
+                keystore_file=keystore_file,
+                keystore_password=keystore_password,
+                quiet=True,
+            )
+        )
+        with open(self.test_file, "rb") as a, open(decrypted_file, "rb") as b:
+            self.assertEqual(a.read(), b.read())
+
+        # Wrong password is still rejected - now by the AES-GCM tag, not the
+        # removed verifier.
+        with self.assertRaises(Exception) as ctx:
+            decrypt_file_with_keystore(
+                input_file=encrypted_file,
+                output_file=decrypted_file + ".wrong",
+                password=wrong_password,
+                keystore_file=keystore_file,
+                keystore_password=keystore_password,
+                quiet=True,
+            )
+        self.assertTrue(
+            any(
+                w in str(ctx.exception).lower()
+                for w in ("password", "decrypt", "authentication", "invalid", "failed", "keystore")
+            )
+        )
+
     def test_pqc_dual_encryption_sha3_key(self):
         """Test PQC key dual encryption with SHA3 key derivation."""
         # Skip if we can't import the necessary modules
