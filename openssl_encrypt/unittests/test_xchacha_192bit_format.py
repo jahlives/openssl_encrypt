@@ -217,14 +217,13 @@ class TestNewFormatStreaming(unittest.TestCase):
     """Streaming XChaCha files must use 24-byte chunk nonces and the real
     construction, signaled by the same metadata flag."""
 
-    # format_version=11 sidesteps a pre-existing streaming bug: metadata is
-    # always written as v12 but the key is derived with the *passed* version,
-    # and only v11 derivation coincides with v12 (see test_streaming.py).
+    # No format_version pin needed: the streaming encrypt path forces v12
+    # internally (see test_streaming_format_version.py), so the default
+    # caller version round-trips.
     ENCRYPT_KWARGS = dict(
         password=PASSWORD,
         algorithm="xchacha20-poly1305",
         quiet=True,
-        format_version=11,
         chunk_size=16384,
         streaming_threshold=1024,
     )
@@ -310,10 +309,9 @@ class TestNewFormatCascade(unittest.TestCase):
         """Streaming + cascade + XChaCha must round-trip with the real
         construction.
 
-        format_version=12 is required here: streaming metadata always says
-        v12, and the cascade encryptor gates per-layer salts and AAD scope
-        on the *passed* version — any other value desynchronizes encrypt
-        and decrypt (pre-existing bug, present for all cipher chains)."""
+        No format_version pin needed: the streaming encrypt path forces v12
+        internally, keeping cascade per-layer salts and AAD scope in sync
+        with the v12 metadata (see test_streaming_format_version.py)."""
         import tempfile
 
         data = PLAINTEXT * 3000
@@ -330,7 +328,6 @@ class TestNewFormatCascade(unittest.TestCase):
                     cascade=True,
                     cipher_names=["aes-gcm", "xchacha20-poly1305"],
                     quiet=True,
-                    format_version=12,
                     chunk_size=16384,
                     streaming_threshold=1024,
                 )
