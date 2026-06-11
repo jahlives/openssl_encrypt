@@ -60,13 +60,6 @@ from openssl_encrypt.modules.asymmetric_core import (
     unwrap_password_for_recipient,
     wrap_password_for_recipient,
 )
-from openssl_encrypt.modules.config_wizard import (
-    ConfigurationWizard,
-    UseCase,
-    UserExpertise,
-    generate_cli_arguments,
-    run_configuration_wizard,
-)
 
 # Import the modules to test
 from openssl_encrypt.modules.crypt_core import (
@@ -124,7 +117,6 @@ from openssl_encrypt.modules.secure_ops import (
     constant_time_pkcs7_unpad,
     secure_memzero,
 )
-from openssl_encrypt.modules.security_scorer import SecurityLevel, SecurityScorer
 
 
 class LogCapture(logging.Handler):
