@@ -5486,6 +5486,49 @@ def encrypt_file(
         except Exception as e:
             raise KeyDerivationError(f"HSM operation failed: {str(e)}")
 
+    # --- Streaming decision (must precede ALL format_version-dependent
+    # derivation: pepper keys, the main key, and cascade setup) ---
+    # Streaming files always record format_version=12 in their metadata, and
+    # decryption reconstructs every derivation from that metadata version.
+    # Encrypting with any other version therefore produced files that failed
+    # authentication on decrypt (data loss), so the version is forced to 12
+    # here, before anything derives from it.
+    _use_streaming = False
+    _streaming_chunk_size = None
+    _streaming_threshold = None
+    if not input_is_bytes and not no_streaming and output_file is not None:
+        from .streaming import (
+            DEFAULT_CHUNK_SIZE,
+            DEFAULT_STREAMING_THRESHOLD,
+            should_use_streaming,
+        )
+
+        _streaming_chunk_size = chunk_size if chunk_size else DEFAULT_CHUNK_SIZE
+        _streaming_threshold = (
+            streaming_threshold if streaming_threshold else DEFAULT_STREAMING_THRESHOLD
+        )
+
+        try:
+            _streaming_file_size = os.path.getsize(input_file)
+        except OSError:
+            _streaming_file_size = 0
+
+        _use_streaming = should_use_streaming(
+            file_size=_streaming_file_size,
+            algorithm=algorithm_value,
+            threshold=_streaming_threshold,
+            no_streaming=no_streaming,
+            input_is_bytes=input_is_bytes,
+        )
+
+    if _use_streaming and format_version != 12:
+        if debug:
+            logger.debug(
+                f"STREAMING: forcing format_version {format_version} -> 12 "
+                f"(streaming metadata is always v12 and decryption derives from it)"
+            )
+        format_version = 12
+
     # Remote pepper generation/retrieval if pepper plugin provided
     remote_pepper = None
     remote_pepper_name = None
@@ -5673,36 +5716,12 @@ def encrypt_file(
             format_version=format_version,  # v10: Sequential XOR, v9: Secure chained salt
         )
     # --- Streaming encryption path ---
-    # Check if streaming should be used (large files with AEAD algorithms)
-    _use_streaming = False
-    if not input_is_bytes and not no_streaming and output_file is not None:
-        from .streaming import (
-            DEFAULT_CHUNK_SIZE,
-            DEFAULT_STREAMING_THRESHOLD,
-            StreamingEncryptor,
-            calculate_hash_streaming,
-            should_use_streaming,
-        )
-
-        _streaming_chunk_size = chunk_size if chunk_size else DEFAULT_CHUNK_SIZE
-        _streaming_threshold = (
-            streaming_threshold if streaming_threshold else DEFAULT_STREAMING_THRESHOLD
-        )
-
-        try:
-            file_size = os.path.getsize(input_file)
-        except OSError:
-            file_size = 0
-
-        _use_streaming = should_use_streaming(
-            file_size=file_size,
-            algorithm=algorithm_value,
-            threshold=_streaming_threshold,
-            no_streaming=no_streaming,
-            input_is_bytes=input_is_bytes,
-        )
-
+    # The streaming decision was made BEFORE key derivation (see above) so
+    # that format_version-dependent derivation matches the v12 metadata.
     if _use_streaming:
+        from .streaming import StreamingEncryptor, calculate_hash_streaming
+
+        file_size = _streaming_file_size
         # Streaming path: two-pass encryption for large files
         if not quiet:
             eprint(f"Using streaming encryption (chunk size: {_streaming_chunk_size} bytes)")
