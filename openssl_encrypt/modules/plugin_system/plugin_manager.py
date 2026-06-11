@@ -17,6 +17,7 @@ import importlib
 import importlib.util
 import logging
 import os
+import stat
 import sys
 import threading
 import time
@@ -669,6 +670,38 @@ class PluginManager:
             "max_memory_mb": self.max_memory_mb,
         }
 
+    @staticmethod
+    def _insecure_location_reason(file_path: str) -> Optional[str]:
+        """Return a reason string if the plugin file or its containing
+        directory is group/world-writable (a tampering window), else None.
+
+        A sticky world-writable directory (e.g. /tmp) is not flagged on its
+        own: the sticky bit means only an entry's owner may rename/delete it,
+        so the file's own mode governs whether it can be tampered with.
+
+        Args:
+            file_path: Path to the plugin file
+
+        Returns:
+            Reason string if the location is insecure, else None.
+        """
+        writable_by_others = stat.S_IWGRP | stat.S_IWOTH
+        try:
+            real_file = os.path.realpath(file_path)
+            for target in (real_file, os.path.dirname(real_file)):
+                st = os.stat(target)
+                if not (st.st_mode & writable_by_others):
+                    continue
+                is_dir = os.path.isdir(target)
+                if is_dir and (st.st_mode & stat.S_ISVTX):
+                    # sticky directory - not a tampering window by itself
+                    continue
+                kind = "directory" if is_dir else "file"
+                return f"plugin {kind} is group/world-writable (mode {oct(st.st_mode & 0o777)})"
+        except OSError as e:
+            return f"could not stat plugin path: {e}"
+        return None
+
     def _validate_plugin_file(self, file_path: str) -> bool:
         """
         Validate plugin file for security issues.
@@ -683,6 +716,31 @@ class PluginManager:
             True if plugin passes validation, False otherwise
         """
         try:
+            import hashlib as _hashlib
+
+            # H8: refuse plugins from group/world-writable files or directories.
+            # That is the window an attacker uses to drop or rewrite a plugin
+            # whose module top-level code runs at import (exec_module) time,
+            # before any sandbox applies. Checked before the built-in trust
+            # shortcut so even shipped plugins in a tampered tree are caught.
+            insecure_reason = self._insecure_location_reason(file_path)
+            if insecure_reason:
+                logger.error(
+                    f"SECURITY BLOCKED: {insecure_reason}: {file_path}. "
+                    f"Plugins must live in a directory writable only by their owner."
+                )
+                if security_logger:
+                    security_logger.log_event(
+                        "plugin_blocked",
+                        "critical",
+                        {
+                            "file_path": file_path,
+                            "reason": "insecure_location",
+                            "detail": insecure_reason,
+                        },
+                    )
+                return False
+
             # Built-in plugins (shipped with the package) are trusted and skip AST analysis.
             # If an attacker could modify these files, they could modify the scanner too.
             # Use realpath to resolve symlinks and prevent symlink-based bypass.

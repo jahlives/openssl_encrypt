@@ -221,43 +221,111 @@ def _plugin_worker(plugin, context, result_queue):
         context: Security context for execution
         result_queue: Queue to return results
     """
+    # Resource limits set below are PROCESS-WIDE and must be restored in the
+    # finally: in the spawned worker the process exits so it does not matter,
+    # but _plugin_worker is also exercised in-process by the test suite, and a
+    # leaked RLIMIT_CPU (60s cumulative) would later kill the host process
+    # with SIGXCPU.
+    saved_rlimits = {}
+    max_fsize = 50 * 1024 * 1024
     try:
-        # Apply resource limits in child process (Linux only)
+        # Apply resource limits in child process (Linux only). Only the SOFT
+        # limit is lowered; the original HARD limit is preserved. Lowering the
+        # hard limit is irreversible for an unprivileged process, which would
+        # make the restore below impossible (and leak a 60s CPU cap into the
+        # host when this runs in-process). The soft limit is sufficient: the
+        # kernel signals (SIGXCPU/SIGXFSZ) / fails opens when it is exceeded.
         try:
             import resource as _resource
 
-            # CPU time limit: 60 seconds
-            if hasattr(_resource, "RLIMIT_CPU"):
-                _resource.setrlimit(_resource.RLIMIT_CPU, (60, 60))
-
-            # Max file size: 50MB
-            if hasattr(_resource, "RLIMIT_FSIZE"):
-                max_fsize = 50 * 1024 * 1024
-                _resource.setrlimit(_resource.RLIMIT_FSIZE, (max_fsize, max_fsize))
-
-            # Max number of open files: 64
-            if hasattr(_resource, "RLIMIT_NOFILE"):
-                _resource.setrlimit(_resource.RLIMIT_NOFILE, (64, 64))
-        except (ImportError, OSError, ValueError):
+            for attr, soft in (
+                ("RLIMIT_CPU", 60),  # 60 seconds CPU
+                ("RLIMIT_FSIZE", max_fsize),  # 50MB max file size
+                ("RLIMIT_NOFILE", 64),  # max 64 open files
+            ):
+                if hasattr(_resource, attr):
+                    rname = getattr(_resource, attr)
+                    try:
+                        old_soft, old_hard = _resource.getrlimit(rname)
+                        saved_rlimits[rname] = (old_soft, old_hard)
+                        new_soft = soft if old_hard < 0 else min(soft, old_hard)
+                        _resource.setrlimit(rname, (new_soft, old_hard))
+                    except (OSError, ValueError):
+                        saved_rlimits.pop(rname, None)
+        except ImportError:
             pass  # Resource limits not available on this platform
 
-        # Install import guard to block dangerous modules
-        guard = PluginImportGuard(context)
-        guard.hide_dangerous_modules()
-        sys.meta_path.insert(0, guard)
-
-        # Run AST validation on plugin source
+        # Run AST validation FIRST, while the real open() is still available
+        # (inspect.getsource needs unpatched file I/O - the file restrictions
+        # applied below would otherwise make the plugin's own source
+        # unreadable).
         try:
             _validate_plugin_source(plugin)
         except SandboxViolationError as e:
             result_queue.put(("error", str(e)))
             return
 
-        # Execute plugin with restrictions applied
-        result = plugin.execute(context)
-        result_queue.put(("success", result))
+        # H8: apply the FULL runtime sandbox (file/network/process
+        # restrictions + import guard) before executing the plugin. This is
+        # the DEFAULT isolation path; previously only the legacy threading
+        # mode patched open()/socket()/Popen, so a process-isolated plugin
+        # declaring no file capability could still read ~/.ssh/id_rsa or
+        # write arbitrary files. _setup_restricted_environment honours the
+        # plugin's capabilities exactly as threading mode does.
+        sandbox = PluginSandbox()
+        saved_state = None
+        original_cwd = None
+        try:
+            sandbox.current_context = context
+            try:
+                original_cwd = os.getcwd()
+                sandbox.temp_dir = tempfile.mkdtemp(
+                    prefix=f"plugin_{PluginSandbox._sanitize_plugin_id(context.plugin_id)}_"
+                )
+                os.chdir(sandbox.temp_dir)
+            except OSError:
+                pass
+            saved_state = sandbox._setup_restricted_environment(context)
+
+            result = plugin.execute(context)
+            result_queue.put(("success", result))
+        finally:
+            # Restore patched globals AND the working directory. Not strictly
+            # required in the spawned worker process (it exits next), but it
+            # keeps the function safe to call in-process and leaves no patched
+            # builtins or changed cwd behind.
+            if saved_state is not None:
+                try:
+                    sandbox._restore_original_environment(saved_state)
+                except Exception as restore_err:  # pragma: no cover - best effort
+                    logger.debug(f"Worker sandbox restore failed (process exiting): {restore_err}")
+            if original_cwd is not None:
+                try:
+                    os.chdir(original_cwd)
+                except OSError:  # pragma: no cover - best effort
+                    pass
+            if sandbox.temp_dir and os.path.isdir(sandbox.temp_dir):
+                try:
+                    sandbox._cleanup_temp_directory(sandbox.temp_dir)
+                except Exception:  # pragma: no cover - best effort
+                    pass
     except Exception as e:
         result_queue.put(("error", str(e)))
+    finally:
+        # Restore process-wide resource limits. Harmless in the spawned worker
+        # (about to exit); essential in-process - a leaked RLIMIT_CPU would
+        # otherwise SIGXCPU-kill the host after 60s of cumulative CPU.
+        if saved_rlimits:
+            try:
+                import resource as _resource
+
+                for rname, old in saved_rlimits.items():
+                    try:
+                        _resource.setrlimit(rname, old)
+                    except (OSError, ValueError):  # pragma: no cover - best effort
+                        pass
+            except ImportError:  # pragma: no cover
+                pass
 
 
 class ResourceMonitor:
