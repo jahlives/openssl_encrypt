@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.4.5] - TBD
 
+### Fixed
+
+- **ML-KEM hybrid encryption via the CLI was impossible with any
+  spelling**: the `ml_kem_patch` compatibility shim rewrites
+  `--algorithm ml-kem-*-hybrid` to the legacy `kyber*-hybrid` names
+  before argument handling, and the v1.2.0 deprecation gate then
+  rejected the converted name — telling users to "use ml-kem-768-hybrid"
+  in response to them typing exactly that. The gate now judges the name
+  the user actually typed; the legacy kyber names remain blocked for new
+  encryptions. Also fixed a latent crash this unmasked on the subcommand
+  path (missing `pqc_gen_key` attribute default). Regression-tested
+  through the real CLI entry point
+  (`test_mlkem_cli_regression.py`).
+
 ### Security
 
 Security-review findings (SECURITY_REVIEW_FINDINGS.md) fixed on the 1.4.x
