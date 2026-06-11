@@ -595,6 +595,19 @@ class KeystoreVersionError(KeystoreError):
         super().__init__(details, original_exception)
 
 
+class KeystoreIntegrityError(KeystoreError):
+    """Exception for keystore integrity (MAC) verification failures.
+
+    Raised when the keystore content does not match its integrity MAC,
+    i.e. the file was tampered with or corrupted after it was written.
+    Distinct from KeystorePasswordError: the password was verified to be
+    correct, but the authenticated structure check failed.
+    """
+
+    def __init__(self, details=None, original_exception=None):
+        super().__init__(details, original_exception)
+
+
 def secure_keystore_error_handler(f):
     """Specialized error handler for keystore operations."""
     return secure_error_handler(f, ErrorCategory.KEYSTORE)
