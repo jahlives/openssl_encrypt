@@ -637,100 +637,6 @@ def setup_encrypt_parser(subparser):
         help="Additional data to be encrypted alongside the file",
     )
 
-    # Steganography options
-    stego_group = subparser.add_argument_group("Steganography options")
-    stego_group.add_argument(
-        "--stego-hide",
-        metavar="COVER_MEDIA",
-        help="Hide encrypted data in cover media instead of writing to file (supports PNG, BMP, JPEG, TIFF, WAV, FLAC, MP3, MP4 formats)",
-    )
-    stego_group.add_argument(
-        "--stego-method",
-        choices=[
-            "lsb",
-            "adaptive",
-            "f5",
-            "outguess",
-            "basic",
-            "uniform",
-            "distortion_comp",
-            "multi_level",
-        ],
-        default="lsb",
-        help="Steganographic method to use (default: lsb). For JPEG: f5, outguess, or basic. For images (TIFF/PNG/BMP): lsb or adaptive. For audio (WAV/FLAC/MP3): lsb. For video (MP4): uniform, adaptive, distortion_comp, or multi_level (DCT-based)",
-    )
-    stego_group.add_argument(
-        "--stego-bits-per-channel",
-        type=int,
-        choices=[1, 2, 3],
-        default=1,
-        help="LSB bits per color channel for images or per sample for audio (default: 1)",
-    )
-    stego_group.add_argument(
-        "--stego-password",
-        help="Password for steganographic security (separate from encryption password)",
-    )
-    stego_group.add_argument(
-        "--stego-randomize-pixels",
-        action="store_true",
-        help="Randomize pixel selection order (requires --stego-password)",
-    )
-    stego_group.add_argument(
-        "--stego-decoy-data",
-        action="store_true",
-        help="Fill unused capacity with decoy data",
-    )
-    stego_group.add_argument(
-        "--jpeg-quality",
-        type=int,
-        choices=range(70, 101),
-        metavar="70-100",
-        default=85,
-        help="JPEG quality factor for steganography (default: 85)",
-    )
-
-    # Video-specific steganography options
-    video_stego_group = subparser.add_argument_group("Video steganography options (MP4)")
-    video_stego_group.add_argument(
-        "--video-quantization-step",
-        type=float,
-        default=8.0,
-        help="DCT quantization step for video steganography (default: 8.0, lower = higher quality but less capacity)",
-    )
-    video_stego_group.add_argument(
-        "--video-adaptation-factor",
-        type=float,
-        default=1.2,
-        help="Adaptation factor for adaptive QIM algorithm (default: 1.2)",
-    )
-    video_stego_group.add_argument(
-        "--video-compensation-factor",
-        type=float,
-        default=0.5,
-        help="Compensation factor for distortion-compensated QIM algorithm (default: 0.5)",
-    )
-    video_stego_group.add_argument(
-        "--video-bits-per-coefficient",
-        type=int,
-        choices=[1, 2, 3, 4],
-        default=2,
-        help="Bits per DCT coefficient for multi-level QIM algorithm (default: 2)",
-    )
-    video_stego_group.add_argument(
-        "--video-temporal-spread",
-        action="store_true",
-        default=True,
-        help="Spread data across multiple frames for redundancy (default: enabled)",
-    )
-    video_stego_group.add_argument(
-        "--video-quality-preservation",
-        type=int,
-        choices=range(1, 11),
-        metavar="1-10",
-        default=8,
-        help="Video quality preservation level (1=max capacity, 10=max quality, default: 8)",
-    )
-
     # HSM plugin arguments for hardware-bound key derivation
     hsm_group = subparser.add_argument_group("HSM Options", "Hardware Security Module integration")
     hsm_group.add_argument(
@@ -900,90 +806,6 @@ def setup_decrypt_parser(subparser):
         dest="identity_store",
         metavar="PATH",
         help="Path to identity store directory (overrides global --identity-store)",
-    )
-
-    # Steganography options
-    stego_group = subparser.add_argument_group("Steganography options")
-    stego_group.add_argument(
-        "--stego-extract",
-        action="store_true",
-        help="Extract encrypted data from steganographic media (input must be stego image, audio, or video file)",
-    )
-    stego_group.add_argument(
-        "--stego-method",
-        choices=[
-            "lsb",
-            "adaptive",
-            "f5",
-            "outguess",
-            "basic",
-            "uniform",
-            "distortion_comp",
-            "multi_level",
-        ],
-        default="lsb",
-        help="Steganographic method used for hiding (default: lsb). For JPEG: f5, outguess, or basic. For TIFF/PNG/BMP/WEBP: lsb or adaptive. For video (MP4): uniform, adaptive, distortion_comp, or multi_level (DCT-based)",
-    )
-    stego_group.add_argument(
-        "--stego-bits-per-channel",
-        type=int,
-        choices=[1, 2, 3],
-        default=1,
-        help="LSB bits per color channel used (default: 1) - ignored for JPEG methods",
-    )
-    stego_group.add_argument(
-        "--stego-password",
-        help="Password for steganographic security (separate from encryption password)",
-    )
-    stego_group.add_argument(
-        "--jpeg-quality",
-        type=int,
-        choices=range(70, 101),
-        metavar="70-100",
-        default=85,
-        help="JPEG quality factor used for steganography (default: 85)",
-    )
-
-    # Video-specific steganography options (for extraction)
-    video_stego_group = subparser.add_argument_group("Video steganography options (MP4)")
-    video_stego_group.add_argument(
-        "--video-quantization-step",
-        type=float,
-        default=8.0,
-        help="DCT quantization step used for video steganography (default: 8.0)",
-    )
-    video_stego_group.add_argument(
-        "--video-adaptation-factor",
-        type=float,
-        default=1.2,
-        help="Adaptation factor used for adaptive QIM algorithm (default: 1.2)",
-    )
-    video_stego_group.add_argument(
-        "--video-compensation-factor",
-        type=float,
-        default=0.5,
-        help="Compensation factor used for distortion-compensated QIM algorithm (default: 0.5)",
-    )
-    video_stego_group.add_argument(
-        "--video-bits-per-coefficient",
-        type=int,
-        choices=[1, 2, 3, 4],
-        default=2,
-        help="Bits per DCT coefficient used for multi-level QIM algorithm (default: 2)",
-    )
-    video_stego_group.add_argument(
-        "--video-temporal-spread",
-        action="store_true",
-        default=True,
-        help="Data was spread across multiple frames during hiding (default: enabled)",
-    )
-    video_stego_group.add_argument(
-        "--video-quality-preservation",
-        type=int,
-        choices=range(1, 11),
-        metavar="1-10",
-        default=8,
-        help="Video quality preservation level used during hiding (default: 8)",
     )
 
     # HSM plugin arguments for hardware-bound key derivation
@@ -2933,9 +2755,6 @@ def create_subparser_main():
         formatter_class=argparse.RawTextHelpFormatter,
     )
     setup_hsm_parser(hsm_parser)
-
-    # Note: Steganography is now integrated into encrypt/decrypt commands
-    # rather than separate commands
 
     # Verify command — structural integrity check without password
     verify_parser = subparsers.add_parser(

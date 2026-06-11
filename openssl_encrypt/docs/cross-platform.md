@@ -286,7 +286,7 @@ openssl_encrypt
 │   ├── liboqs-python → liboqs (C library)
 │   │   └── HQC, ML-KEM, CROSS, MAYO
 │   ├── PyYAML
-│   ├── Pillow, qrcode, pyzbar (Steganography)
+│   ├── Pillow, qrcode, pyzbar (QR key distribution)
 │   └── RandomX (optional, Anti-ASIC KDF)
 └── Flutter GUI
     └── Dart

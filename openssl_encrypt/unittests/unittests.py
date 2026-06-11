@@ -126,42 +126,6 @@ from openssl_encrypt.modules.secure_ops import (
 )
 from openssl_encrypt.modules.security_scorer import SecurityLevel, SecurityScorer
 
-try:
-    from openssl_encrypt.plugins.steganography.error_correction import (
-        AdaptiveErrorCorrection,
-        BlockEncoder,
-        ReedSolomonDecoder,
-        ReedSolomonEncoder,
-    )
-
-    ERROR_CORRECTION_AVAILABLE = True
-except ImportError:
-    ERROR_CORRECTION_AVAILABLE = False
-
-try:
-    from openssl_encrypt.modules.steganography.qim_algorithm import (
-        AdaptiveQIM,
-        DistortionCompensatedQIM,
-        MultiLevelQIM,
-        QIMAnalyzer,
-        UniformQIM,
-    )
-
-    QIM_ALGORITHM_AVAILABLE = True
-except ImportError:
-    QIM_ALGORITHM_AVAILABLE = False
-
-try:
-    from openssl_encrypt.modules.steganography.steganalysis import (
-        AdvancedSteganalysis,
-        ClassicalSteganalysis,
-        InformationTheoreticSecurity,
-    )
-
-    STEGANALYSIS_AVAILABLE = True
-except ImportError:
-    STEGANALYSIS_AVAILABLE = False
-
 
 class LogCapture(logging.Handler):
     """A custom logging handler that captures log records for testing."""
