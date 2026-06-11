@@ -2044,142 +2044,6 @@ def _display_recommendation(rec, number: int):
     eprint()
 
 
-def run_security_tests(args):
-    """Run security test suites."""
-    try:
-        from .testing import SecurityTestRunner, TestExecutionPlan, TestSuiteType
-
-        # Create test runner
-        runner = SecurityTestRunner()
-
-        # Get test action
-        test_action = getattr(args, "test_action", None)
-
-        if not test_action:
-            eprint("No test action specified. Use --help for available options.")
-            return
-
-        # Build execution plan
-        suite_types = []
-
-        if test_action == "fuzz":
-            suite_types = [TestSuiteType.FUZZ]
-        elif test_action == "side-channel":
-            suite_types = [TestSuiteType.SIDE_CHANNEL]
-        elif test_action == "kat":
-            suite_types = [TestSuiteType.KAT]
-        elif test_action == "benchmark":
-            suite_types = [TestSuiteType.BENCHMARK]
-        elif test_action == "memory":
-            suite_types = [TestSuiteType.MEMORY]
-        elif test_action == "all":
-            suite_types = [TestSuiteType.ALL]
-        else:
-            eprint(f"Unknown test action: {test_action}")
-            return
-
-        # Build configuration from arguments
-        config = {}
-
-        # Common configuration
-        if hasattr(args, "algorithm") and args.algorithm:
-            config["algorithm"] = args.algorithm
-
-        if hasattr(args, "iterations") and args.iterations:
-            config["benchmark_iterations"] = args.iterations
-
-        if hasattr(args, "seed") and args.seed:
-            config["seed"] = args.seed
-
-        if hasattr(args, "timing_threshold") and args.timing_threshold:
-            config["timing_threshold"] = args.timing_threshold
-
-        if hasattr(args, "test_iterations") and args.test_iterations:
-            config["memory_test_iterations"] = args.test_iterations
-
-        if hasattr(args, "leak_threshold") and args.leak_threshold:
-            config["leak_threshold"] = args.leak_threshold
-
-        if hasattr(args, "test_category") and args.test_category:
-            config["test_category"] = args.test_category
-
-        if hasattr(args, "algorithms") and args.algorithms:
-            config["algorithms"] = args.algorithms
-
-        if hasattr(args, "file_sizes") and args.file_sizes:
-            config["file_sizes"] = args.file_sizes
-
-        if hasattr(args, "save_baseline") and args.save_baseline:
-            config["save_baseline"] = True
-
-        # Output configuration
-        output_formats = getattr(args, "output_format", ["json", "html"])
-        output_dir = getattr(args, "output_dir", None)
-
-        # Parallel execution for "all" tests
-        parallel = getattr(args, "parallel", False) if test_action == "all" else False
-        max_workers = getattr(args, "max_workers", 3)
-
-        # Create execution plan
-        execution_plan = TestExecutionPlan(
-            suite_types=suite_types,
-            parallel_execution=parallel,
-            max_workers=max_workers,
-            config=config,
-            output_formats=output_formats,
-            output_directory=output_dir,
-        )
-
-        # Set up logging
-        if not getattr(args, "quiet", False):
-            import logging
-
-            logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
-
-        # Run tests
-        eprint(f"🔒 Starting OpenSSL Encrypt Security Tests - {test_action.upper()}")
-        eprint("=" * 60)
-        eprint()
-
-        report = runner.run_tests(execution_plan)
-
-        # Display summary
-        eprint("\n" + "=" * 60)
-        eprint("📊 TEST SUMMARY")
-        eprint("=" * 60)
-
-        summary = report.overall_summary
-        eprint(f"Total Suites: {summary['total_suites']}")
-        eprint(f"Successful Suites: {summary['successful_suites']}")
-        eprint(f"Suite Success Rate: {summary['suite_success_rate']:.1f}%")
-        eprint(f"Total Tests: {summary['total_tests']}")
-        eprint(f"Passed Tests: {summary['passed_tests']}")
-        eprint(f"Warning Tests: {summary['warning_tests']}")
-        eprint(f"Failed Tests: {summary['error_tests']}")
-        eprint(f"Test Success Rate: {summary['test_success_rate']:.1f}%")
-        eprint(f"Total Duration: {report.total_duration:.1f} seconds")
-
-        # Show report locations
-        if output_dir:
-            eprint(f"\n📁 Reports saved to: {output_dir}")
-            for fmt in output_formats:
-                filename = f"security_test_report_{report.run_id}.{fmt}"
-                eprint(f"   • {fmt.upper()}: {filename}")
-
-        eprint("\n✅ Testing completed!")
-
-    except ImportError as e:
-        eprint(f"Error: Testing framework not available: {e}")
-        sys.exit(1)
-    except Exception as e:
-        eprint(f"Error running security tests: {e}")
-        if hasattr(args, "debug") and args.debug:
-            import traceback
-
-            traceback.print_exc()
-        sys.exit(1)
-
-
 def _handle_template_list(template_mgr: TemplateManager, args):
     """Handle template list command."""
     category = getattr(args, "category", None)
@@ -3314,7 +3178,6 @@ def main():
         "analyze-config",
         "template",
         "smart-recommendations",
-        "test",
         "identity",
         "check-argon2",
         "check-pqc",
@@ -4845,10 +4708,6 @@ def main_with_args(args=None):
 
     elif args.action == "smart-recommendations":
         run_smart_recommendations(args)
-        sys.exit(0)
-
-    elif args.action == "test":
-        run_security_tests(args)
         sys.exit(0)
 
     elif args.action == "identity":

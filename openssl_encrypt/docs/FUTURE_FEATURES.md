@@ -42,7 +42,7 @@ These features are fully implemented and available in current releases.
   - ✅ Security recommendations and analysis
 
 ### 3. **Advanced Testing & Quality Assurance** (v1.3.0+)
-- **Status**: ✅ FULLY IMPLEMENTED
+- **Status**: ❌ REMOVED in v1.5.0 (code-surface reduction — dev tooling no longer shipped in the package)
 - **Implementation**:
   - `openssl_encrypt/modules/testing/benchmark_suite.py` (29,654 bytes)
   - `openssl_encrypt/modules/testing/fuzz_testing.py` (20,334 bytes)
