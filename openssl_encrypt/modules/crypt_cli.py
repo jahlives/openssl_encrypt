@@ -4550,6 +4550,7 @@ def main_with_args(args=None):
         "shred_passes": 3,
         "pqc_keyfile": None,
         "pqc_store_key": False,
+        "pqc_gen_key": False,
         "kdf_rounds": 0,
         "enable_scrypt": False,
         "scrypt_rounds": 0,
@@ -7177,8 +7178,12 @@ def main_with_args(args=None):
                 sys.exit(1)
 
             # Enforce deprecation policy: Block encryption with deprecated algorithms in version 1.2.0
-            if is_encryption_blocked_for_algorithm(args.algorithm):
-                error_message = get_encryption_block_message(args.algorithm)
+            # ml_kem_patch rewrites ML-KEM names in sys.argv to legacy kyber names before main()
+            # runs, so judge the name the user actually typed (preserved in the env var by the
+            # patch), not the synthetic converted one — otherwise ml-kem-*-hybrid is unusable.
+            blocked_check_name = original_ml_kem_algorithm or args.algorithm
+            if is_encryption_blocked_for_algorithm(blocked_check_name):
+                error_message = get_encryption_block_message(blocked_check_name)
                 eprint(f"ERROR: {error_message}")
                 sys.exit(1)
 
