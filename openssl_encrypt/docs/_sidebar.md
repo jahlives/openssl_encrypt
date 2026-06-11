@@ -8,7 +8,6 @@
   * [Architecture & KDF Chain](architecture)
   * [Algorithm Reference](algorithm-reference)
   * [Metadata Formats](metadata-formats)
-  * [D-Bus Service](dbus-service)
   * [Portable Media Design](PORTABLE_MEDIA_DESIGN)
 
 * **Security & Compliance**
