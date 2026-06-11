@@ -74,7 +74,7 @@ These features are fully implemented and available in current releases.
   - 📋 Quantum resistance validation and testing tools (future)
 
 ### 5. **Steganography - All Formats** (v1.3.0)
-- **Status**: ✅ FULLY IMPLEMENTED - ALL FORMATS WORKING
+- **Status**: ❌ REMOVED in v1.5.0 (code-surface reduction)
 - **Implementation**: `openssl_encrypt/modules/steganography/` (16 files)
   - `stego_core.py`, `stego_image.py`, `stego_jpeg.py`, `stego_tiff.py`
   - `stego_wav.py`, `stego_flac.py`, `stego_mp3.py`, `stego_webp.py`

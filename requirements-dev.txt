@@ -108,8 +108,6 @@ nltk==3.9.4
     # via safety
 nodeenv==1.10.0
     # via pre-commit
-numpy==2.4.1
-    # via -r requirements-prod.in
 packaging==25.0
     # via
     #   black

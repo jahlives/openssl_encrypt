@@ -3381,33 +3381,6 @@ def main():
         return main_with_args()
 
 
-def _get_steganography_plugin(quiet=False):
-    """
-    Get steganography plugin from plugin system.
-
-    Args:
-        quiet: If True, suppress error messages
-
-    Returns:
-        Plugin instance or None if not available
-    """
-    try:
-        # Import steganography plugin directly
-        from ..plugins.steganography import plugin_instance
-
-        return plugin_instance
-
-    except ImportError:
-        if not quiet:
-            eprint("Error: Steganography requires additional dependencies.")
-            eprint("Install with: pip install Pillow numpy")
-        return None
-    except Exception as e:
-        if not quiet:
-            eprint(f"Error loading steganography plugin: {e}")
-        return None
-
-
 def _run_dice_generation(args):
     """
     Generate a Diceware passphrase from parsed CLI args.
@@ -4432,7 +4405,6 @@ def main_with_args(args=None):
     alias_processor = add_cli_aliases(parser)
 
     # Don't parse args again if they're already provided from subparser
-    # This avoids the "unrecognized arguments" error for steganography options
     if args is None:
         args = parser.parse_args()
 
@@ -7719,58 +7691,8 @@ def main_with_args(args=None):
                         # Apply the original permissions to the temp file
                         os.chmod(temp_output, original_permissions)
 
-                        # Handle steganography if requested
-                        if hasattr(args, "stego_hide") and args.stego_hide:
-                            try:
-                                # Get steganography plugin
-                                stego_plugin = _get_steganography_plugin(quiet=args.quiet)
-                                if stego_plugin:
-                                    # Read encrypted data from temp file
-                                    with open(temp_output, "rb") as f:
-                                        encrypted_data = f.read()
-
-                                    # Extract steganography options from args
-                                    method = getattr(args, "stego_method", "lsb")
-                                    bits_per_channel = getattr(args, "stego_bits_per_channel", 1)
-                                    stego_password = getattr(args, "stego_password", None)
-
-                                    options = {
-                                        "randomize_pixels": getattr(
-                                            args, "stego_randomize_pixels", False
-                                        ),
-                                        "decoy_data": getattr(args, "stego_decoy_data", False),
-                                        "preserve_stats": True,
-                                        "jpeg_quality": getattr(args, "jpeg_quality", 85),
-                                    }
-
-                                    # Hide data using plugin
-                                    result = stego_plugin.hide_data(
-                                        cover_path=args.stego_hide,
-                                        data=encrypted_data,
-                                        output_path=output_file,
-                                        method=method,
-                                        bits_per_channel=bits_per_channel,
-                                        password=stego_password,
-                                        **options,
-                                    )
-
-                                    if result.success:
-                                        if not args.quiet:
-                                            eprint(
-                                                f"Data successfully hidden in image: {output_file}"
-                                            )
-                                    else:
-                                        eprint(f"Steganography error: {result.message}")
-                                        return 1
-                                else:
-                                    # Fallback to normal file output
-                                    os.replace(temp_output, output_file)
-                            except Exception as e:
-                                eprint(f"Steganography error: {e}")
-                                return 1
-                        else:
-                            # Normal file output
-                            os.replace(temp_output, output_file)
+                        # Normal file output
+                        os.replace(temp_output, output_file)
 
                         # Successful operation means we don't need to clean up the temp file
                         temp_files_to_cleanup.remove(temp_output)
@@ -8616,49 +8538,6 @@ def main_with_args(args=None):
                         streaming_threshold=_streaming_threshold,
                     )
 
-                # Handle steganography if requested
-                if success and hasattr(args, "stego_hide") and args.stego_hide:
-                    try:
-                        # Get steganography plugin
-                        stego_plugin = _get_steganography_plugin(quiet=args.quiet)
-                        if stego_plugin:
-                            # Read encrypted data from output file
-                            with open(output_file, "rb") as f:
-                                encrypted_data = f.read()
-
-                            # Extract steganography options from args
-                            method = getattr(args, "stego_method", "lsb")
-                            bits_per_channel = getattr(args, "stego_bits_per_channel", 1)
-                            stego_password = getattr(args, "stego_password", None)
-
-                            options = {
-                                "randomize_pixels": getattr(args, "stego_randomize_pixels", False),
-                                "decoy_data": getattr(args, "stego_decoy_data", False),
-                                "preserve_stats": True,
-                                "jpeg_quality": getattr(args, "jpeg_quality", 85),
-                            }
-
-                            # Hide data using plugin
-                            result = stego_plugin.hide_data(
-                                cover_path=args.stego_hide,
-                                data=encrypted_data,
-                                output_path=output_file,
-                                method=method,
-                                bits_per_channel=bits_per_channel,
-                                password=stego_password,
-                                **options,
-                            )
-
-                            if result.success:
-                                if not args.quiet:
-                                    eprint(f"Data successfully hidden in image: {output_file}")
-                            else:
-                                eprint(f"Steganography error: {result.message}")
-                                return 1
-                    except Exception as e:
-                        eprint(f"Steganography error: {e}")
-                        return 1
-
             if success:
                 # Security audit log for successful encryption
                 if security_logger:
@@ -9311,66 +9190,7 @@ def main_with_args(args=None):
                 temp_files_to_cleanup.append(temp_output)
 
                 try:
-                    # Handle steganography extraction if requested
                     actual_input_file = args.input
-                    temp_extracted_file = None
-
-                    if hasattr(args, "stego_extract") and args.stego_extract:
-                        try:
-                            import tempfile
-
-                            if not args.quiet:
-                                eprint("Extracting encrypted data from steganographic image...")
-
-                            # Get steganography plugin
-                            stego_plugin = _get_steganography_plugin(quiet=args.quiet)
-                            if stego_plugin:
-                                # Extract steganography options from args
-                                method = getattr(args, "stego_method", "lsb")
-                                bits_per_channel = getattr(args, "stego_bits_per_channel", 1)
-                                stego_password = getattr(args, "stego_password", None)
-
-                                options = {
-                                    "randomize_pixels": getattr(
-                                        args, "stego_randomize_pixels", False
-                                    ),
-                                    "decoy_data": getattr(args, "stego_decoy_data", False),
-                                    "preserve_stats": True,
-                                    "jpeg_quality": getattr(args, "jpeg_quality", 85),
-                                }
-
-                                # Extract data using plugin
-                                result = stego_plugin.extract_data(
-                                    stego_path=args.input,
-                                    method=method,
-                                    bits_per_channel=bits_per_channel,
-                                    password=stego_password,
-                                    **options,
-                                )
-
-                                if result.success:
-                                    encrypted_data = result.data.get("extracted_data", b"")
-
-                                    # Create temporary file for extracted data
-                                    with tempfile.NamedTemporaryFile(
-                                        delete=False, suffix=".enc"
-                                    ) as temp_file:
-                                        temp_extracted_file = temp_file.name
-                                        temp_file.write(encrypted_data)
-                                    _fp_set_permissions(temp_extracted_file, PermissionLevel.OWNER_ONLY)
-
-                                    # Use extracted file as input for decryption
-                                    actual_input_file = temp_extracted_file
-                                    temp_files_to_cleanup.append(temp_extracted_file)
-
-                                    if not args.quiet:
-                                        eprint(f"Extracted {len(encrypted_data)} bytes from image")
-                                else:
-                                    eprint(f"Steganography extraction error: {result.message}")
-                                    return 1
-                        except Exception as e:
-                            eprint(f"Steganography extraction error: {e}")
-                            return 1
 
                     # Get original file permissions before doing anything
                     original_permissions = get_file_permissions(actual_input_file)
@@ -9645,63 +9465,7 @@ def main_with_args(args=None):
                         if not args.quiet:
                             eprint(f"Warning: Failed to load PQC key file: {e}")
 
-                # Handle steganography extraction if requested
                 actual_input_file = args.input
-                temp_extracted_file = None
-
-                if hasattr(args, "stego_extract") and args.stego_extract:
-                    try:
-                        import tempfile
-
-                        if not args.quiet:
-                            eprint("Extracting encrypted data from steganographic image...")
-
-                        # Get steganography plugin
-                        stego_plugin = _get_steganography_plugin(quiet=args.quiet)
-                        if stego_plugin:
-                            # Extract steganography options from args
-                            method = getattr(args, "stego_method", "lsb")
-                            bits_per_channel = getattr(args, "stego_bits_per_channel", 1)
-                            stego_password = getattr(args, "stego_password", None)
-
-                            options = {
-                                "randomize_pixels": getattr(args, "stego_randomize_pixels", False),
-                                "decoy_data": getattr(args, "stego_decoy_data", False),
-                                "preserve_stats": True,
-                                "jpeg_quality": getattr(args, "jpeg_quality", 85),
-                            }
-
-                            # Extract data using plugin
-                            result = stego_plugin.extract_data(
-                                stego_path=args.input,
-                                method=method,
-                                bits_per_channel=bits_per_channel,
-                                password=stego_password,
-                                **options,
-                            )
-
-                            if result.success:
-                                encrypted_data = result.data.get("extracted_data", b"")
-
-                                # Create temporary file for extracted data
-                                with tempfile.NamedTemporaryFile(
-                                    delete=False, suffix=".enc"
-                                ) as temp_file:
-                                    temp_extracted_file = temp_file.name
-                                    temp_file.write(encrypted_data)
-
-                                # Use extracted file as input for decryption
-                                actual_input_file = temp_extracted_file
-                                temp_files_to_cleanup.append(temp_extracted_file)
-
-                                if not args.quiet:
-                                    eprint(f"Extracted {len(encrypted_data)} bytes from image")
-                            else:
-                                eprint(f"Steganography extraction error: {result.message}")
-                                return 1
-                    except Exception as e:
-                        eprint(f"Steganography extraction error: {e}")
-                        return 1
 
                 # Check if we should use keystore integration
                 if hasattr(args, "keystore") and args.keystore:
