@@ -185,7 +185,69 @@ inflated KDF metadata parameters, not cosmetic output.
 
 ### Security
 
-- No changes to the cryptographic core. The OnlyKey plugin reuses
+Security-review findings (SECURITY_REVIEW_FINDINGS.md) fixed and ported to
+the 1.5 branch:
+
+- **Keystore integrity — authenticated v2 keystore format (H4)**: the
+  keystore previously stored everything except wrapped private keys as
+  cleartext, unauthenticated JSON, so anyone with write access could swap
+  a stored public key, repoint per-algorithm defaults or delete entries
+  undetected. v2 authenticates the entire structure with HMAC-SHA256 over
+  canonical JSON, keyed by a domain-separated subkey of the master key;
+  any mismatch fails closed with `KeystoreIntegrityError`. Legacy v1
+  keystores load with a warning and auto-upgrade to v2 on the next save.
+  A regression test proves the store-level MAC also neutralizes the
+  blob-move attack (M6).
+- **PQC algorithm resolution fails closed (H3)**: `PQCipher` no longer
+  silently falls back to the weakest available KEM when a requested
+  algorithm cannot be resolved (e.g. ML-KEM-1024 on a build lacking it, or
+  a typo) — it raises `ValueError` listing the available algorithms.
+  Legacy Kyber names still normalize to ML-KEM at the *same* security
+  level.
+- **Portable USB drives use a unique per-drive KDF salt (H5)**: master-key
+  derivation previously used one global hardcoded salt for every drive,
+  enabling a single precomputed dictionary against all drives. New drives
+  generate a random 32-byte salt (`config/salt.bin`); pre-existing drives
+  transparently fall back to the legacy salt and remain verifiable.
+- **Plugin sandbox hardening (H8)**: file/network/process restrictions are
+  now enforced on the default process-isolation path (previously only in
+  legacy threading mode — a plugin without file capability could still
+  read arbitrary files); the AST denylist closes the
+  frame/traceback escape chain (`__traceback__` → `f_back` → `f_globals`);
+  plugins in group/world-writable files or directories are rejected.
+- **Balloon KDF memory-hard default (M3)**: on the v11 independent-XOR
+  path an enabled Balloon with no explicit `space_cost` silently fell back
+  to a ~512-byte buffer (GPU-trivial) and the value was not persisted.
+  A memory-hard default is now applied and persisted at encrypt time;
+  explicitly low values trigger a warning. Legacy files stay decryptable.
+- **Weak dual-encryption password verifier removed (M7)**: dual-encrypted
+  files no longer store a 10,000-iteration PBKDF2 hash of the file
+  password in cleartext metadata (an offline brute-force oracle). The
+  AES-GCM tag already authenticates the password; legacy files carrying
+  the verifier are still honoured.
+- **Identity TOFU key-change detection (M8)**: re-importing a contact
+  whose key fingerprint changed now raises `IdentityKeyChangedError` even
+  with `overwrite=True` (replacing a pinned key requires the explicit
+  `allow_key_change=True`); fingerprint lookup now requires a full match
+  instead of `startswith()` (an empty prefix used to resolve to the first
+  stored identity).
+- **Honest secure-memory contract (M10/M10a)**: `secure_memzero` no longer
+  falsely reports success after zeroing a *copy* of immutable input — it
+  returns `False` for `bytes`/`str` (new `strict=True` raises), and wipes
+  in place for mutable buffers. The KDF registry password wipe, which
+  never actually ran due to an always-false condition, is now effective
+  and copy-free across all backends.
+- **Metadata schema validation fails closed (M11)**: unknown
+  `format_version` values are now rejected instead of skipping
+  per-version schema validation; schemas are registered dynamically from
+  disk (the shipped v9/v12 schemas were never registered and silently
+  unused). The `encryption.algorithm` field in v9/v12 schemas was relaxed
+  to a string — the cipher registry is the fail-closed boundary for
+  algorithm names (H3), the schema's role is structural/DoS validation.
+- D-Bus per-caller authorization (H7+L8) also landed during this cycle
+  and was subsequently superseded by the removal of the entire D-Bus
+  subsystem (see Removed).
+- OnlyKey plugin: no changes to the cryptographic core. It reuses
   yubikit's `YubiOtpSession.calculate_hmac_sha1`; the only difference
   vs the YubiKey plugin is USB device enumeration (additional VID/PID
   filter). Existing YubiKey-encrypted files and YubiKey-protected
@@ -193,12 +255,23 @@ inflated KDF metadata parameters, not cosmetic output.
 
 ### Internal
 
+- **Test-collection regression fixed**: `pytest.ini` (added 2025-12-30)
+  silently stopped collecting `unittests/unittests.py` — 91 tests across
+  12 classes had not run in any suite invocation since. Collection is
+  restored and everything that surfaced was repaired, including a
+  module-level `warnings.warn` monkeypatch that leaked into co-resident
+  workers and broke later `pytest.warns()` assertions.
 - No new Python dependencies. The `onlykey` PyPI package is **not**
   required — HMAC-SHA1 is performed via yubikit (already pulled in
   via `yubikey-manager`).
 - ~200 new unit tests across `test_onlykey_plugin.py`,
   `test_onlykey_cli.py`, `test_onlykey_identity_protection.py`,
-  `test_cr_cross_backend_determinism.py`, and `test_yubikey_plugin.py`.
+  `test_cr_cross_backend_determinism.py`, and `test_yubikey_plugin.py`;
+  new security-fix suites `test_keystore_integrity.py`,
+  `test_plugin_sandbox_h8.py`, `test_identity_tofu_m8.py`,
+  `test_balloon_defaults_m3.py`, `test_kdf_wipe_m10a.py`,
+  `test_secure_memzero_m10.py`, `test_metadata_schema_m11.py` and
+  `test_portable_media.py` additions.
 
 ## [1.4.0b10] - 2026-01-11
 
