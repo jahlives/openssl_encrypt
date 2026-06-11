@@ -122,6 +122,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   through the real CLI entry point
   (`test_mlkem_cli_regression.py`).
 
+- **Undefined-name (F821) bugs**: `keystore_cli.py` used a `logger` that
+  was never created (NameError on any code path that logged) and
+  `versions.py` called `eprint` without importing it when executed as
+  `__main__`. Both fixed during the lint campaign; two further F821s in
+  test files (missing `shutil` import, missing `original_import`
+  capture) repaired as well.
+
 ### Security
 
 Security-review findings (SECURITY_REVIEW_FINDINGS.md) fixed on the 1.4.x
@@ -215,7 +222,20 @@ files remain decryptable.
   `test_kdf_wipe_m10a.py`, `test_secure_memzero_m10.py`,
   `test_metadata_schema_m11.py`, plus PQC fail-closed and per-drive-salt
   regression tests.
-
+- **Code-quality campaign across the entire codebase**: black + isort
+  formatting applied repo-wide, new `.flake8` config with
+  per-file-ignores for test files, autoflake removal of unused imports
+  and variables, 121 placeholder-less f-strings de-f-stringed (F541),
+  bare `except:` replaced with `except Exception:` (E722/B001 — no
+  longer swallows `SystemExit`/`KeyboardInterrupt`), redundant exception
+  types removed (B014). The autoflake pass initially destroyed
+  try/except optional-dependency import probes and `__init__.py`
+  re-exports; both were restored and F401 is now suppressed globally to
+  prevent a repeat.
+- **Test robustness**: Whirlpool tests skip cleanly when the optional
+  module is unavailable; stdout-leak whitelist updated after the
+  formatting pass; rekey algorithm-change tests pinned against the
+  STANDARD-template override.
 - No new Python dependencies. The `onlykey` PyPI package is **not**
   required — HMAC-SHA1 is performed via yubikit (already pulled in
   via `yubikey-manager`).
