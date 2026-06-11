@@ -79,16 +79,20 @@ class SecureJSONValidator:
             schema_files = {
                 "config_template": "config_template_schema.json",
                 "keystore": "keystore_schema.json",
-                "metadata_v3": "metadata_v3_schema.json",
-                "metadata_v4": "metadata_v4_schema.json",
-                "metadata_v5": "metadata_v5_schema.json",
-                "metadata_v6": "metadata_v6_schema.json",
-                "metadata_v7": "metadata_v7_schema.json",
-                "metadata_v8": "metadata_v8_schema.json",
-                "metadata_v10": "metadata_v10_schema.json",
-                "metadata_v11": "metadata_v11_schema.json",
-                "metadata_v12": "metadata_v12_schema.json",
             }
+
+            # M11: dynamically register every metadata_v{N}_schema.json present
+            # on disk so a newly added schema version is picked up automatically.
+            # Previously this was a hand-maintained list that had drifted - the
+            # v9 and v12 schema files existed but were never registered, which
+            # silently disabled their schema validation.
+            import glob
+            import re
+
+            for schema_path in glob.glob(os.path.join(schemas_dir, "metadata_v*_schema.json")):
+                match = re.match(r"metadata_v(\d+)_schema\.json$", os.path.basename(schema_path))
+                if match:
+                    schema_files[f"metadata_v{match.group(1)}"] = os.path.basename(schema_path)
 
             for schema_name, filename in schema_files.items():
                 schema_path = os.path.join(schemas_dir, filename)
@@ -272,38 +276,43 @@ class SecureJSONValidator:
         # Parse and perform basic security validation
         data = self.parse_and_validate_json(json_string)
 
-        # Determine format version and validate against appropriate schema
+        # Determine format version and validate against the version-specific
+        # schema. The schema name is derived from the version so any registered
+        # schema (see _load_schemas) is used automatically.
         format_version = data.get("format_version")
 
-        if format_version == 3:
-            schema_name = "metadata_v3"
-        elif format_version == 4:
-            schema_name = "metadata_v4"
-        elif format_version == 5:
-            schema_name = "metadata_v5"
-        elif format_version == 6:
-            schema_name = "metadata_v6"
-        elif format_version == 7:
-            schema_name = "metadata_v7"
-        elif format_version == 8:
-            schema_name = "metadata_v8"
-        elif format_version == 10:
-            schema_name = "metadata_v10"
-        elif format_version == 11:
-            schema_name = "metadata_v11"
-        elif format_version == 12:
-            schema_name = "metadata_v12"
-        else:
-            # For unknown versions, perform basic validation without schema
+        schema_name = None
+        # bool is an int subclass - exclude True/False from being treated as a
+        # version number.
+        if isinstance(format_version, int) and not isinstance(format_version, bool):
+            if format_version >= 3:
+                schema_name = f"metadata_v{format_version}"
+
+        if schema_name is not None and schema_name in self.schemas:
+            # Validate against version-specific schema
+            self.validate_against_schema(data, schema_name)
+            return data
+
+        # No version-specific schema is available for this version.
+        # M11: legacy pre-schema formats (missing version, or v1/v2 which
+        # predate JSON-schema validation and are treated as v1 by the decrypt
+        # path) are still accepted under the generic security limits already
+        # enforced by parse_and_validate_json - this preserves backward
+        # compatibility for old files.
+        if format_version in (None, 1, 2):
             eprint(
-                f"Warning: Unknown metadata format version {format_version}, skipping schema validation"
+                f"Warning: metadata format version {format_version} predates schema "
+                f"validation; applying generic security limits only"
             )
             return data
 
-        # Validate against version-specific schema
-        self.validate_against_schema(data, schema_name)
-
-        return data
+        # Fail closed: an unknown, future, or non-integer version must not be
+        # able to bypass schema validation simply by declaring a version we do
+        # not recognise (M11). A genuine new version must ship its schema.
+        raise JSONValidationError(
+            f"Unknown or unsupported metadata format version {format_version!r}: "
+            f"refusing to skip schema validation (fail closed)"
+        )
 
     def validate_config_template(self, json_string: str) -> Dict[str, Any]:
         """
