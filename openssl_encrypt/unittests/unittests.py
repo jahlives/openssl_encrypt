@@ -956,12 +956,6 @@ class TestCryptCore(unittest.TestCase):
         with self.assertRaises(ValidationError):
             cipher.encrypt(os.urandom(16), data, aad)
 
-    @unittest.skip(
-        "PORT(1.5): pre-existing failure exposed by enabling unittests.py collection. "
-        "Embeds a hardcoded format_version=3 Fernet vector that the 1.5 decrypt path "
-        "rejects (AuthenticationError) - unrelated to the ported security fixes. "
-        "Regenerate the vector for 1.5 or investigate the v3-Fernet backward-compat path."
-    )
     @pytest.mark.order(1)
     def test_decrypt_stdin(self):
         """Test decryption from stdin using a temporary file instead of mocking."""
@@ -971,7 +965,7 @@ class TestCryptCore(unittest.TestCase):
 
         # Create a temporary file to use instead of mocking stdin
         with tempfile.NamedTemporaryFile() as temp_file:
-            encrypted_content = b"eyJmb3JtYXRfdmVyc2lvbiI6IDMsICJzYWx0IjogIkNRNWphR3E2NFNickhBQ1g1aytLbXc9PSIsICJoYXNoX2NvbmZpZyI6IHsic2hhNTEyIjogMCwgInNoYTI1NiI6IDAsICJzaGEzXzI1NiI6IDAsICJzaGEzXzUxMiI6IDEwLCAiYmxha2UyYiI6IDAsICJzaGFrZTI1NiI6IDAsICJ3aGlybHBvb2wiOiAwLCAic2NyeXB0IjogeyJlbmFibGVkIjogZmFsc2UsICJuIjogMTI4LCAiciI6IDgsICJwIjogMSwgInJvdW5kcyI6IDF9LCAiYXJnb24yIjogeyJlbmFibGVkIjogZmFsc2UsICJ0aW1lX2Nvc3QiOiAzLCAibWVtb3J5X2Nvc3QiOiA2NTUzNiwgInBhcmFsbGVsaXNtIjogNCwgImhhc2hfbGVuIjogMzIsICJ0eXBlIjogMiwgInJvdW5kcyI6IDF9LCAiYmFsbG9vbiI6IHsiZW5hYmxlZCI6IGZhbHNlLCAidGltZV9jb3N0IjogMywgInNwYWNlX2Nvc3QiOiA2NTUzNiwgInBhcmFsbGVsaXNtIjogNCwgInJvdW5kcyI6IDJ9LCAicGJrZGYyX2l0ZXJhdGlvbnMiOiAxMCwgInR5cGUiOiAiaWQifSwgInBia2RmMl9pdGVyYXRpb25zIjogMTAsICJvcmlnaW5hbF9oYXNoIjogImQyYTg0ZjRiOGI2NTA5MzdlYzhmNzNjZDhiZTJjNzRhZGQ1YTkxMWJhNjRkZjI3NDU4ZWQ4MjI5ZGE4MDRhMjYiLCAiZW5jcnlwdGVkX2hhc2giOiAiY2UwNTI4MWRkMmY1NmUzNDEzMmI2NjZjZDkwMTM5OGI0YTA4MWEyZmFjZDcxOTNlMzAwZWM2YjJjODY1MWRhMyIsICJhbGdvcml0aG0iOiAiZmVybmV0In0=:Z0FBQUFBQm9GTC1FNG5Gc2Q1aHhJSzJrTUN5amx4TnF4RXozTHhhQUhqbzRZZlNfQTVOUmRpc0lrUTQxblI1a1J5M05sOXYwUnBMM0Q5a1NnRFZWNzFfOEczZDRLZXo2S3c9PQ=="
+            encrypted_content = b"eyJmb3JtYXRfdmVyc2lvbiI6IDEwLCAibW9kZSI6ICJzeW1tZXRyaWMiLCAiZGVyaXZhdGlvbl9jb25maWciOiB7InNhbHQiOiAiRVRjYlIxcHR3anBtUVVuK0RYdGVTZz09IiwgImhhc2hfY29uZmlnIjogeyJzaGE1MTIiOiB7InJvdW5kcyI6IDB9LCAic2hhMjU2IjogeyJyb3VuZHMiOiAwfSwgInNoYTNfMjU2IjogeyJyb3VuZHMiOiAwfSwgInNoYTNfNTEyIjogeyJyb3VuZHMiOiAxMDAwMH0sICJibGFrZTJiIjogeyJyb3VuZHMiOiAwfSwgImJsYWtlMyI6IHsicm91bmRzIjogMTAwMDB9LCAic2hha2UyNTYiOiB7InJvdW5kcyI6IDB9fSwgImtkZl9jb25maWciOiB7InNjcnlwdCI6IHsiZW5hYmxlZCI6IGZhbHNlfSwgImFyZ29uMiI6IHsiZW5hYmxlZCI6IHRydWUsICJ0aW1lX2Nvc3QiOiAzLCAibWVtb3J5X2Nvc3QiOiA2NTUzNiwgInBhcmFsbGVsaXNtIjogNCwgImhhc2hfbGVuIjogMzIsICJ0eXBlIjogMiwgInJvdW5kcyI6IDEwfSwgInJhbmRvbXgiOiB7ImVuYWJsZWQiOiB0cnVlLCAicm91bmRzIjogMTAsICJtb2RlIjogImxpZ2h0IiwgImhlaWdodCI6IDEsICJoYXNoX2xlbiI6IDMyfX19LCAiaGFzaGVzIjogeyJvcmlnaW5hbF9oYXNoIjogImQyYTg0ZjRiOGI2NTA5MzdlYzhmNzNjZDhiZTJjNzRhZGQ1YTkxMWJhNjRkZjI3NDU4ZWQ4MjI5ZGE4MDRhMjYifSwgImVuY3J5cHRpb24iOiB7ImNhc2NhZGUiOiBmYWxzZSwgImFsZ29yaXRobSI6ICJhZXMtZ2NtIiwgImVuY3J5cHRpb25fZGF0YSI6ICJhZXMtZ2NtIiwgInBxX3NlY3VyaXR5X2JpdHMiOiAxMjh9LCAiYWVhZF9iaW5kaW5nIjogdHJ1ZSwgImVuY3J5cHRlZF9hdCI6ICIyMDI2LTA2LTExVDE2OjE4OjQxWiJ9:EfnJoGh/cGrxJomxXh4oyyetlTXOe5a6UrT4Q5tBgm2L6nZh3OrCtg=="
 
             # Write the encrypted content to the temp file
             temp_file.write(encrypted_content)
@@ -990,11 +984,6 @@ class TestCryptCore(unittest.TestCase):
 
         self.assertEqual(decrypted, b"Hello World\n")
 
-    @unittest.skip(
-        "PORT(1.5): pre-existing failure exposed by enabling unittests.py collection. "
-        "Embeds a hardcoded format_version=3 Fernet vector that the 1.5 decrypt path "
-        "rejects (AuthenticationError) - unrelated to the ported security fixes."
-    )
     @pytest.mark.order(1)
     def test_decrypt_stdin_quick(self):
         """Test quick decryption from stdin using a temporary file instead of mocking."""
@@ -1004,7 +993,7 @@ class TestCryptCore(unittest.TestCase):
 
         # Create a temporary file to use instead of mocking stdin
         with tempfile.NamedTemporaryFile() as temp_file:
-            encrypted_content = b"eyJmb3JtYXRfdmVyc2lvbiI6IDMsICJzYWx0IjogIlFpOUZ6d0FIT3N5UnhmbDlzZ2NoK0E9PSIsICJoYXNoX2NvbmZpZyI6IHsic2hhNTEyIjogMCwgInNoYTI1NiI6IDEwMDAsICJzaGEzXzI1NiI6IDAsICJzaGEzXzUxMiI6IDEwMDAwLCAiYmxha2UyYiI6IDAsICJzaGFrZTI1NiI6IDAsICJ3aGlybHBvb2wiOiAwLCAic2NyeXB0IjogeyJlbmFibGVkIjogZmFsc2UsICJuIjogMTI4LCAiciI6IDgsICJwIjogMSwgInJvdW5kcyI6IDEwMDB9LCAiYXJnb24yIjogeyJlbmFibGVkIjogZmFsc2UsICJ0aW1lX2Nvc3QiOiAyLCAibWVtb3J5X2Nvc3QiOiA2NTUzNiwgInBhcmFsbGVsaXNtIjogNCwgImhhc2hfbGVuIjogMzIsICJ0eXBlIjogMiwgInJvdW5kcyI6IDEwfSwgInBia2RmMl9pdGVyYXRpb25zIjogMTAwMDAsICJ0eXBlIjogImlkIiwgImFsZ29yaXRobSI6ICJmZXJuZXQifSwgInBia2RmMl9pdGVyYXRpb25zIjogMCwgIm9yaWdpbmFsX2hhc2giOiAiZDJhODRmNGI4YjY1MDkzN2VjOGY3M2NkOGJlMmM3NGFkZDVhOTExYmE2NGRmMjc0NThlZDgyMjlkYTgwNGEyNiIsICJlbmNyeXB0ZWRfaGFzaCI6ICIzNzc4MzM4NjlmYTM4ZTVmMWMxMDRjNTUxNzQzZmFmYWI4MTk3Y2UxNzMzYmEzYWQ0MmFhN2NjYTQ5YzhmNGJkIiwgImFsZ29yaXRobSI6ICJmZXJuZXQifQ==:Z0FBQUFBQm9GTUVCT3d5ajlBWWtsQzJ2YXZjeWZGX3ZaOV9NbFBmS3lUWEMtRUVLLS1Fc3R3MlU5WmVPVWtTZ3lIX0tkNlpIdVNXSG1vY28tdXg4UF81bGtKU09VQ01PNkE9PQ=="
+            encrypted_content = b"eyJmb3JtYXRfdmVyc2lvbiI6IDEwLCAibW9kZSI6ICJzeW1tZXRyaWMiLCAiZGVyaXZhdGlvbl9jb25maWciOiB7InNhbHQiOiAiWU1yM01qMmkvWTllYjhRTDNoQ05uUT09IiwgImhhc2hfY29uZmlnIjogeyJzaGE1MTIiOiB7InJvdW5kcyI6IDB9LCAic2hhMjU2IjogeyJyb3VuZHMiOiAwfSwgInNoYTNfMjU2IjogeyJyb3VuZHMiOiAwfSwgInNoYTNfNTEyIjogeyJyb3VuZHMiOiAxMDAwMH0sICJibGFrZTJiIjogeyJyb3VuZHMiOiAwfSwgImJsYWtlMyI6IHsicm91bmRzIjogMTAwMDB9LCAic2hha2UyNTYiOiB7InJvdW5kcyI6IDB9fSwgImtkZl9jb25maWciOiB7InNjcnlwdCI6IHsiZW5hYmxlZCI6IGZhbHNlfSwgImFyZ29uMiI6IHsiZW5hYmxlZCI6IHRydWUsICJ0aW1lX2Nvc3QiOiAzLCAibWVtb3J5X2Nvc3QiOiA2NTUzNiwgInBhcmFsbGVsaXNtIjogNCwgImhhc2hfbGVuIjogMzIsICJ0eXBlIjogMiwgInJvdW5kcyI6IDEwfSwgInJhbmRvbXgiOiB7ImVuYWJsZWQiOiB0cnVlLCAicm91bmRzIjogMTAsICJtb2RlIjogImxpZ2h0IiwgImhlaWdodCI6IDEsICJoYXNoX2xlbiI6IDMyfX19LCAiaGFzaGVzIjogeyJvcmlnaW5hbF9oYXNoIjogImQyYTg0ZjRiOGI2NTA5MzdlYzhmNzNjZDhiZTJjNzRhZGQ1YTkxMWJhNjRkZjI3NDU4ZWQ4MjI5ZGE4MDRhMjYifSwgImVuY3J5cHRpb24iOiB7ImNhc2NhZGUiOiBmYWxzZSwgImFsZ29yaXRobSI6ICJhZXMtZ2NtIiwgImVuY3J5cHRpb25fZGF0YSI6ICJhZXMtZ2NtIiwgInBxX3NlY3VyaXR5X2JpdHMiOiAxMjh9LCAiYWVhZF9iaW5kaW5nIjogdHJ1ZSwgImVuY3J5cHRlZF9hdCI6ICIyMDI2LTA2LTExVDE2OjE4OjQ3WiJ9:QtdmUBvBZGJEv2Et6QR8J5cK1u1F8kmTvjJm6GFQ72LhOXxTa3Rl4Q=="
 
             # Write the encrypted content to the temp file
             temp_file.write(encrypted_content)
@@ -1115,8 +1104,7 @@ class TestCryptUtils(unittest.TestCase):
         result = secure_shred_file(non_existent, quiet=True)
         self.assertFalse(result)
 
-    #  @unittest.skip("This test is destructive and actually deletes directories")
-    def test_recursive_secure_shred(self):
+        #    def test_recursive_secure_shred(self):
         """Test recursive secure shredding of directories.
 
         Note: This test is marked to be skipped by default since it's destructive.
@@ -1695,8 +1683,7 @@ class TestSecureShredding(unittest.TestCase):
         # File should no longer exist
         self.assertFalse(os.path.exists(self.readonly_file))
 
-    # @unittest.skip("Skipping recursive test to avoid actual deletion")
-    def test_recursive_shred(self):
+        #    def test_recursive_shred(self):
         """Test recursive directory shredding.
 
         Note: This test is skipped by default as it's destructive.
