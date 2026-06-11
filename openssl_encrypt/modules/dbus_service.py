@@ -17,7 +17,9 @@ Security Features:
 - Audit logging to systemd journal
 """
 
+import argparse
 import logging
+import os
 import secrets
 import sys
 import threading
@@ -76,8 +78,20 @@ BLOCKED_PATHS = [
     "/sys",
     "/dev",
     "/boot",
-    "/root",  # Root user home (unless we're root)
+    "/root",  # Root user home (allowed in system-bus mode, see __init__)
 ]
+
+# H7: polkit action ids - must match openssl_encrypt/dbus/ch.rmrf.openssl_encrypt.policy
+POLKIT_ACTION_ENCRYPT = "ch.rmrf.openssl_encrypt.encrypt"
+POLKIT_ACTION_DECRYPT = "ch.rmrf.openssl_encrypt.decrypt"
+POLKIT_ACTION_SHRED = "ch.rmrf.openssl_encrypt.shred"
+POLKIT_ACTION_KEYSTORE = "ch.rmrf.openssl_encrypt.keystore"
+POLKIT_ACTION_GENERATE_KEY = "ch.rmrf.openssl_encrypt.generate_key"
+POLKIT_ACTION_DELETE_KEY = "ch.rmrf.openssl_encrypt.delete_key"
+
+# CheckAuthorizationFlags.AllowUserInteraction - lets polkit prompt the
+# caller's authentication agent instead of silently denying
+_POLKIT_ALLOW_USER_INTERACTION = 1
 
 
 class CryptoOperation:
@@ -136,27 +150,119 @@ class CryptoService(dbus.service.Object):
         "hqc-256-hybrid": EncryptionAlgorithm.HQC_256_HYBRID,
     }
 
-    def __init__(self, bus: dbus.Bus, max_concurrent_ops: int = 5):
+    def __init__(self, bus: dbus.Bus, max_concurrent_ops: int = 5, system_bus: bool = False):
         """
         Initialize the D-Bus service
 
         Args:
             bus: D-Bus connection
             max_concurrent_ops: Maximum number of concurrent operations
+            system_bus: True when running on the system bus. Every method is
+                then gated by polkit (admin authorization) and the path
+                policy is widened to system paths - that mode exists so a
+                non-root admin can encrypt files only root has access to.
+                On the session bus (default) only same-UID callers are
+                accepted and paths stay restricted to home/tmp.
         """
         super().__init__(bus, self.OBJECT_PATH)
 
         self.bus = bus
+        self.system_bus = system_bus
         self.operations: Dict[str, CryptoOperation] = {}
         self.operations_lock = threading.Lock()
         self.max_concurrent_ops = max_concurrent_ops
         self.default_timeout = 300  # 5 minutes
 
-        logger.info(f"CryptoService initialized on {self.BUS_NAME}")
+        if system_bus:
+            # The purpose of system-bus mode is reaching root-only files, so
+            # the whitelist is the whole filesystem - but the explicitly
+            # blocked critical paths stay blocked (encrypting /etc/shadow or
+            # /boot bricks the system; a real root shell exists for that),
+            # except /root which is precisely where root-only files live.
+            self._allowed_base_directories = [Path("/")]
+            self._blocked_paths = [p for p in BLOCKED_PATHS if p != "/root"]
+        else:
+            self._allowed_base_directories = list(ALLOWED_BASE_DIRECTORIES)
+            self._blocked_paths = list(BLOCKED_PATHS)
+
+        logger.info(
+            f"CryptoService initialized on {self.BUS_NAME} "
+            f"({'system' if system_bus else 'session'} bus mode)"
+        )
 
     # ========================================
     # Helper Methods
     # ========================================
+
+    def _authorize_caller(self, sender: Optional[str], action_id: str) -> Tuple[bool, str]:
+        """
+        Authorize the D-Bus caller for an operation (H7) - fail closed.
+
+        Session bus: the caller's UID must equal the service's UID. The
+        session bus is per-user anyway; this is defense-in-depth against
+        leaked/forwarded bus sockets.
+
+        System bus: the caller is checked against polkit with the given
+        action id (the .policy defaults require admin authentication), with
+        user interaction allowed so the caller's polkit agent can prompt.
+
+        Args:
+            sender: Unique D-Bus name of the caller (from sender_keyword)
+            action_id: polkit action id for the requested operation
+
+        Returns:
+            (authorized, error_message)
+        """
+
+        def _deny(reason: str) -> Tuple[bool, str]:
+            logger.warning(f"D-Bus authorization denied for {sender!r} ({action_id}): {reason}")
+            if security_logger:
+                security_logger.log_event(
+                    "dbus_authorization_denied",
+                    "critical",
+                    {
+                        "sender": str(sender),
+                        "action_id": action_id,
+                        "reason": reason,
+                        "bus": "system" if self.system_bus else "session",
+                        "service": "dbus",
+                    },
+                )
+            return False, reason
+
+        if not sender:
+            return _deny("caller identity unavailable")
+
+        try:
+            caller_uid = int(self.bus.get_unix_user(sender))
+        except Exception as e:
+            return _deny(f"could not resolve caller UID: {e}")
+
+        if not self.system_bus:
+            if caller_uid == os.getuid():
+                return True, ""
+            return _deny(f"caller UID {caller_uid} does not match service UID")
+
+        # System bus: ask polkit (fail closed on any error)
+        try:
+            authority_obj = self.bus.get_object(
+                "org.freedesktop.PolicyKit1", "/org/freedesktop/PolicyKit1/Authority"
+            )
+            authority = dbus.Interface(authority_obj, "org.freedesktop.PolicyKit1.Authority")
+            subject = ("system-bus-name", {"name": dbus.String(sender)})
+            is_authorized, _is_challenge, _details = authority.CheckAuthorization(
+                subject,
+                action_id,
+                {},
+                dbus.UInt32(_POLKIT_ALLOW_USER_INTERACTION),
+                "",
+            )
+        except Exception as e:
+            return _deny(f"polkit authorization check failed: {e}")
+
+        if bool(is_authorized):
+            return True, ""
+        return _deny("not authorized by polkit")
 
     def _validate_file_path(self, path: str, must_exist: bool = False) -> Tuple[bool, str]:
         """
@@ -190,7 +296,7 @@ class CryptoService(dbus.service.Object):
 
         # Check if path is within allowed directories
         path_allowed = False
-        for allowed_dir in ALLOWED_BASE_DIRECTORIES:
+        for allowed_dir in self._allowed_base_directories:
             try:
                 # resolve() the allowed directory to handle symlinks consistently
                 resolved_allowed = allowed_dir.resolve(strict=False)
@@ -222,7 +328,7 @@ class CryptoService(dbus.service.Object):
 
         # Check against explicitly blocked paths
         abs_path_str = str(abs_path)
-        for blocked in BLOCKED_PATHS:
+        for blocked in self._blocked_paths:
             if abs_path_str == blocked or abs_path_str.startswith(blocked + "/"):
                 logger.error(
                     f"D-Bus path validation: Access to blocked system path denied: {abs_path}"
@@ -243,12 +349,21 @@ class CryptoService(dbus.service.Object):
 
                 return False, "Access to system files denied"
 
+        # Existence/type checks - stat() can raise (e.g. PermissionError on
+        # an unreadable parent directory); treat that as a clean denial
+        # instead of letting the exception escape to the D-Bus layer
+        try:
+            path_exists = abs_path.exists()
+            is_directory = path_exists and abs_path.is_dir()
+        except OSError as e:
+            return False, f"Cannot access path: {e}"
+
         # Check existence if required
-        if must_exist and not abs_path.exists():
+        if must_exist and not path_exists:
             return False, "Path does not exist"
 
         # Check if it's a file (not directory)
-        if abs_path.exists() and abs_path.is_dir():
+        if is_directory:
             return False, "Path is a directory, not a file"
 
         return True, ""
@@ -354,6 +469,7 @@ class CryptoService(dbus.service.Object):
         in_signature="ssssa{sv}",
         out_signature="bss",
         async_callbacks=("reply_handler", "error_handler"),
+        sender_keyword="sender",
     )
     def EncryptFile(
         self,
@@ -364,6 +480,7 @@ class CryptoService(dbus.service.Object):
         options: Dict[str, Any],
         reply_handler,
         error_handler,
+        sender=None,
     ):
         """
         Encrypt a file
@@ -379,6 +496,11 @@ class CryptoService(dbus.service.Object):
             (success, error_msg, operation_id)
         """
         logger.info(f"EncryptFile called: {input_path} -> {output_path}")
+
+        authorized, auth_error = self._authorize_caller(sender, POLKIT_ACTION_ENCRYPT)
+        if not authorized:
+            reply_handler((False, f"Access denied: {auth_error}", ""))
+            return
 
         def _encrypt_worker():
             operation_id = None
@@ -566,6 +688,7 @@ class CryptoService(dbus.service.Object):
         in_signature="sss",
         out_signature="bss",
         async_callbacks=("reply_handler", "error_handler"),
+        sender_keyword="sender",
     )
     def DecryptFile(
         self,
@@ -574,6 +697,7 @@ class CryptoService(dbus.service.Object):
         password: str,
         reply_handler,
         error_handler,
+        sender=None,
     ):
         """
         Decrypt a file
@@ -587,6 +711,11 @@ class CryptoService(dbus.service.Object):
             (success, error_msg, operation_id)
         """
         logger.info(f"DecryptFile called: {input_path} -> {output_path}")
+
+        authorized, auth_error = self._authorize_caller(sender, POLKIT_ACTION_DECRYPT)
+        if not authorized:
+            reply_handler((False, f"Access denied: {auth_error}", ""))
+            return
 
         def _decrypt_worker():
             operation_id = None
@@ -743,9 +872,11 @@ class CryptoService(dbus.service.Object):
         thread = threading.Thread(target=_decrypt_worker, daemon=True)
         thread.start()
 
-    @dbus.service.method(INTERFACE_NAME, in_signature="ayssa{sv}", out_signature="bays")
+    @dbus.service.method(
+        INTERFACE_NAME, in_signature="ayssa{sv}", out_signature="bays", sender_keyword="sender"
+    )
     def EncryptData(
-        self, data: bytes, password: str, algorithm: str, options: Dict[str, Any]
+        self, data: bytes, password: str, algorithm: str, options: Dict[str, Any], sender=None
     ) -> Tuple[bool, bytes, str]:
         """
         Encrypt binary data directly (no file I/O)
@@ -760,11 +891,20 @@ class CryptoService(dbus.service.Object):
             (success, encrypted_data, error_msg)
         """
         logger.info(f"EncryptData called with {len(data)} bytes")
+
+        authorized, auth_error = self._authorize_caller(sender, POLKIT_ACTION_ENCRYPT)
+        if not authorized:
+            return (False, b"", f"Access denied: {auth_error}")
+
         # TODO: Implement data encryption
         return (False, b"", "Not implemented yet")
 
-    @dbus.service.method(INTERFACE_NAME, in_signature="ays", out_signature="bays")
-    def DecryptData(self, encrypted_data: bytes, password: str) -> Tuple[bool, bytes, str]:
+    @dbus.service.method(
+        INTERFACE_NAME, in_signature="ays", out_signature="bays", sender_keyword="sender"
+    )
+    def DecryptData(
+        self, encrypted_data: bytes, password: str, sender=None
+    ) -> Tuple[bool, bytes, str]:
         """
         Decrypt binary data directly (no file I/O)
 
@@ -776,6 +916,11 @@ class CryptoService(dbus.service.Object):
             (success, data, error_msg)
         """
         logger.info(f"DecryptData called with {len(encrypted_data)} bytes")
+
+        authorized, auth_error = self._authorize_caller(sender, POLKIT_ACTION_DECRYPT)
+        if not authorized:
+            return (False, b"", f"Access denied: {auth_error}")
+
         # TODO: Implement data decryption
         return (False, b"", "Not implemented yet")
 
@@ -783,8 +928,10 @@ class CryptoService(dbus.service.Object):
     # D-Bus Methods - Secure File Operations
     # ========================================
 
-    @dbus.service.method(INTERFACE_NAME, in_signature="si", out_signature="bs")
-    def SecureShredFile(self, file_path: str, passes: int) -> Tuple[bool, str]:
+    @dbus.service.method(
+        INTERFACE_NAME, in_signature="si", out_signature="bs", sender_keyword="sender"
+    )
+    def SecureShredFile(self, file_path: str, passes: int, sender=None) -> Tuple[bool, str]:
         """
         Securely delete a file
 
@@ -796,6 +943,10 @@ class CryptoService(dbus.service.Object):
             (success, error_msg)
         """
         logger.info(f"SecureShredFile called: {file_path}, passes={passes}")
+
+        authorized, auth_error = self._authorize_caller(sender, POLKIT_ACTION_SHRED)
+        if not authorized:
+            return (False, f"Access denied: {auth_error}")
 
         # Validate path
         valid, error = self._validate_file_path(file_path, must_exist=True)
@@ -829,9 +980,11 @@ class CryptoService(dbus.service.Object):
     # D-Bus Methods - Keystore Operations
     # ========================================
 
-    @dbus.service.method(INTERFACE_NAME, in_signature="ssss", out_signature="bss")
+    @dbus.service.method(
+        INTERFACE_NAME, in_signature="ssss", out_signature="bss", sender_keyword="sender"
+    )
     def GeneratePQCKey(
-        self, algorithm: str, keystore_path: str, keystore_password: str, key_name: str
+        self, algorithm: str, keystore_path: str, keystore_password: str, key_name: str, sender=None
     ) -> Tuple[bool, str, str]:
         """
         Generate a post-quantum cryptographic key pair
@@ -847,6 +1000,10 @@ class CryptoService(dbus.service.Object):
         """
         logger.info(f"GeneratePQCKey called: algorithm={algorithm}, name={key_name}")
 
+        authorized, auth_error = self._authorize_caller(sender, POLKIT_ACTION_GENERATE_KEY)
+        if not authorized:
+            return (False, "", f"Access denied: {auth_error}")
+
         # Validate keystore path
         valid, error = self._validate_file_path(keystore_path, must_exist=False)
         if not valid:
@@ -855,9 +1012,11 @@ class CryptoService(dbus.service.Object):
         # TODO: Integrate with keystore_utils
         return (False, "", "Not implemented yet")
 
-    @dbus.service.method(INTERFACE_NAME, in_signature="ss", out_signature="baa{ss}s")
+    @dbus.service.method(
+        INTERFACE_NAME, in_signature="ss", out_signature="baa{ss}s", sender_keyword="sender"
+    )
     def ListPQCKeys(
-        self, keystore_path: str, keystore_password: str
+        self, keystore_path: str, keystore_password: str, sender=None
     ) -> Tuple[bool, List[Dict[str, str]], str]:
         """
         List all keys in a keystore
@@ -871,6 +1030,10 @@ class CryptoService(dbus.service.Object):
         """
         logger.info(f"ListPQCKeys called: {keystore_path}")
 
+        authorized, auth_error = self._authorize_caller(sender, POLKIT_ACTION_KEYSTORE)
+        if not authorized:
+            return (False, [], f"Access denied: {auth_error}")
+
         # Validate keystore path
         valid, error = self._validate_file_path(keystore_path, must_exist=True)
         if not valid:
@@ -879,9 +1042,11 @@ class CryptoService(dbus.service.Object):
         # TODO: Integrate with keystore_utils
         return (False, [], "Not implemented yet")
 
-    @dbus.service.method(INTERFACE_NAME, in_signature="sss", out_signature="bs")
+    @dbus.service.method(
+        INTERFACE_NAME, in_signature="sss", out_signature="bs", sender_keyword="sender"
+    )
     def DeletePQCKey(
-        self, keystore_path: str, keystore_password: str, key_id: str
+        self, keystore_path: str, keystore_password: str, key_id: str, sender=None
     ) -> Tuple[bool, str]:
         """
         Delete a key from the keystore
@@ -895,6 +1060,10 @@ class CryptoService(dbus.service.Object):
             (success, error_msg)
         """
         logger.info(f"DeletePQCKey called: key_id={key_id}")
+
+        authorized, auth_error = self._authorize_caller(sender, POLKIT_ACTION_DELETE_KEY)
+        if not authorized:
+            return (False, f"Access denied: {auth_error}")
 
         # Validate keystore path
         valid, error = self._validate_file_path(keystore_path, must_exist=True)
@@ -1052,8 +1221,15 @@ class CryptoService(dbus.service.Object):
         }
 
 
-def run_service():
-    """Run the D-Bus service"""
+def run_service(system_bus: bool = False):
+    """Run the D-Bus service
+
+    Args:
+        system_bus: Bind the system bus instead of the session bus. In this
+            mode every method call is authorized through polkit (admin
+            authentication per the shipped .policy) so that a non-root admin
+            can operate on files only root has access to.
+    """
     # Set up logging
     logging.basicConfig(
         level=logging.INFO,
@@ -1063,8 +1239,8 @@ def run_service():
     # Initialize D-Bus main loop
     DBusGMainLoop(set_as_default=True)
 
-    # Connect to session bus
-    bus = dbus.SessionBus()
+    # Connect to the requested bus
+    bus = dbus.SystemBus() if system_bus else dbus.SessionBus()
 
     # Request service name
     try:
@@ -1076,9 +1252,12 @@ def run_service():
         sys.exit(1)
 
     # Create service instance
-    _service = CryptoService(bus)  # noqa: F841
+    _service = CryptoService(bus, system_bus=system_bus)  # noqa: F841
 
-    logger.info(f"D-Bus service {CryptoService.BUS_NAME} started")
+    logger.info(
+        f"D-Bus service {CryptoService.BUS_NAME} started "
+        f"({'system' if system_bus else 'session'} bus)"
+    )
     logger.info(f"Object path: {CryptoService.OBJECT_PATH}")
     logger.info(f"Interface: {CryptoService.INTERFACE_NAME}")
 
@@ -1094,4 +1273,14 @@ def run_service():
 
 
 if __name__ == "__main__":
-    run_service()
+    parser = argparse.ArgumentParser(description="openssl_encrypt D-Bus service")
+    parser.add_argument(
+        "--system",
+        action="store_true",
+        help=(
+            "Bind the system bus (root service, polkit-authorized) instead "
+            "of the per-user session bus"
+        ),
+    )
+    args = parser.parse_args()
+    run_service(system_bus=args.system)

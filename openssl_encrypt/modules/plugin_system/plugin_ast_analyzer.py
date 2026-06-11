@@ -81,6 +81,23 @@ class DangerousPatternVisitor(ast.NodeVisitor):
         "__import__",
         "__loader__",
         "__spec__",
+        "__dict__",
+        "__func__",
+        "__self__",
+        # H8: frame / traceback traversal recovers real builtins and reaches
+        # eval, e.g. e.__traceback__.tb_frame.f_back.f_globals['__builtins__'].
+        # These are not __dunder__ names but visit_Attribute/getattr checks
+        # membership by attribute string, so listing them here closes the chain.
+        "__traceback__",
+        "tb_frame",
+        "tb_next",
+        "f_back",
+        "f_globals",
+        "f_locals",
+        "f_builtins",
+        "gi_frame",
+        "cr_frame",
+        "ag_frame",
     }
 
     # Use the shared blocked modules set to keep AST and runtime in sync

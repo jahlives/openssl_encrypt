@@ -403,6 +403,9 @@ class PQCipher:
                             break
 
                 if not matched:
+                    # SECURITY (H3): never silently downgrade to a different
+                    # (potentially weaker) algorithm - fail loudly. 1.5 already
+                    # raises here; the security property matches the 1.4 fix.
                     raise ValueError(
                         f"Unsupported PQC algorithm: '{algorithm}'. "
                         f"Available algorithms: {', '.join(sorted(supported))}"
@@ -413,14 +416,14 @@ class PQCipher:
             if algorithm.value in supported:
                 self.algorithm_name = algorithm.value
             else:
-                # Look for variants
-                for supported_algo in supported:
-                    if algorithm.value.lower().replace("-", "") == supported_algo.lower().replace(
-                        "-", ""
-                    ):
-                        self.algorithm_name = supported_algo
-                        break
+                # Legacy enum values (e.g. Kyber768) must still resolve to their
+                # standardized equivalent (ML-KEM-768) at the SAME security level.
+                standard_name = normalize_algorithm_name(algorithm.value, use_standard=True)
+                if standard_name in supported:
+                    self.algorithm_name = standard_name
                 else:
+                    # SECURITY (H3): fail loudly rather than "hope for the best"
+                    # with an unsupported enum value (1.5 already raises here).
                     raise ValueError(
                         f"Unsupported PQC algorithm: '{algorithm.value}'. "
                         f"Available algorithms: {', '.join(sorted(supported))}"

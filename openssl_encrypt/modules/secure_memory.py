@@ -138,7 +138,7 @@ def verify_memory_zeroed(data, full_check=True, sample_size=16):
         return False
 
 
-def secure_memzero(data, full_verification=True):
+def secure_memzero(data, full_verification=True, strict=False):
     """
     Securely wipe data with multiple rounds of overwriting followed by zeroing.
     Ensures the data is completely overwritten in memory and performs verification.
@@ -147,16 +147,39 @@ def secure_memzero(data, full_verification=True):
         data: The data to be wiped (SecureBytes, bytes, bytearray, or memoryview)
         full_verification: Whether to verify all bytes in the buffer (default True)
                           Set to False for very large buffers if performance is critical
+        strict: If True, raise TypeError for immutable (bytes/str) input that
+                cannot be wiped in place. If False (default), return False.
 
     Returns:
-        bool: True if zeroing was successful and verified, False otherwise
+        bool: True if the caller's buffer was zeroed in place and verified,
+              False otherwise. NOTE: immutable inputs (bytes/str) cannot be
+              wiped in place - only a copy could be zeroed, which does NOT
+              clear the caller's secret - so this returns False for them
+              rather than falsely reporting success (M10).
     """
     if data is None:
         return True
 
-    # Convert strings to bytes for wiping
-    if isinstance(data, str):
-        data = data.encode("utf-8")
+    # M10: bytes/str are immutable - the caller's object cannot be wiped in
+    # place, and zeroing a bytearray copy of it leaves the original secret in
+    # memory. Report failure (or raise in strict mode) instead of a false
+    # "verified zeroed". Secrets that must be wiped have to be held in a
+    # bytearray / SecureBytes from creation.
+    if isinstance(data, (bytes, str)):
+        if strict:
+            raise TypeError(
+                "secure_memzero cannot wipe immutable "
+                f"{type(data).__name__} in place; hold secrets in bytearray "
+                "or SecureBytes so they can be zeroed"
+            )
+        # Best-effort: zero a throwaway copy so this transient buffer does not
+        # linger, but be honest that the caller's original is untouched.
+        try:
+            scratch = bytearray(data.encode("utf-8") if isinstance(data, str) else data)
+            scratch[:] = bytearray(len(scratch))
+        except BaseException:
+            pass
+        return False
 
     # Simplified zeroing during shutdown
     try:
@@ -166,11 +189,9 @@ def secure_memzero(data, full_verification=True):
     except BaseException:
         return False
 
-    # Handle different input types
+    # Handle different input types (mutable only - bytes/str handled above)
     if isinstance(data, (SecureBytes, bytearray)):
         target_data = data
-    elif isinstance(data, bytes):
-        target_data = bytearray(data)
     elif isinstance(data, memoryview):
         if data.readonly:
             raise TypeError("Cannot wipe readonly memory view")

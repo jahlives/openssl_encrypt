@@ -80,24 +80,14 @@ def encrypt_file_with_keystore(
                 eprint("Setting dual encryption flag in metadata")
             hash_config_copy["dual_encryption"] = True
 
-            # Add a password verification hash for later validation
-            import hashlib
-
-            # Generate a random salt for verification
-            pw_verify_salt = os.urandom(16)
-            # Create a hash of the password with the salt
-            if isinstance(password, bytes):
-                pw_verify_bytes = password
-            else:
-                pw_verify_bytes = password.encode("utf-8")
-            pw_hash = hashlib.pbkdf2_hmac("sha256", pw_verify_bytes, pw_verify_salt, 10000)
-            # Store in metadata (encoded as base64)
-            hash_config_copy["pqc_dual_encrypt_verify_salt"] = base64.b64encode(
-                pw_verify_salt
-            ).decode("utf-8")
-            hash_config_copy["pqc_dual_encrypt_verify"] = base64.b64encode(pw_hash).decode("utf-8")
-            if not quiet:
-                eprint("Adding password verification hash to metadata")
+            # M7: the legacy password-verification hash (PBKDF2-HMAC-SHA256 at
+            # only 10k iterations of the file password, stored in cleartext
+            # metadata) is intentionally NOT written. It was a redundant UX
+            # pre-check: the dual-encryption AES-GCM tag already authenticates
+            # the file password on decrypt (keystore_cli get_key), so the weak
+            # hash added nothing but a cheap offline brute-force oracle for the
+            # second factor. Files written by older versions still carry it and
+            # remain readable (the decrypt path validates it when present).
 
     # Unify the dual encryption flags for consistency
     use_dual_encryption = dual_encryption or pqc_dual_encryption
@@ -560,7 +550,10 @@ def decrypt_file_with_keystore(
                         metadata["hash_config"]["pqc_dual_encrypt_verify_salt"]
                     )
 
-            # If we found verification fields, proceed with validation
+            # Legacy files (pre-M7) carry a PBKDF2 verification hash. If present
+            # we still honour it (backward compatibility); its absence is the
+            # normal case for files written after M7 - the file password is
+            # then authenticated by the dual-encryption AES-GCM tag downstream.
             if verify_hash and verify_salt:
                 # Calculate hash with current password
                 import hashlib
@@ -579,12 +572,14 @@ def decrypt_file_with_keystore(
                 elif not quiet:
                     eprint("File password verification successful")
             else:
-                # No verification fields in metadata - unusual for dual encryption
-                if not quiet:
+                # No verifier in metadata: normal for post-M7 files. The file
+                # password is verified by the AES-GCM tag during key retrieval,
+                # so no pre-check is needed here.
+                if kwargs.get("verbose"):
                     eprint(
-                        "WARNING: Dual encryption flag set but no password verification data found in metadata"
+                        "No password pre-check hash in metadata - file password will be "
+                        "verified by the dual-encryption AES-GCM tag"
                     )
-                    eprint("Password verification skipped - proceeding with provided password")
 
         except ValueError as ve:
             # Re-raise these as they're expected for validation failures

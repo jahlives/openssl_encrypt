@@ -85,6 +85,34 @@ class IdentityExistsError(IdentityError):
     pass
 
 
+class IdentityKeyChangedError(IdentityError):
+    """Raised when importing/adding an identity whose name already exists but
+    whose keys (fingerprint) differ from the stored ones (M8).
+
+    This is the TOFU key-substitution case: the previously pinned contact's
+    keys would be replaced by different keys. It must be accepted deliberately
+    (explicit override / interactive confirmation), never silently on a plain
+    --overwrite.
+    """
+
+    def __init__(self, name: str, old_fingerprint: str, new_fingerprint: str):
+        self.name = name
+        self.old_fingerprint = old_fingerprint
+        self.new_fingerprint = new_fingerprint
+        super().__init__(
+            f"Key change detected for identity '{name}': the stored key "
+            f"fingerprint ({old_fingerprint}) differs from the imported one "
+            f"({new_fingerprint}). Refusing to replace a pinned identity's keys "
+            f"without explicit confirmation."
+        )
+
+
+class IdentityAmbiguousError(IdentityError):
+    """Raised when a fingerprint lookup matches more than one identity."""
+
+    pass
+
+
 import re
 
 # Strict pattern for identity names: alphanumeric, hyphens, underscores, dots.
@@ -492,7 +520,7 @@ class Identity:
             is_own_identity=False,
         )
         # Verify fingerprint matches the actual public keys to detect tampering
-        if not identity.verify_fingerprint():
+        if not identity.check_fingerprint_consistency():
             raise IdentityError(
                 f"Fingerprint verification failed for imported identity '{data['name']}': "
                 f"the fingerprint does not match the public keys"
@@ -509,15 +537,32 @@ class Identity:
         combined_keys = self.encryption_public_key + self.signing_public_key
         return calculate_fingerprint(combined_keys)
 
-    def verify_fingerprint(self) -> bool:
+    def check_fingerprint_consistency(self) -> bool:
         """
-        Verify that stored fingerprint matches calculated fingerprint.
+        Check that the stored fingerprint matches the fingerprint recomputed
+        from this identity's own public keys.
+
+        SECURITY NOTE (M8): this proves only INTERNAL CONSISTENCY of a bundle
+        (the fingerprint field matches the keys it ships with), NOT
+        AUTHENTICITY. It does not establish that the keys belong to the named
+        party - an attacker can hand you a bundle with their own keys and a
+        matching fingerprint. Authenticity is provided by TOFU pinning
+        (IdentityStore.add_identity refuses a key change) and, for sender
+        verification, by signature checks.
 
         Returns:
-            True if fingerprints match
+            True if the stored and recomputed fingerprints match.
         """
         calculated = self.calculate_fingerprint()
         return calculated == self.fingerprint
+
+    def verify_fingerprint(self) -> bool:
+        """Deprecated alias for check_fingerprint_consistency() (M8).
+
+        The old name implied authenticity verification; it only checks internal
+        consistency. Kept for backward compatibility.
+        """
+        return self.check_fingerprint_consistency()
 
     def __enter__(self):
         """Context manager entry - returns self"""
@@ -651,30 +696,53 @@ class IdentityStore:
         Get identity by fingerprint.
 
         Args:
-            fingerprint: Full or partial fingerprint
+            fingerprint: The FULL fingerprint to match (M8: prefix matching was
+                removed - an empty/short prefix used to silently resolve to the
+                first stored identity, a real identity-confusion risk).
             passphrase: Passphrase for private key decryption
             load_private_keys: Whether to load private keys
 
         Returns:
             Identity or None if not found
-        """
-        for identity in self.list_identities(include_contacts=True):
-            if identity.fingerprint.startswith(fingerprint):
-                # Reload with private keys if requested
-                if load_private_keys and passphrase:
-                    path = self.base_path / identity.name
-                    if not path.exists():
-                        path = self.contacts_path / identity.name
-                    return Identity.load(path, passphrase, load_private_keys)
-                return identity
 
-        return None
+        Raises:
+            IdentityError: If the fingerprint is empty.
+            IdentityAmbiguousError: If more than one identity matches (only
+                possible on a genuine fingerprint collision).
+        """
+        # M8: require a non-empty full fingerprint and match exactly. The old
+        # `startswith` allowed "" (matches the first identity) and short,
+        # ambiguous prefixes.
+        if not fingerprint or not fingerprint.strip():
+            raise IdentityError("A full fingerprint is required for lookup (empty given)")
+
+        matches = [
+            identity
+            for identity in self.list_identities(include_contacts=True)
+            if identity.fingerprint == fingerprint
+        ]
+        if not matches:
+            return None
+        if len(matches) > 1:
+            raise IdentityAmbiguousError(
+                f"Fingerprint {fingerprint} matches {len(matches)} identities; refusing to guess"
+            )
+
+        identity = matches[0]
+        # Reload with private keys if requested
+        if load_private_keys and passphrase:
+            path = self.base_path / identity.name
+            if not path.exists():
+                path = self.contacts_path / identity.name
+            return Identity.load(path, passphrase, load_private_keys)
+        return identity
 
     def add_identity(
         self,
         identity: Identity,
         passphrase: Optional[str] = None,
         overwrite: bool = False,
+        allow_key_change: bool = False,
     ) -> None:
         """
         Add identity to store.
@@ -682,12 +750,30 @@ class IdentityStore:
         Args:
             identity: Identity to add
             passphrase: Passphrase for private key encryption
-            overwrite: Allow overwriting existing identity
+            overwrite: Allow overwriting existing identity (same name)
+            allow_key_change: Allow replacing an EXISTING identity's keys with
+                DIFFERENT keys (a fingerprint change). Required in addition to
+                overwrite for the key-substitution case - a plain overwrite
+                must not silently re-pin a contact to a different key (M8).
 
         Raises:
             IdentityExistsError: If identity exists and overwrite=False
+            IdentityKeyChangedError: If an identity with this name exists, its
+                stored fingerprint differs from the new one, and
+                allow_key_change is False (TOFU pinning).
         """
         validate_identity_name(identity.name)
+
+        # M8: TOFU key-change detection. If a contact/identity with this name is
+        # already pinned, compare the stored key fingerprint to the incoming
+        # one. A different fingerprint is a key substitution and must be
+        # accepted deliberately - even with overwrite=True.
+        if not allow_key_change:
+            existing = self.get_by_name(identity.name)
+            if existing is not None and existing.fingerprint != identity.fingerprint:
+                raise IdentityKeyChangedError(
+                    identity.name, existing.fingerprint, identity.fingerprint
+                )
 
         if identity.is_own_identity:
             path = self.base_path / identity.name

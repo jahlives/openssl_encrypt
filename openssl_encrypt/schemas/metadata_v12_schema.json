@@ -4,7 +4,13 @@
   "title": "OpenSSL Encrypt Metadata Schema Version 12",
   "description": "Schema for validating encrypted file metadata format version 12 (Streaming chunked encryption with per-chunk AEAD)",
   "type": "object",
-  "required": ["format_version", "mode", "derivation_config", "encryption", "streaming"],
+  "required": [
+    "format_version",
+    "mode",
+    "derivation_config",
+    "encryption",
+    "streaming"
+  ],
   "additionalProperties": true,
   "properties": {
     "format_version": {
@@ -19,12 +25,20 @@
     },
     "mode": {
       "type": "string",
-      "enum": ["symmetric", "asymmetric"],
+      "enum": [
+        "symmetric",
+        "asymmetric"
+      ],
       "description": "Encryption mode"
     },
     "streaming": {
       "type": "object",
-      "required": ["enabled", "chunk_size", "chunk_count", "nonce_prefix"],
+      "required": [
+        "enabled",
+        "chunk_size",
+        "chunk_count",
+        "nonce_prefix"
+      ],
       "additionalProperties": false,
       "properties": {
         "enabled": {
@@ -53,7 +67,9 @@
     },
     "derivation_config": {
       "type": "object",
-      "required": ["salt"],
+      "required": [
+        "salt"
+      ],
       "additionalProperties": true,
       "properties": {
         "salt": {
@@ -68,7 +84,9 @@
           "patternProperties": {
             "^(sha512|sha384|sha256|sha224|sha3_512|sha3_384|sha3_256|sha3_224|blake2b|blake3|shake256|shake128)$": {
               "type": "object",
-              "required": ["rounds"],
+              "required": [
+                "rounds"
+              ],
               "additionalProperties": true,
               "properties": {
                 "rounds": {
@@ -93,7 +111,9 @@
     },
     "hashes": {
       "type": "object",
-      "required": ["original_hash"],
+      "required": [
+        "original_hash"
+      ],
       "additionalProperties": true,
       "properties": {
         "original_hash": {
@@ -116,7 +136,13 @@
       "oneOf": [
         {
           "description": "Cascade encryption mode",
-          "required": ["cascade", "cipher_chain", "hkdf_hash", "cascade_salt", "layer_info"],
+          "required": [
+            "cascade",
+            "cipher_chain",
+            "hkdf_hash",
+            "cascade_salt",
+            "layer_info"
+          ],
           "properties": {
             "cascade": {
               "type": "boolean",
@@ -143,7 +169,13 @@
             },
             "hkdf_hash": {
               "type": "string",
-              "enum": ["sha256", "sha384", "sha512", "sha3-256", "blake2b"],
+              "enum": [
+                "sha256",
+                "sha384",
+                "sha512",
+                "sha3-256",
+                "blake2b"
+              ],
               "description": "Hash function used for HKDF key derivation"
             },
             "cascade_salt": {
@@ -156,7 +188,11 @@
               "minItems": 2,
               "items": {
                 "type": "object",
-                "required": ["cipher", "key_size", "tag_size"],
+                "required": [
+                  "cipher",
+                  "key_size",
+                  "tag_size"
+                ],
                 "properties": {
                   "cipher": {
                     "type": "string",
@@ -180,7 +216,9 @@
             },
             "xchacha_nonce_format": {
               "type": "integer",
-              "enum": [2],
+              "enum": [
+                2
+              ],
               "description": "XChaCha20-Poly1305 nonce format: 2 = real 192-bit nonce via HChaCha20 (1.5+); absent on legacy files"
             },
             "total_overhead": {
@@ -197,7 +235,9 @@
         },
         {
           "description": "Single cipher mode",
-          "required": ["algorithm"],
+          "required": [
+            "algorithm"
+          ],
           "properties": {
             "cascade": {
               "type": "boolean",
@@ -206,16 +246,7 @@
             },
             "algorithm": {
               "type": "string",
-              "enum": [
-                "aes-gcm",
-                "aes-gcm-siv",
-                "aes-siv",
-                "chacha20-poly1305",
-                "xchacha20-poly1305",
-                "threefish-512",
-                "threefish-1024"
-              ],
-              "description": "Encryption algorithm used (streaming-capable algorithms only)"
+              "description": "Encryption algorithm used (streaming-capable algorithms only) (M11 port: enum relaxed to string; the cipher registry validates the algorithm and fails closed on unknown)"
             },
             "nonce": {
               "type": "string",
@@ -232,7 +263,9 @@
             },
             "xchacha_nonce_format": {
               "type": "integer",
-              "enum": [2],
+              "enum": [
+                2
+              ],
               "description": "XChaCha20-Poly1305 nonce format: 2 = real 192-bit nonce via HChaCha20 (1.5+); absent on legacy files"
             },
             "pq_security_bits": {

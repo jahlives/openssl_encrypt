@@ -306,16 +306,21 @@ class PQCKeystore:
                         except Exception:
                             raise e1
 
-            # Parse the decrypted data with secure validation (MED-8 fix)
+            # Parse the decrypted data with secure validation (MED-8 fix).
+            # Generic security limits only (size/depth): the payload was just
+            # authenticated by the AEAD decrypt above, and this keystore's
+            # format ("keystore_version", "keys" as a list) does not match the
+            # keystore_cli schema that secure_keystore_loads enforces - using
+            # that schema made every load fail with a validation error.
             plaintext_json = plaintext.decode("utf-8")
             try:
                 from .json_validator import (
                     JSONSecurityError,
                     JSONValidationError,
-                    secure_keystore_loads,
+                    secure_json_loads,
                 )
 
-                self.keystore_data = secure_keystore_loads(plaintext_json)
+                self.keystore_data = secure_json_loads(plaintext_json)
             except (JSONSecurityError, JSONValidationError) as e:
                 raise ValidationError(f"Keystore data validation failed: {e}")
             except ImportError:
@@ -361,9 +366,9 @@ class PQCKeystore:
             raise ValidationError("No keystore data to save")
 
         try:
-            # Prepare the data
+            # Prepare the data (serialized later, after all protection-param
+            # updates, so the payload's embedded copy matches the header)
             self.keystore_data["last_modified"] = datetime.datetime.now().isoformat()
-            plaintext = json.dumps(self.keystore_data).encode("utf-8")
 
             # Get encryption parameters
             protection = self.keystore_data["protection"]
@@ -431,32 +436,23 @@ class PQCKeystore:
                 self.master_key = bytearray(derived_key)
                 self.master_key_time = time.time()
 
-            # Encrypt the keystore data
+            # Encrypt the keystore data. The fresh nonce (and any kdf_version
+            # update above) must land in params BEFORE serializing, otherwise
+            # the encrypted payload embeds a stale copy of the protection
+            # params that differs from the header read back on load.
+            nonce = secrets.token_bytes(12)
+            params["nonce"] = base64.b64encode(nonce).decode("utf-8")
+
+            header = {"protection": protection}
+            # IMPORTANT: Use header JSON as associated_data for consistency with load_keystore
+            header_json = json.dumps(header).encode("utf-8")
+            plaintext = json.dumps(self.keystore_data).encode("utf-8")
+
             if method == KeystoreProtectionMethod.SCRYPT_CHACHA20.value:
-                # Use ChaCha20Poly1305
                 cipher = ChaCha20Poly1305(derived_key)
-                nonce = base64.b64decode(params["nonce"])
-                # Update nonce for each save
-                nonce = secrets.token_bytes(12)
-                params["nonce"] = base64.b64encode(nonce).decode("utf-8")
-
-                header = {"protection": protection}
-                # Use header as associated_data for consistent encryption
-                ciphertext = cipher.encrypt(
-                    nonce, plaintext, associated_data=json.dumps(header).encode("utf-8")
-                )
             else:
-                # Use AES-GCM
                 cipher = AESGCM(derived_key)
-                nonce = base64.b64decode(params["nonce"])
-                # Update nonce for each save
-                nonce = secrets.token_bytes(12)
-                params["nonce"] = base64.b64encode(nonce).decode("utf-8")
-
-                header = {"protection": protection}
-                # IMPORTANT: Use header JSON as associated_data for consistency with load_keystore
-                header_json = json.dumps(header).encode("utf-8")
-                ciphertext = cipher.encrypt(nonce, plaintext, associated_data=header_json)
+            ciphertext = cipher.encrypt(nonce, plaintext, associated_data=header_json)
 
             # Prepare the final file format
             header_json = json.dumps(header).encode("utf-8")
