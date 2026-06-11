@@ -248,7 +248,7 @@ setup(
     install_requires=[
         line.strip()
         for line in open("requirements-prod.txt")
-        if line.strip() and not line.startswith("#") and not line.startswith("-")
+        if line.strip() and not line.strip().startswith("#") and not line.strip().startswith("-")
     ],
     entry_points={
         "console_scripts": [
@@ -262,21 +262,21 @@ setup(
             line.strip()
             for line in open("requirements-dev.txt")
             if line.strip()
-            and not line.startswith("#")
-            and not line.startswith("-")
+            and not line.strip().startswith("#")
+            and not line.strip().startswith("-")
             and line.strip()
             not in [
                 prod_line.strip()
                 for prod_line in open("requirements-prod.txt")
                 if prod_line.strip()
-                and not prod_line.startswith("#")
-                and not prod_line.startswith("-")
+                and not prod_line.strip().startswith("#")
+                and not prod_line.strip().startswith("-")
             ]
         ],
         "hsm": [
             line.strip()
             for line in open("requirements-hsm.txt")
-            if line.strip() and not line.startswith("#") and not line.startswith("-")
+            if line.strip() and not line.strip().startswith("#") and not line.strip().startswith("-")
         ],
         "threefish": [
             "openssl-encrypt-threefish>=1.0.0",

@@ -85,6 +85,19 @@ python -m openssl_encrypt.crypt rekey -i file.enc --standard
 
 If you cannot re-encrypt, **stay on v1.4.x** — it still supports decryption of all legacy formats.
 
+### Removed Features in v1.5.0
+
+As part of a code-surface reduction (~28,000 lines, -23% of production code) the following features were removed. Decryption of existing files is **not** affected — every decrypt path is preserved.
+
+| Removed | Notes |
+|---------|-------|
+| Steganography (`--stego-*` flags, all image/audio/video formats) | ⚠️ Data hidden with `--stego-hide` must be **extracted with v1.4.x** — v1.5.0 cannot extract it. The extracted encrypted payload itself decrypts fine with v1.5.0. |
+| D-Bus service and client (+ systemd units, bus policies) | No replacement; use the CLI. |
+| `test` command (in-package fuzzing/side-channel/KAT/benchmark suites) | Development tooling; no longer shipped in the package. |
+| `config-wizard`, `analyze-config`, `analyze-security`, `template` subcommand, `smart-recommendations` | Advisory tooling only. Encryption templates (`-t/--template`, `--quick/--standard/--paranoid`, custom JSON/YAML in `templates/`) work unchanged. |
+
+The `numpy` production dependency was dropped along with steganography.
+
 ---
 
 ## v1.4.0 Development Series
@@ -446,7 +459,6 @@ Complete overhaul of the desktop GUI with advanced cryptographic features and im
 - Format version 7 and 8 support in metadata viewer
 
 **User Experience:**
-- Steganography configuration panel in encryption tab
 - Force password option for workflow automation
 - Default input type set to file mode
 - Improved status messages and error handling

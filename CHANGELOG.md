@@ -150,6 +150,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The fido2 availability gate is now scoped to `fido2-*` actions only,
   so `onlykey-list` / `onlykey-test` work on machines without fido2.
 
+### Removed
+
+**Code-surface reduction** (~28,000 lines, -23% of production code). None of
+these affect the ability to decrypt existing files — every decrypt path is
+preserved. Exception: steganography *extraction* (see below).
+
+- **Steganography subsystem** (`plugins/steganography/`, ~8.7k lines): all
+  LSB/JPEG/DCT hiding methods for PNG, BMP, JPEG, TIFF, WEBP, WAV, FLAC,
+  MP3 and MP4, and all `--stego-*` CLI flags. ⚠️ Data hidden with
+  `--stego-hide` can no longer be extracted with v1.5.0 — extract it with
+  v1.4.x first (the embedded encrypted payload itself remains decryptable
+  by v1.5.0 once extracted). Drops the `numpy` production dependency
+  (Pillow is retained for QR key distribution).
+- **D-Bus service and client** (`dbus_service.py`, `dbus_client.py`, bus
+  policies, systemd units, client examples). The service had no production
+  importers; a privileged system service is unnecessary attack surface.
+- **In-package security testing framework** (`modules/testing/`, ~4.4k
+  lines: fuzzing, side-channel, KAT, benchmark and memory suites) and the
+  `test` CLI command — development tooling no longer ships in the
+  production package.
+- **Advisory configuration tooling**: `config-wizard`, `analyze-config`,
+  `analyze-security`, the `template` management subcommand and the
+  `smart-recommendations` engine (`config_analyzer.py`, `config_wizard.py`,
+  `template_manager.py`, `smart_recommendations.py`, `security_scorer.py`).
+  Encryption templates are unaffected: `-t/--template`,
+  `--quick/--standard/--paranoid`, the security aliases and custom
+  JSON/YAML templates in `templates/` work unchanged.
+- **`security_report.py`** — dead code, imported by nothing.
+
+Deliberately kept after re-evaluation: the decryption cost estimator
+(`decryption_estimator.py`) — it is DoS protection against maliciously
+inflated KDF metadata parameters, not cosmetic output.
+
 ### Security
 
 - No changes to the cryptographic core. The OnlyKey plugin reuses
