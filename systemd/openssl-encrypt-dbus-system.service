@@ -1,0 +1,59 @@
+[Unit]
+Description=openssl_encrypt D-Bus Cryptographic Service (system bus, polkit-authorized)
+Documentation=https://gitlab.rm-rf.ch/world/openssl_encrypt
+After=dbus.service polkit.service
+Wants=polkit.service
+
+# SYSTEM unit: runs as root on the system bus so that a non-root admin can
+# encrypt/decrypt files only root has access to. EVERY method call is
+# authorized through polkit (see ch.rmrf.openssl_encrypt.policy - admin
+# authentication required); the service fails closed if polkit is
+# unavailable. Do NOT run this unit without the matching D-Bus policy
+# (ch.rmrf.openssl_encrypt.conf) and polkit policy installed.
+
+[Service]
+Type=dbus
+BusName=ch.rmrf.openssl_encrypt
+ExecStart=/usr/bin/python3 -m openssl_encrypt.modules.dbus_service --system
+User=root
+
+# Security hardening (key-handling root process - H7/L8). The service's
+# purpose is reaching root-only files anywhere on disk, so filesystem
+# sandboxing (ProtectSystem/ProtectHome) cannot be applied - the capability
+# set and syscall filter are tightened instead.
+NoNewPrivileges=true
+PrivateTmp=true
+UMask=0077
+LimitCORE=0
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+LockPersonality=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX
+IPAddressDeny=any
+DevicePolicy=closed
+ProtectProc=invisible
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+# Only the capabilities needed to read/write files regardless of ownership
+CapabilityBoundingSet=CAP_DAC_OVERRIDE CAP_DAC_READ_SEARCH CAP_CHOWN CAP_FOWNER
+# MemoryDenyWriteExecute is intentionally NOT set: cffi/libffi closures
+# (liboqs bindings) need writable+executable trampoline pages.
+
+# Resource limits
+MemoryMax=1G
+TasksMax=50
+CPUQuota=200%
+
+# Restart policy
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target

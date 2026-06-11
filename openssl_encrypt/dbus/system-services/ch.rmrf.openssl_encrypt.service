@@ -1,0 +1,9 @@
+[D-BUS Service]
+# System-bus activation file - install to /usr/share/dbus-1/system-services/
+# Pairs with the system policy ch.rmrf.openssl_encrypt.conf
+# (/usr/share/dbus-1/system.d/ or /etc/dbus-1/system.d/) and the polkit
+# policy ch.rmrf.openssl_encrypt.policy (/usr/share/polkit-1/actions/).
+Name=ch.rmrf.openssl_encrypt
+Exec=/usr/bin/python3 -m openssl_encrypt.modules.dbus_service --system
+User=root
+SystemdService=openssl-encrypt-dbus-system.service

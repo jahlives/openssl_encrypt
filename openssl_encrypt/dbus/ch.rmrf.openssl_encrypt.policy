@@ -22,7 +22,7 @@
     <defaults>
       <allow_any>auth_admin</allow_any>
       <allow_inactive>auth_admin</allow_inactive>
-      <allow_active>yes</allow_active>
+      <allow_active>auth_admin_keep</allow_active>
     </defaults>
   </action>
 
@@ -33,7 +33,7 @@
     <defaults>
       <allow_any>auth_admin</allow_any>
       <allow_inactive>auth_admin</allow_inactive>
-      <allow_active>yes</allow_active>
+      <allow_active>auth_admin_keep</allow_active>
     </defaults>
   </action>
 
@@ -55,7 +55,7 @@
     <defaults>
       <allow_any>auth_admin</allow_any>
       <allow_inactive>auth_admin</allow_inactive>
-      <allow_active>yes</allow_active>
+      <allow_active>auth_admin_keep</allow_active>
     </defaults>
   </action>
 
@@ -66,7 +66,7 @@
     <defaults>
       <allow_any>auth_admin</allow_any>
       <allow_inactive>auth_admin</allow_inactive>
-      <allow_active>yes</allow_active>
+      <allow_active>auth_admin_keep</allow_active>
     </defaults>
   </action>
 
