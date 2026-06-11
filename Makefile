@@ -41,7 +41,7 @@ complexity:
 
 test-all:
 	@echo "🧪 Running all tests..."
-	python -m pytest openssl_encrypt/unittests/unittests.py -v
+	python -m pytest -n auto --dist=worksteal openssl_encrypt/unittests/
 
 clean:
 	@echo "🧹 Cleaning analysis reports..."
