@@ -8,7 +8,9 @@ import base64
 import datetime
 import getpass
 import hashlib
+import hmac
 import json
+import logging
 import os
 import sys
 import time
@@ -16,10 +18,13 @@ import uuid
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 
+logger = logging.getLogger(__name__)
+
 from .crypt_errors import (
     KeyNotFoundError,
     KeystoreCorruptedError,
     KeystoreError,
+    KeystoreIntegrityError,
     KeystorePasswordError,
     KeystoreVersionError,
 )
@@ -79,7 +84,18 @@ class PQCKeystore:
     """
 
     # Keystore format version
-    KEYSTORE_VERSION = 1
+    # v2 (H4): the whole keystore structure is authenticated with an
+    # HMAC-SHA256 over canonical JSON, keyed by a subkey derived from the
+    # master key. v1 (unauthenticated) keystores are still readable and are
+    # auto-upgraded on load.
+    KEYSTORE_VERSION = 2
+    SUPPORTED_KEYSTORE_VERSIONS = (1, 2)
+
+    # Domain-separation label for the integrity subkey: the master key is
+    # used directly as the AES-GCM key for private keys, so the MAC key must
+    # be derived, never the master key itself.
+    INTEGRITY_KEY_LABEL = b"openssl_encrypt.keystore.integrity.v2"
+    INTEGRITY_ALG = "HMAC-SHA256"
 
     # Encryption parameters for different security levels
     SECURITY_PARAMS = {
@@ -114,6 +130,31 @@ class PQCKeystore:
         self.keystore_data = None
         self.master_key = None
         self._key_cache = {}
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+        return False
+
+    def close(self):
+        """Securely clear master key and cached private keys from memory."""
+        if self.master_key is not None:
+            if isinstance(self.master_key, bytearray):
+                secure_memzero(self.master_key)
+            else:
+                secure_memzero(bytearray(self.master_key))
+            self.master_key = None
+        for key_id, (pub, priv) in self._key_cache.items():
+            if isinstance(priv, bytearray):
+                secure_memzero(priv)
+            elif isinstance(priv, bytes):
+                secure_memzero(bytearray(priv))
+        self._key_cache.clear()
+
+    def __del__(self):
+        self.close()
 
     def create_keystore(
         self, password: str, security_level: KeystoreSecurityLevel = KeystoreSecurityLevel.STANDARD
@@ -197,9 +238,10 @@ class PQCKeystore:
         # Validate version
         if (
             "version" not in self.keystore_data
-            or self.keystore_data["version"] != self.KEYSTORE_VERSION
+            or self.keystore_data["version"] not in self.SUPPORTED_KEYSTORE_VERSIONS
         ):
-            raise KeystoreVersionError(f"Unsupported keystore version")
+            raise KeystoreVersionError("Unsupported keystore version")
+        version = self.keystore_data["version"]
 
         # Get encryption parameters
         if "encryption" not in self.keystore_data:
@@ -218,6 +260,12 @@ class PQCKeystore:
         # Derive master key
         self.master_key = self._derive_master_key(password, salt, security_level)
 
+        # H4: verify the integrity MAC before trusting any field of a v2
+        # keystore (a wrong password also fails here and is disambiguated
+        # via the test_key inside _verify_integrity)
+        if version >= 2:
+            self._verify_integrity()
+
         # Verify password by checking a test key
         if "test_key" in self.keystore_data:
             test_encrypted = base64.b64decode(self.keystore_data["test_key"])
@@ -229,6 +277,35 @@ class PQCKeystore:
                     secure_memzero(self.master_key)
                     self.master_key = None
                 raise KeystorePasswordError("Incorrect keystore password")
+
+        # H4: legacy v1 keystores carry no integrity protection - warn and
+        # auto-upgrade to the authenticated v2 format now that the password
+        # has been verified. Without a test_key the password cannot be
+        # verified, so upgrading could seal the store under a mistyped
+        # password - warn only in that case.
+        if version < 2:
+            logger.warning(
+                "Keystore %s uses the legacy v1 format without integrity "
+                "protection - upgrading to the authenticated v2 format",
+                self.keystore_path,
+            )
+            if "test_key" in self.keystore_data:
+                try:
+                    self.save_keystore()
+                except Exception as e:
+                    logger.warning(
+                        "Could not auto-upgrade keystore %s to v2 - the file "
+                        "remains unauthenticated: %s",
+                        self.keystore_path,
+                        e,
+                    )
+            else:
+                logger.warning(
+                    "Keystore %s has no test_key to verify the password - "
+                    "skipping the v2 auto-upgrade; save it explicitly after "
+                    "confirming the keys decrypt correctly",
+                    self.keystore_path,
+                )
 
         # Reset key cache
         self._key_cache = {}
@@ -243,16 +320,31 @@ class PQCKeystore:
         if not self.keystore_data:
             raise KeystoreError("No keystore data to save")
 
+        # H4: the integrity MAC is keyed from the master key, so an
+        # unauthenticated save is no longer possible
+        if not self.master_key:
+            raise KeystoreError("Master key not available - cannot compute keystore integrity MAC")
+
         # Update modification timestamp
         self.keystore_data["last_modified"] = (
             datetime.datetime.now(datetime.timezone.utc).isoformat() + "Z"
         )
+
+        # Saving always writes the current format (auto-upgrades legacy v1)
+        self.keystore_data["version"] = self.KEYSTORE_VERSION
 
         # Add a test key for password verification if it doesn't exist
         if "test_key" not in self.keystore_data and self.master_key:
             test_data = b"Keystore password verification data"
             encrypted = self._encrypt_data(test_data)
             self.keystore_data["test_key"] = base64.b64encode(encrypted).decode("utf-8")
+
+        # H4: authenticate the whole structure - computed last so the MAC
+        # covers the final state of every field above
+        self.keystore_data["integrity"] = {
+            "alg": self.INTEGRITY_ALG,
+            "mac": base64.b64encode(self._compute_integrity_mac()).decode("utf-8"),
+        }
 
         # Create a temporary file with secure permissions first
         from .file_permissions import PermissionLevel, create_secure_file
@@ -1102,6 +1194,82 @@ class PQCKeystore:
     def clear_cache(self) -> None:
         """Clear the key cache for security"""
         self._key_cache = {}
+
+    def _derive_integrity_key(self) -> bytes:
+        """
+        Derive the keystore integrity MAC key from the master key
+
+        The master key itself is used directly as the AES-GCM key for
+        private-key encryption, so the MAC uses a domain-separated subkey.
+
+        Returns:
+            The 32-byte HMAC key
+
+        Raises:
+            KeystoreError: If the master key is not available
+        """
+        if not self.master_key:
+            raise KeystoreError("Master key not available")
+
+        return hmac.new(bytes(self.master_key), self.INTEGRITY_KEY_LABEL, hashlib.sha256).digest()
+
+    def _compute_integrity_mac(self) -> bytes:
+        """
+        Compute the integrity MAC over the keystore structure
+
+        The MAC covers the canonical JSON serialization (sorted keys, fixed
+        separators) of the entire keystore except the integrity field itself.
+
+        Returns:
+            The 32-byte HMAC-SHA256 value
+        """
+        payload = {k: v for k, v in self.keystore_data.items() if k != "integrity"}
+        canonical = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        return hmac.new(self._derive_integrity_key(), canonical, hashlib.sha256).digest()
+
+    def _verify_integrity(self) -> None:
+        """
+        Verify the integrity MAC of a loaded v2 keystore
+
+        Must be called before any field of the keystore is trusted. On MAC
+        mismatch the test_key is used to distinguish a wrong password from
+        tampering. Note: if the test_key itself was tampered with, the
+        failure is reported as a password error - either way loading fails
+        closed.
+
+        Raises:
+            KeystoreIntegrityError: If the keystore was tampered with
+            KeystorePasswordError: If the password is incorrect
+        """
+        integrity = self.keystore_data.get("integrity")
+        mac_valid = False
+        if isinstance(integrity, dict) and integrity.get("alg") == self.INTEGRITY_ALG:
+            try:
+                expected_mac = base64.b64decode(integrity["mac"])
+                mac_valid = hmac.compare_digest(self._compute_integrity_mac(), expected_mac)
+            except (KeyError, TypeError, ValueError):
+                mac_valid = False
+
+        if mac_valid:
+            return
+
+        # Distinguish wrong password from tampering: with the wrong password
+        # the master key is wrong, so the test_key cannot decrypt either
+        if "test_key" in self.keystore_data:
+            try:
+                self._decrypt_data(base64.b64decode(self.keystore_data["test_key"]))
+            except Exception:
+                secure_memzero(bytearray(self.master_key))
+                self.master_key = None
+                self.keystore_data = None
+                raise KeystorePasswordError("Incorrect keystore password")
+
+        secure_memzero(bytearray(self.master_key))
+        self.master_key = None
+        self.keystore_data = None
+        raise KeystoreIntegrityError(
+            "Keystore integrity verification failed - the file was tampered with or corrupted"
+        )
 
     def _derive_master_key(
         self, password: str, salt: bytes, security_level: KeystoreSecurityLevel
