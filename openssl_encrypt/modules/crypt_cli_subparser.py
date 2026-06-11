@@ -1458,8 +1458,7 @@ def setup_rekey_parser(subparser):
         "--hsm-slot",
         type=int,
         metavar="SLOT",
-        help="Manually specify the Challenge-Response slot. "
-        "YubiKey 1..2, OnlyKey 1..12.",
+        help="Manually specify the Challenge-Response slot. " "YubiKey 1..2, OnlyKey 1..12.",
     )
 
     # Remote Pepper options
@@ -1597,8 +1596,7 @@ def setup_generate_password_parser(subparser):
     dice_group.add_argument(
         "--dice",
         action="store_true",
-        help="Generate a Diceware-style passphrase instead of a "
-        "character-based password",
+        help="Generate a Diceware-style passphrase instead of a " "character-based password",
     )
     dice_group.add_argument(
         "--dice-count",
@@ -2349,6 +2347,14 @@ def setup_identity_parser(subparser):
     import_parser.add_argument("--file", required=True, help="JSON file to import")
     import_parser.add_argument(
         "--overwrite", action="store_true", help="Overwrite existing identity"
+    )
+    import_parser.add_argument(
+        "--allow-key-change",
+        action="store_true",
+        help="Accept a CHANGED key for an already-pinned identity (TOFU "
+        "key-substitution). Required, in addition to --overwrite, to replace a "
+        "contact's keys with different ones - only use after verifying the new "
+        "fingerprint out of band.",
     )
 
     # Delete identity
