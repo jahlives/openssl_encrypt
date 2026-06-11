@@ -286,10 +286,10 @@ setup(
         ],
     },
     project_urls={
-        "Homepage": "https://github.com/jahlives/openssl_encrypt/tree/releases/1.4.0",
+        "Homepage": "https://github.com/jahlives/openssl_encrypt/tree/releases/1.5.0",
         "Bug Tracker": "https://github.com/jahlives/openssl_encrypt/issues",
-        "Documentation": "https://github.com/jahlives/openssl_encrypt/tree/releases/1.4.0/openssl_encrypt/docs",
-        "Source Code": "https://github.com/jahlives/openssl_encrypt/tree/releases/1.4.0",
+        "Documentation": "https://github.com/jahlives/openssl_encrypt/tree/releases/1.5.0/openssl_encrypt/docs",
+        "Source Code": "https://github.com/jahlives/openssl_encrypt/tree/releases/1.5.0",
     },
     packages=find_packages(),
     include_package_data=True,
