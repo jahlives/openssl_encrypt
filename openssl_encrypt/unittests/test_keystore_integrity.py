@@ -243,6 +243,34 @@ class TestKeystoreIntegrityH4(unittest.TestCase):
         self._write_raw(data)
         self._assert_load_raises_integrity_error()
 
+    def test_private_key_blob_move_between_entries_rejected(self):
+        """M6: moving only the encrypted private_key blob from one entry into
+        another (both wrapped under the same master key, so the blob would
+        decrypt in the wrong entry without AAD binding) must be detected.
+
+        The H4 whole-store HMAC covers every entry's private_key field, so a
+        blob move changes the canonical JSON and fails the MAC on load - which
+        is why per-entry AAD on the master-key wrap (M6) is not separately
+        required for the without-master-key attacker.
+        """
+        key_id = self._create_keystore_with_key()
+        keystore = PQCKeystore(self.keystore_path)
+        keystore.load_keystore(self.keystore_password)
+        second_id = keystore.add_key(
+            algorithm="ML-KEM-768",
+            public_key=os.urandom(64),
+            private_key=os.urandom(64),
+        )
+        keystore.save_keystore()
+        keystore.close()
+
+        data = self._read_raw()
+        # Move ONLY the encrypted private_key blob; leave algorithm/public_key
+        # of the destination entry untouched (the M6 attack shape).
+        data["keys"][second_id]["private_key"] = data["keys"][key_id]["private_key"]
+        self._write_raw(data)
+        self._assert_load_raises_integrity_error()
+
     def test_wrong_password_raises_password_error_not_integrity_error(self):
         """A wrong password must stay distinguishable from tampering."""
         self._create_keystore_with_key()
