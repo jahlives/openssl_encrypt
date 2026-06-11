@@ -301,8 +301,13 @@ class Argon2id(KDFBase):
         import argon2
         from argon2.low_level import Type
 
-        # Convert password to bytes if needed (SecureBytes is a bytearray subclass)
-        password_bytes = bytes(password) if isinstance(password, SecureBytes) else password
+        # M10: argon2's hash_secret_raw requires immutable bytes (it rejects
+        # bytearray). When the caller passed a SecureBytes (the secure path),
+        # hold the secret in a wipeable bytearray and feed argon2 a short-lived
+        # bytes() copy; the bytearray is zeroed in the finally. For a raw bytes
+        # password the caller owns the buffer - we neither wipe nor keep a copy.
+        secret_owner = isinstance(password, SecureBytes)
+        secret_buf = bytearray(password) if secret_owner else password
 
         # Map variant string to Type enum
         type_map = {
@@ -318,7 +323,7 @@ class Argon2id(KDFBase):
 
         try:
             derived_key = argon2.low_level.hash_secret_raw(
-                secret=password_bytes,
+                secret=bytes(secret_buf),
                 salt=salt,
                 time_cost=params.time_cost,
                 memory_cost=params.memory_cost,
@@ -329,9 +334,9 @@ class Argon2id(KDFBase):
             # Wrap result in SecureBytes for automatic cleanup
             return SecureBytes(derived_key)
         finally:
-            # Zero out password_bytes if we created a copy
-            if isinstance(password, SecureBytes) and password_bytes != password:
-                secure_memzero(bytearray(password_bytes))
+            # Zero the wipeable copy we made (no-op for a caller-owned bytes)
+            if secret_owner:
+                secure_memzero(secret_buf)
 
 
 class Argon2i(KDFBase):
@@ -480,9 +485,11 @@ class PBKDF2(KDFBase):
         from cryptography.hazmat.primitives import hashes
         from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
-        # Convert password to bytes if needed
-        password_bytes = bytes(password) if isinstance(password, SecureBytes) else password
-
+        # M10: pass the password (bytes or SecureBytes) straight to the
+        # backend. cryptography's PBKDF2HMAC accepts a bytearray/SecureBytes,
+        # so no intermediate immutable copy of the secret is made and there is
+        # nothing for the registry to wipe - the caller owns and zeroes its
+        # SecureBytes.
         # Map hash function name to cryptography hash algorithm
         hash_map = {
             "sha256": hashes.SHA256(),
@@ -502,12 +509,8 @@ class PBKDF2(KDFBase):
             backend=default_backend(),
         )
 
-        try:
-            derived_key = kdf.derive(password_bytes)
-            return SecureBytes(derived_key)
-        finally:
-            if isinstance(password, SecureBytes) and password_bytes != password:
-                secure_memzero(bytearray(password_bytes))
+        derived_key = kdf.derive(password)
+        return SecureBytes(derived_key)
 
 
 # ============================================================================
@@ -582,9 +585,8 @@ class Scrypt(KDFBase):
         from cryptography.hazmat.backends import default_backend
         from cryptography.hazmat.primitives.kdf.scrypt import Scrypt as CryptoScrypt
 
-        # Convert password to bytes if needed
-        password_bytes = bytes(password) if isinstance(password, SecureBytes) else password
-
+        # M10: cryptography's Scrypt accepts a bytearray/SecureBytes directly,
+        # so pass the password through without making a wipeable-only copy.
         kdf = CryptoScrypt(
             salt=salt,
             length=params.output_length,
@@ -594,12 +596,8 @@ class Scrypt(KDFBase):
             backend=default_backend(),
         )
 
-        try:
-            derived_key = kdf.derive(password_bytes)
-            return SecureBytes(derived_key)
-        finally:
-            if isinstance(password, SecureBytes) and password_bytes != password:
-                secure_memzero(bytearray(password_bytes))
+        derived_key = kdf.derive(password)
+        return SecureBytes(derived_key)
 
 
 # ============================================================================
@@ -665,33 +663,28 @@ class Balloon(KDFBase):
 
         from openssl_encrypt.modules.balloon import balloon_m
 
-        # Convert password to bytes if needed
-        password_bytes = bytes(password) if isinstance(password, SecureBytes) else password
+        # M10: balloon_m accepts a bytearray/SecureBytes directly (verified),
+        # so pass the password through without a wipeable-only copy.
+        # Balloon expects salt as string
+        result = balloon_m(
+            password=password,
+            salt=str(salt.hex()),  # Convert to hex string
+            time_cost=params.time_cost,
+            space_cost=params.space_cost,
+            parallel_cost=params.parallelism,
+        )
 
-        try:
-            # Balloon expects salt as string
-            result = balloon_m(
-                password=password_bytes,
-                salt=str(salt.hex()),  # Convert to hex string
-                time_cost=params.time_cost,
-                space_cost=params.space_cost,
-                parallel_cost=params.parallelism,
-            )
+        # Truncate or pad to desired length
+        if len(result) >= params.output_length:
+            return SecureBytes(result[: params.output_length])
+        else:
+            # Pad with additional hashing if needed
+            import hashlib
 
-            # Truncate or pad to desired length
-            if len(result) >= params.output_length:
-                return SecureBytes(result[: params.output_length])
-            else:
-                # Pad with additional hashing if needed
-                import hashlib
-
-                padded = result
-                while len(padded) < params.output_length:
-                    padded += hashlib.sha256(padded).digest()
-                return SecureBytes(padded[: params.output_length])
-        finally:
-            if isinstance(password, SecureBytes) and password_bytes != password:
-                secure_memzero(bytearray(password_bytes))
+            padded = result
+            while len(padded) < params.output_length:
+                padded += hashlib.sha256(padded).digest()
+            return SecureBytes(padded[: params.output_length])
 
 
 # ============================================================================
@@ -758,9 +751,7 @@ class HKDF(KDFBase):
         from cryptography.hazmat.primitives import hashes
         from cryptography.hazmat.primitives.kdf.hkdf import HKDF as CryptoHKDF
 
-        # Convert password to bytes if needed
-        password_bytes = bytes(password) if isinstance(password, SecureBytes) else password
-
+        # M10: cryptography's HKDF accepts a bytearray/SecureBytes directly.
         # Map hash function name
         hash_map = {
             "sha256": hashes.SHA256(),
@@ -779,12 +770,8 @@ class HKDF(KDFBase):
             backend=default_backend(),
         )
 
-        try:
-            derived_key = kdf.derive(password_bytes)
-            return SecureBytes(derived_key)
-        finally:
-            if isinstance(password, SecureBytes) and password_bytes != password:
-                secure_memzero(bytearray(password_bytes))
+        derived_key = kdf.derive(password)
+        return SecureBytes(derived_key)
 
 
 # ============================================================================
@@ -861,35 +848,31 @@ class RandomX(KDFBase):
 
         import randomx
 
-        # Convert password to bytes if needed
-        password_bytes = bytes(password) if isinstance(password, SecureBytes) else password
+        # M10: hashlib accepts a bytearray/SecureBytes (concatenated with the
+        # salt) directly, so no wipeable-only copy of the secret is made here.
+        # Initial hash with salt (SecureBytes/bytearray + bytes -> bytearray,
+        # which hashlib accepts; no separate immutable copy of the secret)
+        hash_func = getattr(hashlib, params.hash)
+        initial = hash_func(password + salt).digest()
 
-        try:
-            # Initial hash with salt
-            hash_func = getattr(hashlib, params.hash)
-            initial = hash_func(password_bytes + salt).digest()
+        # Apply RandomX hashing
+        # Use initial hash as the RandomX key
+        vm = randomx.RandomX(initial[:32])  # RandomX key (32 bytes)
 
-            # Apply RandomX hashing
-            # Use initial hash as the RandomX key
-            vm = randomx.RandomX(initial[:32])  # RandomX key (32 bytes)
+        # Apply multiple passes for increased security
+        derived = initial
+        for _ in range(params.passes):
+            derived = vm.calculate_hash(derived)
 
-            # Apply multiple passes for increased security
-            derived = initial
-            for _ in range(params.passes):
-                derived = vm.calculate_hash(derived)
-
-            # Ensure correct output length
-            if len(derived) >= params.output_length:
-                return SecureBytes(derived[: params.output_length])
-            else:
-                # Expand with hashing if needed
-                expanded = derived
-                while len(expanded) < params.output_length:
-                    expanded += hashlib.sha256(expanded).digest()
-                return SecureBytes(expanded[: params.output_length])
-        finally:
-            if isinstance(password, SecureBytes) and password_bytes != password:
-                secure_memzero(bytearray(password_bytes))
+        # Ensure correct output length
+        if len(derived) >= params.output_length:
+            return SecureBytes(derived[: params.output_length])
+        else:
+            # Expand with hashing if needed
+            expanded = derived
+            while len(expanded) < params.output_length:
+                expanded += hashlib.sha256(expanded).digest()
+            return SecureBytes(expanded[: params.output_length])
 
 
 # ============================================================================
