@@ -301,7 +301,7 @@ def safe_open_file(file_path, mode, secure_mode=False, allow_special_files=True)
         - Bypasses symlink checks for special files (/dev/*, /proc/*, etc.) when allow_special_files=True
 
     Example:
-        # D-Bus service (secure mode - reject symlinks)
+        # Untrusted input (secure mode - reject symlinks)
         with safe_open_file("/tmp/untrusted.txt", "rb", secure_mode=True) as f:
             data = f.read()
 
@@ -383,7 +383,7 @@ def safe_open_file(file_path, mode, secure_mode=False, allow_special_files=True)
         if e.errno == errno.ELOOP or (e.errno == errno.ENOENT and os.path.islink(file_path)):
             raise ValidationError(
                 f"Symlink attack blocked: '{file_path}' is a symbolic link. "
-                f"D-Bus service does not follow symlinks for security reasons."
+                f"Secure mode does not follow symlinks for security reasons."
             )
         # Re-raise other OS errors (permissions, disk full, etc.)
         raise
@@ -396,7 +396,7 @@ def safe_open_file(file_path, mode, secure_mode=False, allow_special_files=True)
                 os.close(fd)  # Clean up file descriptor
                 raise ValidationError(
                     f"Symlink blocked: '{file_path}' is a symbolic link. "
-                    f"D-Bus service does not follow symlinks for security reasons."
+                    f"Secure mode does not follow symlinks for security reasons."
                 )
         except OSError:
             # If islink() fails, assume it's not a symlink and continue

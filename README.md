@@ -614,7 +614,7 @@ For key derivation chaining:
 
 - Multi-pass secure deletion (configurable passes)
 - Atomic file operations
-- Symlink attack protection (O_NOFOLLOW in D-Bus service)
+- Symlink attack protection (O_NOFOLLOW in secure file operations)
 
 **Key Management:**
 
@@ -799,7 +799,6 @@ openssl_encrypt/
 │   ├── pqc_adapter.py       # PQC algorithm adapter
 │   ├── keystore_cli.py      # Keystore management
 │   ├── password_policy.py   # Password validation
-│   ├── dbus_service.py      # D-Bus integration (Linux)
 │   └── plugin_system/       # Plugin sandbox
 ├── unittests/
 │   ├── unittests.py         # Main test suite (950+ tests)
