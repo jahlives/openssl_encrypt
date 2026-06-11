@@ -2,6 +2,8 @@
 
 A Python-based file encryption tool with modern ciphers, post-quantum algorithms, and defense-in-depth key derivation.
 
+Built to encrypt anything from grandma's pie recipe to the nuclear launch codes — with parameters to satisfy every paranoia level in between. Sensible, secure defaults out of the box; fully tunable KDF chains and cipher choices when you want to crank the cost to match the threat.
+
 > **Looking for the stable release?** The latest stable version is [v1.4.1](https://github.com/jahlives/openssl_encrypt/releases/tag/v1.4.1) on the releases/1.4.x branch.
 
 ## History
