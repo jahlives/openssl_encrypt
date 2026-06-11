@@ -5843,6 +5843,90 @@ def _derive_pqc_sig_key(
     )
 
 
+# M3: Balloon hashing memory-hardness. Balloon's buffer is space_cost * 32
+# bytes (one SHA-256 block per slot), so the historical default of
+# space_cost=16 gave only ~512 bytes of "memory hardness" - GPU/ASIC-trivial,
+# i.e. the memory-hard stretching a user expects from enabling Balloon was
+# effectively absent. New files use a memory-hard default; an explicit
+# sub-floor value is warned about but respected (the expert's choice, per the
+# M4 decision). The pure-Python Balloon implementation caps the practical
+# ceiling (~2 MiB ~ 1s; 64 MiB would take ~35s).
+BALLOON_DEFAULT_SPACE_COST = 65536  # 2 MiB (65536 * 32 bytes)
+BALLOON_MIN_SAFE_SPACE_COST = 16384  # 512 KiB floor below which we warn
+# Pin the mixing rounds for the defaulted case so the cost is ~1s. The
+# independent-XOR (v11) path's read-default for time_cost is 20, which at the
+# new 2 MiB space_cost would take ~9s; 3 matches the established non-XOR balloon
+# default and keeps memory-hardness (space_cost) as the dominant cost.
+BALLOON_DEFAULT_TIME_COST = 3
+
+
+def _apply_balloon_security_defaults(hash_config, quiet=False):
+    """Encrypt-time normalization of an enabled Balloon KDF's space_cost (M3).
+
+    Ensures a memory-hard default when none was given, and warns (loudly) when
+    an explicit space_cost is below the safety floor. The resolved value is
+    written back into the config so it is BOTH used for derivation and
+    persisted in the file metadata - this is what makes the change backward
+    compatible.
+
+    MUST be called on the encrypt path only. Calling it during decryption would
+    raise the space_cost of legacy files that relied on the old unstored
+    default of 16 and make them underivable (the key would change). Decryption
+    reads the space_cost back from metadata for files written after this fix.
+
+    Args:
+        hash_config: The encryption hash/KDF configuration (mutated in place).
+        quiet: Suppress the sub-floor warning when True.
+
+    Returns:
+        The same hash_config (for convenience).
+    """
+    if not isinstance(hash_config, dict):
+        return hash_config
+
+    # The Balloon sub-config may live at the top level (v10 sequential path) or
+    # nested under derivation_config.kdf_config (v11 independent-XOR path).
+    balloon_configs = []
+    if isinstance(hash_config.get("balloon"), dict):
+        balloon_configs.append(hash_config["balloon"])
+    derivation_config = hash_config.get("derivation_config")
+    if isinstance(derivation_config, dict):
+        kdf_config = derivation_config.get("kdf_config")
+        if isinstance(kdf_config, dict) and isinstance(kdf_config.get("balloon"), dict):
+            balloon_configs.append(kdf_config["balloon"])
+
+    for balloon in balloon_configs:
+        if not balloon.get("enabled", False):
+            continue
+
+        space_cost = balloon.get("space_cost")
+        if space_cost is None:
+            # No explicit value: apply the memory-hard default and persist it.
+            # Also pin time_cost (if unset) so the cost stays ~1s instead of the
+            # ~9s the v11 read-default of time_cost=20 would give at 2 MiB.
+            balloon["space_cost"] = BALLOON_DEFAULT_SPACE_COST
+            balloon.setdefault("time_cost", BALLOON_DEFAULT_TIME_COST)
+            continue
+
+        try:
+            space_cost = int(space_cost)
+        except (TypeError, ValueError):
+            balloon["space_cost"] = BALLOON_DEFAULT_SPACE_COST
+            continue
+
+        if space_cost < BALLOON_MIN_SAFE_SPACE_COST and not quiet:
+            eprint(
+                f"⚠️  WARNING: Balloon space_cost={space_cost} provides only "
+                f"{space_cost * 32} bytes of memory hardness, which is weak "
+                f"against GPU/ASIC brute force. Recommended at least "
+                f"space_cost={BALLOON_MIN_SAFE_SPACE_COST} "
+                f"({BALLOON_MIN_SAFE_SPACE_COST * 32} bytes). Proceeding with "
+                f"your explicit value."
+            )
+
+    return hash_config
+
+
 @secure_encrypt_error_handler
 def encrypt_file(
     input_file,
@@ -6122,6 +6206,10 @@ def encrypt_file(
                 },
                 "pbkdf2_iterations": 0,
             }
+
+    # M3: enforce a memory-hard Balloon space_cost for new files (encrypt-time
+    # only; persisted into metadata so legacy files remain decryptable).
+    hash_config = _apply_balloon_security_defaults(hash_config, quiet=quiet)
 
     # Generate a key from the password
     salt = secrets.token_bytes(16)  # Unique salt for each encryption
