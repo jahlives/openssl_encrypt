@@ -26,7 +26,7 @@ These features are fully implemented and available in current releases.
   - ~~Custom encryption/hash plugins~~ (INTENTIONALLY NOT SUPPORTED - plugins are not allowed to access sensitive data per security policy)
 
 ### 2. **Configuration Management System** (v1.3.0+)
-- **Status**: ✅ FULLY IMPLEMENTED
+- **Status**: ❌ REMOVED in v1.5.0 (code-surface reduction — advisory config tools dropped; encryption templates via -t/--template still supported)
 - **Implementation**:
   - `openssl_encrypt/modules/config_wizard.py` (25,619 bytes)
   - `openssl_encrypt/modules/template_manager.py` (28,202 bytes)
