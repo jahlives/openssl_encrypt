@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Optional
 
 from .crypt_utils import eprint
-from .identity import Identity, IdentityError, IdentityStore
+from .identity import Identity, IdentityError, IdentityKeyChangedError, IdentityStore
 from .identity_protection import HSMNotAvailableError, IdentityKeyProtectionService, ProtectionLevel
 from .pqc_signing import LIBOQS_AVAILABLE
 
@@ -182,9 +182,17 @@ def cmd_create(args) -> int:
             require_touch=require_touch,
         )
 
-        # Save to store
+        # Save to store. This is the user's OWN identity being generated
+        # locally; --overwrite is the deliberate intent to (re)generate it
+        # (e.g. key rotation), so the contact-substitution TOFU gate does not
+        # apply here (allow_key_change=True). The gate is for imported contacts.
         store = get_identity_store(getattr(args, "identity_store", None))
-        store.add_identity(identity, passphrase, overwrite=getattr(args, "overwrite", False))
+        store.add_identity(
+            identity,
+            passphrase,
+            overwrite=getattr(args, "overwrite", False),
+            allow_key_change=True,
+        )
 
         eprint("\nIdentity created successfully!")
         eprint(f"Name: {identity.name}")
@@ -444,11 +452,39 @@ def cmd_import(args) -> int:
 
         # Add to store
         store = get_identity_store(getattr(args, "identity_store", None))
-        store.add_identity(
-            identity,
-            passphrase=None,
-            overwrite=getattr(args, "overwrite", False),
-        )
+        overwrite = getattr(args, "overwrite", False)
+        allow_key_change = getattr(args, "allow_key_change", False)
+        try:
+            store.add_identity(
+                identity,
+                passphrase=None,
+                overwrite=overwrite,
+                allow_key_change=allow_key_change,
+            )
+        except IdentityKeyChangedError as e:
+            # M8: TOFU key-change. Refuse non-interactively; prompt on a TTY.
+            eprint("\n⚠️  WARNING: the key for this contact has CHANGED.")
+            eprint(f"  Identity:        {e.name}")
+            eprint(f"  Stored (pinned): {e.old_fingerprint}")
+            eprint(f"  Imported:        {e.new_fingerprint}")
+            eprint(
+                "  A changed key can mean the contact re-keyed - or that this "
+                "bundle is forged / a man-in-the-middle. Only accept if you "
+                "have verified the new fingerprint out of band."
+            )
+            if not sys.stdin.isatty():
+                eprint(
+                    "ERROR: refusing to replace a pinned key non-interactively. "
+                    "Re-run with --allow-key-change once you have verified the "
+                    "new fingerprint.",
+                    file=sys.stderr,
+                )
+                return 1
+            response = input("Accept the new key and replace the pinned one? (yes/no): ")
+            if response.strip().lower() not in ("yes", "y"):
+                eprint("Import cancelled - pinned key kept.")
+                return 1
+            store.add_identity(identity, passphrase=None, overwrite=True, allow_key_change=True)
 
         eprint("Identity imported successfully!")
         eprint(f"Name: {identity.name}")
