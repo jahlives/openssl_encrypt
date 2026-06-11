@@ -265,18 +265,27 @@ class CascadeEncryption:
         decrypted = cascade.decrypt(ciphertext, master_key, salt)
     """
 
-    def __init__(self, config: CascadeConfig, format_version: Optional[int] = None):
+    def __init__(
+        self,
+        config: CascadeConfig,
+        format_version: Optional[int] = None,
+        xchacha_nonce_format: int = 1,
+    ):
         """Initialize cascade encryption with the given configuration.
 
         Args:
             config: Cascade configuration
             format_version: File format version for key derivation behavior
+            xchacha_nonce_format: Nonce handling for XChaCha20-Poly1305
+                layers: 2 = real 192-bit nonces via HChaCha20 (1.5+),
+                1 = legacy HKDF nonce funnel (pre-1.5 files).
 
         Raises:
             CascadeConfigError: If any cipher is not available
         """
         self.config = config
         self.format_version = format_version
+        self.xchacha_nonce_format = xchacha_nonce_format
         self.key_derivation = CascadeKeyDerivation(config, format_version=format_version)
 
         # Validate all ciphers are available
@@ -284,6 +293,10 @@ class CascadeEncryption:
         for cipher_name in config.cipher_names:
             try:
                 cipher = get_cipher(cipher_name)
+                # get_cipher() returns a fresh instance, so this mode flag is
+                # owned by this cascade object and cannot leak across files
+                if cipher.info().name == "xchacha20-poly1305":
+                    cipher.nonce_format = xchacha_nonce_format
                 self.ciphers.append(cipher)
             except Exception as e:
                 raise CascadeConfigError(f"Cipher '{cipher_name}' is not available: {e}")
@@ -313,9 +326,7 @@ class CascadeEncryption:
         layer_keys = self.key_derivation.derive_layer_keys(master_key, salt)
 
         # Encrypt through each layer sequentially
-        use_aad_all_layers = (
-            self.format_version is not None and self.format_version >= 12
-        )
+        use_aad_all_layers = self.format_version is not None and self.format_version >= 12
         try:
             data = plaintext
             for i, (cipher, (key, nonce)) in enumerate(zip(self.ciphers, layer_keys)):
@@ -359,9 +370,7 @@ class CascadeEncryption:
         layer_keys = self.key_derivation.derive_layer_keys(master_key, salt)
 
         # Decrypt through layers in reverse order
-        use_aad_all_layers = (
-            self.format_version is not None and self.format_version >= 12
-        )
+        use_aad_all_layers = self.format_version is not None and self.format_version >= 12
         try:
             data = ciphertext
             for i in range(len(self.ciphers) - 1, -1, -1):

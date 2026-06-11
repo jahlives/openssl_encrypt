@@ -178,6 +178,11 @@
               },
               "description": "Information about each layer in the cascade"
             },
+            "xchacha_nonce_format": {
+              "type": "integer",
+              "enum": [2],
+              "description": "XChaCha20-Poly1305 nonce format: 2 = real 192-bit nonce via HChaCha20 (1.5+); absent on legacy files"
+            },
             "total_overhead": {
               "type": "integer",
               "minimum": 0,
@@ -224,6 +229,11 @@
             "tag_size": {
               "type": "integer",
               "description": "Authentication tag size in bytes"
+            },
+            "xchacha_nonce_format": {
+              "type": "integer",
+              "enum": [2],
+              "description": "XChaCha20-Poly1305 nonce format: 2 = real 192-bit nonce via HChaCha20 (1.5+); absent on legacy files"
             },
             "pq_security_bits": {
               "type": "integer",

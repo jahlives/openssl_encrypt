@@ -9,6 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Real 192-bit XChaCha20-Poly1305 nonces** (spec-compliant per
+  draft-irtf-cfrg-xchacha-03), replacing the previous behavior where a
+  24-byte nonce was stored but only the first 12 bytes affected the
+  keystream (96-bit effective, not a vulnerability thanks to per-file
+  keys, but not real XChaCha and not interoperable):
+  - New module `modules/xchacha.py` implements HChaCha20 on top of the
+    `cryptography` library's ChaCha20 (keystream feed-forward
+    subtraction) — no new runtime dependency. Pinned against the
+    official §2.2.1 and §A.3 test vectors and an independent
+    pure-Python reference (`test_xchacha_primitives.py`).
+  - New files carry `encryption.xchacha_nonce_format: 2` in their
+    metadata (AAD-protected when `aead_binding` is set). Decryption
+    auto-detects: files without the flag use the legacy derivations
+    (one-shot/streaming: first-12-bytes; cascade: HKDF nonce funnel).
+  - Applies to one-shot, streaming (24-byte per-chunk nonces), and
+    cascade XChaCha layers. The PQC hybrid data layer intentionally
+    keeps 12-byte nonces under per-encryption KEM-derived keys.
+  - Backward compatibility is pinned by immutable fixtures generated
+    with the pre-1.5 code (`testfiles/xchacha_legacy/`); the new format
+    is pinned by `testfiles/xchacha_v2/`.
+  - The `XChaCha20Poly1305` wrapper now rejects nonce lengths other
+    than 24 (real) and 12 (legacy/PQC); the unreachable HKDF nonce
+    branches were removed.
+
 - **`info` action now reconstructs the `encrypt` CLI** from file metadata:
   - The human-readable output of `openssl_encrypt info <file>` now ends
     with a "Reconstructed CLI" section showing the full
