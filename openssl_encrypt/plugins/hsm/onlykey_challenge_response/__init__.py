@@ -150,30 +150,46 @@ class OnlykeyHSMPlugin(HSMPlugin):
 
         OnlyKey speaks the YubiKey HMAC-SHA1 wire protocol, so we reuse
         ykman's OtpYubiKeyDevice + HidrawConnection (Linux) / equivalent
-        on other platforms. The PID is passed through because YubiOtpSession
-        consults it for protocol-version negotiation.
+        on other platforms.
+
+        OtpYubiKeyDevice coerces its pid argument through yubikit's PID
+        IntEnum, which only contains Yubico product IDs — the OnlyKey's
+        real PID (0x60FC) raises ValueError. We therefore masquerade as an
+        OTP-only YubiKey Standard (PID.YKS_OTP): yubikit uses the PID only
+        for USB interface bookkeeping (the OTP protocol version is read
+        from device status), and the OTP-only PID also makes ykman skip
+        its reclaim serial-probe, which OnlyKey does not implement.
+
+        Args:
+            path: HID device path (e.g. /dev/hidrawN on Linux).
+            pid: Real USB product id of the device (unused for device
+                construction, see masquerade note above).
         """
+        from yubikit.core import PID
+
+        masquerade_pid = PID.YKS_OTP
+
         platform = sys.platform
         if platform == "linux":
             from ykman.hid.base import OtpYubiKeyDevice
             from ykman.hid.linux import HidrawConnection
 
-            return OtpYubiKeyDevice(path, pid, HidrawConnection)
+            return OtpYubiKeyDevice(path, masquerade_pid, HidrawConnection)
         elif platform == "darwin":
             from ykman.hid.base import OtpYubiKeyDevice
             from ykman.hid.macos import MacHidOtpConnection  # type: ignore
 
-            return OtpYubiKeyDevice(path, pid, MacHidOtpConnection)
+            return OtpYubiKeyDevice(path, masquerade_pid, MacHidOtpConnection)
         elif platform == "win32":
             from ykman.hid.base import OtpYubiKeyDevice
             from ykman.hid.windows import WinHidOtpConnection  # type: ignore
 
-            return OtpYubiKeyDevice(path, pid, WinHidOtpConnection)
+            return OtpYubiKeyDevice(path, masquerade_pid, WinHidOtpConnection)
         elif platform.startswith("freebsd"):
             from ykman.hid.base import OtpYubiKeyDevice
             from ykman.hid.freebsd import FreeBsdHidOtpConnection  # type: ignore
 
-            return OtpYubiKeyDevice(path, pid, FreeBsdHidOtpConnection)
+            return OtpYubiKeyDevice(path, masquerade_pid, FreeBsdHidOtpConnection)
         else:
             raise NotImplementedError(
                 f"OnlyKey HID device construction not implemented on platform {platform!r}"
@@ -201,6 +217,7 @@ class OnlykeyHSMPlugin(HSMPlugin):
             Slot number (1..12) or None if no CR-configured slot found.
         """
         try:
+            from yubikit.core.otp import OtpConnection
             from yubikit.yubiotp import YubiOtpSession
         except ImportError:
             return None
@@ -219,7 +236,7 @@ class OnlykeyHSMPlugin(HSMPlugin):
         test_challenge = b"\x00" * 16
 
         try:
-            with device.open_connection(None) as conn:
+            with device.open_connection(OtpConnection) as conn:
                 session = YubiOtpSession(conn)
                 for slot in range(self.MIN_SLOT, self.MAX_SLOT + 1):
                     try:
@@ -270,11 +287,11 @@ class OnlykeyHSMPlugin(HSMPlugin):
             RuntimeError: if no device attached, device not responsive, etc.
         """
         try:
+            from yubikit.core.otp import OtpConnection
             from yubikit.yubiotp import YubiOtpSession
         except ImportError as e:
             raise RuntimeError(
-                f"yubikit not installed: {e}. "
-                f"Install with: pip install yubikey-manager"
+                f"yubikit not installed: {e}. " f"Install with: pip install yubikey-manager"
             ) from e
 
         devices = self._list_onlykey_devices()
@@ -283,11 +300,9 @@ class OnlykeyHSMPlugin(HSMPlugin):
 
         device = devices[0]
         try:
-            with device.open_connection(None) as conn:
+            with device.open_connection(OtpConnection) as conn:
                 session = YubiOtpSession(conn)
-                logger.info(
-                    f"Performing OnlyKey Challenge-Response on slot {slot}"
-                )
+                logger.info(f"Performing OnlyKey Challenge-Response on slot {slot}")
                 response = session.calculate_hmac_sha1(slot, challenge)
                 logger.info(
                     f"OnlyKey Challenge-Response successful: "
@@ -302,13 +317,9 @@ class OnlykeyHSMPlugin(HSMPlugin):
                     "OnlyKey is locked. Enter your PIN on the OnlyKey "
                     "buttons to unlock it, then retry."
                 ) from e
-            raise RuntimeError(
-                f"OnlyKey Challenge-Response failed: {e}"
-            ) from e
+            raise RuntimeError(f"OnlyKey Challenge-Response failed: {e}") from e
 
-    def get_hsm_pepper(
-        self, salt: bytes, context: PluginSecurityContext
-    ) -> PluginResult:
+    def get_hsm_pepper(self, salt: bytes, context: PluginSecurityContext) -> PluginResult:
         """
         Derive HSM pepper from salt using OnlyKey Challenge-Response.
 
@@ -322,8 +333,7 @@ class OnlykeyHSMPlugin(HSMPlugin):
         try:
             if not self._check_libs_available():
                 return PluginResult.error_result(
-                    "yubikit library not installed. "
-                    "Install with: pip install yubikey-manager"
+                    "yubikit library not installed. " "Install with: pip install yubikey-manager"
                 )
 
             # Validate salt
