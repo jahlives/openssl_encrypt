@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Cross-device HSM decryption (YubiKey ↔ OnlyKey)**: files encrypted with
+  one HMAC-SHA1 challenge-response device can now be decrypted with the
+  other by selecting it explicitly via `--hsm`, provided both devices hold
+  the same 20-byte secret (`yubikey_hsm` / `onlykey_hsm` form a
+  protocol-compatible plugin family; unrelated plugins are still rejected).
+  `--hsm-slot` on `decrypt` / rekey now takes precedence over the slot
+  stored in file metadata — previously it was printed but silently
+  ignored — so fleet devices may hold the secret in different slots.
+- **OnlyKey setup guide** (`docs/ONLYKEY_SETUP.md`, linked from the docs
+  sidebar): installation, udev rules for VID/PID 1d50:60fc, the
+  unlock-then-touch hardware flow, the challenge-code-mode caveat,
+  cross-device provisioning with YubiKey, and troubleshooting for every
+  real-hardware failure mode.
 - **Real 192-bit XChaCha20-Poly1305 nonces** (spec-compliant per
   draft-irtf-cfrg-xchacha-03), replacing the previous behavior where a
   24-byte nonce was stored but only the first 12 bytes affected the
@@ -123,6 +136,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **OnlyKey plugin now works with real hardware**: device construction no
+  longer fails with "24828 is not a valid PID" — the plugin masquerades as
+  an OTP-only YubiKey (`PID.YKS_OTP`), since yubikit's PID enum only
+  contains Yubico product IDs and the PID is used solely for USB interface
+  bookkeeping. `open_connection` is now called with `OtpConnection`
+  instead of `None` (ykman asserts on non-type arguments). A device that
+  actively rejects a challenge now produces an actionable error naming the
+  two real-world causes (empty slot / challenge-code mode) instead of the
+  bare "No data".
+- **threefish_native builds on Python 3.14**: PyO3 upgraded 0.24.1 → 0.26
+  (3.14 support), with the `PyBytes::new_bound` → `PyBytes::new` API
+  rename.
 - **Streaming encryption data-loss bug**: streaming files always record
   `format_version: 12` in their metadata, but the encryption key, pepper
   derivation, and cascade setup were built with the *caller's*
@@ -141,6 +166,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Declared Python floor raised to `>=3.11`** in `setup.py` and
+  `threefish_native/pyproject.toml`, aligning the metadata with the
+  documented requirement (README: "Python 3.11+") and with the 1.4.x
+  line (where numpy forces it; the 1.5 pins alone would allow 3.10).
+  Stale 3.9/3.10 classifiers dropped, 3.14 added. Guarded by
+  `test_python_floor_metadata.py`.
 - `--hsm-slot` no longer hard-restricted to `choices=[1, 2]` at the
   argparse layer. YubiKey validates 1..2 inside its plugin; OnlyKey
   validates 1..12. This is purely an internal validation move — no
