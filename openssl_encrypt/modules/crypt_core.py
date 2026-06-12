@@ -8408,6 +8408,7 @@ def rekey_file(
     plugin_manager=None,
     secure_mode: bool = False,
     hsm_plugin=None,
+    hsm_slot=None,
     no_estimate: bool = False,
     verify_integrity: bool = False,
     parallel_kdf: bool = False,
@@ -8444,6 +8445,8 @@ def rekey_file(
         plugin_manager: Plugin manager instance.
         secure_mode: Enable secure memory mode.
         hsm_plugin: HSM plugin instance.
+        hsm_slot: Explicit HSM slot override for decryption (takes
+            precedence over the slot stored in file metadata).
         no_estimate: Suppress time/memory estimation.
         verify_integrity: Verify metadata integrity before decryption.
         parallel_kdf: Use parallel KDF processing.
@@ -8516,6 +8519,7 @@ def rekey_file(
             plugin_manager=plugin_manager,
             secure_mode=secure_mode,
             hsm_plugin=hsm_plugin,
+            hsm_slot=hsm_slot,
             no_estimate=no_estimate,
             verify_integrity=verify_integrity,
             parallel_kdf=parallel_kdf,
@@ -8610,6 +8614,49 @@ def rekey_file(
                 pass
 
 
+# HSM plugin families whose members speak the same challenge-response wire
+# protocol and therefore derive identical peppers from the same loaded secret.
+# A file encrypted with one family member may be decrypted with another when
+# the user explicitly selects the plugin via --hsm.
+HSM_COMPATIBLE_FAMILIES: tuple = (frozenset({"yubikey_hsm", "onlykey_hsm"}),)
+
+
+def _hsm_plugins_compatible(provided_id: str, stored_id: str) -> bool:
+    """Check whether a user-provided HSM plugin may decrypt a file.
+
+    Args:
+        provided_id: plugin_id of the plugin the user selected via --hsm.
+        stored_id: plugin_id recorded in the encrypted file's metadata.
+
+    Returns:
+        True if the plugins are identical or belong to the same
+        protocol-compatible family in HSM_COMPATIBLE_FAMILIES.
+    """
+    if provided_id == stored_id:
+        return True
+    return any(provided_id in family and stored_id in family for family in HSM_COMPATIBLE_FAMILIES)
+
+
+def _resolve_hsm_slot(cli_slot, stored_config: dict):
+    """Resolve which HSM slot to challenge during decryption.
+
+    An explicit --hsm-slot from the user takes precedence over the slot
+    recorded in file metadata, so a compatible device that holds the same
+    secret in a different slot (e.g. YubiKey slot 2 vs OnlyKey slot 1)
+    can decrypt the file.
+
+    Args:
+        cli_slot: Slot number from --hsm-slot, or None if not given.
+        stored_config: hsm_config dict from file metadata (may be empty).
+
+    Returns:
+        The slot number to use, or None if neither source specifies one.
+    """
+    if cli_slot:
+        return cli_slot
+    return stored_config.get("slot")
+
+
 @secure_decrypt_error_handler
 def decrypt_file(
     input_file,
@@ -8625,6 +8672,7 @@ def decrypt_file(
     plugin_manager=None,
     secure_mode=False,
     hsm_plugin=None,
+    hsm_slot=None,
     no_estimate=False,
     verify_integrity=False,
     parallel_kdf=False,
@@ -8645,6 +8693,7 @@ def decrypt_file(
         enable_plugins (bool): Whether to enable plugin execution (default: True)
         plugin_manager (PluginManager, optional): Plugin manager instance for plugin execution
         secure_mode (bool): If True, use O_NOFOLLOW to reject symlinks (default: False)
+        hsm_slot (int, optional): Explicit HSM slot for pepper derivation; takes precedence over the slot stored in file metadata
         verify_integrity (bool): If True, verify metadata integrity with remote server before decryption (default: False)
 
     Returns:
@@ -9234,8 +9283,10 @@ def decrypt_file(
                     f"Install plugin dependencies or check plugin availability."
                 )
 
-        # Validate plugin matches metadata
-        if hsm_plugin.plugin_id != hsm_plugin_name:
+        # Validate plugin matches metadata, allowing protocol-compatible
+        # families (e.g. YubiKey/OnlyKey HMAC-SHA1 challenge-response) so a
+        # fleet device loaded with the same secret can decrypt the file.
+        if not _hsm_plugins_compatible(hsm_plugin.plugin_id, hsm_plugin_name):
             raise KeyDerivationError(
                 f"File was encrypted with HSM plugin '{hsm_plugin_name}' but '{hsm_plugin.plugin_id}' provided. "
                 f"Use --hsm {hsm_plugin_name} to decrypt."
@@ -9257,9 +9308,11 @@ def decrypt_file(
             )
             hsm_context.metadata["salt"] = salt
 
-            # Pass stored slot config if available
-            if "slot" in hsm_config:
-                hsm_context.config["slot"] = hsm_config["slot"]
+            # Resolve slot: explicit --hsm-slot wins over stored metadata so
+            # a compatible device may hold the secret in a different slot
+            resolved_slot = _resolve_hsm_slot(hsm_slot, hsm_config)
+            if resolved_slot:
+                hsm_context.config["slot"] = resolved_slot
 
             # Execute HSM plugin
             result = hsm_plugin.get_hsm_pepper(salt, hsm_context)

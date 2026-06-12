@@ -5330,10 +5330,7 @@ def main_with_args(args=None):
                 )
                 sys.exit(1)
 
-            eprint(
-                f"\nPassphrase entropy: {entropy_bits:.1f} bits "
-                f"({args.dice_count} words)"
-            )
+            eprint(f"\nPassphrase entropy: {entropy_bits:.1f} bits " f"({args.dice_count} words)")
             display_password_with_timeout(passphrase)
             sys.exit(0)
 
@@ -5594,21 +5591,16 @@ def main_with_args(args=None):
             hsm_value = args.hsm.lower()
             try:
                 if hsm_value == "yubikey":
-                    from ..plugins.hsm.yubikey_challenge_response import (
-                        YubikeyHSMPlugin,
-                    )
+                    from ..plugins.hsm.yubikey_challenge_response import YubikeyHSMPlugin
 
                     hsm_plugin_instance = YubikeyHSMPlugin()
                 elif hsm_value == "onlykey":
-                    from ..plugins.hsm.onlykey_challenge_response import (
-                        OnlykeyHSMPlugin,
-                    )
+                    from ..plugins.hsm.onlykey_challenge_response import OnlykeyHSMPlugin
 
                     hsm_plugin_instance = OnlykeyHSMPlugin()
                 else:
                     eprint(
-                        f"Error: Unknown --hsm value '{args.hsm}'. "
-                        f"Supported: yubikey, onlykey"
+                        f"Error: Unknown --hsm value '{args.hsm}'. " f"Supported: yubikey, onlykey"
                     )
                     sys.exit(1)
             except ImportError as e:
@@ -6723,7 +6715,9 @@ def main_with_args(args=None):
                             )
 
                 else:
-                    eprint(f"Error: Unknown HSM plugin '{args.hsm}'. Supported: yubikey, onlykey, fido2")
+                    eprint(
+                        f"Error: Unknown HSM plugin '{args.hsm}'. Supported: yubikey, onlykey, fido2"
+                    )
                     sys.exit(1)
 
             except ImportError as e:
@@ -9623,6 +9617,7 @@ def main_with_args(args=None):
                             enable_plugins=enable_plugins,
                             plugin_manager=plugin_manager,
                             hsm_plugin=hsm_plugin_instance,
+                            hsm_slot=getattr(args, "hsm_slot", None),
                             no_estimate=getattr(args, "no_estimate", False),
                             verify_integrity=getattr(args, "verify_integrity", False),
                             parallel_kdf=getattr(args, "parallel_kdf", False),
@@ -9849,6 +9844,7 @@ def main_with_args(args=None):
                         enable_plugins=enable_plugins,
                         plugin_manager=plugin_manager,
                         hsm_plugin=hsm_plugin_instance,
+                        hsm_slot=getattr(args, "hsm_slot", None),
                         no_estimate=getattr(args, "no_estimate", False),
                         verify_integrity=getattr(args, "verify_integrity", False),
                     )
@@ -10019,6 +10015,7 @@ def main_with_args(args=None):
                         enable_plugins=enable_plugins,
                         plugin_manager=plugin_manager,
                         hsm_plugin=hsm_plugin_instance,
+                        hsm_slot=getattr(args, "hsm_slot", None),
                         no_estimate=getattr(args, "no_estimate", False),
                         verify_integrity=getattr(args, "verify_integrity", False),
                     )
@@ -10087,6 +10084,7 @@ def main_with_args(args=None):
                     enable_plugins=enable_plugins,
                     plugin_manager=plugin_manager,
                     hsm_plugin=hsm_plugin_instance,
+                    hsm_slot=getattr(args, "hsm_slot", None),
                     no_estimate=getattr(args, "no_estimate", False),
                     verify_integrity=getattr(args, "verify_integrity", False),
                     parallel_kdf=getattr(args, "parallel_kdf", False),
