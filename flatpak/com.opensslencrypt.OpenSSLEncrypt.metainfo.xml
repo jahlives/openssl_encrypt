@@ -39,6 +39,11 @@
   </screenshots>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="1.4.4" date="2026-06-12" type="stable">
+      <description>
+        <p>Security hardening release: authenticated keystore format, D-Bus polkit authorization, fail-closed PQC algorithm resolution, plugin sandbox enforcement, per-drive USB salts. New: cross-device YubiKey/OnlyKey HSM decryption, encrypt-CLI reconstruction from file metadata via the info action, Diceware passphrase generation, HSM-aware derive-password. Threefish extension builds on Python 3.14. Requires Python 3.11+.</p>
+      </description>
+    </release>
     <release version="1.4.3" date="2026-03-30" type="stable">
       <description>
         <p>Fix Flutter GUI launcher in Flatpak: corrected binary name so --gui flag works correctly.</p>
