@@ -69,7 +69,7 @@ fn encrypt_512<'py>(
     let ciphertext = cipher.encrypt(nonce, plaintext, aad)
         .map_err(aead_error_to_py)?;
 
-    Ok(PyBytes::new_bound(py, &ciphertext))
+    Ok(PyBytes::new(py, &ciphertext))
 }
 
 /// Threefish-512 AEAD Decryption
@@ -119,7 +119,7 @@ fn decrypt_512<'py>(
     let plaintext = cipher.decrypt(nonce, ciphertext, aad)
         .map_err(aead_error_to_py)?;
 
-    Ok(PyBytes::new_bound(py, &plaintext))
+    Ok(PyBytes::new(py, &plaintext))
 }
 
 /// Generate a random 64-byte key for Threefish-512
@@ -128,7 +128,7 @@ fn generate_key_512<'py>(py: Python<'py>) -> PyResult<Bound<'py, PyBytes>> {
     use rand::RngCore;
     let mut key = [0u8; 64];
     rand::thread_rng().fill_bytes(&mut key);
-    let result = PyBytes::new_bound(py, &key);
+    let result = PyBytes::new(py, &key);
     key.zeroize();
     Ok(result)
 }
@@ -139,7 +139,7 @@ fn generate_nonce_512<'py>(py: Python<'py>) -> PyResult<Bound<'py, PyBytes>> {
     use rand::RngCore;
     let mut nonce = [0u8; 32];
     rand::thread_rng().fill_bytes(&mut nonce);
-    Ok(PyBytes::new_bound(py, &nonce))
+    Ok(PyBytes::new(py, &nonce))
 }
 
 // ============================================================================
@@ -184,7 +184,7 @@ fn encrypt_1024<'py>(
     let ciphertext = cipher.encrypt(nonce, plaintext, aad)
         .map_err(aead_error_to_py)?;
 
-    Ok(PyBytes::new_bound(py, &ciphertext))
+    Ok(PyBytes::new(py, &ciphertext))
 }
 
 /// Threefish-1024 AEAD Decryption
@@ -234,7 +234,7 @@ fn decrypt_1024<'py>(
     let plaintext = cipher.decrypt(nonce, ciphertext, aad)
         .map_err(aead_error_to_py)?;
 
-    Ok(PyBytes::new_bound(py, &plaintext))
+    Ok(PyBytes::new(py, &plaintext))
 }
 
 /// Generate a random 128-byte key for Threefish-1024
@@ -243,7 +243,7 @@ fn generate_key_1024<'py>(py: Python<'py>) -> PyResult<Bound<'py, PyBytes>> {
     use rand::RngCore;
     let mut key = [0u8; 128];
     rand::thread_rng().fill_bytes(&mut key);
-    let result = PyBytes::new_bound(py, &key);
+    let result = PyBytes::new(py, &key);
     key.zeroize();
     Ok(result)
 }
@@ -254,7 +254,7 @@ fn generate_nonce_1024<'py>(py: Python<'py>) -> PyResult<Bound<'py, PyBytes>> {
     use rand::RngCore;
     let mut nonce = [0u8; 64];
     rand::thread_rng().fill_bytes(&mut nonce);
-    Ok(PyBytes::new_bound(py, &nonce))
+    Ok(PyBytes::new(py, &nonce))
 }
 
 // ============================================================================
