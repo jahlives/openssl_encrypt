@@ -317,6 +317,17 @@ class OnlykeyHSMPlugin(HSMPlugin):
                     "OnlyKey is locked. Enter your PIN on the OnlyKey "
                     "buttons to unlock it, then retry."
                 ) from e
+            if "no data" in error_text:
+                # CommandRejectedError('No data'): the device returned to
+                # idle without computing a response and without requesting
+                # a button press — it actively declined the challenge.
+                raise RuntimeError(
+                    f"OnlyKey rejected the challenge on slot {slot}. Common causes: "
+                    f"the slot has no HMAC-SHA1 secret loaded, or the slot is set to "
+                    f"'challenge code' mode in the OnlyKey App — only button-press "
+                    f"(or no user presence) mode works over the YubiKey wire "
+                    f"protocol. Load the secret or switch the slot mode, then retry."
+                ) from e
             raise RuntimeError(f"OnlyKey Challenge-Response failed: {e}") from e
 
     def get_hsm_pepper(self, salt: bytes, context: PluginSecurityContext) -> PluginResult:
