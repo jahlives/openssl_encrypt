@@ -23,9 +23,7 @@ def _read(path: str) -> str:
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 CRYPT_CLI = os.path.join(REPO_ROOT, "openssl_encrypt", "modules", "crypt_cli.py")
-SUBPARSER = os.path.join(
-    REPO_ROOT, "openssl_encrypt", "modules", "crypt_cli_subparser.py"
-)
+SUBPARSER = os.path.join(REPO_ROOT, "openssl_encrypt", "modules", "crypt_cli_subparser.py")
 
 
 class TestHsmDispatchHasOnlykeyBranch(unittest.TestCase):
@@ -94,8 +92,7 @@ class TestHsmFlagHelpTextMentionsOnlykey(unittest.TestCase):
         self.assertGreaterEqual(
             len(blocks),
             3,
-            msg=f"Expected ≥3 encrypt-side --hsm blocks in subparser, "
-            f"found {len(blocks)}",
+            msg=f"Expected ≥3 encrypt-side --hsm blocks in subparser, " f"found {len(blocks)}",
         )
         for i, block in enumerate(blocks):
             self.assertIn(
@@ -156,8 +153,7 @@ class TestOnlykeySubcommands(unittest.TestCase):
         self.assertRegex(
             src,
             r'add_parser\(\s*["\']onlykey-list["\']',
-            msg="setup_hsm_parser must define an onlykey-list subcommand "
-            "alongside fido2-list.",
+            msg="setup_hsm_parser must define an onlykey-list subcommand " "alongside fido2-list.",
         )
 
     def test_subparser_defines_onlykey_test_subcommand(self):
@@ -165,8 +161,7 @@ class TestOnlykeySubcommands(unittest.TestCase):
         self.assertRegex(
             src,
             r'add_parser\(\s*["\']onlykey-test["\']',
-            msg="setup_hsm_parser must define an onlykey-test subcommand "
-            "alongside fido2-test.",
+            msg="setup_hsm_parser must define an onlykey-test subcommand " "alongside fido2-test.",
         )
 
     def test_dispatch_handles_onlykey_list(self):
@@ -205,9 +200,7 @@ class TestOnlykeySubcommands(unittest.TestCase):
         # (not an unconditional top-of-function exit).
         # Specifically: there should NOT be an early sys.exit before action
         # is even known.
-        fido2_check_indices = [
-            m.start() for m in re.finditer(r"FIDO2 library not available", body)
-        ]
+        fido2_check_indices = [m.start() for m in re.finditer(r"FIDO2 library not available", body)]
         action_assign_index = body.find("args.hsm_action")
         self.assertGreater(
             action_assign_index,

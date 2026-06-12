@@ -26,9 +26,7 @@ sys.modules.setdefault("yubikit.core", MagicMock())
 sys.modules.setdefault("yubikit.core.otp", MagicMock())
 sys.modules.setdefault("yubikit.yubiotp", MagicMock())
 
-from openssl_encrypt.modules.identity_protection import (  # noqa: E402
-    IdentityKeyProtectionService,
-)
+from openssl_encrypt.modules.identity_protection import IdentityKeyProtectionService  # noqa: E402
 
 
 class TestIdentityProtectionPluginSelection(unittest.TestCase):

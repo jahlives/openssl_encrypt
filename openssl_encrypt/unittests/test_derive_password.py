@@ -538,16 +538,12 @@ class TestDerivePasswordConfirm(unittest.TestCase):
         return exit_code, stdout_capture.getvalue(), stderr_capture.getvalue()
 
     def test_confirm_matching_passwords_succeeds(self):
-        exit_code, stdout, stderr = self._run_with_two_prompts(
-            "samepass!", "samepass!"
-        )
+        exit_code, stdout, stderr = self._run_with_two_prompts("samepass!", "samepass!")
         self.assertEqual(exit_code, 0, f"stderr: {stderr}")
         self.assertRegex(stdout.strip(), r"^[0-9a-f]+$")
 
     def test_confirm_mismatched_passwords_errors(self):
-        exit_code, _stdout, stderr = self._run_with_two_prompts(
-            "first-typo", "second-typo"
-        )
+        exit_code, _stdout, stderr = self._run_with_two_prompts("first-typo", "second-typo")
         self.assertNotEqual(exit_code, 0)
         self.assertIn("match", stderr.lower())
 
@@ -786,9 +782,7 @@ class TestDerivePasswordHsmRandomSaltReminder(unittest.TestCase):
 
     def test_hsm_with_explicit_salt_does_not_emit_reminder(self):
         """--hsm + explicit --salt → user already controls salt; no nag."""
-        rc, _out, err = self._run(
-            ["--hsm", "yubikey", "--salt", "bb" * 16]
-        )
+        rc, _out, err = self._run(["--hsm", "yubikey", "--salt", "bb" * 16])
         self.assertEqual(rc, 0)
         # The reminder phrase must not appear.
         self.assertNotIn("hardware token", err.lower())

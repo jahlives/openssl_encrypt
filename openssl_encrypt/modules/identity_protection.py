@@ -230,15 +230,11 @@ class IdentityKeyProtectionService:
         self._hsm_checked = True
         try:
             if self._hsm_type == "yubikey":
-                from openssl_encrypt.plugins.hsm.yubikey_challenge_response import (
-                    YubikeyHSMPlugin,
-                )
+                from openssl_encrypt.plugins.hsm.yubikey_challenge_response import YubikeyHSMPlugin
 
                 self._hsm_plugin = YubikeyHSMPlugin()
             elif self._hsm_type == "onlykey":
-                from openssl_encrypt.plugins.hsm.onlykey_challenge_response import (
-                    OnlykeyHSMPlugin,
-                )
+                from openssl_encrypt.plugins.hsm.onlykey_challenge_response import OnlykeyHSMPlugin
 
                 self._hsm_plugin = OnlykeyHSMPlugin()
             # Other hsm_type values → leave self._hsm_plugin as None

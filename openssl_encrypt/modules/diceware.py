@@ -23,7 +23,6 @@ import warnings
 from pathlib import Path
 from typing import List, Optional, Union
 
-
 # A wordlist smaller than this yields less than 10 bits of entropy per
 # word, which is widely considered the minimum for passphrase use. The
 # bundled EFF Large Wordlist (7776 words) provides ~12.92 bits/word.
@@ -44,11 +43,7 @@ class WordlistValidationError(ValueError):
 def _default_wordlist_path() -> Path:
     """Return the filesystem path to the bundled EFF Large Wordlist."""
     return Path(
-        str(
-            importlib.resources.files("openssl_encrypt").joinpath(
-                _DEFAULT_WORDLIST_RESOURCE
-            )
-        )
+        str(importlib.resources.files("openssl_encrypt").joinpath(_DEFAULT_WORDLIST_RESOURCE))
     )
 
 
@@ -223,7 +218,5 @@ def passphrase_entropy(count: int, wordlist_size: int) -> float:
     if count < 1:
         raise ValueError(f"count must be >= 1, got {count}")
     if wordlist_size < 2:
-        raise ValueError(
-            f"wordlist_size must be >= 2 for nonzero entropy, got {wordlist_size}"
-        )
+        raise ValueError(f"wordlist_size must be >= 2 for nonzero entropy, got {wordlist_size}")
     return count * math.log2(wordlist_size)

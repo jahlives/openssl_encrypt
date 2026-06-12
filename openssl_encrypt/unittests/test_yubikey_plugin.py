@@ -27,9 +27,7 @@ from openssl_encrypt.modules.plugin_system.plugin_base import (  # noqa: E402
     PluginCapability,
     PluginSecurityContext,
 )
-from openssl_encrypt.plugins.hsm.yubikey_challenge_response import (  # noqa: E402
-    YubikeyHSMPlugin,
-)
+from openssl_encrypt.plugins.hsm.yubikey_challenge_response import YubikeyHSMPlugin  # noqa: E402
 
 
 def _make_context(plugin: YubikeyHSMPlugin, slot=None) -> PluginSecurityContext:
@@ -134,11 +132,9 @@ class TestFindChallengeResponseSlot(unittest.TestCase):
 
     def test_no_devices_returns_none(self):
         plugin = YubikeyHSMPlugin()
-        with patch(
-            "ykman.device.list_all_devices", return_value=[]
-        ), patch("yubikit.core.otp.OtpConnection"), patch(
-            "yubikit.yubiotp.YubiOtpSession"
-        ):
+        with patch("ykman.device.list_all_devices", return_value=[]), patch(
+            "yubikit.core.otp.OtpConnection"
+        ), patch("yubikit.yubiotp.YubiOtpSession"):
             result = plugin._find_challenge_response_slot()
         self.assertIsNone(result)
 
@@ -184,9 +180,7 @@ class TestFindChallengeResponseSlot(unittest.TestCase):
 
     def test_enumeration_exception_returns_none(self):
         plugin = YubikeyHSMPlugin()
-        with patch(
-            "ykman.device.list_all_devices", side_effect=RuntimeError("USB error")
-        ):
+        with patch("ykman.device.list_all_devices", side_effect=RuntimeError("USB error")):
             result = plugin._find_challenge_response_slot()
         self.assertIsNone(result)
 
@@ -227,11 +221,9 @@ class TestCalculateChallengeResponse(unittest.TestCase):
         mock_session = MagicMock()
         mock_session.calculate_hmac_sha1.return_value = expected
 
-        with patch(
-            "ykman.device.list_all_devices", return_value=[device]
-        ), patch("yubikit.core.otp.OtpConnection"), patch(
-            "yubikit.yubiotp.YubiOtpSession", return_value=mock_session
-        ):
+        with patch("ykman.device.list_all_devices", return_value=[device]), patch(
+            "yubikit.core.otp.OtpConnection"
+        ), patch("yubikit.yubiotp.YubiOtpSession", return_value=mock_session):
             result = plugin._calculate_challenge_response(b"\x00" * 16, slot=1)
 
         self.assertEqual(result, expected)
@@ -239,11 +231,9 @@ class TestCalculateChallengeResponse(unittest.TestCase):
 
     def test_no_device_raises_runtime_error(self):
         plugin = YubikeyHSMPlugin()
-        with patch(
-            "ykman.device.list_all_devices", return_value=[]
-        ), patch("yubikit.core.otp.OtpConnection"), patch(
-            "yubikit.yubiotp.YubiOtpSession"
-        ):
+        with patch("ykman.device.list_all_devices", return_value=[]), patch(
+            "yubikit.core.otp.OtpConnection"
+        ), patch("yubikit.yubiotp.YubiOtpSession"):
             with self.assertRaises(RuntimeError) as cm:
                 plugin._calculate_challenge_response(b"\x00" * 16, slot=1)
         self.assertIn("No Yubikey", str(cm.exception))
@@ -254,11 +244,9 @@ class TestCalculateChallengeResponse(unittest.TestCase):
         mock_session = MagicMock()
         mock_session.calculate_hmac_sha1.side_effect = RuntimeError("touch timeout")
 
-        with patch(
-            "ykman.device.list_all_devices", return_value=[device]
-        ), patch("yubikit.core.otp.OtpConnection"), patch(
-            "yubikit.yubiotp.YubiOtpSession", return_value=mock_session
-        ):
+        with patch("ykman.device.list_all_devices", return_value=[device]), patch(
+            "yubikit.core.otp.OtpConnection"
+        ), patch("yubikit.yubiotp.YubiOtpSession", return_value=mock_session):
             with self.assertRaises(RuntimeError) as cm:
                 plugin._calculate_challenge_response(b"\x00" * 16, slot=1)
         self.assertIn("Yubikey Challenge-Response failed", str(cm.exception))
@@ -305,11 +293,9 @@ class TestGetHsmPepper(unittest.TestCase):
         mock_session.calculate_hmac_sha1.return_value = expected_response
 
         ctx = _make_context(plugin, slot=1)
-        with patch(
-            "ykman.device.list_all_devices", return_value=[device]
-        ), patch("yubikit.core.otp.OtpConnection"), patch(
-            "yubikit.yubiotp.YubiOtpSession", return_value=mock_session
-        ):
+        with patch("ykman.device.list_all_devices", return_value=[device]), patch(
+            "yubikit.core.otp.OtpConnection"
+        ), patch("yubikit.yubiotp.YubiOtpSession", return_value=mock_session):
             result = plugin.get_hsm_pepper(b"\x00" * 16, ctx)
 
         self.assertTrue(result.success)
@@ -322,17 +308,13 @@ class TestGetHsmPepper(unittest.TestCase):
         expected_response = b"\x99" * 20
 
         mock_session = MagicMock()
-        mock_session.get_config_state.return_value.is_configured.side_effect = (
-            lambda s: s == 2
-        )
+        mock_session.get_config_state.return_value.is_configured.side_effect = lambda s: s == 2
         mock_session.calculate_hmac_sha1.return_value = expected_response
 
         ctx = _make_context(plugin)  # no slot
-        with patch(
-            "ykman.device.list_all_devices", return_value=[device]
-        ), patch("yubikit.core.otp.OtpConnection"), patch(
-            "yubikit.yubiotp.YubiOtpSession", return_value=mock_session
-        ):
+        with patch("ykman.device.list_all_devices", return_value=[device]), patch(
+            "yubikit.core.otp.OtpConnection"
+        ), patch("yubikit.yubiotp.YubiOtpSession", return_value=mock_session):
             result = plugin.get_hsm_pepper(b"\x00" * 16, ctx)
 
         self.assertTrue(result.success)
@@ -358,11 +340,9 @@ class TestGetHsmPepper(unittest.TestCase):
         mock_session.calculate_hmac_sha1.return_value = expected_response
 
         ctx = _make_context(plugin)  # no slot
-        with patch(
-            "ykman.device.list_all_devices", return_value=[device]
-        ), patch("yubikit.core.otp.OtpConnection"), patch(
-            "yubikit.yubiotp.YubiOtpSession", return_value=mock_session
-        ):
+        with patch("ykman.device.list_all_devices", return_value=[device]), patch(
+            "yubikit.core.otp.OtpConnection"
+        ), patch("yubikit.yubiotp.YubiOtpSession", return_value=mock_session):
             result = plugin.get_hsm_pepper(b"\x00" * 16, ctx)
 
         self.assertTrue(result.success)
