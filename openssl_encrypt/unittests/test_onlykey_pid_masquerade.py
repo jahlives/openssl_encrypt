@@ -118,5 +118,46 @@ class TestOpenConnectionRequestsOtpConnection(unittest.TestCase):
         self.assertEqual(response, b"\x01" * 20)
 
 
+class TestNoDataRejectionMessage(unittest.TestCase):
+    """A 'No data' command rejection must produce an actionable message.
+
+    yubikit raises CommandRejectedError('No data') when the device returns
+    to idle without computing a response and without requesting touch —
+    i.e. the OnlyKey actively declined the challenge. The two real-world
+    causes (no HMAC secret in the slot; slot set to 'challenge code' mode,
+    which the raw YubiKey wire protocol cannot serve) must be surfaced
+    instead of the bare 'No data'.
+    """
+
+    def test_no_data_rejection_gets_actionable_message(self):
+        fake_otp_mod = MagicMock()
+        fake_otp_mod.OtpConnection = type("OtpConnection", (), {})
+        fake_yubiotp = MagicMock()
+        session = fake_yubiotp.YubiOtpSession.return_value
+        session.calculate_hmac_sha1.side_effect = Exception("No data")
+        device = MagicMock()
+
+        with patch.dict(
+            sys.modules,
+            {
+                "yubikit": MagicMock(),
+                "yubikit.core": MagicMock(),
+                "yubikit.core.otp": fake_otp_mod,
+                "yubikit.yubiotp": fake_yubiotp,
+            },
+        ):
+            plugin = OnlykeyHSMPlugin()
+            plugin._libs_available = True
+            with patch.object(plugin, "_list_onlykey_devices", return_value=[device]):
+                with self.assertRaises(RuntimeError) as cm:
+                    plugin._calculate_challenge_response(b"\x00" * 16, 1)
+
+        message = str(cm.exception).lower()
+        self.assertIn("rejected", message)
+        self.assertIn("challenge code", message)
+        self.assertIn("button", message)
+        self.assertIn("hmac", message)
+
+
 if __name__ == "__main__":
     unittest.main()
