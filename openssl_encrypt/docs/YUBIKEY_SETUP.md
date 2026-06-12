@@ -342,6 +342,7 @@ Tested with:
 
 ## See Also
 
+- [OnlyKey Setup](ONLYKEY_SETUP.md) - OnlyKey variant; cross-device compatible with YubiKey when both hold the same HMAC-SHA1 secret
 - [HSM Plugin Guide](HSM_PLUGIN_GUIDE.md) - Full HSM plugin system documentation
 - [Yubikey Manager Documentation](https://docs.yubico.com/software/yubikey/tools/ykman/)
 - [Yubikey Challenge-Response](https://developers.yubico.com/yubico-c/Manuals/ykpersonalize.1.html)
