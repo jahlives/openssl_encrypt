@@ -15,6 +15,7 @@
   * [Crypto Security Analysis](crypto_tool_security_analysis)
   * [HSM Plugin](HSM_PLUGIN_GUIDE)
   * [YubiKey setup](YUBIKEY_SETUP)
+  * [OnlyKey setup](ONLYKEY_SETUP)
 
 * **Development**
   * [Development Setup](development-setup)
