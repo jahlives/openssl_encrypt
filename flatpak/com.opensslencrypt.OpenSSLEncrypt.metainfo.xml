@@ -39,6 +39,11 @@
   </screenshots>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="1.4.5" date="2026-06-12" type="stable">
+      <description>
+        <p>Security dependency update: urllib3 2.7.0, cryptography 46.0.7, pillow 12.2.0, idna 3.15 — fixes for CVE-2026-44431/44432, CVE-2026-39892, a PSD decoder out-of-bounds write, and an idna DoS. New CI check keeps flatpak dependency pins aligned with the package requirements.</p>
+      </description>
+    </release>
     <release version="1.4.4" date="2026-06-12" type="stable">
       <description>
         <p>Security hardening release: authenticated keystore format, D-Bus polkit authorization, fail-closed PQC algorithm resolution, plugin sandbox enforcement, per-drive USB salts. New: cross-device YubiKey/OnlyKey HSM decryption, encrypt-CLI reconstruction from file metadata via the info action, Diceware passphrase generation, HSM-aware derive-password. Threefish extension builds on Python 3.14. Requires Python 3.11+.</p>
