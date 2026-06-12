@@ -4,7 +4,7 @@ A Python-based file encryption tool with modern ciphers, post-quantum algorithms
 
 Built to encrypt anything from grandma's pie recipe to the nuclear launch codes — with parameters to satisfy every paranoia level in between. Sensible, secure defaults out of the box; fully tunable KDF chains and cipher choices when you want to crank the cost to match the threat.
 
-> **Looking for the stable release?** The latest stable version is [v1.4.1](https://github.com/jahlives/openssl_encrypt/releases/tag/v1.4.1) on the releases/1.4.x branch.
+> **Looking for the stable release?** The latest stable version is [v1.4.5](https://github.com/jahlives/openssl_encrypt/releases/tag/v1.4.5) on the releases/1.4.x branch.
 
 ## History
 
@@ -52,20 +52,31 @@ For deep-dives into the cryptographic design and security policies of this proje
 * **Deterministic AEAD**: AES-SIV support for maximum protection against nonce-misuse.
 * **Metadata Integrity**: Cryptographic binding of headers to prevent tampering (on AEAD-supported ciphers).
 * **Hardware-Resistant KDF**: Sequential Argon2id and RandomX hashing to neutralize ASIC/GPU brute-force clusters.
+* **Hardware Token Binding (HSM)**: YubiKey/OnlyKey HMAC-SHA1 challenge-response and FIDO2 support — the hardware-derived pepper is never stored, so decryption requires the physical token. YubiKey and OnlyKey are interchangeable within a same-secret fleet.
+* **Cascade Multi-Layer Encryption**: Independent AES-256-GCM + ChaCha20-Poly1305 layers (default in the STANDARD template) for defense-in-depth.
+* **Threefish-512/1024**: Native AEAD ciphers with 256/512-bit post-quantum security margins.
+* **Streaming Chunked Encryption**: Constant-memory authenticated encryption for multi-gigabyte files (format v12).
 ---
-## 🚀 What's New in v1.4.1
+## 🚀 What's New in v1.4.5
 
-**Current Release:** v1.4.1 | **Status:** Stable | **Tests:** 1636+ passing
+**Current Release:** v1.4.5 | **Status:** Stable | **Tests:** 2315+ passing
 
-- **Streaming chunked encryption (format v12)**: Constant-memory handling of large files via AEAD chunks — memory usage stays proportional to chunk size regardless of file size
-- **`--info` CLI action**: Display format version, algorithms, and `encrypted_at` timestamp without decrypting
-- **Windows compatibility**: Full Windows support (NTFS ACLs, UTF-8 fixes, Whirlpool build)
-- **Stderr output separation**: All progress/status output now goes to stderr — `2>/dev/null` correctly suppresses everything except decrypted content
-- **Security hardening**: Key zeroization, HKDF for all derived keys (v12+), per-layer cascade salts and AAD, plugin sandbox hardening, restrictive file permissions, identity import fingerprint verification
-- **Dependency updates**: authlib 1.6.9, python-jose 3.4.0, cryptography ≥46.0.5, nltk 3.9.3
+Everything that landed since v1.4.1:
+
+- **Security dependency update (1.4.5)**: urllib3 2.7.0, cryptography 46.0.7, pillow 12.2.0, idna 3.15 — fixes for CVE-2026-44431/44432, CVE-2026-39892, a PSD decoder out-of-bounds write, and an idna DoS. A new CI check keeps flatpak dependency pins aligned with the package requirements.
+- **Security hardening batch (1.4.4)**: Authenticated v2 keystore format (HMAC-SHA256, fails closed on tampering), D-Bus per-caller authorization with polkit, fail-closed PQC algorithm resolution, plugin sandbox enforcement (file/network/process restrictions), unique per-drive salts for portable USB drives, TOFU key-change detection in the identity layer
+- **OnlyKey HSM plugin & cross-device fleet decryption (1.4.4)**: Hardware-bound key derivation via OnlyKey challenge-response; YubiKey and OnlyKey provisioned with the same HMAC-SHA1 secret decrypt each other's files (`--hsm onlykey` / `--hsm yubikey`, `--hsm-slot` overrides the stored slot)
+- **CLI tooling (1.4.4)**: `info` reconstructs the full `encrypt` command from file metadata; `derive-password` gains HSM-aware deterministic derivation and `--confirm`; Diceware passphrase generation (`generate-password --dice`, bundled EFF wordlist)
+- **Modernized defaults (1.4.2)**: STANDARD template upgraded to cascade encryption (AES-256-GCM + ChaCha20-Poly1305), RandomX + Argon2 KDFs, and Independent XOR (v11) key derivation by default
+- **Simple/Pro GUI modes (1.4.2)**: Default Simple mode shows only Encrypt/Decrypt/Settings; Pro mode restores the full crypto UI
+- **Platform support**: Python 3.11+ required; Python 3.14 fully supported including the Threefish native extension (PyO3 0.26)
 
 **Release History:**
-- **v1.4.1** (Current) - Stable release
+- **v1.4.5** (Current) - Security dependency update (CVE fixes) and flatpak pin CI guard
+- **v1.4.4** - Security hardening batch, OnlyKey HSM plugin with cross-device fleet decryption, `info` CLI reconstruction, Diceware passphrases, Python 3.14 support
+- **v1.4.3** - Flatpak GUI launcher fix
+- **v1.4.2** - Simple/Pro GUI modes, modernized STANDARD template (cascade by default, Independent XOR v11)
+- **v1.4.1** - Stable release
 - **v1.4.0** - Stable release with in-memory encryption and security-hardened rekey
 - **v1.4.0rc2** - Relax SAST rules for built-in plugins
 - **v1.4.0rc1** - First release candidate: security hardening and dependency updates
@@ -73,67 +84,6 @@ For deep-dives into the cryptographic design and security policies of this proje
 - **v1.4.0b9** - Test infrastructure improvements, Threefish cipher support, cross-version compatibility fixes
 - **v1.4.0b8** - Critical security fix: Format Version 9 with secure chained salt derivation
 - See [version.py.template](openssl_encrypt/version.py.template) for complete release history
-
-### 🚨 CRITICAL SECURITY FIX - Format Version 9 (Beta)
-
-**SECURITY ADVISORY 2026-01** - The v1.4.0 beta series includes a critical security fix for multi-round KDF configurations (implemented in v1.4.0b8, validated in v1.4.0b9).
-
-**Vulnerability**: Format versions ≤8 used predictable salt derivation that allowed attackers to precompute all round salts from plaintext metadata, enabling optimized rainbow table attacks against multi-round KDF configurations (CVSSv3 Score: 8.1 - High).
-
-**Fix**: Format Version 9 implements secure chained salt derivation where each round uses the previous round's output as salt, forcing sequential computation and preventing precomputation attacks.
-
-**Action Required**:
-- ✅ **New encryptions automatically use v9** (secure)
-- ⚠️ **Re-encrypt ALL files encrypted with format version < v9 OR code version < 1.4.0**
-- ✅ **Backward compatible** - v8 and below files can still be decrypted
-
-**Affected**: All files encrypted with metadata format versions v3-v8 or openssl_encrypt versions < 1.4.0, especially files with multi-round KDF (rounds > 1) or weak/medium passwords.
-
-See [docs/security.md](openssl_encrypt/docs/security.md) and [docs/metadata-formats.md](openssl_encrypt/docs/metadata-formats.md) for complete details.
-
----
-
-### Format Version 9: Secure Chained Salt Derivation
-
-**Critical security fix** addressing CVE-2026-01 vulnerability in multi-round KDF implementations.
-
-- **Security Impact**: Prevents precomputation attacks on multi-round KDF configurations
-- **Implementation**: Chained salt derivation using previous round's output as next round's salt
-- **Backward Compatible**: v8 and below files decrypt correctly with automatic format detection
-- **Affected Components**: All multi-round KDF/hash functions (Argon2, PBKDF2, Scrypt, Balloon, HKDF, BLAKE3, BLAKE2b, SHAKE-256)
-- **Mitigation**: Automatic upgrade for new encryptions; **re-encryption recommended for ALL files with format version < v9 or encrypted with code version < 1.4.0**
-- **Format Versions v3-v8**: Deprecated immediately (read-only support maintained)
-
-**Technical Details**:
-```python
-# VULNERABLE (v8): Predictable salt derivation
-round_salt = SHA256(base_salt + str(round_num)).digest()[:16]
-
-# SECURE (v9): Chained salt derivation
-round_salt = previous_round_output[:16]
-```
-
-**References**:
-- Security Advisory: [docs/security.md](openssl_encrypt/docs/security.md#advisory-2026-01)
-- Technical Specification: [docs/metadata-formats.md](openssl_encrypt/docs/metadata-formats.md#version-9-specification)
-- Test Coverage: `openssl_encrypt/unittests/test_salt_derivation_versions.py`
-
----
-
-### Beta Testing & Feedback
-
-v1.4.0 is currently in beta testing. We welcome feedback and bug reports:
-
-- **Test Suite:** 1535 tests passing, 0 failures
-- **Security Audit:** Format Version 9 validated across all KDF algorithms (PBKDF2, Argon2, Scrypt, Balloon)
-- **Backward Compatibility:** Fully compatible with v1.3.x encrypted files
-- **Forward Compatibility:** v1.3.5 files compatible with v1.4.x
-
-**Report Issues:**
-- GitLab: https://gitlab.rm-rf.ch/world/openssl_encrypt/-/issues
-- GitHub: https://github.com/jahlives/openssl_encrypt/issues
-
----
 
 ### Cascade Encryption (Multi-Layer Defense)
 
