@@ -754,16 +754,17 @@ def setup_encrypt_parser(subparser):
         "--hsm",
         metavar="PLUGIN",
         help="Enable HSM (Hardware Security Module) plugin for hardware-bound key derivation. "
-        "Supported: 'yubikey' (Yubikey Challenge-Response). "
+        "Supported: 'yubikey' (Yubikey Challenge-Response, slots 1..2), "
+        "'onlykey' (OnlyKey Challenge-Response, slots 1..12). "
         "The HSM adds a hardware-specific pepper to the key derivation, requiring the device "
         "for both encryption and decryption.",
     )
     hsm_group.add_argument(
         "--hsm-slot",
         type=int,
-        choices=[1, 2],
         metavar="SLOT",
-        help="Manually specify Yubikey slot (1 or 2) for Challenge-Response. "
+        help="Manually specify the Challenge-Response slot. Valid range is plugin-specific: "
+        "YubiKey 1..2, OnlyKey 1..12. "
         "If not specified, the plugin will auto-detect the configured slot.",
     )
 
@@ -1008,15 +1009,15 @@ def setup_decrypt_parser(subparser):
         "--hsm",
         metavar="PLUGIN",
         help="Enable HSM (Hardware Security Module) plugin for hardware-bound key derivation. "
-        "Supported: 'yubikey' (Yubikey Challenge-Response). "
+        "Supported: 'yubikey' (slots 1..2), 'onlykey' (slots 1..12). "
         "Required if the file was encrypted with an HSM plugin.",
     )
     hsm_group.add_argument(
         "--hsm-slot",
         type=int,
-        choices=[1, 2],
         metavar="SLOT",
-        help="Manually specify Yubikey slot (1 or 2) for Challenge-Response. "
+        help="Manually specify the Challenge-Response slot. Valid range is plugin-specific: "
+        "YubiKey 1..2, OnlyKey 1..12. "
         "If not specified, the slot will be read from file metadata or auto-detected.",
     )
 
@@ -1479,14 +1480,14 @@ def setup_rekey_parser(subparser):
         "--hsm",
         metavar="PLUGIN",
         help="Enable HSM plugin for hardware-bound key derivation. "
+        "Supported: 'yubikey' (slots 1..2), 'onlykey' (slots 1..12). "
         "Required if the file was encrypted with an HSM plugin.",
     )
     hsm_group.add_argument(
         "--hsm-slot",
         type=int,
-        choices=[1, 2],
         metavar="SLOT",
-        help="Manually specify Yubikey slot (1 or 2) for Challenge-Response.",
+        help="Manually specify the Challenge-Response slot. " "YubiKey 1..2, OnlyKey 1..12.",
     )
 
     # Remote Pepper options
@@ -1595,27 +1596,73 @@ def setup_generate_password_parser(subparser):
         type=int,
         nargs="?",
         default=32,
-        help="Password length (default: 32)",
+        help="Password length (default: 32, character-based mode only)",
     )
     subparser.add_argument(
         "--use-lowercase",
         action="store_true",
-        help="Include lowercase letters",
+        help="Include lowercase letters (character-based mode)",
     )
     subparser.add_argument(
         "--use-uppercase",
         action="store_true",
-        help="Include uppercase letters",
+        help="Include uppercase letters (character-based mode)",
     )
     subparser.add_argument(
         "--use-digits",
         action="store_true",
-        help="Include digits",
+        help="Include digits (character-based mode)",
     )
     subparser.add_argument(
         "--use-special",
         action="store_true",
-        help="Include special characters",
+        help="Include special characters (character-based mode)",
+    )
+
+    # Diceware mode (mutually exclusive with character-based flags;
+    # mutex is enforced at runtime in the handler, not by argparse, so
+    # we can produce a more actionable error message than argparse's).
+    dice_group = subparser.add_argument_group(
+        "Diceware mode",
+        "Generate a passphrase by drawing words from a wordlist "
+        "(mutually exclusive with character-based generation).",
+    )
+    dice_group.add_argument(
+        "--dice",
+        action="store_true",
+        help="Generate a Diceware-style passphrase instead of a " "character-based password",
+    )
+    dice_group.add_argument(
+        "--dice-count",
+        type=int,
+        default=10,
+        metavar="N",
+        help="Number of words in the passphrase (default: 10, ~129 bits with "
+        "the bundled EFF Large Wordlist)",
+    )
+    dice_group.add_argument(
+        "--dice-sep",
+        type=str,
+        default="",
+        metavar="SEP",
+        help='Separator between words (default: "" for maximum compatibility '
+        "with password fields that strip whitespace)",
+    )
+    dice_group.add_argument(
+        "--dice-list",
+        type=str,
+        default=None,
+        metavar="PATH",
+        help="Path to a custom wordlist (default: bundled EFF Large Wordlist). "
+        "Accepts both EFF format ('<dice>\\t<word>') and plain "
+        "one-word-per-line.",
+    )
+    dice_group.add_argument(
+        "--force-wordlist",
+        action="store_true",
+        help="Override the 1024-word minimum for custom wordlists "
+        "(small lists are otherwise rejected because they yield "
+        "less than 10 bits of entropy per word)",
     )
 
 
@@ -1649,6 +1696,38 @@ def setup_derive_password_parser(subparser):
         "--force-password",
         action="store_true",
         help="Force acceptance of weak passwords (use with caution)",
+    )
+    subparser.add_argument(
+        "--confirm",
+        action="store_true",
+        help="Prompt for the password twice and verify they match. Recommended "
+        "for derive-password since a typo would silently produce a wrong "
+        "but valid-looking derived value with no way to detect the mistake "
+        "until you try to reuse the output elsewhere.",
+    )
+
+    # HSM options — mirror the encrypt-side --hsm/--hsm-slot flags so a
+    # hardware token can contribute a pepper to the derivation.
+    hsm_group = subparser.add_argument_group(
+        "HSM Options",
+        "Mix a hardware-derived pepper into the KDF cascade. Reproducing "
+        "the output then requires the same password, the same salt, AND "
+        "the same secret loaded on the hardware token.",
+    )
+    hsm_group.add_argument(
+        "--hsm",
+        metavar="PLUGIN",
+        help="Enable HSM (Hardware Security Module) plugin for hardware-bound "
+        "key derivation. Supported: 'yubikey' (slots 1..2), 'onlykey' "
+        "(slots 1..12).",
+    )
+    hsm_group.add_argument(
+        "--hsm-slot",
+        type=int,
+        metavar="SLOT",
+        help="Manually specify the Challenge-Response slot (YubiKey 1..2, "
+        "OnlyKey 1..12). If omitted, the plugin auto-detects the configured "
+        "slot.",
     )
 
     # Salt options
@@ -2175,23 +2254,25 @@ def setup_identity_parser(subparser):
     )
     create_parser.add_argument(
         "--hsm",
-        choices=["none", "yubikey", "yubikey-only"],
+        choices=["none", "yubikey", "yubikey-only", "onlykey", "onlykey-only"],
         default="none",
         help="HSM protection for private keys: "
         "'none' (default, password only), "
-        "'yubikey' (password + Yubikey required), "
-        "'yubikey-only' (Yubikey only, no password)",
+        "'yubikey' (password + Yubikey required, slots 1..2), "
+        "'yubikey-only' (Yubikey only, no password), "
+        "'onlykey' (password + OnlyKey required, slots 1..12), "
+        "'onlykey-only' (OnlyKey only, no password)",
     )
     create_parser.add_argument(
         "--hsm-slot",
         type=int,
-        choices=[1, 2],
-        help="Yubikey slot (1 or 2, default: auto-detect)",
+        help="HSM slot for Challenge-Response. "
+        "YubiKey 1..2, OnlyKey 1..12. Default: auto-detect.",
     )
     create_parser.add_argument(
         "--no-touch",
         action="store_true",
-        help="Disable Yubikey touch requirement (less secure)",
+        help="Disable HSM touch / button-press requirement (less secure)",
     )
 
     # List identities
@@ -2218,6 +2299,14 @@ def setup_identity_parser(subparser):
     import_parser.add_argument("--file", required=True, help="JSON file to import")
     import_parser.add_argument(
         "--overwrite", action="store_true", help="Overwrite existing identity"
+    )
+    import_parser.add_argument(
+        "--allow-key-change",
+        action="store_true",
+        help="Accept a CHANGED key for an already-pinned identity (TOFU "
+        "key-substitution). Required, in addition to --overwrite, to replace a "
+        "contact's keys with different ones - only use after verifying the new "
+        "fingerprint out of band.",
     )
 
     # Delete identity
@@ -2386,6 +2475,18 @@ def setup_hsm_parser(subparser):
     # FIDO2 list devices subcommand
     hsm_subparsers.add_parser(
         "fido2-list", help="List connected FIDO2 devices and their capabilities"
+    )
+
+    # OnlyKey list devices subcommand
+    hsm_subparsers.add_parser(
+        "onlykey-list",
+        help="List connected OnlyKey devices (USB VID 0x1d50:0x60fc)",
+    )
+
+    # OnlyKey test subcommand
+    hsm_subparsers.add_parser(
+        "onlykey-test",
+        help="Test OnlyKey Challenge-Response pepper derivation with a random salt",
     )
 
     # FIDO2 unregister subcommand

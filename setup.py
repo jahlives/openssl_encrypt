@@ -19,7 +19,7 @@ this_directory = os.path.abspath(os.path.dirname(__file__))
 with open(os.path.join(this_directory, "README.md"), encoding="utf-8") as f:
     long_description = f.read()
 
-VERSION = "1.4.3"  # Define version in a variable for reuse
+VERSION = "1.4.4"  # Define version in a variable for reuse
 
 # Get git commit hash
 git_hash = "unknown"
@@ -308,16 +308,15 @@ setup(
         "Intended Audience :: Information Technology",
         "Intended Audience :: System Administrators",
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.9",
-        "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
         "Programming Language :: Python :: 3.12",
         "Programming Language :: Python :: 3.13",
+        "Programming Language :: Python :: 3.14",
         "License :: Other/Proprietary License",
         "Topic :: Security",
         "Topic :: Security :: Cryptography",
         "Topic :: Utilities",
         "Operating System :: OS Independent",
     ],
-    python_requires=">=3.9",
+    python_requires=">=3.11",
 )

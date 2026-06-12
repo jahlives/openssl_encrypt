@@ -22,6 +22,7 @@ import json
 import logging
 import os
 import platform
+import secrets
 import shutil
 import tempfile
 import time
@@ -87,7 +88,13 @@ class USBDriveCreator:
 
     # Integrity constants
     INTEGRITY_FILE = ".integrity"
+    SALT_FILE = "salt.bin"  # per-drive KDF salt (plaintext; salts are not secret)
     VERSION = "1.0"
+
+    # Legacy fixed salt used by pre-fix drives. Retained ONLY so that USB drives
+    # created before per-drive salts were introduced remain decryptable/verifiable.
+    # New drives MUST use a random per-drive salt (see _load_or_create_salt).
+    _LEGACY_FIXED_SALT = b"openssl_encrypt_usb_v1.0_salt_2024"
 
     def __init__(self, security_profile: USBSecurityProfile = USBSecurityProfile.STANDARD):
         """
@@ -163,8 +170,11 @@ class USBDriveCreator:
             # Copy entire openssl_encrypt project for full CLI compatibility
             project_copy_info = self._copy_openssl_encrypt_project(portable_root)
 
-            # Generate encryption key from password using hash chaining
-            encryption_key = self._derive_encryption_key(secure_password, hash_config)
+            # Generate a unique per-drive KDF salt (defeats precomputation and
+            # ensures two drives with the same password do not share a key), then
+            # derive the encryption key from the password using hash chaining.
+            salt = self._load_or_create_salt(portable_root, create=True)
+            encryption_key = self._derive_encryption_key(secure_password, hash_config, salt)
 
             # Create portable configuration
             config = self._create_portable_config(custom_config, include_logs)
@@ -291,7 +301,9 @@ class USBDriveCreator:
 
             # Create secure password key
             secure_password = SecureBytes(password.encode("utf-8"))
-            encryption_key = self._derive_encryption_key(secure_password, hash_config)
+            # Load this drive's salt (legacy fixed salt for pre-fix drives).
+            salt = self._load_or_create_salt(portable_root, create=False)
+            encryption_key = self._derive_encryption_key(secure_password, hash_config, salt)
 
             # Verify integrity file
             integrity_path = portable_root / self.INTEGRITY_FILE
@@ -309,25 +321,70 @@ class USBDriveCreator:
         except Exception as e:
             raise USBCreationError(f"USB verification failed: {e}")
 
+    def _load_or_create_salt(self, portable_root: Path, create: bool = False) -> bytes:
+        """Load this drive's per-drive KDF salt, or create one at USB-creation time.
+
+        Salts are not secret, so the file is stored in plaintext. A unique random
+        salt per drive defeats precomputation/rainbow-table attacks and ensures two
+        drives sharing a password do not share a key.
+
+        Backward compatibility: drives created before per-drive salts existed have no
+        salt file; for those (create=False) we fall back to the legacy fixed salt so
+        they remain verifiable. New drives (create=True) always get a random salt.
+
+        Args:
+            portable_root: The portable installation root on the USB drive.
+            create: If True, generate and persist a new random salt when none exists.
+
+        Returns:
+            The salt bytes to use for key derivation.
+        """
+        salt_path = portable_root / self.CONFIG_DIR / self.SALT_FILE
+
+        if salt_path.exists():
+            salt = salt_path.read_bytes()
+            if len(salt) >= 16:
+                return salt
+            logger.warning("USB salt file is too short; treating drive as un-salted")
+
+        if create:
+            salt = secrets.token_bytes(self.SALT_LENGTH)
+            salt_path.parent.mkdir(parents=True, exist_ok=True)
+            salt_path.write_bytes(salt)
+            return salt
+
+        # Pre-fix drive without a salt file: use the legacy fixed salt for compat.
+        return self._LEGACY_FIXED_SALT
+
     def _derive_encryption_key(
-        self, password: SecureBytes, hash_config: Optional[Dict] = None
+        self,
+        password: SecureBytes,
+        hash_config: Optional[Dict] = None,
+        salt: Optional[bytes] = None,
     ) -> bytes:
         """
         Derive encryption key from password using complex hash chaining system
 
         Uses the same multi-hash approach as the main CLI for consistency.
         Falls back to PBKDF2 if no hash config provided or if import fails.
+
+        Args:
+            password: The master password.
+            hash_config: Hash chaining configuration (same format as main CLI).
+            salt: Per-drive KDF salt. If None, the legacy fixed salt is used (only
+                appropriate for reading pre-fix drives); callers creating or verifying
+                a drive must pass the drive's salt from _load_or_create_salt().
         """
+        if salt is None:
+            salt = self._LEGACY_FIXED_SALT
+
         if hash_config is None:
             # Fallback to simple PBKDF2 if no hash config provided
-            return self._derive_key_pbkdf2_fallback(password)
+            return self._derive_key_pbkdf2_fallback(password, salt)
 
         try:
             # Import the complex hash chaining functionality from crypt_core
             from ..crypt_core import multi_hash_password
-
-            # Use fixed salt for USB drives (deterministic but unique per USB)
-            salt = b"openssl_encrypt_usb_v1.0_salt_2024"
 
             # Use the same multi-hash system as main CLI
             hashed_password = multi_hash_password(
@@ -350,16 +407,24 @@ class USBDriveCreator:
 
         except ImportError:
             # Fallback if crypt_core not available
-            return self._derive_key_pbkdf2_fallback(password)
+            return self._derive_key_pbkdf2_fallback(password, salt)
         except Exception as e:
             # Log the error but continue with fallback
             logger.warning(f"Complex hash derivation failed, using PBKDF2 fallback: {e}")
-            return self._derive_key_pbkdf2_fallback(password)
+            return self._derive_key_pbkdf2_fallback(password, salt)
 
-    def _derive_key_pbkdf2_fallback(self, password: SecureBytes) -> bytes:
-        """Fallback PBKDF2 key derivation for backwards compatibility"""
-        # Generate or use fixed salt for deterministic key derivation
-        salt = b"openssl_encrypt_usb_v1.0_salt_2024"  # Fixed salt for USB drives
+    def _derive_key_pbkdf2_fallback(
+        self, password: SecureBytes, salt: Optional[bytes] = None
+    ) -> bytes:
+        """Fallback PBKDF2 key derivation.
+
+        Args:
+            password: The master password.
+            salt: Per-drive KDF salt. If None, the legacy fixed salt is used (only
+                appropriate for reading pre-fix drives).
+        """
+        if salt is None:
+            salt = self._LEGACY_FIXED_SALT
 
         # Adjust iterations based on security profile
         iterations = {
@@ -732,7 +797,8 @@ fi
 
             # Try to decrypt with PBKDF2 (fallback method)
             secure_password = SecureBytes(password.encode("utf-8"))
-            pbkdf2_key = self._derive_key_pbkdf2_fallback(secure_password)
+            salt = self._load_or_create_salt(portable_root, create=False)
+            pbkdf2_key = self._derive_key_pbkdf2_fallback(secure_password, salt)
 
             with open(integrity_path, "rb") as f:
                 encrypted_data = f.read()

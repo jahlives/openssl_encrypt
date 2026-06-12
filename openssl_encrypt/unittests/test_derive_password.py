@@ -496,5 +496,303 @@ class TestDerivePasswordKDFIntegration(unittest.TestCase):
         self.assertRegex(output, r"^[0-9a-f]+$")
 
 
+class TestDerivePasswordConfirm(unittest.TestCase):
+    """The new --confirm flag: prompt twice and verify the two entries match."""
+
+    FIXED_SALT = "aa" * 16
+
+    def _run_with_two_prompts(self, first: str, second: str, extra_args=None):
+        """Run derive-password --confirm with two mocked getpass returns."""
+        extra_args = extra_args or []
+        base_args = [
+            "crypt.py",
+            "--quiet",
+            "derive-password",
+            "--force-password",
+            "--confirm",
+            "--salt",
+            self.FIXED_SALT,
+        ] + extra_args
+        sys.argv = base_args
+
+        stdout_capture = io.StringIO()
+        stderr_capture = io.StringIO()
+        old_stdout, old_stderr = sys.stdout, sys.stderr
+        exit_code = None
+        try:
+            sys.stdout = stdout_capture
+            sys.stderr = stderr_capture
+            with mock.patch("getpass.getpass", side_effect=[first, second]):
+                with mock.patch("sys.exit") as mock_exit:
+                    mock_exit.side_effect = SystemExit
+                    try:
+                        cli_main()
+                    except SystemExit as e:
+                        exit_code = (
+                            e.code
+                            if e.code is not None
+                            else (mock_exit.call_args[0][0] if mock_exit.called else 0)
+                        )
+        finally:
+            sys.stdout, sys.stderr = old_stdout, old_stderr
+        return exit_code, stdout_capture.getvalue(), stderr_capture.getvalue()
+
+    def test_confirm_matching_passwords_succeeds(self):
+        exit_code, stdout, stderr = self._run_with_two_prompts(
+            "samepass!", "samepass!"
+        )
+        self.assertEqual(exit_code, 0, f"stderr: {stderr}")
+        self.assertRegex(stdout.strip(), r"^[0-9a-f]+$")
+
+    def test_confirm_mismatched_passwords_errors(self):
+        exit_code, _stdout, stderr = self._run_with_two_prompts(
+            "first-typo", "second-typo"
+        )
+        self.assertNotEqual(exit_code, 0)
+        self.assertIn("match", stderr.lower())
+
+    def test_confirm_with_password_flag_no_double_prompt(self):
+        """--password set on CLI: --confirm is harmless no-op (no prompt)."""
+        sys.argv = [
+            "crypt.py",
+            "--quiet",
+            "derive-password",
+            "--force-password",
+            "--confirm",
+            "--password",
+            "supplied-on-cli",
+            "--salt",
+            self.FIXED_SALT,
+        ]
+        stdout_capture = io.StringIO()
+        stderr_capture = io.StringIO()
+        old_stdout, old_stderr = sys.stdout, sys.stderr
+        exit_code = None
+        try:
+            sys.stdout = stdout_capture
+            sys.stderr = stderr_capture
+            # If --confirm were to prompt despite --password being set,
+            # getpass would be called and our (intentional) empty
+            # side_effect list would raise StopIteration.
+            with mock.patch("getpass.getpass", side_effect=[]):
+                with mock.patch("sys.exit") as mock_exit:
+                    mock_exit.side_effect = SystemExit
+                    try:
+                        cli_main()
+                    except SystemExit as e:
+                        exit_code = (
+                            e.code
+                            if e.code is not None
+                            else (mock_exit.call_args[0][0] if mock_exit.called else 0)
+                        )
+        finally:
+            sys.stdout, sys.stderr = old_stdout, old_stderr
+        self.assertEqual(exit_code, 0, f"stderr: {stderr_capture.getvalue()}")
+        self.assertRegex(stdout_capture.getvalue().strip(), r"^[0-9a-f]+$")
+
+
+class TestDerivePasswordHsm(unittest.TestCase):
+    """The --hsm flag plumbs a hardware-derived pepper into the KDF cascade."""
+
+    FIXED_SALT = "aa" * 16
+
+    def _run(self, extra_args, password="testpassword123!", patches=()):
+        """Run derive-password with optional unittest.mock.patch contexts.
+
+        Always enables Argon2 with minimal cost so generate_key actually
+        runs the KDF — without any KDF/hash flags, derive-password
+        short-circuits to ``password || salt`` and the HSM pepper would
+        be truncated off the end, defeating the test's purpose.
+        """
+        import contextlib
+
+        base = [
+            "crypt.py",
+            "--quiet",
+            "derive-password",
+            "--force-password",
+            "--password",
+            password,
+            "--salt",
+            self.FIXED_SALT,
+            "--enable-argon2",
+            "--argon2-rounds",
+            "1",
+            "--argon2-time",
+            "1",
+            "--argon2-memory",
+            "8",
+            "--argon2-parallelism",
+            "1",
+        ]
+        sys.argv = base + extra_args
+        stdout_capture, stderr_capture = io.StringIO(), io.StringIO()
+        old_stdout, old_stderr = sys.stdout, sys.stderr
+        exit_code = None
+        try:
+            sys.stdout = stdout_capture
+            sys.stderr = stderr_capture
+            with contextlib.ExitStack() as stack:
+                for p in patches:
+                    stack.enter_context(p)
+                with mock.patch("sys.exit") as mock_exit:
+                    mock_exit.side_effect = SystemExit
+                    try:
+                        cli_main()
+                    except SystemExit as e:
+                        exit_code = (
+                            e.code
+                            if e.code is not None
+                            else (mock_exit.call_args[0][0] if mock_exit.called else 0)
+                        )
+        finally:
+            sys.stdout, sys.stderr = old_stdout, old_stderr
+        return exit_code, stdout_capture.getvalue(), stderr_capture.getvalue()
+
+    def _mock_yubikey_plugin(self, pepper: bytes):
+        """Patch YubikeyHSMPlugin so its get_hsm_pepper returns a fixed pepper."""
+        from openssl_encrypt.modules.plugin_system.plugin_base import PluginResult
+
+        fake_plugin = mock.MagicMock()
+        fake_plugin.plugin_id = "yubikey_hsm"
+        fake_plugin.name = "Yubikey Challenge-Response HSM"
+        fake_plugin.get_required_capabilities.return_value = set()
+        fake_plugin.initialize.return_value = PluginResult.success_result("initialized")
+        fake_plugin.get_hsm_pepper.return_value = PluginResult.success_result(
+            "ok",
+            data={"hsm_pepper": pepper, "slot": 1},
+        )
+        return mock.patch(
+            "openssl_encrypt.plugins.hsm.yubikey_challenge_response.YubikeyHSMPlugin",
+            return_value=fake_plugin,
+        )
+
+    def test_hsm_yubikey_alters_output(self):
+        """With same password+salt, --hsm yubikey produces a different output."""
+        # Run 1: no HSM
+        rc1, out1, _err1 = self._run([])
+        self.assertEqual(rc1, 0)
+
+        # Run 2: HSM yubikey with a fixed pepper
+        rc2, out2, _err2 = self._run(
+            ["--hsm", "yubikey"],
+            patches=[self._mock_yubikey_plugin(b"\xab" * 20)],
+        )
+        self.assertEqual(rc2, 0)
+        self.assertNotEqual(out1.strip(), out2.strip())
+
+    def test_hsm_yubikey_deterministic_for_same_pepper(self):
+        """Same pepper → same output (the property the use case needs)."""
+        pepper = b"\xcd" * 20
+        rc1, out1, _ = self._run(
+            ["--hsm", "yubikey"],
+            patches=[self._mock_yubikey_plugin(pepper)],
+        )
+        rc2, out2, _ = self._run(
+            ["--hsm", "yubikey"],
+            patches=[self._mock_yubikey_plugin(pepper)],
+        )
+        self.assertEqual(rc1, 0)
+        self.assertEqual(rc2, 0)
+        self.assertEqual(out1.strip(), out2.strip())
+
+    def test_hsm_yubikey_different_peppers_differ(self):
+        """Different peppers → different outputs."""
+        rc1, out1, _ = self._run(
+            ["--hsm", "yubikey"],
+            patches=[self._mock_yubikey_plugin(b"\x11" * 20)],
+        )
+        rc2, out2, _ = self._run(
+            ["--hsm", "yubikey"],
+            patches=[self._mock_yubikey_plugin(b"\x22" * 20)],
+        )
+        self.assertEqual(rc1, 0)
+        self.assertEqual(rc2, 0)
+        self.assertNotEqual(out1.strip(), out2.strip())
+
+    def test_unknown_hsm_value_errors(self):
+        rc, _out, err = self._run(["--hsm", "no-such-plugin"])
+        self.assertNotEqual(rc, 0)
+        self.assertIn("hsm", err.lower())
+
+
+class TestDerivePasswordHsmRandomSaltReminder(unittest.TestCase):
+    """
+    When --hsm is set without --salt (random salt mode), emit a stderr
+    reminder so the user knows reproducing the output requires the same
+    password, the same salt, AND the same hardware-loaded secret.
+    """
+
+    def _mock_yubikey_plugin(self, pepper: bytes = b"\xaa" * 20):
+        from openssl_encrypt.modules.plugin_system.plugin_base import PluginResult
+
+        fake = mock.MagicMock()
+        fake.plugin_id = "yubikey_hsm"
+        fake.name = "Yubikey Challenge-Response HSM"
+        fake.get_required_capabilities.return_value = set()
+        fake.initialize.return_value = PluginResult.success_result("initialized")
+        fake.get_hsm_pepper.return_value = PluginResult.success_result(
+            "ok",
+            data={"hsm_pepper": pepper, "slot": 1},
+        )
+        return mock.patch(
+            "openssl_encrypt.plugins.hsm.yubikey_challenge_response.YubikeyHSMPlugin",
+            return_value=fake,
+        )
+
+    def _run(self, extra_args):
+        import contextlib
+
+        base = [
+            "crypt.py",
+            "--quiet",
+            "derive-password",
+            "--force-password",
+            "--password",
+            "testpassword123!",
+        ] + extra_args
+        sys.argv = base
+        stdout_capture, stderr_capture = io.StringIO(), io.StringIO()
+        old_stdout, old_stderr = sys.stdout, sys.stderr
+        exit_code = None
+        try:
+            sys.stdout, sys.stderr = stdout_capture, stderr_capture
+            with contextlib.ExitStack() as stack:
+                stack.enter_context(self._mock_yubikey_plugin())
+                with mock.patch("sys.exit") as mock_exit:
+                    mock_exit.side_effect = SystemExit
+                    try:
+                        cli_main()
+                    except SystemExit as e:
+                        exit_code = (
+                            e.code
+                            if e.code is not None
+                            else (mock_exit.call_args[0][0] if mock_exit.called else 0)
+                        )
+        finally:
+            sys.stdout, sys.stderr = old_stdout, old_stderr
+        return exit_code, stdout_capture.getvalue(), stderr_capture.getvalue()
+
+    def test_hsm_with_random_salt_emits_reminder(self):
+        """--hsm + no --salt → reminder about three reproducibility inputs."""
+        rc, _out, err = self._run(["--hsm", "yubikey"])
+        self.assertEqual(rc, 0)
+        err_lower = err.lower()
+        self.assertIn("hardware token", err_lower)
+        # The reminder must mention all three reproducibility inputs:
+        self.assertIn("password", err_lower)
+        self.assertIn("salt", err_lower)
+        self.assertIn("secret", err_lower)
+
+    def test_hsm_with_explicit_salt_does_not_emit_reminder(self):
+        """--hsm + explicit --salt → user already controls salt; no nag."""
+        rc, _out, err = self._run(
+            ["--hsm", "yubikey", "--salt", "bb" * 16]
+        )
+        self.assertEqual(rc, 0)
+        # The reminder phrase must not appear.
+        self.assertNotIn("hardware token", err.lower())
+
+
 if __name__ == "__main__":
     unittest.main()

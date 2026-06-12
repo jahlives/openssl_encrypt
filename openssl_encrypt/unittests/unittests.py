@@ -20,34 +20,21 @@ import sys
 import tempfile
 import time
 import unittest
-import warnings
 
-# Suppress specific deprecation warnings during tests
-# First try with Python warnings module
-warnings.filterwarnings("ignore", category=DeprecationWarning)
-warnings.filterwarnings("ignore", category=UserWarning)
-
-# Also use pytest markers if pytest is available
+# Suppress noisy deprecation/user warnings for the tests in THIS module only.
+# Never mutate the global warnings state here (warnings.filterwarnings or
+# monkeypatching warnings.warn at import time) - this module is imported into
+# the same process as every other test module, and a global patch silently
+# breaks all pytest.warns()/assertWarns() based tests that run after it.
 try:
     import pytest
 
-    pytestmark = pytest.mark.filterwarnings("ignore::DeprecationWarning")
-    pytestmark = pytest.mark.filterwarnings("ignore::UserWarning")
-except (ImportError, AttributeError):
+    pytestmark = [
+        pytest.mark.filterwarnings("ignore::DeprecationWarning"),
+        pytest.mark.filterwarnings("ignore::UserWarning"),
+    ]
+except ImportError:
     pass
-
-# Monkey patch the warnings module for tests
-original_warn = warnings.warn
-
-
-def silent_warn(message, category=None, stacklevel=1, source=None):
-    # Only log to debug instead of showing warning
-    if category == DeprecationWarning or "Algorithm" in str(message):
-        return
-    return original_warn(message, category, stacklevel, source)
-
-
-warnings.warn = silent_warn
 import base64
 import json
 import secrets
@@ -369,38 +356,35 @@ class TestCryptCore(unittest.TestCase):
         # Test password
         self.test_password = b"TestPassword123!"
 
-        # Define some hash configs for testing
+        # Define some hash configs for testing.
+        # encrypt_file expects the FLAT hash_config shape (like
+        # test_algorithms.py uses) - the nested derivation_config shape
+        # produced files that failed to decrypt.
         self.basic_hash_config = {
-            "derivation_config": {
-                "hash_config": {
-                    "sha512": 0,  # Reduced from potentially higher values
-                    "sha256": 0,
-                    "sha3_256": 0,  # Reduced from potentially higher values
-                    "sha3_512": 0,
-                    "blake2b": 0,  # Added for testing new hash function
-                    "shake256": 0,  # Added for testing new hash function
-                    "whirlpool": 0,
-                },
-                "kdf_config": {
-                    "scrypt": {
-                        "enabled": False,
-                        "n": 1024,  # Reduced from potentially higher values
-                        "r": 8,
-                        "p": 1,
-                        "rounds": 1,
-                    },
-                    "argon2": {
-                        "enabled": False,
-                        "time_cost": 1,
-                        "memory_cost": 8192,
-                        "parallelism": 1,
-                        "hash_len": 32,
-                        "type": 2,  # Argon2id
-                        "rounds": 1,
-                    },
-                    "pbkdf2_iterations": 1000,  # Reduced for testing
-                },
-            }
+            "sha512": 0,  # Reduced from potentially higher values
+            "sha256": 0,
+            "sha3_256": 0,  # Reduced from potentially higher values
+            "sha3_512": 0,
+            "blake2b": 0,  # Added for testing new hash function
+            "shake256": 0,  # Added for testing new hash function
+            "whirlpool": 0,
+            "scrypt": {
+                "enabled": False,
+                "n": 1024,  # Reduced from potentially higher values
+                "r": 8,
+                "p": 1,
+                "rounds": 1,
+            },
+            "argon2": {
+                "enabled": False,
+                "time_cost": 1,
+                "memory_cost": 8192,
+                "parallelism": 1,
+                "hash_len": 32,
+                "type": 2,  # Argon2id
+                "rounds": 1,
+            },
+            "pbkdf2_iterations": 1000,  # Reduced for testing
         }
 
         # Define stronger hash config for specific tests
@@ -429,34 +413,51 @@ class TestCryptCore(unittest.TestCase):
         # }
 
         self.strong_hash_config = {
+            "sha512": 1000,
+            "sha256": 0,
+            "sha3_256": 1000,
+            "sha3_512": 0,
+            "blake2b": 500,
+            "shake256": 500,
+            "whirlpool": 0,
+            "scrypt": {
+                "enabled": True,
+                "n": 4096,  # Lower value for faster tests
+                "r": 8,
+                "p": 1,
+                "rounds": 1,
+            },
+            "argon2": {
+                "enabled": True,
+                "time_cost": 1,  # Low time cost for tests
+                "memory_cost": 8192,  # Lower memory for tests
+                "parallelism": 1,
+                "hash_len": 32,
+                "type": 2,  # Argon2id
+                "rounds": 1,
+            },
+            "pbkdf2_iterations": 1000,  # Use low value for faster tests
+        }
+
+        # Nested v4 companion of basic_hash_config for APIs that take the
+        # metadata-internal format (multi_hash_password), built from the
+        # flat config so the two can never drift apart
+        _hash_keys = (
+            "sha512",
+            "sha256",
+            "sha3_256",
+            "sha3_512",
+            "blake2b",
+            "shake256",
+            "whirlpool",
+        )
+        self.basic_hash_config_nested = {
             "derivation_config": {
-                "hash_config": {
-                    "sha512": 1000,
-                    "sha256": 0,
-                    "sha3_256": 1000,
-                    "sha3_512": 0,
-                    "blake2b": 500,
-                    "shake256": 500,
-                    "whirlpool": 0,
-                },
+                "hash_config": {k: self.basic_hash_config[k] for k in _hash_keys},
                 "kdf_config": {
-                    "scrypt": {
-                        "enabled": True,
-                        "n": 4096,  # Lower value for faster tests
-                        "r": 8,
-                        "p": 1,
-                        "rounds": 1,
-                    },
-                    "argon2": {
-                        "enabled": True,
-                        "time_cost": 1,  # Low time cost for tests
-                        "memory_cost": 8192,  # Lower memory for tests
-                        "parallelism": 1,
-                        "hash_len": 32,
-                        "type": 2,  # Argon2id
-                        "rounds": 1,
-                    },
-                    "pbkdf2_iterations": 1000,  # Use low value for faster tests
+                    "scrypt": self.basic_hash_config["scrypt"],
+                    "argon2": self.basic_hash_config["argon2"],
+                    "pbkdf2_iterations": self.basic_hash_config["pbkdf2_iterations"],
                 },
             }
         }
@@ -603,10 +604,7 @@ class TestCryptCore(unittest.TestCase):
         # In a future PR, we can fix the actual implementation to work with V4 format
 
         # Skip test if Argon2 is required but not available
-        if (
-            self.strong_hash_config["derivation_config"]["kdf_config"]["argon2"]["enabled"]
-            and not ARGON2_AVAILABLE
-        ):
+        if self.strong_hash_config["argon2"]["enabled"] and not ARGON2_AVAILABLE:
             self.skipTest("Argon2 is not available")
 
         # Define output files
@@ -815,10 +813,10 @@ class TestCryptCore(unittest.TestCase):
         config1 = {
             "derivation_config": {
                 "hash_config": {
-                    **self.basic_hash_config["derivation_config"]["hash_config"],
+                    **self.basic_hash_config_nested["derivation_config"]["hash_config"],
                     "sha256": 100,  # Add SHA-256 with 100 rounds
                 },
-                "kdf_config": self.basic_hash_config["derivation_config"]["kdf_config"],
+                "kdf_config": self.basic_hash_config_nested["derivation_config"]["kdf_config"],
             }
         }
 
@@ -832,10 +830,10 @@ class TestCryptCore(unittest.TestCase):
         config2 = {
             "derivation_config": {
                 "hash_config": {
-                    **self.basic_hash_config["derivation_config"]["hash_config"],
+                    **self.basic_hash_config_nested["derivation_config"]["hash_config"],
                     "sha512": 100,  # Add SHA-512 with 100 rounds
                 },
-                "kdf_config": self.basic_hash_config["derivation_config"]["kdf_config"],
+                "kdf_config": self.basic_hash_config_nested["derivation_config"]["kdf_config"],
             }
         }
 
@@ -861,10 +859,10 @@ class TestCryptCore(unittest.TestCase):
         config3 = {
             "derivation_config": {
                 "hash_config": {
-                    **self.basic_hash_config["derivation_config"]["hash_config"],
+                    **self.basic_hash_config_nested["derivation_config"]["hash_config"],
                     "sha3_256": 100,  # Add SHA3-256 with 100 rounds
                 },
-                "kdf_config": self.basic_hash_config["derivation_config"]["kdf_config"],
+                "kdf_config": self.basic_hash_config_nested["derivation_config"]["kdf_config"],
             }
         }
 
@@ -880,11 +878,13 @@ class TestCryptCore(unittest.TestCase):
         # Create a proper v4 format hash config with Scrypt
         config4 = {
             "derivation_config": {
-                "hash_config": self.basic_hash_config["derivation_config"]["hash_config"],
+                "hash_config": self.basic_hash_config_nested["derivation_config"]["hash_config"],
                 "kdf_config": {
-                    **self.basic_hash_config["derivation_config"]["kdf_config"],
+                    **self.basic_hash_config_nested["derivation_config"]["kdf_config"],
                     "scrypt": {
-                        **self.basic_hash_config["derivation_config"]["kdf_config"]["scrypt"],
+                        **self.basic_hash_config_nested["derivation_config"]["kdf_config"][
+                            "scrypt"
+                        ],
                         "enabled": True,
                         "n": 1024,  # Low value for testing
                     },
@@ -905,11 +905,15 @@ class TestCryptCore(unittest.TestCase):
             # Create a proper v4 format hash config with Argon2
             config5 = {
                 "derivation_config": {
-                    "hash_config": self.basic_hash_config["derivation_config"]["hash_config"],
+                    "hash_config": self.basic_hash_config_nested["derivation_config"][
+                        "hash_config"
+                    ],
                     "kdf_config": {
-                        **self.basic_hash_config["derivation_config"]["kdf_config"],
+                        **self.basic_hash_config_nested["derivation_config"]["kdf_config"],
                         "argon2": {
-                            **self.basic_hash_config["derivation_config"]["kdf_config"]["argon2"],
+                            **self.basic_hash_config_nested["derivation_config"]["kdf_config"][
+                                "argon2"
+                            ],
                             "enabled": True,
                         },
                     },
@@ -929,10 +933,10 @@ class TestCryptCore(unittest.TestCase):
         config6 = {
             "derivation_config": {
                 "hash_config": {
-                    **self.basic_hash_config["derivation_config"]["hash_config"],
+                    **self.basic_hash_config_nested["derivation_config"]["hash_config"],
                     "blake2b": 100,  # Add BLAKE2b with 100 rounds
                 },
-                "kdf_config": self.basic_hash_config["derivation_config"]["kdf_config"],
+                "kdf_config": self.basic_hash_config_nested["derivation_config"]["kdf_config"],
             }
         }
 
@@ -949,10 +953,10 @@ class TestCryptCore(unittest.TestCase):
         config7 = {
             "derivation_config": {
                 "hash_config": {
-                    **self.basic_hash_config["derivation_config"]["hash_config"],
+                    **self.basic_hash_config_nested["derivation_config"]["hash_config"],
                     "shake256": 100,  # Add SHAKE-256 with 100 rounds
                 },
-                "kdf_config": self.basic_hash_config["derivation_config"]["kdf_config"],
+                "kdf_config": self.basic_hash_config_nested["derivation_config"]["kdf_config"],
             }
         }
 
@@ -2387,6 +2391,12 @@ class TestArgon2KdfVersion(unittest.TestCase):
 
     def setUp(self):
         """Set up test environment."""
+        # These tests exercise the AEAD whole-store keystore from
+        # pqc_keystore.py - NOT keystore_cli.PQCKeystore (same class name)
+        # that the module-level import provides
+        from openssl_encrypt.modules.pqc_keystore import PQCKeystore as AeadPQCKeystore
+
+        self.keystore_cls = AeadPQCKeystore
         self.test_dir = tempfile.mkdtemp()
         self.keystore_path = os.path.join(self.test_dir, "test_kdf_version.pqc")
         self.keystore_password = "TestKdfVersionPassword123!"
@@ -2458,11 +2468,11 @@ class TestArgon2KdfVersion(unittest.TestCase):
     @unittest.skipUnless(ARGON2_AVAILABLE, "argon2-cffi not available")
     def test_new_keystore_uses_kdf_v2(self):
         """Test that newly created keystores use kdf_version 2."""
-        keystore = PQCKeystore(self.keystore_path)
+        keystore = self.keystore_cls(self.keystore_path)
         keystore.create_keystore(self.keystore_password)
 
         # Reload and check the stored params
-        keystore2 = PQCKeystore(self.keystore_path)
+        keystore2 = self.keystore_cls(self.keystore_path)
         keystore2.load_keystore(self.keystore_password)
 
         protection = keystore2.keystore_data["protection"]
@@ -2471,75 +2481,128 @@ class TestArgon2KdfVersion(unittest.TestCase):
 
     @unittest.skipUnless(ARGON2_AVAILABLE, "argon2-cffi not available")
     def test_legacy_v1_keystore_loads_and_upgrades(self):
-        """Test that a v1 keystore can be loaded, and saving upgrades it to v2."""
+        """Test the legacy (no kdf_version) load fallback and v2 upgrade on save.
+
+        The real v1 derivation (PasswordHasher.hash) salts randomly on every
+        call, so a genuine v1 keystore can never be re-derived/decrypted -
+        that non-determinism is exactly why kdf_version 2 exists. To exercise
+        the legacy-fallback and upgrade plumbing deterministically, the v1
+        branch of _argon2_derive_key is patched to a fixed key.
+        """
+        import hashlib
+
+        from openssl_encrypt.modules import pqc_keystore as pk
+
+        real_derive = pk._argon2_derive_key
+        fixed_v1_key = hashlib.sha256(b"deterministic-v1-test-key").digest()
+
+        def deterministic_derive(password, salt, argon2_params, kdf_version=2):
+            if kdf_version < 2:
+                return fixed_v1_key
+            return real_derive(password, salt, argon2_params, kdf_version)
+
+        with mock.patch.object(pk, "_argon2_derive_key", side_effect=deterministic_derive):
+            # Create a keystore normally (v2)
+            keystore = self.keystore_cls(self.keystore_path)
+            keystore.create_keystore(self.keystore_password)
+
+            # Manually downgrade the keystore to v1 by re-encrypting with v1 derivation
+            keystore.load_keystore(self.keystore_password)
+            protection = keystore.keystore_data["protection"]
+            params = protection["params"]
+
+            # Remove kdf_version to simulate a legacy keystore
+            params.pop("kdf_version", None)
+
+            # Re-encrypt the keystore data with the (deterministic) v1 key
+            nonce = secrets.token_bytes(12)
+            params["nonce"] = base64.b64encode(nonce).decode("utf-8")
+            plaintext = json.dumps(keystore.keystore_data).encode("utf-8")
+
+            header = {"protection": protection}
+
+            if protection["method"] == "scrypt_chacha20":
+                from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305 as CP
+
+                cipher = CP(fixed_v1_key)
+            else:
+                from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+                cipher = AESGCM(fixed_v1_key)
+            ciphertext = cipher.encrypt(
+                nonce, plaintext, associated_data=json.dumps(header).encode("utf-8")
+            )
+
+            # Write the v1 keystore file
+            header_json = json.dumps(header).encode("utf-8")
+            with open(self.keystore_path, "wb") as f:
+                f.write(len(header_json).to_bytes(4, byteorder="big"))
+                f.write(header_json)
+                f.write(ciphertext)
+
+            # Now load the v1 keystore — should succeed with legacy fallback
+            keystore2 = self.keystore_cls(self.keystore_path)
+            keystore2.load_keystore(self.keystore_password)
+            self.assertIsNotNone(keystore2.keystore_data)
+
+            # Save it — should upgrade to v2
+            keystore2.save_keystore(self.keystore_password)
+
+        # Reload OUTSIDE the patch: a real v2 keystore must load with the
+        # genuine (deterministic) v2 derivation
+        keystore3 = self.keystore_cls(self.keystore_path)
+        keystore3.load_keystore(self.keystore_password)
+        upgraded_params = keystore3.keystore_data["protection"]["params"]
+        self.assertEqual(upgraded_params.get("kdf_version"), 2)
+
+    @unittest.skipUnless(ARGON2_AVAILABLE, "argon2-cffi not available")
+    def test_real_v1_keystore_is_unrecoverable(self):
+        """Document reality: the true v1 KDF is non-deterministic, so a real
+        v1 keystore can never be decrypted again - loading must fail."""
         from openssl_encrypt.modules.pqc_keystore import _argon2_derive_key
 
-        # Create a keystore normally (v2)
-        keystore = PQCKeystore(self.keystore_path)
+        keystore = self.keystore_cls(self.keystore_path)
         keystore.create_keystore(self.keystore_password)
-
-        # Manually downgrade the keystore to v1 by re-encrypting with v1 derivation
         keystore.load_keystore(self.keystore_password)
         protection = keystore.keystore_data["protection"]
         params = protection["params"]
-
-        # Remove kdf_version to simulate a legacy keystore
         params.pop("kdf_version", None)
 
-        # Re-derive key with v1 and re-encrypt
         salt = base64.b64decode(params["salt"])
         argon2_params = params["argon2_params"]
-        derived_key_v1 = _argon2_derive_key(
-            self.keystore_password, salt, argon2_params, kdf_version=1
-        )
+        # Two v1 derivations with identical inputs yield different keys
+        key_a = _argon2_derive_key(self.keystore_password, salt, argon2_params, kdf_version=1)
+        key_b = _argon2_derive_key(self.keystore_password, salt, argon2_params, kdf_version=1)
+        self.assertNotEqual(key_a, key_b)
 
-        # Re-encrypt the keystore data with v1 key
-        plaintext = json.dumps(keystore.keystore_data).encode("utf-8")
+        # A file genuinely encrypted under one v1 derivation cannot be loaded
         nonce = secrets.token_bytes(12)
         params["nonce"] = base64.b64encode(nonce).decode("utf-8")
-
+        plaintext = json.dumps(keystore.keystore_data).encode("utf-8")
         header = {"protection": protection}
 
-        if protection["method"] == "scrypt_chacha20":
-            from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305 as CP
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-            cipher = CP(derived_key_v1)
-        else:
-            from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-
-            cipher = AESGCM(derived_key_v1)
-        ciphertext = cipher.encrypt(
+        ciphertext = AESGCM(key_a).encrypt(
             nonce, plaintext, associated_data=json.dumps(header).encode("utf-8")
         )
-
-        # Write the v1 keystore file
         header_json = json.dumps(header).encode("utf-8")
         with open(self.keystore_path, "wb") as f:
             f.write(len(header_json).to_bytes(4, byteorder="big"))
             f.write(header_json)
             f.write(ciphertext)
 
-        # Now load the v1 keystore — should succeed with legacy fallback
-        keystore2 = PQCKeystore(self.keystore_path)
-        keystore2.load_keystore(self.keystore_password)
-        self.assertIsNotNone(keystore2.keystore_data)
-
-        # Save it — should upgrade to v2
-        keystore2.save_keystore(self.keystore_password)
-
-        # Reload and verify it's now v2
-        keystore3 = PQCKeystore(self.keystore_path)
-        keystore3.load_keystore(self.keystore_password)
-        upgraded_params = keystore3.keystore_data["protection"]["params"]
-        self.assertEqual(upgraded_params.get("kdf_version"), 2)
+        keystore2 = self.keystore_cls(self.keystore_path)
+        with self.assertRaises(Exception):
+            keystore2.load_keystore(self.keystore_password)
 
     @unittest.skipUnless(ARGON2_AVAILABLE, "argon2-cffi not available")
     def test_wrong_password_still_fails(self):
         """Test that wrong password is rejected for both v1 and v2."""
-        keystore = PQCKeystore(self.keystore_path)
+        keystore = self.keystore_cls(self.keystore_path)
         keystore.create_keystore(self.keystore_password)
 
-        keystore2 = PQCKeystore(self.keystore_path)
+        keystore2 = self.keystore_cls(self.keystore_path)
         with self.assertRaises(Exception):
             keystore2.load_keystore("WrongPassword!")
 
@@ -2547,7 +2610,7 @@ class TestArgon2KdfVersion(unittest.TestCase):
     def test_v2_keystore_rejects_tampered_aad(self):
         """Test that v2 keystores reject decryption when AAD is tampered with."""
         # Create a v2 keystore
-        keystore = PQCKeystore(self.keystore_path)
+        keystore = self.keystore_cls(self.keystore_path)
         keystore.create_keystore(self.keystore_password)
 
         # Read the raw keystore file
@@ -2571,7 +2634,7 @@ class TestArgon2KdfVersion(unittest.TestCase):
             f.write(ciphertext)
 
         # Loading should fail — AAD mismatch, no fallback for v2
-        keystore2 = PQCKeystore(self.keystore_path)
+        keystore2 = self.keystore_cls(self.keystore_path)
         with self.assertRaises(Exception):
             keystore2.load_keystore(self.keystore_password)
 

@@ -245,3 +245,13 @@ openssl_encrypt/plugins/*.json
 target/
 Cargo.lock
 **/*.rs.bk
+
+# Secrets / credentials (never commit)
+.gh_token
+*.token
+.env
+.env.*
+
+# Local tool/test output artifacts
+output.txt
+precommit_output.txt

@@ -2,6 +2,8 @@
 
 A Python-based file encryption tool with modern ciphers, post-quantum algorithms, and defense-in-depth key derivation.
 
+Built to encrypt anything from grandma's pie recipe to the nuclear launch codes — with parameters to satisfy every paranoia level in between. Sensible, secure defaults out of the box; fully tunable KDF chains and cipher choices when you want to crank the cost to match the threat.
+
 > **Looking for the stable release?** The latest stable version is [v1.4.1](https://github.com/jahlives/openssl_encrypt/releases/tag/v1.4.1) on the releases/1.4.x branch.
 
 ## History
@@ -233,6 +235,95 @@ Centralized cryptographic algorithm registration and validation framework.
 - HSM_ONLY identities skip password prompts during encryption/decryption
 - Automatic HSM identity detection with `--with-key`
 - Save/load HSM identities without password requirements
+- **OnlyKey support** (`--hsm onlykey` / `--hsm onlykey-only`, slots 1..12)
+  alongside YubiKey. Same HMAC-SHA1 wire protocol — fleets mixing
+  YubiKey and OnlyKey devices loaded with the same 20-byte secret are
+  deterministic across either backend. See
+  [docs/hardware-tokens.md](docs/hardware-tokens.md) for setup and
+  [docs/migration-from-yubikey-only.md](docs/migration-from-yubikey-only.md)
+  for adding OnlyKey to an existing YubiKey fleet.
+
+### `info` action — encrypted file inspection with CLI reconstruction
+
+`openssl_encrypt info <file>` reads the metadata of an encrypted file
+without decrypting it. In addition to the human-readable summary, the
+output now ends with a "Reconstructed CLI" section showing the
+`openssl_encrypt encrypt` command that would produce equivalent
+encryption settings on a fresh file. Salt and per-file random values
+are deliberately NOT reconstructed (only the deterministic
+configuration: cipher / cascade chain, KDFs, hash rounds, HSM binding,
+pepper).
+
+```bash
+$ openssl_encrypt info myfile.enc
+File Information:
+  Format Version:    9
+  ...
+
+  Reconstructed CLI:
+    openssl_encrypt encrypt \
+      --algorithm aes-gcm \
+      --enable-argon2 \
+      --argon2-rounds 10 \
+      --argon2-time 3 \
+      --argon2-memory 65536 \
+      ...
+```
+
+JSON mode (`--json`) is unchanged — the JSON payload remains the raw
+metadata dict so scripts piping into `jq` continue working.
+
+### `derive-password` — HSM-aware deterministic derivation
+
+The `derive-password` action runs a user-supplied password through the
+full KDF cascade (Argon2id, scrypt, Balloon, RandomX, HKDF, hashes)
+and prints the derived bytes. Useful for generating a strong,
+reproducible password for third-party tools (password managers, disk
+encryption, encrypted archives) from a memorable input.
+
+```bash
+# Basic: derive a 32-byte key from a password (auto-generated salt
+# echoed to stderr so you can reproduce)
+openssl_encrypt derive-password --enable-argon2 --argon2-rounds 10
+
+# Reproducible (specify the salt)
+openssl_encrypt derive-password --salt 0123456789abcdef0123456789abcdef \
+    --enable-argon2 --argon2-rounds 10
+
+# Confirm the password twice — guards against typos that would
+# silently produce a wrong-but-valid-looking output
+openssl_encrypt derive-password --confirm --enable-argon2 --argon2-rounds 10
+
+# Mix in a hardware token: same password + same salt + same hardware
+# secret = same output. Re-provisioning the token changes the output
+# (a stderr reminder fires when --hsm is used without --salt).
+openssl_encrypt derive-password --hsm yubikey --salt 0123...abcdef \
+    --enable-argon2 --argon2-rounds 10
+openssl_encrypt derive-password --hsm onlykey --hsm-slot 3 --salt 0123...abcdef \
+    --enable-argon2 --argon2-rounds 10
+```
+
+### Diceware Passphrase Generation
+
+`generate-password --dice` produces Diceware-style passphrases as an
+alternative to character-based generation:
+
+```bash
+# Default: 10 words from the bundled EFF Large Wordlist (~129 bits of entropy)
+openssl_encrypt generate-password --dice
+
+# Customize word count and separator
+openssl_encrypt generate-password --dice --dice-count 7 --dice-sep -
+
+# Bring your own wordlist (EFF format or plain text)
+openssl_encrypt generate-password --dice --dice-list ~/my-wordlist.txt
+```
+
+The bundled wordlist is the [EFF Large Wordlist for Passphrases](https://www.eff.org/dice)
+(7,776 words), redistributed under
+[Creative Commons Attribution 3.0 US](https://creativecommons.org/licenses/by/3.0/us/)
+with attribution in
+[`openssl_encrypt/data/EFF_WORDLIST_LICENSE.txt`](openssl_encrypt/data/EFF_WORDLIST_LICENSE.txt).
 
 ### Security Enhancements
 

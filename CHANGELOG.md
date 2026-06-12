@@ -5,6 +5,274 @@ All notable changes to the openssl_encrypt project will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.4] - 2026-06-12
+
+### Added
+
+- **Cross-device HSM decryption (YubiKey ↔ OnlyKey)**: files encrypted with
+  one HMAC-SHA1 challenge-response device can now be decrypted with the
+  other by selecting it explicitly via `--hsm`, provided both devices hold
+  the same 20-byte secret (`yubikey_hsm` / `onlykey_hsm` form a
+  protocol-compatible plugin family; unrelated plugins are still rejected).
+  `--hsm-slot` on `decrypt` / rekey now takes precedence over the slot
+  stored in file metadata — previously it was printed but silently
+  ignored — so fleet devices may hold the secret in different slots.
+- **OnlyKey setup guide** (`docs/ONLYKEY_SETUP.md`, linked from the docs
+  sidebar): installation, udev rules for VID/PID 1d50:60fc, the
+  unlock-then-touch hardware flow, the challenge-code-mode caveat,
+  cross-device provisioning with YubiKey, and troubleshooting for every
+  real-hardware failure mode.
+- **`info` action now reconstructs the `encrypt` CLI** from file metadata:
+  - The human-readable output of `openssl_encrypt info <file>` now ends
+    with a "Reconstructed CLI" section showing the full
+    `openssl_encrypt encrypt ...` command that would produce equivalent
+    encryption settings on a fresh file.
+  - Salt and per-file random values are NOT reconstructed — only the
+    deterministic configuration (cipher / cascade chain, all five KDFs
+    Argon2id/scrypt/Balloon/HKDF/RandomX, the 12 hash-rounds flags,
+    legacy PBKDF2 / Whirlpool flags, HSM binding via `--hsm` +
+    `--hsm-slot`, remote-pepper plugin via `--pepper` + `--pepper-name`).
+  - JSON output mode (`info --json`) is unchanged — the JSON payload
+    remains the raw metadata dict, so scripts piping into `jq` continue
+    to work without modification.
+  - Round-trip property covered by automated test
+    (`test_info_reconstruction.py::TestReconstructionRoundTrip`):
+    encrypting a fresh file with parameters X, extracting metadata, and
+    running the reconstructor yields a CLI flag string containing
+    every parameter value from X.
+  - Argon2's `type` field is auto-converted from the on-disk integer
+    representation (0/1/2) back to the CLI form (`d`/`i`/`id`).
+  - SHA-3 hash names use the metadata form (`sha3_512`) translated to
+    the CLI flag form (`--sha3-512-rounds`).
+- **`derive-password` gains HSM-aware deterministic derivation**:
+  - `--hsm yubikey` / `--hsm onlykey` (+ optional `--hsm-slot`) plumb
+    the hardware token's HMAC-SHA1 response into the KDF cascade. Same
+    password + same salt + same device-loaded secret = same output;
+    re-provisioning the device silently changes the output.
+  - When `--hsm` is set without explicit `--salt` (random-salt mode), a
+    stderr reminder fires explaining the three reproducibility inputs
+    (password, salt, hardware secret) so users don't get surprised when
+    re-running fails.
+  - `--confirm` prompts for the password twice and rejects on mismatch
+    — guards against typos that would silently produce a wrong derived
+    value. No-op when password comes from `--password` / `--password-file`
+    / `--password-fd` / `OPENSSL_ENCRYPT_PASSWORD` / `--keyring-load`.
+- **Diceware passphrase generation** for `generate-password`:
+  - `--dice` switches `generate-password` from character-based generation
+    to a Diceware-style passphrase (mutually exclusive with the
+    `--use-lowercase/uppercase/digits/special` flags).
+  - `--dice-count N` (default 10) — number of words. Defaults to 10 for a
+    conservative ~129 bits of entropy with the bundled EFF list.
+  - `--dice-sep SEP` (default `""`) — separator between words. Defaults to
+    empty for maximum compatibility with password fields that strip
+    whitespace.
+  - `--dice-list PATH` — custom wordlist; auto-detects EFF format
+    (`<dice>\t<word>`) vs plain one-word-per-line.
+  - `--force-wordlist` — override the 1024-word (10 bits/word) minimum
+    for custom wordlists. Default rejects undersized lists outright;
+    forcing emits a UserWarning but proceeds.
+  - The bundled
+    [EFF Large Wordlist](https://www.eff.org/dice) (7,776 words) ships
+    at `openssl_encrypt/data/eff_large_wordlist.txt` under
+    [CC BY 3.0 US](https://creativecommons.org/licenses/by/3.0/us/);
+    attribution lives in `openssl_encrypt/data/EFF_WORDLIST_LICENSE.txt`.
+  - Diceware mode prints `Passphrase entropy: X bits (N words)` to
+    stderr, then the passphrase via the existing display helper.
+  - Wordlist loader strict-validates: rejects duplicate words and
+    words containing whitespace (both would silently corrupt entropy
+    or boundary semantics).
+  - Policy interaction: in `--dice` mode only entropy- and length-based
+    policy checks apply; character-class and common-password checks are
+    skipped (they are orthogonal to passphrase security).
+- **OnlyKey Challenge-Response HSM plugin**: New `OnlykeyHSMPlugin`
+  (`openssl_encrypt/plugins/hsm/onlykey_challenge_response/`) adds
+  hardware-bound pepper derivation via OnlyKey devices (USB VID/PID
+  `0x1d50:0x60fc`) using the same HMAC-SHA1 wire protocol as YubiKey.
+  CLI: `--hsm onlykey` for encrypt/decrypt, slots 1..12 via `--hsm-slot`,
+  auto-detected if omitted. Two new HSM management subcommands:
+  `openssl_encrypt hsm onlykey-list` and `openssl_encrypt hsm onlykey-test`.
+- **OnlyKey identity protection**: `openssl_encrypt identity create`
+  now accepts `--hsm onlykey` and `--hsm onlykey-only` alongside the
+  existing yubikey options. `IdentityKeyProtectionService` selects the
+  plugin via a new `hsm_type` constructor argument; the type is
+  serialised into the identity protection metadata so decrypt routes
+  to the correct plugin.
+- **Cross-device deterministic pepper guarantee**: A YubiKey and an
+  OnlyKey loaded with the same 20-byte HMAC-SHA1 secret produce
+  identical responses for identical challenges, allowing mixed fleets.
+  Verified by a new RFC 2202 parameterised determinism test
+  (`test_cr_cross_backend_determinism.py`).
+- **Documentation**: `docs/hardware-tokens.md` (combined YubiKey +
+  OnlyKey setup guide, fleet provisioning workflow, troubleshooting)
+  and `docs/migration-from-yubikey-only.md` (step-by-step for existing
+  users adding OnlyKey to their fleet).
+- **Regression test baseline for YubikeyHSMPlugin**
+  (`test_yubikey_plugin.py`, 24 tests) — locks in existing behaviour
+  prior to the OnlyKey work.
+
+### Changed
+
+- **Declared Python floor raised to `>=3.11`** in `setup.py` and
+  `threefish_native/pyproject.toml` (the pinned dependency set already
+  required it — numpy 2.3 needs >=3.11 — so 3.9/3.10 installs failed at
+  dependency resolution anyway). Stale 3.9/3.10 classifiers dropped,
+  3.14 added. Guarded by `test_python_floor_metadata.py`.
+- `--hsm-slot` no longer hard-restricted to `choices=[1, 2]` at the
+  argparse layer. YubiKey validates 1..2 inside its plugin; OnlyKey
+  validates 1..12. This is purely an internal validation move — no
+  user-visible behaviour change for existing YubiKey users; OnlyKey
+  users can now select any slot in 1..12.
+- `handle_hsm_command` no longer imports / requires FIDO2 unconditionally.
+  The fido2 availability gate is now scoped to `fido2-*` actions only,
+  so `onlykey-list` / `onlykey-test` work on machines without fido2.
+
+### Fixed
+
+- **OnlyKey plugin now works with real hardware**: device construction no
+  longer fails with "24828 is not a valid PID" — the plugin masquerades as
+  an OTP-only YubiKey (`PID.YKS_OTP`), since yubikit's PID enum only
+  contains Yubico product IDs and the PID is used solely for USB interface
+  bookkeeping. `open_connection` is now called with `OtpConnection`
+  instead of `None` (ykman asserts on non-type arguments). A device that
+  actively rejects a challenge now produces an actionable error naming the
+  two real-world causes (empty slot / challenge-code mode) instead of the
+  bare "No data".
+- **threefish_native builds on Python 3.14**: PyO3 upgraded 0.24.1 → 0.26
+  (3.14 support), with the `PyBytes::new_bound` → `PyBytes::new` API
+  rename.
+- **ML-KEM hybrid encryption via the CLI was impossible with any
+  spelling**: the `ml_kem_patch` compatibility shim rewrites
+  `--algorithm ml-kem-*-hybrid` to the legacy `kyber*-hybrid` names
+  before argument handling, and the v1.2.0 deprecation gate then
+  rejected the converted name — telling users to "use ml-kem-768-hybrid"
+  in response to them typing exactly that. The gate now judges the name
+  the user actually typed; the legacy kyber names remain blocked for new
+  encryptions. Also fixed a latent crash this unmasked on the subcommand
+  path (missing `pqc_gen_key` attribute default). Regression-tested
+  through the real CLI entry point
+  (`test_mlkem_cli_regression.py`).
+
+- **Undefined-name (F821) bugs**: `keystore_cli.py` used a `logger` that
+  was never created (NameError on any code path that logged) and
+  `versions.py` called `eprint` without importing it when executed as
+  `__main__`. Both fixed during the lint campaign; two further F821s in
+  test files (missing `shutil` import, missing `original_import`
+  capture) repaired as well.
+
+### Security
+
+Security-review findings (SECURITY_REVIEW_FINDINGS.md) fixed on the 1.4.x
+line. None of these change the on-disk encryption format — all existing
+files remain decryptable.
+
+- **Keystore integrity — authenticated v2 keystore format (H4)**: the
+  keystore previously stored everything except wrapped private keys as
+  cleartext, unauthenticated JSON, so anyone with write access could swap
+  a stored public key, repoint per-algorithm defaults or delete entries
+  undetected. v2 authenticates the entire structure with HMAC-SHA256 over
+  canonical JSON, keyed by a domain-separated subkey of the master key;
+  any mismatch fails closed with `KeystoreIntegrityError`. Legacy v1
+  keystores load with a warning and auto-upgrade to v2 on the next save.
+  A regression test proves the store-level MAC also neutralizes the
+  blob-move attack (M6).
+- **D-Bus per-caller authorization (H7+L8)**: EncryptFile/DecryptFile/
+  SecureShredFile and the keystore methods previously performed no caller
+  authorization — on the system bus any local user could drive a root
+  service. Every state-touching method now authorizes the caller first
+  and fails closed (missing sender, unresolvable UID or unreachable
+  polkit ⇒ deny, audit-logged): session bus requires caller UID ==
+  service UID; system bus (new explicit `--system` flag) checks polkit
+  `CheckAuthorization` against the shipped action ids, now tightened to
+  `auth_admin_keep` (any-user access to the root service is gone). Path
+  policy is mode-aware: system mode whitelists root-only file purposes
+  (`/etc/shadow`, `/boot`, `/proc` stay blocked), session mode remains
+  home/tmp-only.
+- **PQC algorithm resolution fails closed (H3)**: `PQCipher` no longer
+  silently falls back to the weakest available KEM when a requested
+  algorithm cannot be resolved (e.g. ML-KEM-1024 on a build lacking it,
+  or a typo) — it raises `ValueError` listing the available algorithms.
+  Legacy Kyber names still normalize to ML-KEM at the *same* security
+  level.
+- **Portable USB drives use a unique per-drive KDF salt (H5)**: master-key
+  derivation previously used one global hardcoded salt for every drive,
+  enabling a single precomputed dictionary against all drives. New drives
+  generate a random 32-byte salt (`config/salt.bin`); pre-existing drives
+  transparently fall back to the legacy salt and remain verifiable.
+- **Plugin sandbox hardening (H8)**: file/network/process restrictions are
+  now enforced on the default process-isolation path (previously only in
+  legacy threading mode — a plugin without file capability could still
+  read arbitrary files); the AST denylist closes the
+  frame/traceback escape chain (`__traceback__` → `f_back` → `f_globals`);
+  plugins in group/world-writable files or directories are rejected.
+- **Balloon KDF memory-hard default (M3)**: on the v11 independent-XOR
+  path an enabled Balloon with no explicit `space_cost` silently fell back
+  to a ~512-byte buffer (GPU-trivial) and the value was not persisted.
+  A memory-hard default is now applied and persisted at encrypt time;
+  explicitly low values trigger a warning. Legacy files stay decryptable.
+- **Weak dual-encryption password verifier removed (M7)**: dual-encrypted
+  files no longer store a 10,000-iteration PBKDF2 hash of the file
+  password in cleartext metadata (an offline brute-force oracle). The
+  AES-GCM tag already authenticates the password; legacy files carrying
+  the verifier are still honoured.
+- **Identity TOFU key-change detection (M8)**: re-importing a contact
+  whose key fingerprint changed now raises `IdentityKeyChangedError` even
+  with `overwrite=True` (replacing a pinned key requires the explicit
+  `allow_key_change=True`); fingerprint lookup now requires a full match
+  instead of `startswith()` (an empty prefix used to resolve to the first
+  stored identity).
+- **Honest secure-memory contract (M10/M10a)**: `secure_memzero` no longer
+  falsely reports success after zeroing a *copy* of immutable input — it
+  returns `False` for `bytes`/`str` (new `strict=True` raises), and wipes
+  in place for mutable buffers. The KDF registry password wipe, which
+  never actually ran due to an always-false condition, is now effective
+  and copy-free across all backends.
+- **Metadata schema validation fails closed (M11)**: unknown
+  `format_version` values are now rejected instead of skipping
+  per-version schema validation; schemas are registered dynamically from
+  disk (the shipped v9/v12 schemas were never registered and silently
+  unused).
+
+- No changes to the cryptographic core. The OnlyKey plugin reuses
+  yubikit's `YubiOtpSession.calculate_hmac_sha1`; the only difference
+  vs the YubiKey plugin is USB device enumeration (additional VID/PID
+  filter). Existing YubiKey-encrypted files and YubiKey-protected
+  identities are bit-identical and unaffected.
+
+### Internal
+
+- **Test-collection regression fixed**: `pytest.ini` (added 2025-12-30)
+  silently stopped collecting `unittests/unittests.py` — 91 tests across
+  12 classes had not run in any suite invocation since. Collection is
+  restored and everything that surfaced was repaired, including a
+  module-level `warnings.warn` monkeypatch that leaked into co-resident
+  workers and broke later `pytest.warns()` assertions.
+- New security-fix test suites: `test_keystore_integrity.py`,
+  `test_dbus_authz.py`, `test_plugin_sandbox_h8.py`,
+  `test_identity_tofu_m8.py`, `test_balloon_defaults_m3.py`,
+  `test_kdf_wipe_m10a.py`, `test_secure_memzero_m10.py`,
+  `test_metadata_schema_m11.py`, plus PQC fail-closed and per-drive-salt
+  regression tests.
+- **Code-quality campaign across the entire codebase**: black + isort
+  formatting applied repo-wide, new `.flake8` config with
+  per-file-ignores for test files, autoflake removal of unused imports
+  and variables, 121 placeholder-less f-strings de-f-stringed (F541),
+  bare `except:` replaced with `except Exception:` (E722/B001 — no
+  longer swallows `SystemExit`/`KeyboardInterrupt`), redundant exception
+  types removed (B014). The autoflake pass initially destroyed
+  try/except optional-dependency import probes and `__init__.py`
+  re-exports; both were restored and F401 is now suppressed globally to
+  prevent a repeat.
+- **Test robustness**: Whirlpool tests skip cleanly when the optional
+  module is unavailable; stdout-leak whitelist updated after the
+  formatting pass; rekey algorithm-change tests pinned against the
+  STANDARD-template override.
+- No new Python dependencies. The `onlykey` PyPI package is **not**
+  required — HMAC-SHA1 is performed via yubikit (already pulled in
+  via `yubikey-manager`).
+- ~200 new unit tests across `test_onlykey_plugin.py`,
+  `test_onlykey_cli.py`, `test_onlykey_identity_protection.py`,
+  `test_cr_cross_backend_determinism.py`, and `test_yubikey_plugin.py`.
+
 ## [1.4.3] - 2026-03-30
 
 ### Fixed

@@ -2483,27 +2483,31 @@ def handle_hsm_command(args):
     import getpass
     import secrets
 
-    # Import FIDO2 plugin
-    try:
-        from ..plugins.hsm.fido2_pepper import FIDO2_AVAILABLE, FIDO2HSMPlugin
-    except ImportError:
-        eprint("❌ Error: FIDO2 library not available")
-        eprint("Install with: pip install fido2>=1.1.0")
-        sys.exit(1)
-
-    if not FIDO2_AVAILABLE:
-        eprint("❌ Error: FIDO2 library not available")
-        eprint("Install with: pip install fido2>=1.1.0")
-        sys.exit(1)
-
-    # Get HSM action
+    # Determine action first so non-FIDO2 actions (e.g. onlykey-*) don't
+    # require the fido2 library to be installed.
     action = args.hsm_action
 
-    # Get optional rp_id
-    rp_id = getattr(args, "rp_id", None)
+    # FIDO2 plugin is only needed for fido2-* actions. Lazy-import to keep
+    # onlykey-* actions usable on machines without fido2.
+    plugin = None
+    if action.startswith("fido2-"):
+        try:
+            from ..plugins.hsm.fido2_pepper import FIDO2_AVAILABLE, FIDO2HSMPlugin
+        except ImportError:
+            eprint("❌ Error: FIDO2 library not available")
+            eprint("Install with: pip install fido2>=1.1.0")
+            sys.exit(1)
 
-    # Initialize plugin
-    plugin = FIDO2HSMPlugin(rp_id=rp_id) if rp_id else FIDO2HSMPlugin()
+        if not FIDO2_AVAILABLE:
+            eprint("❌ Error: FIDO2 library not available")
+            eprint("Install with: pip install fido2>=1.1.0")
+            sys.exit(1)
+
+        # Get optional rp_id
+        rp_id = getattr(args, "rp_id", None)
+
+        # Initialize plugin
+        plugin = FIDO2HSMPlugin(rp_id=rp_id) if rp_id else FIDO2HSMPlugin()
 
     if action == "fido2-register":
         # Register new FIDO2 credential
@@ -2691,6 +2695,89 @@ def handle_hsm_command(args):
                 eprint(f"Configuration updated: {plugin.credential_file}")
         else:
             eprint(f"\n❌ Removal failed: {result.message}")
+            sys.exit(1)
+
+    elif action == "onlykey-list":
+        # List connected OnlyKey devices (USB VID 0x1d50:0x60fc).
+        from ..plugins.hsm.onlykey_challenge_response import OnlykeyHSMPlugin
+
+        ok_plugin = OnlykeyHSMPlugin()
+
+        eprint("\n🔐 Connected OnlyKey Devices")
+        eprint("=" * 50)
+
+        try:
+            devices = ok_plugin._list_onlykey_devices()
+        except Exception as e:
+            eprint(f"❌ Error enumerating OnlyKey devices: {e}")
+            sys.exit(1)
+
+        if not devices:
+            eprint("❌ No OnlyKey devices found")
+            eprint(
+                "\nPlease connect an OnlyKey and ensure it is unlocked "
+                "(enter PIN on device buttons)."
+            )
+            eprint(
+                f"\nExpected USB IDs: VID 0x{ok_plugin.ONLYKEY_VID:04x}, "
+                f"PID 0x{ok_plugin.ONLYKEY_PID:04x}"
+            )
+            sys.exit(0)
+
+        eprint(f"Found {len(devices)} OnlyKey device(s):\n")
+        for i, device in enumerate(devices, 1):
+            # OtpYubiKeyDevice exposes .path on Linux/macOS/Windows
+            path = getattr(device, "path", "<unknown>")
+            eprint(f"Device #{i}: {path}")
+            eprint(
+                f"  USB IDs: VID 0x{ok_plugin.ONLYKEY_VID:04x}, "
+                f"PID 0x{ok_plugin.ONLYKEY_PID:04x}"
+            )
+            eprint()
+
+    elif action == "onlykey-test":
+        # Test OnlyKey Challenge-Response pepper derivation.
+        from ..plugins.hsm.onlykey_challenge_response import OnlykeyHSMPlugin
+        from .plugin_system.plugin_base import PluginSecurityContext
+
+        ok_plugin = OnlykeyHSMPlugin()
+
+        eprint("\n🔐 OnlyKey Pepper Derivation Test")
+        eprint("=" * 50)
+
+        # Optional manual slot override via --hsm-slot
+        slot_override = getattr(args, "hsm_slot", None)
+
+        test_salt = secrets.token_bytes(16)
+        eprint(f"Test salt: {test_salt.hex()}")
+        eprint(
+            "\nPlease connect your OnlyKey. If the device is locked, enter "
+            "your PIN on the OnlyKey buttons before continuing."
+        )
+        if slot_override:
+            eprint(f"Using manual slot: {slot_override}")
+        else:
+            eprint("Auto-detecting Challenge-Response slot (1..12)...")
+
+        context = PluginSecurityContext(
+            plugin_id=ok_plugin.plugin_id,
+            capabilities=ok_plugin.get_required_capabilities(),
+        )
+        if slot_override:
+            context.config["slot"] = slot_override
+
+        result = ok_plugin.get_hsm_pepper(test_salt, context)
+
+        if result.success:
+            pepper = result.data.get("hsm_pepper")
+            slot = result.data.get("slot")
+            eprint("\n✅ Test successful!")
+            eprint(f"Slot: {slot}")
+            eprint(f"Pepper length: {len(pepper)} bytes")
+            eprint(f"Pepper (hex): {pepper.hex()}")
+            eprint("\nYour OnlyKey Challenge-Response is working correctly.")
+        else:
+            eprint(f"\n❌ Test failed: {result.message}")
             sys.exit(1)
 
     else:
@@ -3345,6 +3432,110 @@ def _get_steganography_plugin(quiet=False):
         return None
 
 
+def _run_dice_generation(args):
+    """
+    Generate a Diceware passphrase from parsed CLI args.
+
+    Bridges the argparse layer to the :mod:`diceware` module. Loads the
+    requested wordlist (custom path from ``--dice-list`` or the bundled
+    EFF Large Wordlist if None), generates a passphrase of
+    ``--dice-count`` words joined by ``--dice-sep``, and returns the
+    passphrase together with its computed entropy in bits.
+
+    The caller is responsible for any policy/length checks and for
+    output formatting; this helper has no side effects beyond reading
+    the wordlist file.
+
+    Args:
+        args: An object exposing the attributes ``dice_list``,
+            ``dice_count``, ``dice_sep``, ``force_wordlist``.
+
+    Returns:
+        Tuple ``(passphrase: str, entropy_bits: float)``.
+    """
+    from .diceware import generate_passphrase, load_wordlist, passphrase_entropy
+
+    wordlist = load_wordlist(
+        path=getattr(args, "dice_list", None),
+        force_small=getattr(args, "force_wordlist", False),
+    )
+    phrase = generate_passphrase(
+        count=args.dice_count,
+        sep=args.dice_sep,
+        wordlist=wordlist,
+    )
+    bits = passphrase_entropy(count=args.dice_count, wordlist_size=len(wordlist))
+    return phrase, bits
+
+
+def _validate_generate_password_args(
+    *,
+    dice: bool,
+    use_lowercase: bool,
+    use_uppercase: bool,
+    use_digits: bool,
+    use_special: bool,
+    dice_count: int,
+    dice_sep: str,
+    dice_list,
+    force_wordlist: bool,
+) -> None:
+    """
+    Validate the flag combination passed to ``generate-password``.
+
+    Enforces two rules:
+
+    1. ``--dice`` is mutually exclusive with any character-class flag
+       (``--use-lowercase``, ``--use-uppercase``, ``--use-digits``,
+       ``--use-special``). A passphrase is shaped by its source wordlist,
+       not by character classes.
+
+    2. The Diceware-specific options (``--dice-count``, ``--dice-sep``,
+       ``--dice-list``, ``--force-wordlist``) are only meaningful when
+       ``--dice`` is set. Using them without ``--dice`` is a user error
+       and we reject loudly so the user notices.
+
+    Raises:
+        ValueError with a human-readable, actionable message on any rule
+        violation. The caller prints the message and exits.
+    """
+    if dice:
+        char_flags = []
+        if use_lowercase:
+            char_flags.append("--use-lowercase")
+        if use_uppercase:
+            char_flags.append("--use-uppercase")
+        if use_digits:
+            char_flags.append("--use-digits")
+        if use_special:
+            char_flags.append("--use-special")
+        if char_flags:
+            raise ValueError(
+                f"--dice is mutually exclusive with character-class flags "
+                f"({', '.join(char_flags)}). A Diceware passphrase is "
+                f"defined by its wordlist, not by character classes — drop "
+                f"the character-class flags, or drop --dice."
+            )
+        return
+
+    # --dice is not set; check that no Diceware-only options were passed.
+    leaked: list = []
+    if dice_count != 10:
+        leaked.append("--dice-count")
+    if dice_sep != "":
+        leaked.append("--dice-sep")
+    if dice_list is not None:
+        leaked.append("--dice-list")
+    if force_wordlist:
+        leaked.append("--force-wordlist")
+    if leaked:
+        raise ValueError(
+            f"the following flags require --dice: {', '.join(leaked)}. "
+            f"Add --dice to use Diceware passphrase generation, or drop "
+            f"these flags to use the default character-based generator."
+        )
+
+
 def main_with_args(args=None):
     """Main logic with pre-parsed arguments (or None to parse from command line)"""
     # Original main function continues below...
@@ -3631,6 +3822,13 @@ def main_with_args(args=None):
         "--password",
         "-p",
         help="Password (will prompt if not provided, or use CRYPT_PASSWORD environment variable)",
+    )
+    parser.add_argument(
+        "--confirm",
+        action="store_true",
+        help="(derive-password only) Prompt for the password twice and verify "
+        "they match before deriving — guards against typos that would yield "
+        "a silent, irreproducible output.",
     )
     parser.add_argument(
         "--random",
@@ -4110,6 +4308,45 @@ def main_with_args(args=None):
         help="Include special characters in generated password",
     )
 
+    # Diceware mode (mutually exclusive with the character-based flags
+    # above; mutex enforced at runtime in the handler).
+    dice_group = parser.add_argument_group(
+        "Diceware Mode",
+        "Generate a passphrase by drawing words from a wordlist (use with generate-password). "
+        "Mutually exclusive with the character-based generation flags.",
+    )
+    dice_group.add_argument(
+        "--dice",
+        action="store_true",
+        help="Generate a Diceware-style passphrase instead of a character-based password",
+    )
+    dice_group.add_argument(
+        "--dice-count",
+        type=int,
+        default=10,
+        metavar="N",
+        help="Number of words in the Diceware passphrase (default: 10, ~129 bits with the bundled EFF list)",
+    )
+    dice_group.add_argument(
+        "--dice-sep",
+        type=str,
+        default="",
+        metavar="SEP",
+        help='Separator between Diceware words (default: "" for maximum compatibility)',
+    )
+    dice_group.add_argument(
+        "--dice-list",
+        type=str,
+        default=None,
+        metavar="PATH",
+        help="Path to a custom wordlist (EFF format or plain). Default: bundled EFF Large Wordlist",
+    )
+    dice_group.add_argument(
+        "--force-wordlist",
+        action="store_true",
+        help="Allow wordlists below the 1024-word minimum (otherwise rejected)",
+    )
+
     # Password policy options
     policy_group = parser.add_argument_group(
         "Password Policy Options", "Configure password strength validation"
@@ -4192,16 +4429,18 @@ def main_with_args(args=None):
         "--hsm",
         metavar="PLUGIN",
         help="Enable HSM (Hardware Security Module) plugin for hardware-bound key derivation. "
-        "Supported: 'yubikey' (YubiKey Challenge-Response), 'fido2' (FIDO2 hmac-secret). "
+        "Supported: 'yubikey' (YubiKey Challenge-Response, slots 1..2), "
+        "'onlykey' (OnlyKey Challenge-Response, slots 1..12), "
+        "'fido2' (FIDO2 hmac-secret). "
         "The HSM adds a hardware-specific pepper to the key derivation, requiring the device "
         "for both encryption and decryption.",
     )
     plugin_group.add_argument(
         "--hsm-slot",
         type=int,
-        choices=[1, 2],
         metavar="SLOT",
-        help="Manually specify Yubikey slot (1 or 2) for Challenge-Response. "
+        help="Manually specify the Challenge-Response slot. Valid range is plugin-specific: "
+        "YubiKey 1..2, OnlyKey 1..12. "
         "If not specified, the plugin will auto-detect the configured slot.",
     )
 
@@ -4311,6 +4550,7 @@ def main_with_args(args=None):
         "shred_passes": 3,
         "pqc_keyfile": None,
         "pqc_store_key": False,
+        "pqc_gen_key": False,
         "kdf_rounds": 0,
         "enable_scrypt": False,
         "scrypt_rounds": 0,
@@ -5041,6 +5281,59 @@ def main_with_args(args=None):
             sys.exit(1)
 
     elif args.action == "generate-password":
+        # Validate --dice mutual exclusion with character-class flags and
+        # reject --dice-* options used without --dice. The handler-level
+        # check (vs argparse mutex) lets us produce more actionable error
+        # messages and keeps the character flags freely combinable.
+        try:
+            _validate_generate_password_args(
+                dice=getattr(args, "dice", False),
+                use_lowercase=args.use_lowercase,
+                use_uppercase=args.use_uppercase,
+                use_digits=args.use_digits,
+                use_special=args.use_special,
+                dice_count=getattr(args, "dice_count", 10),
+                dice_sep=getattr(args, "dice_sep", ""),
+                dice_list=getattr(args, "dice_list", None),
+                force_wordlist=getattr(args, "force_wordlist", False),
+            )
+        except ValueError as e:
+            eprint(f"Error: {e}")
+            sys.exit(1)
+
+        # --dice mode: skip the character-based pipeline entirely.
+        # Per Q15, we apply only entropy-/length-based policy checks (not
+        # character-class or common-password checks, which are orthogonal
+        # to passphrase security).
+        if getattr(args, "dice", False):
+            try:
+                passphrase, entropy_bits = _run_dice_generation(args)
+            except Exception as e:
+                eprint(f"Error generating passphrase: {e}")
+                sys.exit(1)
+
+            min_entropy = getattr(args, "min_password_entropy", None)
+            if min_entropy is not None and entropy_bits < min_entropy:
+                eprint(
+                    f"Error: passphrase entropy {entropy_bits:.1f} bits < "
+                    f"required minimum {min_entropy} bits. Increase "
+                    f"--dice-count or pick a larger wordlist."
+                )
+                sys.exit(1)
+
+            min_length = getattr(args, "min_password_length", None)
+            if min_length is not None and len(passphrase) < min_length:
+                eprint(
+                    f"Error: passphrase length {len(passphrase)} chars < "
+                    f"required minimum {min_length} chars. Increase "
+                    f"--dice-count or pick longer words."
+                )
+                sys.exit(1)
+
+            eprint(f"\nPassphrase entropy: {entropy_bits:.1f} bits " f"({args.dice_count} words)")
+            display_password_with_timeout(passphrase)
+            sys.exit(0)
+
         # If no character sets are explicitly selected, use all by default
         if not (args.use_lowercase or args.use_uppercase or args.use_digits or args.use_special):
             args.use_lowercase = True
@@ -5164,8 +5457,20 @@ def main_with_args(args=None):
                 sys.exit(1)
 
         if not getattr(args, "password", None):
-            # Prompt for password
+            # Prompt for password. With --confirm, prompt twice and reject
+            # on mismatch — guards against typos that would silently produce
+            # a different (wrong-but-valid-looking) derived value.
             args.password = getpass.getpass("Password for key derivation: ")
+            if getattr(args, "confirm", False):
+                confirm_pw = getpass.getpass("Confirm password: ")
+                if confirm_pw != args.password:
+                    eprint(
+                        "Error: passwords do not match. Re-run without typos; "
+                        "derive-password produces a different output for every "
+                        "distinct input, so a typo would silently waste your "
+                        "downstream use."
+                    )
+                    sys.exit(1)
 
         if not args.password:
             eprint("Error: password is required for derive-password")
@@ -5175,6 +5480,7 @@ def main_with_args(args=None):
 
         # Resolve salt
         salt_hex = getattr(args, "salt", None)
+        salt_was_auto_generated = False
         if salt_hex:
             try:
                 salt = bytes.fromhex(salt_hex)
@@ -5184,11 +5490,26 @@ def main_with_args(args=None):
         else:
             salt_length = getattr(args, "salt_length", 16) or 16
             salt = secrets.token_bytes(salt_length)
+            salt_was_auto_generated = True
             # Always show auto-generated salt so user can reproduce
             eprint(f"Salt (hex): {salt.hex()}")
 
         if getattr(args, "show_salt", False):
             eprint(f"Salt (hex): {salt.hex()}")
+
+        # When --hsm is set without an explicit --salt, reproducing the
+        # output needs THREE inputs to match: password, the auto-generated
+        # salt (echoed above), AND the 20-byte secret loaded on the
+        # hardware token. The token-secret leg isn't visible from the host,
+        # so re-provisioning the device would silently change future
+        # outputs — emit a stderr reminder per Q17.
+        if getattr(args, "hsm", None) and salt_was_auto_generated:
+            eprint(
+                "Note: reproducing this output requires the same password, "
+                "the same salt (echoed above), AND the same HMAC-SHA1 secret "
+                "loaded on the hardware token. Re-provisioning the token will "
+                "silently change the output."
+            )
 
         # Build hash_config from args
         hash_config = {}
@@ -5260,6 +5581,57 @@ def main_with_args(args=None):
                 "hash_len": getattr(args, "randomx_hash_len", 32),
             }
 
+        # Optional HSM pepper: when --hsm is set, load the corresponding
+        # plugin and derive a pepper from the salt. The pepper feeds into
+        # generate_key the same way the encrypt path uses it, so the
+        # derived value is reproducible iff the password, the salt AND the
+        # hardware-loaded secret all match.
+        hsm_pepper: bytes = None
+        if getattr(args, "hsm", None):
+            hsm_value = args.hsm.lower()
+            try:
+                if hsm_value == "yubikey":
+                    from ..plugins.hsm.yubikey_challenge_response import YubikeyHSMPlugin
+
+                    hsm_plugin_instance = YubikeyHSMPlugin()
+                elif hsm_value == "onlykey":
+                    from ..plugins.hsm.onlykey_challenge_response import OnlykeyHSMPlugin
+
+                    hsm_plugin_instance = OnlykeyHSMPlugin()
+                else:
+                    eprint(
+                        f"Error: Unknown --hsm value '{args.hsm}'. " f"Supported: yubikey, onlykey"
+                    )
+                    sys.exit(1)
+            except ImportError as e:
+                eprint(
+                    f"Error: HSM plugin import failed: {e}. "
+                    f"Install with: pip install -r requirements-hsm.txt"
+                )
+                sys.exit(1)
+
+            init_result = hsm_plugin_instance.initialize({})
+            if not init_result.success:
+                eprint(f"Error initializing HSM plugin: {init_result.message}")
+                sys.exit(1)
+
+            from .plugin_system.plugin_base import PluginSecurityContext
+
+            hsm_ctx = PluginSecurityContext(
+                plugin_id=hsm_plugin_instance.plugin_id,
+                capabilities=hsm_plugin_instance.get_required_capabilities(),
+            )
+            if getattr(args, "hsm_slot", None):
+                hsm_ctx.config["slot"] = args.hsm_slot
+            hsm_result = hsm_plugin_instance.get_hsm_pepper(salt, hsm_ctx)
+            if not hsm_result.success:
+                eprint(f"Error obtaining HSM pepper: {hsm_result.message}")
+                sys.exit(1)
+            hsm_pepper = hsm_result.data.get("hsm_pepper")
+            if not hsm_pepper:
+                eprint("Error: HSM plugin returned no pepper")
+                sys.exit(1)
+
         # Call generate_key to derive the key
         from .crypt_core import generate_key
 
@@ -5289,6 +5661,7 @@ def main_with_args(args=None):
                 algorithm=synth_algorithm,
                 progress=getattr(args, "progress", False),
                 debug=getattr(args, "debug", False),
+                hsm_pepper=hsm_pepper,
                 format_version=9,
             )
         except Exception as e:
@@ -6304,6 +6677,24 @@ def main_with_args(args=None):
                         else:
                             eprint("   Auto-detecting Challenge-Response slot")
 
+                elif args.hsm.lower() == "onlykey":
+                    from ..plugins.hsm.onlykey_challenge_response import OnlykeyHSMPlugin
+
+                    hsm_plugin_instance = OnlykeyHSMPlugin()
+
+                    # Initialize plugin
+                    init_result = hsm_plugin_instance.initialize({})
+                    if not init_result.success:
+                        eprint(f"Error initializing HSM plugin: {init_result.message}")
+                        sys.exit(1)
+
+                    if not args.quiet:
+                        eprint(f"✅ Loaded HSM plugin: {hsm_plugin_instance.name}")
+                        if hasattr(args, "hsm_slot") and args.hsm_slot:
+                            eprint(f"   Using manual slot: {args.hsm_slot}")
+                        else:
+                            eprint("   Auto-detecting Challenge-Response slot (1..12)")
+
                 elif args.hsm.lower() == "fido2":
                     from ..plugins.hsm.fido2_pepper import FIDO2HSMPlugin
 
@@ -6324,12 +6715,18 @@ def main_with_args(args=None):
                             )
 
                 else:
-                    eprint(f"Error: Unknown HSM plugin '{args.hsm}'. Supported: yubikey, fido2")
+                    eprint(
+                        f"Error: Unknown HSM plugin '{args.hsm}'. Supported: yubikey, onlykey, fido2"
+                    )
                     sys.exit(1)
 
             except ImportError as e:
                 eprint(f"Error: Could not import HSM plugin: {e}")
                 if args.hsm.lower() == "yubikey":
+                    eprint(
+                        "Make sure yubikey-manager is installed: pip install -r requirements-hsm.txt"
+                    )
+                elif args.hsm.lower() == "onlykey":
                     eprint(
                         "Make sure yubikey-manager is installed: pip install -r requirements-hsm.txt"
                     )
@@ -6775,8 +7172,12 @@ def main_with_args(args=None):
                 sys.exit(1)
 
             # Enforce deprecation policy: Block encryption with deprecated algorithms in version 1.2.0
-            if is_encryption_blocked_for_algorithm(args.algorithm):
-                error_message = get_encryption_block_message(args.algorithm)
+            # ml_kem_patch rewrites ML-KEM names in sys.argv to legacy kyber names before main()
+            # runs, so judge the name the user actually typed (preserved in the env var by the
+            # patch), not the synthetic converted one — otherwise ml-kem-*-hybrid is unusable.
+            blocked_check_name = original_ml_kem_algorithm or args.algorithm
+            if is_encryption_blocked_for_algorithm(blocked_check_name):
+                error_message = get_encryption_block_message(blocked_check_name)
                 eprint(f"ERROR: {error_message}")
                 sys.exit(1)
 
@@ -9216,6 +9617,7 @@ def main_with_args(args=None):
                             enable_plugins=enable_plugins,
                             plugin_manager=plugin_manager,
                             hsm_plugin=hsm_plugin_instance,
+                            hsm_slot=getattr(args, "hsm_slot", None),
                             no_estimate=getattr(args, "no_estimate", False),
                             verify_integrity=getattr(args, "verify_integrity", False),
                             parallel_kdf=getattr(args, "parallel_kdf", False),
@@ -9442,6 +9844,7 @@ def main_with_args(args=None):
                         enable_plugins=enable_plugins,
                         plugin_manager=plugin_manager,
                         hsm_plugin=hsm_plugin_instance,
+                        hsm_slot=getattr(args, "hsm_slot", None),
                         no_estimate=getattr(args, "no_estimate", False),
                         verify_integrity=getattr(args, "verify_integrity", False),
                     )
@@ -9612,6 +10015,7 @@ def main_with_args(args=None):
                         enable_plugins=enable_plugins,
                         plugin_manager=plugin_manager,
                         hsm_plugin=hsm_plugin_instance,
+                        hsm_slot=getattr(args, "hsm_slot", None),
                         no_estimate=getattr(args, "no_estimate", False),
                         verify_integrity=getattr(args, "verify_integrity", False),
                     )
@@ -9680,6 +10084,7 @@ def main_with_args(args=None):
                     enable_plugins=enable_plugins,
                     plugin_manager=plugin_manager,
                     hsm_plugin=hsm_plugin_instance,
+                    hsm_slot=getattr(args, "hsm_slot", None),
                     no_estimate=getattr(args, "no_estimate", False),
                     verify_integrity=getattr(args, "verify_integrity", False),
                     parallel_kdf=getattr(args, "parallel_kdf", False),

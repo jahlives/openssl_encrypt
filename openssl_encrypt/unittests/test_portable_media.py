@@ -300,6 +300,68 @@ class TestUSBDriveEncryption(unittest.TestCase):
         self.assertEqual(verification["missing_files"], 0)
         self.assertGreaterEqual(verification["verified_files"], 1)
 
+    def test_usb_per_drive_salt_is_unique(self):
+        """Security (H5): each USB drive must use a unique random KDF salt, so two
+        drives created with the SAME password do not share a key, and a global
+        precomputed dictionary cannot crack every drive."""
+        if not self.usb_available:
+            self.skipTest("USB encryption dependencies not available")
+
+        creator = self.USBDriveCreator(self.USBSecurityProfile.STANDARD)
+        password = "same_password_two_drives"
+
+        salts = []
+        for name in ("usb_a", "usb_b"):
+            usb_path = os.path.join(self.test_dir, name)
+            os.makedirs(usb_path)
+            result = creator.create_portable_usb(usb_path, password)
+            self.assertTrue(result["success"])
+
+            salt_path = os.path.join(usb_path, creator.PORTABLE_DIR, "config", "salt.bin")
+            self.assertTrue(os.path.exists(salt_path), "per-drive salt file must be written")
+            with open(salt_path, "rb") as f:
+                salt = f.read()
+            self.assertEqual(len(salt), creator.SALT_LENGTH)
+            self.assertNotEqual(
+                salt,
+                creator._LEGACY_FIXED_SALT,
+                "new drives must not use the legacy fixed salt",
+            )
+            # Each drive must still verify against itself.
+            verification = creator.verify_usb_integrity(usb_path, password)
+            self.assertTrue(verification["integrity_ok"])
+            salts.append(salt)
+
+        self.assertNotEqual(salts[0], salts[1], "two drives must have different salts")
+
+    def test_usb_salt_legacy_fallback_and_key_separation(self):
+        """Security (H5) unit checks: missing salt file falls back to the legacy
+        fixed salt (so pre-fix drives still verify), and different salts yield
+        different derived keys for the same password."""
+        if not self.usb_available:
+            self.skipTest("USB encryption dependencies not available")
+
+        from pathlib import Path
+
+        from openssl_encrypt.modules.secure_memory import SecureBytes
+
+        creator = self.USBDriveCreator(self.USBSecurityProfile.STANDARD)
+
+        # No salt file present -> legacy fixed salt (backward compatibility).
+        empty_root = Path(self.test_dir) / "no_salt_drive"
+        empty_root.mkdir(parents=True, exist_ok=True)
+        self.assertEqual(
+            creator._load_or_create_salt(empty_root, create=False),
+            creator._LEGACY_FIXED_SALT,
+        )
+
+        # Different salts must produce different keys for the same password.
+        pw = SecureBytes(b"key_separation_password")
+        key_a = creator._derive_key_pbkdf2_fallback(pw, b"A" * 32)
+        key_b = creator._derive_key_pbkdf2_fallback(pw, b"B" * 32)
+        self.assertNotEqual(key_a, key_b)
+        self.assertEqual(len(key_a), creator.KEY_LENGTH)
+
     def test_usb_autorun_files(self):
         """Test USB autorun file creation."""
         if not self.usb_available:

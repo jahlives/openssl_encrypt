@@ -5843,6 +5843,90 @@ def _derive_pqc_sig_key(
     )
 
 
+# M3: Balloon hashing memory-hardness. Balloon's buffer is space_cost * 32
+# bytes (one SHA-256 block per slot), so the historical default of
+# space_cost=16 gave only ~512 bytes of "memory hardness" - GPU/ASIC-trivial,
+# i.e. the memory-hard stretching a user expects from enabling Balloon was
+# effectively absent. New files use a memory-hard default; an explicit
+# sub-floor value is warned about but respected (the expert's choice, per the
+# M4 decision). The pure-Python Balloon implementation caps the practical
+# ceiling (~2 MiB ~ 1s; 64 MiB would take ~35s).
+BALLOON_DEFAULT_SPACE_COST = 65536  # 2 MiB (65536 * 32 bytes)
+BALLOON_MIN_SAFE_SPACE_COST = 16384  # 512 KiB floor below which we warn
+# Pin the mixing rounds for the defaulted case so the cost is ~1s. The
+# independent-XOR (v11) path's read-default for time_cost is 20, which at the
+# new 2 MiB space_cost would take ~9s; 3 matches the established non-XOR balloon
+# default and keeps memory-hardness (space_cost) as the dominant cost.
+BALLOON_DEFAULT_TIME_COST = 3
+
+
+def _apply_balloon_security_defaults(hash_config, quiet=False):
+    """Encrypt-time normalization of an enabled Balloon KDF's space_cost (M3).
+
+    Ensures a memory-hard default when none was given, and warns (loudly) when
+    an explicit space_cost is below the safety floor. The resolved value is
+    written back into the config so it is BOTH used for derivation and
+    persisted in the file metadata - this is what makes the change backward
+    compatible.
+
+    MUST be called on the encrypt path only. Calling it during decryption would
+    raise the space_cost of legacy files that relied on the old unstored
+    default of 16 and make them underivable (the key would change). Decryption
+    reads the space_cost back from metadata for files written after this fix.
+
+    Args:
+        hash_config: The encryption hash/KDF configuration (mutated in place).
+        quiet: Suppress the sub-floor warning when True.
+
+    Returns:
+        The same hash_config (for convenience).
+    """
+    if not isinstance(hash_config, dict):
+        return hash_config
+
+    # The Balloon sub-config may live at the top level (v10 sequential path) or
+    # nested under derivation_config.kdf_config (v11 independent-XOR path).
+    balloon_configs = []
+    if isinstance(hash_config.get("balloon"), dict):
+        balloon_configs.append(hash_config["balloon"])
+    derivation_config = hash_config.get("derivation_config")
+    if isinstance(derivation_config, dict):
+        kdf_config = derivation_config.get("kdf_config")
+        if isinstance(kdf_config, dict) and isinstance(kdf_config.get("balloon"), dict):
+            balloon_configs.append(kdf_config["balloon"])
+
+    for balloon in balloon_configs:
+        if not balloon.get("enabled", False):
+            continue
+
+        space_cost = balloon.get("space_cost")
+        if space_cost is None:
+            # No explicit value: apply the memory-hard default and persist it.
+            # Also pin time_cost (if unset) so the cost stays ~1s instead of the
+            # ~9s the v11 read-default of time_cost=20 would give at 2 MiB.
+            balloon["space_cost"] = BALLOON_DEFAULT_SPACE_COST
+            balloon.setdefault("time_cost", BALLOON_DEFAULT_TIME_COST)
+            continue
+
+        try:
+            space_cost = int(space_cost)
+        except (TypeError, ValueError):
+            balloon["space_cost"] = BALLOON_DEFAULT_SPACE_COST
+            continue
+
+        if space_cost < BALLOON_MIN_SAFE_SPACE_COST and not quiet:
+            eprint(
+                f"⚠️  WARNING: Balloon space_cost={space_cost} provides only "
+                f"{space_cost * 32} bytes of memory hardness, which is weak "
+                f"against GPU/ASIC brute force. Recommended at least "
+                f"space_cost={BALLOON_MIN_SAFE_SPACE_COST} "
+                f"({BALLOON_MIN_SAFE_SPACE_COST * 32} bytes). Proceeding with "
+                f"your explicit value."
+            )
+
+    return hash_config
+
+
 @secure_encrypt_error_handler
 def encrypt_file(
     input_file,
@@ -6122,6 +6206,10 @@ def encrypt_file(
                 },
                 "pbkdf2_iterations": 0,
             }
+
+    # M3: enforce a memory-hard Balloon space_cost for new files (encrypt-time
+    # only; persisted into metadata so legacy files remain decryptable).
+    hash_config = _apply_balloon_security_defaults(hash_config, quiet=quiet)
 
     # Generate a key from the password
     salt = secrets.token_bytes(16)  # Unique salt for each encryption
@@ -7993,7 +8081,274 @@ def print_file_info(input_file: str, json_output: bool = False) -> dict:
         if pepper_name:
             eprint(f"    Name:            {pepper_name}")
 
+    # Reconstructed CLI — show users how they could re-encrypt with the
+    # same settings on a fresh file. Salt and per-file random values are
+    # NOT included; only the deterministic configuration.
+    eprint()
+    eprint("  Reconstructed CLI:")
+    for line in _reconstruct_cli_from_metadata(metadata).splitlines():
+        eprint(f"    {line}")
+
     return metadata
+
+
+def _reconstruct_cli_from_metadata(metadata: dict) -> str:
+    """
+    Reconstruct an ``openssl_encrypt encrypt`` CLI line from file metadata.
+
+    Given the metadata extracted from an encrypted file, return a
+    multi-line shell command (with ``\\`` continuations) whose execution
+    would produce equivalent encryption settings on a fresh file. The
+    salt, file paths, and per-file random values are NOT included — only
+    the deterministic configuration (cipher, KDFs, hash rounds, HSM
+    binding, etc.).
+
+    This is the helper backing the CLI-reconstruction output of the
+    ``info`` action. It is intentionally additive — each commit in the
+    series adds one slice of the reconstruction (cipher, KDF group N,
+    hashes, HSM, pepper, removed-flag handling). Until a slice lands,
+    the helper simply skips that part of the metadata.
+
+    Args:
+        metadata: The file metadata dict as returned by
+            :func:`extract_file_metadata`.
+
+    Returns:
+        Multi-line shell command starting with ``openssl_encrypt encrypt``.
+    """
+    lines = ["openssl_encrypt encrypt"]
+
+    encryption = metadata.get("encryption") or {}
+    _append_cipher_flags(lines, encryption)
+    _append_hsm_flags(lines, encryption)
+    _append_pepper_flags(lines, encryption)
+
+    derivation = metadata.get("derivation_config") or {}
+    kdf_config = derivation.get("kdf_config") or {}
+    _append_argon2_flags(lines, kdf_config.get("argon2") or {})
+    _append_scrypt_flags(lines, kdf_config.get("scrypt") or {})
+    _append_balloon_flags(lines, kdf_config.get("balloon") or {})
+    _append_hkdf_flags(lines, kdf_config.get("hkdf") or {})
+    _append_randomx_flags(lines, kdf_config.get("randomx") or {})
+    _append_pbkdf2_flags(lines, kdf_config.get("pbkdf2") or {})
+
+    hash_config = derivation.get("hash_config") or {}
+    _append_hash_rounds_flags(lines, hash_config)
+    _append_whirlpool_flags(lines, hash_config.get("whirlpool"))
+
+    return " \\\n".join(lines)
+
+
+# Hash algorithms recognised by the encrypt CLI's *-rounds flags.
+# Metadata key form (with underscores) → CLI flag prefix (with hyphens).
+_SUPPORTED_HASH_KEYS = {
+    "sha512": "sha512",
+    "sha384": "sha384",
+    "sha256": "sha256",
+    "sha224": "sha224",
+    "sha3_512": "sha3-512",
+    "sha3_384": "sha3-384",
+    "sha3_256": "sha3-256",
+    "sha3_224": "sha3-224",
+    "blake2b": "blake2b",
+    "blake3": "blake3",
+    "shake256": "shake256",
+    "shake128": "shake128",
+}
+
+
+def _append_hash_rounds_flags(lines: list, hash_config: dict) -> None:
+    """
+    Append --<hash>-rounds N flags for each hash with rounds > 0.
+
+    Metadata may store rounds as either ``{"rounds": N}`` (current
+    format) or as a scalar ``N`` (older formats). Both are handled.
+    Algorithms not in :data:`_SUPPORTED_HASH_KEYS` are silently skipped
+    — newer formats may include hash names this code doesn't know yet.
+    """
+    for meta_key, flag_prefix in _SUPPORTED_HASH_KEYS.items():
+        cfg = hash_config.get(meta_key)
+        if cfg is None:
+            continue
+        if isinstance(cfg, dict):
+            rounds = cfg.get("rounds", 0)
+        else:
+            rounds = cfg
+        if rounds and rounds > 0:
+            lines.append(f"  --{flag_prefix}-rounds {rounds}")
+
+
+# Reverse map for argon2 type integers stored in metadata.
+_ARGON2_INT_TO_STR = {0: "d", 1: "i", 2: "id"}
+
+
+def _append_argon2_flags(lines: list, cfg: dict) -> None:
+    """Append --enable-argon2 + --argon2-* flags when argon2 is enabled."""
+    if not cfg.get("enabled"):
+        return
+    lines.append("  --enable-argon2")
+    if "rounds" in cfg:
+        lines.append(f"  --argon2-rounds {cfg['rounds']}")
+    if "time_cost" in cfg:
+        lines.append(f"  --argon2-time {cfg['time_cost']}")
+    if "memory_cost" in cfg:
+        lines.append(f"  --argon2-memory {cfg['memory_cost']}")
+    if "parallelism" in cfg:
+        lines.append(f"  --argon2-parallelism {cfg['parallelism']}")
+    if "hash_len" in cfg:
+        lines.append(f"  --argon2-hash-len {cfg['hash_len']}")
+    if "type" in cfg:
+        t = cfg["type"]
+        # Metadata stores type as int (0,1,2). CLI expects "d","i","id".
+        type_str = _ARGON2_INT_TO_STR.get(t, t) if isinstance(t, int) else t
+        lines.append(f"  --argon2-type {type_str}")
+
+
+def _append_scrypt_flags(lines: list, cfg: dict) -> None:
+    """Append --enable-scrypt + --scrypt-* flags when scrypt is enabled."""
+    if not cfg.get("enabled"):
+        return
+    lines.append("  --enable-scrypt")
+    if "rounds" in cfg:
+        lines.append(f"  --scrypt-rounds {cfg['rounds']}")
+    if "n" in cfg:
+        lines.append(f"  --scrypt-n {cfg['n']}")
+    if "r" in cfg:
+        lines.append(f"  --scrypt-r {cfg['r']}")
+    if "p" in cfg:
+        lines.append(f"  --scrypt-p {cfg['p']}")
+
+
+def _append_balloon_flags(lines: list, cfg: dict) -> None:
+    """Append --enable-balloon + --balloon-* flags when balloon is enabled."""
+    if not cfg.get("enabled"):
+        return
+    lines.append("  --enable-balloon")
+    if "rounds" in cfg:
+        lines.append(f"  --balloon-rounds {cfg['rounds']}")
+    if "time_cost" in cfg:
+        lines.append(f"  --balloon-time-cost {cfg['time_cost']}")
+    if "space_cost" in cfg:
+        lines.append(f"  --balloon-space-cost {cfg['space_cost']}")
+    if "parallelism" in cfg:
+        lines.append(f"  --balloon-parallelism {cfg['parallelism']}")
+
+
+def _append_hkdf_flags(lines: list, cfg: dict) -> None:
+    """Append --enable-hkdf + --hkdf-* flags when hkdf is enabled."""
+    if not cfg.get("enabled"):
+        return
+    lines.append("  --enable-hkdf")
+    if "rounds" in cfg:
+        lines.append(f"  --hkdf-rounds {cfg['rounds']}")
+    if "algorithm" in cfg:
+        lines.append(f"  --hkdf-algorithm {cfg['algorithm']}")
+    if "info" in cfg:
+        lines.append(f"  --hkdf-info {cfg['info']}")
+
+
+def _append_pbkdf2_flags(lines: list, cfg: dict) -> None:
+    """
+    Append --pbkdf2-iterations N when PBKDF2 is configured.
+
+    PBKDF2 is a legacy KDF that v1.5 removes from the CLI entirely.
+    On v1.4 we still emit the flag normally (the CLI accepts it).
+    The v1.5 port re-routes this to a commented migration hint
+    (``# --pbkdf2-iterations N  (removed in v1.5.0 — use Argon2id)``)
+    since the flag no longer exists there.
+    """
+    if not cfg:
+        return
+    if isinstance(cfg, dict):
+        rounds = cfg.get("rounds", 0)
+    else:
+        rounds = cfg
+    if rounds and rounds > 0:
+        lines.append(f"  --pbkdf2-iterations {rounds}")
+
+
+def _append_whirlpool_flags(lines: list, cfg) -> None:
+    """
+    Append --whirlpool-rounds N when Whirlpool is configured.
+
+    Same legacy treatment as PBKDF2 — supported on v1.4, removed in
+    v1.5 (the port will switch this to a commented migration hint).
+    """
+    if cfg is None:
+        return
+    if isinstance(cfg, dict):
+        rounds = cfg.get("rounds", 0)
+    else:
+        rounds = cfg
+    if rounds and rounds > 0:
+        lines.append(f"  --whirlpool-rounds {rounds}")
+
+
+def _append_randomx_flags(lines: list, cfg: dict) -> None:
+    """Append --enable-randomx + --randomx-* flags when randomx is enabled."""
+    if not cfg.get("enabled"):
+        return
+    lines.append("  --enable-randomx")
+    if "rounds" in cfg:
+        lines.append(f"  --randomx-rounds {cfg['rounds']}")
+    if "mode" in cfg:
+        lines.append(f"  --randomx-mode {cfg['mode']}")
+    if "height" in cfg:
+        lines.append(f"  --randomx-height {cfg['height']}")
+    if "hash_len" in cfg:
+        lines.append(f"  --randomx-hash-len {cfg['hash_len']}")
+
+
+def _append_pepper_flags(lines: list, encryption: dict) -> None:
+    """
+    Append --pepper / --pepper-name from metadata['encryption'].
+
+    Presence of metadata['encryption']['pepper_plugin'] indicates the
+    file was encrypted with a remote pepper plugin enabled — emit
+    ``--pepper`` to re-enable on the reconstructed command. If a
+    pepper_name is also stored, emit ``--pepper-name <name>`` so the
+    reconstructed encryption reuses the same named pepper.
+    """
+    if not encryption.get("pepper_plugin"):
+        return
+    lines.append("  --pepper")
+    pepper_name = encryption.get("pepper_name")
+    if pepper_name:
+        lines.append(f"  --pepper-name {pepper_name}")
+
+
+def _append_hsm_flags(lines: list, encryption: dict) -> None:
+    """
+    Append --hsm <name> and --hsm-slot N from metadata['encryption'].
+
+    Plugin IDs follow the convention ``<name>_hsm`` (e.g. yubikey_hsm,
+    onlykey_hsm, fido2_hsm). Strip the trailing ``_hsm`` to get the
+    user-facing ``--hsm <name>`` value the CLI dispatch expects.
+    """
+    plugin = encryption.get("hsm_plugin")
+    if not plugin:
+        return
+    short = plugin[:-4] if plugin.endswith("_hsm") else plugin
+    lines.append(f"  --hsm {short}")
+
+    hsm_cfg = encryption.get("hsm_config") or {}
+    slot = hsm_cfg.get("slot")
+    if slot is not None:
+        lines.append(f"  --hsm-slot {slot}")
+
+
+def _append_cipher_flags(lines: list, encryption: dict) -> None:
+    """Append --cascade / --algorithm flags from the encryption section."""
+    is_cascade = encryption.get("cascade", False)
+    if is_cascade:
+        chain = encryption.get("cipher_chain") or []
+        if chain:
+            lines.append("  --cascade")
+            lines.append(f"  --algorithm {','.join(chain)}")
+    else:
+        algorithm = encryption.get("algorithm")
+        if algorithm:
+            lines.append(f"  --algorithm {algorithm}")
 
 
 def _format_kdf_params(kdf_name: str, params: dict) -> str:
@@ -8053,6 +8408,7 @@ def rekey_file(
     plugin_manager=None,
     secure_mode: bool = False,
     hsm_plugin=None,
+    hsm_slot=None,
     no_estimate: bool = False,
     verify_integrity: bool = False,
     parallel_kdf: bool = False,
@@ -8089,6 +8445,8 @@ def rekey_file(
         plugin_manager: Plugin manager instance.
         secure_mode: Enable secure memory mode.
         hsm_plugin: HSM plugin instance.
+        hsm_slot: Explicit HSM slot override for decryption (takes
+            precedence over the slot stored in file metadata).
         no_estimate: Suppress time/memory estimation.
         verify_integrity: Verify metadata integrity before decryption.
         parallel_kdf: Use parallel KDF processing.
@@ -8161,6 +8519,7 @@ def rekey_file(
             plugin_manager=plugin_manager,
             secure_mode=secure_mode,
             hsm_plugin=hsm_plugin,
+            hsm_slot=hsm_slot,
             no_estimate=no_estimate,
             verify_integrity=verify_integrity,
             parallel_kdf=parallel_kdf,
@@ -8255,6 +8614,49 @@ def rekey_file(
                 pass
 
 
+# HSM plugin families whose members speak the same challenge-response wire
+# protocol and therefore derive identical peppers from the same loaded secret.
+# A file encrypted with one family member may be decrypted with another when
+# the user explicitly selects the plugin via --hsm.
+HSM_COMPATIBLE_FAMILIES: tuple = (frozenset({"yubikey_hsm", "onlykey_hsm"}),)
+
+
+def _hsm_plugins_compatible(provided_id: str, stored_id: str) -> bool:
+    """Check whether a user-provided HSM plugin may decrypt a file.
+
+    Args:
+        provided_id: plugin_id of the plugin the user selected via --hsm.
+        stored_id: plugin_id recorded in the encrypted file's metadata.
+
+    Returns:
+        True if the plugins are identical or belong to the same
+        protocol-compatible family in HSM_COMPATIBLE_FAMILIES.
+    """
+    if provided_id == stored_id:
+        return True
+    return any(provided_id in family and stored_id in family for family in HSM_COMPATIBLE_FAMILIES)
+
+
+def _resolve_hsm_slot(cli_slot, stored_config: dict):
+    """Resolve which HSM slot to challenge during decryption.
+
+    An explicit --hsm-slot from the user takes precedence over the slot
+    recorded in file metadata, so a compatible device that holds the same
+    secret in a different slot (e.g. YubiKey slot 2 vs OnlyKey slot 1)
+    can decrypt the file.
+
+    Args:
+        cli_slot: Slot number from --hsm-slot, or None if not given.
+        stored_config: hsm_config dict from file metadata (may be empty).
+
+    Returns:
+        The slot number to use, or None if neither source specifies one.
+    """
+    if cli_slot:
+        return cli_slot
+    return stored_config.get("slot")
+
+
 @secure_decrypt_error_handler
 def decrypt_file(
     input_file,
@@ -8270,6 +8672,7 @@ def decrypt_file(
     plugin_manager=None,
     secure_mode=False,
     hsm_plugin=None,
+    hsm_slot=None,
     no_estimate=False,
     verify_integrity=False,
     parallel_kdf=False,
@@ -8290,6 +8693,7 @@ def decrypt_file(
         enable_plugins (bool): Whether to enable plugin execution (default: True)
         plugin_manager (PluginManager, optional): Plugin manager instance for plugin execution
         secure_mode (bool): If True, use O_NOFOLLOW to reject symlinks (default: False)
+        hsm_slot (int, optional): Explicit HSM slot for pepper derivation; takes precedence over the slot stored in file metadata
         verify_integrity (bool): If True, verify metadata integrity with remote server before decryption (default: False)
 
     Returns:
@@ -8879,8 +9283,10 @@ def decrypt_file(
                     f"Install plugin dependencies or check plugin availability."
                 )
 
-        # Validate plugin matches metadata
-        if hsm_plugin.plugin_id != hsm_plugin_name:
+        # Validate plugin matches metadata, allowing protocol-compatible
+        # families (e.g. YubiKey/OnlyKey HMAC-SHA1 challenge-response) so a
+        # fleet device loaded with the same secret can decrypt the file.
+        if not _hsm_plugins_compatible(hsm_plugin.plugin_id, hsm_plugin_name):
             raise KeyDerivationError(
                 f"File was encrypted with HSM plugin '{hsm_plugin_name}' but '{hsm_plugin.plugin_id}' provided. "
                 f"Use --hsm {hsm_plugin_name} to decrypt."
@@ -8902,9 +9308,11 @@ def decrypt_file(
             )
             hsm_context.metadata["salt"] = salt
 
-            # Pass stored slot config if available
-            if "slot" in hsm_config:
-                hsm_context.config["slot"] = hsm_config["slot"]
+            # Resolve slot: explicit --hsm-slot wins over stored metadata so
+            # a compatible device may hold the secret in a different slot
+            resolved_slot = _resolve_hsm_slot(hsm_slot, hsm_config)
+            if resolved_slot:
+                hsm_context.config["slot"] = resolved_slot
 
             # Execute HSM plugin
             result = hsm_plugin.get_hsm_pepper(salt, hsm_context)
