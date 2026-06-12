@@ -5,6 +5,33 @@ All notable changes to the openssl_encrypt project will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.5] - 2026-06-12
+
+### Security
+
+- **Dependency updates for published CVEs** (all patched versions verified
+  clean against OSV; production and dev pin sets now audit clean):
+  - `urllib3` 2.6.3 → 2.7.0 — CVE-2026-44431 (sensitive headers forwarded
+    across origins in proxied low-level redirects), CVE-2026-44432
+    (decompression-bomb safeguard bypass in the streaming API)
+  - `cryptography` 46.0.6 → 46.0.7 — CVE-2026-39892 (buffer overflow with
+    non-contiguous Python buffers in APIs like `Hash.update()`)
+  - `pillow` 12.1.1 → 12.2.0 — integer-overflow bypass of the PSD
+    tile-extent bounds checks (follow-up to CVE-2026-25990)
+  - `idna` 3.11 → 3.15 — incomplete-fix follow-up to CVE-2024-3651
+  - dev-only: `authlib` → 1.6.12 (CVE-2026-41425, CVE-2026-41479,
+    CVE-2026-44681), `pygments` → 2.20.0 (CVE-2026-4539),
+    `pytest` → 9.0.3 (CVE-2025-71176)
+
+### Internal
+
+- **New `flatpak-pin-check` CI job + consistency test**: the flatpak
+  manifest's hard-coded pip pins are now verified against
+  `requirements-prod.txt` on every push (including feature branches).
+  The check immediately caught and fixed a stale `requests` pin in the
+  manifest.
+- Flatpak manifest dependency pins aligned with requirements-prod.txt.
+
 ## [1.4.4] - 2026-06-12
 
 ### Added
