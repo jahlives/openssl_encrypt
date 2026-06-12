@@ -360,9 +360,13 @@ class TestPathPolicyByBusMode(unittest.TestCase):
         service, _ = _make_service(system_bus=False)
         valid, err = service._validate_file_path("/tmp/some-file.bin", must_exist=False)
         self.assertTrue(valid, err)
-        valid, err = service._validate_file_path(
-            os.path.join(os.path.expanduser("~"), "f.bin"), must_exist=False
-        )
+        home = os.path.expanduser("~")
+        if any(home.startswith(blocked) for blocked in service._blocked_paths):
+            # Running as root (e.g. in CI): home is /root, which session
+            # mode deliberately blocks — the session service is for
+            # regular users, so the home-allowance assertion is moot here.
+            self.skipTest(f"process home {home!r} is itself a blocked path in session mode")
+        valid, err = service._validate_file_path(os.path.join(home, "f.bin"), must_exist=False)
         self.assertTrue(valid, err)
 
     def test_system_mode_allows_system_paths(self):
