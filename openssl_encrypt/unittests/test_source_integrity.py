@@ -675,6 +675,42 @@ class TestUpdateManifest(unittest.TestCase):
                            manifest_path=self.manifest_path)
         )
 
+    def test_sync_is_idempotent_no_resign(self) -> None:
+        """sync_manifest does not rewrite/re-sign when nothing changed."""
+        from openssl_encrypt.integrity.update_manifest import sync_manifest
+
+        changed1 = sync_manifest(
+            self.root, allowlist_path=self.allowlist, key_fingerprint=self.fpr,
+            manifest_path=self.manifest_path, signature_path=self.sig_path,
+            sign=True, home=self.home,
+        )
+        self.assertTrue(changed1)
+        sig_before = self.sig_path.read_bytes()
+        changed2 = sync_manifest(
+            self.root, allowlist_path=self.allowlist, key_fingerprint=self.fpr,
+            manifest_path=self.manifest_path, signature_path=self.sig_path,
+            sign=True, home=self.home,
+        )
+        self.assertFalse(changed2)
+        self.assertEqual(self.sig_path.read_bytes(), sig_before)
+
+    def test_sync_rewrites_on_change(self) -> None:
+        """sync_manifest rewrites and re-signs after a protected file changes."""
+        from openssl_encrypt.integrity.update_manifest import sync_manifest
+
+        sync_manifest(
+            self.root, allowlist_path=self.allowlist, key_fingerprint=self.fpr,
+            manifest_path=self.manifest_path, signature_path=self.sig_path,
+            sign=True, home=self.home,
+        )
+        (self.root / "pkg" / "a.py").write_text("alpha-v2\n", encoding="utf-8")
+        changed = sync_manifest(
+            self.root, allowlist_path=self.allowlist, key_fingerprint=self.fpr,
+            manifest_path=self.manifest_path, signature_path=self.sig_path,
+            sign=True, home=self.home,
+        )
+        self.assertTrue(changed)
+
     def test_check_false_when_manifest_absent(self) -> None:
         """A missing manifest is treated as not-current (fail closed)."""
         from openssl_encrypt.integrity.update_manifest import check_manifest

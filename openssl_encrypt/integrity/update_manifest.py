@@ -123,6 +123,70 @@ def check_manifest(
     return fresh == on_disk_bytes
 
 
+def sync_manifest(
+    repo_root: Path,
+    *,
+    key_fingerprint: str,
+    sign: bool,
+    allowlist_path: Optional[Path] = None,
+    manifest_path: Optional[Path] = None,
+    signature_path: Optional[Path] = None,
+    home: Optional[Path] = None,
+    passphrase: Optional[str] = None,
+    gpg_binary: Optional[str] = None,
+) -> bool:
+    """Regenerate (and sign) the manifest only when it would actually change.
+
+    Signatures are non-deterministic, so blindly re-signing on every commit would
+    churn the ``.asc`` even when nothing changed. This compares freshly computed
+    manifest bytes against the on-disk manifest and only rewrites/re-signs when the
+    content differs or the signature is missing.
+
+    Args:
+        repo_root: Repository root the allowlist paths are relative to.
+        key_fingerprint: Fingerprint recorded in the manifest and used to sign.
+        sign: Whether a detached signature should be produced.
+        allowlist_path: Allowlist file (default: shipped allowlist).
+        manifest_path: Manifest path (default: shipped manifest).
+        signature_path: Signature path (default: shipped signature).
+        home: GNUPGHOME holding the signing key.
+        passphrase: Optional signing-key passphrase.
+        gpg_binary: Override the gpg executable (mainly for tests).
+
+    Returns:
+        bool: True if the manifest/signature were (re)written, False if unchanged.
+    """
+    manifest_path = manifest_path or default_manifest_path()
+    signature_path = signature_path or default_signature_path()
+
+    fresh = generate_manifest(
+        repo_root,
+        allowlist_path=allowlist_path,
+        key_fingerprint=key_fingerprint,
+        manifest_path=manifest_path,
+        signature_path=signature_path,
+        write=False,
+    )
+    unchanged = Path(manifest_path).is_file() and Path(manifest_path).read_bytes() == fresh
+    signature_present = Path(signature_path).is_file()
+    if unchanged and (signature_present or not sign):
+        return False
+
+    generate_manifest(
+        repo_root,
+        allowlist_path=allowlist_path,
+        key_fingerprint=key_fingerprint,
+        manifest_path=manifest_path,
+        signature_path=signature_path,
+        sign=sign,
+        home=home,
+        passphrase=passphrase,
+        gpg_binary=gpg_binary,
+        write=True,
+    )
+    return True
+
+
 def _git_add(paths: List[Path], repo_root: Path) -> None:
     """Stage the given paths so the regenerated manifest is part of the commit.
 
@@ -201,7 +265,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     passphrase = os.environ.get(args.passphrase_env) if args.passphrase_env else None
 
     try:
-        generate_manifest(
+        changed = sync_manifest(
             repo_root,
             key_fingerprint=fingerprint or "",
             sign=args.sign,
@@ -211,6 +275,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     except (GpgUnavailableError, GpgError) as exc:
         print(f"ERROR: signing failed: {exc}", file=sys.stderr)
         return 1
+
+    if not changed:
+        print("Integrity manifest already up to date.")
+        return 0
 
     if args.git_add:
         _git_add([default_manifest_path(), default_signature_path()], repo_root)
