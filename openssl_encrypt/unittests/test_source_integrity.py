@@ -285,5 +285,78 @@ class TestSerializeManifest(unittest.TestCase):
         self.assertEqual(json.loads(serialize_manifest(m).decode("utf-8")), m)
 
 
+class TestVerifyFiles(unittest.TestCase):
+    """Hash comparison against a manifest (tamper detection, no signature)."""
+
+    def setUp(self) -> None:
+        self.tmpdir = tempfile.mkdtemp()
+        self.root = Path(self.tmpdir)
+        (self.root / "pkg").mkdir()
+        (self.root / "pkg" / "a.py").write_text("alpha\n", encoding="utf-8")
+        (self.root / "pkg" / "b.py").write_text("beta\n", encoding="utf-8")
+        from openssl_encrypt.integrity.manifest_core import build_manifest
+
+        self.entries = ["pkg/a.py", "pkg/b.py"]
+        self.manifest = build_manifest(self.root, self.entries, key_fingerprint="K")
+
+    def tearDown(self) -> None:
+        import shutil
+
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def test_unmodified_tree_all_ok(self) -> None:
+        """An untouched tree verifies clean."""
+        from openssl_encrypt.integrity.verify import OK, verify_files
+
+        result = verify_files(self.root, self.manifest)
+        self.assertTrue(result.all_ok)
+        self.assertTrue(all(s.status == OK for s in result.statuses))
+        self.assertEqual(result.problems, [])
+
+    def test_modified_file_detected(self) -> None:
+        """A one-byte change flips the file to MODIFIED and fails overall."""
+        from openssl_encrypt.integrity.verify import MODIFIED, verify_files
+
+        (self.root / "pkg" / "a.py").write_text("alpha!\n", encoding="utf-8")
+        result = verify_files(self.root, self.manifest)
+        self.assertFalse(result.all_ok)
+        statuses = {s.path: s.status for s in result.statuses}
+        self.assertEqual(statuses["pkg/a.py"], MODIFIED)
+        self.assertEqual(statuses["pkg/b.py"], "OK")
+
+    def test_missing_file_detected(self) -> None:
+        """A deleted protected file is reported MISSING."""
+        from openssl_encrypt.integrity.verify import MISSING, verify_files
+
+        (self.root / "pkg" / "a.py").unlink()
+        result = verify_files(self.root, self.manifest)
+        self.assertFalse(result.all_ok)
+        statuses = {s.path: s.status for s in result.statuses}
+        self.assertEqual(statuses["pkg/a.py"], MISSING)
+
+    def test_symlink_swap_detected(self) -> None:
+        """Replacing a protected file with a symlink is treated as MISSING."""
+        from openssl_encrypt.integrity.verify import MISSING, verify_files
+
+        target = self.root / "pkg" / "a.py"
+        target.unlink()
+        try:
+            os.symlink(self.root / "pkg" / "b.py", target)
+        except (OSError, NotImplementedError):
+            self.skipTest("symlinks not supported on this platform")
+        result = verify_files(self.root, self.manifest)
+        statuses = {s.path: s.status for s in result.statuses}
+        self.assertEqual(statuses["pkg/a.py"], MISSING)
+
+    def test_unsupported_algorithm_fails_closed(self) -> None:
+        """A manifest declaring an unknown hash algorithm is rejected."""
+        from openssl_encrypt.integrity.verify import VerifyError, verify_files
+
+        bad = dict(self.manifest)
+        bad["hash_algorithm"] = "md5"
+        with self.assertRaises(VerifyError):
+            verify_files(self.root, bad)
+
+
 if __name__ == "__main__":
     unittest.main()
