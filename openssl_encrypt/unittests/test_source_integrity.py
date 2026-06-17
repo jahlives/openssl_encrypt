@@ -503,6 +503,72 @@ class TestVerifyFiles(unittest.TestCase):
             verify_files(self.root, bad)
 
 
+class TestSyncAllManifests(unittest.TestCase):
+    """sync_all_manifests maintains both the source and installed manifests."""
+
+    def setUp(self) -> None:
+        self.gpg = _gpg_or_skip(self)
+        self.tmpdir = tempfile.mkdtemp()
+        self.root = Path(self.tmpdir) / "repo"
+        (self.root / "openssl_encrypt" / "modules").mkdir(parents=True)
+        (self.root / "openssl_encrypt" / "cli.py").write_text("cli\n", encoding="utf-8")
+        (self.root / "openssl_encrypt" / "modules" / "m.py").write_text("m\n", encoding="utf-8")
+        (self.root / "requirements.txt").write_text("dep\n", encoding="utf-8")
+        self.allowlist = self.root / "protected_files.txt"
+        self.allowlist.write_text(
+            "openssl_encrypt/cli.py\nopenssl_encrypt/modules/m.py\nrequirements.txt\n",
+            encoding="utf-8",
+        )
+        self.src_m = self.root / "manifest.json"
+        self.src_s = self.root / "manifest.json.asc"
+        self.inst_m = self.root / "manifest-installed.json"
+        self.inst_s = self.root / "manifest-installed.json.asc"
+        self.home = Path(self.tmpdir) / "gnupg"
+        self.fpr, self.pub = _make_ephemeral_key(self.gpg, self.home)
+
+    def tearDown(self) -> None:
+        import shutil
+
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _sync(self):
+        from openssl_encrypt.integrity.update_manifest import sync_all_manifests
+
+        return sync_all_manifests(
+            self.root,
+            key_fingerprint=self.fpr,
+            sign=True,
+            home=self.home,
+            allowlist_path=self.allowlist,
+            manifest_path=self.src_m,
+            signature_path=self.src_s,
+            installed_manifest_path=self.inst_m,
+            installed_signature_path=self.inst_s,
+        )
+
+    def test_writes_both_manifests(self) -> None:
+        """Both manifests and signatures are produced."""
+        import json
+
+        self.assertTrue(self._sync())
+        for p in (self.src_m, self.src_s, self.inst_m, self.inst_s):
+            self.assertTrue(p.is_file(), f"missing {p}")
+        src_files = set(json.loads(self.src_m.read_text())["files"])
+        inst_files = set(json.loads(self.inst_m.read_text())["files"])
+        self.assertEqual(
+            src_files,
+            {"openssl_encrypt/cli.py", "openssl_encrypt/modules/m.py", "requirements.txt"},
+        )
+        self.assertEqual(
+            inst_files, {"openssl_encrypt/cli.py", "openssl_encrypt/modules/m.py"}
+        )
+
+    def test_idempotent(self) -> None:
+        """A second run with no changes rewrites nothing."""
+        self.assertTrue(self._sync())
+        self.assertFalse(self._sync())
+
+
 class TestVerifyIntegrityCli(unittest.TestCase):
     """The verify-integrity command core: warning, signature + hash, exit codes."""
 
@@ -818,6 +884,23 @@ class TestInstalledLayoutDetection(unittest.TestCase):
         from openssl_encrypt.integrity.verify_cli import default_repo_root, is_installed_layout
 
         self.assertFalse(is_installed_layout(default_repo_root()))
+
+
+class TestPackagingShipsIntegrity(unittest.TestCase):
+    """The integrity artifacts must be packaged so installed verification works."""
+
+    def setUp(self) -> None:
+        self.repo_root = Path(__file__).resolve().parents[2]
+
+    def test_manifest_in_includes_integrity_artifacts(self) -> None:
+        """MANIFEST.in ships the integrity manifests and keys (sdist)."""
+        text = (self.repo_root / "MANIFEST.in").read_text(encoding="utf-8")
+        self.assertIn("openssl_encrypt/integrity", text)
+
+    def test_setup_package_data_includes_integrity(self) -> None:
+        """setup.py package_data ships the integrity artifacts into the wheel."""
+        text = (self.repo_root / "setup.py").read_text(encoding="utf-8")
+        self.assertIn("openssl_encrypt.integrity", text)
 
 
 class TestVerifyIntegrityCliWiring(unittest.TestCase):

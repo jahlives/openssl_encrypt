@@ -19,11 +19,13 @@ import sys
 from pathlib import Path
 from typing import List, Optional
 
-from .allowlist import default_allowlist_path, load_allowlist
+from .allowlist import default_allowlist_path, filter_installable, load_allowlist
 from .gpg_runner import GpgError, GpgUnavailableError, detached_sign
 from .manifest_core import build_manifest, serialize_manifest
 from .verify_cli import (
     default_fingerprint,
+    default_installed_manifest_path,
+    default_installed_signature_path,
     default_manifest_path,
     default_repo_root,
     default_signature_path,
@@ -194,6 +196,65 @@ def sync_manifest(
     return True
 
 
+def sync_all_manifests(
+    repo_root: Path,
+    *,
+    key_fingerprint: str,
+    sign: bool,
+    allowlist_path: Optional[Path] = None,
+    manifest_path: Optional[Path] = None,
+    signature_path: Optional[Path] = None,
+    installed_manifest_path: Optional[Path] = None,
+    installed_signature_path: Optional[Path] = None,
+    home: Optional[Path] = None,
+    passphrase: Optional[str] = None,
+    gpg_binary: Optional[str] = None,
+) -> bool:
+    """Sync both the full source manifest and the installed-scope subset manifest.
+
+    The source manifest covers every allowlisted file; the installed manifest covers
+    only the subset that survives installation (``filter_installable``). Each is
+    synced idempotently (re-signed only when its content changed).
+
+    Args:
+        repo_root: Repository root the allowlist paths are relative to.
+        key_fingerprint: Fingerprint recorded in the manifests and used to sign.
+        sign: Whether detached signatures should be produced.
+        allowlist_path: Allowlist file (default: shipped allowlist).
+        manifest_path / signature_path: Source manifest paths (default: shipped).
+        installed_manifest_path / installed_signature_path: Installed manifest paths
+            (default: shipped).
+        home: GNUPGHOME holding the signing key.
+        passphrase: Optional signing-key passphrase.
+        gpg_binary: Override the gpg executable (mainly for tests).
+
+    Returns:
+        bool: True if either manifest was (re)written.
+    """
+    entries = load_allowlist(allowlist_path or default_allowlist_path())
+    common = dict(
+        repo_root=repo_root,
+        key_fingerprint=key_fingerprint,
+        sign=sign,
+        home=home,
+        passphrase=passphrase,
+        gpg_binary=gpg_binary,
+    )
+    changed = sync_manifest(
+        entries=entries,
+        manifest_path=manifest_path or default_manifest_path(),
+        signature_path=signature_path or default_signature_path(),
+        **common,
+    )
+    changed_installed = sync_manifest(
+        entries=filter_installable(entries),
+        manifest_path=installed_manifest_path or default_installed_manifest_path(),
+        signature_path=installed_signature_path or default_installed_signature_path(),
+        **common,
+    )
+    return changed or changed_installed
+
+
 def _git_add(paths: List[Path], repo_root: Path) -> None:
     """Stage the given paths so the regenerated manifest is part of the commit.
 
@@ -272,7 +333,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     passphrase = os.environ.get(args.passphrase_env) if args.passphrase_env else None
 
     try:
-        changed = sync_manifest(
+        changed = sync_all_manifests(
             repo_root,
             key_fingerprint=fingerprint or "",
             sign=args.sign,
@@ -284,14 +345,22 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 1
 
     if not changed:
-        print("Integrity manifest already up to date.", file=sys.stderr)
+        print("Integrity manifests already up to date.", file=sys.stderr)
         return 0
 
     if args.git_add:
-        _git_add([default_manifest_path(), default_signature_path()], repo_root)
+        _git_add(
+            [
+                default_manifest_path(),
+                default_signature_path(),
+                default_installed_manifest_path(),
+                default_installed_signature_path(),
+            ],
+            repo_root,
+        )
 
     print(
-        "Integrity manifest regenerated" + (" and signed." if args.sign else "."),
+        "Integrity manifests regenerated" + (" and signed." if args.sign else "."),
         file=sys.stderr,
     )
     return 0

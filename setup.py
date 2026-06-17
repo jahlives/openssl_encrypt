@@ -292,7 +292,16 @@ setup(
     },
     packages=find_packages(),
     include_package_data=True,
-    package_data={"": ["README.md", "scripts/build_local_deps.sh"]},
+    package_data={
+        "": ["README.md", "scripts/build_local_deps.sh"],
+        # Ship source-integrity artifacts so installed packages can be verified.
+        "openssl_encrypt.integrity": [
+            "*.json",
+            "*.asc",
+            "protected_files.txt",
+            "keys/*",
+        ],
+    },
     author="Tobi",
     author_email="jahlives@gmx.ch",
     license="Hippocratic-3.0",
