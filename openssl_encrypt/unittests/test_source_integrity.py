@@ -572,6 +572,22 @@ class TestVerifyIntegrityCli(unittest.TestCase):
         self.assertIn("SOURCE_INTEGRITY", err)
         self.assertLessEqual(len(err.strip().splitlines()), 2)
 
+    def test_json_reports_installed_scope(self) -> None:
+        """Installed-context verification labels its reduced scope."""
+        import json
+
+        _code, out, _err = self._run(as_json=True, quiet=True, installed=True)
+        payload = json.loads(out)
+        self.assertEqual(payload["scope"], "installed")
+
+    def test_json_reports_source_scope(self) -> None:
+        """Source-checkout verification labels full scope."""
+        import json
+
+        _code, out, _err = self._run(as_json=True, quiet=True, installed=False)
+        payload = json.loads(out)
+        self.assertEqual(payload["scope"], "source")
+
     def test_json_always_includes_trust_warning(self) -> None:
         """--json output retains the full trust caveat in a field (Q6b)."""
         import json
@@ -770,6 +786,38 @@ class TestUpdateManifest(unittest.TestCase):
             check_manifest(self.root, allowlist_path=self.allowlist,
                            manifest_path=self.manifest_path)
         )
+
+
+class TestInstalledLayoutDetection(unittest.TestCase):
+    """Detecting whether we run from a source checkout or an installed package."""
+
+    def setUp(self) -> None:
+        self.tmpdir = tempfile.mkdtemp()
+
+    def tearDown(self) -> None:
+        import shutil
+
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def test_source_checkout_detected(self) -> None:
+        """A tree with requirements.txt / threefish_native/ is a source checkout."""
+        from openssl_encrypt.integrity.verify_cli import is_installed_layout
+
+        root = Path(self.tmpdir)
+        (root / "requirements.txt").write_text("x\n", encoding="utf-8")
+        self.assertFalse(is_installed_layout(root))
+
+    def test_installed_layout_detected(self) -> None:
+        """A tree without those repo-root markers is an installed layout."""
+        from openssl_encrypt.integrity.verify_cli import is_installed_layout
+
+        self.assertTrue(is_installed_layout(Path(self.tmpdir)))
+
+    def test_real_repo_is_source(self) -> None:
+        """This repository checkout is detected as a source tree."""
+        from openssl_encrypt.integrity.verify_cli import default_repo_root, is_installed_layout
+
+        self.assertFalse(is_installed_layout(default_repo_root()))
 
 
 class TestVerifyIntegrityCliWiring(unittest.TestCase):

@@ -65,6 +65,33 @@ def default_signature_path() -> Path:
     return _pkg_dir() / "manifest.json.asc"
 
 
+def default_installed_manifest_path() -> Path:
+    """Path to the shipped installed-scope manifest (package .py files only)."""
+    return _pkg_dir() / "manifest-installed.json"
+
+
+def default_installed_signature_path() -> Path:
+    """Path to the shipped installed-scope manifest signature."""
+    return _pkg_dir() / "manifest-installed.json.asc"
+
+
+def is_installed_layout(repo_root: Path) -> bool:
+    """Return True if ``repo_root`` looks like an installed package, not a checkout.
+
+    A source checkout contains repo-root files that are never installed into
+    site-packages (``requirements.txt`` and the ``threefish_native/`` crate); their
+    absence indicates an installed layout.
+
+    Args:
+        repo_root: The resolved root the manifest paths are relative to.
+
+    Returns:
+        bool: True if installed layout, False if source checkout.
+    """
+    root = Path(repo_root)
+    return not ((root / "requirements.txt").is_file() or (root / "threefish_native").is_dir())
+
+
 def default_pubkey_path() -> Path:
     """Path to the bundled public key."""
     return _pkg_dir() / "keys" / "source-integrity-pubkey.asc"
@@ -91,6 +118,7 @@ def verify_integrity(
     signature_path: Optional[Path] = None,
     pubkey_path: Optional[Path] = None,
     expected_fingerprint: Optional[str] = None,
+    installed: Optional[bool] = None,
     quiet: bool = False,
     as_json: bool = False,
     gpg_binary: Optional[str] = None,
@@ -108,6 +136,8 @@ def verify_integrity(
         signature_path: Detached signature location (default: shipped signature).
         pubkey_path: Public key location (default: bundled public key).
         expected_fingerprint: Expected signing fingerprint (default: keys/FINGERPRINT).
+        installed: Force installed scope (True) or source scope (False); None
+            auto-detects from the layout. Selects which default manifest is used.
         quiet: If True, shorten the human warning to one line.
         as_json: If True, emit a JSON report on stdout.
         gpg_binary: Override the gpg executable (mainly for tests).
@@ -116,17 +146,34 @@ def verify_integrity(
         int: One of the EXIT_* codes.
     """
     repo_root = Path(repo_root) if repo_root is not None else default_repo_root()
-    manifest_path = manifest_path or default_manifest_path()
-    signature_path = signature_path or default_signature_path()
+    if installed is None:
+        installed = is_installed_layout(repo_root)
+    scope = "installed" if installed else "source"
+
+    # Choose default manifest/signature by scope; explicit paths always win.
+    if manifest_path is None:
+        manifest_path = default_installed_manifest_path() if installed else default_manifest_path()
+    if signature_path is None:
+        signature_path = (
+            default_installed_signature_path() if installed else default_signature_path()
+        )
     pubkey_path = pubkey_path or default_pubkey_path()
     if expected_fingerprint is None:
         expected_fingerprint = default_fingerprint()
 
     # The trust warning is non-negotiable: human-readable to stderr always.
     print(SHORT_WARNING if quiet else TRUST_WARNING, file=sys.stderr)
+    if installed and not quiet:
+        print(
+            "Scope: installed package — verifies Python source only. Native code "
+            "(threefish) and dependencies are NOT covered here; rely on the packaging "
+            "channel and on verifying the source tree before build.",
+            file=sys.stderr,
+        )
 
     def _emit(payload: dict, code: int) -> int:
         payload["trust_warning"] = TRUST_WARNING
+        payload["scope"] = scope
         payload["exit_code"] = code
         if as_json:
             print(json.dumps(payload, indent=2, sort_keys=True))  # JSON data -> stdout

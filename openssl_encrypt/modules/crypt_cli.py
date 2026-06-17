@@ -4970,6 +4970,7 @@ def main_with_args(args=None):
                 manifest_path=Path(args.manifest) if args.manifest else None,
                 signature_path=Path(args.signature) if args.signature else None,
                 pubkey_path=Path(args.pubkey) if args.pubkey else None,
+                installed=args.vi_installed,
                 quiet=args.quiet,
                 as_json=args.json,
             )

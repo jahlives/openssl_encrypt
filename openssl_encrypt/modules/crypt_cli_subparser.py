@@ -2906,6 +2906,20 @@ def create_subparser_main():
     verify_integrity_parser.add_argument(
         "--quiet", action="store_true", help="Shorten the trust warning to one line"
     )
+    vi_scope = verify_integrity_parser.add_mutually_exclusive_group()
+    vi_scope.add_argument(
+        "--installed",
+        dest="vi_installed",
+        action="store_true",
+        default=None,
+        help="Force installed-package scope (Python source only); default: auto-detect",
+    )
+    vi_scope.add_argument(
+        "--source",
+        dest="vi_installed",
+        action="store_false",
+        help="Force source-checkout scope (full manifest); default: auto-detect",
+    )
 
     # Note: Steganography is now integrated into encrypt/decrypt commands
     # rather than separate commands
