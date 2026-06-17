@@ -562,6 +562,14 @@ The v1.3.0 codebase received an independent security review:
 - **Dependencies**: pip-audit clean, zero known vulnerabilities
 
 See <SECURITY_REVIEW_v1.3.0.md> for the full report.
+
+### Source-Code Integrity
+
+Core cryptographic/security source files are covered by a PGP-signed integrity
+manifest. Verify with `openssl-encrypt verify-integrity` (a convenience tripwire) or,
+authoritatively, with `gpg` against the out-of-band fingerprint published in
+[SECURITY.md](SECURITY.md). Full runbook: [docs/SOURCE_INTEGRITY.md](docs/SOURCE_INTEGRITY.md).
+
 ---
 ## Features
 

@@ -60,6 +60,8 @@ STDOUT_WHITELIST = [
     ("modules/keystore_cli.py", "print(json.dumps(", "JSON data output"),
     # verify.py — JSON data output for verification results
     ("modules/verify.py", "print(json.dumps(", "JSON data output"),
+    # integrity/verify_cli.py — verify-integrity --json data output (warning/report use stderr)
+    ("integrity/verify_cli.py", "print(json.dumps(", "verify-integrity JSON report"),
     # portable_media/usb_creator.py — decrypted content to stdout
     ("modules/portable_media/usb_creator.py", "sys.stdout.buffer.write(content)", "Decrypted data output"),
     # audit_cli.py — verify/status are CLIs that emit JSON or human-readable

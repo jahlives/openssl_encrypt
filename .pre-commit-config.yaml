@@ -124,6 +124,18 @@ repos:
         always_run: false
         files: '(?i).*(plan|implementation).*\.md$'
 
+      # Regenerate and sign the source-integrity manifests when a protected
+      # source file (or the allowlist) changes. Signs with the local project
+      # key (keys/FINGERPRINT); the private key never leaves the dev machine.
+      # See docs/SOURCE_INTEGRITY.md.
+      - id: source-integrity-manifest
+        name: Regenerate & sign source integrity manifest
+        entry: python -m openssl_encrypt.integrity.update_manifest --sign --git-add
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
+        files: '^(openssl_encrypt/integrity/protected_files\.txt|openssl_encrypt/modules/.*\.py|openssl_encrypt/(__init__|__main__|cli|crypt|crypt_gui|versions|post_install)\.py|requirements(-(prod|dev|hsm))?\.(txt|in)|threefish_native/(Cargo\.toml|pyproject\.toml|src/.*\.rs))$'
+
 # Configuration for specific checks
 default_install_hook_types: [pre-commit, pre-push]
 default_stages: [pre-commit]

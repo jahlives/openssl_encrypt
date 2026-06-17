@@ -13,6 +13,31 @@ We take security seriously and provide security updates for the following versio
 
 **Note:** We provide extended security support for both the current major version (1.4.x) and the previous major version (1.3.x). End of life dates will be announced well in advance.
 
+## Source-Code Integrity Verification
+
+Core cryptographic/security source files are covered by a PGP-signed integrity
+manifest so tampering can be detected. The manifest is signed by a **dedicated
+source-integrity key**:
+
+- **Source-integrity signing key fingerprint:** `1E5D7995 DA9A62CE D90354D8 F98AAFF3 F31FD459`
+- Key type: Ed25519 (sign-only)
+
+This fingerprint is published here as an **out-of-band reference**. To verify the
+source independently, confirm this fingerprint through a channel other than the
+repository, then follow `docs/SOURCE_INTEGRITY.md`:
+
+```bash
+gpg --verify openssl_encrypt/integrity/manifest.json.asc \
+             openssl_encrypt/integrity/manifest.json
+```
+
+> The built-in `openssl-encrypt verify-integrity` command is a convenience tripwire,
+> not cryptographic proof — the verifier ships in the same package it checks. Only
+> manual `gpg` verification against an out-of-band fingerprint is authoritative.
+>
+> **Note:** the current key is a development *bootstrap* key and will be rotated to a
+> key generated on a trusted machine before a real public release.
+
 ## Reporting a Vulnerability
 
 We appreciate responsible disclosure of security vulnerabilities. If you discover a security issue, please follow these steps:
