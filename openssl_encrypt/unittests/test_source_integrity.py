@@ -285,6 +285,116 @@ class TestSerializeManifest(unittest.TestCase):
         self.assertEqual(json.loads(serialize_manifest(m).decode("utf-8")), m)
 
 
+def _gpg_or_skip(test: unittest.TestCase) -> str:
+    """Return the gpg binary path, or skip the test if gpg is unavailable."""
+    import shutil
+
+    gpg = shutil.which("gpg")
+    if not gpg:
+        test.skipTest("gpg binary not available")
+    return gpg
+
+
+def _make_ephemeral_key(gpg: str, home: Path) -> tuple:
+    """Create an Ed25519 signing key in an isolated GNUPGHOME.
+
+    Returns:
+        tuple: (fingerprint, armored_public_key_bytes).
+    """
+    import subprocess
+
+    home.mkdir(mode=0o700, exist_ok=True)
+    env = {"GNUPGHOME": str(home), "PATH": os.environ.get("PATH", "")}
+    subprocess.run(
+        [
+            gpg, "--homedir", str(home), "--batch", "--pinentry-mode", "loopback",
+            "--passphrase", "", "--quick-generate-key",
+            "Integrity Test <test@example.invalid>", "ed25519", "sign", "0",
+        ],
+        check=True, capture_output=True, env=env,
+    )
+    listing = subprocess.run(
+        [gpg, "--homedir", str(home), "--batch", "--with-colons", "--list-keys"],
+        check=True, capture_output=True, env=env, text=True,
+    ).stdout
+    fpr = ""
+    for line in listing.splitlines():
+        if line.startswith("fpr:"):
+            fpr = line.split(":")[9]
+            break
+    pub = subprocess.run(
+        [gpg, "--homedir", str(home), "--batch", "--armor", "--export", fpr],
+        check=True, capture_output=True, env=env,
+    ).stdout
+    return fpr, pub
+
+
+class TestGpgRunner(unittest.TestCase):
+    """Detached signing and verification via the system gpg binary."""
+
+    def setUp(self) -> None:
+        self.gpg = _gpg_or_skip(self)
+        self.tmpdir = tempfile.mkdtemp()
+        self.home = Path(self.tmpdir) / "gnupg"
+        self.fpr, self.pub = _make_ephemeral_key(self.gpg, self.home)
+        self.data = b"manifest-bytes\n"
+
+    def tearDown(self) -> None:
+        import shutil
+
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def test_sign_then_verify_roundtrip(self) -> None:
+        """A detached signature verifies and reports the signing fingerprint."""
+        from openssl_encrypt.integrity.gpg_runner import detached_sign, verify_detached
+
+        sig = detached_sign(self.data, self.fpr, home=self.home)
+        self.assertIn(b"BEGIN PGP SIGNATURE", sig)
+        result = verify_detached(self.data, sig, public_key=self.pub)
+        self.assertTrue(result.good)
+        self.assertTrue(self.fpr.endswith(result.fingerprint) or result.fingerprint == self.fpr)
+
+    def test_corrupted_signature_fails(self) -> None:
+        """A tampered signature does not verify."""
+        from openssl_encrypt.integrity.gpg_runner import detached_sign, verify_detached
+
+        sig = bytearray(detached_sign(self.data, self.fpr, home=self.home))
+        # Flip a byte inside the armored body (avoid the header line).
+        sig[len(sig) // 2] ^= 0x01
+        result = verify_detached(self.data, bytes(sig), public_key=self.pub)
+        self.assertFalse(result.good)
+
+    def test_modified_data_fails(self) -> None:
+        """A signature over different data does not verify."""
+        from openssl_encrypt.integrity.gpg_runner import detached_sign, verify_detached
+
+        sig = detached_sign(self.data, self.fpr, home=self.home)
+        result = verify_detached(self.data + b"tampered", sig, public_key=self.pub)
+        self.assertFalse(result.good)
+
+    def test_fingerprint_mismatch_fails(self) -> None:
+        """A valid signature by an unexpected key is reported as not good."""
+        from openssl_encrypt.integrity.gpg_runner import detached_sign, verify_detached
+
+        sig = detached_sign(self.data, self.fpr, home=self.home)
+        result = verify_detached(
+            self.data, sig, public_key=self.pub, expected_fingerprint="0" * 40
+        )
+        self.assertFalse(result.good)
+
+    def test_missing_gpg_binary_raises_unavailable(self) -> None:
+        """A nonexistent gpg binary triggers the fail-closed error (Q8)."""
+        from openssl_encrypt.integrity.gpg_runner import (
+            GpgUnavailableError,
+            verify_detached,
+        )
+
+        with self.assertRaises(GpgUnavailableError):
+            verify_detached(
+                self.data, b"sig", public_key=self.pub, gpg_binary="/nonexistent/gpg-xyz"
+            )
+
+
 class TestVerifyFiles(unittest.TestCase):
     """Hash comparison against a manifest (tamper detection, no signature)."""
 
