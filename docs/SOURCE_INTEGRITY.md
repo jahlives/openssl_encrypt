@@ -43,9 +43,21 @@ Deliberately **not** protected: the auto-generated `version.py`, the integrity
 verifier code itself (it cannot protect itself), tests, plugins, and `Cargo.lock`
 (untracked).
 
+There are **two** manifests:
+
+- **Source manifest** (`manifest.json`) — all 48 files. Use it to verify a **source
+  checkout** (the files you build from).
+- **Installed manifest** (`manifest-installed.json`) — the 38 `openssl_encrypt/` `.py`
+  files that survive installation. Use it to verify a **pip/flatpak install**. It
+  cannot cover the `requirements*` files, the `threefish_native/` Rust sources, or
+  the compiled Threefish `.so` (those aren't present, or aren't reproducible, in an
+  installed layout — see §4b).
+
+`verify-integrity` auto-selects the right one (override with `--source` / `--installed`).
+
 Artifacts:
-- `openssl_encrypt/integrity/manifest.json` — canonical, reproducible SHA-512 manifest
-- `openssl_encrypt/integrity/manifest.json.asc` — detached PGP signature
+- `openssl_encrypt/integrity/manifest.json[.asc]` — source manifest + signature
+- `openssl_encrypt/integrity/manifest-installed.json[.asc]` — installed manifest + signature
 - `openssl_encrypt/integrity/keys/source-integrity-pubkey.asc` — signing public key
 - `openssl_encrypt/integrity/keys/FINGERPRINT` — expected fingerprint
 
@@ -97,13 +109,67 @@ Exit codes:
 
 ---
 
+## 4b. Verifying an installed package (pip / flatpak)
+
+When run from an installed package, `verify-integrity` auto-detects the installed
+layout and uses the **installed manifest** (38 `.py` files):
+
+```bash
+openssl-encrypt verify-integrity            # auto-detects installed scope
+```
+
+**Scope of an installed check (important):** a green result means *"the installed
+Python source matches the signed manifest"* — it does **not** cover the native
+Threefish `.so` (not reproducible) or the dependencies (`requirements*` — use pip
+hash-checking / PyPI attestations for those). Native-code assurance comes only from
+verifying the **source tree** (§3) before building.
+
+### Detecting a compromised distribution channel (e.g. a hijacked PyPI)
+
+If someone hijacks the PyPI project and ships tampered files, the manifest, signature
+**and** public key *bundled in that package* are also under their control — so the
+built-in check (which reads bundled files) would still say PASS. To detect this you
+must compare against a reference from a **different trust domain: the GitLab repo.**
+
+1. Note the installed version (it tells you which GitLab tag to use):
+   ```bash
+   python -c "import openssl_encrypt.version as v; print(v.__version__, v.__git_commit__)"
+   ```
+2. Download the installed manifest, its signature, and the public key **from GitLab**
+   for the **matching tag** (not from the installed package), e.g.:
+   ```bash
+   base="https://gitlab.rm-rf.ch/world/openssl_encrypt/-/raw/v<VERSION>/openssl_encrypt/integrity"
+   curl -O "$base/manifest-installed.json" -O "$base/manifest-installed.json.asc"
+   curl -O "$base/keys/source-integrity-pubkey.asc"
+   ```
+3. Confirm the signing fingerprint **out-of-band** (SECURITY.md / project page), then
+   verify the GitLab manifest's signature and compare it to the installed files:
+   ```bash
+   gpg --import source-integrity-pubkey.asc
+   gpg --verify manifest-installed.json.asc manifest-installed.json
+   # point the verifier at the GitLab-downloaded reference, against the install:
+   openssl-encrypt verify-integrity --installed \
+     --manifest manifest-installed.json \
+     --signature manifest-installed.json.asc \
+     --pubkey source-integrity-pubkey.asc
+   ```
+   If PyPI was hijacked but GitLab was not, the installed file hashes will not match
+   the GitLab manifest → detected.
+
+> Even this is strengthened, not absolute: the verifier code itself comes from the
+> (possibly hijacked) install. For full assurance, do the comparison **manually** —
+> `gpg --verify` the GitLab manifest, then `sha512sum` the installed files and diff
+> against the manifest by hand, using tools that did not come from the package.
+
+---
+
 ## 5. Signing (maintainers with the key)
 
 Signing happens **locally**; the private key never enters CI or the repo (D3).
 
-The pre-commit hook `source-integrity-manifest` regenerates and re-signs the
-manifest automatically whenever a protected file (or the allowlist) changes, and
-stages the result:
+The pre-commit hook `source-integrity-manifest` regenerates and re-signs **both**
+manifests (source + installed) automatically whenever a protected file (or the
+allowlist) changes, and stages the result:
 
 ```bash
 pip install pre-commit && pre-commit install
