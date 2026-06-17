@@ -500,6 +500,7 @@ class TestVerifyIntegrityCli(unittest.TestCase):
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
     def _run(self, **overrides):
+        import contextlib
         import io
 
         from openssl_encrypt.integrity import verify_cli
@@ -511,11 +512,10 @@ class TestVerifyIntegrityCli(unittest.TestCase):
             signature_path=self.sig_path,
             pubkey_path=self.pub_path,
             expected_fingerprint=self.fpr,
-            out=out,
-            err=err,
         )
         kwargs.update(overrides)
-        code = verify_cli.verify_integrity(**kwargs)
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = verify_cli.verify_integrity(**kwargs)
         return code, out.getvalue(), err.getvalue()
 
     def test_happy_path_returns_ok(self) -> None:

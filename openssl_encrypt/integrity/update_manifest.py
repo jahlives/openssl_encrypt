@@ -245,7 +245,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     if args.check:
         if check_manifest(repo_root):
-            print("Integrity manifest is up to date.")
+            print("Integrity manifest is up to date.", file=sys.stderr)
             return 0
         print(
             "ERROR: integrity manifest is out of date or missing; "
@@ -277,13 +277,16 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 1
 
     if not changed:
-        print("Integrity manifest already up to date.")
+        print("Integrity manifest already up to date.", file=sys.stderr)
         return 0
 
     if args.git_add:
         _git_add([default_manifest_path(), default_signature_path()], repo_root)
 
-    print("Integrity manifest regenerated" + (" and signed." if args.sign else "."))
+    print(
+        "Integrity manifest regenerated" + (" and signed." if args.sign else "."),
+        file=sys.stderr,
+    )
     return 0
 
 

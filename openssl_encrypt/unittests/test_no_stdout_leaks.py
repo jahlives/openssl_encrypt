@@ -41,6 +41,8 @@ STDOUT_WHITELIST = [
     ("crypt_utils.py", 25, "eprint() helper implementation"),
     # usb_creator.py — decrypted text content
     ("usb_creator.py", 914, "USB decrypted text content"),
+    # verify_cli.py — verify-integrity --json data output (warning/report use stderr)
+    ("verify_cli.py", 132, "verify-integrity JSON report"),
 ]
 
 # Tolerance for line number matching (handles formatting/refactoring shifts)

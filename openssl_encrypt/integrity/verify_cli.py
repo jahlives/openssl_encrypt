@@ -18,7 +18,7 @@ Exit codes (distinct per failure class):
 import json
 import sys
 from pathlib import Path
-from typing import Optional, TextIO
+from typing import Optional
 
 from . import gpg_runner
 from .verify import MISSING, MODIFIED, VerifyError, verify_files
@@ -93,11 +93,14 @@ def verify_integrity(
     expected_fingerprint: Optional[str] = None,
     quiet: bool = False,
     as_json: bool = False,
-    out: TextIO = sys.stdout,
-    err: TextIO = sys.stderr,
     gpg_binary: Optional[str] = None,
 ) -> int:
     """Verify the signed manifest and the protected files; return an exit code.
+
+    Output streams are fixed: the trust warning, the human-readable report and all
+    error messages go to **stderr**; only the ``--json`` payload is written to
+    **stdout** (so stdout stays empty/clean in the non-JSON case and parseable in the
+    JSON case). Tests capture these with contextlib.redirect_stdout/redirect_stderr.
 
     Args:
         repo_root: Root the manifest paths are relative to (default: package root).
@@ -106,9 +109,7 @@ def verify_integrity(
         pubkey_path: Public key location (default: bundled public key).
         expected_fingerprint: Expected signing fingerprint (default: keys/FINGERPRINT).
         quiet: If True, shorten the human warning to one line.
-        as_json: If True, emit a JSON report on ``out``.
-        out: Stream for normal output (JSON or the human report).
-        err: Stream for the trust warning and errors.
+        as_json: If True, emit a JSON report on stdout.
         gpg_binary: Override the gpg executable (mainly for tests).
 
     Returns:
@@ -122,13 +123,13 @@ def verify_integrity(
         expected_fingerprint = default_fingerprint()
 
     # The trust warning is non-negotiable: human-readable to stderr always.
-    print(SHORT_WARNING if quiet else TRUST_WARNING, file=err)
+    print(SHORT_WARNING if quiet else TRUST_WARNING, file=sys.stderr)
 
     def _emit(payload: dict, code: int) -> int:
         payload["trust_warning"] = TRUST_WARNING
         payload["exit_code"] = code
         if as_json:
-            print(json.dumps(payload, indent=2, sort_keys=True), file=out)
+            print(json.dumps(payload, indent=2, sort_keys=True))  # JSON data -> stdout
         return code
 
     # Step 1: required inputs must exist and parse.
@@ -138,14 +139,14 @@ def verify_integrity(
         ("public key", pubkey_path),
     ):
         if not Path(path).is_file():
-            print(f"ERROR: {label} not found: {path}", file=err)
+            print(f"ERROR: {label} not found: {path}", file=sys.stderr)
             return _emit({"error": f"{label} not found"}, EXIT_NOT_FOUND)
 
     manifest_bytes = Path(manifest_path).read_bytes()
     try:
         manifest = json.loads(manifest_bytes.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        print(f"ERROR: manifest is not valid JSON: {exc}", file=err)
+        print(f"ERROR: manifest is not valid JSON: {exc}", file=sys.stderr)
         return _emit({"error": "manifest malformed"}, EXIT_NOT_FOUND)
 
     # Step 2: signature verification (fail closed if gpg is missing).
@@ -169,7 +170,7 @@ def verify_integrity(
         missing = [s.path for s in file_result.statuses if s.status == MISSING]
         files_ok = file_result.all_ok
     except VerifyError as exc:
-        print(f"ERROR: cannot process manifest: {exc}", file=err)
+        print(f"ERROR: cannot process manifest: {exc}", file=sys.stderr)
         return _emit({"error": str(exc)}, EXIT_NOT_FOUND)
 
     # Determine exit code: most severe failure wins.
@@ -182,15 +183,20 @@ def verify_integrity(
         code = EXIT_GPG_UNAVAILABLE
 
     if not quiet and not as_json:
-        print(f"Signature: {'VALID' if sig_good else 'NOT VALID'} ({sig_summary})", file=out)
+        # Human-readable report -> stderr (stdout stays clean for non-JSON callers).
+        sig_state = "VALID" if sig_good else "NOT VALID"
+        print(f"Signature: {sig_state} ({sig_summary})", file=sys.stderr)
         if sig_fpr:
-            print(f"Signing key: {sig_fpr}", file=out)
-        print(f"Files: {len(manifest.get('files', {}))} checked, ", end="", file=out)
-        print(f"{len(modified)} modified, {len(missing)} missing", file=out)
+            print(f"Signing key: {sig_fpr}", file=sys.stderr)
+        n_files = len(manifest.get("files", {}))
+        print(
+            f"Files: {n_files} checked, {len(modified)} modified, {len(missing)} missing",
+            file=sys.stderr,
+        )
         for path in modified:
-            print(f"  MODIFIED: {path}", file=out)
+            print(f"  MODIFIED: {path}", file=sys.stderr)
         for path in missing:
-            print(f"  MISSING:  {path}", file=out)
+            print(f"  MISSING:  {path}", file=sys.stderr)
 
     return _emit(
         {
