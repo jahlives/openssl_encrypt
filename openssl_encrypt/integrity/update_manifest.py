@@ -34,6 +34,7 @@ def generate_manifest(
     repo_root: Path,
     *,
     allowlist_path: Optional[Path] = None,
+    entries: Optional[List[str]] = None,
     key_fingerprint: str = "",
     manifest_path: Optional[Path] = None,
     signature_path: Optional[Path] = None,
@@ -47,7 +48,10 @@ def generate_manifest(
 
     Args:
         repo_root: Repository root the allowlist paths are relative to.
-        allowlist_path: Allowlist file (default: shipped allowlist).
+        allowlist_path: Allowlist file (default: shipped allowlist). Ignored when
+            ``entries`` is given.
+        entries: Explicit list of protected paths to use instead of loading the
+            allowlist (used to build the installed-scope subset manifest).
         key_fingerprint: Fingerprint recorded in the manifest and used to sign.
         manifest_path: Where to write the manifest (default: shipped manifest).
         signature_path: Where to write the signature (default: shipped signature).
@@ -63,11 +67,11 @@ def generate_manifest(
     Raises:
         GpgUnavailableError / GpgError: If signing is requested but fails.
     """
-    allowlist_path = allowlist_path or default_allowlist_path()
     manifest_path = manifest_path or default_manifest_path()
     signature_path = signature_path or default_signature_path()
 
-    entries = load_allowlist(allowlist_path)
+    if entries is None:
+        entries = load_allowlist(allowlist_path or default_allowlist_path())
     manifest = build_manifest(repo_root, entries, key_fingerprint=key_fingerprint)
     blob = serialize_manifest(manifest)
 
@@ -129,6 +133,7 @@ def sync_manifest(
     key_fingerprint: str,
     sign: bool,
     allowlist_path: Optional[Path] = None,
+    entries: Optional[List[str]] = None,
     manifest_path: Optional[Path] = None,
     signature_path: Optional[Path] = None,
     home: Optional[Path] = None,
@@ -162,6 +167,7 @@ def sync_manifest(
     fresh = generate_manifest(
         repo_root,
         allowlist_path=allowlist_path,
+        entries=entries,
         key_fingerprint=key_fingerprint,
         manifest_path=manifest_path,
         signature_path=signature_path,
@@ -175,6 +181,7 @@ def sync_manifest(
     generate_manifest(
         repo_root,
         allowlist_path=allowlist_path,
+        entries=entries,
         key_fingerprint=key_fingerprint,
         manifest_path=manifest_path,
         signature_path=signature_path,

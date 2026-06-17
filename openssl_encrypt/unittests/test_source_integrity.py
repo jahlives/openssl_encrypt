@@ -126,6 +126,41 @@ class TestShippedAllowlist(unittest.TestCase):
         self.assertNotIn("openssl_encrypt/version.py", entries)
 
 
+class TestInstallableSubset(unittest.TestCase):
+    """The subset of protected files that survive installation into site-packages."""
+
+    def test_filter_keeps_only_package_paths(self) -> None:
+        """Only openssl_encrypt/-prefixed entries are installable."""
+        from openssl_encrypt.integrity.allowlist import filter_installable
+
+        entries = [
+            "openssl_encrypt/cli.py",
+            "openssl_encrypt/modules/crypt_core.py",
+            "requirements.txt",
+            "requirements-dev.in",
+            "threefish_native/src/lib.rs",
+            "threefish_native/Cargo.toml",
+        ]
+        self.assertEqual(
+            filter_installable(entries),
+            ["openssl_encrypt/cli.py", "openssl_encrypt/modules/crypt_core.py"],
+        )
+
+    def test_shipped_allowlist_installable_subset(self) -> None:
+        """The shipped allowlist yields the 38 installable .py files only."""
+        from openssl_encrypt.integrity.allowlist import (
+            default_allowlist_path,
+            filter_installable,
+            load_allowlist,
+        )
+
+        inst = filter_installable(load_allowlist(default_allowlist_path()))
+        self.assertEqual(len(inst), 38)
+        self.assertTrue(all(e.startswith("openssl_encrypt/") for e in inst))
+        self.assertNotIn("requirements.txt", inst)
+        self.assertFalse(any(e.startswith("threefish_native/") for e in inst))
+
+
 class TestHashFile(unittest.TestCase):
     """SHA-512 file hashing."""
 
@@ -620,6 +655,22 @@ class TestUpdateManifest(unittest.TestCase):
         )
         self.assertEqual(blob, expected)
         self.assertEqual(self.manifest_path.read_bytes(), expected)
+
+    def test_generate_with_entries_override(self) -> None:
+        """An explicit entries list overrides the allowlist (used for the subset)."""
+        from openssl_encrypt.integrity.manifest_core import build_manifest, serialize_manifest
+        from openssl_encrypt.integrity.update_manifest import generate_manifest
+
+        blob = generate_manifest(
+            self.root,
+            entries=["pkg/a.py"],
+            key_fingerprint=self.fpr,
+            manifest_path=self.manifest_path,
+        )
+        expected = serialize_manifest(
+            build_manifest(self.root, ["pkg/a.py"], key_fingerprint=self.fpr)
+        )
+        self.assertEqual(blob, expected)
 
     def test_generate_is_idempotent(self) -> None:
         """Two generations of an unchanged tree produce identical bytes."""

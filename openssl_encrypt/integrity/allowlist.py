@@ -23,6 +23,25 @@ class AllowlistError(Exception):
     """Raised when the protected-files allowlist is missing or malformed."""
 
 
+#: Path prefix of files that survive installation into site-packages (the package
+#: tree). Root files such as requirements*.txt and threefish_native/ are not
+#: installed, so they cannot appear in the installed-scope manifest.
+INSTALLABLE_PREFIX = "openssl_encrypt/"
+
+
+def filter_installable(entries: List[str]) -> List[str]:
+    """Return the subset of ``entries`` that exist in an installed package.
+
+    Args:
+        entries: Repo-relative protected paths.
+
+    Returns:
+        List[str]: Entries under the package tree (``openssl_encrypt/``), in the
+            same order as the input.
+    """
+    return [e for e in entries if e.startswith(INSTALLABLE_PREFIX)]
+
+
 def default_allowlist_path() -> Path:
     """Return the path to the allowlist shipped inside this package.
 
