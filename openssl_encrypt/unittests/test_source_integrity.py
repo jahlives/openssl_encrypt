@@ -468,5 +468,143 @@ class TestVerifyFiles(unittest.TestCase):
             verify_files(self.root, bad)
 
 
+class TestVerifyIntegrityCli(unittest.TestCase):
+    """The verify-integrity command core: warning, signature + hash, exit codes."""
+
+    def setUp(self) -> None:
+        self.gpg = _gpg_or_skip(self)
+        self.tmpdir = tempfile.mkdtemp()
+        self.root = Path(self.tmpdir) / "repo"
+        (self.root / "pkg").mkdir(parents=True)
+        (self.root / "pkg" / "a.py").write_text("alpha\n", encoding="utf-8")
+        (self.root / "pkg" / "b.py").write_text("beta\n", encoding="utf-8")
+
+        self.home = Path(self.tmpdir) / "gnupg"
+        self.fpr, self.pub = _make_ephemeral_key(self.gpg, self.home)
+
+        from openssl_encrypt.integrity.gpg_runner import detached_sign
+        from openssl_encrypt.integrity.manifest_core import build_manifest, serialize_manifest
+
+        manifest = build_manifest(self.root, ["pkg/a.py", "pkg/b.py"], key_fingerprint=self.fpr)
+        self.manifest_bytes = serialize_manifest(manifest)
+        self.manifest_path = self.root / "manifest.json"
+        self.sig_path = self.root / "manifest.json.asc"
+        self.pub_path = self.root / "pub.asc"
+        self.manifest_path.write_bytes(self.manifest_bytes)
+        self.sig_path.write_bytes(detached_sign(self.manifest_bytes, self.fpr, home=self.home))
+        self.pub_path.write_bytes(self.pub)
+
+    def tearDown(self) -> None:
+        import shutil
+
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _run(self, **overrides):
+        import io
+
+        from openssl_encrypt.integrity import verify_cli
+
+        out, err = io.StringIO(), io.StringIO()
+        kwargs = dict(
+            repo_root=self.root,
+            manifest_path=self.manifest_path,
+            signature_path=self.sig_path,
+            pubkey_path=self.pub_path,
+            expected_fingerprint=self.fpr,
+            out=out,
+            err=err,
+        )
+        kwargs.update(overrides)
+        code = verify_cli.verify_integrity(**kwargs)
+        return code, out.getvalue(), err.getvalue()
+
+    def test_happy_path_returns_ok(self) -> None:
+        """Valid signature + unmodified files -> exit 0."""
+        from openssl_encrypt.integrity.verify_cli import EXIT_OK
+
+        code, _out, _err = self._run()
+        self.assertEqual(code, EXIT_OK)
+
+    def test_full_warning_printed_by_default(self) -> None:
+        """The full trust warning is printed to stderr unless --quiet."""
+        _code, _out, err = self._run()
+        self.assertIn("tripwire", err.lower())
+        self.assertIn("out-of-band", err.lower())
+
+    def test_quiet_shortens_warning(self) -> None:
+        """--quiet collapses the warning to a one-line pointer (Q6b)."""
+        _code, _out, err = self._run(quiet=True)
+        self.assertIn("SOURCE_INTEGRITY", err)
+        self.assertLessEqual(len(err.strip().splitlines()), 2)
+
+    def test_json_always_includes_trust_warning(self) -> None:
+        """--json output retains the full trust caveat in a field (Q6b)."""
+        import json
+
+        code, out, _err = self._run(as_json=True, quiet=True)
+        payload = json.loads(out)
+        self.assertIn("trust_warning", payload)
+        self.assertIn("tripwire", payload["trust_warning"].lower())
+        self.assertEqual(payload["exit_code"], code)
+
+    def test_modified_file_returns_hash_mismatch(self) -> None:
+        """A tampered protected file -> exit 1."""
+        from openssl_encrypt.integrity.verify_cli import EXIT_HASH_MISMATCH
+
+        (self.root / "pkg" / "a.py").write_text("alpha-TAMPERED\n", encoding="utf-8")
+        code, _out, _err = self._run()
+        self.assertEqual(code, EXIT_HASH_MISMATCH)
+
+    def test_bad_signature_returns_two(self) -> None:
+        """A corrupted signature -> exit 2 (outranks a hash mismatch)."""
+        from openssl_encrypt.integrity.verify_cli import EXIT_BAD_SIGNATURE
+
+        blob = bytearray(self.sig_path.read_bytes())
+        blob[len(blob) // 2] ^= 0x01
+        self.sig_path.write_bytes(bytes(blob))
+        code, _out, _err = self._run()
+        self.assertEqual(code, EXIT_BAD_SIGNATURE)
+
+    def test_missing_manifest_returns_not_found(self) -> None:
+        """A missing manifest -> exit 4 (fail closed, never silent pass)."""
+        from openssl_encrypt.integrity.verify_cli import EXIT_NOT_FOUND
+
+        self.manifest_path.unlink()
+        code, _out, _err = self._run()
+        self.assertEqual(code, EXIT_NOT_FOUND)
+
+    def test_missing_gpg_returns_unavailable(self) -> None:
+        """No gpg binary -> exit 3, fail closed (Q8)."""
+        from openssl_encrypt.integrity.verify_cli import EXIT_GPG_UNAVAILABLE
+
+        code, _out, _err = self._run(gpg_binary="/nonexistent/gpg-xyz")
+        self.assertEqual(code, EXIT_GPG_UNAVAILABLE)
+
+
+class TestVerifyIntegrityCliWiring(unittest.TestCase):
+    """End-to-end wiring: the verify-integrity subcommand is reachable."""
+
+    def test_subcommand_dispatches_and_warns(self) -> None:
+        """`python -m openssl_encrypt verify-integrity --json` routes to our handler."""
+        import json
+        import subprocess
+        import sys
+
+        repo_root = Path(__file__).resolve().parents[2]
+        proc = subprocess.run(
+            [sys.executable, "-m", "openssl_encrypt", "verify-integrity", "--json", "--quiet"],
+            cwd=str(repo_root),
+            capture_output=True,
+            text=True,
+        )
+        # Exit code is environment-dependent (manifest may or may not be present),
+        # but the command must be recognised (not an argparse error code 2 with usage)
+        # and must always emit the trust warning in its JSON payload.
+        self.assertNotIn("invalid choice: 'verify-integrity'", proc.stderr)
+        payload = json.loads(proc.stdout)
+        self.assertIn("trust_warning", payload)
+        self.assertEqual(payload["exit_code"], proc.returncode)
+
+
 if __name__ == "__main__":
     unittest.main()

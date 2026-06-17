@@ -3354,6 +3354,7 @@ def main():
         "telemetry",
         "keyserver",
         "hsm",
+        "verify-integrity",
     ]
 
     # Use subparser only if a subcommand is present
@@ -4958,6 +4959,21 @@ def main_with_args(args=None):
     elif args.action == "hsm":
         handle_hsm_command(args)
         sys.exit(0)
+
+    elif args.action == "verify-integrity":
+        from pathlib import Path
+
+        from ..integrity.verify_cli import verify_integrity
+
+        sys.exit(
+            verify_integrity(
+                manifest_path=Path(args.manifest) if args.manifest else None,
+                signature_path=Path(args.signature) if args.signature else None,
+                pubkey_path=Path(args.pubkey) if args.pubkey else None,
+                quiet=args.quiet,
+                as_json=args.json,
+            )
+        )
 
     elif args.action == "list-algorithms":
         show_algorithm_registry(args)

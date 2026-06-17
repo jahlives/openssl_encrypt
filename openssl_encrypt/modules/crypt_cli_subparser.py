@@ -2886,6 +2886,27 @@ def create_subparser_main():
     )
     setup_hsm_parser(hsm_parser)
 
+    verify_integrity_parser = subparsers.add_parser(
+        "verify-integrity",
+        help="Verify the signed source-integrity manifest (see docs/SOURCE_INTEGRITY.md)",
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
+    verify_integrity_parser.add_argument(
+        "--manifest", metavar="PATH", help="Path to manifest.json (default: bundled)"
+    )
+    verify_integrity_parser.add_argument(
+        "--signature", metavar="PATH", help="Path to manifest.json.asc (default: bundled)"
+    )
+    verify_integrity_parser.add_argument(
+        "--pubkey", metavar="PATH", help="Path to the signing public key (default: bundled)"
+    )
+    verify_integrity_parser.add_argument(
+        "--json", action="store_true", help="Emit a JSON report (trust warning retained)"
+    )
+    verify_integrity_parser.add_argument(
+        "--quiet", action="store_true", help="Shorten the trust warning to one line"
+    )
+
     # Note: Steganography is now integrated into encrypt/decrypt commands
     # rather than separate commands
 
