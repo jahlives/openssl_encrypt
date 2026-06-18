@@ -19,7 +19,7 @@ Core cryptographic/security source files are covered by a PGP-signed integrity
 manifest so tampering can be detected. The manifest is signed by a **dedicated
 source-integrity key** (separate from the vulnerability-reporting key below):
 
-- **Source-integrity signing key fingerprint:** `1E5D7995 DA9A62CE D90354D8 F98AAFF3 F31FD459`
+- **Source-integrity signing key fingerprint:** `D269D6A5 D6D7CE52 CE1FC71D C2DF2905 9ED65043`
 - Key type: Ed25519 (sign-only)
 
 This fingerprint is published here as an **out-of-band reference**. To verify the
@@ -35,8 +35,9 @@ gpg --verify openssl_encrypt/integrity/manifest.json.asc \
 > not cryptographic proof — the verifier ships in the same package it checks. Only
 > manual `gpg` verification against an out-of-band fingerprint is authoritative.
 >
-> **Note:** the current key is a development *bootstrap* key and will be rotated to a
-> key generated on a trusted machine before a real public release.
+> **Note:** the source-integrity signing key has been rotated from the development
+> bootstrap key to the production key generated on a trusted machine (fingerprint
+> above); confirm it out-of-band before trusting any verification result.
 
 ## Reporting a Vulnerability
 

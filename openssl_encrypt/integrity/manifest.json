@@ -50,6 +50,6 @@
     "threefish_native/src/threefish_aead.rs": "sha512:0ba6593faf9d236f90fab44fa7c345320d7a2d63d12e2f86f10120ea80024c43b84852249f129d241a54aaffea3d8de2058fd8a5644c1381f0d8ea5593c98784"
   },
   "hash_algorithm": "sha512",
-  "key_fingerprint": "1E5D7995DA9A62CED90354D8F98AAFF3F31FD459",
+  "key_fingerprint": "D269D6A5D6D7CE52CE1FC71DC2DF29059ED65043",
   "schema_version": 1
 }

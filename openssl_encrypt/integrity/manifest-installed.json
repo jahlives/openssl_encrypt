@@ -40,6 +40,6 @@
     "openssl_encrypt/versions.py": "sha512:8e6ac4204c3391b3c36c403087f44a4a3be78c60e7c7e50267f03d324287f9ccdff6781568c1240b17b6ac6826b7d23485fcd874563245890002cb1addddcdda"
   },
   "hash_algorithm": "sha512",
-  "key_fingerprint": "1E5D7995DA9A62CED90354D8F98AAFF3F31FD459",
+  "key_fingerprint": "D269D6A5D6D7CE52CE1FC71DC2DF29059ED65043",
   "schema_version": 1
 }
