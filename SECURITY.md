@@ -19,7 +19,7 @@ Core cryptographic/security source files are covered by a PGP-signed integrity
 manifest so tampering can be detected. The manifest is signed by a **dedicated
 source-integrity key**:
 
-- **Source-integrity signing key fingerprint:** `1E5D7995 DA9A62CE D90354D8 F98AAFF3 F31FD459`
+- **Source-integrity signing key fingerprint:** `D269D6A5 D6D7CE52 CE1FC71D C2DF2905 9ED65043`
 - Key type: Ed25519 (sign-only)
 
 This fingerprint is published here as an **out-of-band reference**. To verify the
