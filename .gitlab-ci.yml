@@ -81,7 +81,7 @@ source-integrity-verify:
     # heavy CLI import). Checks the detached signature, the expected fingerprint
     # (keys/FINGERPRINT) and every protected-file hash; non-zero exit fails the job.
     - python -c "import sys; from openssl_encrypt.integrity.verify_cli import verify_integrity; sys.exit(verify_integrity(quiet=True))"
-    - echo "NOTE: CI verifies against the in-repo public key, so it catches drift, stale/unsigned manifests and bad signatures. A full repo rewrite that also swaps the key would still pass here; only out-of-band fingerprint verification is complete (see docs/SOURCE_INTEGRITY.md)."
+    - 'echo "NOTE: CI verifies against the in-repo public key, so it catches drift, stale/unsigned manifests and bad signatures. A full repo rewrite that also swaps the key would still pass here; only out-of-band fingerprint verification is complete (see docs/SOURCE_INTEGRITY.md)."'
   rules:
     - if: $CI_COMMIT_BRANCH == "dev" && $DOCS_ONLY != "true"
     - if: $CI_COMMIT_BRANCH == "testing" && $DOCS_ONLY != "true"
