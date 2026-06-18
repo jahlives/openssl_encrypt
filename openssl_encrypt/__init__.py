@@ -7,8 +7,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-from openssl_encrypt.modules.crypt_utils import eprint
-
 # Version will be set by setup.py
 try:
     from .version import __git_commit__, __version__
@@ -90,7 +88,7 @@ def _check_and_build_dependencies():
 
         # For interactive sessions, offer to build automatically
         if sys.stdin.isatty() and not os.environ.get("CI"):
-            eprint(
+            print(
                 "\nWould you like to build dependencies now? (y/N): ",
                 end="",
                 file=sys.stderr,
@@ -108,7 +106,7 @@ def _check_and_build_dependencies():
                     try:
                         subprocess.check_call(["/bin/bash", str(build_script)], env=env)
                         print("\n✓ Dependencies built successfully!", file=sys.stderr)
-                        eprint(
+                        print(
                             "Please restart your Python session to use the new libraries.",
                             file=sys.stderr,
                         )

@@ -1,6 +1,6 @@
 {
   "files": {
-    "openssl_encrypt/__init__.py": "sha512:b1f8f318cd1947c59d06c5e62e28cbeeddd816d1edd1f7831923e74ab1bb0e3abbed7bb5c9c9eebebce3d321b8057e03c66cb4bd59ea7af90e671e5df3d946ec",
+    "openssl_encrypt/__init__.py": "sha512:1b7d4a6073e45f3f512cbec27f40bef0ac10f526d86529e374541812008e17f5dd258f5b98d7aed393cc67d2a7c38fd11d776d9b7eb3ef95b4f9882d9d4db434",
     "openssl_encrypt/__main__.py": "sha512:da26e5f22bbd0ed7616c98a35daaa7a485cdcaa4e427ffc86127ddccf0f244df6cb38fa7fc7951011964dab0bd3c9c83f9f11ba9f9d579e3ab3cd8a97ceff263",
     "openssl_encrypt/cli.py": "sha512:1ff84f7ea921fec3f0ec94a8ee887b5c460e4db16def4797e3d2e20d639d941ee5c2e1d564857a0d73f1b5286ae9099022b099a5483a7f25817cd668ae563481",
     "openssl_encrypt/crypt.py": "sha512:65c2da9fe9d1a9201844359c46b471cfb397424453964fd00c61ed02a2c97b4a9cf2ecd119bcb7f51aeb684e2492027275a4851a1c44c083ded7833354cd914a",
