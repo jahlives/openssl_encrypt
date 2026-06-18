@@ -35,8 +35,13 @@ gpg --verify openssl_encrypt/integrity/manifest.json.asc \
 > not cryptographic proof — the verifier ships in the same package it checks. Only
 > manual `gpg` verification against an out-of-band fingerprint is authoritative.
 >
-> **Note:** the current key is a development *bootstrap* key and will be rotated to a
-> key generated on a trusted machine before a real public release.
+> **Production signing-key fingerprint** — confirm this through an independent channel
+> (this repo, the GitLab project page, the maintainer's web-of-trust) before trusting
+> any verification result:
+>
+> ```
+> D269D6A5D6D7CE52CE1FC71DC2DF29059ED65043
+> ```
 
 ## Reporting a Vulnerability
 

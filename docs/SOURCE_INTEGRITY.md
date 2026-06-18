@@ -23,7 +23,7 @@ The only reliable verification is **manual**, using a `gpg` you trust and the si
 ### Expected signing-key fingerprint
 
 ```
-1E5D7995DA9A62CED90354D8F98AAFF3F31FD459
+D269D6A5D6D7CE52CE1FC71DC2DF29059ED65043
 ```
 
 This fingerprint is also published in `SECURITY.md` and the GitLab project page.
@@ -71,7 +71,7 @@ Artifacts:
 
 # 2. Import the public key and check its fingerprint:
 gpg --import openssl_encrypt/integrity/keys/source-integrity-pubkey.asc
-gpg --fingerprint 1E5D7995DA9A62CED90354D8F98AAFF3F31FD459
+gpg --fingerprint D269D6A5D6D7CE52CE1FC71DC2DF29059ED65043
 
 # 3. Verify the manifest signature:
 gpg --verify openssl_encrypt/integrity/manifest.json.asc \
@@ -223,11 +223,12 @@ regenerates and signs the manifest before the MR is merged.
   movable onto a hardware token (OnlyKey/YubiKey) without process change — signing
   always goes through `gpg --local-user <fingerprint>`.
 
-### ⚠️ Bootstrap key notice
+### Production signing key
 
-The current key was generated in a development sandbox as a **bootstrap** key. Before
-any real public release it MUST be rotated to a key generated on a trusted machine
-(ideally hardware-backed). See §9.
+The bootstrap key has been **rotated** to the production signing key
+(`D269D6A5D6D7CE52CE1FC71DC2DF29059ED65043`), generated on a trusted machine. The key
+remains **token-ready**: it can be moved to a hardware token (OnlyKey/YubiKey) later
+without changing the signing or verification process. See §9.
 
 ---
 
