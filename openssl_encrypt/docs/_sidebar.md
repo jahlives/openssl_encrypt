@@ -2,20 +2,21 @@
   * [Home](/)
   * [Installation](INSTALLATION)
   * [User Guide](user-guide)
+  * [Cross-Platform Build](cross-platform)
   * [Keystore Guide](keystore-guide)
 
 * **Technical Deep Dive**
   * [Architecture & KDF Chain](architecture)
   * [Algorithm Reference](algorithm-reference)
   * [Metadata Formats](metadata-formats)
+  * [Asymmetric Encryption](ASYMMETRIC_ENCRYPTION_GUIDE)
+  * [CLI Integration](CLI_INTEGRATION_GUIDE)
   * [D-Bus Service](dbus-service)
   * [Portable Media Design](PORTABLE_MEDIA_DESIGN)
 
 * **Security & Compliance**
   * [Security Policy](security)
-  * [HSM Plugin](HSM_PLUGIN_GUIDE)
-  * [YubiKey setup](YUBIKEY_SETUP)
-  * [OnlyKey setup](ONLYKEY_SETUP)
+  * [Source Integrity](SOURCE_INTEGRITY)
 
 * **Audits & Reviews**
   * [Comprehensive Security Audit](COMPREHENSIVE_SECURITY_AUDIT)
@@ -27,6 +28,15 @@
   * [Branch Compatibility Analysis](branch_compatibility_analysis)
   * [Plugin Security Tests](PLUGIN_SECURITY_TESTS)
   * [Plugin Security Violations](PLUGINS_SECURITY_VIOLATION_SUMMARY)
+
+* **Hardware Tokens**
+  * [Hardware Tokens Overview](hardware-tokens)
+  * [HSM Plugin](HSM_PLUGIN_GUIDE)
+  * [FIDO2 / HSM Guide](FIDO2_HSM_GUIDE)
+  * [YubiKey setup](YUBIKEY_SETUP)
+  * [OnlyKey setup](ONLYKEY_SETUP)
+  * [Migrate from YubiKey-only](migration-from-yubikey-only)
+  * [Keyserver Guide](KEYSERVER_GUIDE)
 
 * **Development**
   * [Development Setup](development-setup)
