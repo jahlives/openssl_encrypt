@@ -4,7 +4,7 @@
 
 OpenSSL Encrypt follows [Semantic Versioning (SemVer)](https://semver.org/) for version numbering and maintains comprehensive version history to track the evolution of cryptographic security features, post-quantum implementations, and security enhancements.
 
-**Current Version:** `1.3.1` (Production Release)
+**Current Version:** `1.4.5` (Production Release)
 
 **Development Status:** Production/Stable
 
@@ -17,22 +17,55 @@ OpenSSL Encrypt follows [Semantic Versioning (SemVer)](https://semver.org/) for 
 
 ## Release History
 
-### 1.4.0 (Development) - Streaming Encryption & Security Enhancements
-**Release Date:** TBD
-**Status:** In Development
+### 1.4.5 (Current) - Dependency Security Updates
+**Release Date:** June 12, 2026
+**Status:** Production Release
+
+- Dependency updates for published CVEs (verified patched versions)
+
+### 1.4.4 - Cross-Device HSM (YubiKey + OnlyKey)
+**Release Date:** June 12, 2026
+**Status:** Production Release
+
+- Cross-device HSM decryption: files encrypted with one HMAC-SHA1
+  challenge-response device decrypt with the other (`yubikey_hsm`/`onlykey_hsm`
+  family) when both hold the same 20-byte secret
+- OnlyKey Challenge-Response HSM plugin and setup guide
+- `--hsm-slot` on decrypt/rekey overrides the slot stored in metadata
+
+### 1.4.3 - Flatpak GUI Fixes
+**Release Date:** March 30, 2026
+**Status:** Production Release
+
+- Fixed the Flutter GUI launcher binary name in the Flatpak wrapper so `--gui` works
+- Corrected the GTK window title
+
+### 1.4.2 - Desktop GUI Simple/Pro Mode
+**Release Date:** March 29, 2026
+**Status:** Production Release
+
+- Simple/Pro mode for the desktop GUI (Simple is the default)
+- Independent XOR (v11) as the default key derivation for STANDARD/PARANOID templates
+- RandomX support in the independent-XOR key-derivation path
+
+### 1.4.1 - Streaming Chunked Encryption
+**Release Date:** March 22, 2026
+**Status:** Production Release
+
+- Streaming chunked encryption (format v12) for constant-memory operation on large files
+- `--info` CLI action and the `encrypted_at` metadata timestamp
+
+### 1.4.0 - Rekey Hardening & Secure Salt Derivation
+**Release Date:** March 3, 2026
+**Status:** Production Release
 
 **Enhancements:**
-- **Streaming chunked encryption** for large files (format v12):
-  - Per-chunk AEAD with HKDF-SHA256 derived nonces for constant-memory encryption
-  - Trailer HMAC-SHA256 commitment for global integrity verification
-  - Auto-activates for files >10 MB with AEAD algorithms (configurable via `--streaming-threshold`)
-  - CLI controls: `--chunk-size`, `--no-streaming`, `--streaming-threshold`
+- Plaintext never touches disk during rekey (passed as bytes, no temp file)
 - Secure chained salt derivation (format v9)
-- `--info` CLI action and `encrypted_at` timestamp
-- `--rekey` action for re-encrypting with new password
+- `--rekey` action for re-encrypting with a new password
 - Bytes input/output support
 
-### 1.3.1 (Current) - Maintenance Release
+### 1.3.1 - Maintenance Release
 **Release Date:** December 2025
 **Status:** Production Release
 
@@ -431,7 +464,8 @@ print(f"Build Date: {info.get('build_date', 'Unknown')}")
 
 | Version | Python | Status | Support Level |
 |---------|--------|--------|---------------|
-| 1.3.x | 3.9+ | Current | Full Support |
+| 1.4.x | 3.11+ | Current | Full Support |
+| 1.3.x | 3.9+ | Maintenance | Security Fixes |
 | 1.2.x | 3.9+ | Maintenance | Security Fixes |
 | 1.1.x | 3.9+ | Maintenance | Security Fixes |
 | 1.0.x | 3.9+ | Maintenance | Security Fixes |
