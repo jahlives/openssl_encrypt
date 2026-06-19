@@ -4,6 +4,14 @@ Status: **Planned** — waiting for liboqs 0.16.0 release.
 
 Last reviewed: 2026-03-30
 
+> **Note:** The pin is genuinely still liboqs 0.12.0 (`setup.py`
+> `REQUIRED_LIBOQS_VERSION = "0.12.0"`), so this upgrade remains planned.
+> However, the SLH-DSA signature classes (`SLHDSASHA2128F` / `192F` / `256F`,
+> with aliases for the old `sphincs-sha2-*` names) already exist in
+> `openssl_encrypt/modules/registry/signature_registry.py`. The remaining work
+> is the 0.16.0 pin bump and replacing the `oqs.Signature("SPHINCS+-…")` call
+> sites this plan flags.
+
 ## Summary of liboqs Changes (0.13.0 → 0.16.0)
 
 - **SPHINCS+ removed** in 0.16.0, replaced by SLH-DSA (NIST FIPS 205)

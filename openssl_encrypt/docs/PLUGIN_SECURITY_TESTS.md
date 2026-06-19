@@ -6,7 +6,7 @@ The `test_plugin_security.py` file contains comprehensive unit tests that verify
 
 ## Test Coverage
 
-### ✅ 20 Security Tests Implemented
+### ✅ 39 Security Tests Implemented
 
 | Test Suite | Tests | Coverage |
 |-----------|-------|----------|
@@ -212,7 +212,7 @@ python3 -m pytest openssl_encrypt/unittests/test_plugin_security.py --cov=openss
 
 ## Test Results
 
-**Latest Test Run:**
+**Example test run** (captured when the suite had 20 tests; it has since grown to 39 — `test_plugin_security.py`):
 ```
 ============================= test session starts ==============================
 platform linux -- Python 3.14.2, pytest-9.0.1, pluggy-1.6.0

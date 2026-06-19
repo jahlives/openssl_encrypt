@@ -397,10 +397,40 @@ python -m openssl_encrypt.crypt ACTION [OPTIONS]
 |--------|-------------|
 | `encrypt` | Encrypt a file with a password |
 | `decrypt` | Decrypt a file with a password |
+| `info` | Inspect an encrypted file's metadata and reconstruct the `encrypt` CLI (no password needed) |
 | `shred` | Securely delete a file by overwriting its contents |
 | `generate-password` | Generate a secure random password |
 | `security-info` | Show security recommendations |
 | `check-argon2` | Check Argon2 support |
+
+### Inspecting a File (`info`)
+
+`info` prints the encryption metadata of an already-encrypted file **without
+decrypting it** (no password required). The human-readable output ends with a
+**Reconstructed CLI** section — the full `openssl_encrypt encrypt …` command
+that would reproduce the same encryption settings on a fresh file:
+
+```bash
+python -m openssl_encrypt.crypt info -i document.txt.enc
+```
+
+The reconstruction covers only the **deterministic configuration**:
+
+- Cipher or cascade chain (`--algorithm`)
+- All five KDFs — Argon2id, Scrypt, Balloon, HKDF, RandomX — with their parameters
+- The hash-round flags
+- HSM binding (`--hsm` / `--hsm-slot`) and the remote-pepper plugin (`--pepper` / `--pepper-name`)
+
+The salt, file paths, and per-file random values are **not** included (they are
+unique per file). If a file used an algorithm removed in v1.5.0, the
+reconstruction emits a migration hint instead of an unusable flag.
+
+JSON output is unchanged — `info --json` still prints the raw metadata dict, so
+scripts can pipe it into `jq`:
+
+```bash
+python -m openssl_encrypt.crypt info --json -i document.txt.enc | jq .
+```
 
 ### Core Options
 

@@ -2,6 +2,9 @@
 
 **Audit Date**: 2025-10-10
 **Scope**: Complete codebase security review (81 Python files, Dart GUI, configurations)
+
+> **Note:** Point-in-time audit dated 2025-10-10. It predates the v1.5.0 changes (deprecated-algorithm removal, real 192-bit XChaCha, source-code integrity, ~28k-line code-surface reduction); the codebase has since grown to ~207 Python files. See [VERSION.md](VERSION.md).
+
 **Auditor**: Automated security analysis with manual validation
 **Overall Security Posture**: **GOOD** ✅
 
