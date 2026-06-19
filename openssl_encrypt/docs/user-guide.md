@@ -17,7 +17,7 @@
 
 ### System Requirements
 
-- **Python**: 3.9 or higher (3.11+ recommended for full feature support)
+- **Python**: 3.11 or higher (3.11–3.14 supported)
 - **Operating System**: Windows, macOS, Linux
 - **Memory**: Minimum 512MB RAM (2GB+ recommended for paranoid security settings)
 - **Storage**: 100MB for installation plus encrypted file storage space

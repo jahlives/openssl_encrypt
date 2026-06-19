@@ -481,10 +481,10 @@ A: Yes! Post-quantum algorithms protect the key exchange, but your passphrase pr
 ## Related Documentation
 
 - [Main README](../README.md)
-- [Security Architecture](SECURITY.md)
-- [API Documentation](API.md)
+- [Security Policy](security.md)
+- [Algorithm Reference](algorithm-reference.md)
 
 ## Support
 
-- GitHub Issues: https://github.com/smirnfil/openssl_encrypt/issues
+- GitHub Issues: https://github.com/jahlives/openssl_encrypt/issues
 - Security Issues: Report privately via GitHub Security Advisories

@@ -57,7 +57,7 @@ For users who want a single-file executable without Python installed, follow the
 # https://visualstudio.microsoft.com/visual-cpp-build-tools/
 # Select "Desktop development with C++" workload
 
-# 2. Install Python 3.12
+# 2. Install Python 3.11 or newer (3.11–3.14 supported)
 # https://www.python.org/downloads/
 
 # 3. Build liboqs
@@ -279,7 +279,7 @@ pip install --no-cache-dir \
 
 ```
 openssl_encrypt
-├── Python 3.12
+├── Python 3.11+
 │   ├── cryptography (OpenSSL bindings)
 │   ├── argon2-cffi (KDF)
 │   ├── blake3 (Hash)

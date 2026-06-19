@@ -1,5 +1,5 @@
 * **Getting Started**
-  * [Home](home)
+  * [Home](/)
   * [Installation](INSTALLATION)
   * [User Guide](user-guide)
   * [Keystore Guide](keystore-guide)

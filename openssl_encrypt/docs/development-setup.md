@@ -26,7 +26,7 @@ This document provides comprehensive guidance for setting up a development envir
 
 ### Prerequisites
 
-- **Python**: 3.9+ (3.11+ recommended)
+- **Python**: 3.11+ (3.11–3.14 supported)
 - **Git**: Latest version
 - **Docker**: For CI/CD testing (optional)
 
@@ -146,7 +146,7 @@ pip-audit --requirement requirements-prod.txt --format cyclonedx-json --output s
 ```ini
 # mypy.ini
 [mypy]
-python_version = 3.9
+python_version = 3.11
 strict = True
 warn_return_any = True
 warn_unused_configs = True
@@ -172,8 +172,8 @@ ignore_missing_imports = True
 ```toml
 # pyproject.toml
 [tool.black]
-line-length = 88
-target-version = ['py39']
+line-length = 100
+target-version = ['py311']
 include = '\.pyi?$'
 extend-exclude = '''
 /(
@@ -680,7 +680,7 @@ skips:
 #### `mypy.ini`
 ```ini
 [mypy]
-python_version = 3.9
+python_version = 3.11
 strict = True
 warn_return_any = True
 warn_unused_configs = True
