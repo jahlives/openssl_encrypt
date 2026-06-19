@@ -1,5 +1,9 @@
 # Dependency Management - OpenSSL Encrypt
 
+> **⚠️ Removed in v1.5.0:** AES-OCB3, Camellia, the Whirlpool hash (and its
+> `whirlpool-py311` dependency), the PBKDF2 KDF chain, and the legacy Kyber
+> algorithm names have been **completely removed**. See [VERSION.md](VERSION.md).
+
 ## Table of Contents
 
 1. [Dependency Structure](#dependency-structure)
@@ -52,7 +56,6 @@ pip install -r requirements-prod.txt
 | **cryptography** | Core cryptographic primitives and algorithms | >=44.0.1,<45.0.0 | Apache-2.0 | **CRITICAL** |
 | **argon2-cffi** | Argon2 password hashing algorithm | >=23.1.0,<24.0.0 | MIT | **HIGH** |
 | **PyYAML** | YAML parser for configuration files | >=6.0.2,<7.0.0 | MIT | **MEDIUM** |
-| **whirlpool-py311** | Whirlpool hash algorithm for Python 3.11+ | >=1.0.0,<2.0.0 | Public Domain | **LOW** |
 
 ### Platform-Specific Dependencies
 
@@ -94,7 +97,7 @@ The `cryptography` package is the cornerstone of cryptographic operations:
 
 - **Symmetric Encryption Algorithms**:
   - Fernet (authenticated encryption)
-  - AES-GCM, AES-GCM-SIV, AES-OCB3 (AEAD modes)
+  - AES-GCM, AES-GCM-SIV (AEAD modes)
   - ChaCha20-Poly1305, XChaCha20-Poly1305
   - AES-SIV
 
@@ -149,7 +152,6 @@ The `cryptography` package is the cornerstone of cryptographic operations:
 #### 1.2 Version Constraint Improvements
 - **✅ Added upper bounds** to all critical dependencies:
   - `PyYAML>=6.0.2,<7.0.0`
-  - `whirlpool-py311>=1.0.0,<2.0.0`
   - `argon2-cffi>=23.1.0,<24.0.0`
 
 #### 1.3 Development Dependencies
@@ -301,7 +303,7 @@ bandit -r openssl_encrypt/ -f json -o security-report.json
 | **CRITICAL** | cryptography | Complete compromise of encryption | Immediate updates, security monitoring |
 | **HIGH** | argon2-cffi | Password security compromise | Regular updates, vulnerability scanning |
 | **MEDIUM** | PyYAML, pytest | Limited attack surface | Safe usage patterns, version pinning |
-| **LOW** | whirlpool-py311, black | Minimal security impact | Standard update procedures |
+| **LOW** | black | Minimal security impact | Standard update procedures |
 
 ### Risk Mitigation Strategies
 

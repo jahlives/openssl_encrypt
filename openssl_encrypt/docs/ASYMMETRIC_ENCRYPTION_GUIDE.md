@@ -1,5 +1,10 @@
 # Asymmetric Encryption Guide
 
+> **⚠️ Removed in v1.5.0:** AES-OCB3, Camellia, the Whirlpool hash, the PBKDF2
+> KDF chain, and the legacy Kyber algorithm names have been **completely
+> removed**. The `--pbkdf2-iterations` flag no longer exists; use the Argon2id
+> / Scrypt KDF options instead. See [VERSION.md](VERSION.md).
+
 ## Overview
 
 openssl_encrypt now supports **post-quantum asymmetric encryption** using identity-based cryptography. This allows you to encrypt files for specific recipients using their public keys, with the added security of post-quantum algorithms.
@@ -152,8 +157,7 @@ openssl_encrypt encrypt --input secret.txt \
     --for Bob \
     --sign-with Alice \
     --sha512-rounds 10 \
-    --blake2b-rounds 5 \
-    --pbkdf2-iterations 200000
+    --blake2b-rounds 5
 ```
 
 ### Skip Signature Verification (Not Recommended)
@@ -415,8 +419,7 @@ openssl_encrypt encrypt --input topsecret.txt \
     --for SecureBob \
     --sign-with SecureAlice \
     --sha512-rounds 20 \
-    --blake2b-rounds 15 \
-    --pbkdf2-iterations 500000
+    --blake2b-rounds 15
 ```
 
 ## API Usage (Python)

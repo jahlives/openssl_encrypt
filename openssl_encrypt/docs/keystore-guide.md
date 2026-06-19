@@ -1,5 +1,10 @@
 # Keystore Guide - OpenSSL Encrypt
 
+> **⚠️ Removed in v1.5.0:** AES-OCB3, Camellia, the Whirlpool hash, the PBKDF2
+> KDF chain, and the legacy Kyber algorithm names have been **completely
+> removed**. Use ML-KEM-512/768/1024 in place of the old Kyber names. See
+> [VERSION.md](VERSION.md).
+
 ## Table of Contents
 
 1. [Overview](#overview)
@@ -31,7 +36,6 @@ The Post-Quantum Cryptography (PQC) keystore functionality provides a secure, ce
   - ML-KEM-1024 (Security Level 5)
 - **HQC (Hamming Quasi-Cyclic)**: Code-based post-quantum algorithms
   - HQC-128, HQC-192, HQC-256
-- **Legacy Kyber**: Original CRYSTALS-Kyber implementation (deprecated naming)
 
 ## Getting Started
 
@@ -296,7 +300,6 @@ The keystore supports three security levels with different performance and secur
 - **Configuration**:
   - Argon2id: 512MB memory, 2 iterations
   - AES-256-GCM for keystore encryption
-  - PBKDF2: 100,000 iterations
 
 ```bash
 python -m openssl_encrypt.keystore_cli_main create \
@@ -311,7 +314,6 @@ python -m openssl_encrypt.keystore_cli_main create \
 - **Configuration**:
   - Argon2id: 1GB memory, 3 iterations
   - AES-256-GCM for keystore encryption
-  - PBKDF2: 200,000 iterations
   - Additional entropy gathering
 
 ```bash
@@ -327,7 +329,6 @@ python -m openssl_encrypt.keystore_cli_main create \
 - **Configuration**:
   - Argon2id: 2GB memory, 4 iterations
   - AES-256-GCM for keystore encryption
-  - PBKDF2: 500,000 iterations
   - Multiple layers of key derivation
   - Extended secure memory usage
 

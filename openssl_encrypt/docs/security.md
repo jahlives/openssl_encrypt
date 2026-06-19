@@ -1,5 +1,9 @@
 # Security Policy
 
+> **⚠️ Removed in v1.5.0:** AES-OCB3, Camellia, the Whirlpool hash, the PBKDF2
+> KDF chain, and the legacy Kyber algorithm names have been **completely
+> removed** — both encryption and decryption. See [VERSION.md](VERSION.md).
+
 ## 1. Security Philosophy
 `openssl_encrypt` is designed with a **Defense in Depth** approach. Our security model doesn't just focus on data confidentiality but emphasizes **Metadata Integrity** and **Quantum Resistance**.
 
@@ -48,7 +52,6 @@ Since `base_salt` is stored in plaintext metadata, attackers can:
 
 **Affected Components**:
 - Argon2 (Argon2id, Argon2i, Argon2d) multi-round configurations
-- PBKDF2 multi-round configurations
 - Scrypt multi-round configurations
 - Balloon hashing multi-round configurations
 - HKDF multi-round configurations

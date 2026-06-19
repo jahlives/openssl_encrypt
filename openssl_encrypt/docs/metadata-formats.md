@@ -1,5 +1,13 @@
 # Metadata Formats - OpenSSL Encrypt
 
+> **⚠️ Removed in v1.5.0:** AES-OCB3, Camellia, the Whirlpool hash, the PBKDF2
+> KDF chain, and the legacy Kyber algorithm names have been **completely
+> removed** from the current format (v12) — both encryption and decryption.
+> The earlier format specifications below (v4, v5, v9, …) **intentionally
+> retain** these fields because legacy files of those formats genuinely
+> contained them; they are documented here for historical accuracy only and
+> cannot be produced or read by v1.5.0. See [VERSION.md](VERSION.md).
+
 ## Table of Contents
 
 1. [Overview](#overview)
@@ -240,7 +248,7 @@ Specifies the symmetric encryption algorithm used for data encryption:
 
 - **aes-gcm**: AES-256-GCM (default)
 - **aes-gcm-siv**: AES-256-GCM-SIV (nonce-misuse resistant)
-- **aes-ocb3**: AES-256-OCB3 (deprecated)
+- **aes-ocb3**: AES-256-OCB3 (removed in v1.5.0 — legacy v4/v5 files only)
 - **aes-siv**: AES-256-SIV (deterministic)
 - **chacha20-poly1305**: ChaCha20-Poly1305
 - **xchacha20-poly1305**: XChaCha20-Poly1305

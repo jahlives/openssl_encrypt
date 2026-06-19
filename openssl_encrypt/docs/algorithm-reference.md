@@ -1,5 +1,11 @@
 # Algorithm Reference - OpenSSL Encrypt
 
+> **⚠️ Removed in v1.5.0:** AES-OCB3, Camellia, the Whirlpool hash, the PBKDF2
+> KDF chain, and the legacy Kyber algorithm names have been **completely
+> removed** — both encryption and decryption. See
+> [Removed Algorithms (v1.5.0)](#removed-algorithms-v150) below and
+> [VERSION.md](VERSION.md).
+
 ## Table of Contents
 
 1. [Overview](#overview)
