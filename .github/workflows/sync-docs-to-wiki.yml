@@ -54,10 +54,12 @@ jobs:
             exit 1
           fi
 
-      - name: Copy README as Home page
+      - name: Copy README and SECURITY policy as wiki pages
         run: |
           echo "Copying README.md to wiki Home.md..."
           cp -v README.md wiki/Home.md
+          echo "Copying SECURITY.md to wiki security.md (canonical security policy)..."
+          cp -v SECURITY.md wiki/security.md
 
       - name: Sync documentation files
         run: |
