@@ -77,6 +77,7 @@ jobs:
             # Create transformed sidebar
             cat openssl_encrypt/docs/_sidebar.md | \
               sed 's/\](\.\.\/\.\.\/README\.md)/](Home)/g' | \
+              sed 's#](/)#](Home)#g' | \
               sed 's/\](\([^)]*\)\.md)/](\1)/g' > wiki/_Sidebar.md
 
             echo "=== Transformed sidebar ==="
