@@ -26,6 +26,8 @@
   * [Algorithm Registry Analysis](algorithm_registry_analysis)
   * [Crypto Security Analysis](crypto_tool_security_analysis)
   * [Branch Compatibility Analysis](branch_compatibility_analysis)
+  * [Plugin Security Tests](PLUGIN_SECURITY_TESTS)
+  * [Plugin Security Violations](PLUGINS_SECURITY_VIOLATION_SUMMARY)
 
 * **Hardware Tokens**
   * [Hardware Tokens Overview](hardware-tokens)
