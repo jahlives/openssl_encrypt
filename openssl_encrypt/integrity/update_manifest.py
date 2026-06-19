@@ -20,13 +20,20 @@ from pathlib import Path
 from typing import List, Optional
 
 from .allowlist import default_allowlist_path, filter_installable, load_allowlist
-from .gpg_runner import GpgError, GpgUnavailableError, detached_sign
+from .gpg_runner import (
+    GpgError,
+    GpgUnavailableError,
+    detached_sign,
+    export_public_key,
+    verify_detached,
+)
 from .manifest_core import build_manifest, serialize_manifest
 from .verify_cli import (
     default_fingerprint,
     default_installed_manifest_path,
     default_installed_signature_path,
     default_manifest_path,
+    default_pubkey_path,
     default_repo_root,
     default_signature_path,
 )
@@ -77,18 +84,72 @@ def generate_manifest(
     manifest = build_manifest(repo_root, entries, key_fingerprint=key_fingerprint)
     blob = serialize_manifest(manifest)
 
-    if write:
-        Path(manifest_path).parent.mkdir(parents=True, exist_ok=True)
-        Path(manifest_path).write_bytes(blob)
-
+    # Sign BEFORE writing so a signing failure leaves the existing manifest and
+    # signature untouched. Writing the manifest first (then signing) could leave a
+    # rewritten manifest paired with a stale .asc -- the exact state that let a
+    # content-current manifest ship with a signature that no longer verified.
+    signature = None
     if sign:
         signature = detached_sign(
             blob, key_fingerprint, home=home, passphrase=passphrase, gpg_binary=gpg_binary
         )
-        if write:
+
+    if write:
+        Path(manifest_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(manifest_path).write_bytes(blob)
+        if signature is not None:
             Path(signature_path).write_bytes(signature)
 
     return blob
+
+
+def _signature_valid(
+    manifest_bytes: bytes,
+    signature_path: Path,
+    *,
+    key_fingerprint: str = "",
+    public_key: Optional[bytes] = None,
+    expected_fingerprint: Optional[str] = None,
+    home: Optional[Path] = None,
+    gpg_binary: Optional[str] = None,
+) -> bool:
+    """Return True iff ``signature_path`` is a valid signature over ``manifest_bytes``.
+
+    Fails closed: a missing signature, unavailable gpg, unexportable key, or any
+    verification error all return False, so callers re-sign / report drift rather
+    than trusting an unverified signature. ``public_key`` may be supplied directly;
+    otherwise it is exported from ``home`` for ``key_fingerprint`` so the signature
+    is checked against the key that produced (or will reproduce) it.
+
+    Args:
+        manifest_bytes: Canonical manifest the signature must cover.
+        signature_path: Path to the detached ``.asc`` signature.
+        key_fingerprint: Fingerprint to export the public key for (when
+            ``public_key`` is not given) and the default expected signer.
+        public_key: Armored public key to verify against (optional).
+        expected_fingerprint: Required signing fingerprint (default: key_fingerprint).
+        home: GNUPGHOME holding the key when exporting the public key.
+        gpg_binary: Override the gpg executable (mainly for tests).
+
+    Returns:
+        bool: True only if the signature verifies and matches the expected key.
+    """
+    sig = Path(signature_path)
+    if not sig.is_file():
+        return False
+    try:
+        if public_key is None:
+            public_key = export_public_key(key_fingerprint, home=home, gpg_binary=gpg_binary)
+        result = verify_detached(
+            manifest_bytes,
+            sig.read_bytes(),
+            public_key=public_key,
+            expected_fingerprint=expected_fingerprint or key_fingerprint or None,
+            gpg_binary=gpg_binary,
+        )
+    except GpgError:
+        return False
+    return result.good
 
 
 def check_manifest(
@@ -96,19 +157,35 @@ def check_manifest(
     *,
     allowlist_path: Optional[Path] = None,
     manifest_path: Optional[Path] = None,
+    signature_path: Optional[Path] = None,
+    pubkey_path: Optional[Path] = None,
+    expected_fingerprint: Optional[str] = None,
+    verify_signature: bool = True,
+    gpg_binary: Optional[str] = None,
 ) -> bool:
-    """Return True iff the on-disk manifest matches a freshly generated one.
+    """Return True iff the on-disk manifest matches the tree AND is validly signed.
 
-    The on-disk manifest's recorded key fingerprint is reused so the comparison
-    reflects only file-content / allowlist drift, not a fingerprint difference.
+    The on-disk manifest's recorded key fingerprint is reused for the content
+    comparison so it reflects only file-content / allowlist drift, not a fingerprint
+    difference. When ``verify_signature`` is True (the default) the detached
+    signature must also verify against the manifest; a missing or invalid signature
+    is treated as drift. This closes the gap where a content-current manifest could
+    pass ``--check`` while its ``.asc`` no longer matched the contents. Signature
+    verification fails closed when gpg is unavailable (consistent with the runtime
+    verifier); pass ``verify_signature=False`` to check content drift only.
 
     Args:
         repo_root: Repository root the allowlist paths are relative to.
         allowlist_path: Allowlist file (default: shipped allowlist).
         manifest_path: Manifest to check (default: shipped manifest).
+        signature_path: Detached signature (default: shipped signature).
+        pubkey_path: Public key to verify against (default: bundled public key).
+        expected_fingerprint: Required signing fingerprint (default: keys/FINGERPRINT).
+        verify_signature: Also require a valid detached signature (default: True).
+        gpg_binary: Override the gpg executable (mainly for tests).
 
     Returns:
-        bool: True if current, False if absent, unparseable, or drifted.
+        bool: True if current and (when requested) validly signed; False otherwise.
     """
     allowlist_path = allowlist_path or default_allowlist_path()
     manifest_path = manifest_path or default_manifest_path()
@@ -126,7 +203,26 @@ def check_manifest(
     fresh = serialize_manifest(
         build_manifest(repo_root, entries, key_fingerprint=parsed.get("key_fingerprint", ""))
     )
-    return fresh == on_disk_bytes
+    if fresh != on_disk_bytes:
+        return False
+
+    if not verify_signature:
+        return True
+
+    signature_path = signature_path or default_signature_path()
+    pubkey_path = pubkey_path or default_pubkey_path()
+    if expected_fingerprint is None:
+        expected_fingerprint = default_fingerprint()
+    pub = Path(pubkey_path)
+    if not pub.is_file():
+        return False
+    return _signature_valid(
+        on_disk_bytes,
+        Path(signature_path),
+        public_key=pub.read_bytes(),
+        expected_fingerprint=expected_fingerprint,
+        gpg_binary=gpg_binary,
+    )
 
 
 def sync_manifest(
@@ -176,9 +272,21 @@ def sync_manifest(
         write=False,
     )
     unchanged = Path(manifest_path).is_file() and Path(manifest_path).read_bytes() == fresh
-    signature_present = Path(signature_path).is_file()
-    if unchanged and (signature_present or not sign):
-        return False
+    if unchanged:
+        if not sign:
+            return False
+        # Content matches; skip re-signing ONLY when the existing signature actually
+        # verifies against it. A present-but-stale/invalid .asc (e.g. left behind by
+        # an earlier failed signing run) must trigger a re-sign, not a false
+        # "already up to date".
+        if _signature_valid(
+            fresh,
+            Path(signature_path),
+            key_fingerprint=key_fingerprint,
+            home=home,
+            gpg_binary=gpg_binary,
+        ):
+            return False
 
     generate_manifest(
         repo_root,

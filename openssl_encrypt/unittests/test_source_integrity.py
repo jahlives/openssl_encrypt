@@ -715,6 +715,8 @@ class TestUpdateManifest(unittest.TestCase):
 
         self.home = Path(self.tmpdir) / "gnupg"
         self.fpr, self.pub = _make_ephemeral_key(self.gpg, self.home)
+        self.pub_path = self.root / "pubkey.asc"
+        self.pub_path.write_bytes(self.pub)
 
     def tearDown(self) -> None:
         import shutil
@@ -790,8 +792,12 @@ class TestUpdateManifest(unittest.TestCase):
             manifest_path=self.manifest_path,
         )
         self.assertTrue(
-            check_manifest(self.root, allowlist_path=self.allowlist,
-                           manifest_path=self.manifest_path)
+            check_manifest(
+                self.root,
+                allowlist_path=self.allowlist,
+                manifest_path=self.manifest_path,
+                verify_signature=False,
+            )
         )
 
     def test_check_detects_drift(self) -> None:
@@ -852,6 +858,130 @@ class TestUpdateManifest(unittest.TestCase):
             check_manifest(self.root, allowlist_path=self.allowlist,
                            manifest_path=self.manifest_path)
         )
+
+    def test_check_passes_with_valid_signature(self) -> None:
+        """Signature-aware check passes when content matches and the .asc verifies."""
+        from openssl_encrypt.integrity.update_manifest import check_manifest, sync_manifest
+
+        sync_manifest(
+            self.root,
+            allowlist_path=self.allowlist,
+            key_fingerprint=self.fpr,
+            manifest_path=self.manifest_path,
+            signature_path=self.sig_path,
+            sign=True,
+            home=self.home,
+        )
+        self.assertTrue(
+            check_manifest(
+                self.root,
+                allowlist_path=self.allowlist,
+                manifest_path=self.manifest_path,
+                signature_path=self.sig_path,
+                pubkey_path=self.pub_path,
+                expected_fingerprint=self.fpr,
+            )
+        )
+
+    def test_check_detects_invalid_signature(self) -> None:
+        """A content-current manifest with a stale signature is drift (regression).
+
+        Reproduces the incident: the manifest matches the tree, but its detached
+        signature covers different bytes, so ``--check`` must report drift.
+        """
+        from openssl_encrypt.integrity.gpg_runner import detached_sign
+        from openssl_encrypt.integrity.update_manifest import check_manifest, sync_manifest
+
+        sync_manifest(
+            self.root,
+            allowlist_path=self.allowlist,
+            key_fingerprint=self.fpr,
+            manifest_path=self.manifest_path,
+            signature_path=self.sig_path,
+            sign=True,
+            home=self.home,
+        )
+        # Valid armor, valid key, but signs the wrong content -> a stale signature.
+        self.sig_path.write_bytes(detached_sign(b"a different manifest", self.fpr, home=self.home))
+        self.assertFalse(
+            check_manifest(
+                self.root,
+                allowlist_path=self.allowlist,
+                manifest_path=self.manifest_path,
+                signature_path=self.sig_path,
+                pubkey_path=self.pub_path,
+                expected_fingerprint=self.fpr,
+            )
+        )
+
+    def test_sync_resigns_when_signature_stale(self) -> None:
+        """sync re-signs when content matches but the .asc no longer verifies (regression).
+
+        Previously sync short-circuited on a *present* signature, so a stale .asc
+        left by an earlier failed signing run was reported as "already up to date".
+        """
+        from openssl_encrypt.integrity.gpg_runner import detached_sign, verify_detached
+        from openssl_encrypt.integrity.update_manifest import sync_manifest
+
+        sync_manifest(
+            self.root,
+            allowlist_path=self.allowlist,
+            key_fingerprint=self.fpr,
+            manifest_path=self.manifest_path,
+            signature_path=self.sig_path,
+            sign=True,
+            home=self.home,
+        )
+        # Content stays current; replace the signature with one over other bytes.
+        self.sig_path.write_bytes(detached_sign(b"stale content", self.fpr, home=self.home))
+        changed = sync_manifest(
+            self.root,
+            allowlist_path=self.allowlist,
+            key_fingerprint=self.fpr,
+            manifest_path=self.manifest_path,
+            signature_path=self.sig_path,
+            sign=True,
+            home=self.home,
+        )
+        self.assertTrue(changed)
+        result = verify_detached(
+            self.manifest_path.read_bytes(), self.sig_path.read_bytes(), public_key=self.pub
+        )
+        self.assertTrue(result.good)
+
+    def test_sign_failure_leaves_manifest_untouched(self) -> None:
+        """A signing failure must not rewrite the manifest (atomicity regression).
+
+        Guards against the rewritten-but-unsigned state: writing the new manifest
+        and only then failing to sign is what stranded a stale .asc.
+        """
+        from openssl_encrypt.integrity.gpg_runner import GpgError
+        from openssl_encrypt.integrity.update_manifest import generate_manifest
+
+        generate_manifest(
+            self.root,
+            allowlist_path=self.allowlist,
+            key_fingerprint=self.fpr,
+            manifest_path=self.manifest_path,
+            signature_path=self.sig_path,
+            sign=True,
+            home=self.home,
+        )
+        manifest_before = self.manifest_path.read_bytes()
+        sig_before = self.sig_path.read_bytes()
+        (self.root / "pkg" / "a.py").write_text("changed-before-sign-fails\n", encoding="utf-8")
+        with self.assertRaises(GpgError):
+            generate_manifest(
+                self.root,
+                allowlist_path=self.allowlist,
+                key_fingerprint="0" * 40,  # not in the keyring -> signing fails
+                manifest_path=self.manifest_path,
+                signature_path=self.sig_path,
+                sign=True,
+                home=self.home,
+            )
+        self.assertEqual(self.manifest_path.read_bytes(), manifest_before)
+        self.assertEqual(self.sig_path.read_bytes(), sig_before)
 
 
 class TestInstalledLayoutDetection(unittest.TestCase):
