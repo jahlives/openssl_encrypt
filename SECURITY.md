@@ -38,6 +38,14 @@ gpg --verify openssl_encrypt/integrity/manifest.json.asc \
 > **Note:** the source-integrity signing key has been rotated from the development
 > bootstrap key to the production key generated on a trusted machine (fingerprint
 > above); confirm it out-of-band before trusting any verification result.
+>
+> **Production signing-key fingerprint** — confirm this through an independent channel
+> (this repo, the GitLab project page, the maintainer's web-of-trust) before trusting
+> any verification result:
+>
+> ```
+> D269D6A5D6D7CE52CE1FC71DC2DF29059ED65043
+> ```
 
 ## Reporting a Vulnerability
 
