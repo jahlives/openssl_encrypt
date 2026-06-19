@@ -57,9 +57,7 @@ def _resolve_gpg(gpg_binary: Optional[str]) -> str:
     else:
         resolved = shutil.which("gpg")
     if not resolved:
-        raise GpgUnavailableError(
-            "gpg binary not found; cannot sign or verify (install gnupg)."
-        )
+        raise GpgUnavailableError("gpg binary not found; cannot sign or verify (install gnupg).")
     return resolved
 
 
@@ -115,8 +113,15 @@ def detached_sign(
         data_file = Path(td) / "data"
         data_file.write_bytes(data)
         args = [
-            gpg, "--batch", "--yes", "--armor", "--detach-sign",
-            "--local-user", key_fingerprint, "--output", "-",
+            gpg,
+            "--batch",
+            "--yes",
+            "--armor",
+            "--detach-sign",
+            "--local-user",
+            key_fingerprint,
+            "--output",
+            "-",
         ]
         stdin: Optional[bytes] = None
         if passphrase is not None:
@@ -173,9 +178,7 @@ def verify_detached(
 
         imp = _run([gpg, "--batch", "--import"], home, public_key)
         if imp.returncode != 0:
-            return SignatureResult(
-                False, None, "could not import public key for verification"
-            )
+            return SignatureResult(False, None, "could not import public key for verification")
 
         result = _run(
             [gpg, "--batch", "--status-fd", "1", "--verify", str(sig_file), str(data_file)],
@@ -202,8 +205,6 @@ def verify_detached(
             exp = expected_fingerprint.replace(" ", "").upper()
             got = (fingerprint or "").upper()
             if not (got == exp or got.endswith(exp) or exp.endswith(got)):
-                return SignatureResult(
-                    False, fingerprint, f"signing key {got} != expected {exp}"
-                )
+                return SignatureResult(False, fingerprint, f"signing key {got} != expected {exp}")
 
         return SignatureResult(True, fingerprint, "signature valid")
