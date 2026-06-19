@@ -35,6 +35,15 @@ This release **removes** all deprecated algorithms entirely — both encryption 
 - **Legacy Kyber naming** (use ML-KEM-512/768/1024 instead)
 - **TESTDATA PQC simulation format** (use real liboqs)
 
+**Removed Features (code-surface reduction):**
+- **Steganography subsystem** — all image/audio data-hiding removed (numpy
+  dependency dropped). Extract any hidden data with v1.4.x **before** upgrading.
+- **D-Bus service/client**
+- **In-package security testing framework** (fuzzing/KAT harness no longer shipped)
+- **Advisory configuration tooling** (config-wizard, analyze-config,
+  analyze-security, template subcommand, smart-recommendations). Encryption
+  templates (`-t`/`--template`, `--quick`/`--standard`/`--paranoid`) are unchanged.
+
 **Enhancements:**
 - **Streaming chunked encryption** for large files (format v12):
   - Per-chunk AEAD with HKDF-SHA256 derived nonces for constant-memory encryption

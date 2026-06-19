@@ -74,11 +74,11 @@ These features are fully implemented and available in current releases.
   - 📋 Quantum resistance validation and testing tools (future)
 
 ### 5. **Steganography - All Formats** (v1.3.0)
-- **Status**: ❌ REMOVED in v1.5.0 (code-surface reduction)
-- **Implementation**: `openssl_encrypt/modules/steganography/` (16 files)
+- **Status**: ❌ REMOVED in v1.5.0 (code-surface reduction). Extract any hidden data with v1.4.x **before** upgrading.
+- **Former implementation (removed in v1.5.0)**: `openssl_encrypt/modules/steganography/`
   - `stego_core.py`, `stego_image.py`, `stego_jpeg.py`, `stego_tiff.py`
   - `stego_wav.py`, `stego_flac.py`, `stego_mp3.py`, `stego_webp.py`
-- **Features**:
+- **Formats supported before removal** (v1.3.x):
   - ✅ PNG steganography
   - ✅ JPEG steganography
   - ✅ TIFF steganography
@@ -91,7 +91,7 @@ These features are fully implemented and available in current releases.
   - 📋 Archive steganography (ZIP, TAR, 7z files) - future
   - 📋 Filesystem steganography (hidden partitions, slack space) - future
   - 📋 Print media steganography (QR codes, dot patterns) - future
-- **Note**: As of v1.3.0, ALL steganography formats for images and audio are working. WEBP and MP3, which were previously disabled due to algorithmic issues, have been fixed and are now fully functional.
+- **Note**: All image/audio steganography formats worked as of v1.3.0, but the entire steganography subsystem was **removed in v1.5.0** as part of the code-surface reduction (the numpy dependency was dropped). Extract any hidden data with v1.4.x before upgrading.
 
 ### 6. **Portable Media & Offline Distribution** (v1.3.0+)
 - **Status**: ✅ FULLY IMPLEMENTED
@@ -165,7 +165,6 @@ These features are planned for future releases but not yet implemented.
   - ✅ Basic encryption/decryption GUI (existing)
   - 📋 Drag-and-drop file encryption/decryption
   - 📋 Progress indicators in GUI (distinct from CLI progress bars)
-  - 📋 Built-in steganography image viewer
   - 📋 Configuration wizard for non-expert users (GUI version of CLI wizard)
   - 📋 Dark mode and accessibility features
   - 📋 Offline help system and documentation viewer
@@ -339,16 +338,16 @@ These features are **explicitly excluded** due to the project's core security re
 ### Already Complete (v1.0.0 - v1.3.1):
 1. ✅ Post-Quantum Cryptography (v1.0.0+)
 2. ✅ Plugin Architecture (v1.3.0+)
-3. ✅ Configuration Management (v1.3.0+)
-4. ✅ Testing Framework (v1.3.0+)
-5. ✅ Steganography - All Formats (v1.3.0)
+3. ✅ Configuration Management (v1.3.0+; ❌ advisory tooling removed in v1.5.0)
+4. ✅ Testing Framework (v1.3.0+; ❌ in-package framework removed in v1.5.0)
+5. ✅ Steganography - All Formats (v1.3.0; ❌ removed in v1.5.0)
 6. ✅ Portable Media (v1.3.0+)
-7. ✅ HSM Integration - Yubikey (v1.3.1)
+7. ✅ HSM Integration - YubiKey + OnlyKey (v1.3.1; cross-device v1.5.0)
 
 ### Next 2 months (Phase 1):
 1. **Complete Key Rotation System** - Finish automatic rotation for existing keystore
 2. **Performance Optimizations** - GPU acceleration, multi-threading for large files
-3. **Enhanced GUI** - Drag-drop, progress indicators, steganography viewer (100% offline)
+3. **Enhanced GUI** - Drag-drop, progress indicators (100% offline)
 
 ### Months 3-4 (Phase 2):
 4. **Local SQLite Encryption** - Encrypt local SQLite database files
@@ -392,7 +391,7 @@ These features are **explicitly excluded** due to the project's core security re
 
 - **Major Achievements Since v1.0.0**:
   - Complete plugin architecture with security sandboxing (v1.3.0)
-  - All steganography formats fixed and working - WEBP and MP3 were broken, now functional (v1.3.0)
+  - Steganography (all image/audio formats) implemented in v1.3.0, later removed in v1.5.0 (code-surface reduction)
   - Full testing suite with fuzzing, KAT, benchmarks, side-channel, and memory tests (v1.3.0)
   - Configuration wizard, templates, and security analysis (v1.3.0)
   - Portable media tools for USB and QR code distribution (v1.3.0)
@@ -401,7 +400,7 @@ These features are **explicitly excluded** due to the project's core security re
 - **Focus Areas for Next Release**:
   - Complete automatic key rotation system
   - GPU acceleration and multi-threaded encryption (local only)
-  - Enhanced GUI features (drag-drop, dark mode, steganography viewer - 100% offline)
+  - Enhanced GUI features (drag-drop, dark mode - 100% offline)
   - Local SQLite database encryption
 
 - **What Will NEVER Be Implemented**:
