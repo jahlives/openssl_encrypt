@@ -1,6 +1,6 @@
 # Production dependencies for openssl_encrypt
 # Core dependencies
-cryptography>=46.0.6,<47.0.0
+cryptography>=48.0.1,<49.0.0
 argon2-cffi>=23.1.0,<24.0.0
 whirlpool-py311>=1.0.0,<2.0.0; python_version >= '3.11'
 PyYAML>=6.0.2,<7.0.0
