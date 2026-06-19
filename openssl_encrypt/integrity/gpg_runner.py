@@ -136,6 +136,41 @@ def detached_sign(
     return result.stdout
 
 
+def export_public_key(
+    key_fingerprint: str,
+    *,
+    home: Optional[Path] = None,
+    gpg_binary: Optional[str] = None,
+) -> bytes:
+    """Export the ASCII-armored public key for ``key_fingerprint`` from a keyring.
+
+    Lets a signature-validity check verify an existing detached signature against
+    the very key that will (re)sign the manifest, so the check works with any
+    keyring -- the project key or an ephemeral test key -- without needing a
+    separate public-key file on disk.
+
+    Args:
+        key_fingerprint: Fingerprint of the key to export.
+        home: GNUPGHOME holding the key (None = caller's default keyring).
+        gpg_binary: Override the gpg executable (mainly for tests).
+
+    Returns:
+        bytes: The armored public key.
+
+    Raises:
+        GpgUnavailableError: If gpg is not available (fail closed).
+        GpgError: If the key cannot be exported.
+    """
+    gpg = _resolve_gpg(gpg_binary)
+    result = _run([gpg, "--batch", "--armor", "--export", key_fingerprint], home, None)
+    if result.returncode != 0 or not result.stdout:
+        raise GpgError(
+            f"could not export public key {key_fingerprint}: "
+            f"{result.stderr.decode('utf-8', 'replace').strip()}"
+        )
+    return result.stdout
+
+
 def verify_detached(
     data: bytes,
     signature: bytes,
