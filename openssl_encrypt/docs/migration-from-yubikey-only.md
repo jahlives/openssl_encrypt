@@ -23,8 +23,8 @@ You will need:
   secret — see "If you don't have the original secret" below)
 - One or more OnlyKey devices, unlocked (PIN entered on device buttons)
 - The OnlyKey App (https://docs.crp.to/quickstart) for slot configuration
-- `openssl_encrypt` v1.4.4 or later (this is the release that adds
-  OnlyKey support)
+- `openssl_encrypt` v1.5.0 or later (this is the release that adds
+  OnlyKey support and cross-device decryption)
 
 ---
 

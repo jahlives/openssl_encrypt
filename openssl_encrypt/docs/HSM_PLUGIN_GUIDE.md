@@ -4,6 +4,30 @@
 
 HSM (Hardware Security Module) plugins enhance encryption security by adding a hardware-bound pepper value to the key derivation process. The pepper is derived from the hardware device and is never stored in the encrypted file, requiring the physical device to be present for both encryption and decryption.
 
+## Cross-Device Support (v1.5.0)
+
+`openssl_encrypt` ships two challenge-response HSM plugins that form a single
+**protocol-compatible family**: `yubikey_hsm` and `onlykey_hsm`. Both implement
+HMAC-SHA1 challenge-response over a shared 20-byte secret.
+
+- **Cross-device decryption**: a file encrypted with one device can be
+  decrypted with the other, provided both devices hold the **same 20-byte
+  secret**. Select the device explicitly at decrypt time with `--hsm yubikey`
+  or `--hsm onlykey`. Unrelated plugins are still rejected.
+- **`--hsm-slot` precedence**: on `decrypt` and rekey, `--hsm-slot`
+  **overrides** the slot recorded in the file metadata (previously the metadata
+  slot was printed but silently ignored). Fleet devices may therefore hold the
+  shared secret in different slots.
+- **Slots**: YubiKey exposes 2 challenge-response slots (1–2). The OnlyKey
+  plugin accepts slots **1–12**, but only slots **1–2** are verified on real
+  hardware (the two standard CR slot command codes); slots 3–12 are accepted by
+  the plugin but untested. See [ONLYKEY_SETUP.md](ONLYKEY_SETUP.md) for the
+  OnlyKey unlock-then-touch flow and cross-device provisioning.
+
+To provision a fleet, program the same secret onto each device and decrypt with
+whichever device is present via `--hsm <device>` (adding `--hsm-slot <n>` if
+that device holds the secret in a different slot).
+
 ## Security Model
 
 ### Hardware-Bound Encryption
@@ -104,9 +128,13 @@ openssl-encrypt encrypt --hsm yubikey \
    - Caches detected slot for subsequent operations
 
 3. **Metadata Storage**:
-   - Stores: HSM plugin name ("yubikey_hsm")
-   - Stores: Slot number (if manually specified)
+   - Stores: HSM plugin name ("yubikey_hsm" or "onlykey_hsm")
+   - Stores: Slot number (if manually specified) — note that `--hsm-slot` at
+     decrypt/rekey time overrides this stored value (v1.5.0+)
    - Does NOT store: The pepper value itself
+   - Decryption accepts any plugin in the same compatible family (see
+     [Cross-Device Support](#cross-device-support-v150)), not only the exact
+     plugin used for encryption
 
 ## Error Handling
 
@@ -120,8 +148,9 @@ openssl-encrypt encrypt --hsm yubikey \
 - Solution: Configure Challenge-Response on your Yubikey
 - Command: `ykman otp chalresp --generate 2`
 
-**Error: "File was encrypted with HSM plugin 'yubikey_hsm' but no HSM plugin provided"**
-- Solution: Add `--hsm yubikey` when decrypting
+**Error: "File was encrypted with HSM plugin 'yubikey_hsm' but '<other>' provided. Use --hsm yubikey_hsm to decrypt."**
+- Cause: no HSM (or a different, non-compatible plugin) was supplied at decrypt time
+- Solution: Add `--hsm yubikey` (or `--hsm onlykey` for a compatible cross-device decrypt) when decrypting
 - Example: `openssl-encrypt decrypt --hsm yubikey file.enc file.txt`
 
 **Error: "HSM pepper derivation failed"**
@@ -259,8 +288,8 @@ ykman otp info
 
 ## FAQ
 
-**Q: Can I use multiple Yubikeys?**
-A: Each file is bound to the specific Yubikey used during encryption. You can program multiple Yubikeys with the same secret for redundancy.
+**Q: Can I use multiple devices (YubiKey / OnlyKey)?**
+A: Yes. Program the same 20-byte secret onto each device. Any device in the compatible family (`yubikey_hsm` / `onlykey_hsm`) can then decrypt the file — select it with `--hsm yubikey` or `--hsm onlykey`, adding `--hsm-slot <n>` if a device holds the secret in a different slot. See [Cross-Device Support](#cross-device-support-v150).
 
 **Q: What happens if I lose my Yubikey?**
 A: If you have a backup Yubikey with the same secret, you can decrypt. Otherwise, the files are permanently inaccessible.

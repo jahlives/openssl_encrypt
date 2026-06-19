@@ -51,9 +51,11 @@ challenges sent over the raw YubiKey wire protocol (only OnlyKey-aware host
 applications can display the code). The plugin reports this as
 *"OnlyKey rejected the challenge on slot N"*.
 
-**Note on slots:** the OnlyKey hardware advertises many slots, but the YubiKey
-wire protocol used by this plugin only defines two Challenge-Response slot
-command codes. Use slot 1 or slot 2.
+**Note on slots:** the plugin accepts slots 1..12, but only **slots 1 and 2**
+are verified on real hardware. The YubiKey wire protocol used by this plugin
+defines two Challenge-Response slot command codes, which map to OnlyKey's HMAC1
+and HMAC2; slots 3..12 are accepted by the plugin but untested. Use slot 1 or
+slot 2.
 
 ### 3. Set up HID Permissions
 
