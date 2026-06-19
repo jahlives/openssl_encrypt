@@ -60,6 +60,54 @@ This release **removes** all deprecated algorithms entirely — both encryption 
 2. Re-encrypt with supported algorithms (e.g., AES-GCM, ML-KEM-768-hybrid)
 3. Upgrade to v1.5.0
 
+### 1.4.5 (Latest Released) - Dependency Security Updates
+**Release Date:** June 12, 2026
+**Status:** Production Release
+
+- Dependency updates for published CVEs (verified patched versions)
+
+### 1.4.4 - Cross-Device HSM (YubiKey + OnlyKey)
+**Release Date:** June 12, 2026
+**Status:** Production Release
+
+- Cross-device HSM decryption: files encrypted with one HMAC-SHA1
+  challenge-response device decrypt with the other (`yubikey_hsm`/`onlykey_hsm`
+  family) when both hold the same 20-byte secret
+- OnlyKey Challenge-Response HSM plugin and setup guide
+- `--hsm-slot` on decrypt/rekey overrides the slot stored in metadata
+
+### 1.4.3 - Flatpak GUI Fixes
+**Release Date:** March 30, 2026
+**Status:** Production Release
+
+- Fixed the Flutter GUI launcher binary name in the Flatpak wrapper so `--gui` works
+- Corrected the GTK window title
+
+### 1.4.2 - Desktop GUI Simple/Pro Mode
+**Release Date:** March 29, 2026
+**Status:** Production Release
+
+- Simple/Pro mode for the desktop GUI (Simple is the default)
+- Independent XOR (v11) as the default key derivation for STANDARD/PARANOID templates
+- RandomX support in the independent-XOR key-derivation path
+
+### 1.4.1 - Streaming Chunked Encryption
+**Release Date:** March 22, 2026
+**Status:** Production Release
+
+- Streaming chunked encryption (format v12) for constant-memory operation on large files
+- `--info` CLI action and the `encrypted_at` metadata timestamp
+
+### 1.4.0 - Rekey Hardening & Secure Salt Derivation
+**Release Date:** March 3, 2026
+**Status:** Production Release
+
+**Enhancements:**
+- Plaintext never touches disk during rekey (passed as bytes, no temp file)
+- Secure chained salt derivation (format v9)
+- `--rekey` action for re-encrypting with a new password
+- Bytes input/output support
+
 ### 1.3.1 - Maintenance Release
 **Release Date:** December 2025
 **Status:** Production Release
