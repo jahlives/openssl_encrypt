@@ -15,9 +15,17 @@
 
 * **Security & Compliance**
   * [Security Policy](security)
-  * [Crypto Security Analysis](crypto_tool_security_analysis)
   * [Source Integrity](SOURCE_INTEGRITY)
   * [Audit Chain](AUDIT_CHAIN)
+
+* **Audits & Reviews**
+  * [Comprehensive Security Audit](COMPREHENSIVE_SECURITY_AUDIT)
+  * [Security Review](SECURITY_REVIEW)
+  * [Security Review — v1.3.0](SECURITY_REVIEW_v1.3.0)
+  * [Algorithm Registry Audit](SECURITY_AUDIT_REGISTRY)
+  * [Algorithm Registry Analysis](algorithm_registry_analysis)
+  * [Crypto Security Analysis](crypto_tool_security_analysis)
+  * [Branch Compatibility Analysis](branch_compatibility_analysis)
 
 * **Hardware Tokens**
   * [Hardware Tokens Overview](hardware-tokens)
