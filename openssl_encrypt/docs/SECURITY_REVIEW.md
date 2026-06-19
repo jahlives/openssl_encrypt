@@ -657,7 +657,7 @@ String _canonicalizePath(String filePath) {
 
 2. **Cryptographic Attacks**
    - Predictable password generation enabling brute force
-   - Nonce reuse in XChaCha20 enabling plaintext recovery
+   - Nonce reuse in XChaCha20 enabling plaintext recovery *(resolved in v1.5.0 — real 192-bit nonces)*
    - Timing side-channel attacks in MAC verification
    - Weak default configurations reducing security
 
@@ -688,6 +688,11 @@ String _canonicalizePath(String filePath) {
 3. Attacker XORs ciphertexts to recover plaintext directly
 4. All previously encrypted data becomes recoverable
 5. **Reduced Impact**: Password generator now secure, limits exposure scope
+6. **Update (v1.5.0):** Resolved — XChaCha20-Poly1305 now uses real 192-bit
+   (24-byte) nonces via HChaCha20 subkey derivation
+   (draft-irtf-cfrg-xchacha-03), raising the random-collision bound from 2^48
+   to 2^96. Combined with per-file random salts (a fresh key per file), the
+   ~16M-operation nonce-collision scenario described above no longer applies.
 
 **Scenario 3: Supply Chain Attack via Build Process**
 1. Attacker compromises upstream repository (liboqs-python)
@@ -1080,7 +1085,7 @@ Despite critical vulnerabilities, the project demonstrates several exemplary sec
 - Implementation of secure memory management where possible
 - Proper use of constant-time comparison functions
 - Multi-algorithm support allowing security upgrades
-- **Secure XChaCha20 implementation**: Custom XChaCha20Poly1305 class properly implements HKDF-based nonce derivation, providing secure 24-byte nonce handling despite Python cryptography library limitations
+- **Secure XChaCha20 implementation**: As of v1.5.0 the XChaCha20Poly1305 wrapper implements real 192-bit XChaCha via HChaCha20 subkey derivation (draft-irtf-cfrg-xchacha-03), providing genuine 24-byte nonce handling on top of the `cryptography` library's ChaCha20 (pre-1.5 files used a legacy HKDF-based 12-byte-effective derivation and remain decryptable)
 
 ---
 
