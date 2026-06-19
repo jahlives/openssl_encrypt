@@ -1,6 +1,6 @@
 # Future Features Roadmap
 
-*Last Updated: December 22, 2025 - Based on v1.3.0+ codebase analysis*
+*Last Updated: June 19, 2026 - Based on v1.5.0 (in development) codebase analysis*
 
 This document outlines features for the OpenSSL Encrypt project, organized by implementation status: what's already done, what's in progress, and what's planned for the future.
 
@@ -105,17 +105,18 @@ These features are fully implemented and available in current releases.
   - 📋 CD/DVD mastering with encryption (future)
   - 📋 Removable media sanitization and secure deletion (future)
 
-### 7. **HSM Integration - Yubikey** (v1.3.1)
+### 7. **HSM Integration - YubiKey & OnlyKey** (YubiKey v1.3.1; OnlyKey + cross-device v1.5.0)
 - **Status**: ✅ FULLY IMPLEMENTED
-- **Implementation**: `openssl_encrypt/plugins/hsm/yubikey_challenge_response.py` (279 lines)
+- **Implementation**: `openssl_encrypt/plugins/hsm/yubikey_challenge_response/` and `openssl_encrypt/plugins/hsm/onlykey_challenge_response/`
 - **Features**:
-  - ✅ Yubikey Challenge-Response mode (HMAC-SHA1)
-  - ✅ Hardware-bound key derivation using Yubikey pepper
-  - ✅ Auto-detection of Challenge-Response slot (slot 1 or 2)
-  - ✅ Manual slot specification via --hsm-slot argument
+  - ✅ Challenge-Response mode (HMAC-SHA1) on YubiKey and OnlyKey
+  - ✅ Hardware-bound key derivation using the device pepper
+  - ✅ Auto-detection of the Challenge-Response slot (YubiKey 1–2; OnlyKey 1–12 accepted, 1–2 verified)
+  - ✅ Manual slot specification via `--hsm-slot` (overrides the metadata slot on decrypt/rekey, v1.5.0)
   - ✅ Touch-based authentication for decrypt operations
   - ✅ HSM plugin integration in key derivation pipeline
-- **Note**: Hardware Security Module integration for Yubikey is complete. The Yubikey's HMAC-SHA1 Challenge-Response is used to generate a hardware-specific pepper that enhances encryption security and requires the physical Yubikey to be present for decryption.
+  - ✅ Cross-device decryption (v1.5.0): `yubikey_hsm`/`onlykey_hsm` form a protocol-compatible family — a file encrypted with one device decrypts with the other when both hold the same 20-byte secret
+- **Note**: The device's HMAC-SHA1 Challenge-Response generates a hardware-specific pepper that requires the physical device to be present for decryption. See `docs/HSM_PLUGIN_GUIDE.md` and `docs/ONLYKEY_SETUP.md`.
 
 ---
 
@@ -312,12 +313,12 @@ These features are **explicitly excluded** due to the project's core security re
 | Feature | Status | Priority | User Impact | Technical Risk | Notes |
 |---------|--------|----------|-------------|----------------|-------|
 | Plugin Architecture | ✅ DONE | High | High | Low | 7 plugin types, capability-based security |
-| Configuration Management | ✅ DONE | Medium | High | Low | Wizard, templates, security analysis |
-| Testing Framework | ✅ DONE | High | High | Low | Fuzzing, KAT, benchmarks, side-channel, memory |
-| Post-Quantum Crypto | ✅ DONE | High | High | Low | ML-KEM, Kyber, hybrid modes |
-| Steganography | ✅ DONE | Medium | Medium | Medium | ALL formats working as of v1.3.0 |
+| Configuration Management | ❌ REMOVED v1.5.0 | Medium | High | Low | Advisory config tools dropped; `-t`/`--template` retained |
+| Testing Framework | ❌ REMOVED v1.5.0 | High | High | Low | In-package dev tooling no longer shipped |
+| Post-Quantum Crypto | ✅ DONE | High | High | Low | ML-KEM, HQC, hybrid modes (legacy Kyber naming removed v1.5.0) |
+| Steganography | ❌ REMOVED v1.5.0 | Medium | Medium | Medium | Subsystem removed (code-surface reduction) |
 | Portable Media | ✅ DONE | Medium | Medium | Low | USB, QR codes, air-gapped |
-| HSM Integration (Yubikey) | ✅ DONE | High | High | Low | Challenge-Response, auto-detection |
+| HSM Integration (YubiKey + OnlyKey) | ✅ DONE | High | High | Low | Challenge-Response, auto-detection, cross-device (v1.5.0) |
 | Key Management | 🚧 PARTIAL | High | High | Low | Storage ✅, Rotation 📋 |
 | Performance | 🚧 PARTIAL | High | Medium | Medium | Progress bars ✅, GPU/threading 📋 |
 | Enhanced GUI | 📋 PLANNED | Medium | Medium | Low | Offline GUI, basic version exists |
@@ -369,7 +370,7 @@ These features are **explicitly excluded** due to the project's core security re
 
 ## Notes
 
-- **Current Version**: v1.3.0+ (with v1.3.1 HSM support)
+- **Current Version**: v1.5.0 (in development; latest released 1.4.5)
 
 - **Core Security Principle: ZERO NETWORK ACCESS**:
   - OpenSSL Encrypt will **never** access the network, directly or through plugins
@@ -380,11 +381,11 @@ These features are **explicitly excluded** due to the project's core security re
   - Privacy guarantee: Zero risk of data exfiltration
 
 - **Current Strengths**:
-  - Excellent post-quantum cryptography support (ML-KEM, Kyber)
+  - Excellent post-quantum cryptography support (ML-KEM, HQC, hybrid modes)
   - Complete plugin system with 7 types and capability-based security
-  - Comprehensive testing framework (fuzzing, KAT, benchmarks, side-channel resistance, memory safety)
-  - All steganography formats working (PNG, JPEG, TIFF, WAV, FLAC, WEBP, MP3)
-  - HSM integration with Yubikey Challenge-Response
+  - Comprehensive test suite (unit, KAT, integration)
+  - Real 192-bit XChaCha20-Poly1305 and source-code integrity protection (v1.5.0)
+  - HSM integration with YubiKey and OnlyKey Challenge-Response, including cross-device decryption (v1.5.0)
   - Configuration wizard and template management
   - Portable media and offline key distribution
   - **100% offline operation - works completely without network**

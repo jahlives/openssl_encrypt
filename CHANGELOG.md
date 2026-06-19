@@ -636,7 +636,7 @@ the 1.5 branch:
 - **PQC Key Storage**: Fixed post-quantum private key storage for AEAD algorithms
 - **Flatpak Permissions**: Cleaned up invalid filesystem permissions
 
-## [1.4.0] - TBD (Target Stable Release)
+## [1.4.0] - 2026-03-03 (additional security-fix notes; see the consolidated [1.4.0] entry above)
 
 ### 🚨 CRITICAL SECURITY FIX
 

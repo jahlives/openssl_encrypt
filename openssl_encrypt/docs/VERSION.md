@@ -4,9 +4,11 @@
 
 OpenSSL Encrypt follows [Semantic Versioning (SemVer)](https://semver.org/) for version numbering and maintains comprehensive version history to track the evolution of cryptographic security features, post-quantum implementations, and security enhancements.
 
-**Current Version:** `1.5.0` (Production Release)
+**Current Version:** `1.5.0` (Unreleased — in development on `feature/v1.5.x-development`)
 
-**Development Status:** Production/Stable
+**Latest Released Version:** `1.4.5`
+
+**Development Status:** Beta / Pre-release
 
 ## Version Numbering Scheme
 
@@ -17,9 +19,9 @@ OpenSSL Encrypt follows [Semantic Versioning (SemVer)](https://semver.org/) for 
 
 ## Release History
 
-### 1.5.0 (Current) - Breaking: Deprecated Algorithm Removal
-**Release Date:** February 2026
-**Status:** Production Release
+### 1.5.0 (Unreleased) - Breaking: Deprecated Algorithm Removal
+**Release Date:** TBD (in development)
+**Status:** Unreleased — see [CHANGELOG](../../CHANGELOG.md) `[1.5.0] - TBD`
 
 **BREAKING CHANGES:**
 
