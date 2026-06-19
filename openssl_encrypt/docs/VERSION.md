@@ -448,8 +448,8 @@ print(f"Build Date: {info.get('build_date', 'Unknown')}")
 
 | Version | Python | Status | Support Level |
 |---------|--------|--------|---------------|
-| 1.5.x | 3.9+ | Current | Full Support |
-| 1.4.x | 3.9+ | Maintenance | Security Fixes |
+| 1.5.x | 3.11+ | Current | Full Support |
+| 1.4.x | 3.11+ | Maintenance | Security Fixes |
 | 1.3.x | 3.9+ | Maintenance | Security Fixes |
 | 1.2.x | 3.9+ | EOL | No Support |
 | 1.1.x | 3.9+ | EOL | No Support |

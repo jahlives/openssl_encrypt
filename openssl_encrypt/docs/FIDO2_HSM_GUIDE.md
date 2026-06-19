@@ -45,7 +45,7 @@ openssl_encrypt hsm fido2-list
 
 ### Software Requirements
 
-- Python 3.8+
+- Python 3.11+
 - `fido2` library (python-fido2 by Yubico)
 
 ---
