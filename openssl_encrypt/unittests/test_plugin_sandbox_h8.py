@@ -35,6 +35,10 @@ from openssl_encrypt.modules.plugin_system.plugin_sandbox import (
     _plugin_worker,
 )
 
+_IS_WINDOWS = os.name == "nt"
+# os.geteuid() is POSIX-only; guard it so this module still imports on Windows.
+_IS_ROOT = hasattr(os, "geteuid") and os.geteuid() == 0
+
 
 # A module-level plugin so it is importable/picklable and runnable in-process.
 class _OpenAttemptPlugin:
@@ -197,14 +201,16 @@ class TestProcessWorkerAppliesSandbox(unittest.TestCase):
         sandbox.current_context = ctx
         sandbox.temp_dir = tempfile.mkdtemp()
         self.addCleanup(lambda: shutil.rmtree(sandbox.temp_dir, ignore_errors=True))
+        # An existing file outside the sandbox temp dir (cross-platform).
+        outside_path = os.path.abspath(__file__)
         saved = sandbox._setup_restricted_environment(ctx)
         try:
             with self.assertRaises(SandboxViolationError):
-                open("/etc/hostname", "r")
+                open(outside_path, "r")
         finally:
             sandbox._restore_original_environment(saved)
         # open() must work again after restoration
-        with open("/etc/hostname", "r") as f:
+        with open(outside_path, "r") as f:
             self.assertIsNotNone(f.read())
 
     def test_worker_preserves_cwd(self):
@@ -249,6 +255,7 @@ class TestProcessWorkerAppliesSandbox(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 
+@unittest.skipIf(_IS_WINDOWS, "POSIX permission semantics; see TestWindowsPluginLocationAcl")
 class TestWritablePluginLocationRejected(unittest.TestCase):
     """A plugin file (or its directory) that is group/world-writable must be
     refused - that is the window an attacker uses to drop import-time code."""
@@ -276,19 +283,19 @@ class TestWritablePluginLocationRejected(unittest.TestCase):
         os.chmod(path, 0o644)
         return path
 
-    @unittest.skipIf(os.geteuid() == 0, "root bypasses file permission checks")
+    @unittest.skipIf(_IS_ROOT, "root bypasses file permission checks")
     def test_world_writable_plugin_file_rejected(self):
         path = self._write_plugin()
         os.chmod(path, 0o666)  # world-writable
         self.assertFalse(self.manager._validate_plugin_file(path))
 
-    @unittest.skipIf(os.geteuid() == 0, "root bypasses file permission checks")
+    @unittest.skipIf(_IS_ROOT, "root bypasses file permission checks")
     def test_group_writable_plugin_file_rejected(self):
         path = self._write_plugin()
         os.chmod(path, 0o664)  # group-writable
         self.assertFalse(self.manager._validate_plugin_file(path))
 
-    @unittest.skipIf(os.geteuid() == 0, "root bypasses file permission checks")
+    @unittest.skipIf(_IS_ROOT, "root bypasses file permission checks")
     def test_world_writable_plugin_dir_rejected(self):
         path = self._write_plugin()
         os.chmod(self.temp_dir, 0o777)  # world-writable directory
@@ -299,6 +306,108 @@ class TestWritablePluginLocationRejected(unittest.TestCase):
         os.chmod(self.temp_dir, 0o755)
         os.chmod(path, 0o644)
         self.assertTrue(self.manager._validate_plugin_file(path))
+
+
+@unittest.skipUnless(_IS_WINDOWS, "Windows ACL semantics")
+class TestWindowsPluginLocationAcl(unittest.TestCase):
+    """On Windows the location check inspects the DACL instead of POSIX mode
+    bits: a plugin is insecure only if a principal other than its owner (or
+    SYSTEM/Administrators) has write access."""
+
+    def setUp(self):
+        import shutil
+
+        from openssl_encrypt.modules.plugin_system.plugin_manager import PluginManager
+
+        self.PluginManager = PluginManager
+        self.temp_dir = tempfile.mkdtemp()
+        self.addCleanup(lambda: shutil.rmtree(self.temp_dir, ignore_errors=True))
+        self.path = os.path.join(self.temp_dir, "p.py")
+        with open(self.path, "w", encoding="utf-8") as f:
+            f.write("# benign plugin\nVALUE = 1\n")
+        # Pin the file's DACL to owner-only so inherited ACEs don't influence
+        # the result; tests then add broader ACEs as needed.
+        self._set_dacl([(self._current_user_sid(), self._all_access())])
+
+    @staticmethod
+    def _current_user_sid():
+        import win32api
+        import win32security
+
+        sid, _, _ = win32security.LookupAccountName("", win32api.GetUserName())
+        return sid
+
+    @staticmethod
+    def _all_access():
+        import ntsecuritycon
+
+        return ntsecuritycon.FILE_ALL_ACCESS
+
+    def _set_dacl(self, entries):
+        import win32security
+
+        dacl = win32security.ACL()
+        for sid, mask in entries:
+            dacl.AddAccessAllowedAce(win32security.ACL_REVISION, mask, sid)
+        sd = win32security.GetFileSecurity(
+            self.path, win32security.DACL_SECURITY_INFORMATION
+        )
+        sd.SetSecurityDescriptorDacl(1, dacl, 0)
+        win32security.SetFileSecurity(
+            self.path, win32security.DACL_SECURITY_INFORMATION, sd
+        )
+
+    def _reason(self):
+        # Check the file alone (the directory carries unrelated inherited ACEs).
+        return self.PluginManager._windows_insecure_location_reason((self.path,))
+
+    def test_owner_only_accepted(self):
+        self.assertIsNone(self._reason())
+
+    def test_everyone_writable_rejected(self):
+        import ntsecuritycon
+        import win32security
+
+        everyone = win32security.CreateWellKnownSid(win32security.WinWorldSid)
+        self._set_dacl(
+            [
+                (self._current_user_sid(), self._all_access()),
+                (everyone, ntsecuritycon.FILE_GENERIC_WRITE),
+            ]
+        )
+        reason = self._reason()
+        self.assertIsNotNone(reason)
+        self.assertIn("S-1-1-0", reason)
+
+    def test_authenticated_users_writable_rejected(self):
+        import ntsecuritycon
+        import win32security
+
+        auth_users = win32security.CreateWellKnownSid(
+            win32security.WinAuthenticatedUserSid
+        )
+        self._set_dacl(
+            [
+                (self._current_user_sid(), self._all_access()),
+                (auth_users, ntsecuritycon.FILE_GENERIC_WRITE),
+            ]
+        )
+        self.assertIsNotNone(self._reason())
+
+    def test_administrators_write_allowed(self):
+        import ntsecuritycon
+        import win32security
+
+        admins = win32security.CreateWellKnownSid(
+            win32security.WinBuiltinAdministratorsSid
+        )
+        self._set_dacl(
+            [
+                (self._current_user_sid(), self._all_access()),
+                (admins, ntsecuritycon.FILE_ALL_ACCESS),
+            ]
+        )
+        self.assertIsNone(self._reason())
 
 
 if __name__ == "__main__":

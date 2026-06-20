@@ -688,11 +688,20 @@ class PluginManager:
     @staticmethod
     def _insecure_location_reason(file_path: str) -> Optional[str]:
         """Return a reason string if the plugin file or its containing
-        directory is group/world-writable (a tampering window), else None.
+        directory can be modified by anyone other than its owner (a tampering
+        window), else None.
 
-        A sticky world-writable directory (e.g. /tmp) is not flagged on its
-        own: the sticky bit means only an entry's owner may rename/delete it,
-        so the file's own mode governs whether it can be tampered with.
+        The check is platform-specific:
+
+        - POSIX: the file/dir must not be group- or world-writable. A sticky
+          world-writable directory (e.g. /tmp) is not flagged on its own: the
+          sticky bit means only an entry's owner may rename/delete it, so the
+          file's own mode governs whether it can be tampered with.
+        - Windows: POSIX mode bits are meaningless there (``os.stat`` always
+          reports 0o666 for files and 0o777 for directories regardless of the
+          ACL), so the DACL is inspected instead - the location is insecure if
+          any principal other than the owner, SYSTEM or the local
+          Administrators group has write access.
 
         Args:
             file_path: Path to the plugin file
@@ -700,21 +709,128 @@ class PluginManager:
         Returns:
             Reason string if the location is insecure, else None.
         """
-        writable_by_others = stat.S_IWGRP | stat.S_IWOTH
         try:
             real_file = os.path.realpath(file_path)
-            for target in (real_file, os.path.dirname(real_file)):
-                st = os.stat(target)
-                if not (st.st_mode & writable_by_others):
-                    continue
-                is_dir = os.path.isdir(target)
-                if is_dir and (st.st_mode & stat.S_ISVTX):
-                    # sticky directory - not a tampering window by itself
-                    continue
-                kind = "directory" if is_dir else "file"
-                return f"plugin {kind} is group/world-writable (mode {oct(st.st_mode & 0o777)})"
+            targets = (real_file, os.path.dirname(real_file))
+            if os.name == "nt":
+                return PluginManager._windows_insecure_location_reason(targets)
+            return PluginManager._posix_insecure_location_reason(targets)
         except OSError as e:
             return f"could not stat plugin path: {e}"
+
+    @staticmethod
+    def _posix_insecure_location_reason(targets) -> Optional[str]:
+        """POSIX check: flag a group/world-writable file or directory."""
+        writable_by_others = stat.S_IWGRP | stat.S_IWOTH
+        for target in targets:
+            st = os.stat(target)
+            if not (st.st_mode & writable_by_others):
+                continue
+            is_dir = os.path.isdir(target)
+            if is_dir and (st.st_mode & stat.S_ISVTX):
+                # sticky directory - not a tampering window by itself
+                continue
+            kind = "directory" if is_dir else "file"
+            return f"plugin {kind} is group/world-writable (mode {oct(st.st_mode & 0o777)})"
+        return None
+
+    @staticmethod
+    def _windows_insecure_location_reason(targets) -> Optional[str]:
+        """Windows check: flag a file or directory whose DACL grants write
+        access to any principal other than the owner, SYSTEM or the local
+        Administrators group.
+
+        Requires pywin32. If it is unavailable the ACL cannot be inspected;
+        rather than block every plugin (POSIX mode bits are meaningless on
+        Windows) the check is skipped with a warning.
+        """
+        try:
+            import ntsecuritycon
+            import win32security
+        except ImportError:
+            logger.warning(
+                "pywin32 is not available; cannot verify plugin location "
+                "permissions on Windows. Install pywin32 to enable owner-only "
+                "verification of plugin files."
+            )
+            return None
+
+        # Rights that would let a principal tamper with the plugin file.
+        write_mask = (
+            ntsecuritycon.FILE_WRITE_DATA
+            | ntsecuritycon.FILE_APPEND_DATA
+            | ntsecuritycon.FILE_WRITE_EA
+            | ntsecuritycon.FILE_WRITE_ATTRIBUTES
+            | ntsecuritycon.WRITE_DAC
+            | ntsecuritycon.WRITE_OWNER
+            | ntsecuritycon.DELETE
+            | ntsecuritycon.GENERIC_WRITE
+            | ntsecuritycon.GENERIC_ALL
+        )
+
+        # SIDs whose write access is not a meaningful extra exposure:
+        # CREATOR_OWNER (S-1-3-0) and OWNER_RIGHTS (S-1-3-4) are the owner by
+        # definition, and an attacker who already controls SYSTEM or the local
+        # Administrators group can tamper with anything regardless.
+        trusted = {"S-1-3-0", "S-1-3-4"}
+        for sid_type in (
+            win32security.WinLocalSystemSid,
+            win32security.WinBuiltinAdministratorsSid,
+        ):
+            try:
+                trusted.add(
+                    win32security.ConvertSidToStringSid(
+                        win32security.CreateWellKnownSid(sid_type)
+                    )
+                )
+            except Exception:  # pragma: no cover - defensive
+                pass
+
+        for target in targets:
+            is_dir = os.path.isdir(target)
+            kind = "directory" if is_dir else "file"
+            try:
+                sd = win32security.GetFileSecurity(
+                    target,
+                    win32security.OWNER_SECURITY_INFORMATION
+                    | win32security.DACL_SECURITY_INFORMATION,
+                )
+            except Exception as e:  # pywintypes.error is not an OSError
+                # Fail closed: if we cannot read the ACL we cannot vouch for it.
+                return f"could not read ACL for plugin {kind}: {e}"
+
+            dacl = sd.GetSecurityDescriptorDacl()
+            if dacl is None:
+                # A NULL DACL grants everyone full access.
+                return f"plugin {kind} has a NULL DACL (everyone-writable)"
+
+            allowed = set(trusted)
+            allowed.add(
+                win32security.ConvertSidToStringSid(sd.GetSecurityDescriptorOwner())
+            )
+
+            for i in range(dacl.GetAceCount()):
+                ace = dacl.GetAce(i)
+                ace_type = ace[0][0]
+                # Only ACCESS_ALLOWED ACEs grant rights; this is also the only
+                # ACE type guaranteed to use the (type, flags), mask, sid shape.
+                if ace_type != win32security.ACCESS_ALLOWED_ACE_TYPE:
+                    continue
+                mask, sid = ace[1], ace[2]
+                if not (mask & write_mask):
+                    continue
+                sid_str = win32security.ConvertSidToStringSid(sid)
+                if sid_str in allowed:
+                    continue
+                try:
+                    name, domain, _ = win32security.LookupAccountSid(None, sid)
+                    who = f"{domain}\\{name}" if domain else name
+                except Exception:
+                    who = sid_str
+                return (
+                    f"plugin {kind} grants write access to '{who}' "
+                    f"({sid_str}), not just its owner"
+                )
         return None
 
     def _validate_plugin_file(self, file_path: str) -> bool:
