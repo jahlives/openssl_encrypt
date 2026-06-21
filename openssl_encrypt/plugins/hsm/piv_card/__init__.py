@@ -59,12 +59,27 @@ def _default_pin_provider() -> bytearray:
 class PIVHSMPlugin(HSMPlugin):
     """PIV/PKCS#11 HSM plugin for hardware-bound key derivation."""
 
-    def __init__(self, pin_provider: Optional[Callable[[], bytearray]] = None):
+    def __init__(
+        self,
+        pkcs11_lib_path: Optional[str] = None,
+        slot_index: int = 0,
+        piv_slot: int = 0x9A,
+        pepper_length: int = 32,
+        biometric: bool = False,
+        pin_provider: Optional[Callable[[], bytearray]] = None,
+    ):
         super().__init__(
             plugin_id="piv_hsm",
             name="PIV/PKCS#11 HSM",
             version="1.0.0",
         )
+        # Construction-time config (used by the encrypt/decrypt path, where
+        # crypt_core builds its own context). context.config overrides these.
+        self._pkcs11_lib_path = pkcs11_lib_path
+        self._slot_index = slot_index
+        self._piv_slot = piv_slot
+        self._pepper_length = pepper_length
+        self._biometric = biometric
         self._pin_provider = pin_provider or _default_pin_provider
 
     def get_required_capabilities(self) -> Set[PluginCapability]:
@@ -87,7 +102,8 @@ class PIVHSMPlugin(HSMPlugin):
         """
         try:
             config = context.config or {}
-            lib_path = config.get("pkcs11_lib_path")
+            # context.config takes precedence over construction-time config.
+            lib_path = config.get("pkcs11_lib_path", self._pkcs11_lib_path)
             if not lib_path:
                 return PluginResult.error_result(
                     "PIV HSM requires 'pkcs11_lib_path' (path to a PKCS#11 module such as "
@@ -99,10 +115,11 @@ class PIVHSMPlugin(HSMPlugin):
                     f"Invalid salt length: expected 16 bytes, got {len(salt) if salt else 0}"
                 )
 
-            slot_index = config.get("slot_index", 0)
-            piv_slot = config.get("piv_slot", 0x9A)
-            pepper_length = config.get("pepper_length", 32)
-            biometric = bool(config.get("biometric", False))
+            # The HSM context reuses the "slot" key for the PKCS#11 slot index.
+            slot_index = config.get("slot", config.get("slot_index", self._slot_index))
+            piv_slot = config.get("piv_slot", self._piv_slot)
+            pepper_length = config.get("pepper_length", self._pepper_length)
+            biometric = bool(config.get("biometric", self._biometric))
 
             backend = PIVBackend(
                 lib_path,
