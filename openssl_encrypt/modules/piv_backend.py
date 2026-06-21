@@ -28,6 +28,7 @@ without the binding installed.
 """
 
 import ctypes
+import hmac
 import logging
 import os
 from typing import Callable, Optional, Union
@@ -505,3 +506,74 @@ class PIVSigner(metaclass=_PIVSignerMeta):
         raise PIVKeyError(
             f"Unsupported PIV key type: {key_type}. Supported types are RSA and Ed25519."
         )
+
+    def sign(self, challenge: bytes, session=None) -> bytes:
+        """Sign the challenge with the PIV key and enforce determinism.
+
+        Verifies the signature is non-empty (item 10) and the expected length for
+        the key type (item 11), then signs the same challenge a second time and
+        compares the two with a constant-time check (item 12). Raises
+        PIVDeterminismError if they differ.
+        """
+        if self._key is None:
+            if session is None:
+                raise PIVKeyError("find_key() must be called (or a session passed) before sign()")
+            self.find_key(session)
+
+        pkcs11 = _load_pkcs11_module()
+        key = self._key
+        mechanism = self._mechanism_for(key, pkcs11)
+
+        first = self._raw_sign(key, challenge, mechanism, pkcs11)
+        self._verify_signature(key, first, pkcs11)
+
+        # Item 12: determinism is the whole premise -- verify it on every sign.
+        second = self._raw_sign(key, challenge, mechanism, pkcs11)
+        if not hmac.compare_digest(first, second):
+            raise PIVDeterminismError(
+                "The PIV key did not produce a deterministic signature for an identical "
+                "challenge. This key/mechanism cannot guarantee multi-device determinism "
+                "and is unsuitable for pepper derivation."
+            )
+        return first
+
+    @staticmethod
+    def _mechanism_for(key, pkcs11):
+        key_type = getattr(key, "key_type", None)
+        if key_type == pkcs11.KeyType.RSA:
+            return pkcs11.Mechanism.RSA_PKCS  # PKCS#1 v1.5 -- deterministic
+        if key_type == pkcs11.KeyType.EC_EDWARDS:
+            return pkcs11.Mechanism.EDDSA  # Ed25519 -- deterministic
+        raise PIVKeyError(f"Cannot sign with unsupported key type: {key_type}")
+
+    def _expected_sig_len(self, key, pkcs11) -> Optional[int]:
+        key_type = getattr(key, "key_type", None)
+        if key_type == pkcs11.KeyType.RSA:
+            try:
+                modulus_bits = key[pkcs11.Attribute.MODULUS_BITS]
+            except Exception:
+                return None  # cannot determine -> skip strict length check
+            return int(modulus_bits) // 8
+        if key_type == pkcs11.KeyType.EC_EDWARDS:
+            return self.ED25519_SIG_LEN
+        return None
+
+    @staticmethod
+    def _raw_sign(key, challenge: bytes, mechanism, pkcs11) -> bytes:
+        try:
+            signature = key.sign(challenge, mechanism=mechanism)
+        except pkcs11.exceptions.PKCS11Error as exc:
+            raise PIVSignatureError(f"PIV signing operation failed: {exc}") from exc
+        return bytes(signature)
+
+    def _verify_signature(self, key, signature: bytes, pkcs11) -> None:
+        # Item 10: signature must be non-empty.
+        if not signature:
+            raise PIVSignatureError("PIV signing returned an empty signature")
+        # Item 11: signature length must match the key type when it is known.
+        expected = self._expected_sig_len(key, pkcs11)
+        if expected is not None and len(signature) != expected:
+            raise PIVSignatureError(
+                f"Signature length {len(signature)} does not match the expected "
+                f"{expected} bytes for this key type."
+            )
