@@ -28,11 +28,32 @@ without the binding installed.
 """
 
 import logging
+import os
 
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 logger = logging.getLogger(__name__)
+
+
+# --------------------------------------------------------------------------- #
+# Lazy python-pkcs11 loader
+# --------------------------------------------------------------------------- #
+def _load_pkcs11_module():
+    """Import and return the ``pkcs11`` module, or raise a friendly error.
+
+    Imported lazily so this module is usable without the binding, and so unit
+    tests can substitute a fake ``pkcs11`` in ``sys.modules``.
+    """
+    try:
+        import pkcs11
+    except ImportError as exc:  # binding missing or broken
+        raise PIVDependencyError(
+            "python-pkcs11 is not installed or could not be imported. "
+            "Install it with 'pip install python-pkcs11' and ensure a PKCS#11 "
+            "module (e.g. opensc-pkcs11.so or ykcs11.so) is available on this system."
+        ) from exc
+    return pkcs11
 
 
 # --------------------------------------------------------------------------- #
@@ -134,3 +155,58 @@ class PepperDerivation:
         if not raw_signature:
             raise ValueError("raw_signature must be non-empty")
         return self._hkdf(raw_signature, self.PEPPER_INFO, self.pepper_length)
+
+
+# --------------------------------------------------------------------------- #
+# PKCS11Library -- load and verify the PKCS#11 module (items 1 and 2)
+# --------------------------------------------------------------------------- #
+class PKCS11Library:
+    """Loads and validates a PKCS#11 shared library by path.
+
+    The path is always supplied by the caller -- it is never hardcoded. Both the
+    file's existence (item 1) and its loadability (item 2) are verified before
+    the library object is returned.
+    """
+
+    def __init__(self, lib_path: str):
+        if not isinstance(lib_path, str) or not lib_path:
+            raise PIVConfigurationError(
+                "PKCS#11 library path must be a non-empty string supplied by the caller"
+            )
+        self.lib_path = lib_path
+        self._lib = None
+
+    def load(self):
+        """Return the loaded PKCS#11 library object, loading it once and caching.
+
+        Raises:
+            PIVLibraryError: file missing or not loadable.
+            PIVDependencyError: python-pkcs11 not installed.
+        """
+        if self._lib is not None:
+            return self._lib
+
+        # Item 1: verify the file exists before attempting to load it.
+        if not os.path.isfile(self.lib_path):
+            raise PIVLibraryError(
+                f"PKCS#11 library not found at '{self.lib_path}'. "
+                "Provide the correct path to a PKCS#11 module "
+                "(e.g. /usr/lib/opensc-pkcs11.so or the YubiKey ykcs11 module)."
+            )
+
+        pkcs11 = _load_pkcs11_module()
+
+        # Item 2: verify the library is actually loadable.
+        try:
+            self._lib = pkcs11.lib(self.lib_path)
+        except (OSError, pkcs11.exceptions.PKCS11Error) as exc:
+            raise PIVLibraryError(
+                f"Failed to load PKCS#11 library '{self.lib_path}': {exc}. "
+                "Verify the file is a valid PKCS#11 module for this platform/architecture."
+            ) from exc
+        except Exception as exc:  # any other binding-level failure
+            raise PIVLibraryError(
+                f"Failed to load PKCS#11 library '{self.lib_path}': {exc}."
+            ) from exc
+
+        return self._lib
