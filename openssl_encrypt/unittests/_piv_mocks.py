@@ -57,10 +57,18 @@ class Attribute(enum.Enum):
     CLASS = "CLASS"
     KEY_TYPE = "KEY_TYPE"
     LABEL = "LABEL"
+    ID = "ID"
     MODULUS_BITS = "MODULUS_BITS"
     EC_PARAMS = "EC_PARAMS"
     PRIVATE = "PRIVATE"
     SIGN = "SIGN"
+
+
+# CKA_ID values OpenSC/ykcs11 assign to PIV key slots.
+PIV_SLOT_ID_9A = b"\x01"
+PIV_SLOT_ID_9C = b"\x02"
+PIV_SLOT_ID_9D = b"\x03"
+PIV_SLOT_ID_9E = b"\x04"
 
 
 class TokenFlag(enum.IntFlag):
@@ -147,15 +155,18 @@ class FakeKey:
         modulus_bits: Optional[int] = None,
         ec_params: Optional[bytes] = None,
         label: str = "PIV AUTH key",
+        key_id: bytes = PIV_SLOT_ID_9A,
         attr_error: Optional[Exception] = None,
     ):
         self.key_type = key_type
+        self.key_id = key_id
         self._signer = signer
         self._attr_error = attr_error
         self._attrs: Dict[Attribute, object] = {
             Attribute.CLASS: ObjectClass.PRIVATE_KEY,
             Attribute.KEY_TYPE: key_type,
             Attribute.LABEL: label,
+            Attribute.ID: key_id,
             Attribute.PRIVATE: True,
             Attribute.SIGN: True,
         }
@@ -202,7 +213,7 @@ class FakeSession:
     def get_session_info(self) -> FakeSessionInfo:
         return FakeSessionInfo(self._state)
 
-    def get_key(self, object_class=None, key_type=None) -> FakeKey:
+    def get_key(self, object_class=None, key_type=None, id=None, label=None) -> FakeKey:
         if self._get_key_error is not None:
             raise self._get_key_error
         matches = [
@@ -210,6 +221,8 @@ class FakeSession:
             for k in self._keys
             if (object_class is None or k[Attribute.CLASS] == object_class)
             and (key_type is None or k.key_type == key_type)
+            and (id is None or k.key_id == id)
+            and (label is None or k[Attribute.LABEL] == label)
         ]
         if not matches:
             raise NoSuchKey("no key matching the request")
