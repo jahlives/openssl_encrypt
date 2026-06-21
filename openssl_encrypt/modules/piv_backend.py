@@ -408,3 +408,100 @@ class TokenSession:
                 logger.debug("Error while closing PKCS#11 session: %s", exc)
             finally:
                 self._session = None
+
+
+# --------------------------------------------------------------------------- #
+# PIVSigner -- key detection, type validation, deterministic signing
+# (items 6, 7, 10, 11, 12)
+# --------------------------------------------------------------------------- #
+class _PIVSignerMeta(type):
+    """Expose SUPPORTED_KEY_TYPES lazily so the class needs no binding at import.
+
+    Computed on attribute access (by which point python-pkcs11 -- real or the
+    test fake -- is importable), keeping module import order irrelevant.
+    """
+
+    def __getattr__(cls, name):
+        if name == "SUPPORTED_KEY_TYPES":
+            pkcs11 = _load_pkcs11_module()
+            return frozenset({pkcs11.KeyType.RSA, pkcs11.KeyType.EC_EDWARDS})
+        raise AttributeError(name)
+
+
+class PIVSigner(metaclass=_PIVSignerMeta):
+    """Finds the PIV private key, validates its type, and signs deterministically.
+
+    Only deterministic signature schemes are supported so the same key on
+    multiple devices yields identical output: Ed25519 (RFC 8032) and RSA with
+    PKCS#1 v1.5. ECDSA and RSA-PSS are randomized and are rejected.
+    """
+
+    # CKA_ID values OpenSC/ykcs11 assign to the PIV key slots.
+    PIV_SLOT_TO_ID = {
+        0x9A: b"\x01",
+        0x9C: b"\x02",
+        0x9D: b"\x03",
+        0x9E: b"\x04",
+    }
+
+    # Expected raw signature lengths per key type (item 11).
+    RSA_SIG_LEN = {2048: 256, 3072: 384, 4096: 512}
+    ED25519_SIG_LEN = 64
+
+    def __init__(self, piv_slot: int = 0x9A):
+        if not isinstance(piv_slot, int) or isinstance(piv_slot, bool):
+            raise PIVConfigurationError("piv_slot must be an integer (e.g. 0x9A)")
+        if piv_slot not in self.PIV_SLOT_TO_ID:
+            valid = ", ".join(f"{s:#x}" for s in self.PIV_SLOT_TO_ID)
+            raise PIVConfigurationError(
+                f"Unsupported PIV slot {piv_slot:#x}. Supported slots: {valid}."
+            )
+        self.piv_slot = piv_slot
+        self._key = None
+
+    def find_key(self, session):
+        """Locate the private key in the configured PIV slot and validate its type.
+
+        Verifies a signing key exists (item 6) and that its type is supported
+        (item 7). Raises PIVKeyError otherwise.
+        """
+        pkcs11 = _load_pkcs11_module()
+        key_id = self.PIV_SLOT_TO_ID[self.piv_slot]
+        try:
+            key = session.get_key(
+                object_class=pkcs11.ObjectClass.PRIVATE_KEY,
+                id=key_id,
+            )
+        except pkcs11.exceptions.NoSuchKey:
+            raise PIVKeyError(
+                f"No private key found in PIV slot {self.piv_slot:#x}. "
+                "Import a key into that slot (see the PIV backend setup guide)."
+            ) from None
+        except pkcs11.exceptions.MultipleObjectsReturned:
+            raise PIVKeyError(
+                f"More than one key matched PIV slot {self.piv_slot:#x}; cannot choose unambiguously."
+            ) from None
+        except pkcs11.exceptions.PKCS11Error as exc:
+            raise PIVKeyError(
+                f"Failed to look up the key in PIV slot {self.piv_slot:#x}: {exc}"
+            ) from exc
+
+        self._validate_key_type(key, pkcs11)
+        self._key = key
+        return key
+
+    @staticmethod
+    def _validate_key_type(key, pkcs11) -> None:
+        """Item 7: accept only deterministic key types; reject the rest clearly."""
+        key_type = getattr(key, "key_type", None)
+        if key_type == pkcs11.KeyType.RSA or key_type == pkcs11.KeyType.EC_EDWARDS:
+            return
+        if key_type == pkcs11.KeyType.EC:
+            raise PIVKeyError(
+                "ECDSA keys produce non-deterministic signatures and are not supported "
+                "(they would break multi-device determinism). Use an Ed25519 or "
+                "RSA (PKCS#1 v1.5) key instead."
+            )
+        raise PIVKeyError(
+            f"Unsupported PIV key type: {key_type}. Supported types are RSA and Ed25519."
+        )
