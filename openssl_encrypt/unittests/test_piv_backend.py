@@ -219,5 +219,64 @@ class TestVerifyHardware(_BackendTestBase):
         self.assertNotEqual(result["deterministic"], True)
 
 
+class TestAlgorithmAgnostic(_BackendTestBase):
+    """Definition of Done: RSA-2048/3072/4096 and Ed25519 all work uniformly."""
+
+    def _pepper_for(self, key):
+        backend, _ = self._backend(key)
+        return backend.get_pepper(b"shared-input", pin=b"123456")
+
+    def test_rsa2048_yields_valid_pepper(self):
+        self.assertEqual(len(self._pepper_for(make_rsa_key(2048))), 32)
+
+    def test_rsa3072_yields_valid_pepper(self):
+        self.assertEqual(len(self._pepper_for(make_rsa_key(3072))), 32)
+
+    def test_rsa4096_yields_valid_pepper(self):
+        self.assertEqual(len(self._pepper_for(make_rsa_key(4096))), 32)
+
+    def test_ed25519_yields_valid_pepper(self):
+        self.assertEqual(len(self._pepper_for(make_ed25519_key())), 32)
+
+    def test_distinct_algorithms_yield_distinct_peppers(self):
+        peppers = {
+            bytes(self._pepper_for(make_rsa_key(2048))),
+            bytes(self._pepper_for(make_rsa_key(4096))),
+            bytes(self._pepper_for(make_ed25519_key())),
+        }
+        self.assertEqual(len(peppers), 3)
+
+
+class TestMultiDeviceDeterminism(_BackendTestBase):
+    """The core guarantee: the same key on two devices -> identical pepper."""
+
+    def test_same_key_two_devices_same_pepper_rsa(self):
+        # Two independent backends/tokens, each holding the same (deterministic)
+        # RSA key material -> identical signatures -> identical peppers.
+        backend_a, _ = self._backend(make_rsa_key(2048, deterministic=True))
+        pepper_a = backend_a.get_pepper(b"file-salt", pin=b"123456")
+
+        backend_b, _ = self._backend(make_rsa_key(2048, deterministic=True))
+        pepper_b = backend_b.get_pepper(b"file-salt", pin=b"999999")
+
+        self.assertEqual(pepper_a, pepper_b)
+
+    def test_same_key_two_devices_same_pepper_ed25519(self):
+        backend_a, _ = self._backend(make_ed25519_key(deterministic=True))
+        pepper_a = backend_a.get_pepper(b"file-salt", pin=None)
+
+        backend_b, _ = self._backend(make_ed25519_key(deterministic=True))
+        pepper_b = backend_b.get_pepper(b"file-salt", pin=None)
+
+        self.assertEqual(pepper_a, pepper_b)
+
+    def test_different_input_different_pepper(self):
+        backend, _ = self._backend(make_rsa_key(2048))
+        self.assertNotEqual(
+            backend.get_pepper(b"input-one", pin=b"123456"),
+            backend.get_pepper(b"input-two", pin=b"123456"),
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
