@@ -27,7 +27,6 @@ performed) so that this module is importable, and PepperDerivation is usable,
 without the binding installed.
 """
 
-import ctypes
 import hmac
 import logging
 import os
@@ -36,15 +35,9 @@ from typing import Callable, Optional, Union
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
+from .secure_memory import secure_memzero
+
 logger = logging.getLogger(__name__)
-
-
-def _zero_bytearray(buf: bytearray) -> None:
-    """Overwrite a mutable byte buffer in place with zeros (best-effort wipe)."""
-    if not buf:
-        return
-    backing = (ctypes.c_char * len(buf)).from_buffer(buf)
-    ctypes.memset(backing, 0, len(buf))
 
 
 # --------------------------------------------------------------------------- #
@@ -351,9 +344,10 @@ class TokenSession:
                 raise PIVAuthenticationError("Authentication failed") from None
         finally:
             # Zero our working copy and, if the caller passed a mutable buffer, theirs too.
-            _zero_bytearray(working)
+            # secure_memzero (the project-wide helper) overwrites in place and verifies.
+            secure_memzero(working)
             if isinstance(pin, bytearray):
-                _zero_bytearray(pin)
+                secure_memzero(pin)
 
         self._session = session
 
