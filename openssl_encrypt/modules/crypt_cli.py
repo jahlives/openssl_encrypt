@@ -4418,10 +4418,14 @@ def main_with_args(args=None):
                     )
 
                     hsm_plugin_instance = OnlykeyHSMPlugin()
+                elif hsm_value == "piv":
+                    from ..plugins.hsm.piv_card import PIVHSMPlugin
+
+                    hsm_plugin_instance = PIVHSMPlugin()
                 else:
                     eprint(
                         f"Error: Unknown --hsm value '{args.hsm}'. "
-                        f"Supported: yubikey, onlykey"
+                        f"Supported: yubikey, onlykey, piv"
                     )
                     sys.exit(1)
             except ImportError as e:
@@ -4444,6 +4448,11 @@ def main_with_args(args=None):
             )
             if getattr(args, "hsm_slot", None):
                 hsm_ctx.config["slot"] = args.hsm_slot
+            if hsm_value == "piv":
+                if getattr(args, "hsm_pkcs11_lib", None):
+                    hsm_ctx.config["pkcs11_lib_path"] = args.hsm_pkcs11_lib
+                hsm_ctx.config["piv_slot"] = getattr(args, "hsm_piv_slot", 0x9A)
+                hsm_ctx.config["biometric"] = bool(getattr(args, "hsm_biometric", False))
             hsm_result = hsm_plugin_instance.get_hsm_pepper(salt, hsm_ctx)
             if not hsm_result.success:
                 eprint(f"Error obtaining HSM pepper: {hsm_result.message}")
@@ -5512,8 +5521,39 @@ def main_with_args(args=None):
                                 "   ⚠️  No credentials registered. Run: openssl_encrypt hsm fido2-register"
                             )
 
+                elif args.hsm.lower() == "piv":
+                    from ..plugins.hsm.piv_card import PIVHSMPlugin
+
+                    pkcs11_lib = getattr(args, "hsm_pkcs11_lib", None)
+                    if not pkcs11_lib:
+                        eprint(
+                            "Error: --hsm piv requires --hsm-pkcs11-lib PATH "
+                            "(e.g. /usr/lib/opensc-pkcs11.so or the ykcs11 module)."
+                        )
+                        sys.exit(1)
+
+                    # crypt_core builds its own security context for the encrypt/
+                    # decrypt path, so the PIV config must live on the instance.
+                    hsm_plugin_instance = PIVHSMPlugin(
+                        pkcs11_lib_path=pkcs11_lib,
+                        slot_index=(getattr(args, "hsm_slot", None) or 0),
+                        piv_slot=getattr(args, "hsm_piv_slot", 0x9A),
+                        biometric=bool(getattr(args, "hsm_biometric", False)),
+                    )
+
+                    init_result = hsm_plugin_instance.initialize({})
+                    if not init_result.success:
+                        eprint(f"Error initializing HSM plugin: {init_result.message}")
+                        sys.exit(1)
+
+                    if not args.quiet:
+                        eprint(f"✅ Loaded HSM plugin: {hsm_plugin_instance.name}")
+                        eprint(f"   PIV slot: {getattr(args, 'hsm_piv_slot', 0x9A):#x}")
+
                 else:
-                    eprint(f"Error: Unknown HSM plugin '{args.hsm}'. Supported: yubikey, onlykey, fido2")
+                    eprint(
+                        f"Error: Unknown HSM plugin '{args.hsm}'. Supported: yubikey, onlykey, fido2, piv"
+                    )
                     sys.exit(1)
 
             except ImportError as e:
@@ -5528,6 +5568,10 @@ def main_with_args(args=None):
                     )
                 elif args.hsm.lower() == "fido2":
                     eprint("Make sure fido2 library is installed: pip install fido2>=1.1.0")
+                elif args.hsm.lower() == "piv":
+                    eprint(
+                        "Make sure python-pkcs11 is installed: pip install -r requirements-hsm.txt"
+                    )
                 sys.exit(1)
             except Exception as e:
                 eprint(f"Error initializing HSM plugin: {e}")

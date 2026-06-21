@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **PIV / PKCS#11 HSM backend** (`--hsm piv`): hardware-bound key derivation
+  backed by a PIV private key on a PKCS#11 token (YubiKey Bio MPE, Token2 PIN+
+  R3.3+, or any compliant PIV smart card). The key signs a deterministic
+  challenge derived from the salt and the signature is normalized into a pepper
+  via HKDF-SHA256. Algorithm-agnostic across Ed25519 and RSA-2048/3072/4096;
+  non-deterministic schemes (ECDSA, RSA-PSS) are explicitly rejected so the
+  same key on multiple devices always yields identical peppers.
+  - New flags: `--hsm-pkcs11-lib PATH` (required), `--hsm-piv-slot {9a,9c,9d,9e}`,
+    `--hsm-biometric`; `--hsm-slot` selects the PKCS#11 slot index for PIV.
+  - PIN is read via `getpass` (never via CLI args/logs/exceptions), held in a
+    `bytearray`, and wiped with `secure_memzero` after login; a final-try guard
+    refuses lock-risking attempts without confirmation; sessions are closed on
+    every exit path.
+  - New dependency: `python-pkcs11` (in `requirements-hsm.txt`).
+  - Setup guide: `openssl_encrypt/docs/PIV_BACKEND.md`.
+
 - **Real 192-bit XChaCha20-Poly1305 nonces** (spec-compliant per
   draft-irtf-cfrg-xchacha-03), replacing the previous behavior where a
   24-byte nonce was stored but only the first 12 bytes affected the

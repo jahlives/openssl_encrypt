@@ -53,6 +53,48 @@ def get_available_algorithms_1_0():
     return available
 
 
+def _piv_slot_arg(value):
+    """Parse a PIV slot given as hex (9a/0x9a) or as an int. Returns an int."""
+    try:
+        parsed = int(value, 16) if isinstance(value, str) else int(value)
+    except (TypeError, ValueError):
+        raise argparse.ArgumentTypeError(f"invalid PIV slot: {value!r} (use 9a, 9c, 9d, or 9e)")
+    if parsed not in (0x9A, 0x9C, 0x9D, 0x9E):
+        raise argparse.ArgumentTypeError(
+            f"unsupported PIV slot {value!r}; choose one of 9a, 9c, 9d, 9e"
+        )
+    return parsed
+
+
+def _add_piv_hsm_arguments(group):
+    """Add PIV/PKCS#11 backend arguments to an existing HSM argument group.
+
+    These apply only when ``--hsm piv`` is selected. For PIV, ``--hsm-slot`` is
+    reused as the PKCS#11 slot index. The PIN is never a CLI argument -- it is
+    prompted interactively with getpass, or supplied by a Bio key's fingerprint.
+    """
+    group.add_argument(
+        "--hsm-pkcs11-lib",
+        metavar="PATH",
+        help="Path to the PKCS#11 module for '--hsm piv' (e.g. /usr/lib/opensc-pkcs11.so "
+        "or the YubiKey ykcs11 module). Required for the PIV backend.",
+    )
+    group.add_argument(
+        "--hsm-piv-slot",
+        type=_piv_slot_arg,
+        metavar="SLOT",
+        default=0x9A,
+        help="PIV key slot to sign with: 9a (Authentication, default), 9c (Digital "
+        "Signature), 9d (Key Management), or 9e (Card Authentication).",
+    )
+    group.add_argument(
+        "--hsm-biometric",
+        action="store_true",
+        help="For '--hsm piv' with a biometric (Bio) key: skip the PIN prompt and "
+        "authenticate by fingerprint touch instead.",
+    )
+
+
 def _add_keyring_arguments(subparser):
     """Add keyring integration arguments to a subparser.
 
@@ -644,7 +686,8 @@ def setup_encrypt_parser(subparser):
         metavar="PLUGIN",
         help="Enable HSM (Hardware Security Module) plugin for hardware-bound key derivation. "
         "Supported: 'yubikey' (Yubikey Challenge-Response, slots 1..2), "
-        "'onlykey' (OnlyKey Challenge-Response, slots 1..12). "
+        "'onlykey' (OnlyKey Challenge-Response, slots 1..12), "
+        "'piv' (PIV/PKCS#11 token, see --hsm-pkcs11-lib/--hsm-piv-slot). "
         "The HSM adds a hardware-specific pepper to the key derivation, requiring the device "
         "for both encryption and decryption.",
     )
@@ -656,6 +699,7 @@ def setup_encrypt_parser(subparser):
         "YubiKey 1..2, OnlyKey 1..12. "
         "If not specified, the plugin will auto-detect the configured slot.",
     )
+    _add_piv_hsm_arguments(hsm_group)
 
     # Remote Pepper plugin arguments for remote pepper storage
     pepper_group = subparser.add_argument_group(
@@ -814,7 +858,7 @@ def setup_decrypt_parser(subparser):
         "--hsm",
         metavar="PLUGIN",
         help="Enable HSM (Hardware Security Module) plugin for hardware-bound key derivation. "
-        "Supported: 'yubikey' (slots 1..2), 'onlykey' (slots 1..12). "
+        "Supported: 'yubikey' (slots 1..2), 'onlykey' (slots 1..12), 'piv' (PIV/PKCS#11). "
         "Required if the file was encrypted with an HSM plugin.",
     )
     hsm_group.add_argument(
@@ -825,6 +869,7 @@ def setup_decrypt_parser(subparser):
         "YubiKey 1..2, OnlyKey 1..12. "
         "If not specified, the slot will be read from file metadata or auto-detected.",
     )
+    _add_piv_hsm_arguments(hsm_group)
 
     # Integrity verification options
     integrity_group = subparser.add_argument_group("Integrity verification options")
@@ -1273,7 +1318,7 @@ def setup_rekey_parser(subparser):
         "--hsm",
         metavar="PLUGIN",
         help="Enable HSM plugin for hardware-bound key derivation. "
-        "Supported: 'yubikey' (slots 1..2), 'onlykey' (slots 1..12). "
+        "Supported: 'yubikey' (slots 1..2), 'onlykey' (slots 1..12), 'piv' (PIV/PKCS#11). "
         "Required if the file was encrypted with an HSM plugin.",
     )
     hsm_group.add_argument(
@@ -1282,6 +1327,7 @@ def setup_rekey_parser(subparser):
         metavar="SLOT",
         help="Manually specify the Challenge-Response slot. " "YubiKey 1..2, OnlyKey 1..12.",
     )
+    _add_piv_hsm_arguments(hsm_group)
 
     # Remote Pepper options
     pepper_group = subparser.add_argument_group(
@@ -1507,7 +1553,7 @@ def setup_derive_password_parser(subparser):
         metavar="PLUGIN",
         help="Enable HSM (Hardware Security Module) plugin for hardware-bound "
         "key derivation. Supported: 'yubikey' (slots 1..2), 'onlykey' "
-        "(slots 1..12).",
+        "(slots 1..12), 'piv' (PIV/PKCS#11).",
     )
     hsm_group.add_argument(
         "--hsm-slot",
@@ -1517,6 +1563,7 @@ def setup_derive_password_parser(subparser):
         "OnlyKey 1..12). If omitted, the plugin auto-detects the configured "
         "slot.",
     )
+    _add_piv_hsm_arguments(hsm_group)
 
     # Salt options
     salt_group = subparser.add_argument_group("Salt options")
@@ -1747,6 +1794,7 @@ def setup_identity_parser(subparser):
         help="HSM slot for Challenge-Response. "
         "YubiKey 1..2, OnlyKey 1..12. Default: auto-detect.",
     )
+    _add_piv_hsm_arguments(create_parser)
     create_parser.add_argument(
         "--no-touch",
         action="store_true",
