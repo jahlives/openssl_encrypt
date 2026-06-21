@@ -309,5 +309,58 @@ class TestLoginSessionStateVerification(_TokenSessionTestBase):
         self.assertTrue(sess.closed)
 
 
+class TestSessionCleanup(_TokenSessionTestBase):
+    """Item 14: the session is closed on every exit path."""
+
+    def _logged_in(self):
+        sess = FakeSession(state=SessionState.RO_USER_FUNCTIONS)
+        token = FakeToken(flags=PRESENT, session=sess)
+        lib = self._library(_piv_mocks.single_slot_lib(token))
+        ts = TokenSession(lib, slot_index=0)
+        return ts, sess
+
+    def test_close_closes_open_session(self):
+        ts, sess = self._logged_in()
+        ts.login(pin=b"123456")
+        ts.close()
+        self.assertTrue(sess.closed)
+
+    def test_close_clears_session_reference(self):
+        ts, sess = self._logged_in()
+        ts.login(pin=b"123456")
+        ts.close()
+        self.assertIsNone(ts._session)
+
+    def test_close_is_idempotent(self):
+        ts, sess = self._logged_in()
+        ts.login(pin=b"123456")
+        ts.close()
+        ts.close()  # must not raise
+        self.assertTrue(sess.closed)
+
+    def test_close_without_session_is_noop(self):
+        ts, _ = self._logged_in()
+        ts.close()  # never logged in -- must not raise
+
+    def test_context_manager_closes_on_normal_exit(self):
+        ts, sess = self._logged_in()
+        with ts as ctx:
+            ctx.login(pin=b"123456")
+        self.assertTrue(sess.closed)
+
+    def test_context_manager_closes_on_exception(self):
+        ts, sess = self._logged_in()
+        with self.assertRaises(RuntimeError):
+            with ts as ctx:
+                ctx.login(pin=b"123456")
+                raise RuntimeError("boom inside the session")
+        self.assertTrue(sess.closed)
+
+    def test_context_manager_returns_self(self):
+        ts, _ = self._logged_in()
+        with ts as ctx:
+            self.assertIs(ctx, ts)
+
+
 if __name__ == "__main__":
     unittest.main()
