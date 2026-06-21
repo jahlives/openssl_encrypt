@@ -239,6 +239,14 @@ class TokenSession:
         self._token = None
         self._session = None
 
+    def __enter__(self) -> "TokenSession":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> bool:
+        # Close on every exit path, including exceptions; never suppress them.
+        self.close()
+        return False
+
     def select_token(self):
         """Locate and validate the token in the configured slot.
 
