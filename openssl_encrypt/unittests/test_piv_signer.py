@@ -9,7 +9,9 @@ import unittest
 
 from openssl_encrypt.modules.piv_backend import (
     PIVConfigurationError,
+    PIVDeterminismError,
     PIVKeyError,
+    PIVSignatureError,
     PIVSigner,
 )
 from openssl_encrypt.unittests import _piv_mocks
@@ -17,6 +19,7 @@ from openssl_encrypt.unittests._piv_mocks import (
     FakeKey,
     FakeSession,
     KeyType,
+    Mechanism,
     deterministic_signer,
     make_ecdsa_key,
     make_ed25519_key,
@@ -111,6 +114,109 @@ class TestKeyTypeValidation(unittest.TestCase):
         self.assertIn(KeyType.RSA, PIVSigner.SUPPORTED_KEY_TYPES)
         self.assertIn(KeyType.EC_EDWARDS, PIVSigner.SUPPORTED_KEY_TYPES)
         self.assertNotIn(KeyType.EC, PIVSigner.SUPPORTED_KEY_TYPES)
+
+
+class TestSignLengthAndContent(unittest.TestCase):
+    """Items 10 (non-empty) and 11 (length matches key type)."""
+
+    def _sign(self, key, challenge=b"challenge-bytes"):
+        signer = PIVSigner()
+        signer.find_key(FakeSession(keys=[key]))
+        return signer.sign(challenge)
+
+    def test_rsa2048_signature_is_256_bytes(self):
+        self.assertEqual(len(self._sign(make_rsa_key(2048))), 256)
+
+    def test_rsa4096_signature_is_512_bytes(self):
+        self.assertEqual(len(self._sign(make_rsa_key(4096))), 512)
+
+    def test_ed25519_signature_is_64_bytes(self):
+        self.assertEqual(len(self._sign(make_ed25519_key())), 64)
+
+    def test_signature_is_non_empty(self):
+        self.assertTrue(len(self._sign(make_rsa_key(2048))) > 0)
+
+    def test_empty_signature_rejected(self):
+        key = FakeKey(KeyType.RSA, signer=lambda d, m: b"", modulus_bits=2048)
+        with self.assertRaises(PIVSignatureError):
+            self._sign(key)
+
+    def test_wrong_length_signature_rejected(self):
+        # RSA-2048 key but the token returns a short signature.
+        key = FakeKey(KeyType.RSA, signer=lambda d, m: b"\x00" * 100, modulus_bits=2048)
+        with self.assertRaises(PIVSignatureError):
+            self._sign(key)
+
+    def test_sign_failure_becomes_signature_error(self):
+        from pkcs11.exceptions import FunctionFailed
+
+        def boom(d, m):
+            raise FunctionFailed("C_Sign failed")
+
+        key = FakeKey(KeyType.RSA, signer=boom, modulus_bits=2048)
+        with self.assertRaises(PIVSignatureError):
+            self._sign(key)
+
+
+class TestSignMechanism(unittest.TestCase):
+    def test_rsa_uses_pkcs1_v15(self):
+        key = make_rsa_key(2048)
+        signer = PIVSigner()
+        signer.find_key(FakeSession(keys=[key]))
+        signer.sign(b"data")
+        self.assertEqual(key.sign_calls[0][1], Mechanism.RSA_PKCS)
+
+    def test_ed25519_uses_eddsa(self):
+        key = make_ed25519_key()
+        signer = PIVSigner()
+        signer.find_key(FakeSession(keys=[key]))
+        signer.sign(b"data")
+        self.assertEqual(key.sign_calls[0][1], Mechanism.EDDSA)
+
+
+class TestSignDeterminism(unittest.TestCase):
+    """Item 12: signing the same challenge twice must match (constant-time check)."""
+
+    def test_deterministic_key_returns_stable_signature(self):
+        key = make_rsa_key(2048, deterministic=True)
+        signer = PIVSigner()
+        signer.find_key(FakeSession(keys=[key]))
+        a = signer.sign(b"same-challenge")
+        b = signer.sign(b"same-challenge")
+        self.assertEqual(a, b)
+
+    def test_determinism_self_check_signs_twice(self):
+        # Each sign() must internally sign twice and compare (item 12).
+        key = make_rsa_key(2048, deterministic=True)
+        signer = PIVSigner()
+        signer.find_key(FakeSession(keys=[key]))
+        signer.sign(b"challenge")
+        self.assertEqual(len(key.sign_calls), 2)
+
+    def test_nondeterministic_rsa_rejected(self):
+        key = make_rsa_key(2048, deterministic=False)
+        signer = PIVSigner()
+        signer.find_key(FakeSession(keys=[key]))
+        with self.assertRaises(PIVDeterminismError):
+            signer.sign(b"challenge")
+
+    def test_nondeterministic_ed25519_rejected(self):
+        key = make_ed25519_key(deterministic=False)
+        signer = PIVSigner()
+        signer.find_key(FakeSession(keys=[key]))
+        with self.assertRaises(PIVDeterminismError):
+            signer.sign(b"challenge")
+
+
+class TestSignWithoutKey(unittest.TestCase):
+    def test_sign_without_find_key_or_session_raises(self):
+        with self.assertRaises(PIVKeyError):
+            PIVSigner().sign(b"challenge")
+
+    def test_sign_with_session_auto_finds_key(self):
+        key = make_rsa_key(2048)
+        sig = PIVSigner().sign(b"challenge", session=FakeSession(keys=[key]))
+        self.assertEqual(len(sig), 256)
 
 
 if __name__ == "__main__":
