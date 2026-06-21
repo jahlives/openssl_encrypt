@@ -577,3 +577,147 @@ class PIVSigner(metaclass=_PIVSignerMeta):
                 f"Signature length {len(signature)} does not match the expected "
                 f"{expected} bytes for this key type."
             )
+
+
+# --------------------------------------------------------------------------- #
+# PIVBackend -- orchestrates library, session, signer, and pepper derivation
+# --------------------------------------------------------------------------- #
+class PIVBackend:
+    """Hardware-bound pepper source backed by a PIV key on a PKCS#11 token.
+
+    Wires PKCS11Library, TokenSession, PIVSigner and PepperDerivation into the
+    interface ``openssl_encrypt`` expects. Algorithm-agnostic: works with
+    RSA-2048/3072/4096 and Ed25519 keys without the caller knowing which.
+    """
+
+    def __init__(
+        self,
+        pkcs11_lib_path: str,
+        slot_index: int = 0,
+        piv_slot: int = 0x9A,
+        pepper_length: int = 32,
+        confirm_final_attempt: Optional[Callable[[], bool]] = None,
+    ):
+        # Each constructor validates its own argument and raises descriptively.
+        self._library = PKCS11Library(pkcs11_lib_path)
+        self._pepper = PepperDerivation(pepper_length)
+        TokenSession(self._library, slot_index)  # validates slot_index
+        PIVSigner(piv_slot)  # validates piv_slot
+
+        self.pkcs11_lib_path = pkcs11_lib_path
+        self.slot_index = slot_index
+        self.piv_slot = piv_slot
+        self.pepper_length = pepper_length
+        self.confirm_final_attempt = confirm_final_attempt
+
+    def get_pepper(
+        self,
+        input_data: bytes,
+        pin: Optional[Union[bytes, bytearray]] = None,
+    ) -> bytes:
+        """Derive a deterministic pepper from ``input_data`` using the PIV key.
+
+        Derives a challenge from input_data, signs it with the PIV key, and
+        normalizes the signature to a fixed-length pepper via HKDF. The session
+        is closed on every exit path. The PIN is zeroed before returning and is
+        never logged or included in any exception.
+        """
+        if not input_data:
+            raise PIVConfigurationError("input_data must be non-empty")
+
+        challenge = self._pepper.derive_challenge(input_data)
+        signer = PIVSigner(self.piv_slot)
+        with TokenSession(self._library, self.slot_index) as session_ctx:
+            session = session_ctx.login(pin, confirm_final_attempt=self.confirm_final_attempt)
+            signature = signer.sign(challenge, session=session)
+            pepper = self._pepper.derive_pepper(signature)
+        return pepper
+
+    def verify_hardware(self, pin: Optional[Union[bytes, bytearray]] = None) -> dict:
+        """Run the verification-table checks and return a per-check result dict.
+
+        Each value is ``True`` (passed), ``"skipped"`` (a prerequisite failed),
+        or a descriptive error string. This is a non-raising diagnostic; the real
+        get_pepper() path raises on failure. PINs never appear in the results.
+        """
+        keys = (
+            "library_file_exists",
+            "library_loadable",
+            "slot_present",
+            "slot_index_valid",
+            "token_present",
+            "key_present",
+            "key_type_supported",
+            "login_succeeded",
+            "signature_non_empty",
+            "signature_length_ok",
+            "deterministic",
+            "pepper_length_ok",
+            "session_closed",
+        )
+        results = {k: "skipped" for k in keys}
+
+        # Items 1 & 2.
+        results["library_file_exists"] = os.path.isfile(self.pkcs11_lib_path)
+        try:
+            self._library.load()
+        except PIVError as exc:
+            results["library_loadable"] = str(exc)
+            return results
+        results["library_loadable"] = True
+
+        pkcs11 = _load_pkcs11_module()
+        session_ctx = TokenSession(self._library, self.slot_index)
+        try:
+            # Items 3, 4, 5.
+            try:
+                token = session_ctx.select_token()
+            except PIVTokenError as exc:
+                results["slot_present"] = results["slot_index_valid"] = results[
+                    "token_present"
+                ] = str(exc)
+                return results
+            results["slot_present"] = results["slot_index_valid"] = True
+            results["token_present"] = bool(token.flags & pkcs11.TokenFlag.TOKEN_PRESENT)
+
+            # Items 8 & 9.
+            try:
+                session = session_ctx.login(pin, confirm_final_attempt=self.confirm_final_attempt)
+                results["login_succeeded"] = True
+            except PIVError as exc:
+                results["login_succeeded"] = str(exc)
+                return results
+
+            # Items 6 & 7.
+            signer = PIVSigner(self.piv_slot)
+            try:
+                signer.find_key(session)
+            except PIVKeyError as exc:
+                results["key_present"] = str(exc)
+                return results
+            results["key_present"] = True
+            results["key_type_supported"] = True
+
+            # Items 10, 11, 12.
+            challenge = self._pepper.derive_challenge(b"piv-verify-hardware")
+            try:
+                signature = signer.sign(challenge, session=session)
+                results["signature_non_empty"] = len(signature) > 0
+                results["signature_length_ok"] = True
+                results["deterministic"] = True
+            except PIVDeterminismError as exc:
+                results["deterministic"] = str(exc)
+                return results
+            except PIVSignatureError as exc:
+                results["signature_length_ok"] = str(exc)
+                return results
+
+            # Item 13.
+            pepper = self._pepper.derive_pepper(signature)
+            results["pepper_length_ok"] = len(pepper) == self.pepper_length
+        finally:
+            # Item 14.
+            session_ctx.close()
+            results["session_closed"] = session_ctx._session is None
+
+        return results
