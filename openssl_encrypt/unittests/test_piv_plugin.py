@@ -165,5 +165,54 @@ class TestPluginPinSecurity(_PluginTestBase):
         self.assertNotIn("salt", result.data)
 
 
+class TestPluginConstructionConfig(_PluginTestBase):
+    """Config supplied at construction (used by the encrypt/decrypt CLI path,
+    where crypt_core builds its own context without PIV config)."""
+
+    def _bare_ctx(self, plugin):
+        return PluginSecurityContext(
+            plugin_id=plugin.plugin_id, capabilities=plugin.get_required_capabilities()
+        )
+
+    def test_instance_lib_path_used_without_context_config(self):
+        self._install(make_rsa_key(2048))
+        plugin = PIVHSMPlugin(pkcs11_lib_path=self.path, pin_provider=lambda: bytearray(b"123456"))
+        result = plugin.get_hsm_pepper(SALT16, self._bare_ctx(plugin))
+        self.assertTrue(result.success)
+        self.assertEqual(len(result.data["hsm_pepper"]), 32)
+
+    def test_instance_biometric_skips_prompt(self):
+        self._install(make_ed25519_key())
+        calls = {"n": 0}
+
+        def provider():
+            calls["n"] += 1
+            return bytearray(b"x")
+
+        plugin = PIVHSMPlugin(pkcs11_lib_path=self.path, biometric=True, pin_provider=provider)
+        result = plugin.get_hsm_pepper(SALT16, self._bare_ctx(plugin))
+        self.assertTrue(result.success)
+        self.assertEqual(calls["n"], 0)
+
+    def test_instance_piv_slot_used(self):
+        self._install(make_rsa_key(2048, key_id=_piv_mocks.PIV_SLOT_ID_9C))
+        plugin = PIVHSMPlugin(
+            pkcs11_lib_path=self.path, piv_slot=0x9C, pin_provider=lambda: bytearray(b"123456")
+        )
+        result = plugin.get_hsm_pepper(SALT16, self._bare_ctx(plugin))
+        self.assertTrue(result.success)
+
+    def test_context_config_overrides_instance(self):
+        # Key is in slot 9a; instance is misconfigured to 9c; context corrects it.
+        self._install(make_rsa_key(2048))
+        plugin = PIVHSMPlugin(
+            pkcs11_lib_path=self.path, piv_slot=0x9C, pin_provider=lambda: bytearray(b"123456")
+        )
+        ctx = self._bare_ctx(plugin)
+        ctx.config["piv_slot"] = 0x9A
+        result = plugin.get_hsm_pepper(SALT16, ctx)
+        self.assertTrue(result.success)
+
+
 if __name__ == "__main__":
     unittest.main()
