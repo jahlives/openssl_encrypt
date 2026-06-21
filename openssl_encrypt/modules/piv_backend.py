@@ -27,13 +27,23 @@ performed) so that this module is importable, and PepperDerivation is usable,
 without the binding installed.
 """
 
+import ctypes
 import logging
 import os
+from typing import Callable, Optional, Union
 
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 logger = logging.getLogger(__name__)
+
+
+def _zero_bytearray(buf: bytearray) -> None:
+    """Overwrite a mutable byte buffer in place with zeros (best-effort wipe)."""
+    if not buf:
+        return
+    backing = (ctypes.c_char * len(buf)).from_buffer(buf)
+    ctypes.memset(backing, 0, len(buf))
 
 
 # --------------------------------------------------------------------------- #
@@ -272,3 +282,121 @@ class TokenSession:
 
         self._token = token
         return token
+
+    def login(
+        self,
+        pin: Optional[Union[bytes, bytearray]] = None,
+        *,
+        confirm_final_attempt: Optional[Callable[[], bool]] = None,
+    ):
+        """Open an authenticated session on the selected token.
+
+        Args:
+            pin: ``None`` means biometric / empty-PIN login -- ``C_Login`` is
+                called with ``b""`` so a Bio key waits for a fingerprint touch.
+                ``bytes``/``bytearray`` is sent as the PIN and zeroed from memory
+                before this method returns, on success or failure.
+            confirm_final_attempt: called (with no args) only when the token
+                reports its PIN is on the final try before lockout and a
+                non-empty PIN was supplied. Must return True to proceed.
+
+        The PIN never appears in logs, exceptions, or tracebacks. On any
+        authentication failure a generic error is raised (no fallback).
+        """
+        if self._token is None:
+            self.select_token()
+        token = self._token
+        pkcs11 = _load_pkcs11_module()
+
+        biometric = pin is None
+        if biometric:
+            working = bytearray(b"")
+        else:
+            if not isinstance(pin, (bytes, bytearray)):
+                raise PIVConfigurationError("pin must be bytes, bytearray, or None")
+            working = bytearray(pin)
+
+        session = None
+        try:
+            # Item 8: retry-counter guard for the PIN flow only (skip biometric).
+            if not biometric:
+                self._enforce_retry_guard(token, pkcs11, confirm_final_attempt)
+
+            try:
+                # Empty bytes for biometric; PIN bytes otherwise. Never None.
+                session = token.open(rw=False, user_pin=bytes(working))
+            except pkcs11.exceptions.PinLocked:
+                # `from None`: never chain -- keeps any PIN-bearing frame out of the traceback.
+                raise PIVAuthenticationError(
+                    "Authentication failed: the token PIN is locked."
+                ) from None
+            except pkcs11.exceptions.PinIncorrect:
+                if biometric:
+                    raise PIVAuthenticationError(
+                        "Authentication failed: the token rejected the empty-PIN/biometric "
+                        "login. If this is a fingerprint (Bio) key, ensure a fingerprint is "
+                        "enrolled and touch the sensor; if it is a PIN-only key, supply a PIN."
+                    ) from None
+                raise PIVAuthenticationError("Authentication failed") from None
+            except pkcs11.exceptions.PKCS11Error:
+                raise PIVAuthenticationError("Authentication failed") from None
+        finally:
+            # Zero our working copy and, if the caller passed a mutable buffer, theirs too.
+            _zero_bytearray(working)
+            if isinstance(pin, bytearray):
+                _zero_bytearray(pin)
+
+        self._session = session
+
+        # Item 9: do not assume a non-raising open means we are authenticated.
+        if not self._session_is_user_authenticated(session, pkcs11):
+            self.close()
+            raise PIVAuthenticationError("Authentication failed")
+
+        return session
+
+    @staticmethod
+    def _enforce_retry_guard(token, pkcs11, confirm_final_attempt) -> None:
+        """Refuse a PIN attempt that could lock the token without confirmation."""
+        flags = token.flags
+        if flags & pkcs11.TokenFlag.USER_PIN_LOCKED:
+            raise PIVAuthenticationError("Authentication failed: the token PIN is locked.")
+        if flags & pkcs11.TokenFlag.USER_PIN_FINAL_TRY:
+            confirmed = bool(confirm_final_attempt()) if confirm_final_attempt else False
+            if not confirmed:
+                raise PIVAuthenticationError(
+                    "Refusing to attempt the PIN: only one try remains before the token "
+                    "locks. Re-run with explicit confirmation to proceed."
+                )
+
+    @staticmethod
+    def _session_is_user_authenticated(session, pkcs11) -> bool:
+        """Confirm the session reached a USER_FUNCTIONS state after login.
+
+        Uses ``get_session_info().state`` when the binding exposes it. Some
+        python-pkcs11 versions do not; in that case we trust ``token.open()``,
+        which itself raises on a failed ``C_Login`` (the signer additionally
+        exercises a login-gated operation on real hardware).
+        """
+        get_info = getattr(session, "get_session_info", None)
+        if get_info is None:
+            return True
+        try:
+            info = get_info()
+        except Exception:
+            return False
+        state = getattr(info, "state", None)
+        return state in (
+            pkcs11.SessionState.RO_USER_FUNCTIONS,
+            pkcs11.SessionState.RW_USER_FUNCTIONS,
+        )
+
+    def close(self) -> None:
+        """Close the PKCS#11 session if one is open (idempotent)."""
+        if self._session is not None:
+            try:
+                self._session.close()
+            except Exception as exc:  # never mask the original error path
+                logger.debug("Error while closing PKCS#11 session: %s", exc)
+            finally:
+                self._session = None
