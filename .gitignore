@@ -255,3 +255,6 @@ Cargo.lock
 # Local tool/test output artifacts
 output.txt
 precommit_output.txt
+
+# Local test/baseline logs
+test-logs/
