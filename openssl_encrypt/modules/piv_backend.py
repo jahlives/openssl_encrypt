@@ -210,3 +210,65 @@ class PKCS11Library:
             ) from exc
 
         return self._lib
+
+
+# --------------------------------------------------------------------------- #
+# TokenSession -- slot selection, login, PIN handling, session lifecycle
+# (items 3, 4, 5, 8, 9, 14)
+# --------------------------------------------------------------------------- #
+class TokenSession:
+    """Selects a token in a PKCS#11 slot and manages its authenticated session."""
+
+    def __init__(self, library: PKCS11Library, slot_index: int = 0):
+        if not isinstance(slot_index, int) or isinstance(slot_index, bool):
+            raise PIVConfigurationError("slot_index must be an integer")
+        if slot_index < 0:
+            raise PIVConfigurationError("slot_index must be non-negative")
+        self.library = library
+        self.slot_index = slot_index
+        self._token = None
+        self._session = None
+
+    def select_token(self):
+        """Locate and validate the token in the configured slot.
+
+        Verifies a slot with a token is present (item 3), the slot index is in
+        range (item 4), and the token reports TOKEN_PRESENT (item 5).
+        """
+        lib = self.library.load()
+        pkcs11 = _load_pkcs11_module()
+
+        # Item 3: at least one slot with a token present.
+        try:
+            slots = lib.get_slots(token_present=True)
+        except pkcs11.exceptions.PKCS11Error as exc:
+            raise PIVTokenError(f"Failed to enumerate PKCS#11 slots: {exc}") from exc
+        if not slots:
+            raise PIVTokenError(
+                "No PKCS#11 slot with a token present. Insert/connect the PIV token and retry."
+            )
+
+        # Item 4: the requested slot index is within bounds.
+        if self.slot_index >= len(slots):
+            raise PIVTokenError(
+                f"PKCS#11 slot index {self.slot_index} is out of range; "
+                f"{len(slots)} slot(s) with a token were found (valid indices 0..{len(slots) - 1})."
+            )
+
+        slot = slots[self.slot_index]
+        try:
+            token = slot.get_token()
+        except pkcs11.exceptions.PKCS11Error as exc:
+            raise PIVTokenError(
+                f"Failed to read token in slot index {self.slot_index}: {exc}"
+            ) from exc
+
+        # Item 5: confirm the token is actually present.
+        if not (token.flags & pkcs11.TokenFlag.TOKEN_PRESENT):
+            raise PIVTokenError(
+                f"No token present in slot index {self.slot_index} "
+                "(TOKEN_PRESENT flag is not set)."
+            )
+
+        self._token = token
+        return token
