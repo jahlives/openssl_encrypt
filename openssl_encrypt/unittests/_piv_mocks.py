@@ -264,7 +264,14 @@ class FakeToken:
         self.open_calls: List[dict] = []
 
     def open(self, rw: bool = False, user_pin=None) -> FakeSession:
-        # Record exactly what the host sent (used to assert b"" on biometric flow).
+        # Mirror real python-pkcs11: Token.open calls user_pin.encode(), so a
+        # non-None user_pin MUST be a str. Passing bytes raises AttributeError
+        # on real hardware -- reproduce that here so the bug can't slip through.
+        if user_pin is not None and not isinstance(user_pin, str):
+            raise AttributeError(
+                f"'{type(user_pin).__name__}' object has no attribute 'encode'"
+            )
+        # Record exactly what the host sent (used to assert "" on biometric flow).
         self.open_calls.append({"rw": rw, "user_pin": user_pin})
         if self._open_error is not None:
             raise self._open_error
