@@ -4,7 +4,11 @@
   "title": "OpenSSL Encrypt Metadata Schema Version 4",
   "description": "Schema for validating encrypted file metadata format version 4 (hierarchical structure)",
   "type": "object",
-  "required": ["format_version", "derivation_config", "encryption"],
+  "required": [
+    "format_version",
+    "derivation_config",
+    "encryption"
+  ],
   "additionalProperties": true,
   "properties": {
     "format_version": {
@@ -14,7 +18,9 @@
     },
     "derivation_config": {
       "type": "object",
-      "required": ["salt"],
+      "required": [
+        "salt"
+      ],
       "additionalProperties": true,
       "properties": {
         "salt": {
@@ -29,7 +35,9 @@
           "patternProperties": {
             "^(sha512|sha384|sha256|sha224|sha3_512|sha3_384|sha3_256|sha3_224|blake2b|blake3|shake256|shake128|whirlpool)$": {
               "type": "object",
-              "required": ["rounds"],
+              "required": [
+                "rounds"
+              ],
               "additionalProperties": true,
               "properties": {
                 "rounds": {
@@ -48,7 +56,9 @@
           "properties": {
             "pbkdf2": {
               "type": "object",
-              "required": ["rounds"],
+              "required": [
+                "rounds"
+              ],
               "additionalProperties": true,
               "properties": {
                 "rounds": {
@@ -61,7 +71,11 @@
             },
             "scrypt": {
               "type": "object",
-              "required": ["n", "r", "p"],
+              "required": [
+                "n",
+                "r",
+                "p"
+              ],
               "additionalProperties": true,
               "properties": {
                 "n": {
@@ -86,7 +100,11 @@
             },
             "argon2": {
               "type": "object",
-              "required": ["time_cost", "memory_cost", "parallelism"],
+              "required": [
+                "time_cost",
+                "memory_cost",
+                "parallelism"
+              ],
               "additionalProperties": true,
               "properties": {
                 "time_cost": {
@@ -155,7 +173,9 @@
     },
     "encryption": {
       "type": "object",
-      "required": ["algorithm"],
+      "required": [
+        "algorithm"
+      ],
       "additionalProperties": true,
       "properties": {
         "algorithm": {
@@ -179,7 +199,24 @@
             "kyber1024",
             "kyber512-hybrid",
             "kyber768-hybrid",
-            "kyber1024-hybrid"
+            "kyber1024-hybrid",
+            "aes-256-gcm",
+            "aes-256-gcm-siv",
+            "aes-256-siv",
+            "aes256-gcm",
+            "aesgcm",
+            "aesgcmsiv",
+            "aessiv",
+            "chacha20",
+            "chacha20poly1305",
+            "tf1024",
+            "tf512",
+            "threefish-1024",
+            "threefish-512",
+            "threefish1024",
+            "threefish512",
+            "xchacha20",
+            "xchacha20poly1305"
           ],
           "description": "Encryption algorithm used"
         }
