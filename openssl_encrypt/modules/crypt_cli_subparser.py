@@ -1922,9 +1922,15 @@ def setup_hsm_parser(subparser):
     )
 
     # OnlyKey test subcommand
-    hsm_subparsers.add_parser(
+    onlykey_test_parser = hsm_subparsers.add_parser(
         "onlykey-test",
         help="Test OnlyKey Challenge-Response pepper derivation with a random salt",
+    )
+    onlykey_test_parser.add_argument(
+        "--hsm-slot",
+        type=int,
+        metavar="N",
+        help="OnlyKey Challenge-Response slot to test (1..12); default: auto-detect",
     )
 
     # FIDO2 unregister subcommand

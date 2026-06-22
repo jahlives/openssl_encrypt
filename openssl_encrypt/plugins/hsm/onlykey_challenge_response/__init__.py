@@ -330,6 +330,56 @@ class OnlykeyHSMPlugin(HSMPlugin):
                 ) from e
             raise RuntimeError(f"OnlyKey Challenge-Response failed: {e}") from e
 
+    def _autodetect_challenge_response(self, salt: bytes):
+        """Auto-detect the CR slot by performing the *real* challenge-response.
+
+        Iterates slots ``MIN_SLOT..MAX_SLOT`` and performs one real
+        challenge-response per slot, returning ``(slot, response)`` for the
+        first slot that answers. This replaces the older probe-then-call
+        approach: that performed two challenge-responses (an all-zeros probe via
+        ``_find_challenge_response_slot`` plus the real call), which on
+        button-press OnlyKey slots needs two presses — the second was rejected
+        ("No data"), so auto-detect failed on a slot that works fine when
+        addressed explicitly with ``--hsm-slot``.
+
+        A clean rejection on a slot (no CR secret) means "try the next slot". A
+        locked device, or a slot that is configured but awaiting a button press
+        (timeout), is surfaced immediately — scanning further would not help and
+        would burn through user interactions.
+
+        Args:
+            salt: 16-byte challenge (the encryption salt)
+
+        Returns:
+            Tuple of (slot number, 20-byte HMAC-SHA1 response)
+
+        Raises:
+            RuntimeError: if no slot answers, the device is locked, or a
+                configured slot is awaiting a button press.
+        """
+        last_error = None
+        for slot in range(self.MIN_SLOT, self.MAX_SLOT + 1):
+            try:
+                response = self._calculate_challenge_response(salt, slot)
+                logger.info(f"Auto-detected OnlyKey Challenge-Response on slot {slot}")
+                return slot, response
+            except RuntimeError as e:
+                msg = str(e).lower()
+                # Locked, or configured-but-awaiting-touch: surface immediately
+                # rather than silently moving on to other slots.
+                if "locked" in msg or any(
+                    token in msg for token in ("timeout", "touch", "button", "press")
+                ):
+                    raise
+                last_error = e
+                logger.debug(f"OnlyKey slot {slot} did not answer: {e}")
+                continue
+        raise RuntimeError(
+            "No OnlyKey slot answered the Challenge-Response. Configure CR on a "
+            "slot (1..2) with the OnlyKey App in button-press mode, or pass "
+            "--hsm-slot. Last error: " + (str(last_error) if last_error else "none")
+        )
+
     def get_hsm_pepper(self, salt: bytes, context: PluginSecurityContext) -> PluginResult:
         """
         Derive HSM pepper from salt using OnlyKey Challenge-Response.
@@ -354,7 +404,11 @@ class OnlykeyHSMPlugin(HSMPlugin):
                     f"Invalid salt length: expected 16 bytes, got {actual}"
                 )
 
-            # Determine slot (manual or auto-detect)
+            # Determine slot (manual or auto-detect) and perform the
+            # Challenge-Response. Each path performs exactly ONE real
+            # challenge-response for the chosen slot — never a separate probe
+            # followed by a second call, which on button-press OnlyKey slots
+            # would require two presses and get the second one rejected.
             slot = context.config.get("slot")
 
             if slot:
@@ -365,26 +419,16 @@ class OnlykeyHSMPlugin(HSMPlugin):
                         f"Must be {self.MIN_SLOT}..{self.MAX_SLOT}."
                     )
                 logger.info(f"Using manually specified OnlyKey slot {slot}")
+                response = self._calculate_challenge_response(salt, slot)
+            elif self._cached_slot:
+                slot = self._cached_slot
+                logger.info(f"Using cached OnlyKey slot {slot}")
+                response = self._calculate_challenge_response(salt, slot)
             else:
-                # Auto-detect slot
-                if self._cached_slot:
-                    slot = self._cached_slot
-                    logger.info(f"Using cached OnlyKey slot {slot}")
-                else:
-                    logger.info("Auto-detecting OnlyKey Challenge-Response slot")
-                    slot = self._find_challenge_response_slot()
-                    if not slot:
-                        return PluginResult.error_result(
-                            "No OnlyKey with Challenge-Response found. "
-                            "Configure CR on slots 1..12 with the OnlyKey App, "
-                            "or specify the slot with --hsm-slot."
-                        )
-                    self._cached_slot = slot
-                    logger.info(f"Auto-detected OnlyKey slot {slot}")
-
-            # Perform Challenge-Response
-            logger.info(f"Performing Challenge-Response with OnlyKey slot {slot}")
-            response = self._calculate_challenge_response(salt, slot)
+                logger.info("Auto-detecting OnlyKey Challenge-Response slot")
+                slot, response = self._autodetect_challenge_response(salt)
+                self._cached_slot = slot
+                logger.info(f"Auto-detected OnlyKey slot {slot}")
 
             return PluginResult.success_result(
                 f"OnlyKey Challenge-Response successful (slot {slot})",

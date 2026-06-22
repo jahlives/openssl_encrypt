@@ -349,29 +349,88 @@ class TestGetHsmPepper(unittest.TestCase):
         self.assertIn("slot", result.message.lower())
 
     def test_auto_detect_when_no_slot_specified(self):
+        # Auto-detect performs the REAL challenge-response per slot (no separate
+        # probe). Slots 1..3 have no secret (clean rejection); slot 4 answers.
         plugin = OnlykeyHSMPlugin()
         ctx = _make_context(plugin)  # no slot
         expected = b"\x99" * 20
 
-        with patch.object(
-            plugin, "_find_challenge_response_slot", return_value=4
-        ), patch.object(
-            plugin, "_calculate_challenge_response", return_value=expected
-        ):
+        def fake_cr(salt, slot):
+            if slot == 4:
+                return expected
+            raise RuntimeError(f"OnlyKey rejected the challenge on slot {slot}. No data.")
+
+        with patch.object(plugin, "_calculate_challenge_response", side_effect=fake_cr):
             result = plugin.get_hsm_pepper(b"\x00" * 16, ctx)
 
         self.assertTrue(result.success)
         self.assertEqual(result.data.get("slot"), 4)
+        self.assertEqual(result.data.get("hsm_pepper"), expected)
+
+    def test_auto_detect_continues_past_rejected_slot(self):
+        # Regression: a rejection on slot 1 must NOT abort the scan. Previously
+        # auto-detect "stopped on 1" (probe false-positive + double-press).
+        plugin = OnlykeyHSMPlugin()
+        ctx = _make_context(plugin)  # no slot
+        expected = b"\xab" * 20
+        calls = []
+
+        def fake_cr(salt, slot):
+            calls.append(slot)
+            if slot == 1:
+                raise RuntimeError("OnlyKey rejected the challenge on slot 1. No data.")
+            if slot == 2:
+                return expected
+            raise RuntimeError(f"OnlyKey rejected the challenge on slot {slot}. No data.")
+
+        with patch.object(plugin, "_calculate_challenge_response", side_effect=fake_cr):
+            result = plugin.get_hsm_pepper(b"\x00" * 16, ctx)
+
+        self.assertTrue(result.success)
+        self.assertEqual(result.data.get("slot"), 2)
+        self.assertEqual(result.data.get("hsm_pepper"), expected)
+        # Exactly one CR per slot, no recompute on the winning slot (no 2nd press)
+        self.assertEqual(calls, [1, 2])
 
     def test_auto_detect_failure_returns_error(self):
         plugin = OnlykeyHSMPlugin()
         ctx = _make_context(plugin)
-        with patch.object(
-            plugin, "_find_challenge_response_slot", return_value=None
-        ):
+        def reject_all(salt, slot):
+            raise RuntimeError(f"OnlyKey rejected the challenge on slot {slot}. No data.")
+
+        with patch.object(plugin, "_calculate_challenge_response", side_effect=reject_all):
             result = plugin.get_hsm_pepper(b"\x00" * 16, ctx)
         self.assertFalse(result.success)
         self.assertIn("OnlyKey", result.message)
+
+    def test_auto_detect_surfaces_locked_immediately(self):
+        # A locked device must be surfaced at once, not scanned past.
+        plugin = OnlykeyHSMPlugin()
+        ctx = _make_context(plugin)
+        calls = []
+
+        def fake_cr(salt, slot):
+            calls.append(slot)
+            raise RuntimeError("OnlyKey is locked. Enter your PIN on the buttons.")
+
+        with patch.object(plugin, "_calculate_challenge_response", side_effect=fake_cr):
+            result = plugin.get_hsm_pepper(b"\x00" * 16, ctx)
+        self.assertFalse(result.success)
+        self.assertIn("locked", result.message.lower())
+        self.assertEqual(calls, [1])  # stopped after the first slot
+
+    def test_auto_detect_surfaces_button_press(self):
+        # A configured slot awaiting a touch must be surfaced, not skipped.
+        plugin = OnlykeyHSMPlugin()
+        ctx = _make_context(plugin)
+
+        def fake_cr(salt, slot):
+            raise RuntimeError("Timeout waiting for button press on the OnlyKey.")
+
+        with patch.object(plugin, "_calculate_challenge_response", side_effect=fake_cr):
+            result = plugin.get_hsm_pepper(b"\x00" * 16, ctx)
+        self.assertFalse(result.success)
+        self.assertIn("button", result.message.lower())
 
     def test_cached_slot_used_on_second_call(self):
         plugin = OnlykeyHSMPlugin()
@@ -531,6 +590,29 @@ class TestEdgeCaseDeviceDisconnect(unittest.TestCase):
             result = plugin.get_hsm_pepper(b"\x00" * 16, ctx)
 
         self.assertFalse(result.success)
+
+
+class TestOnlykeyTestCliArgs(unittest.TestCase):
+    """`hsm onlykey-test` must accept --hsm-slot (the handler reads it)."""
+
+    def _parser(self):
+        import argparse
+
+        from openssl_encrypt.modules.crypt_cli_subparser import setup_hsm_parser
+
+        parser = argparse.ArgumentParser()
+        sub = parser.add_subparsers(dest="command")
+        hsm = sub.add_parser("hsm")
+        setup_hsm_parser(hsm)
+        return parser
+
+    def test_onlykey_test_accepts_hsm_slot(self):
+        args = self._parser().parse_args(["hsm", "onlykey-test", "--hsm-slot", "2"])
+        self.assertEqual(args.hsm_slot, 2)
+
+    def test_onlykey_test_hsm_slot_defaults_to_none(self):
+        args = self._parser().parse_args(["hsm", "onlykey-test"])
+        self.assertIsNone(getattr(args, "hsm_slot", None))
 
 
 if __name__ == "__main__":
