@@ -24,6 +24,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - New dependency: `python-pkcs11` (in `requirements-hsm.txt`).
   - Setup guide: `openssl_encrypt/docs/PIV_BACKEND.md`.
 
+- **Source-code integrity protection** (`openssl-encrypt verify-integrity`): a
+  PGP-signed manifest of SHA-512 hashes over the core cryptographic/security
+  source files (the explicit allowlist in
+  `openssl_encrypt/integrity/protected_files.txt`) so tampering with those files
+  can be detected. Both a source-scope and an installed-scope manifest are
+  maintained and shipped in the package; a pre-commit hook regenerates and checks
+  for drift. The bundled verifier is a convenience tripwire — authoritative
+  verification is manual with a trusted `gpg` against the out-of-band signing
+  fingerprint `D269D6A5D6D7CE52CE1FC71DC2DF29059ED65043` (also published in
+  `SECURITY.md`). Signing key rotated from the bootstrap key to the production
+  key. Runbook: `openssl_encrypt/docs/SOURCE_INTEGRITY.md`.
+
 ## [1.4.5] - 2026-06-12
 
 ### Security
