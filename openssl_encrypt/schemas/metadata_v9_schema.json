@@ -4,27 +4,52 @@
   "title": "OpenSSL Encrypt Metadata Schema Version 9",
   "description": "Schema for validating encrypted file metadata format version 9 (secure chained salt derivation)",
   "type": "object",
-  "required": ["format_version", "mode", "derivation_config", "encryption"],
+  "required": [
+    "format_version",
+    "mode",
+    "derivation_config",
+    "encryption"
+  ],
   "additionalProperties": true,
   "properties": {
     "format_version": {
       "type": "integer",
-      "enum": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+      "enum": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11
+      ],
       "description": "Metadata format version. v11: Independent XOR (Massey). v10/v8: Sequential + XOR composition (v8 from 1.3 branch). v9: Secure chained salt. v7: Enhanced security. v4-6: Nested config. v1-3: Legacy."
     },
     "xor_mode": {
       "type": "string",
-      "enum": ["sequential", "independent"],
+      "enum": [
+        "sequential",
+        "independent"
+      ],
       "description": "XOR composition mode. 'sequential': v8/v10 chained (each algorithm uses previous output). 'independent': v11 parallel (Massey - each algorithm uses original input). Optional field - only present for v8/v10/v11."
     },
     "mode": {
       "type": "string",
-      "enum": ["symmetric", "asymmetric"],
+      "enum": [
+        "symmetric",
+        "asymmetric"
+      ],
       "description": "Encryption mode"
     },
     "derivation_config": {
       "type": "object",
-      "required": ["salt"],
+      "required": [
+        "salt"
+      ],
       "additionalProperties": true,
       "properties": {
         "salt": {
@@ -39,7 +64,9 @@
           "patternProperties": {
             "^(sha512|sha384|sha256|sha224|sha3_512|sha3_384|sha3_256|sha3_224|blake2b|blake3|shake256|shake128|whirlpool)$": {
               "type": "object",
-              "required": ["rounds"],
+              "required": [
+                "rounds"
+              ],
               "additionalProperties": true,
               "properties": {
                 "rounds": {
@@ -64,7 +91,9 @@
     },
     "hashes": {
       "type": "object",
-      "required": ["original_hash"],
+      "required": [
+        "original_hash"
+      ],
       "additionalProperties": true,
       "properties": {
         "original_hash": {
@@ -87,7 +116,13 @@
       "oneOf": [
         {
           "description": "Cascade encryption mode",
-          "required": ["cascade", "cipher_chain", "hkdf_hash", "cascade_salt", "layer_info"],
+          "required": [
+            "cascade",
+            "cipher_chain",
+            "hkdf_hash",
+            "cascade_salt",
+            "layer_info"
+          ],
           "properties": {
             "cascade": {
               "type": "boolean",
@@ -101,21 +136,43 @@
                 "type": "string",
                 "enum": [
                   "aes-256-gcm",
+                  "aes-256-gcm-siv",
+                  "aes-256-ocb3",
+                  "aes-256-siv",
                   "aes-gcm",
                   "aes-gcm-siv",
                   "aes-ocb3",
                   "aes-siv",
+                  "aes256-gcm",
+                  "aesgcm",
+                  "aesgcmsiv",
+                  "aesocb3",
+                  "aessiv",
+                  "chacha20",
                   "chacha20-poly1305",
-                  "xchacha20-poly1305",
+                  "chacha20poly1305",
+                  "tf1024",
+                  "tf512",
+                  "threefish-1024",
                   "threefish-512",
-                  "threefish-1024"
+                  "threefish1024",
+                  "threefish512",
+                  "xchacha20",
+                  "xchacha20-poly1305",
+                  "xchacha20poly1305"
                 ]
               },
               "description": "Ordered list of ciphers in the cascade"
             },
             "hkdf_hash": {
               "type": "string",
-              "enum": ["sha256", "sha384", "sha512", "sha3-256", "blake2b"],
+              "enum": [
+                "sha256",
+                "sha384",
+                "sha512",
+                "sha3-256",
+                "blake2b"
+              ],
               "description": "Hash function used for HKDF key derivation"
             },
             "cascade_salt": {
@@ -128,7 +185,11 @@
               "minItems": 2,
               "items": {
                 "type": "object",
-                "required": ["cipher", "key_size", "tag_size"],
+                "required": [
+                  "cipher",
+                  "key_size",
+                  "tag_size"
+                ],
                 "properties": {
                   "cipher": {
                     "type": "string",
@@ -164,7 +225,9 @@
         },
         {
           "description": "Single cipher mode",
-          "required": ["algorithm"],
+          "required": [
+            "algorithm"
+          ],
           "properties": {
             "cascade": {
               "type": "boolean",
@@ -181,7 +244,26 @@
                 "aes-siv",
                 "chacha20-poly1305",
                 "xchacha20-poly1305",
-                "cascade"
+                "cascade",
+                "aes-256-gcm",
+                "aes-256-gcm-siv",
+                "aes-256-ocb3",
+                "aes-256-siv",
+                "aes256-gcm",
+                "aesgcm",
+                "aesgcmsiv",
+                "aesocb3",
+                "aessiv",
+                "chacha20",
+                "chacha20poly1305",
+                "tf1024",
+                "tf512",
+                "threefish-1024",
+                "threefish-512",
+                "threefish1024",
+                "threefish512",
+                "xchacha20",
+                "xchacha20poly1305"
               ],
               "description": "Encryption algorithm used"
             },
