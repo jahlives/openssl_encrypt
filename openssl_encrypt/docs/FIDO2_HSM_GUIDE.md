@@ -8,9 +8,26 @@ The FIDO2 HSM plugin adds hardware-bound key derivation to OpenSSL Encrypt using
 - ✅ Hardware-bound encryption (requires physical security key)
 - ✅ Works with any FIDO2-compliant authenticator (YubiKey 5, Nitrokey 3, SoloKey v2, etc.)
 - ✅ PIN protection + touch requirement for each operation
-- ✅ Multiple credential support (primary + backup keys)
-- ✅ Deterministic pepper derivation (same salt → same pepper)
+- ⚠️ Per-credential peppers — **no true backup key** (see warning below)
+- ✅ Deterministic pepper derivation (same salt + same credential → same pepper)
 - ✅ Standard FIDO2 protocol (no vendor lock-in)
+
+> ⚠️ **No true backup key with FIDO2.** A FIDO2 hmac-secret credential's secret
+> (CredRandom) is generated inside the authenticator, is **non-exportable**, and
+> is **unique per credential**. There is no way to provision a second physical
+> key that derives the *same* pepper. Registering a backup credential
+> (`fido2-register --backup`) only adds a credential that produces a *different*
+> pepper, so a backup key **cannot decrypt files encrypted with the primary** —
+> it is useful only for encrypting *new* files you also want that key to open.
+> If the registered key is lost or reset, data bound to it is **unrecoverable**.
+>
+> For genuine multi-device redundancy use a backend whose secret can be
+> replicated across devices: the **PIV / PKCS#11** backend (import the same
+> private key onto several tokens — [PIV_BACKEND.md](PIV_BACKEND.md)) or the
+> **YubiKey/OnlyKey HMAC-SHA1 CR** backends (load the same 20-byte secret onto
+> several devices — [hardware-tokens.md](hardware-tokens.md)). Reach for FIDO2
+> mainly when your key is FIDO-only (Security Key Series, YubiKey Bio FIDO
+> Edition) and PIV/OTP applets are unavailable.
 
 ---
 
@@ -166,16 +183,20 @@ openssl_encrypt encrypt --hsm fido2 -a ml-kem-768-hybrid classified.txt
 
 ### Backup Credential Registration
 
-Register a second security key as backup:
+Register an additional credential:
 
 ```bash
 openssl_encrypt hsm fido2-register --description "Backup Nitrokey 3" --backup
 ```
 
-**Benefits:**
-- Access your encrypted files if primary key is lost
-- Multiple credentials are tried automatically during decryption
-- Both keys work interchangeably
+> ⚠️ **This does NOT give you a recovery key.** Each FIDO2 credential has its
+> own non-exportable secret, so a "backup" credential derives a *different*
+> pepper and **cannot decrypt files encrypted with the primary**. It only lets
+> that second key open files you encrypt *after* registering it (the plugin
+> peppers with whichever registered credential is present). To survive loss of
+> the primary key you must keep the primary key itself safe, or re-encrypt your
+> data under each key separately. For genuine recovery, use the PIV or
+> YubiKey/OnlyKey CR backends instead — see the warning at the top of this guide.
 
 ---
 
@@ -239,7 +260,7 @@ pepper = HMAC-SHA256(credential_secret, salt)  # 32-byte output
 ```
 
 **Key Properties:**
-- ✅ **Deterministic**: Same salt → same pepper
+- ✅ **Deterministic**: Same salt + same credential → same pepper
 - ✅ **Hardware-bound**: Pepper requires physical device
 - ✅ **Never stored**: Computed on-demand each time
 - ✅ **PIN protected**: User verification required
@@ -311,14 +332,14 @@ This provides **two-factor authentication** for every encryption/decryption oper
 ### 3. Deterministic Pepper Derivation
 
 The pepper is **deterministic**:
-- Same salt → same pepper (always)
+- Same salt + same credential → same pepper (always)
 - Required for decryption
-- Never changes for a given salt
+- Never changes for a given salt and credential
 
 This ensures:
-- ✅ Encrypted files can always be decrypted (with correct key)
+- ✅ Encrypted files can always be decrypted **with the same credential** used to encrypt them
 - ✅ No risk of pepper rotation breaking old files
-- ✅ Backup keys work with files encrypted by primary key
+- ⚠️ The pepper is **per-credential**: a different credential (e.g. a "backup" key) derives a *different* pepper and cannot decrypt the primary's files
 
 ### 4. No Secrets in Storage
 
@@ -354,10 +375,11 @@ openssl_encrypt hsm fido2-register --description "YubiKey 5 NFC"
 openssl_encrypt hsm fido2-register --description "Backup Nitrokey 3" --backup
 ```
 
-**Benefits:**
-- Recovery if primary key is lost
-- Both keys derive the same pepper for same salt
-- No re-encryption needed
+> ⚠️ **Not a recovery key.** The two keys derive **different** peppers for the
+> same salt (each credential's secret is unique and non-exportable), so the
+> backup key **cannot** decrypt files made with the primary. Re-encryption under
+> the backup key *is* required if you want that key to open existing files. See
+> the "no true backup key" warning at the top of this guide.
 
 ### Check Registration Status
 
@@ -536,16 +558,16 @@ sudo udevadm trigger
 
 ### Q: What happens if I lose my security key?
 
-**A:** If you have **only one credential registered:**
-- ❌ You **cannot decrypt** your files
-- Files are permanently inaccessible
+**A:** Your files are **permanently inaccessible** for anything that was
+encrypted while that key was the present credential. FIDO2 has **no recovery
+key**: a "backup" credential derives a different pepper and cannot decrypt the
+lost key's files (see the warning at the top of this guide). A backup credential
+only helps for files you *also* encrypted with that backup key present.
 
-**If you have backup credentials:**
-- ✅ Use your backup security key to decrypt files
-- Register a new primary key
-- Continue using your encrypted files
-
-**Recommendation:** Always register at least one backup credential.
+**Recommendation:** If you need to survive loss of the device, do **not** rely on
+FIDO2 — use the PIV backend (same private key imported onto a spare token) or the
+YubiKey/OnlyKey CR backends (same secret loaded onto a spare device), both of
+which give a real recovery key.
 
 ---
 
@@ -587,23 +609,31 @@ Even with the correct password, decryption fails without the physical security k
 
 ### Q: How do backup credentials work?
 
-**A:** All registered credentials (primary + backups) derive **the same pepper** for the same salt.
+**A:** They do **not** provide cross-key recovery. Each registered credential
+derives a **different** pepper for the same salt.
 
-**How:**
-- Each credential has a unique secret stored in the authenticator
-- The FIDO2 spec ensures different credentials can produce same output
-- Files encrypted with primary key can be decrypted with backup key
+**Why:**
+- Each credential has a unique `CredRandom` secret generated inside the
+  authenticator at registration; it is non-exportable and cannot be cloned.
+- The FIDO2 hmac-secret output is `HMAC(CredRandom, salt)` — so different
+  credentials produce **different** outputs, by design of the spec.
+- Therefore a file encrypted with the primary credential **cannot** be decrypted
+  with a backup credential. A "backup" only opens files that were encrypted
+  while that backup credential was the one present.
 
 ---
 
 ### Q: Can I use multiple FIDO2 devices simultaneously?
 
-**A:** You can **register** multiple devices, but only **one device is used** during encryption/decryption.
+**A:** You can **register** multiple devices, but only **one device is used** per
+operation — and the pepper depends on *which* credential that device holds.
 
 **During decryption:**
-- Plugin tries credentials in order (primary, then backups)
-- First device that responds successfully is used
-- Other devices are not needed
+- The plugin presents all registered credential IDs; the connected device
+  answers for whichever one it holds.
+- Decryption only succeeds if the present credential is the **same** one used at
+  encryption time — a different registered credential yields a different pepper
+  and fails. Registered keys are **not** interchangeable for a given file.
 
 ---
 
@@ -632,9 +662,12 @@ The security key only stores **cryptographic material** needed for pepper deriva
 | **Authentication** | PIN + Touch | Touch only (no PIN) |
 | **Standard** | FIDO2 (industry standard) | Proprietary (Yubico) |
 | **Device Support** | Any FIDO2 authenticator | YubiKey only |
-| **Backup Support** | Multiple credentials | Single slot |
+| **Multi-device recovery** | ❌ None — per-credential secret, non-exportable | ✅ Same 20-byte secret can be loaded onto multiple devices |
 
-**Recommendation:** Use **FIDO2 hmac-secret** for better security and flexibility.
+**Recommendation:** FIDO2 hmac-secret offers a longer pepper and PIN+touch, but
+has **no multi-device recovery**. If you need a backup/recovery key, prefer the
+PIV backend or the YubiKey/OnlyKey Challenge-Response backends. Use FIDO2 when
+your key is FIDO-only (e.g. Security Key Series, YubiKey Bio FIDO Edition).
 
 ---
 
@@ -652,14 +685,15 @@ The security key only stores **cryptographic material** needed for pepper deriva
 ### Q: What happens if I factory reset my security key?
 
 **A:**
-- ❌ All credentials are **deleted** from the device
-- ❌ You **cannot** decrypt files encrypted with that key
-- ✅ Backup credentials (if registered) still work
+- ❌ All credentials are **deleted** from the device, and their secrets are gone
+  forever (non-exportable, unrecoverable).
+- ❌ You **cannot** decrypt files encrypted with that key — a backup credential
+  on another device does **not** help, because it derives a different pepper.
 
-**Before Factory Reset:**
-1. Ensure backup credentials are registered and tested
-2. Decrypt critical files
-3. Backup credential configuration
+**Before Factory Reset — there is no shortcut:**
+1. Decrypt **all** files that were bound to this key, while you still have it.
+2. Re-encrypt them afterwards (under a new credential, or a recovery-capable
+   backend like PIV / YubiKey-OnlyKey CR).
 
 ---
 

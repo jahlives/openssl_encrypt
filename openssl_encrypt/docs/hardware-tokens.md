@@ -10,6 +10,15 @@ secret, so a single fleet can mix devices freely.
 > PKCS#11 token (YubiKey Bio MPE, Token2 PIN+, any compliant PIV smart card)
 > instead of HMAC-SHA1 CR. See [PIV / PKCS#11 backend](PIV_BACKEND.md) for setup.
 
+> **Device compatibility, briefly:** the CR backends need the Yubico **OTP**
+> applet; the PIV backend needs the **PIV** applet (5 series, 5 FIPS, Bio
+> **MPE** — *not* the Bio **FIDO Edition** or Security Key Series). FIDO-only
+> keys can use the **FIDO2** backend (`--hsm fido2`,
+> [FIDO2_HSM_GUIDE.md](FIDO2_HSM_GUIDE.md)), but note FIDO2 has **no true backup
+> key** — its credential secret is non-exportable and unique per credential, so
+> a second device cannot decrypt the first's files. Run `ykman info` and check
+> the applet rows before choosing a backend.
+
 This guide covers:
 
 - [What hardware-bound CR provides](#what-hardware-bound-cr-provides)
