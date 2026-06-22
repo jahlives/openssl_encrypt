@@ -36,7 +36,7 @@ results (constant-time) as a determinism self-check.
 | YubiKey 5 series | Yes | Ed25519, RSA | `opensc-pkcs11.so` or `ykcs11.so` |
 | YubiKey 5 FIPS | Yes | Ed25519, RSA | `opensc-pkcs11.so` or `ykcs11.so` |
 | YubiKey Bio — MPE (enterprise-only, see caveat) | Yes | Ed25519, RSA | `opensc-pkcs11.so` or `ykcs11.so` |
-| Token2 PIN+ R3.3+ | Yes | RSA-2048/3072/4096 | `opensc-pkcs11.so` |
+| Token2 PIN+ Release3.3+ "with PIV" (see caveat) | Yes | RSA-2048/3072/4096 | `opensc-pkcs11.so` |
 | Any PKCS#11 PIV token | Yes | Ed25519 or RSA | vendor module |
 
 > ⚠️ **Most YubiKeys you can buy do not have PIV — the YubiKey 5 series is the
@@ -59,6 +59,15 @@ results (constant-time) as a determinism self-check.
 > USB on this YubiKey` — a missing applet, not a disabled interface. Check with
 > `ykman info`: if the `PIV` row reads `Not available`, this backend is not an
 > option for that key.
+
+> ⚠️ **Token2: not every model has PIV.** Only the **PIN+ Release3.3** keys (sold
+> explicitly as *"FIDO2.1 Key with PIV, OpenPGP and OTP"* — e.g. *PIN+ Dual
+> Release3.3* and *PIN+ Release3.3 TypeC*) carry the PIV applet. The **Token2
+> Bio3** ships with **OpenPGP, not PIV**, and `openssl_encrypt` has no
+> OpenPGP-card backend — so a Bio3 cannot drive `--hsm piv` (its reader name
+> shows "FIDO + PGP", and `pkcs15-init` fails with *"Invalid arguments"*).
+> Confirm the applet first with `pkcs15-tool --dump` or
+> `pkcs11-tool --module /usr/lib/opensc-pkcs11.so -O --login`.
 
 ### If your key is FIDO-only
 
