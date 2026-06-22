@@ -25,7 +25,7 @@ from openssl_encrypt.unittests._piv_mocks import (
     make_rsa_key,
 )
 
-PRESENT = TokenFlag.TOKEN_PRESENT | TokenFlag.LOGIN_REQUIRED
+PRESENT = TokenFlag.LOGIN_REQUIRED
 SALT16 = b"0123456789abcdef"
 
 

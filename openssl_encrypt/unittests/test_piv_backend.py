@@ -30,7 +30,7 @@ from openssl_encrypt.unittests._piv_mocks import (
     make_rsa_key,
 )
 
-PRESENT = TokenFlag.TOKEN_PRESENT | TokenFlag.LOGIN_REQUIRED
+PRESENT = TokenFlag.LOGIN_REQUIRED
 
 
 def _expected_pepper(input_data, sig_len, pepper_length=32):

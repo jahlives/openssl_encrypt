@@ -21,10 +21,11 @@ from openssl_encrypt.unittests._piv_mocks import (
     FakeSlot,
     FakeToken,
     SessionState,
+    SlotFlag,
     TokenFlag,
 )
 
-PRESENT = TokenFlag.TOKEN_PRESENT | TokenFlag.LOGIN_REQUIRED
+PRESENT = TokenFlag.LOGIN_REQUIRED
 
 
 class _TokenSessionTestBase(unittest.TestCase):
@@ -77,9 +78,11 @@ class TestTokenSelection(_TokenSessionTestBase):
             session.select_token()
 
     def test_token_present_flag_missing_raises(self):
-        # Item 5: token object exists but TOKEN_PRESENT flag is not set.
-        token = FakeToken(flags=TokenFlag.LOGIN_REQUIRED)  # no TOKEN_PRESENT bit
-        lib = self._library(_piv_mocks.single_slot_lib(token))
+        # Item 5: the slot does not report SlotFlag.TOKEN_PRESENT.
+        # (TOKEN_PRESENT is a SlotFlag, not a TokenFlag — checking it on the
+        # token, as the old code did, raised AttributeError on real hardware.)
+        slot = FakeSlot(token=FakeToken(flags=PRESENT), slot_id=0, flags=SlotFlag(0))
+        lib = self._library(_piv_mocks.make_lib(slot))
         session = TokenSession(lib, slot_index=0)
         with self.assertRaises(PIVTokenError):
             session.select_token()

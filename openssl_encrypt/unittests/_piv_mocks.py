@@ -72,12 +72,21 @@ PIV_SLOT_ID_9E = b"\x04"
 
 
 class TokenFlag(enum.IntFlag):
-    TOKEN_PRESENT = 1 << 0
+    # NB: there is deliberately NO TOKEN_PRESENT here. In real python-pkcs11
+    # TOKEN_PRESENT is a SlotFlag, not a TokenFlag; keeping the mock faithful
+    # ensures code that wrongly references pkcs11.TokenFlag.TOKEN_PRESENT fails
+    # in tests the same way it does against real hardware.
     LOGIN_REQUIRED = 1 << 2
     USER_PIN_INITIALIZED = 1 << 3
     USER_PIN_COUNT_LOW = 1 << 16
     USER_PIN_FINAL_TRY = 1 << 17
     USER_PIN_LOCKED = 1 << 18
+
+
+class SlotFlag(enum.IntFlag):
+    TOKEN_PRESENT = 1 << 0
+    REMOVABLE_DEVICE = 1 << 1
+    HW_SLOT = 1 << 2
 
 
 class UserType(enum.Enum):
@@ -241,7 +250,7 @@ class FakeToken:
     def __init__(
         self,
         *,
-        flags: TokenFlag = TokenFlag.TOKEN_PRESENT | TokenFlag.LOGIN_REQUIRED,
+        flags: TokenFlag = TokenFlag.LOGIN_REQUIRED,
         session: Optional[FakeSession] = None,
         open_error: Optional[Exception] = None,
         biometric: bool = False,
@@ -269,10 +278,13 @@ class FakeSlot:
         token: Optional[FakeToken] = None,
         token_error: Optional[Exception] = None,
         slot_id: int = 0,
+        flags: Optional["SlotFlag"] = None,
     ):
         self.slot_id = slot_id
         self._token = token
         self._token_error = token_error
+        # Real slots holding a token report SlotFlag.TOKEN_PRESENT.
+        self.flags = SlotFlag.TOKEN_PRESENT if flags is None else flags
 
     def get_token(self) -> FakeToken:
         if self._token_error is not None:
@@ -399,6 +411,7 @@ def _build_fake_modules():
     pkcs11_mod.KeyType = KeyType
     pkcs11_mod.Attribute = Attribute
     pkcs11_mod.TokenFlag = TokenFlag
+    pkcs11_mod.SlotFlag = SlotFlag
     pkcs11_mod.UserType = UserType
     pkcs11_mod.SessionState = SessionState
     pkcs11_mod.exceptions = exc_mod
