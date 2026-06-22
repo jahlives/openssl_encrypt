@@ -52,7 +52,7 @@ For deep-dives into the cryptographic design and security policies of this proje
 * **Deterministic AEAD**: AES-SIV support for maximum protection against nonce-misuse.
 * **Metadata Integrity**: Cryptographic binding of headers to prevent tampering (on AEAD-supported ciphers).
 * **Hardware-Resistant KDF**: Sequential Argon2id and RandomX hashing to neutralize ASIC/GPU brute-force clusters.
-* **Hardware Token Binding (HSM)**: YubiKey/OnlyKey HMAC-SHA1 challenge-response and FIDO2 support — the hardware-derived pepper is never stored, so decryption requires the physical token. YubiKey and OnlyKey are interchangeable within a same-secret fleet.
+* **Hardware Token Binding (HSM)**: YubiKey/OnlyKey HMAC-SHA1 challenge-response, FIDO2, and PIV/PKCS#11 smart-card support — the hardware-derived pepper is never stored, so decryption requires the physical token. YubiKey and OnlyKey are interchangeable within a same-secret fleet.
 * **Cascade Multi-Layer Encryption**: Independent AES-256-GCM + ChaCha20-Poly1305 layers (default in the STANDARD template) for defense-in-depth.
 * **Threefish-512/1024**: Native AEAD ciphers with 256/512-bit post-quantum security margins.
 * **Streaming Chunked Encryption**: Constant-memory authenticated encryption for multi-gigabyte files (format v12).
@@ -185,6 +185,17 @@ Centralized cryptographic algorithm registration and validation framework.
 - HSM_ONLY identities skip password prompts during encryption/decryption
 - Automatic HSM identity detection with `--with-key`
 - Save/load HSM identities without password requirements
+- **PIV / PKCS#11 HSM backend** (`--hsm piv`): hardware-bound key
+  derivation backed by a PIV private key on a PKCS#11 token (YubiKey Bio
+  MPE, Token2 PIN+ R3.3+, or any compliant PIV smart card). The key signs
+  a deterministic challenge derived from the salt; the signature is
+  normalized into a pepper via HKDF-SHA256, so the same key on multiple
+  devices always yields identical peppers. Algorithm-agnostic across
+  Ed25519 and RSA-2048/3072/4096; non-deterministic schemes (ECDSA,
+  RSA-PSS) are rejected. New flags: `--hsm-pkcs11-lib PATH` (required),
+  `--hsm-piv-slot {9a,9c,9d,9e}`, `--hsm-biometric`. Requires
+  `python-pkcs11` (`pip install -r requirements-hsm.txt`). See
+  [docs/PIV_BACKEND.md](docs/PIV_BACKEND.md) for setup.
 - **OnlyKey support** (`--hsm onlykey` / `--hsm onlykey-only`, slots 1..12)
   alongside YubiKey. Same HMAC-SHA1 wire protocol — fleets mixing
   YubiKey and OnlyKey devices loaded with the same 20-byte secret are

@@ -17,6 +17,18 @@ OpenSSL Encrypt follows [Semantic Versioning (SemVer)](https://semver.org/) for 
 
 ## Release History
 
+### Unreleased - PIV / PKCS#11 HSM Backend
+**Release Date:** TBD (in development)
+**Status:** Unreleased — see [CHANGELOG](../../CHANGELOG.md) `[Unreleased]`
+
+- **PIV / PKCS#11 HSM backend** (`--hsm piv`): hardware-bound key
+  derivation backed by a PIV private key on a PKCS#11 token (YubiKey Bio
+  MPE, Token2 PIN+ R3.3+, or any compliant PIV smart card). Deterministic
+  signing (Ed25519, RSA PKCS#1 v1.5) is normalized into a pepper via
+  HKDF-SHA256; ECDSA/RSA-PSS are rejected. New flags:
+  `--hsm-pkcs11-lib`, `--hsm-piv-slot {9a,9c,9d,9e}`, `--hsm-biometric`.
+  Requires `python-pkcs11`. See [PIV_BACKEND](PIV_BACKEND.md).
+
 ### 1.4.5 (Current) - Dependency Security Updates
 **Release Date:** June 12, 2026
 **Status:** Production Release

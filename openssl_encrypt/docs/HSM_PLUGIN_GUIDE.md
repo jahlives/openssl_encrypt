@@ -181,13 +181,23 @@ openssl-encrypt encrypt --hsm yubikey \
    - Use strong passwords (HSM adds defense in depth, not a replacement)
    - Combine with strong KDF settings (Argon2, Scrypt)
 
+## PIV / PKCS#11 Backend
+
+A second HSM backend, `piv_hsm` (`--hsm piv`), derives the pepper from a PIV
+private key on a PKCS#11 token (YubiKey Bio MPE, Token2 PIN+ R3.3+, or any
+compliant PIV smart card) rather than HMAC-SHA1 challenge-response. The key
+signs a deterministic challenge derived from the salt, and the signature is
+normalized into a pepper via HKDF-SHA256 — so the same key on multiple devices
+always yields identical peppers. Only deterministic signature schemes are
+allowed (Ed25519, RSA PKCS#1 v1.5); ECDSA and RSA-PSS are rejected. It uses its
+own flags (`--hsm-pkcs11-lib`, `--hsm-piv-slot {9a,9c,9d,9e}`, `--hsm-biometric`)
+and requires `python-pkcs11`. See [PIV_BACKEND.md](PIV_BACKEND.md) for full setup.
+
 ## Future HSM Support
 
 The HSM plugin system is designed to be extensible. Future support planned for:
 
 - **TPM 2.0**: Hardware-bound encryption using Trusted Platform Module
-- **Smart Cards**: Challenge-Response via PC/SC interface
-- **Hardware Tokens**: PKCS#11 compatible devices
 - **Cloud HSM**: AWS CloudHSM, Azure Key Vault (with appropriate warnings)
 
 ## Custom HSM Plugin Development

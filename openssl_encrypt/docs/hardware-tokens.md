@@ -5,6 +5,11 @@ Challenge-Response on two device families: **YubiKey** and **OnlyKey**. The
 two backends produce identical output when loaded with the same 20-byte
 secret, so a single fleet can mix devices freely.
 
+> A third, signature-based backend is also available: the **PIV / PKCS#11**
+> backend (`--hsm piv`) derives the pepper from a PIV private key on a
+> PKCS#11 token (YubiKey Bio MPE, Token2 PIN+, any compliant PIV smart card)
+> instead of HMAC-SHA1 CR. See [PIV / PKCS#11 backend](PIV_BACKEND.md) for setup.
+
 This guide covers:
 
 - [What hardware-bound CR provides](#what-hardware-bound-cr-provides)
