@@ -125,12 +125,23 @@ Repeat the import on each backup device using the same `piv_key.pem`.
 
 ## PIV slots
 
-| Slot | Hex | Purpose |
-|---|---|---|
-| 9a | `0x9A` | PIV Authentication (default) |
-| 9c | `0x9C` | Digital Signature |
-| 9d | `0x9D` | Key Management |
-| 9e | `0x9E` | Card Authentication |
+| Slot | Hex | Purpose | PIN behavior | Works with this backend? |
+|---|---|---|---|---|
+| 9a | `0x9A` | PIV Authentication | PIN once per session (honors `--pin-policy`) | ✅ **recommended (default)** |
+| 9c | `0x9C` | Digital Signature | **PIN required before *every* signature** (always-authenticate) | ❌ **not supported** — see warning |
+| 9d | `0x9D` | Key Management | PIN once per session (honors `--pin-policy`) | ✅ works like 9a |
+| 9e | `0x9E` | Card Authentication | **no PIN** (PIN-policy NEVER) | ⚠️ works, but no PIN factor |
+
+> ⚠️ **Do not use slot 9c with this backend.** On YubiKey, slot 9c (Digital
+> Signature) is **always-authenticate**: the PIV standard requires a fresh PIN
+> verification immediately before *each* signature, which PKCS#11 exposes as a
+> **context-specific login** (`CKA_ALWAYS_AUTHENTICATE`). This backend performs a
+> single session login and then signs (twice, for the determinism self-check)
+> **without** a per-signature context-specific re-login, so signing on a 9c key
+> fails (`CKR_USER_NOT_LOGGED_IN`, after prompting for a second "context specific
+> PIN"). Use **9a** (default) — or 9d — which honor `--pin-policy ONCE` so one
+> session login covers the operation. Slot 9e works too but requires no PIN at
+> all, dropping the PIN factor.
 
 ## Usage
 
@@ -139,9 +150,9 @@ Repeat the import on each backup device using the same `piv_key.pem`.
 openssl_encrypt encrypt -i secret.txt -o secret.enc \
     --hsm piv --hsm-pkcs11-lib /usr/lib/opensc-pkcs11.so
 
-# Use a different PIV slot.
+# Use a different PIV slot (9d behaves like 9a; avoid 9c — see "PIV slots").
 openssl_encrypt encrypt -i secret.txt -o secret.enc \
-    --hsm piv --hsm-pkcs11-lib /usr/lib/opensc-pkcs11.so --hsm-piv-slot 9c
+    --hsm piv --hsm-pkcs11-lib /usr/lib/opensc-pkcs11.so --hsm-piv-slot 9d
 
 # Biometric (YubiKey Bio): no PIN prompt, touch the fingerprint sensor instead.
 openssl_encrypt encrypt -i secret.txt -o secret.enc \
@@ -162,7 +173,7 @@ openssl_encrypt decrypt -i secret.enc -o secret.txt \
 |---|---|
 | `--hsm piv` | select the PIV/PKCS#11 backend |
 | `--hsm-pkcs11-lib PATH` | path to the PKCS#11 module (**required** for PIV) |
-| `--hsm-piv-slot {9a,9c,9d,9e}` | PIV key slot (default `9a`) |
+| `--hsm-piv-slot {9a,9c,9d,9e}` | PIV key slot (default `9a`; use 9a or 9d — **not 9c**, see "PIV slots") |
 | `--hsm-slot N` | PKCS#11 slot index when several tokens are present (default 0) |
 | `--hsm-biometric` | Bio keys: skip the PIN prompt, authenticate by touch (see caveat) |
 
@@ -206,5 +217,10 @@ back to the no-PIN / biometric flow.
   (each value `True`, `"skipped"`, or an error string) rather than raising on a
   failed check, so you can inspect every step. The real `get_pepper()` path
   raises on any failure.
+- **No context-specific (always-authenticate) login.** The backend does one
+  session `C_Login` and then signs; it does not perform a per-signature
+  context-specific login. Keys whose slot sets `CKA_ALWAYS_AUTHENTICATE` —
+  notably **YubiKey PIV slot 9c** — therefore fail at signing. Use slot **9a**
+  (default) or **9d**. See the warning under "PIV slots".
 - **Out of scope:** on-device key generation, an interactive setup wizard, and
   the Windows PKCS#11 mini-driver path (documented as future work).
