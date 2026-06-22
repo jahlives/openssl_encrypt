@@ -107,21 +107,53 @@ or Yubico's `ykcs11`). The path is **always supplied explicitly** via
 > responsibility. Generate the key once, store it securely (offline), and import
 > the *same* key onto every device you want to use.
 
+A PIV slot stores **two** objects: the private **key** and a matching
+**certificate**. Most tooling (and a clean `ykman piv info`) expects the cert to
+be present, so generate one from the key and import **both**.
+
 ```bash
-# Generate an Ed25519 key once, and keep piv_key.pem somewhere safe & offline.
+# 1. Generate an Ed25519 key ONCE. Keep piv_key.pem somewhere safe & offline --
+#    it is your master recovery secret (see "Cross-device backup & recovery").
 openssl genpkey -algorithm ed25519 -out piv_key.pem
 
-# Import into a YubiKey PIV slot 9a (Authentication).
-ykman piv keys import 9a piv_key.pem
+# 2. Create a self-signed certificate from that key (the CN is cosmetic).
+openssl req -new -x509 -key piv_key.pem -out piv_cert.pem -days 3650 \
+    -subj "/CN=openssl-encrypt PIV"
 
-# Import the SAME key into a Token2 R3.3 via OpenSC.
-pkcs15-init --store-private-key piv_key.pem --key-usage sign --auth-id 01
+# 3. Import the private key into YubiKey PIV slot 9a (Authentication).
+#    --pin-policy ONCE caches the PIN for the session; --touch-policy ALWAYS
+#    requires a touch on every use (relax either if you prefer).
+ykman piv keys import --pin-policy ONCE --touch-policy ALWAYS 9a piv_key.pem
 
-# Verify the key is present.
+# 4. Import the matching certificate into the SAME slot (a separate command).
+ykman piv certificates import 9a piv_cert.pem
+
+# 5. Verify BOTH the key and the certificate now show in slot 9a.
 ykman piv info
 ```
 
-Repeat the import on each backup device using the same `piv_key.pem`.
+> **Token2 R3.3 (and other RSA-only PIV tokens):** these do **not** support
+> Ed25519 — generate an RSA key instead (`openssl genpkey -algorithm RSA
+> -pkeyopt rsa_keygen_bits:2048 -out piv_key.pem`, then the same `openssl req`
+> cert step) and import via OpenSC rather than `ykman`:
+>
+> ```bash
+> pkcs15-init --store-private-key piv_key.pem --key-usage sign --auth-id 01
+> pkcs15-init --store-certificate  piv_cert.pem --auth-id 01
+> ```
+
+Optionally confirm the key actually signs through the same PKCS#11 module the
+backend uses. OpenSC maps PIV slots to ids `9a→01`, `9c→02`, `9d→03`, `9e→04`,
+so slot 9a is id `01` (**enter your PIV PIN**, then touch):
+
+```bash
+printf 'test' > /tmp/msg
+pkcs11-tool --module /usr/lib/opensc-pkcs11.so --login \
+    --sign --mechanism EDDSA --id 01 -i /tmp/msg -o /tmp/sig
+```
+
+Repeat steps 3-4 on each backup device using the **same** `piv_key.pem` /
+`piv_cert.pem` (see [Cross-device backup & recovery](#cross-device-backup--recovery)).
 
 ## Cross-device backup & recovery
 
