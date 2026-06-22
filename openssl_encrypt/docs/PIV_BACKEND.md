@@ -33,20 +33,29 @@ results (constant-time) as a determinism self-check.
 
 | Device | PIV application | Key types | PKCS#11 module |
 |---|---|---|---|
-| YubiKey Bio MPE | Yes | Ed25519, RSA | `opensc-pkcs11.so` or `ykcs11.so` |
 | YubiKey 5 series | Yes | Ed25519, RSA | `opensc-pkcs11.so` or `ykcs11.so` |
+| YubiKey 5 FIPS | Yes | Ed25519, RSA | `opensc-pkcs11.so` or `ykcs11.so` |
+| YubiKey C Bio — MPE (see caveat) | Yes | Ed25519, RSA | `opensc-pkcs11.so` or `ykcs11.so` |
 | Token2 PIN+ R3.3+ | Yes | RSA-2048/3072/4096 | `opensc-pkcs11.so` |
 | Any PKCS#11 PIV token | Yes | Ed25519 or RSA | vendor module |
 
-> ⚠️ **Not every YubiKey has PIV.** The PIV applet exists only on the
-> **YubiKey 5 series**, **5 FIPS**, and the **YubiKey Bio — Multi-Protocol
-> Edition (MPE)**. It is **absent** on the **Security Key Series** (FIDO-only)
-> and, importantly, on the **YubiKey Bio — FIDO Edition** (note: *FIDO*
-> Edition, not *MPE*). On those devices the PIV application simply does not
-> exist, so the backend cannot be used and `ykman config usb -e piv` fails with
-> `PIV not supported over USB on this YubiKey` — it is a missing applet, not a
-> disabled interface. Check with `ykman info`: if the `PIV` row reads
-> `Not available`, this backend is not an option for that key.
+> ⚠️ **Most YubiKeys you can buy do not have PIV — the YubiKey 5 series is the
+> practical choice.** The PIV applet exists only on the **YubiKey 5 series**,
+> **5 FIPS**, and the **YubiKey Bio — Multi-Protocol Edition (MPE)**. It is
+> **absent** on the **Security Key Series** (FIDO-only) and on the **YubiKey Bio
+> — FIDO Edition** — which is the *only* Bio you can buy off the shelf.
+>
+> Heads-up on the Bio MPE specifically:
+> - It is **USB-C only** ("YubiKey **C** Bio – MPE"); there is **no USB-A MPE**.
+> - It is **not sold in the regular store** — it ships **only via "YubiKey as a
+>   Service"** (enterprise Compliance/Advanced subscription). For an individual
+>   buyer, a **YubiKey 5** is the realistic PIV-capable option, not a Bio.
+>
+> On a FIDO-only key the PIV application simply does not exist, so the backend
+> cannot be used and `ykman config usb -e piv` fails with `PIV not supported over
+> USB on this YubiKey` — a missing applet, not a disabled interface. Check with
+> `ykman info`: if the `PIV` row reads `Not available`, this backend is not an
+> option for that key.
 
 ### If your key is FIDO-only
 
@@ -143,11 +152,20 @@ openssl_encrypt decrypt -i secret.enc -o secret.txt \
 | `--hsm-pkcs11-lib PATH` | path to the PKCS#11 module (**required** for PIV) |
 | `--hsm-piv-slot {9a,9c,9d,9e}` | PIV key slot (default `9a`) |
 | `--hsm-slot N` | PKCS#11 slot index when several tokens are present (default 0) |
-| `--hsm-biometric` | Bio keys: skip the PIN prompt, authenticate by touch |
+| `--hsm-biometric` | Bio keys: skip the PIN prompt, authenticate by touch (see caveat) |
 
 The **PIN is never a command-line argument**. For PIN-protected keys you are
 prompted interactively (via `getpass`, so it never echoes). An empty entry falls
 back to the no-PIN / biometric flow.
+
+> ⚠️ **`--hsm-biometric` is effectively Windows-only for PIV.** On the YubiKey
+> Bio MPE, fingerprint verification for the **PIV** applet requires Yubico's
+> **Smart Card Minidriver (≥4.6.1), which exists only on Windows**. On Linux and
+> macOS the PIV path uses the **PIN** instead (and on the MPE the PIN is *shared*
+> between PIV and FIDO2). So on this project's primary platform (Linux),
+> `--hsm-biometric` will generally not give you a true fingerprint-only flow —
+> expect a PIN prompt. Also note the MPE's **PUK is blocked by default**: a
+> blocked PIN can only be cleared by a full device reset (which destroys the key).
 
 ## Security notes
 
