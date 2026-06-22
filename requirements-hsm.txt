@@ -6,3 +6,7 @@ yubikey-manager>=5.0.0,<6.0.0
 
 # FIDO2 support for hardware security keys
 fido2>=2.0.0,<3.0.0
+
+# PIV / PKCS#11 smart-card and token support (YubiKey Bio MPE, Token2 PIN+,
+# any PKCS#11-compliant PIV token). Imported as `pkcs11`.
+python-pkcs11>=0.7.0,<1.0.0

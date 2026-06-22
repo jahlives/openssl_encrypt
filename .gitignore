@@ -257,3 +257,6 @@ output.txt
 precommit_output.txt
 after_*.txt
 baseline_*.txt
+
+# Local test/baseline logs
+test-logs/
