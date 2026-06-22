@@ -73,12 +73,19 @@ class TestCipherAliasAcceptedBySchema(unittest.TestCase):
                     self.validator.validate_metadata(json.dumps(meta))
 
     def test_previously_valid_names_still_accepted(self):
-        """No regression: names that worked before must still validate."""
+        """No regression: canonical names must still validate.
+
+        Uses names present on every supported branch (avoids ciphers that may
+        have been removed on a given line, e.g. OCB3 on 1.5.x).
+        """
+        canon = set(CipherRegistry.default().list_names(include_aliases=False))
         for chain in (
             ["aes-256-gcm", "chacha20-poly1305"],
-            ["aes-gcm-siv", "aes-ocb3"],
+            ["xchacha20-poly1305", "aes-gcm-siv"],
             ["threefish-512", "threefish-1024"],
         ):
+            if not all(c in canon for c in chain):
+                continue  # cipher not available on this branch -> skip
             self.validator.validate_metadata(json.dumps(_cascade_metadata(9, chain)))
 
     def test_unknown_cipher_still_rejected(self):
