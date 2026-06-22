@@ -35,6 +35,7 @@
   * [FIDO2 / HSM Guide](FIDO2_HSM_GUIDE)
   * [YubiKey setup](YUBIKEY_SETUP)
   * [OnlyKey setup](ONLYKEY_SETUP)
+  * [PIV / PKCS#11 backend](PIV_BACKEND)
   * [Migrate from YubiKey-only](migration-from-yubikey-only)
   * [Keyserver Guide](KEYSERVER_GUIDE)
 

@@ -28,6 +28,18 @@ To provision a fleet, program the same secret onto each device and decrypt with
 whichever device is present via `--hsm <device>` (adding `--hsm-slot <n>` if
 that device holds the secret in a different slot).
 
+## PIV / PKCS#11 Backend (v1.5.0)
+
+A third HSM backend, `piv_hsm` (`--hsm piv`), derives the pepper from a PIV
+private key on a PKCS#11 token (YubiKey Bio MPE, Token2 PIN+ R3.3+, or any
+compliant PIV smart card) rather than HMAC-SHA1 challenge-response. The key
+signs a deterministic challenge derived from the salt, and the signature is
+normalized into a pepper via HKDF-SHA256 — so the same key on multiple devices
+always yields identical peppers. Only deterministic signature schemes are
+allowed (Ed25519, RSA PKCS#1 v1.5); ECDSA and RSA-PSS are rejected. It uses its
+own flags (`--hsm-pkcs11-lib`, `--hsm-piv-slot {9a,9c,9d,9e}`, `--hsm-biometric`)
+and requires `python-pkcs11`. See [PIV_BACKEND.md](PIV_BACKEND.md) for full setup.
+
 ## Security Model
 
 ### Hardware-Bound Encryption

@@ -284,6 +284,17 @@ Centralized cryptographic algorithm registration and validation framework.
   [docs/hardware-tokens.md](docs/hardware-tokens.md) for setup and
   [docs/migration-from-yubikey-only.md](docs/migration-from-yubikey-only.md)
   for adding OnlyKey to an existing YubiKey fleet.
+- **PIV / PKCS#11 HSM backend** (`--hsm piv`): hardware-bound key
+  derivation backed by a PIV private key on a PKCS#11 token (YubiKey Bio
+  MPE, Token2 PIN+ R3.3+, or any compliant PIV smart card). The key signs
+  a deterministic challenge derived from the salt; the signature is
+  normalized into a pepper via HKDF-SHA256, so the same key on multiple
+  devices always yields identical peppers. Algorithm-agnostic across
+  Ed25519 and RSA-2048/3072/4096; non-deterministic schemes (ECDSA,
+  RSA-PSS) are rejected. New flags: `--hsm-pkcs11-lib PATH` (required),
+  `--hsm-piv-slot {9a,9c,9d,9e}`, `--hsm-biometric`. Requires
+  `python-pkcs11` (`pip install -r requirements-hsm.txt`). See
+  [docs/PIV_BACKEND.md](docs/PIV_BACKEND.md) for setup.
 
 ### `info` action — encrypted file inspection with CLI reconstruction
 

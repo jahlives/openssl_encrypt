@@ -45,6 +45,13 @@ This release **removes** all deprecated algorithms entirely — both encryption 
   templates (`-t`/`--template`, `--quick`/`--standard`/`--paranoid`) are unchanged.
 
 **Enhancements:**
+- **PIV / PKCS#11 HSM backend** (`--hsm piv`): hardware-bound key
+  derivation backed by a PIV private key on a PKCS#11 token (YubiKey Bio
+  MPE, Token2 PIN+ R3.3+, or any compliant PIV smart card). Deterministic
+  signing (Ed25519, RSA PKCS#1 v1.5) is normalized into a pepper via
+  HKDF-SHA256; ECDSA/RSA-PSS are rejected. New flags:
+  `--hsm-pkcs11-lib`, `--hsm-piv-slot {9a,9c,9d,9e}`, `--hsm-biometric`.
+  Requires `python-pkcs11`. See [PIV_BACKEND](PIV_BACKEND.md).
 - **Streaming chunked encryption** for large files (format v12):
   - Per-chunk AEAD with HKDF-SHA256 derived nonces for constant-memory encryption
   - Trailer HMAC-SHA256 commitment for global integrity verification
