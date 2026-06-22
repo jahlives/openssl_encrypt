@@ -330,8 +330,11 @@ class TokenSession:
                 self._enforce_retry_guard(token, pkcs11, confirm_final_attempt)
 
             try:
-                # Empty bytes for biometric; PIN bytes otherwise. Never None.
-                session = token.open(rw=False, user_pin=bytes(working))
+                # python-pkcs11's Token.open expects ``user_pin`` as a *str*
+                # (it calls .encode() internally); passing bytes raises
+                # AttributeError. Empty string for the biometric/empty-PIN flow,
+                # the decoded PIN otherwise. Never None (None means "no login").
+                session = token.open(rw=False, user_pin=bytes(working).decode("utf-8"))
             except pkcs11.exceptions.PinLocked:
                 # `from None`: never chain -- keeps any PIN-bearing frame out of the traceback.
                 raise PIVAuthenticationError(

@@ -134,12 +134,13 @@ class TestLoginBiometricFlow(_TokenSessionTestBase):
         lib = self._library(_piv_mocks.single_slot_lib(token))
         return TokenSession(lib, slot_index=0)
 
-    def test_biometric_login_calls_open_with_empty_bytes(self):
+    def test_biometric_login_calls_open_with_empty_string(self):
         token = FakeToken(flags=PRESENT, session=FakeSession(state=SessionState.RO_USER_FUNCTIONS))
         session = self._session(token)
         session.login(pin=None)
         self.assertEqual(len(token.open_calls), 1)
-        self.assertEqual(token.open_calls[0]["user_pin"], b"")
+        # python-pkcs11 wants a str PIN; biometric/empty-PIN flow sends "".
+        self.assertEqual(token.open_calls[0]["user_pin"], "")
 
     def test_biometric_login_never_passes_none_pin(self):
         token = FakeToken(flags=PRESENT, session=FakeSession(state=SessionState.RW_USER_FUNCTIONS))
@@ -180,7 +181,8 @@ class TestLoginPinFlow(_TokenSessionTestBase):
         token = FakeToken(flags=PRESENT, session=FakeSession(state=SessionState.RO_USER_FUNCTIONS))
         session = self._session(token)
         session.login(pin=b"123456")
-        self.assertEqual(token.open_calls[0]["user_pin"], b"123456")
+        # The backend decodes the PIN bytes to a str for python-pkcs11's open().
+        self.assertEqual(token.open_calls[0]["user_pin"], "123456")
 
     def test_non_bytes_pin_rejected(self):
         token = FakeToken(flags=PRESENT, session=FakeSession())
