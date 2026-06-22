@@ -13,8 +13,9 @@
 #   - threefish_native/Cargo.lock       (gitignored, not tracked)
 #   - tests, plugins, data, schemas, templates
 
-# --- Core cryptographic / security modules (30) ---
+# --- Core cryptographic / security modules (31) ---
 # (ml_kem_patch.py existed in 1.4.x but was removed in 1.5.x with the ML-KEM rework)
+openssl_encrypt/modules/piv_backend.py
 openssl_encrypt/modules/crypt_core.py
 openssl_encrypt/modules/crypt_utils.py
 openssl_encrypt/modules/crypt_errors.py
@@ -46,7 +47,7 @@ openssl_encrypt/modules/diceware.py
 openssl_encrypt/modules/file_permissions.py
 openssl_encrypt/modules/security_logger.py
 
-# --- Top-level package entry / orchestration (7) ---
+# --- Top-level package entry / orchestration (8) ---
 openssl_encrypt/__init__.py
 openssl_encrypt/__main__.py
 openssl_encrypt/cli.py
@@ -54,6 +55,8 @@ openssl_encrypt/crypt.py
 openssl_encrypt/crypt_gui.py
 openssl_encrypt/versions.py
 openssl_encrypt/post_install.py
+openssl_encrypt/plugins/hsm/piv_card/__init__.py
+
 
 # --- Dependency / requirements files (6) ---
 requirements.txt

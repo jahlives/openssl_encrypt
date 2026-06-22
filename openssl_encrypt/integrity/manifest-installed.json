@@ -24,6 +24,7 @@
     "openssl_encrypt/modules/keystore_wrapper.py": "sha512:da7a0fd5c7beb3d9ef54b9669459f9b6b3e9ff0eb0b547bfe73de3cddd6e7b2eec5f4ffe37eec1fbeafa70f323e1e1431312995b2eb34623e48a523156cfdd78",
     "openssl_encrypt/modules/parallel_kdf.py": "sha512:97045dbc28215948df1ccc21cf2f6de6e7a6b715ba3fdec7570fd87dce741325997deb6861f3ebebb46785562f627da65bea69070b5b6059e1c775b894daac24",
     "openssl_encrypt/modules/password_policy.py": "sha512:1de0a6493a94967714d4321b058240e2b7376971302c2598c3a88317d625f70471733f879b76c7235235a7f4900b69ec1684c7790eb4bb46063225c1cc70d499",
+    "openssl_encrypt/modules/piv_backend.py": "sha512:43052cdd030e785ea41fefb4f3c8082a53605d30de4b7944d8dcd69b10dc45f34d44bbcfced034ec1fa8547d24dde5ab275b6d42cb65d6b9203c6fe67415fd58",
     "openssl_encrypt/modules/pqc.py": "sha512:b96259ea8276dd6231f7734b876b7c784bc4cf7e67c9b5b6982e6522fb4fa98ee8c15a4e15f86945de9d16d74ff77fb36c3803c25d78a0d8557c0192c292946b",
     "openssl_encrypt/modules/pqc_adapter.py": "sha512:316afc2af7d355752313ee212e329ba51e41de15a225d484870cce06270c92aca912ba00043e0b415fef917ac63a88414e54d94c186a428c6b145570d06d11cf",
     "openssl_encrypt/modules/pqc_keystore.py": "sha512:b8b532feaa6150f7190894bd0e6fbdfbcafedea7f1d1c37c113110774e0f12549c5ef37f1841413e366e3c1eecb9334d4113ebfed7da535e9fe6b9ffcb6f1d8f",
@@ -35,6 +36,7 @@
     "openssl_encrypt/modules/secure_ops.py": "sha512:892be807fa45597d3641d87ae310e7591bda62e9fb94f76bcf76d0f49e9e23eac59164757e4734a01651989ea2d27fbd997fa6a8b4b1219edabcff6040b6ae82",
     "openssl_encrypt/modules/secure_ops_core.py": "sha512:a97e1023fe3ad0e942b930e745aba7463f517bf6a0b88b4d380b21130fc12d8f249f698a995c082cc94c07b3bbd54e2fd2bbcf50293dce3953570c919f6b18a0",
     "openssl_encrypt/modules/security_logger.py": "sha512:4830eb41d595f10709c944b0ce4f1bca191dcdf4a9d629f71e043a48e58ad211e296e2b022b80a6b7b01aecae5a98f51ece39e24372475877af4bbc6a70039ba",
+    "openssl_encrypt/plugins/hsm/piv_card/__init__.py": "sha512:0b7bc6de2ebed65d644967ba205d31bbf8b75843bd63217aa0a96ec9368491e5354625f1c4dfcd27c262b9c949d7d6133bd794bb250903da371bca4e8c67c6ed",
     "openssl_encrypt/post_install.py": "sha512:0150f9a1391e52ce131119a90461608636f63ab251d9753fc13512df8a259e2bc21c017d323041fdc8ea4867d247d03c2290ba20a60be78d57db4ecba64423cb",
     "openssl_encrypt/versions.py": "sha512:9cf9a00bbea5eeac2a5219f2b4e17409ba0ca0e948124530cb1d8eeb6c8a08866a91a4d0c9e68b23922df7b8cf2d66ec50ee7c25813eab6fc88a2f6c92bd44e1"
   },
