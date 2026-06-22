@@ -2306,6 +2306,41 @@ def create_subparser_main():
     )
     setup_combine_secrets_parser(combine_secrets_parser)
 
+    verify_integrity_parser = subparsers.add_parser(
+        "verify-integrity",
+        help="Verify the signed source-integrity manifest (see docs/SOURCE_INTEGRITY.md)",
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
+    verify_integrity_parser.add_argument(
+        "--manifest", metavar="PATH", help="Path to manifest.json (default: bundled)"
+    )
+    verify_integrity_parser.add_argument(
+        "--signature", metavar="PATH", help="Path to manifest.json.asc (default: bundled)"
+    )
+    verify_integrity_parser.add_argument(
+        "--pubkey", metavar="PATH", help="Path to the signing public key (default: bundled)"
+    )
+    verify_integrity_parser.add_argument(
+        "--json", action="store_true", help="Emit a JSON report (trust warning retained)"
+    )
+    verify_integrity_parser.add_argument(
+        "--quiet", action="store_true", help="Shorten the trust warning to one line"
+    )
+    vi_scope = verify_integrity_parser.add_mutually_exclusive_group()
+    vi_scope.add_argument(
+        "--installed",
+        dest="vi_installed",
+        action="store_true",
+        default=None,
+        help="Force installed-package scope (Python source only); default: auto-detect",
+    )
+    vi_scope.add_argument(
+        "--source",
+        dest="vi_installed",
+        action="store_false",
+        help="Force source-checkout scope (full manifest); default: auto-detect",
+    )
+
     # Parse arguments
     args = parser.parse_args()
 

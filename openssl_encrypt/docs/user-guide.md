@@ -1,5 +1,11 @@
 # User Guide - OpenSSL Encrypt
 
+> **⚠️ Removed in v1.5.0:** AES-OCB3, Camellia, the Whirlpool hash, the PBKDF2
+> KDF chain, and the legacy Kyber algorithm names have been **completely
+> removed** — both encryption and decryption. Files that use any of them must
+> be decrypted with v1.4.x first, then re-encrypted under a supported
+> algorithm. See [VERSION.md](VERSION.md) for the full removal list.
+
 ## Table of Contents
 
 1. [Installation](#installation)
@@ -17,7 +23,7 @@
 
 ### System Requirements
 
-- **Python**: 3.9 or higher (3.11+ recommended for full feature support)
+- **Python**: 3.11 or higher (3.11–3.14 supported)
 - **Operating System**: Windows, macOS, Linux
 - **Memory**: Minimum 512MB RAM (2GB+ recommended for paranoid security settings)
 - **Storage**: 100MB for installation plus encrypted file storage space
@@ -296,15 +302,6 @@ import oqs
 print(oqs.get_enabled_kem_mechanisms())
 ```
 
-#### Whirlpool Hash Algorithm
-
-The package automatically installs the appropriate Whirlpool module for your Python version:
-
-- **Python 3.11+**: `whirlpool-py311>=1.0.0`
-- **Python 3.10 and below**: `Whirlpool`
-
-If you encounter installation issues, see the [Whirlpool Troubleshooting](#whirlpool-troubleshooting) section.
-
 ### Development Installation
 
 For development and testing:
@@ -400,10 +397,40 @@ python -m openssl_encrypt.crypt ACTION [OPTIONS]
 |--------|-------------|
 | `encrypt` | Encrypt a file with a password |
 | `decrypt` | Decrypt a file with a password |
+| `info` | Inspect an encrypted file's metadata and reconstruct the `encrypt` CLI (no password needed) |
 | `shred` | Securely delete a file by overwriting its contents |
 | `generate-password` | Generate a secure random password |
 | `security-info` | Show security recommendations |
 | `check-argon2` | Check Argon2 support |
+
+### Inspecting a File (`info`)
+
+`info` prints the encryption metadata of an already-encrypted file **without
+decrypting it** (no password required). The human-readable output ends with a
+**Reconstructed CLI** section — the full `openssl_encrypt encrypt …` command
+that would reproduce the same encryption settings on a fresh file:
+
+```bash
+python -m openssl_encrypt.crypt info -i document.txt.enc
+```
+
+The reconstruction covers only the **deterministic configuration**:
+
+- Cipher or cascade chain (`--algorithm`)
+- All five KDFs — Argon2id, Scrypt, Balloon, HKDF, RandomX — with their parameters
+- The hash-round flags
+- HSM binding (`--hsm` / `--hsm-slot`) and the remote-pepper plugin (`--pepper` / `--pepper-name`)
+
+The salt, file paths, and per-file random values are **not** included (they are
+unique per file). If a file used an algorithm removed in v1.5.0, the
+reconstruction emits a migration hint instead of an unusable flag.
+
+JSON output is unchanged — `info --json` still prints the raw metadata dict, so
+scripts can pipe it into `jq`:
+
+```bash
+python -m openssl_encrypt.crypt info --json -i document.txt.enc | jq .
+```
 
 ### Core Options
 
@@ -618,7 +645,6 @@ Pre-configured security profiles for different use cases:
 - **Configuration**:
   - Argon2id: 512MB memory, 2 iterations
   - Single-layer key derivation
-  - PBKDF2: 50,000 iterations
 
 ```bash
 python -m openssl_encrypt.crypt encrypt -i file.txt --quick
@@ -630,7 +656,6 @@ python -m openssl_encrypt.crypt encrypt -i file.txt --quick
 - **Performance**: Medium
 - **Configuration**:
   - Argon2id: 1GB memory, 3 iterations
-  - PBKDF2: 100,000 iterations
   - BLAKE2b file hashing
 
 ```bash
@@ -645,7 +670,7 @@ python -m openssl_encrypt.crypt encrypt -i file.txt
 - **Performance**: Low
 - **Configuration**:
   - Argon2id: 2GB memory, 4 iterations
-  - Multiple KDF layers (Argon2 + PBKDF2 + Scrypt)
+  - Multiple KDF layers (Argon2id + Scrypt + Balloon)
   - All available hash functions
   - Extended key derivation chains
 
@@ -666,10 +691,6 @@ cat > ./templates/my_template.json << EOF
         "rounds": 5,
         "memory_cost": 1048576,
         "time_cost": 3
-    },
-    "pbkdf2": {
-        "enabled": true,
-        "iterations": 200000
     },
     "sha256": 1000000,
     "blake2b": 500000
@@ -785,33 +806,6 @@ source venv/bin/activate  # Linux/Mac
 pip install openssl_encrypt
 ```
 
-#### Whirlpool Troubleshooting
-
-**Problem**: `ImportError: No module named 'whirlpool'`
-**Solution**:
-```bash
-# For Python 3.11+
-pip install whirlpool-py311
-
-# For older Python versions
-pip install Whirlpool
-
-# Manual setup if needed
-python -m openssl_encrypt.modules.setup_whirlpool
-```
-
-**Problem**: Whirlpool module installed but not recognized
-**Solution**:
-```bash
-# Check Python environment
-python -c "import sys; print(sys.executable)"
-python -c "import whirlpool; print('OK')"
-
-# Reinstall in correct environment
-pip uninstall whirlpool whirlpool-py311
-pip install whirlpool-py311  # For Python 3.11+
-```
-
 #### Runtime Issues
 
 **Problem**: `MemoryError` during encryption
@@ -856,10 +850,6 @@ python -m openssl_encrypt.crypt encrypt -i file.txt --algorithm chacha20-poly130
 
 # Use quick template
 python -m openssl_encrypt.crypt encrypt -i file.txt --quick
-
-# Reduce hash iterations
-python -m openssl_encrypt.crypt encrypt -i file.txt \
-    --pbkdf2-iterations 50000
 ```
 
 #### Post-Quantum Issues
@@ -908,7 +898,7 @@ python -m openssl_encrypt.crypt decrypt -i document.txt.enc --debug
 **Debug Output Categories**:
 
 1. **Hash Processing Debug**: Shows INPUT/OUTPUT/FINAL hex values for every hash round
-2. **Key Derivation Debug**: Details for Argon2, Scrypt, Balloon, PBKDF2, HKDF operations
+2. **Key Derivation Debug**: Details for Argon2, Scrypt, Balloon, HKDF, RandomX operations
 3. **Encryption Algorithm Debug**: Algorithm-specific parameters, nonces, and data
 4. **Post-Quantum Debug**: PQC algorithm details, key lengths, and hybrid operations
 

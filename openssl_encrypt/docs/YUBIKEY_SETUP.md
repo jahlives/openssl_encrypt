@@ -210,7 +210,7 @@ openssl-encrypt --hsm yubikey --hsm-slot 2 input.txt output.enc
 ### Decrypt with Yubikey HSM
 
 ```bash
-# Slot is stored in metadata, auto-detected on decrypt
+# Slot from metadata is used by default; --hsm-slot overrides it (v1.5.0+)
 openssl-encrypt -d --hsm yubikey output.enc decrypted.txt
 
 # Or specify slot explicitly
@@ -297,9 +297,9 @@ sudo pytest tests/test_hsm_plugin.py::TestRealYubikey -v -s
 
 ### Limitations
 
-- **Same Yubikey required**: You must use the same physical Yubikey that encrypted the file
-- **Slot matters**: The same slot must be used (stored in file metadata)
-- **Secret cannot be backed up**: The Yubikey's Challenge-Response secret cannot be extracted
+- **Compatible device required**: As of v1.5.0 any device in the `yubikey_hsm` / `onlykey_hsm` family holding the same 20-byte secret can decrypt — not only the exact YubiKey used to encrypt (see [migration-from-yubikey-only.md](migration-from-yubikey-only.md))
+- **Slot is overridable**: The metadata slot is used by default, but `--hsm-slot` takes precedence on decrypt/rekey (v1.5.0+), so a backup or cross-device unit may hold the secret in a different slot
+- **Secret cannot be backed up**: The Yubikey's Challenge-Response secret cannot be extracted (program the same secret onto each device at provisioning time instead)
 
 ### Best Practices
 
@@ -320,8 +320,8 @@ sudo pytest tests/test_hsm_plugin.py::TestRealYubikey -v -s
    - Store only plugin name and slot in metadata (NOT the pepper)
 
 2. **Decryption**:
-   - Read salt and slot from metadata
-   - Send salt to Yubikey as challenge (same slot)
+   - Read salt and slot from metadata (the slot is overridable via `--hsm-slot`)
+   - Send salt to the device as challenge
    - Receive same 20-byte hsm_pepper
    - Combine: `password + salt + hsm_pepper` → KDF → decryption key
 
@@ -342,6 +342,7 @@ Tested with:
 
 ## See Also
 
+- [OnlyKey Setup](ONLYKEY_SETUP.md) - OnlyKey variant; cross-device compatible with YubiKey when both hold the same HMAC-SHA1 secret
 - [HSM Plugin Guide](HSM_PLUGIN_GUIDE.md) - Full HSM plugin system documentation
 - [Yubikey Manager Documentation](https://docs.yubico.com/software/yubikey/tools/ykman/)
 - [Yubikey Challenge-Response](https://developers.yubico.com/yubico-c/Manuals/ykpersonalize.1.html)

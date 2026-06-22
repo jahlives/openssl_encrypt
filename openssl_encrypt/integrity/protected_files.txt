@@ -1,0 +1,70 @@
+# Protected-files allowlist for source-code integrity protection.
+#
+# Each non-comment line is a repo-relative path whose SHA-512 hash is recorded in
+# the signed integrity manifest. Adding or removing a line MUST be a deliberate,
+# reviewed change. See docs/SOURCE_INTEGRITY.md and SOURCE_INTEGRITY_PROTECTION_PLAN.md.
+#
+# Rules: repo-relative paths only, forward slashes, no '..' components.
+#
+# Deliberately NOT protected (see plan §3.2):
+#   - openssl_encrypt/version.py        (auto-generated, embeds the git commit)
+#   - openssl_encrypt/version.py.template
+#   - openssl_encrypt/integrity/*.py    (the verifier cannot protect itself)
+#   - threefish_native/Cargo.lock       (gitignored, not tracked)
+#   - tests, plugins, data, schemas, templates
+
+# --- Core cryptographic / security modules (30) ---
+# (ml_kem_patch.py existed in 1.4.x but was removed in 1.5.x with the ML-KEM rework)
+openssl_encrypt/modules/crypt_core.py
+openssl_encrypt/modules/crypt_utils.py
+openssl_encrypt/modules/crypt_errors.py
+openssl_encrypt/modules/crypt_settings.py
+openssl_encrypt/modules/secure_memory.py
+openssl_encrypt/modules/secure_allocator.py
+openssl_encrypt/modules/secure_ops.py
+openssl_encrypt/modules/secure_ops_core.py
+openssl_encrypt/modules/crypto_secure_memory.py
+openssl_encrypt/modules/asymmetric_core.py
+openssl_encrypt/modules/pqc.py
+openssl_encrypt/modules/pqc_adapter.py
+openssl_encrypt/modules/pqc_liboqs.py
+openssl_encrypt/modules/pqc_signing.py
+openssl_encrypt/modules/pqc_keystore.py
+openssl_encrypt/modules/cascade.py
+openssl_encrypt/modules/cascade_validator.py
+openssl_encrypt/modules/balloon.py
+openssl_encrypt/modules/parallel_kdf.py
+openssl_encrypt/modules/randomx.py
+openssl_encrypt/modules/key_bundle.py
+openssl_encrypt/modules/key_resolver.py
+openssl_encrypt/modules/keystore_utils.py
+openssl_encrypt/modules/keystore_wrapper.py
+openssl_encrypt/modules/identity.py
+openssl_encrypt/modules/identity_protection.py
+openssl_encrypt/modules/password_policy.py
+openssl_encrypt/modules/diceware.py
+openssl_encrypt/modules/file_permissions.py
+openssl_encrypt/modules/security_logger.py
+
+# --- Top-level package entry / orchestration (7) ---
+openssl_encrypt/__init__.py
+openssl_encrypt/__main__.py
+openssl_encrypt/cli.py
+openssl_encrypt/crypt.py
+openssl_encrypt/crypt_gui.py
+openssl_encrypt/versions.py
+openssl_encrypt/post_install.py
+
+# --- Dependency / requirements files (6) ---
+requirements.txt
+requirements-prod.txt
+requirements-dev.txt
+requirements-hsm.txt
+requirements-prod.in
+requirements-dev.in
+
+# --- Native Threefish crate (4) ---
+threefish_native/Cargo.toml
+threefish_native/pyproject.toml
+threefish_native/src/lib.rs
+threefish_native/src/threefish_aead.rs

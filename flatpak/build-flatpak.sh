@@ -1,6 +1,8 @@
 #!/bin/bash
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 echo "🚀 Building OpenSSL Encrypt Flatpak package..."
 
 # Parse command line arguments
@@ -29,8 +31,15 @@ for arg in "$@"; do
         --dev-install)
             DEV_INSTALL=true
             LOCAL_INSTALL=true
-            FLATPAK_BRANCH="development"
-            echo "🧪 Development installation requested (development branch)"
+            # Version-specific dev branch (e.g. 1.4.5-dev) so multiple dev
+            # versions can stay installed in parallel
+            PKG_VERSION="$(sed -n 's/^VERSION = "\([^"]*\)".*/\1/p' "$SCRIPT_DIR/../setup.py")"
+            if [[ -z "$PKG_VERSION" ]]; then
+                echo "❌ Could not determine package version from setup.py"
+                exit 1
+            fi
+            FLATPAK_BRANCH="${PKG_VERSION}-dev"
+            echo "🧪 Development installation requested (${FLATPAK_BRANCH} branch)"
             ;;
         *)
             echo "Unknown argument: $arg"
@@ -38,7 +47,7 @@ for arg in "$@"; do
             echo "  --build-flutter   Build Flutter desktop GUI before Flatpak"
             echo "  -f, --force       Force clean build cache"
             echo "  --local-install   Install locally as stable branch (overwrites production)"
-            echo "  --dev-install     Install locally as development branch (parallel to production)"
+            echo "  --dev-install     Install locally as versioned dev branch (X.Y.Z-dev, parallel to production and to other dev versions)"
             echo ""
             echo "Examples:"
             echo "  $0                          # Build only (for build-remote.sh)"
@@ -195,9 +204,13 @@ if [[ "$LOCAL_INSTALL" == "true" ]]; then
     fi
     echo ""
     if [[ "$DEV_INSTALL" == "true" ]]; then
-        echo "ℹ️  This is a development branch - it runs parallel to production!"
+        echo "ℹ️  This is a development branch - it runs parallel to production"
+        echo "   and to dev builds of other versions!"
         echo "   Production (if installed): flatpak run com.opensslencrypt.OpenSSLEncrypt//stable"
-        echo "   Development (this build):  flatpak run com.opensslencrypt.OpenSSLEncrypt//development"
+        echo "   Development (this build):  flatpak run com.opensslencrypt.OpenSSLEncrypt//$FLATPAK_BRANCH"
+        echo "   List all installed versions: flatpak list --app | grep OpenSSLEncrypt"
+        echo "   (a legacy 'development' branch install can be removed with:"
+        echo "    flatpak --user uninstall com.opensslencrypt.OpenSSLEncrypt//development)"
     fi
     echo ""
     echo "🗑️  To uninstall this $FLATPAK_BRANCH version:"

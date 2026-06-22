@@ -27,7 +27,7 @@ We follow the [Semantic Versioning](https://semver.org/) (SemVer) principles whe
 For dependencies that directly affect cryptographic operations or security:
 
 ```python
-cryptography>=44.0.1,<45.0.0
+cryptography>=46.0.6,<47.0.0
 ```
 
 **Guidelines**:
@@ -37,7 +37,7 @@ cryptography>=44.0.1,<45.0.0
 - Always include in the critical security review process
 
 **Examples**:
-- `cryptography>=44.0.1,<45.0.0` (Allows patch updates but not major/minor)
+- `cryptography>=46.0.6,<47.0.0` (Allows patch updates but not major/minor)
 - `argon2-cffi>=23.1.0,<24.0.0` (Same approach for password hashing library)
 
 ### Standard Dependencies
@@ -72,7 +72,7 @@ pytest>=8.0.0,<9.0.0
 
 **Examples**:
 - `pytest>=8.0.0,<9.0.0`
-- `black>=24.1.0,<25.0.0`
+- `black>=26.3.1,<27.0.0`
 
 ### Platform-Specific Dependencies
 
@@ -122,7 +122,7 @@ For functionality that is not required for core operations:
 - For dependencies with known compatibility issues
 - In CI/CD environments where reproducibility is critical
 
-**Example**: `cryptography==44.0.1`
+**Example**: `cryptography==46.0.7`
 
 ### Compatible Release (`~=`)
 
@@ -149,7 +149,7 @@ For functionality that is not required for core operations:
 - For dependencies with a history of breaking changes in minor releases
 - In sensitive security contexts
 
-**Example**: `cryptography>=44.0.1,<45.0.0`
+**Example**: `cryptography>=46.0.6,<47.0.0`
 
 ## Exception Handling
 

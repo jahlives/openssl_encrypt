@@ -1,6 +1,6 @@
 # Future Features Roadmap
 
-*Last Updated: December 22, 2025 - Based on v1.3.0+ codebase analysis*
+*Last Updated: June 19, 2026 - Based on v1.5.0 (in development) codebase analysis*
 
 This document outlines features for the OpenSSL Encrypt project, organized by implementation status: what's already done, what's in progress, and what's planned for the future.
 
@@ -74,11 +74,11 @@ These features are fully implemented and available in current releases.
   - 📋 Quantum resistance validation and testing tools (future)
 
 ### 5. **Steganography - All Formats** (v1.3.0)
-- **Status**: ❌ REMOVED in v1.5.0 (code-surface reduction)
-- **Implementation**: `openssl_encrypt/modules/steganography/` (16 files)
+- **Status**: ❌ REMOVED in v1.5.0 (code-surface reduction). Extract any hidden data with v1.4.x **before** upgrading.
+- **Former implementation (removed in v1.5.0)**: `openssl_encrypt/modules/steganography/`
   - `stego_core.py`, `stego_image.py`, `stego_jpeg.py`, `stego_tiff.py`
   - `stego_wav.py`, `stego_flac.py`, `stego_mp3.py`, `stego_webp.py`
-- **Features**:
+- **Formats supported before removal** (v1.3.x):
   - ✅ PNG steganography
   - ✅ JPEG steganography
   - ✅ TIFF steganography
@@ -91,7 +91,7 @@ These features are fully implemented and available in current releases.
   - 📋 Archive steganography (ZIP, TAR, 7z files) - future
   - 📋 Filesystem steganography (hidden partitions, slack space) - future
   - 📋 Print media steganography (QR codes, dot patterns) - future
-- **Note**: As of v1.3.0, ALL steganography formats for images and audio are working. WEBP and MP3, which were previously disabled due to algorithmic issues, have been fixed and are now fully functional.
+- **Note**: All image/audio steganography formats worked as of v1.3.0, but the entire steganography subsystem was **removed in v1.5.0** as part of the code-surface reduction (the numpy dependency was dropped). Extract any hidden data with v1.4.x before upgrading.
 
 ### 6. **Portable Media & Offline Distribution** (v1.3.0+)
 - **Status**: ✅ FULLY IMPLEMENTED
@@ -105,17 +105,18 @@ These features are fully implemented and available in current releases.
   - 📋 CD/DVD mastering with encryption (future)
   - 📋 Removable media sanitization and secure deletion (future)
 
-### 7. **HSM Integration - Yubikey** (v1.3.1)
+### 7. **HSM Integration - YubiKey & OnlyKey** (YubiKey v1.3.1; OnlyKey + cross-device v1.5.0)
 - **Status**: ✅ FULLY IMPLEMENTED
-- **Implementation**: `openssl_encrypt/plugins/hsm/yubikey_challenge_response.py` (279 lines)
+- **Implementation**: `openssl_encrypt/plugins/hsm/yubikey_challenge_response/` and `openssl_encrypt/plugins/hsm/onlykey_challenge_response/`
 - **Features**:
-  - ✅ Yubikey Challenge-Response mode (HMAC-SHA1)
-  - ✅ Hardware-bound key derivation using Yubikey pepper
-  - ✅ Auto-detection of Challenge-Response slot (slot 1 or 2)
-  - ✅ Manual slot specification via --hsm-slot argument
+  - ✅ Challenge-Response mode (HMAC-SHA1) on YubiKey and OnlyKey
+  - ✅ Hardware-bound key derivation using the device pepper
+  - ✅ Auto-detection of the Challenge-Response slot (YubiKey 1–2; OnlyKey 1–12 accepted, 1–2 verified)
+  - ✅ Manual slot specification via `--hsm-slot` (overrides the metadata slot on decrypt/rekey, v1.5.0)
   - ✅ Touch-based authentication for decrypt operations
   - ✅ HSM plugin integration in key derivation pipeline
-- **Note**: Hardware Security Module integration for Yubikey is complete. The Yubikey's HMAC-SHA1 Challenge-Response is used to generate a hardware-specific pepper that enhances encryption security and requires the physical Yubikey to be present for decryption.
+  - ✅ Cross-device decryption (v1.5.0): `yubikey_hsm`/`onlykey_hsm` form a protocol-compatible family — a file encrypted with one device decrypts with the other when both hold the same 20-byte secret
+- **Note**: The device's HMAC-SHA1 Challenge-Response generates a hardware-specific pepper that requires the physical device to be present for decryption. See `docs/HSM_PLUGIN_GUIDE.md` and `docs/ONLYKEY_SETUP.md`.
 
 ---
 
@@ -164,7 +165,6 @@ These features are planned for future releases but not yet implemented.
   - ✅ Basic encryption/decryption GUI (existing)
   - 📋 Drag-and-drop file encryption/decryption
   - 📋 Progress indicators in GUI (distinct from CLI progress bars)
-  - 📋 Built-in steganography image viewer
   - 📋 Configuration wizard for non-expert users (GUI version of CLI wizard)
   - 📋 Dark mode and accessibility features
   - 📋 Offline help system and documentation viewer
@@ -312,12 +312,12 @@ These features are **explicitly excluded** due to the project's core security re
 | Feature | Status | Priority | User Impact | Technical Risk | Notes |
 |---------|--------|----------|-------------|----------------|-------|
 | Plugin Architecture | ✅ DONE | High | High | Low | 7 plugin types, capability-based security |
-| Configuration Management | ✅ DONE | Medium | High | Low | Wizard, templates, security analysis |
-| Testing Framework | ✅ DONE | High | High | Low | Fuzzing, KAT, benchmarks, side-channel, memory |
-| Post-Quantum Crypto | ✅ DONE | High | High | Low | ML-KEM, Kyber, hybrid modes |
-| Steganography | ✅ DONE | Medium | Medium | Medium | ALL formats working as of v1.3.0 |
+| Configuration Management | ❌ REMOVED v1.5.0 | Medium | High | Low | Advisory config tools dropped; `-t`/`--template` retained |
+| Testing Framework | ❌ REMOVED v1.5.0 | High | High | Low | In-package dev tooling no longer shipped |
+| Post-Quantum Crypto | ✅ DONE | High | High | Low | ML-KEM, HQC, hybrid modes (legacy Kyber naming removed v1.5.0) |
+| Steganography | ❌ REMOVED v1.5.0 | Medium | Medium | Medium | Subsystem removed (code-surface reduction) |
 | Portable Media | ✅ DONE | Medium | Medium | Low | USB, QR codes, air-gapped |
-| HSM Integration (Yubikey) | ✅ DONE | High | High | Low | Challenge-Response, auto-detection |
+| HSM Integration (YubiKey + OnlyKey) | ✅ DONE | High | High | Low | Challenge-Response, auto-detection, cross-device (v1.5.0) |
 | Key Management | 🚧 PARTIAL | High | High | Low | Storage ✅, Rotation 📋 |
 | Performance | 🚧 PARTIAL | High | Medium | Medium | Progress bars ✅, GPU/threading 📋 |
 | Enhanced GUI | 📋 PLANNED | Medium | Medium | Low | Offline GUI, basic version exists |
@@ -338,16 +338,16 @@ These features are **explicitly excluded** due to the project's core security re
 ### Already Complete (v1.0.0 - v1.3.1):
 1. ✅ Post-Quantum Cryptography (v1.0.0+)
 2. ✅ Plugin Architecture (v1.3.0+)
-3. ✅ Configuration Management (v1.3.0+)
-4. ✅ Testing Framework (v1.3.0+)
-5. ✅ Steganography - All Formats (v1.3.0)
+3. ✅ Configuration Management (v1.3.0+; ❌ advisory tooling removed in v1.5.0)
+4. ✅ Testing Framework (v1.3.0+; ❌ in-package framework removed in v1.5.0)
+5. ✅ Steganography - All Formats (v1.3.0; ❌ removed in v1.5.0)
 6. ✅ Portable Media (v1.3.0+)
-7. ✅ HSM Integration - Yubikey (v1.3.1)
+7. ✅ HSM Integration - YubiKey + OnlyKey (v1.3.1; cross-device v1.5.0)
 
 ### Next 2 months (Phase 1):
 1. **Complete Key Rotation System** - Finish automatic rotation for existing keystore
 2. **Performance Optimizations** - GPU acceleration, multi-threading for large files
-3. **Enhanced GUI** - Drag-drop, progress indicators, steganography viewer (100% offline)
+3. **Enhanced GUI** - Drag-drop, progress indicators (100% offline)
 
 ### Months 3-4 (Phase 2):
 4. **Local SQLite Encryption** - Encrypt local SQLite database files
@@ -369,7 +369,7 @@ These features are **explicitly excluded** due to the project's core security re
 
 ## Notes
 
-- **Current Version**: v1.3.0+ (with v1.3.1 HSM support)
+- **Current Version**: v1.5.0 (in development; latest released 1.4.5)
 
 - **Core Security Principle: ZERO NETWORK ACCESS**:
   - OpenSSL Encrypt will **never** access the network, directly or through plugins
@@ -380,18 +380,18 @@ These features are **explicitly excluded** due to the project's core security re
   - Privacy guarantee: Zero risk of data exfiltration
 
 - **Current Strengths**:
-  - Excellent post-quantum cryptography support (ML-KEM, Kyber)
+  - Excellent post-quantum cryptography support (ML-KEM, HQC, hybrid modes)
   - Complete plugin system with 7 types and capability-based security
-  - Comprehensive testing framework (fuzzing, KAT, benchmarks, side-channel resistance, memory safety)
-  - All steganography formats working (PNG, JPEG, TIFF, WAV, FLAC, WEBP, MP3)
-  - HSM integration with Yubikey Challenge-Response
+  - Comprehensive test suite (unit, KAT, integration)
+  - Real 192-bit XChaCha20-Poly1305 and source-code integrity protection (v1.5.0)
+  - HSM integration with YubiKey and OnlyKey Challenge-Response, including cross-device decryption (v1.5.0)
   - Configuration wizard and template management
   - Portable media and offline key distribution
   - **100% offline operation - works completely without network**
 
 - **Major Achievements Since v1.0.0**:
   - Complete plugin architecture with security sandboxing (v1.3.0)
-  - All steganography formats fixed and working - WEBP and MP3 were broken, now functional (v1.3.0)
+  - Steganography (all image/audio formats) implemented in v1.3.0, later removed in v1.5.0 (code-surface reduction)
   - Full testing suite with fuzzing, KAT, benchmarks, side-channel, and memory tests (v1.3.0)
   - Configuration wizard, templates, and security analysis (v1.3.0)
   - Portable media tools for USB and QR code distribution (v1.3.0)
@@ -400,7 +400,7 @@ These features are **explicitly excluded** due to the project's core security re
 - **Focus Areas for Next Release**:
   - Complete automatic key rotation system
   - GPU acceleration and multi-threaded encryption (local only)
-  - Enhanced GUI features (drag-drop, dark mode, steganography viewer - 100% offline)
+  - Enhanced GUI features (drag-drop, dark mode - 100% offline)
   - Local SQLite database encryption
 
 - **What Will NEVER Be Implemented**:

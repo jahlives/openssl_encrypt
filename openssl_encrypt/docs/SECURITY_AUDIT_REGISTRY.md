@@ -1,5 +1,10 @@
 # Security Audit: Algorithm Registry System
 
+> **⚠️ Removed in v1.5.0:** Since this audit was written, AES-OCB3, Camellia,
+> the Whirlpool hash, the PBKDF2 KDF chain, and the legacy Kyber algorithm
+> names have been **completely removed**. The inventory counts below have been
+> updated to reflect the supported set. See [VERSION.md](VERSION.md).
+
 **Date**: 2025-12-27
 **Auditor**: Claude (Sonnet 4.5)
 **Scope**: Algorithm Registry sensitive data handling
@@ -35,9 +40,8 @@ def derive(self, password: bytes, salt: bytes, params: Optional[KDFParams] = Non
 
 **Risk Level**: 🔴 **CRITICAL**
 
-**Impact**: All 8 KDF implementations affected:
+**Impact**: All 7 KDF implementations affected:
 - Argon2id, Argon2i, Argon2d
-- PBKDF2
 - Scrypt
 - Balloon
 - HKDF
@@ -58,8 +62,8 @@ def decrypt(self, key: bytes, nonce: bytes, ciphertext: bytes, tag: bytes, aad: 
 
 **Risk Level**: 🔴 **CRITICAL**
 
-**Impact**: All 6 cipher implementations affected:
-- AES-256-GCM, AES-256-GCM-SIV, AES-256-OCB3, AES-256-SIV
+**Impact**: All 5 cipher implementations affected:
+- AES-256-GCM, AES-256-GCM-SIV, AES-256-SIV
 - ChaCha20-Poly1305, XChaCha20-Poly1305
 
 ### 3. KEM Registry (`kem_registry.py`)
@@ -242,9 +246,9 @@ def test_kdf_secure_memory():
 **Completed**: 2025-12-27
 
 All CRITICAL security fixes have been implemented:
-- **35 implementations** across 4 registries updated with SecureBytes
-- **KDF Registry**: 8/8 implementations complete (Argon2, PBKDF2, Scrypt, etc.)
-- **Cipher Registry**: 6/6 implementations complete (AES-GCM, ChaCha20, etc.)
+- **33 implementations** across 4 registries updated with SecureBytes
+- **KDF Registry**: 7/7 implementations complete (Argon2, Scrypt, Balloon, etc.)
+- **Cipher Registry**: 5/5 implementations complete (AES-GCM, ChaCha20, etc.)
 - **KEM Registry**: 6/6 implementations complete (ML-KEM, HQC)
 - **Signature Registry**: 15/15 implementations complete (ML-DSA, SLH-DSA, etc.)
 

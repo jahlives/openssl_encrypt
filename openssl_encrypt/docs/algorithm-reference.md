@@ -1,5 +1,11 @@
 # Algorithm Reference - OpenSSL Encrypt
 
+> **⚠️ Removed in v1.5.0:** AES-OCB3, Camellia, the Whirlpool hash, the PBKDF2
+> KDF chain, and the legacy Kyber algorithm names have been **completely
+> removed** — both encryption and decryption. See
+> [Removed Algorithms (v1.5.0)](#removed-algorithms-v150) below and
+> [VERSION.md](VERSION.md).
+
 ## Table of Contents
 
 1. [Overview](#overview)
@@ -34,8 +40,18 @@ This document provides a comprehensive analysis of all cryptographic algorithms 
 | **AES-GCM-SIV** | ✅ Compliant | cryptography.hazmat.primitives.ciphers.aead.AESGCMSIV | RFC 8452 standardized | Nonce-misuse resistant, recommended for nonce-reuse scenarios |
 | **AES-SIV** | ✅ Compliant | cryptography.hazmat.primitives.ciphers.aead.AESSIV | RFC 5297 standardized | Deterministic encryption, good for key-wrapping |
 | **ChaCha20-Poly1305** | ✅ Compliant | cryptography.hazmat.primitives.ciphers.aead.ChaCha20Poly1305 | RFC 7539 standardized | Recommended for software-only implementations |
-| **XChaCha20-Poly1305** | ✅ Compliant | Custom implementation using ChaCha20Poly1305 + HKDF | Industry recommended | Extended nonce space, good for long-lived keys |
+| **XChaCha20-Poly1305** | ✅ Compliant | Real 192-bit XChaCha20 via in-repo HChaCha20 (`modules/xchacha.py`) over `cryptography`'s ChaCha20; draft-irtf-cfrg-xchacha-03 compliant | Industry recommended | True 24-byte (192-bit) nonce, 2^96 collision bound; see nonce-format note below |
 | **Fernet** | ✅ Compliant | cryptography.fernet.Fernet | Uses NIST-approved primitives | AES-128-CBC + HMAC-SHA256, ease of use |
+
+> **XChaCha20-Poly1305 nonce formats (v1.5.0):** New files use real 192-bit
+> XChaCha20 — the per-message subkey is derived with HChaCha20
+> (`openssl_encrypt/modules/xchacha.py`), and the file carries
+> `encryption.xchacha_nonce_format: 2`. Files written before v1.5.0 (field
+> absent or `1`) used only the first 12 bytes of the stored nonce
+> (96-bit-effective; not a vulnerability thanks to per-file keys, but not real
+> XChaCha); they remain decryptable. The PQC hybrid data layer keeps 12-byte
+> nonces under per-encryption KEM-derived keys. See
+> [metadata-formats.md](metadata-formats.md#xchacha20-poly1305-nonce-format).
 
 ### Algorithm Selection Matrix
 

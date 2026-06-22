@@ -33,8 +33,8 @@ Both plugins follow the same convention:
 
 - Encryption: `openssl_encrypt encrypt --hsm <plugin> ...`
 - Decryption: `openssl_encrypt decrypt --hsm <plugin> ...`
-- Slot selection: `--hsm-slot N` (YubiKey: 1..2, OnlyKey: 1..12;
-  auto-detected if omitted)
+- Slot selection: `--hsm-slot N` (YubiKey: 1..2, OnlyKey: 1..12 accepted but
+  only 1..2 verified on hardware; auto-detected if omitted)
 - Plugin name in metadata is advisory — a file encrypted with
   `--hsm yubikey` can be decrypted with `--hsm onlykey` provided both
   devices hold the same 20-byte secret.
@@ -92,8 +92,9 @@ ykman otp chalresp 1 deadbeef
 
 1. Open the OnlyKey App and enter your PIN on the device buttons
 2. Go to **Preferences → HMAC Mode** and enable it
-3. Select either **Slot 1 (HMAC1)** or **Slot 2 (HMAC2)** — and any of
-   the additional slots OnlyKey exposes (1..12 total)
+3. Select either **Slot 1 (HMAC1)** or **Slot 2 (HMAC2)** — these are the only
+   slots verified on hardware; the plugin also accepts slots 3..12, but those
+   are untested
 4. Click **Configure HMAC** and load your 20-byte hex secret
 
 ### Verify the configuration
@@ -155,7 +156,7 @@ fleet has the same 20-byte secret loaded**. Suggested workflow:
 openssl_encrypt encrypt --hsm yubikey secret.txt secret.enc
 
 # OnlyKey with explicit slot
-openssl_encrypt encrypt --hsm onlykey --hsm-slot 3 secret.txt secret.enc
+openssl_encrypt encrypt --hsm onlykey --hsm-slot 2 secret.txt secret.enc
 
 # Decryption — the device must hold the same secret used for encrypt
 openssl_encrypt decrypt --hsm yubikey secret.enc secret.txt
@@ -171,7 +172,7 @@ The same hardware token can protect post-quantum private keys:
 openssl_encrypt identity create --name alice --hsm onlykey
 
 # OnlyKey-only protection (no password)
-openssl_encrypt identity create --name alice --hsm onlykey-only --hsm-slot 5
+openssl_encrypt identity create --name alice --hsm onlykey-only --hsm-slot 2
 
 # Same options work for yubikey / yubikey-only
 ```

@@ -2,6 +2,13 @@ recursive-include openssl_encrypt/docs *
 recursive-include openssl_encrypt/schemas *.json
 recursive-include openssl_encrypt/templates *.json
 recursive-include openssl_encrypt/data *.txt
+# Source-integrity artifacts (signed manifests, signing public key, allowlist)
+include openssl_encrypt/integrity/manifest.json
+include openssl_encrypt/integrity/manifest.json.asc
+include openssl_encrypt/integrity/manifest-installed.json
+include openssl_encrypt/integrity/manifest-installed.json.asc
+include openssl_encrypt/integrity/protected_files.txt
+recursive-include openssl_encrypt/integrity/keys *
 include openssl_encrypt/version.py.template
 include requirements*.txt
 include requirements*.in

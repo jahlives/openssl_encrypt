@@ -4,9 +4,11 @@
 
 OpenSSL Encrypt follows [Semantic Versioning (SemVer)](https://semver.org/) for version numbering and maintains comprehensive version history to track the evolution of cryptographic security features, post-quantum implementations, and security enhancements.
 
-**Current Version:** `1.5.0` (Production Release)
+**Current Version:** `1.5.0` (Unreleased — in development on `feature/v1.5.x-development`)
 
-**Development Status:** Production/Stable
+**Latest Released Version:** `1.4.5`
+
+**Development Status:** Beta / Pre-release
 
 ## Version Numbering Scheme
 
@@ -17,9 +19,9 @@ OpenSSL Encrypt follows [Semantic Versioning (SemVer)](https://semver.org/) for 
 
 ## Release History
 
-### 1.5.0 (Current) - Breaking: Deprecated Algorithm Removal
-**Release Date:** February 2026
-**Status:** Production Release
+### 1.5.0 (Unreleased) - Breaking: Deprecated Algorithm Removal
+**Release Date:** TBD (in development)
+**Status:** Unreleased — see [CHANGELOG](../../CHANGELOG.md) `[1.5.0] - TBD`
 
 **BREAKING CHANGES:**
 
@@ -32,6 +34,15 @@ This release **removes** all deprecated algorithms entirely — both encryption 
 - **PBKDF2** key derivation chain (use Argon2id or Scrypt instead)
 - **Legacy Kyber naming** (use ML-KEM-512/768/1024 instead)
 - **TESTDATA PQC simulation format** (use real liboqs)
+
+**Removed Features (code-surface reduction):**
+- **Steganography subsystem** — all image/audio data-hiding removed (numpy
+  dependency dropped). Extract any hidden data with v1.4.x **before** upgrading.
+- **D-Bus service/client**
+- **In-package security testing framework** (fuzzing/KAT harness no longer shipped)
+- **Advisory configuration tooling** (config-wizard, analyze-config,
+  analyze-security, template subcommand, smart-recommendations). Encryption
+  templates (`-t`/`--template`, `--quick`/`--standard`/`--paranoid`) are unchanged.
 
 **Enhancements:**
 - **Streaming chunked encryption** for large files (format v12):
@@ -48,6 +59,54 @@ This release **removes** all deprecated algorithms entirely — both encryption 
 1. Decrypt all files using deprecated algorithms with v1.4.x
 2. Re-encrypt with supported algorithms (e.g., AES-GCM, ML-KEM-768-hybrid)
 3. Upgrade to v1.5.0
+
+### 1.4.5 (Latest Released) - Dependency Security Updates
+**Release Date:** June 12, 2026
+**Status:** Production Release
+
+- Dependency updates for published CVEs (verified patched versions)
+
+### 1.4.4 - Cross-Device HSM (YubiKey + OnlyKey)
+**Release Date:** June 12, 2026
+**Status:** Production Release
+
+- Cross-device HSM decryption: files encrypted with one HMAC-SHA1
+  challenge-response device decrypt with the other (`yubikey_hsm`/`onlykey_hsm`
+  family) when both hold the same 20-byte secret
+- OnlyKey Challenge-Response HSM plugin and setup guide
+- `--hsm-slot` on decrypt/rekey overrides the slot stored in metadata
+
+### 1.4.3 - Flatpak GUI Fixes
+**Release Date:** March 30, 2026
+**Status:** Production Release
+
+- Fixed the Flutter GUI launcher binary name in the Flatpak wrapper so `--gui` works
+- Corrected the GTK window title
+
+### 1.4.2 - Desktop GUI Simple/Pro Mode
+**Release Date:** March 29, 2026
+**Status:** Production Release
+
+- Simple/Pro mode for the desktop GUI (Simple is the default)
+- Independent XOR (v11) as the default key derivation for STANDARD/PARANOID templates
+- RandomX support in the independent-XOR key-derivation path
+
+### 1.4.1 - Streaming Chunked Encryption
+**Release Date:** March 22, 2026
+**Status:** Production Release
+
+- Streaming chunked encryption (format v12) for constant-memory operation on large files
+- `--info` CLI action and the `encrypted_at` metadata timestamp
+
+### 1.4.0 - Rekey Hardening & Secure Salt Derivation
+**Release Date:** March 3, 2026
+**Status:** Production Release
+
+**Enhancements:**
+- Plaintext never touches disk during rekey (passed as bytes, no temp file)
+- Secure chained salt derivation (format v9)
+- `--rekey` action for re-encrypting with a new password
+- Bytes input/output support
 
 ### 1.3.1 - Maintenance Release
 **Release Date:** December 2025
@@ -448,8 +507,8 @@ print(f"Build Date: {info.get('build_date', 'Unknown')}")
 
 | Version | Python | Status | Support Level |
 |---------|--------|--------|---------------|
-| 1.5.x | 3.9+ | Current | Full Support |
-| 1.4.x | 3.9+ | Maintenance | Security Fixes |
+| 1.5.x | 3.11+ | Current | Full Support |
+| 1.4.x | 3.11+ | Maintenance | Security Fixes |
 | 1.3.x | 3.9+ | Maintenance | Security Fixes |
 | 1.2.x | 3.9+ | EOL | No Support |
 | 1.1.x | 3.9+ | EOL | No Support |

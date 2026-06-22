@@ -1,5 +1,13 @@
 # Metadata Formats - OpenSSL Encrypt
 
+> **⚠️ Removed in v1.5.0:** AES-OCB3, Camellia, the Whirlpool hash, the PBKDF2
+> KDF chain, and the legacy Kyber algorithm names have been **completely
+> removed** from the current format (v12) — both encryption and decryption.
+> The earlier format specifications below (v4, v5, v9, …) **intentionally
+> retain** these fields because legacy files of those formats genuinely
+> contained them; they are documented here for historical accuracy only and
+> cannot be produced or read by v1.5.0. See [VERSION.md](VERSION.md).
+
 ## Table of Contents
 
 1. [Overview](#overview)
@@ -240,7 +248,7 @@ Specifies the symmetric encryption algorithm used for data encryption:
 
 - **aes-gcm**: AES-256-GCM (default)
 - **aes-gcm-siv**: AES-256-GCM-SIV (nonce-misuse resistant)
-- **aes-ocb3**: AES-256-OCB3 (deprecated)
+- **aes-ocb3**: AES-256-OCB3 (removed in v1.5.0 — legacy v4/v5 files only)
 - **aes-siv**: AES-256-SIV (deterministic)
 - **chacha20-poly1305**: ChaCha20-Poly1305
 - **xchacha20-poly1305**: XChaCha20-Poly1305
@@ -597,6 +605,41 @@ Version 12 extends the metadata with a `streaming` section:
 | `chunk_count` | integer | Total number of chunks in the file |
 | `nonce_prefix` | string | Base64-encoded 8-byte random prefix for HKDF nonce derivation |
 
+#### Encryption Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `algorithm` | string | Symmetric cipher (or cascade chain) used for data encryption |
+| `cascade` | boolean | `true` if a multi-cipher cascade chain was used |
+| `xchacha_nonce_format` | integer | Present only for `xchacha20-poly1305`. `2` = real 192-bit XChaCha20 nonces (v1.5.0+ default); absent or `1` = legacy 12-byte-effective derivation (pre-1.5 files). See [XChaCha20-Poly1305 Nonce Format](#xchacha20-poly1305-nonce-format) below. |
+
+#### XChaCha20-Poly1305 Nonce Format
+
+Starting with **v1.5.0**, XChaCha20-Poly1305 uses **real 192-bit (24-byte)
+nonces**, spec-compliant with draft-irtf-cfrg-xchacha-03. The per-message
+subkey is derived with HChaCha20 — implemented in
+`openssl_encrypt/modules/xchacha.py` on top of the `cryptography` library's
+ChaCha20 (no extra dependency) — giving a 2^96 random-collision bound instead
+of the 2^48 bound of the legacy path.
+
+The behavior is signaled by the `encryption.xchacha_nonce_format` field:
+
+- **`2`** — Real 192-bit XChaCha. Default for all new XChaCha files: one-shot,
+  streaming (24-byte per-chunk nonces), and cascade XChaCha layers. When
+  `aead_binding` is set, the field is covered by the AAD.
+- **absent or `1`** — Legacy behavior for files written before v1.5.0:
+  one-shot/streaming used only the first 12 bytes of the stored nonce; cascade
+  layers used an HKDF nonce funnel. Such files remain decryptable.
+
+Decryption auto-detects the format from this field — no flag is required.
+Stripping the field cannot downgrade a `format 2` file to a weaker successful
+decryption: the derived subkey/keystream changes, so the Poly1305 tag check
+fails.
+
+> **Note:** The PQC hybrid data layer intentionally keeps 12-byte nonces under
+> per-encryption KEM-derived keys (no nonce-reuse risk) and does not set this
+> field.
+
 ### File Format
 
 ```
@@ -643,7 +686,7 @@ ikm  = nonce_prefix + struct.pack(">I", chunk_index)
 
 nonce = HKDF(
     algorithm=SHA256(),
-    length=nonce_size,    # 12 bytes for AES-GCM/ChaCha20
+    length=nonce_size,    # 12 bytes for AES-GCM/ChaCha20; 24 for XChaCha20 when xchacha_nonce_format=2
     salt=nonce_prefix,    # 8 random bytes from metadata
     info=info
 ).derive(ikm)
@@ -687,7 +730,7 @@ Streaming chunked encryption requires AEAD algorithms. Supported ciphers:
 |-----------|-----------|-------|
 | `aes-gcm` | 12 bytes | Industry standard, hardware-accelerated |
 | `chacha20-poly1305` | 12 bytes | Software-optimized |
-| `xchacha20-poly1305` | 12 bytes | Extended nonce variant |
+| `xchacha20-poly1305` | 24 bytes (real 192-bit; 12 in pre-1.5 files) | See [XChaCha20-Poly1305 Nonce Format](#xchacha20-poly1305-nonce-format) |
 | `aes-gcm-siv` | 12 bytes | Nonce-misuse resistant |
 | `aes-siv` | 16 bytes | Deterministic AEAD |
 | `threefish-512` | 32 bytes | Wide-block cipher |

@@ -1,5 +1,10 @@
 # CLI Integration Guide for Algorithm Registries
 
+> **⚠️ Removed in v1.5.0:** AES-OCB3, Camellia, the Whirlpool hash, the PBKDF2
+> KDF chain, and the legacy Kyber algorithm names have been **completely
+> removed** and are no longer returned by the registry helpers. See
+> [VERSION.md](VERSION.md).
+
 This guide explains how to integrate the algorithm registries with the existing CLI and configuration tools.
 
 ## Overview
@@ -26,7 +31,7 @@ ciphers = get_available_ciphers()
 # ['aes-256-gcm', 'aes-256-gcm-siv', 'aes-256-siv', ...]
 
 kdfs = get_available_kdfs()
-# ['argon2id', 'argon2i', 'argon2d', 'pbkdf2', 'scrypt', ...]
+# ['argon2id', 'scrypt', 'balloon', 'hkdf', 'randomx', ...]
 
 kems = get_available_kems()
 # ['ml-kem-512', 'ml-kem-768', 'ml-kem-1024', 'hqc-128', ...]

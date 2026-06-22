@@ -1,5 +1,9 @@
 # Dependency Management - OpenSSL Encrypt
 
+> **⚠️ Removed in v1.5.0:** AES-OCB3, Camellia, the Whirlpool hash (and its
+> `whirlpool-py311` dependency), the PBKDF2 KDF chain, and the legacy Kyber
+> algorithm names have been **completely removed**. See [VERSION.md](VERSION.md).
+
 ## Table of Contents
 
 1. [Dependency Structure](#dependency-structure)
@@ -49,10 +53,21 @@ pip install -r requirements-prod.txt
 
 | Dependency | Purpose | Version Constraint | License | Security Level |
 |------------|---------|-------------------|---------|----------------|
-| **cryptography** | Core cryptographic primitives and algorithms | >=44.0.1,<45.0.0 | Apache-2.0 | **CRITICAL** |
+| **cryptography** | Core cryptographic primitives and algorithms | >=46.0.6,<47.0.0 | Apache-2.0 | **CRITICAL** |
 | **argon2-cffi** | Argon2 password hashing algorithm | >=23.1.0,<24.0.0 | MIT | **HIGH** |
+| **blake3** | BLAKE3 cryptographic hash | >=1.0.0,<2.0.0 | CC0-1.0 / Apache-2.0 | **HIGH** |
+| **RandomX** | RandomX memory-hard KDF | >=1.1.10 | BSD-3-Clause | **HIGH** |
 | **PyYAML** | YAML parser for configuration files | >=6.0.2,<7.0.0 | MIT | **MEDIUM** |
-| **whirlpool-py311** | Whirlpool hash algorithm for Python 3.11+ | >=1.0.0,<2.0.0 | Public Domain | **LOW** |
+
+### Feature Dependencies
+
+| Dependency | Purpose | Version Constraint | License | Notes |
+|------------|---------|-------------------|---------|-------|
+| **jsonschema** | Metadata schema validation | >=4.0.0,<5.0.0 | MIT | Validates file metadata format |
+| **requests** | HTTP client for plugins | >=2.31.0,<3.0.0 | Apache-2.0 | Network-facing plugins |
+| **Pillow** | Image handling | >=12.1.1,<13.0.0 | HPND | QR-code key distribution |
+| **qrcode[pil]** | QR-code generation | >=7.0.0,<9.0.0 | BSD-3-Clause | QR-code key distribution |
+| **pyzbar** | QR-code decoding | >=0.1.9,<1.0.0 | MIT | QR-code key distribution |
 
 ### Platform-Specific Dependencies
 
@@ -72,7 +87,7 @@ pip install -r requirements-prod.txt
 |------------|---------|-------------------|---------|-------|
 | **pytest** | Testing framework | >=8.0.0,<9.0.0 | MIT | Unit testing |
 | **pytest-cov** | Test coverage plugin | >=4.1.0,<5.0.0 | MIT | Coverage measurement |
-| **black** | Code formatter | >=24.1.0,<25.0.0 | MIT | Code formatting |
+| **black** | Code formatter | >=26.3.1,<27.0.0 | MIT | Code formatting |
 | **pylint** | Static code analyzer | >=3.0.0,<4.0.0 | GPL-2.0 | Code quality |
 | **bandit** | Security vulnerability scanner | >=1.7.0,<2.0.0 | Apache-2.0 | Security scanning |
 | **mypy** | Static type checker | >=1.0.0,<2.0.0 | MIT | Type checking |
@@ -87,14 +102,14 @@ pip install -r requirements-prod.txt
 
 ## Critical Dependencies Assessment
 
-### 1. cryptography (>=44.0.1,<45.0.0)
+### 1. cryptography (>=46.0.6,<47.0.0)
 
 #### Usage in the Project
 The `cryptography` package is the cornerstone of cryptographic operations:
 
 - **Symmetric Encryption Algorithms**:
   - Fernet (authenticated encryption)
-  - AES-GCM, AES-GCM-SIV, AES-OCB3 (AEAD modes)
+  - AES-GCM, AES-GCM-SIV (AEAD modes)
   - ChaCha20-Poly1305, XChaCha20-Poly1305
   - AES-SIV
 
@@ -109,9 +124,9 @@ The `cryptography` package is the cornerstone of cryptographic operations:
   - Digital signatures
 
 #### Security Analysis
-- **Current Requirement**: >=44.0.1,<45.0.0
+- **Current Requirement**: >=46.0.6,<47.0.0 (resolves to 46.0.7)
 - **Maintenance**: Actively maintained by the Python Cryptographic Authority
-- **Vulnerabilities**: CVE-2024-12797 addressed in version 44.0.1
+- **Vulnerabilities**: Floor tracks upstream security fixes; >=46.0.6 addresses the SECT curve subgroup attack
 - **Risk Level**: **CRITICAL** - Any vulnerability directly compromises encryption security
 
 ### 2. argon2-cffi (>=23.1.0,<24.0.0)
@@ -142,20 +157,19 @@ The `cryptography` package is the cornerstone of cryptographic operations:
 ### Phase 1: Immediate Security Updates ✅ COMPLETED
 
 #### 1.1 Critical Dependency Updates
-- **✅ Updated cryptography** from `>=42.0.0,<43.0.0` to `>=44.0.1,<45.0.0`
-  - Addresses CVE-2024-12797 (AES-OCB mode key reuse vulnerability)
-  - Prevents potential nonce-reuse attacks
+- **✅ Updated cryptography** to `>=46.0.6,<47.0.0`
+  - Tracks upstream security fixes (e.g. the SECT curve subgroup attack)
+  - Upper bound prevents breaking major-version changes
 
 #### 1.2 Version Constraint Improvements
 - **✅ Added upper bounds** to all critical dependencies:
   - `PyYAML>=6.0.2,<7.0.0`
-  - `whirlpool-py311>=1.0.0,<2.0.0`
   - `argon2-cffi>=23.1.0,<24.0.0`
 
 #### 1.3 Development Dependencies
 - **✅ Pinned development tools** with security implications:
   - `pytest>=8.0.0,<9.0.0`
-  - `black>=24.1.0,<25.0.0`
+  - `black>=26.3.1,<27.0.0`
   - `pylint>=3.0.0,<4.0.0`
   - `bandit>=1.7.0,<2.0.0`
 
@@ -178,7 +192,7 @@ The `cryptography` package is the cornerstone of cryptographic operations:
 1. **Security-Critical Dependencies** (cryptography, argon2-cffi):
    - **Lower bound**: Minimum version with required security fixes
    - **Upper bound**: Next major version to prevent breaking changes
-   - **Example**: `cryptography>=44.0.1,<45.0.0`
+   - **Example**: `cryptography>=46.0.6,<47.0.0`
 
 2. **Functional Dependencies** (PyYAML, pytest):
    - **Lower bound**: Minimum version with required features
@@ -188,7 +202,7 @@ The `cryptography` package is the cornerstone of cryptographic operations:
 3. **Development Tools**:
    - **Compatible release**: Allow patch and minor updates
    - **Major version pinning**: Prevent breaking changes in tooling
-   - **Example**: `black>=24.1.0,<25.0.0`
+   - **Example**: `black>=26.3.1,<27.0.0`
 
 ### Rationale
 
@@ -301,7 +315,7 @@ bandit -r openssl_encrypt/ -f json -o security-report.json
 | **CRITICAL** | cryptography | Complete compromise of encryption | Immediate updates, security monitoring |
 | **HIGH** | argon2-cffi | Password security compromise | Regular updates, vulnerability scanning |
 | **MEDIUM** | PyYAML, pytest | Limited attack surface | Safe usage patterns, version pinning |
-| **LOW** | whirlpool-py311, black | Minimal security impact | Standard update procedures |
+| **LOW** | black | Minimal security impact | Standard update procedures |
 
 ### Risk Mitigation Strategies
 
@@ -331,4 +345,4 @@ bandit -r openssl_encrypt/ -f json -o security-report.json
 
 This dependency management documentation ensures secure, reliable, and maintainable dependency handling for the OpenSSL Encrypt project. Regular review and updates of this documentation are essential as the dependency landscape evolves.
 
-**Last updated**: June 16, 2025
+**Last updated**: June 19, 2026

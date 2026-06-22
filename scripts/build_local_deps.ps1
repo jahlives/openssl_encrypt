@@ -216,7 +216,11 @@ function Find-VsDevShell {
         return $false
     }
 
-    $vsInstallPath = & $vsWherePath -latest -property installationPath 2>$null
+    $vsInstallPath = & $vsWherePath -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath 2>$null
+    # vswhere may emit multiple lines (or error text); keep only the first non-empty path
+    if ($vsInstallPath -is [array]) {
+        $vsInstallPath = ($vsInstallPath | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1)
+    }
     if (-not $vsInstallPath) {
         return $false
     }
@@ -291,6 +295,17 @@ if (-not (Test-Command "python")) {
 
 $pythonVersion = python --version 2>&1
 Write-Success "Python found: $pythonVersion"
+
+# PyO3 forward-compatibility: native extensions from the [hsm]/[threefish] extras
+# use PyO3 0.24.x, which officially supports Python up to 3.13. On Python 3.14+
+# the build aborts unless this flag tells PyO3 to build against the stable ABI.
+# Set it for this process (so any pip build here works) and persist it at the
+# User level so the later `pip install -e ".[hsm,threefish]"` succeeds too.
+if (-not $env:PYO3_USE_ABI3_FORWARD_COMPATIBILITY) {
+    $env:PYO3_USE_ABI3_FORWARD_COMPATIBILITY = "1"
+    [Environment]::SetEnvironmentVariable("PYO3_USE_ABI3_FORWARD_COMPATIBILITY", "1", "User")
+    Write-Success "Set PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1 (process + persisted for user)"
+}
 
 # Check pip
 try {
@@ -380,8 +395,21 @@ catch {
     # Not installed
 }
 
-if ($liboqsOk -and $liboqsPythonOk) {
-    Write-Banner "All liboqs dependencies already installed with correct versions"
+# Check RandomX (built in Step 3) so we don't skip it when liboqs is already present
+$randomxPreOk = $false
+try {
+    $rxPre = python -c "import randomx; vm = randomx.RandomX(b'test_seed_hash_00000000000000000'); h = vm.calculate_hash(b'test'); print(len(h))" 2>&1
+    if ($LASTEXITCODE -eq 0) {
+        Write-Success "RandomX already installed and working"
+        $randomxPreOk = $true
+    }
+}
+catch {
+    # Not installed
+}
+
+if ($liboqsOk -and $liboqsPythonOk -and $randomxPreOk) {
+    Write-Banner "All dependencies already installed with correct versions"
     exit 0
 }
 
@@ -487,6 +515,7 @@ else {
 # Step 2: Install liboqs-python
 # ──────────────────────────────────────────────────────────
 
+if (-not $liboqsPythonOk) {
 Write-Banner "Step 2/3: Installing liboqs-python $LiboqsPythonVersion"
 
 # Set environment for liboqs-python build
@@ -541,6 +570,10 @@ catch {
     Write-Fail "liboqs-python verification failed: $_"
     exit 1
 }
+}
+else {
+    Write-Banner "Step 2/3: liboqs-python $LiboqsPythonVersion already installed"
+}
 
 # ──────────────────────────────────────────────────────────
 # Step 3: Build RandomX for Windows (MSVC patch)
@@ -572,6 +605,18 @@ else {
 
     $randomxTemp = Join-Path ([System.IO.Path]::GetTempPath()) "randomx-build-$(Get-Random)"
     New-Item -ItemType Directory -Path $randomxTemp -Force | Out-Null
+
+    # The RandomX steps below use --no-build-isolation, so the build backend
+    # (setuptools) and the Cython toolchain must be present in the current env.
+    # Python 3.12+ no longer ships setuptools, so install them explicitly.
+    Write-Step "Ensuring build dependencies (setuptools, wheel, Cython)..."
+    & { $ErrorActionPreference = 'Continue'
+        python -m pip install --upgrade setuptools wheel Cython 2>&1 | Write-Host
+    }
+    if ($LASTEXITCODE -ne 0) {
+        Write-Fail "Failed to install RandomX build dependencies"
+        exit 1
+    }
 
     try {
         # Download source

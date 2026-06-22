@@ -1,5 +1,12 @@
 # Algorithm Registry System - Comprehensive Analysis & Updated Plan
 
+> **⚠️ Removed in v1.5.0:** This is a point-in-time analysis from the 1.4.0
+> cycle. Since it was written, AES-OCB3, Camellia, the Whirlpool hash, the
+> PBKDF2 KDF chain, and the legacy Kyber algorithm names have been
+> **completely removed** from the registries. Entries below that mark them as
+> active/legacy are historical and no longer reflect the shipped code. See
+> [VERSION.md](VERSION.md).
+
 **Date:** December 27, 2025
 **Branch:** feature/v1.4.0-development
 **Implementation Language:** English (code comments, docstrings, variable names)

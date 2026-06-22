@@ -45,7 +45,7 @@ openssl_encrypt hsm fido2-list
 
 ### Software Requirements
 
-- Python 3.8+
+- Python 3.11+
 - `fido2` library (python-fido2 by Yubico)
 
 ---
@@ -631,8 +631,8 @@ The security key only stores **cryptographic material** needed for pepper deriva
 | **Pepper Size** | 32 bytes (SHA256) | 20 bytes (SHA1) |
 | **Authentication** | PIN + Touch | Touch only (no PIN) |
 | **Standard** | FIDO2 (industry standard) | Proprietary (Yubico) |
-| **Device Support** | Any FIDO2 authenticator | YubiKey only |
-| **Backup Support** | Multiple credentials | Single slot |
+| **Device Support** | Any FIDO2 authenticator | YubiKey + OnlyKey (cross-device family, v1.5.0+) |
+| **Backup Support** | Multiple credentials | Same secret on multiple devices; `--hsm-slot` overridable |
 
 **Recommendation:** Use **FIDO2 hmac-secret** for better security and flexibility.
 

@@ -33,7 +33,10 @@ sync-wiki:
   script:
     - git clone https://oauth2:${PROJECT_ACCESS_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.wiki.git wiki
     - cp -r openssl_encrypt/docs/* wiki/
+    # Fix the docsify Home link for the GitLab wiki (its home page is "home")
+    - sed -i 's#](/)#](home)#g' wiki/_sidebar.md
     - cp README.md wiki/home.md
+    - cp SECURITY.md wiki/security.md
     - cd wiki
     - git config --global user.email "pipeline@rm-rf.ch"
     - git config --global user.name "GitLab Pipeline"
@@ -50,6 +53,47 @@ sync-wiki:
     - if: $CI_COMMIT_BRANCH == "dev"
       when: manual
       allow_failure: true
+
+# Flatpak manifest pins must match requirements-prod.txt (fast, stdlib-only)
+flatpak-pin-check:
+  stage: security
+  image: python:3.13-alpine
+  script:
+    # Run by path: importing the package would require the full dependency set
+    - python openssl_encrypt/unittests/test_flatpak_pin_consistency.py -v
+  rules:
+    - if: $CI_COMMIT_BRANCH == "dev" && $DOCS_ONLY != "true"
+    - if: $CI_COMMIT_BRANCH == "testing" && $DOCS_ONLY != "true"
+    - if: $CI_COMMIT_BRANCH == "main" && $DOCS_ONLY != "true"
+    - if: $CI_COMMIT_BRANCH == "release" && $DOCS_ONLY != "true"
+    - if: $CI_COMMIT_BRANCH =~ /^releases\/.*/ && $DOCS_ONLY != "true"
+    - if: $CI_COMMIT_BRANCH =~ /^feature\/.*/ && $DOCS_ONLY != "true"
+    - if: $CI_COMMIT_TAG && $DOCS_ONLY != "true"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $DOCS_ONLY != "true"
+
+# Source-code integrity manifest verification (signature + protected-file hashes).
+# Verify-only: holds NO private key (signing happens locally, decision D3).
+source-integrity-verify:
+  stage: security
+  image: python:3.13-slim
+  before_script:
+    - apt-get update && apt-get install -y --no-install-recommends gnupg && rm -rf /var/lib/apt/lists/*
+  script:
+    - echo "=== Verifying signed source-integrity manifest (signature + file hashes) ==="
+    # Uses the lightweight integrity package directly (no full dependency tree, no
+    # heavy CLI import). Checks the detached signature, the expected fingerprint
+    # (keys/FINGERPRINT) and every protected-file hash; non-zero exit fails the job.
+    - python -c "import sys; from openssl_encrypt.integrity.verify_cli import verify_integrity; sys.exit(verify_integrity(quiet=False))"
+    - 'echo "NOTE: CI verifies against the in-repo public key, so it catches drift, stale/unsigned manifests and bad signatures. A full repo rewrite that also swaps the key would still pass here; only out-of-band fingerprint verification is complete (see docs/SOURCE_INTEGRITY.md)."'
+  rules:
+    - if: $CI_COMMIT_BRANCH == "dev" && $DOCS_ONLY != "true"
+    - if: $CI_COMMIT_BRANCH == "testing" && $DOCS_ONLY != "true"
+    - if: $CI_COMMIT_BRANCH == "main" && $DOCS_ONLY != "true"
+    - if: $CI_COMMIT_BRANCH == "release" && $DOCS_ONLY != "true"
+    - if: $CI_COMMIT_BRANCH =~ /^releases\/.*/ && $DOCS_ONLY != "true"
+    - if: $CI_COMMIT_BRANCH =~ /^feature\/.*/ && $DOCS_ONLY != "true"
+    - if: $CI_COMMIT_TAG && $DOCS_ONLY != "true"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $DOCS_ONLY != "true"
 
 # Dependency security scanning
 dependency-scan:
