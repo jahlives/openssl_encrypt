@@ -230,6 +230,7 @@ class TokenSession:
             raise PIVConfigurationError("slot_index must be non-negative")
         self.library = library
         self.slot_index = slot_index
+        self._slot = None
         self._token = None
         self._session = None
 
@@ -275,13 +276,17 @@ class TokenSession:
                 f"Failed to read token in slot index {self.slot_index}: {exc}"
             ) from exc
 
-        # Item 5: confirm the token is actually present.
-        if not (token.flags & pkcs11.TokenFlag.TOKEN_PRESENT):
+        # Item 5: confirm the slot reports a token present. TOKEN_PRESENT is a
+        # SlotFlag (a property of the slot), NOT a TokenFlag -- the real
+        # python-pkcs11 binding has no pkcs11.TokenFlag.TOKEN_PRESENT and raises
+        # AttributeError if you reference it (only the test mock had it).
+        if not (slot.flags & pkcs11.SlotFlag.TOKEN_PRESENT):
             raise PIVTokenError(
                 f"No token present in slot index {self.slot_index} "
-                "(TOKEN_PRESENT flag is not set)."
+                "(slot TOKEN_PRESENT flag is not set)."
             )
 
+        self._slot = slot
         self._token = token
         return token
 
@@ -672,7 +677,11 @@ class PIVBackend:
                 ] = str(exc)
                 return results
             results["slot_present"] = results["slot_index_valid"] = True
-            results["token_present"] = bool(token.flags & pkcs11.TokenFlag.TOKEN_PRESENT)
+            # select_token() validated the slot's TOKEN_PRESENT flag (SlotFlag).
+            results["token_present"] = bool(
+                session_ctx._slot is not None
+                and (session_ctx._slot.flags & pkcs11.SlotFlag.TOKEN_PRESENT)
+            )
 
             # Items 8 & 9.
             try:
