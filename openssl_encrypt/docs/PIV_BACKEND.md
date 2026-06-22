@@ -35,7 +35,7 @@ results (constant-time) as a determinism self-check.
 |---|---|---|---|
 | YubiKey 5 series | Yes | Ed25519, RSA | `opensc-pkcs11.so` or `ykcs11.so` |
 | YubiKey 5 FIPS | Yes | Ed25519, RSA | `opensc-pkcs11.so` or `ykcs11.so` |
-| YubiKey C Bio — MPE (see caveat) | Yes | Ed25519, RSA | `opensc-pkcs11.so` or `ykcs11.so` |
+| YubiKey Bio — MPE (enterprise-only, see caveat) | Yes | Ed25519, RSA | `opensc-pkcs11.so` or `ykcs11.so` |
 | Token2 PIN+ R3.3+ | Yes | RSA-2048/3072/4096 | `opensc-pkcs11.so` |
 | Any PKCS#11 PIV token | Yes | Ed25519 or RSA | vendor module |
 
@@ -46,10 +46,13 @@ results (constant-time) as a determinism self-check.
 > — FIDO Edition** — which is the *only* Bio you can buy off the shelf.
 >
 > Heads-up on the Bio MPE specifically:
-> - It is **USB-C only** ("YubiKey **C** Bio – MPE"); there is **no USB-A MPE**.
-> - It is **not sold in the regular store** — it ships **only via "YubiKey as a
->   Service"** (enterprise Compliance/Advanced subscription). For an individual
->   buyer, a **YubiKey 5** is the realistic PIV-capable option, not a Bio.
+> - It exists in both form factors (USB-A "YubiKey Bio – MPE" and USB-C "YubiKey
+>   C Bio – MPE"), **but you cannot buy one in the store.** Yubico's own
+>   consumer store sells only the **FIDO Edition** Bios; the MPE ships
+>   **exclusively via "YubiKey as a Service"** (enterprise Compliance tier, or an
+>   Advanced-tier add-on). There is no individual purchase path at any price.
+> - For anyone not on a Yubico enterprise contract, the realistic PIV-capable
+>   key is a **YubiKey 5**, not a Bio.
 >
 > On a FIDO-only key the PIV application simply does not exist, so the backend
 > cannot be used and `ykman config usb -e piv` fails with `PIV not supported over
