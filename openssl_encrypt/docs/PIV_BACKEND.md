@@ -123,6 +123,56 @@ ykman piv info
 
 Repeat the import on each backup device using the same `piv_key.pem`.
 
+## Cross-device backup & recovery
+
+This is the backend's headline advantage over the FIDO2 backend (which has **no**
+backup key — its credential secret is non-exportable). Because Ed25519 and
+RSA PKCS#1 v1.5 are **deterministic**, the *same* private key on two different
+tokens signs the salt-derived challenge identically, so both derive the **same
+pepper** — and a file encrypted with one token decrypts with the other.
+
+> ✅ **Verified on real hardware** (2026-06-22): a file encrypted with one
+> YubiKey (Ed25519, slot 9a) decrypted cleanly with a second YubiKey holding the
+> same imported key.
+
+**Provision a backup device:**
+
+```bash
+# Import the SAME offline piv_key.pem onto a second token (YubiKey 5.7+ for
+# Ed25519, or 5-series/Token2 R3.3 for RSA). Use the same slot you encrypt with.
+ykman piv keys import --pin-policy ONCE --touch-policy ALWAYS 9a piv_key.pem
+ykman piv certificates import 9a piv_cert.pem
+```
+
+**Prove recovery before you rely on it** — encrypt with key #1, then decrypt with
+**only key #2** present:
+
+```bash
+echo "recovery test" > /tmp/rt.txt
+# (key #1 inserted)
+openssl_encrypt encrypt -i /tmp/rt.txt -o /tmp/rt.enc \
+    --hsm piv --hsm-pkcs11-lib /usr/lib/opensc-pkcs11.so --hsm-piv-slot 9a
+# swap to key #2, then:
+openssl_encrypt decrypt -i /tmp/rt.enc -o /tmp/rt.out \
+    --hsm piv --hsm-pkcs11-lib /usr/lib/opensc-pkcs11.so --hsm-piv-slot 9a
+diff /tmp/rt.txt /tmp/rt.out && echo "cross-device PIV recovery OK"
+```
+
+Requirements and caveats:
+
+- **Same key type on every device.** Ed25519 needs **YubiKey firmware ≥ 5.7**;
+  to include an older YubiKey or a Token2 R3.3 in the fleet, standardize on
+  **RSA-2048** (works everywhere) instead. Mixed key material does **not** produce
+  matching peppers.
+- **Same key, not a fresh one per device.** Generate `piv_key.pem` once and import
+  that exact file onto each token — a key generated on-device would differ.
+- **Keep `piv_key.pem` itself offline** (e.g. paper/USB in a safe). It is the
+  master recovery secret: from it you can provision any replacement token. The
+  per-device PIN/touch only gate *use* of the key, not its value.
+- The PKCS#11 **slot index** (`--hsm-slot`) may differ between hosts/tokens; the
+  **PIV slot** (`--hsm-piv-slot`, default `9a`) should match what you encrypted
+  with. On `decrypt`/rekey, `--hsm-slot` overrides any stored value.
+
 ## PIV slots
 
 | Slot | Hex | Purpose | PIN behavior | Works with this backend? |
