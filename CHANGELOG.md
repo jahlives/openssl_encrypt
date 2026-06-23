@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Detached file signing** (`sign` / `verify-signature`): post-quantum
+  (ML-DSA-65) detached signatures over **arbitrary files**, closing the
+  authenticity gap of symmetric AEAD (which gives confidentiality + integrity
+  but lets anyone who knows the password forge a valid file).
+  `sign --input F --sign-with IDENTITY` writes a `.sig` JSON sidecar
+  (ASCII-armored by default; `--no-armor` for raw) that binds the file's
+  SHA-512 digest to the signer over a domain-separated payload (distinct from
+  the encrypted-file metadata signature). `verify-signature` resolves the
+  signer's public key from your identity store **and contacts** by the embedded
+  fingerprint, **fails closed on an unknown signer** (`--signer` to pin),
+  reports which signature component(s) verified, and supports `--json`. The
+  sidecar's `signatures` list is forward-compatible with a future classical
+  (e.g. Ed25519) hybrid component. New module
+  `openssl_encrypt/modules/file_signature.py` (covered by the signed manifest).
+
 - **ASCII armor** (`encrypt --armor` / `-a`): write PEM-style Base64 output that
   is safe to paste into email, chat, YAML or a clipboard. The whole encrypted
   blob is wrapped in a `-----BEGIN/END OPENSSL-ENCRYPT MESSAGE-----` envelope

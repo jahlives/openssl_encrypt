@@ -17,7 +17,7 @@ OpenSSL Encrypt follows [Semantic Versioning (SemVer)](https://semver.org/) for 
 
 ## Release History
 
-### Unreleased - PIV Backend, ASCII Armor & Encrypt-to-Self
+### Unreleased - PIV Backend, ASCII Armor, Encrypt-to-Self & File Signing
 **Release Date:** TBD (in development)
 **Status:** Unreleased — see [CHANGELOG](../../CHANGELOG.md) `[Unreleased]`
 
@@ -42,6 +42,15 @@ OpenSSL Encrypt follows [Semantic Versioning (SemVer)](https://semver.org/) for 
   extra recipient so the sender can decrypt their own outbound file. Reuses the
   multi-recipient ML-KEM wrapping, de-duplicated by fingerprint. Opt out with
   `--no-encrypt-to-self`.
+
+- **Detached file signing** (`sign` / `verify-signature`): post-quantum
+  (ML-DSA-65) detached signatures over arbitrary files, closing the authenticity
+  gap of symmetric AEAD. `sign` writes a `.sig` JSON sidecar (ASCII-armored by
+  default; `--no-armor` for raw) binding the file's SHA-512 to the signer over a
+  domain-separated payload. `verify-signature` resolves the signer from your
+  identity store/contacts by fingerprint (fails closed on an unknown signer;
+  `--signer` to pin), reports which component(s) verified, and supports `--json`.
+  New module `modules/file_signature.py`.
 
 ### 1.4.5 (Current) - Dependency Security Updates
 **Release Date:** June 12, 2026

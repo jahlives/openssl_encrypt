@@ -41,7 +41,7 @@
   <releases>
     <release version="1.4.6" date="2026-06-23" type="development">
       <description>
-        <p>New PIV / PKCS#11 HSM backend (--hsm piv) that derives the key-derivation pepper from a PIV private key on a smart card, and source-code integrity protection (verify-integrity) backed by a PGP-signed SHA-512 manifest. New ASCII armor output (encrypt --armor) writes paste-safe PEM-style Base64 with CRC-24 truncation detection, auto-detected on decrypt. Encrypt-to-self now adds the sender as a recipient by default so senders can decrypt their own outbound files (opt out with --no-encrypt-to-self).</p>
+        <p>New PIV / PKCS#11 HSM backend (--hsm piv) that derives the key-derivation pepper from a PIV private key on a smart card, and source-code integrity protection (verify-integrity) backed by a PGP-signed SHA-512 manifest. New ASCII armor output (encrypt --armor) writes paste-safe PEM-style Base64 with CRC-24 truncation detection, auto-detected on decrypt. Encrypt-to-self now adds the sender as a recipient by default so senders can decrypt their own outbound files (opt out with --no-encrypt-to-self). New detached post-quantum file signing (sign / verify-signature with ML-DSA-65) adds authenticity that symmetric AEAD alone cannot provide.</p>
       </description>
     </release>
     <release version="1.4.5" date="2026-06-12" type="stable">
