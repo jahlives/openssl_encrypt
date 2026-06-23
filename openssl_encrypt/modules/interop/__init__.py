@@ -11,7 +11,7 @@ is mandatory (no unauthenticated plaintext is ever returned), and unsupported
 constructions fail closed with a clear error rather than guessing.
 """
 
-SUPPORTED_FOREIGN_FORMATS = ("age",)
+SUPPORTED_FOREIGN_FORMATS = ("age", "pgp")
 
 
 def decrypt_foreign_cli(args) -> int:
@@ -62,6 +62,22 @@ def decrypt_foreign_cli(args) -> int:
         except _age.AgeError as exc:
             eprint(f"Error: age decryption failed: {exc}")
             return 1
+
+    elif fmt == "pgp":
+        from . import openpgp as _pgp
+
+        passphrase = getattr(args, "password", None) or os.environ.get("OPENSSL_ENCRYPT_PASSWORD")
+        if passphrase is None:
+            passphrase = getpass.getpass("Passphrase for OpenPGP file: ")
+        try:
+            plaintext = _pgp.decrypt(data, passphrase=passphrase)
+        except _pgp.OpenPGPWrongPassphrase:
+            eprint("Error: wrong passphrase for this OpenPGP file.")
+            return 1
+        except _pgp.OpenPGPError as exc:
+            eprint(f"Error: OpenPGP decryption failed: {exc}")
+            return 1
+
     else:
         eprint(f"Error: unsupported foreign format: {fmt}")
         return 1

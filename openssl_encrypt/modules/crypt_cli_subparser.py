@@ -835,10 +835,11 @@ def setup_decrypt_parser(subparser):
     foreign_group.add_argument(
         "--from",
         dest="from_format",
-        choices=["age"],
-        help="Decrypt a foreign-format file instead of an openssl-encrypt file "
-        "(currently: age). The passphrase (for age -p / scrypt files) comes from "
-        "the usual --password / prompt.",
+        choices=["age", "pgp"],
+        help="Decrypt a foreign-format file instead of an openssl-encrypt file: "
+        "'age' (age/rage) or 'pgp' (passphrase-based OpenPGP, i.e. gpg -c). The "
+        "passphrase (age -p / scrypt, or gpg -c) comes from the usual "
+        "--password / prompt.",
     )
     foreign_group.add_argument(
         "--age-identity",
