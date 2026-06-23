@@ -666,6 +666,22 @@ def setup_encrypt_parser(subparser):
         help="Enable keyserver lookup for recipient keys (opt-in). "
         "Fetches public keys from configured keyserver if not found locally.",
     )
+    # Feature #6: encrypt-to-self. Enabled by default so the sender can always
+    # recover their own outbound files; --no-encrypt-to-self opts out.
+    asymmetric_group.add_argument(
+        "--encrypt-to-self",
+        dest="encrypt_to_self",
+        action="store_true",
+        default=True,
+        help="Also encrypt to the sender's own identity (--sign-with) so the "
+        "sender can later decrypt their own outbound file. Enabled by default.",
+    )
+    asymmetric_group.add_argument(
+        "--no-encrypt-to-self",
+        dest="encrypt_to_self",
+        action="store_false",
+        help="Do not add the sender as a recipient (disable encrypt-to-self).",
+    )
 
     # Keystore options
     keystore_group = subparser.add_argument_group("Keystore options")

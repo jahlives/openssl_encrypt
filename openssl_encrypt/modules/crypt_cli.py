@@ -5844,6 +5844,19 @@ def main_with_args(args=None):
 
                         secure_memzero(sender_passphrase)
 
+                # Feature #6: encrypt-to-self. Add the sender as an additional
+                # recipient (unless already listed or opted out) so the sender
+                # can decrypt their own outbound file.
+                from .identity import resolve_recipients_with_self
+
+                encrypt_to_self = getattr(args, "encrypt_to_self", True)
+                recipients_before = len(recipients)
+                recipients = resolve_recipients_with_self(
+                    recipients, sender, enabled=encrypt_to_self
+                )
+                if not args.quiet and len(recipients) > recipients_before:
+                    eprint(f"Encrypt-to-self: added sender '{sender.name}' as a recipient")
+
                 # Build hash config from CLI arguments
                 # Use the same hash_config building logic as symmetric encryption (around line 4009)
                 hash_config = {
