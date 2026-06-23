@@ -1391,5 +1391,147 @@ class TestStreamingDecryptMemory(unittest.TestCase):
         self.assertEqual(result, plaintext)
 
 
+class TestCascadeChunkNonceUniqueness(unittest.TestCase):
+    """Regression guard: cascade + streaming must derive a UNIQUE per-chunk
+    cascade salt/nonce, never reusing one across chunks.
+
+    On this (1.4.x) branch the protection is provided by passing a per-chunk
+    ``chunk_nonce`` into ``CascadeEncryption.encrypt`` (folded into the salt as
+    ``effective_salt = salt + chunk_nonce``). This test fails if a future
+    refactor drops ``chunk_nonce`` (which is exactly the regression that
+    introduced an AEAD nonce-reuse bug on the 1.5.x branch). See
+    docs/PLAN_streaming-cascade-nonce_and_envelope.md (#1, v1.4.x port).
+    """
+
+    def test_cascade_per_chunk_effective_salt_is_unique(self):
+        """Each chunk must feed the cascade a distinct (salt, chunk_nonce)."""
+        captured = []  # list of (salt, chunk_nonce) per chunk
+
+        class _RecordingCascade:
+            def encrypt(self, plaintext, master_key, salt, associated_data=None, chunk_nonce=None):
+                captured.append((bytes(salt), None if chunk_nonce is None else bytes(chunk_nonce)))
+                return b"C" * (len(plaintext) + 16)
+
+        key = secrets.token_bytes(32)
+        cascade_salt = secrets.token_bytes(32)
+        chunk_size = 16
+        data = b"A" * (chunk_size * 4)  # 4 chunks
+        input_path = _create_temp_file(data)
+        output_enc = _create_temp_file(b"")
+
+        try:
+            enc = StreamingEncryptor(
+                key=key,
+                algorithm="cascade",
+                chunk_size=chunk_size,
+                cascade_encryptor=_RecordingCascade(),
+                cascade_salt=cascade_salt,
+                format_version=12,
+            )
+            chunk_count = enc.get_chunk_count(len(data))
+            metadata_b64 = base64.b64encode(b"{}")
+
+            enc.encrypt_file(
+                input_file=input_path,
+                output_file=output_enc,
+                metadata_b64=metadata_b64,
+                chunk_count=chunk_count,
+                quiet=True,
+            )
+
+            self.assertEqual(len(captured), 4)
+            # A per-chunk nonce MUST be supplied (its removal is the 1.5.x regression).
+            for _, chunk_nonce in captured:
+                self.assertIsNotNone(
+                    chunk_nonce, "cascade streaming dropped chunk_nonce -> nonce reuse risk"
+                )
+            # The effective salt (salt + chunk_nonce) must be distinct per chunk.
+            effective = [salt + (cn or b"") for salt, cn in captured]
+            self.assertEqual(
+                len(set(effective)),
+                len(effective),
+                "cascade effective salt reused across chunks -> AEAD nonce reuse",
+            )
+        finally:
+            for p in (input_path, output_enc):
+                if os.path.exists(p):
+                    os.unlink(p)
+
+    def test_cascade_decryptor_also_receives_per_chunk_nonce(self):
+        """The decryptor must mirror the encryptor and supply a unique per-chunk
+        chunk_nonce, so encrypt/decrypt derive identical per-chunk keys."""
+        captured = []
+
+        class _RecordingCascadeEnc:
+            def encrypt(self, plaintext, master_key, salt, associated_data=None, chunk_nonce=None):
+                # Echo plaintext back (plus filler) so the decryptor sees real chunks.
+                return b"E" * 16 + plaintext
+
+        dec_captured = []
+
+        class _RecordingCascadeDec:
+            def decrypt(self, ciphertext, master_key, salt, associated_data=None, chunk_nonce=None):
+                dec_captured.append(None if chunk_nonce is None else bytes(chunk_nonce))
+                return ciphertext[16:]
+
+        key = secrets.token_bytes(32)
+        cascade_salt = secrets.token_bytes(32)
+        chunk_size = 16
+        data = b"B" * (chunk_size * 3)  # 3 chunks
+        input_path = _create_temp_file(data)
+        output_enc = _create_temp_file(b"")
+        output_dec = _create_temp_file(b"")
+
+        try:
+            enc = StreamingEncryptor(
+                key=key,
+                algorithm="cascade",
+                chunk_size=chunk_size,
+                cascade_encryptor=_RecordingCascadeEnc(),
+                cascade_salt=cascade_salt,
+                format_version=12,
+            )
+            chunk_count = enc.get_chunk_count(len(data))
+            metadata_b64 = base64.b64encode(b"{}")
+            enc.encrypt_file(
+                input_file=input_path,
+                output_file=output_enc,
+                metadata_b64=metadata_b64,
+                chunk_count=chunk_count,
+                quiet=True,
+            )
+
+            dec = StreamingDecryptor(
+                key=key,
+                algorithm="cascade",
+                nonce_prefix=enc.nonce_prefix,
+                chunk_size=chunk_size,
+                cascade_decryptor=_RecordingCascadeDec(),
+                cascade_salt=cascade_salt,
+                format_version=12,
+            )
+            dec.decrypt_file(
+                input_file=output_enc,
+                output_file=output_dec,
+                metadata_b64=metadata_b64,
+                expected_chunk_count=chunk_count,
+                original_hash=None,
+                quiet=True,
+            )
+
+            self.assertEqual(len(dec_captured), 3)
+            for chunk_nonce in dec_captured:
+                self.assertIsNotNone(
+                    chunk_nonce, "decryptor dropped chunk_nonce -> cannot match encrypt"
+                )
+            self.assertEqual(
+                len(set(dec_captured)), len(dec_captured), "decryptor reused chunk_nonce"
+            )
+        finally:
+            for p in (input_path, output_enc, output_dec):
+                if os.path.exists(p):
+                    os.unlink(p)
+
+
 if __name__ == "__main__":
     unittest.main()
