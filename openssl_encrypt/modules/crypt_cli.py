@@ -2338,9 +2338,7 @@ def _handle_template_analyze(template_mgr: TemplateManager, args):
                 priority_icon = (
                     "🚨"
                     if rec["priority"] == "critical"
-                    else "⚠️"
-                    if rec["priority"] == "high"
-                    else "💡"
+                    else "⚠️" if rec["priority"] == "high" else "💡"
                 )
                 eprint(f"   {i}. {priority_icon} {rec['title']}")
                 eprint(f"      {rec['description']}")
@@ -5763,6 +5761,34 @@ def main_with_args(args=None):
         if args.debug:
             eprint(f"DEBUG: Converted stdin to temp file: {args.input}", file=sys.stderr)
 
+    # Feature #2: transparently de-armor ASCII-armored input before any
+    # decrypt/info/verify path reads it. Detection is content-based (the PEM
+    # BEGIN marker), so no flag is required. The de-armored bytes are written
+    # to an owner-only temp file that all downstream readers (auto-detection,
+    # keystore, asymmetric, symmetric) consume like any encrypted file.
+    if args.action in ("decrypt", "info", "verify", "rekey") and getattr(args, "input", None):
+        import tempfile
+
+        from .armor import ArmorError, dearmor_file, is_armored_file
+
+        if is_armored_file(args.input):
+            try:
+                dearmored_bytes = dearmor_file(args.input)
+            except ArmorError as armor_err:
+                eprint(f"Error: input is ASCII-armored but malformed: {armor_err}")
+                sys.exit(1)
+            else:
+                with tempfile.NamedTemporaryFile(
+                    delete=False, suffix=".dearmored"
+                ) as dearmored_file:
+                    dearmored_file.write(dearmored_bytes)
+                    dearmored_path = dearmored_file.name
+                os.chmod(dearmored_path, 0o600)  # owner-only
+                temp_files_to_cleanup.append(dearmored_path)
+                args.input = dearmored_path
+                if getattr(args, "debug", False):
+                    eprint(f"DEBUG: De-armored input to temp file: {args.input}")
+
     # Auto-detect encryption type for decrypt operations
     # Only run auto-detection if user didn't explicitly provide --with-key
     # This avoids potential interference with symmetric HSM decryption
@@ -6132,9 +6158,9 @@ def main_with_args(args=None):
                                             policy_params["check_common_passwords"] = False
 
                                         if args.custom_password_list:
-                                            policy_params[
-                                                "common_passwords_path"
-                                            ] = args.custom_password_list
+                                            policy_params["common_passwords_path"] = (
+                                                args.custom_password_list
+                                            )
 
                                         # Create policy and validate password
                                         policy = PasswordPolicy(
@@ -7007,6 +7033,19 @@ def main_with_args(args=None):
 
                         secure_memzero(sender_passphrase)
 
+                # Feature #6: encrypt-to-self. Add the sender as an additional
+                # recipient (unless already listed or opted out) so the sender
+                # can decrypt their own outbound file.
+                from .identity import resolve_recipients_with_self
+
+                encrypt_to_self = getattr(args, "encrypt_to_self", True)
+                recipients_before = len(recipients)
+                recipients = resolve_recipients_with_self(
+                    recipients, sender, enabled=encrypt_to_self
+                )
+                if not args.quiet and len(recipients) > recipients_before:
+                    eprint(f"Encrypt-to-self: added sender '{sender.name}' as a recipient")
+
                 # Build hash config from CLI arguments
                 # Use the same hash_config building logic as symmetric encryption (around line 4009)
                 hash_config = {
@@ -7148,6 +7187,12 @@ def main_with_args(args=None):
                         import shutil
 
                         shutil.move(temp_output, output_file)
+
+                    # Feature #2: wrap the finished recipient file in ASCII armor.
+                    if getattr(args, "armor", False) and os.path.isfile(output_file):
+                        from .armor import armor_file
+
+                        armor_file(output_file)
 
                     if not args.quiet:
                         eprint("\nAsymmetric encryption successful! ✅")
@@ -8155,7 +8200,14 @@ def main_with_args(args=None):
                     # Output the encrypted content to stdout
                     try:
                         with open(temp_output_file, "rb") as f:
-                            sys.stdout.buffer.write(f.read())
+                            encrypted_stdout_bytes = f.read()
+                        # Feature #2: armor the stream when requested so it is
+                        # safe to pipe into clipboards, chat or email.
+                        if getattr(args, "armor", False):
+                            from .armor import armor as _armor_bytes
+
+                            encrypted_stdout_bytes = _armor_bytes(encrypted_stdout_bytes)
+                        sys.stdout.buffer.write(encrypted_stdout_bytes)
                         sys.stdout.buffer.flush()
                     except Exception as e:
                         if not args.quiet:
@@ -8842,6 +8894,15 @@ def main_with_args(args=None):
                         return 1
 
             if success:
+                # Feature #2: wrap the finished file in ASCII armor if requested.
+                # Done as post-processing so it composes with every encryption
+                # path (symmetric, keystore) and does not disturb the binary
+                # format on disk before this point.
+                if getattr(args, "armor", False) and output_file and os.path.isfile(output_file):
+                    from .armor import armor_file
+
+                    armor_file(output_file)
+
                 # Security audit log for successful encryption
                 if security_logger:
                     security_logger.log_event(

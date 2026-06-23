@@ -1055,6 +1055,37 @@ def _decrypt_private_key(
         raise ValueError(f"Failed to decrypt private key: {e}")
 
 
+def resolve_recipients_with_self(recipients: list, sender, enabled: bool = True) -> list:
+    """Resolve the recipient list for an asymmetric encryption (encrypt-to-self).
+
+    Feature #6: when encrypting *for* one or more recipients, the sender's own
+    identity is added as an additional recipient so the sender can later
+    decrypt their own outbound file. This avoids a common data-loss footgun
+    where the sender keeps the ciphertext but can no longer read it.
+
+    The sender is appended only when ``enabled`` is true and the sender is not
+    already an explicit recipient (matched by fingerprint, so no duplicate KEM
+    slot is created). The input ``recipients`` list is never mutated.
+
+    Args:
+        recipients: Recipient identities (each exposing a ``fingerprint``
+            attribute).
+        sender: The sender identity (exposing a ``fingerprint`` attribute), or
+            ``None``.
+        enabled: Whether encrypt-to-self is active (default ``True``).
+
+    Returns:
+        A new list of recipients, with the sender appended when applicable.
+    """
+    result = list(recipients)
+    if not enabled or sender is None:
+        return result
+    if any(getattr(r, "fingerprint", None) == sender.fingerprint for r in result):
+        return result
+    result.append(sender)
+    return result
+
+
 if __name__ == "__main__":
     # Simple test
     eprint("Testing Identity Management...")
