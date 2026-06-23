@@ -66,17 +66,45 @@ def decrypt_foreign_cli(args) -> int:
     elif fmt == "pgp":
         from . import openpgp as _pgp
 
+        key_files = getattr(args, "pgp_key", None) or []
         passphrase = getattr(args, "password", None) or os.environ.get("OPENSSL_ENCRYPT_PASSWORD")
-        if passphrase is None:
-            passphrase = getpass.getpass("Passphrase for OpenPGP file: ")
-        try:
-            plaintext = _pgp.decrypt(data, passphrase=passphrase)
-        except _pgp.OpenPGPWrongPassphrase:
-            eprint("Error: wrong passphrase for this OpenPGP file.")
-            return 1
-        except _pgp.OpenPGPError as exc:
-            eprint(f"Error: OpenPGP decryption failed: {exc}")
-            return 1
+
+        if key_files:
+            # Public-key message: unlock the secret key(s) with the passphrase.
+            from . import openpgp_pubkey as _pgpk
+
+            if passphrase is None:
+                passphrase = getpass.getpass("Passphrase for OpenPGP secret key: ")
+            try:
+                secret_keys = []
+                for path in key_files:
+                    with open(path, "rb") as kf:
+                        secret_keys.extend(_pgpk.parse_secret_keys(kf.read(), passphrase))
+                plaintext = _pgpk.decrypt(data, secret_keys=secret_keys)
+            except _pgpk.OpenPGPNoMatchingKey:
+                eprint("Error: none of the supplied OpenPGP keys match this message.")
+                return 1
+            except _pgp.OpenPGPWrongPassphrase:
+                eprint("Error: wrong passphrase (could not unlock the OpenPGP secret key).")
+                return 1
+            except _pgp.OpenPGPError as exc:
+                eprint(f"Error: OpenPGP decryption failed: {exc}")
+                return 1
+            except OSError as exc:
+                eprint(f"Error: cannot read OpenPGP key file: {exc}")
+                return 1
+        else:
+            # Passphrase-based (gpg -c) message.
+            if passphrase is None:
+                passphrase = getpass.getpass("Passphrase for OpenPGP file: ")
+            try:
+                plaintext = _pgp.decrypt(data, passphrase=passphrase)
+            except _pgp.OpenPGPWrongPassphrase:
+                eprint("Error: wrong passphrase for this OpenPGP file.")
+                return 1
+            except _pgp.OpenPGPError as exc:
+                eprint(f"Error: OpenPGP decryption failed: {exc}")
+                return 1
 
     else:
         eprint(f"Error: unsupported foreign format: {fmt}")

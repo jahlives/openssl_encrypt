@@ -85,6 +85,9 @@ class OpenPGPWrongPassphrase(OpenPGPError):
 
 _ARMOR_BEGIN = b"-----BEGIN PGP MESSAGE-----"
 _ARMOR_END = b"-----END PGP MESSAGE-----"
+# Generic prefixes so any PGP armor (MESSAGE, PRIVATE KEY BLOCK, …) de-armors.
+_ARMOR_BEGIN_PREFIX = b"-----BEGIN PGP "
+_ARMOR_END_PREFIX = b"-----END PGP "
 
 
 def _crc24(data: bytes) -> int:
@@ -100,7 +103,7 @@ def _crc24(data: bytes) -> int:
 
 def _maybe_dearmor(data: bytes) -> bytes:
     stripped = data.lstrip()
-    if not stripped.startswith(_ARMOR_BEGIN):
+    if not stripped.startswith(_ARMOR_BEGIN_PREFIX):
         return data
     lines = stripped.split(b"\n")
     body_lines = []
@@ -109,10 +112,10 @@ def _maybe_dearmor(data: bytes) -> bytes:
     blank_seen = False
     for line in lines:
         s = line.rstrip(b"\r")
-        if s.startswith(_ARMOR_BEGIN):
+        if s.startswith(_ARMOR_BEGIN_PREFIX):
             in_body = True
             continue
-        if s.startswith(_ARMOR_END):
+        if s.startswith(_ARMOR_END_PREFIX):
             break
         if not in_body:
             continue

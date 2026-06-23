@@ -849,6 +849,15 @@ def setup_decrypt_parser(subparser):
         help="age secret-key file (keys.txt with AGE-SECRET-KEY-1… lines) for "
         "X25519 recipients; may be given multiple times.",
     )
+    foreign_group.add_argument(
+        "--pgp-key",
+        dest="pgp_key",
+        metavar="FILE",
+        action="append",
+        help="OpenPGP secret-key file (armored or binary) for public-key "
+        "messages (--from pgp); the key passphrase comes from --password/prompt. "
+        "Without this, --from pgp expects a passphrase-based (gpg -c) message.",
+    )
 
     # Display options
     subparser.add_argument(

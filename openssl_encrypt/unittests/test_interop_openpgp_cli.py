@@ -79,5 +79,63 @@ class TestDecryptFromPgpCLI(unittest.TestCase):
         self.assertFalse(os.path.exists(out))
 
 
+_PK_DIR = os.path.join(os.path.dirname(__file__), "testfiles", "openpgp_pubkey")
+_PK_PW = "keypw"
+_PK_EXPECT = b"public-key openpgp interop test message"
+
+
+class TestDecryptFromPgpPublicKeyCLI(TestDecryptFromPgpCLI):
+    """`decrypt --from pgp --pgp-key …` for public-key messages."""
+
+    def _decrypt_pk(self, name, password=_PK_PW, key=None):
+        out = os.path.join(self.tmp, "out.txt")
+        rc = self._run(
+            [
+                "--quiet",
+                "decrypt",
+                "--from",
+                "pgp",
+                "--pgp-key",
+                os.path.join(_PK_DIR, key or f"sec_{name}.asc"),
+                "--input",
+                os.path.join(_PK_DIR, f"msg_{name}.gpg"),
+                "--password",
+                password,
+                "--output",
+                out,
+            ]
+        )
+        return rc, out
+
+    def test_rsa(self):
+        rc, out = self._decrypt_pk("rsa")
+        self.assertEqual(rc, 0)
+        with open(out, "rb") as f:
+            self.assertEqual(f.read(), _PK_EXPECT)
+
+    def test_cv25519(self):
+        rc, out = self._decrypt_pk("cv25519")
+        self.assertEqual(rc, 0)
+        with open(out, "rb") as f:
+            self.assertEqual(f.read(), _PK_EXPECT)
+
+    def test_nistp521(self):
+        rc, out = self._decrypt_pk("nistp521")
+        self.assertEqual(rc, 0)
+        with open(out, "rb") as f:
+            self.assertEqual(f.read(), _PK_EXPECT)
+
+    def test_wrong_key_passphrase_fails(self):
+        rc, out = self._decrypt_pk("rsa", password="wrong")
+        self.assertEqual(rc, 1)
+        self.assertFalse(os.path.exists(out))
+
+    def test_non_matching_key_fails(self):
+        # cv25519 message with the RSA key supplied.
+        rc, out = self._decrypt_pk("cv25519", key="sec_rsa.asc")
+        self.assertEqual(rc, 1)
+        self.assertFalse(os.path.exists(out))
+
+
 if __name__ == "__main__":
     unittest.main()
