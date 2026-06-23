@@ -73,6 +73,14 @@ This release **removes** all deprecated algorithms entirely — both encryption 
   extra recipient so the sender can decrypt their own outbound file. Reuses the
   multi-recipient ML-KEM wrapping, de-duplicated by fingerprint. Opt out with
   `--no-encrypt-to-self`.
+- **Detached file signing** (`sign` / `verify-signature`): post-quantum
+  (ML-DSA-65) detached signatures over arbitrary files, closing the authenticity
+  gap of symmetric AEAD. `sign` writes a `.sig` JSON sidecar (ASCII-armored by
+  default; `--no-armor` for raw) binding the file's SHA-512 to the signer over a
+  domain-separated payload. `verify-signature` resolves the signer from your
+  identity store/contacts by fingerprint (fails closed on an unknown signer;
+  `--signer` to pin), reports which component(s) verified, and supports `--json`.
+  New module `modules/file_signature.py`.
 
 **Migration Guide:**
 1. Decrypt all files using deprecated algorithms with v1.4.x
