@@ -85,10 +85,11 @@ This release **removes** all deprecated algorithms entirely — both encryption 
   read-only decryption of files from other ecosystems, built directly on pyca
   (no new dependency). `age` (X25519 via `--age-identity`, scrypt via `--password`,
   binary/armored, GREASE-safe) validated against the age reference impl;
-  OpenPGP symmetric (`gpg -c`: S2K, SEIPD v1 CFB+MDC, ZIP/ZLIB/BZIP2, 3DES/CAST5/
-  AES/Camellia) validated against real GnuPG output. Integrity is verified before
-  any plaintext is returned; the unauthenticated OpenPGP SED packet is refused.
-  OpenPGP public-key decryption follows. New package `modules/interop/`.
+  OpenPGP (`gpg -c` symmetric: S2K, SEIPD v1 CFB+MDC, ZIP/ZLIB/BZIP2, 3DES/CAST5/
+  AES/Camellia; and public-key via `--pgp-key`: RSA PKCS#1 v1.5 and ECDH over
+  Curve25519 / NIST P-256/384/521) validated against real GnuPG output.
+  Integrity is verified before any plaintext is returned; the unauthenticated
+  OpenPGP SED packet is refused. New package `modules/interop/`.
 
 **Migration Guide:**
 1. Decrypt all files using deprecated algorithms with v1.4.x

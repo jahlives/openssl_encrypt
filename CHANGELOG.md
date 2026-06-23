@@ -17,10 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     repeatable) and scrypt passphrase files (`age -p`, via `--password`); binary
     and ASCII-armored; unknown/GREASE stanzas skipped. Validated against the
     `age` reference implementation's known-answer vectors.
-  - **OpenPGP symmetric** (`--from pgp`): passphrase-based messages (`gpg -c`) —
-    SKESK + S2K, SEIPD v1 (CFB + SHA-1 MDC), inner ZIP/ZLIB/BZIP2 compression,
-    ciphers 3DES/CAST5/AES-128/192/256/Camellia. Validated against real GnuPG
-    output. (OpenPGP *public-key* messages are a later phase.)
+  - **OpenPGP** (`--from pgp`): both passphrase-based (`gpg -c`) and
+    **public-key** messages. Symmetric: SKESK + S2K, SEIPD v1 (CFB + SHA-1 MDC),
+    inner ZIP/ZLIB/BZIP2 compression, ciphers 3DES/CAST5/AES-128/192/256/Camellia.
+    Public-key (`--pgp-key FILE`, key passphrase via `--password`): parses an
+    exported secret key and unwraps the session key for **RSA** (PKCS#1 v1.5) and
+    **ECDH** (RFC 6637 + RFC 3394) over Curve25519 and NIST P-256/384/521. All
+    validated against real GnuPG output.
   - Untrusted-input hardening across both: integrity (age MAC/AEAD; OpenPGP MDC)
     is verified before any plaintext is returned, unauthenticated OpenPGP data
     (SED) is refused, decompression and packet/work-factor sizes are bounded,
