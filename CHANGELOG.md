@@ -9,17 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Foreign-format interop — decrypt `age` files** (`decrypt --from age`):
-  read-only decryption of files produced by `age`/`rage`, to ease migration.
-  Supports X25519 recipients (`--age-identity keys.txt`, repeatable) and scrypt
-  passphrase files (`age -p`, via `--password`/prompt); reads binary and
-  ASCII-armored age, and skips unknown/GREASE recipient stanzas. Implemented
-  directly on `cryptography` — **no new dependency** — and validated against
-  known-answer vectors from the `age` reference implementation. Untrusted-input
-  hardening: the header MAC and every payload chunk are authenticated before any
-  plaintext is returned, a scrypt stanza must be the file's only stanza, the
-  scrypt work factor is capped, and reads are bounded. (OpenPGP support is the
-  next phase.) New package `openssl_encrypt/modules/interop/`.
+- **Foreign-format interop — decrypt `age` and OpenPGP files**
+  (`decrypt --from age|pgp`): read-only decryption of files produced by other
+  ecosystems, to ease migration. Implemented directly on `cryptography` — **no
+  new dependency**.
+  - **age** (`--from age`): X25519 recipients (`--age-identity keys.txt`,
+    repeatable) and scrypt passphrase files (`age -p`, via `--password`); binary
+    and ASCII-armored; unknown/GREASE stanzas skipped. Validated against the
+    `age` reference implementation's known-answer vectors.
+  - **OpenPGP symmetric** (`--from pgp`): passphrase-based messages (`gpg -c`) —
+    SKESK + S2K, SEIPD v1 (CFB + SHA-1 MDC), inner ZIP/ZLIB/BZIP2 compression,
+    ciphers 3DES/CAST5/AES-128/192/256/Camellia. Validated against real GnuPG
+    output. (OpenPGP *public-key* messages are a later phase.)
+  - Untrusted-input hardening across both: integrity (age MAC/AEAD; OpenPGP MDC)
+    is verified before any plaintext is returned, unauthenticated OpenPGP data
+    (SED) is refused, decompression and packet/work-factor sizes are bounded,
+    and unsupported constructions fail closed. New package
+    `openssl_encrypt/modules/interop/`.
 
 - **Detached file signing** (`sign` / `verify-signature`): post-quantum
   (ML-DSA-65) detached signatures over **arbitrary files**, closing the
