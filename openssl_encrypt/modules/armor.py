@@ -28,9 +28,16 @@ import base64
 import binascii
 from typing import Union
 
-# Envelope markers. Kept stable for forward/backward compatibility.
-ARMOR_BEGIN = b"-----BEGIN OPENSSL-ENCRYPT MESSAGE-----"
-ARMOR_END = b"-----END OPENSSL-ENCRYPT MESSAGE-----"
+# Envelope marker family. The label distinguishes payload kinds (e.g. MESSAGE
+# for ciphertext, SIGNATURE for detached signatures) while keeping a single
+# parser. The default MESSAGE markers are kept stable for backward compatibility.
+_MARKER_BEGIN_PREFIX = b"-----BEGIN OPENSSL-ENCRYPT "
+_MARKER_END_PREFIX = b"-----END OPENSSL-ENCRYPT "
+_MARKER_SUFFIX = b"-----"
+DEFAULT_LABEL = "MESSAGE"
+
+ARMOR_BEGIN = _MARKER_BEGIN_PREFIX + DEFAULT_LABEL.encode("ascii") + _MARKER_SUFFIX
+ARMOR_END = _MARKER_END_PREFIX + DEFAULT_LABEL.encode("ascii") + _MARKER_SUFFIX
 
 # Base64 characters per body line (PEM convention).
 LINE_WIDTH = 64
@@ -77,11 +84,22 @@ def _as_bytes(data: Union[bytes, bytearray, str]) -> bytes:
     return bytes(data)
 
 
-def armor(data: Union[bytes, bytearray]) -> bytes:
+def _begin_marker(label: str) -> bytes:
+    return _MARKER_BEGIN_PREFIX + label.encode("ascii") + _MARKER_SUFFIX
+
+
+def _end_marker(label: str) -> bytes:
+    return _MARKER_END_PREFIX + label.encode("ascii") + _MARKER_SUFFIX
+
+
+def armor(data: Union[bytes, bytearray], label: str = DEFAULT_LABEL) -> bytes:
     """Wrap binary ``data`` in an ASCII-armored PEM envelope.
 
     Args:
-        data: The raw encrypted-file bytes to encode.
+        data: The raw bytes to encode.
+        label: PEM label placed in the BEGIN/END markers (e.g. ``"MESSAGE"`` for
+            ciphertext, ``"SIGNATURE"`` for a detached signature). Defaults to
+            ``"MESSAGE"`` for backward compatibility.
 
     Returns:
         The armored representation as ``bytes`` (ASCII, newline-terminated).
@@ -89,11 +107,11 @@ def armor(data: Union[bytes, bytearray]) -> bytes:
     payload = bytes(data)
     encoded = base64.b64encode(payload)
 
-    lines = [ARMOR_BEGIN]
+    lines = [_begin_marker(label)]
     for i in range(0, len(encoded), LINE_WIDTH):
         lines.append(encoded[i : i + LINE_WIDTH])
     lines.append(_crc24_line(payload))
-    lines.append(ARMOR_END)
+    lines.append(_end_marker(label))
     return b"\n".join(lines) + b"\n"
 
 
@@ -114,21 +132,25 @@ def is_armored(data: Union[bytes, bytearray, str]) -> bool:
         raw = _as_bytes(data)
     except UnicodeEncodeError:
         return False
-    return raw.lstrip().startswith(ARMOR_BEGIN)
+    return raw.lstrip().startswith(_MARKER_BEGIN_PREFIX)
 
 
-def dearmor(data: Union[bytes, bytearray, str]) -> bytes:
+def dearmor(data: Union[bytes, bytearray, str], expected_label: str = None) -> bytes:
     """Decode an ASCII-armored message back to its original bytes.
 
     Args:
         data: The armored message (bytes or text).
+        expected_label: If given, require the envelope's PEM label to equal this
+            value (e.g. ``"SIGNATURE"``); a mismatch raises :class:`ArmorError`.
+            ``None`` accepts any label.
 
     Returns:
         The original binary payload.
 
     Raises:
-        ArmorError: If the markers are missing, the Base64 body is invalid, or
-            the CRC-24 checksum does not match (truncation/corruption).
+        ArmorError: If the markers are missing, the label does not match
+            ``expected_label``, the Base64 body is invalid, or the CRC-24
+            checksum does not match (truncation/corruption).
     """
     try:
         raw = _as_bytes(data)
@@ -139,13 +161,27 @@ def dearmor(data: Union[bytes, bytearray, str]) -> bytes:
     lines = raw.replace(b"\r\n", b"\n").replace(b"\r", b"\n").split(b"\n")
     stripped = [ln.strip() for ln in lines]
 
-    # Locate the envelope markers.
-    try:
-        begin = stripped.index(ARMOR_BEGIN)
-    except ValueError:
+    # Locate the BEGIN marker by its family prefix and extract the label.
+    begin = None
+    label = None
+    for i, ln in enumerate(stripped):
+        if (
+            ln.startswith(_MARKER_BEGIN_PREFIX)
+            and ln.endswith(_MARKER_SUFFIX)
+            and len(ln) > len(_MARKER_BEGIN_PREFIX) + len(_MARKER_SUFFIX)
+        ):
+            begin = i
+            label = ln[len(_MARKER_BEGIN_PREFIX) : -len(_MARKER_SUFFIX)]
+            break
+    if begin is None:
         raise ArmorError("missing BEGIN marker: input is not ASCII-armored")
+
+    if expected_label is not None and label != expected_label.encode("ascii"):
+        raise ArmorError(f"unexpected armor label: got {label!r}, expected {expected_label!r}")
+
+    end_marker = _MARKER_END_PREFIX + label + _MARKER_SUFFIX
     try:
-        end = stripped.index(ARMOR_END, begin + 1)
+        end = stripped.index(end_marker, begin + 1)
     except ValueError:
         raise ArmorError("missing END marker: armored input is truncated")
 
