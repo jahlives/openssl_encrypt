@@ -81,6 +81,12 @@ This release **removes** all deprecated algorithms entirely — both encryption 
   identity store/contacts by fingerprint (fails closed on an unknown signer;
   `--signer` to pin), reports which component(s) verified, and supports `--json`.
   New module `modules/file_signature.py`.
+- **Foreign-format interop — decrypt `age`** (`decrypt --from age`): read-only
+  decryption of `age`/`rage` files (X25519 via `--age-identity`, scrypt via
+  `--password`), binary and armored, GREASE-safe. Built directly on pyca
+  (no new dependency), validated against the age reference implementation's
+  known-answer vectors; integrity is verified before any plaintext is returned.
+  OpenPGP support follows. New package `modules/interop/`.
 
 **Migration Guide:**
 1. Decrypt all files using deprecated algorithms with v1.4.x

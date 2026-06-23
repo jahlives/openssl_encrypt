@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Foreign-format interop — decrypt `age` files** (`decrypt --from age`):
+  read-only decryption of files produced by `age`/`rage`, to ease migration.
+  Supports X25519 recipients (`--age-identity keys.txt`, repeatable) and scrypt
+  passphrase files (`age -p`, via `--password`/prompt); reads binary and
+  ASCII-armored age, and skips unknown/GREASE recipient stanzas. Implemented
+  directly on `cryptography` — **no new dependency** — and validated against
+  known-answer vectors from the `age` reference implementation. Untrusted-input
+  hardening: the header MAC and every payload chunk are authenticated before any
+  plaintext is returned, a scrypt stanza must be the file's only stanza, the
+  scrypt work factor is capped, and reads are bounded. (OpenPGP support is the
+  next phase.) New package `openssl_encrypt/modules/interop/`.
+
 - **Detached file signing** (`sign` / `verify-signature`): post-quantum
   (ML-DSA-65) detached signatures over **arbitrary files**, closing the
   authenticity gap of symmetric AEAD (which gives confidentiality + integrity
