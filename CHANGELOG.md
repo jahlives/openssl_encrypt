@@ -285,6 +285,19 @@ inflated KDF metadata parameters, not cosmetic output.
 
 ### Security
 
+- **Cascade + streaming per-chunk nonce reuse fixed**: streaming encryption of
+  a `cascade` chain reused a single cascade salt for every chunk. Because each
+  cascade layer derives its key *and* AEAD nonce from `(master_key, salt)`, this
+  reused the per-layer nonce across all chunks — catastrophic AEAD nonce reuse
+  (a confidentiality/integrity break) for multi-chunk cascade streaming files
+  (format v12). Each chunk now derives a unique cascade salt via HKDF
+  (`oesc-cascade-chunk-salt`), recorded as `streaming.cascade_nonce_scheme = 2`
+  in metadata. Files written before the fix lack the flag, are read as the
+  legacy scheme (1) for backward compatibility, and emit a security warning
+  urging re-encryption (rekey). Non-cascade streaming was unaffected (it already
+  derived a unique per-chunk nonce). Covered by new adversarial and legacy-read
+  tests in `test_streaming.py`.
+
 Security-review findings (SECURITY_REVIEW_FINDINGS.md) fixed and ported to
 the 1.5 branch:
 
