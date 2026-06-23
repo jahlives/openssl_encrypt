@@ -61,6 +61,18 @@ This release **removes** all deprecated algorithms entirely — both encryption 
 - Cleaned deprecation infrastructure for future use
 - Smaller, cleaner codebase with no dead code paths
 - Updated JSON schemas (config template, keystore) to reflect removed algorithms
+- **ASCII armor** (`encrypt --armor` / `-a`): PEM-style Base64 output that
+  survives email, chat, YAML and copy-paste, wrapped in a
+  `BEGIN/END OPENSSL-ENCRYPT MESSAGE` envelope with an OpenPGP-style CRC-24
+  checksum for paste-truncation detection (fails closed on malformed armor).
+  `decrypt`/`info`/`verify` auto-detect armored input; the round-trip is
+  byte-exact. Covers symmetric, `stdin`→`stdout` streaming and
+  recipient/asymmetric output. New module `modules/armor.py`.
+- **Encrypt-to-self** (default on): when encrypting for recipients
+  (`--for-identity`), the sender's own identity (`--sign-with`) is added as an
+  extra recipient so the sender can decrypt their own outbound file. Reuses the
+  multi-recipient ML-KEM wrapping, de-duplicated by fingerprint. Opt out with
+  `--no-encrypt-to-self`.
 
 **Migration Guide:**
 1. Decrypt all files using deprecated algorithms with v1.4.x
