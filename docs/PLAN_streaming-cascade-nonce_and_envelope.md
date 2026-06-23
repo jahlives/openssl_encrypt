@@ -146,7 +146,7 @@ per-chunk `nonce` derived at line 503. `cascade.py` derives each layer's key+non
       wrapped_dek present+base64+size, wrong-password fails, non-envelope has no wrapped_dek.
 - [x] **4. [Red→Green]** streaming under DEK — `test_envelope_streaming_roundtrip` (key=DEK flows
       into StreamingEncryptor/Decryptor). 16 envelope tests green; cascade regression 78 green.
-- [ ] **5. [Red→Green]** `rekey` fast path: assert ciphertext bytes unchanged, only header rewrapped.
+- [ ] **5. [Red→Green]** `rekey` fast path — **BLOCKED: OPEN DESIGN DECISION (see below).** Deferred.
 - [ ] **6. [Green]** backward-compat: pre-envelope files decrypt unchanged.
 - [ ] **7. Security tests:** DEK/KEK zeroed on all paths; absent from logs & exception messages.
 - [ ] **8. Release artifacts** (CHANGELOG.md ### Added, version.py.template + version.py, flatpak
@@ -156,7 +156,66 @@ per-chunk `nonce` derived at line 503. `cascade.py` derives each layer's key+non
 
 ---
 
+## ⚠️ OPEN DESIGN DECISION FOR TOMORROW — envelope rekey fast-path vs AEAD binding
+
+**Status:** Cycles 1–4 of Feature #2 are DONE and committed (envelope works end-to-end;
+`--envelope` opt-in; one-shot/cascade/streaming round-trip). Cycle 5 (the O(1) rekey fast-path —
+envelope's headline benefit) is **BLOCKED** on the decision below. Decide tomorrow, then implement.
+
+### The conflict (verified in code)
+- Bulk ciphertext is AEAD-bound to the FULL metadata: `aad = metadata_b64` (one-shot:
+  `aad_for_decrypt = metadata_b64` at decrypt; streaming: `build_chunk_aad(metadata_b64, ...)`).
+- `metadata_b64` includes the KDF **salt**, **kdf_config**, AND the new **`encryption.wrapped_dek`**.
+- A rekey with a new password MUST change salt → new KEK → new `wrapped_dek`. That changes the AAD,
+  so the OLD bulk ciphertext would fail authentication. ⇒ "keep ciphertext, only rewrap the DEK"
+  (true O(1) rekey) is **incompatible** with the current full-metadata AEAD binding.
+
+### The sound fix (standard envelope construction)
+Make the envelope bulk AEAD bind only a **stable subset** of metadata — algorithm, format_version,
+cascade chain (cipher_chain/layer_info), streaming params (chunk_size/chunk_count/nonce_prefix/
+cascade_nonce_scheme), encryption_data — and EXCLUDE the KEK-derivation fields
+(`derivation_config.salt`, `derivation_config.kdf_config`/`hash_config`, `encryption.wrapped_dek`).
+- **Why safe:** `wrapped_dek` is itself AES-GCM authenticated, so tampering with salt/kdf/wrapped_dek
+  just makes `unwrap_dek` fail closed; the DEK (actual bulk key) is unchanged by a rekey. Everything
+  that affects *interpretation* of the bulk ciphertext stays in the AAD; only the *access-gating*
+  KEK material is excluded. This is the conventional KEM/DEK envelope AAD split.
+- **Cost/risk:** security-sensitive change to AAD computation in BOTH encrypt and decrypt, across
+  one-shot + cascade + streaming. Needs a canonical stable-subset serializer (deterministic key
+  order) used identically on both sides, plus adversarial tests (tamper each excluded field ⇒
+  unwrap fails; tamper each included field ⇒ auth fails; cross-file wrapped_dek swap ⇒ fails).
+
+### Options (pick one tomorrow)
+- **A. Implement stable-subset AAD** (recommended) → enables true O(1) rekey (rewrap DEK + rewrite
+  metadata, copy bulk ciphertext verbatim). Most value; most care required.
+- **B. Ship envelope WITHOUT fast-path** → keep full-metadata binding; rekey stays full re-encrypt
+  even for envelope files. Envelope is then only DEK indirection (foundation for multi-recipient),
+  with little immediate user benefit. Low risk.
+- **C. Revert Feature #2** if the fast-path isn't worth the AAD change (cycles 1–4 are isolated on
+  `feature/envelope-encryption`, easy to shelve).
+
+### If A is chosen — implementation sketch
+1. Add `envelope_aad(metadata) -> bytes`: canonical JSON of the stable subset (sorted keys).
+2. encrypt_file + StreamingEncryptor + cascade: when envelope, use `envelope_aad` instead of
+   `metadata_b64` for the bulk AEAD AAD (a flag/param threaded down). Non-envelope unchanged.
+3. decrypt_file mirror: when `wrapped_dek` present, recompute `envelope_aad` for bulk decryption.
+4. rekey_file: envelope fast-path — read file, derive old KEK, unwrap DEK; derive new KEK (new
+   salt/kdf from new password/config), rewrap DEK; rewrite metadata (new salt/kdf/wrapped_dek),
+   keep payload bytes; recompute nothing on the bulk side because `envelope_aad` is unchanged.
+   Add test: bulk ciphertext bytes identical before/after rekey; new password decrypts; old fails.
+5. Full adversarial test pass (above).
+
+### Remaining Feature #2 cycles after the decision
+6 backward-compat (mostly green) · 7 security/wipe tests (DEK/KEK zeroed, never logged) ·
+8 release artifacts (CHANGELOG ### Added, version.py.template+version.py, flatpak metainfo.xml) ·
+9 post-change full suite → test-logs/postfix_envelope.log · 10 final commit.
+
 ## Progress log (newest first)
+- 2026-06-23 (later): Feature #1 committed on feature/streaming-cascade-nonce-fix (08cc2052).
+  v1.4.x regression-guard committed (6470b1e6) — v1.4.x was already protected via chunk_nonce.
+  Feature #2 cycles 1-4 committed on feature/envelope-encryption (cycle1 7e4a89cb; cycles2-4
+  17055935): envelope.py primitive + --envelope opt-in + encrypt/decrypt integration + streaming.
+  16 envelope tests green. Cycle 5 (rekey fast-path) BLOCKED on the AEAD-binding design decision
+  above — left for tomorrow. STOP POINT: resume by deciding A/B/C above.
 - 2026-06-23: Plan drafted. Branch `feature/streaming-cascade-nonce-fix` created off v1.5.x.
   Root cause confirmed (streaming.py:509-512). Baseline full suite running
   (`test-logs/baseline_cascade_nonce_fix.log`). Memory updated with the 5 changelog locations.
