@@ -131,15 +131,21 @@ per-chunk `nonce` derived at line 503. `cascade.py` derives each layer's key+non
 - Tests: new `test_envelope_encryption.py`; touch `test_rekey.py`
 
 ## TDD cycles — tasks
-- [~] **0. Baseline** on `feature/envelope-encryption` (off v1.5.x-dev) → `test-logs/baseline_envelope.log` (RUNNING).
+- [x] **0. Baseline** on `feature/envelope-encryption` (off v1.5.x-dev) → `test-logs/baseline_envelope.log`: 4988 passed, 25 skipped, 4 xfailed, 0 failed.
 - [x] **1. [Red→Green]** DEK wrap/unwrap primitive — `modules/envelope.py` (`generate_dek`,
       `wrap_dek`, `unwrap_dek`; AES-256-GCM, HKDF-domain-separated wrap key, `secure_memzero`).
       9 tests in `test_envelope_encryption.py` (roundtrip, wrong-KEK, tamper, sizes, short-KEK). GREEN.
       Standalone module (no PQ KEM dependency). Commit pending.
-- [ ] **2. [Red→Green]** flag plumbing (`--envelope`) parsed & threaded to encrypt_file.
-- [ ] **3. [Red→Green]** bulk encrypt/decrypt under DEK via additive `encryption.wrapped_dek`
-      (existing format_version preserved); non-envelope still works; decrypt auto-detects.
-- [ ] **4. [Red→Green]** streaming under DEK.
+- [x] **2. [Red→Green]** `--envelope` flag added to encrypt subparser, threaded to all 3
+      `encrypt_file(` CLI call sites (`envelope=getattr(args,"envelope",False)`).
+- [x] **3. [Red→Green]** bulk encrypt/decrypt under DEK via additive `encryption.wrapped_dek`
+      (existing format_version preserved). encrypt_file: DEK swap after KEK finalized (crypt_core
+      ~5807), wrapped_dek injected before each `json.dumps(metadata)` (3 sites). decrypt_file: unwrap
+      after KEK derived (~8829). No schema change needed (encryption.additionalProperties=true).
+      Non-envelope unchanged; decrypt auto-detects. Tests: aes-gcm/chacha/cascade roundtrip,
+      wrapped_dek present+base64+size, wrong-password fails, non-envelope has no wrapped_dek.
+- [x] **4. [Red→Green]** streaming under DEK — `test_envelope_streaming_roundtrip` (key=DEK flows
+      into StreamingEncryptor/Decryptor). 16 envelope tests green; cascade regression 78 green.
 - [ ] **5. [Red→Green]** `rekey` fast path: assert ciphertext bytes unchanged, only header rewrapped.
 - [ ] **6. [Green]** backward-compat: pre-envelope files decrypt unchanged.
 - [ ] **7. Security tests:** DEK/KEK zeroed on all paths; absent from logs & exception messages.

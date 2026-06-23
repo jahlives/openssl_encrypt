@@ -5217,6 +5217,7 @@ def encrypt_file(
     chunk_size=None,
     no_streaming=False,
     streaming_threshold=None,
+    envelope=False,
 ):
     """
     Encrypt a file (or in-memory bytes) with a password using the specified algorithm.
@@ -5803,6 +5804,26 @@ def encrypt_file(
             hsm_pepper=combined_pepper,
             format_version=format_version,  # v10: Sequential XOR, v9: Secure chained salt
         )
+
+    # --- Envelope (DEK/KEK) wrapping (opt-in) ---
+    # When envelope mode is on, bulk data is encrypted under a random DEK, and
+    # that DEK is wrapped with the password-derived key (now acting as the KEK).
+    # The wrapped DEK is stored in metadata (encryption.wrapped_dek) so a future
+    # rekey only has to rewrap it. The KEK is then zeroed and ``key`` is rebound
+    # to the DEK, so every downstream bulk path (one-shot, cascade, streaming)
+    # transparently uses the DEK.
+    _envelope_wrapped_dek = None
+    if envelope:
+        from .envelope import generate_dek, wrap_dek
+
+        _dek = generate_dek()
+        try:
+            _envelope_wrapped_dek = wrap_dek(bytes(_dek), key)
+        finally:
+            secure_memzero(key)
+            key = bytes(_dek)
+            secure_memzero(_dek)
+
     # --- Streaming encryption path ---
     # The streaming decision was made BEFORE key derivation (see above) so
     # that format_version-dependent derivation matches the v12 metadata.
@@ -5899,6 +5920,10 @@ def encrypt_file(
                 "original_path": _archive_original_path,
             }
 
+        if _envelope_wrapped_dek is not None:
+            metadata.setdefault("encryption", {})["wrapped_dek"] = base64.b64encode(
+                _envelope_wrapped_dek
+            ).decode("ascii")
         metadata_json = json.dumps(metadata).encode("utf-8")
         metadata_b64 = base64.b64encode(metadata_json)
 
@@ -6673,6 +6698,10 @@ def encrypt_file(
                 "original_path": _archive_original_path,
             }
 
+        if _envelope_wrapped_dek is not None:
+            metadata.setdefault("encryption", {})["wrapped_dek"] = base64.b64encode(
+                _envelope_wrapped_dek
+            ).decode("ascii")
         metadata_json = json.dumps(metadata).encode("utf-8")
         metadata_b64 = base64.b64encode(metadata_json)
 
@@ -6939,6 +6968,10 @@ def encrypt_file(
 
         # If scrypt is used, add rounds to hash_config
         # Serialize and encode the metadata
+        if _envelope_wrapped_dek is not None:
+            metadata.setdefault("encryption", {})["wrapped_dek"] = base64.b64encode(
+                _envelope_wrapped_dek
+            ).decode("ascii")
         metadata_json = json.dumps(metadata).encode("utf-8")
         metadata_base64 = base64.b64encode(metadata_json)
 
@@ -8797,6 +8830,23 @@ def decrypt_file(
             hsm_pepper=combined_pepper,
             format_version=format_version,  # Use version from file metadata for backward compatibility
         )
+
+    # --- Envelope (DEK/KEK) unwrap (opt-in, auto-detected) ---
+    # If the file was written in envelope mode, the password-derived key is the
+    # KEK: unwrap the stored DEK and rebind ``key`` to it so every bulk
+    # decryption path uses the DEK. Files without wrapped_dek are unaffected.
+    _enc_meta = metadata.get("encryption", {}) if isinstance(metadata, dict) else {}
+    _wrapped_dek_b64 = _enc_meta.get("wrapped_dek")
+    if _wrapped_dek_b64:
+        from .envelope import unwrap_dek
+
+        _kek = key
+        try:
+            _dek = unwrap_dek(base64.b64decode(_wrapped_dek_b64), _kek)
+        finally:
+            secure_memzero(_kek)
+        key = bytes(_dek)
+        secure_memzero(_dek)
 
     # Helper function to get expected nonce size for each algorithm
     def get_nonce_size(alg, include_legacy=True):

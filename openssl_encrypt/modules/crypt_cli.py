@@ -3323,6 +3323,15 @@ def main_with_args(args=None):
         "Default: 10M. Files below this size use one-shot encryption.",
     )
 
+    parser.add_argument(
+        "--envelope",
+        action="store_true",
+        help="Envelope mode: encrypt the data under a random data key (DEK) that is "
+        "wrapped with your password-derived key. A future 'rekey' then only rewraps "
+        "the small DEK instead of re-encrypting the whole file. Decryption "
+        "auto-detects envelope files; default off.",
+    )
+
     # Add CLI aliases for simplified user experience
     alias_processor = add_cli_aliases(parser)
 
@@ -6702,6 +6711,7 @@ def main_with_args(args=None):
                             chunk_size=_streaming_chunk_size,
                             no_streaming=getattr(args, "no_streaming", False),
                             streaming_threshold=_streaming_threshold,
+                            envelope=getattr(args, "envelope", False),
                         )
 
                     if success:
@@ -6925,6 +6935,7 @@ def main_with_args(args=None):
                     chunk_size=_streaming_chunk_size,
                     no_streaming=getattr(args, "no_streaming", False),
                     streaming_threshold=_streaming_threshold,
+                    envelope=getattr(args, "envelope", False),
                 )
 
                 if success:
@@ -7560,6 +7571,7 @@ def main_with_args(args=None):
                         chunk_size=_streaming_chunk_size,
                         no_streaming=getattr(args, "no_streaming", False),
                         streaming_threshold=_streaming_threshold,
+                        envelope=getattr(args, "envelope", False),
                     )
 
             if success:
