@@ -3353,6 +3353,8 @@ def main():
         "keyserver",
         "hsm",
         "verify-integrity",
+        "sign",
+        "verify-signature",
     ]
 
     # Use subparser only if a subcommand is present
@@ -4973,6 +4975,28 @@ def main_with_args(args=None):
                 as_json=args.json,
             )
         )
+
+    elif args.action == "sign":
+        # Create a detached post-quantum signature for a file (feature #1)
+        try:
+            from .file_signature import sign_file_cli
+
+            sign_file_cli(args)
+            sys.exit(0)
+        except Exception as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
+
+    elif args.action == "verify-signature":
+        # Verify a detached signature for a file (feature #1)
+        try:
+            from .file_signature import verify_signature_cli
+
+            verify_signature_cli(args)
+            sys.exit(0)
+        except Exception as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
 
     elif args.action == "list-algorithms":
         show_algorithm_registry(args)

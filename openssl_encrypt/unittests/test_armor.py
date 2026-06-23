@@ -237,5 +237,42 @@ class TestArmorFileHelpers(unittest.TestCase):
         self.assertEqual(dearmor_file(p), data)
 
 
+class TestArmorLabels(unittest.TestCase):
+    """Custom PEM labels (e.g. SIGNATURE) on the OPENSSL-ENCRYPT envelope."""
+
+    def test_default_label_is_message(self):
+        """armor() with no label keeps the historical MESSAGE envelope."""
+        wrapped = armor(b"x")
+        self.assertIn(b"-----BEGIN OPENSSL-ENCRYPT MESSAGE-----", wrapped)
+        self.assertIn(b"-----END OPENSSL-ENCRYPT MESSAGE-----", wrapped)
+
+    def test_custom_label_markers(self):
+        wrapped = armor(b"signature-bytes", label="SIGNATURE")
+        self.assertIn(b"-----BEGIN OPENSSL-ENCRYPT SIGNATURE-----", wrapped)
+        self.assertIn(b"-----END OPENSSL-ENCRYPT SIGNATURE-----", wrapped)
+        self.assertNotIn(b"MESSAGE", wrapped)
+
+    def test_custom_label_roundtrip(self):
+        data = os.urandom(500)
+        self.assertEqual(dearmor(armor(data, label="SIGNATURE")), data)
+
+    def test_is_armored_detects_any_label(self):
+        self.assertTrue(is_armored(armor(b"d", label="SIGNATURE")))
+        self.assertTrue(is_armored(armor(b"d", label="MESSAGE")))
+
+    def test_dearmor_accepts_any_label_by_default(self):
+        data = os.urandom(64)
+        self.assertEqual(dearmor(armor(data, label="SIGNATURE")), data)
+
+    def test_dearmor_expected_label_match(self):
+        data = os.urandom(64)
+        self.assertEqual(dearmor(armor(data, label="SIGNATURE"), expected_label="SIGNATURE"), data)
+
+    def test_dearmor_expected_label_mismatch_rejected(self):
+        wrapped = armor(os.urandom(64), label="SIGNATURE")
+        with self.assertRaises(ArmorError):
+            dearmor(wrapped, expected_label="MESSAGE")
+
+
 if __name__ == "__main__":
     unittest.main()
