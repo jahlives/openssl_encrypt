@@ -29,6 +29,7 @@ from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 from openssl_encrypt.modules.interop.age import (
+    AgeError,
     AgeFormatError,
     AgeIntegrityError,
     NoMatchingIdentityError,
@@ -280,7 +281,10 @@ class TestAgeRejection(unittest.TestCase):
         b = bytearray(blob)
         idx = blob.index(b"-> X25519 ") + 12  # inside the FIRST (other) stanza
         b[idx] ^= 0x01
-        with self.assertRaises((AgeIntegrityError, NoMatchingIdentityError)):
+        # Depending on where the bit lands this is caught as a MAC failure, a
+        # parse error, or a no-match — never silently accepted. The security
+        # property is simply: tampering does not yield plaintext.
+        with self.assertRaises(AgeError):
             decrypt(bytes(b), identities=[self.scalar])
 
     def test_tampered_payload(self):
