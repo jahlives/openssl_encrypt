@@ -14,7 +14,6 @@ import ast
 import os
 import unittest
 
-
 # Directories to scan (relative to package root)
 PACKAGE_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -38,19 +37,29 @@ STDOUT_WHITELIST = [
     # crypt_core.py — JSON data output in print_file_info
     ("modules/crypt_core.py", "print(json.dumps(metadata", "JSON data output for --info --json"),
     # crypt_core.py — 3 print() calls in DO NOT CHANGE blocks
-    ("modules/crypt_core.py", "Successfully decrypted post-quantum private key", "DO NOT CHANGE block"),
+    (
+        "modules/crypt_core.py",
+        "Successfully decrypted post-quantum private key",
+        "DO NOT CHANGE block",
+    ),
     ("modules/crypt_core.py", "Failed to decrypt post-quantum private key", "DO NOT CHANGE block"),
     ("modules/crypt_core.py", "Error decrypting private key", "DO NOT CHANGE block"),
     # crypt_cli.py — derive-password output to stdout
     ("modules/crypt_cli.py", "print(derived.hex())", "derive-password hex output to stdout"),
-    ("modules/crypt_cli.py", "print(base64.b64encode(derived)", "derive-password base64 output to stdout"),
+    (
+        "modules/crypt_cli.py",
+        "print(base64.b64encode(derived)",
+        "derive-password base64 output to stdout",
+    ),
     # crypt_cli.py — JSON data output
     ("modules/crypt_cli.py", "print(json.dumps(", "JSON data output"),
+    # file_signature.py — verify-signature --json result (machine-readable, stdout)
+    ("modules/file_signature.py", "print(result_json)", "verify-signature JSON result"),
     # crypt_cli.py — Decrypted plaintext output
     ("modules/crypt_cli.py", "print(plaintext.decode(", "Decrypted plaintext to stdout"),
     ("modules/crypt_cli.py", "print(decrypted.decode(", "Decrypted text to stdout"),
     # crypt_cli.py — subprocess -c strings (print inside string literals, not actual calls)
-    ("modules/crypt_cli.py", 'print(oqs.oqs_python_version())', "Subprocess -c string"),
+    ("modules/crypt_cli.py", "print(oqs.oqs_python_version())", "Subprocess -c string"),
     ("modules/crypt_cli.py", "print(getattr(randomx,", "Subprocess -c string"),
     # randomx.py — subprocess -c strings
     ("modules/randomx.py", 'print("SUCCESS")', "Subprocess -c string"),
@@ -63,7 +72,11 @@ STDOUT_WHITELIST = [
     # integrity/verify_cli.py — verify-integrity --json data output (warning/report use stderr)
     ("integrity/verify_cli.py", "print(json.dumps(", "verify-integrity JSON report"),
     # portable_media/usb_creator.py — decrypted content to stdout
-    ("modules/portable_media/usb_creator.py", "sys.stdout.buffer.write(content)", "Decrypted data output"),
+    (
+        "modules/portable_media/usb_creator.py",
+        "sys.stdout.buffer.write(content)",
+        "Decrypted data output",
+    ),
     # audit_cli.py — verify/status are CLIs that emit JSON or human-readable
     # reports on stdout (consumers pipe into jq, etc.). Diagnostic errors go
     # to stderr; only the structured output is whitelisted here.
@@ -109,7 +122,7 @@ def _is_in_string_literal(node: ast.Call, source_lines: list) -> bool:
     if '"-c"' in line_text or "'-c'" in line_text:
         return True
     # Check if print is inside a string (rough heuristic)
-    before_print = line_text[:line_text.find("print(")]
+    before_print = line_text[: line_text.find("print(")]
     quote_count = before_print.count("'") + before_print.count('"')
     if quote_count % 2 == 1:
         return True
@@ -188,9 +201,7 @@ class TestNoStdoutLeaks(unittest.TestCase):
                         if node.lineno <= len(source_lines)
                         else "<unknown>"
                     )
-                    violations.append(
-                        f"  {rel_path}:{node.lineno}: {line_text}"
-                    )
+                    violations.append(f"  {rel_path}:{node.lineno}: {line_text}")
 
         if violations:
             msg = (

@@ -1684,6 +1684,74 @@ def setup_verify_parser(subparser):
     )
 
 
+def setup_sign_parser(subparser):
+    """Set up arguments for the sign command (detached file signature)."""
+    subparser.add_argument(
+        "--input",
+        "-i",
+        required=True,
+        help="File to sign",
+    )
+    subparser.add_argument(
+        "--output",
+        "-o",
+        help="Detached signature file (default: <input>.sig)",
+    )
+    subparser.add_argument(
+        "--sign-with",
+        dest="sign_with",
+        metavar="IDENTITY",
+        required=True,
+        help="Signer identity (an own identity holding a private signing key)",
+    )
+    subparser.add_argument(
+        "--no-armor",
+        dest="armor",
+        action="store_false",
+        default=True,
+        help="Write the signature as raw JSON instead of ASCII armor (default: armored)",
+    )
+    subparser.add_argument(
+        "--identity-store",
+        dest="identity_store",
+        metavar="PATH",
+        help="Path to identity store directory (overrides global --identity-store)",
+    )
+
+
+def setup_verify_signature_parser(subparser):
+    """Set up arguments for the verify-signature command."""
+    subparser.add_argument(
+        "--input",
+        "-i",
+        required=True,
+        help="File whose detached signature to verify",
+    )
+    subparser.add_argument(
+        "--signature",
+        "-s",
+        help="Detached signature file (default: <input>.sig)",
+    )
+    subparser.add_argument(
+        "--signer",
+        dest="signer",
+        metavar="IDENTITY",
+        help="Pin the expected signer identity by name (optional; otherwise the "
+        "signer is resolved from the signature's fingerprint in your identity store)",
+    )
+    subparser.add_argument(
+        "--identity-store",
+        dest="identity_store",
+        metavar="PATH",
+        help="Path to identity store directory (overrides global --identity-store)",
+    )
+    subparser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output the verification result as JSON",
+    )
+
+
 def setup_split_secret_parser(subparser):
     """Set up arguments for the split-secret command."""
     subparser.add_argument(
@@ -2369,6 +2437,22 @@ def create_subparser_main():
         action="store_false",
         help="Force source-checkout scope (full manifest); default: auto-detect",
     )
+
+    # Sign command — detached post-quantum file signature (feature #1)
+    sign_parser = subparsers.add_parser(
+        "sign",
+        help="Create a detached post-quantum signature for a file",
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
+    setup_sign_parser(sign_parser)
+
+    # Verify-signature command — verify a detached signature
+    verify_signature_parser = subparsers.add_parser(
+        "verify-signature",
+        help="Verify a detached signature for a file",
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
+    setup_verify_signature_parser(verify_signature_parser)
 
     # Parse arguments
     args = parser.parse_args()

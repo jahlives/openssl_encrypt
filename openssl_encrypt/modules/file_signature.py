@@ -291,3 +291,148 @@ def verify_signature(actual_file_hash: str, sig: dict, signer_public_key: bytes)
         components=components_out,
         reason=reason,
     )
+
+
+# --------------------------------------------------------------------------- #
+# CLI handlers (wired from crypt_cli dispatch)
+# --------------------------------------------------------------------------- #
+
+
+def sign_file_cli(args) -> None:
+    """CLI handler for the ``sign`` action."""
+    import getpass
+    import sys
+    from datetime import datetime, timezone
+
+    from .crypt_cli import resolve_identity_store_path
+    from .crypt_utils import eprint
+    from .identity_cli import get_identity_store
+    from .identity_protection import ProtectionLevel
+    from .secure_memory import secure_memzero
+
+    input_file = args.input
+    output_file = getattr(args, "output", None) or (input_file + ".sig")
+    armored = getattr(args, "armor", True)
+    signer_name = args.sign_with
+
+    store = get_identity_store(resolve_identity_store_path(args))
+
+    # Load metadata first (no private keys) to validate and check protection.
+    signer_meta = store.get_by_name(signer_name, load_private_keys=False)
+    if signer_meta is None:
+        eprint(f"ERROR: Signer identity '{signer_name}' not found ❌")
+        sys.exit(1)
+    if not getattr(signer_meta, "is_own_identity", False):
+        eprint(f"ERROR: '{signer_name}' is a contact (public key only) and cannot sign ❌")
+        sys.exit(1)
+
+    passphrase = None
+    if not signer_meta.protection or signer_meta.protection.level != ProtectionLevel.HSM_ONLY:
+        passphrase = getpass.getpass(f"Passphrase for signer identity '{signer_name}': ")
+
+    try:
+        signer = store.get_by_name(signer_name, passphrase=passphrase, load_private_keys=True)
+        if signer is None:
+            eprint(f"ERROR: Signer identity '{signer_name}' not found ❌")
+            sys.exit(1)
+        file_hash = hash_file(input_file)
+        signed_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        sig = build_signature(file_hash, signer, signed_at)
+    finally:
+        if passphrase:
+            secure_memzero(passphrase)
+
+    blob = serialize_signature(sig, armored=armored)
+    with open(output_file, "wb") as f:
+        f.write(blob)
+
+    if not getattr(args, "quiet", False):
+        eprint(f"✅ Signed '{input_file}' as '{signer.name}' ({sig['algorithm']})")
+        eprint(f"   Signature:          {output_file}")
+        eprint(f"   Signer fingerprint: {signer.fingerprint}")
+
+
+def verify_signature_cli(args) -> None:
+    """CLI handler for the ``verify-signature`` action."""
+    import json as _json
+    import sys
+
+    from .crypt_cli import resolve_identity_store_path
+    from .crypt_utils import eprint
+    from .identity_cli import get_identity_store
+
+    input_file = args.input
+    sig_file = getattr(args, "signature", None) or (input_file + ".sig")
+    json_out = getattr(args, "json", False)
+
+    try:
+        with open(sig_file, "rb") as f:
+            sig = parse_signature(f.read())
+    except FileNotFoundError:
+        eprint(f"ERROR: Signature file '{sig_file}' not found ❌")
+        sys.exit(1)
+    except FileSignatureError as exc:
+        eprint(f"ERROR: {exc} ❌")
+        sys.exit(1)
+
+    signer_fp = sig.get("signer_fingerprint")
+    store = get_identity_store(resolve_identity_store_path(args))
+
+    # Resolve the signer's public key. Trust comes from the local store: the
+    # signer must be a known own-identity or contact (fail closed if unknown).
+    pinned = getattr(args, "signer", None)
+    signer_identity = None
+    if pinned:
+        signer_identity = store.get_by_name(pinned, load_private_keys=False)
+        if signer_identity is None:
+            eprint(f"ERROR: Pinned signer identity '{pinned}' not found ❌")
+            sys.exit(1)
+        if signer_identity.fingerprint != signer_fp:
+            eprint(
+                f"ERROR: Pinned signer '{pinned}' does not match the signature's "
+                f"signer fingerprint ❌"
+            )
+            sys.exit(1)
+    else:
+        for ident in store.list_identities(include_contacts=True):
+            if ident.fingerprint == signer_fp:
+                signer_identity = ident
+                break
+        if signer_identity is None:
+            eprint(
+                f"ERROR: Unknown signer (fingerprint {signer_fp}); not found among "
+                f"your identities or contacts ❌"
+            )
+            eprint("       Add the signer as a contact, or use --signer to pin a known identity.")
+            sys.exit(1)
+
+    result = verify_signature(hash_file(input_file), sig, signer_identity.signing_public_key)
+
+    if json_out:
+        result_json = _json.dumps(
+            {
+                "valid": result.valid,
+                "file_match": result.file_match,
+                "signature_valid": result.signature_valid,
+                "signer": signer_identity.name,
+                "signer_fingerprint": result.signer_fingerprint,
+                "signed_at": result.signed_at,
+                "components": result.components,
+                "reason": result.reason,
+            },
+            indent=2,
+        )
+        print(result_json)
+    elif result.valid:
+        comp = ", ".join(
+            f"{c['component']}={'ok' if c['valid'] else 'BAD'}" for c in result.components
+        )
+        eprint(f"✅ GOOD signature from '{signer_identity.name}'")
+        eprint(f"   Signer fingerprint: {result.signer_fingerprint}")
+        eprint(f"   Signed at:          {result.signed_at}")
+        eprint(f"   Components:         {comp}")
+    else:
+        eprint(f"❌ BAD signature: {result.reason}")
+        eprint(f"   Claimed signer: '{signer_identity.name}' ({result.signer_fingerprint})")
+
+    sys.exit(0 if result.valid else 1)
