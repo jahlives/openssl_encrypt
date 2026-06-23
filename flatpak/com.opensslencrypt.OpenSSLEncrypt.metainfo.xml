@@ -39,6 +39,11 @@
   </screenshots>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="1.4.6" date="2026-06-23" type="development">
+      <description>
+        <p>New PIV / PKCS#11 HSM backend (--hsm piv) that derives the key-derivation pepper from a PIV private key on a smart card, and source-code integrity protection (verify-integrity) backed by a PGP-signed SHA-512 manifest. New ASCII armor output (encrypt --armor) writes paste-safe PEM-style Base64 with CRC-24 truncation detection, auto-detected on decrypt. Encrypt-to-self now adds the sender as a recipient by default so senders can decrypt their own outbound files (opt out with --no-encrypt-to-self).</p>
+      </description>
+    </release>
     <release version="1.4.5" date="2026-06-12" type="stable">
       <description>
         <p>Security dependency update: urllib3 2.7.0, cryptography 46.0.7, pillow 12.2.0, idna 3.15 — fixes for CVE-2026-44431/44432, CVE-2026-39892, a PSD decoder out-of-bounds write, and an idna DoS. New CI check keeps flatpak dependency pins aligned with the package requirements.</p>

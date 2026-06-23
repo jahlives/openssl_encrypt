@@ -17,7 +17,7 @@ OpenSSL Encrypt follows [Semantic Versioning (SemVer)](https://semver.org/) for 
 
 ## Release History
 
-### Unreleased - PIV / PKCS#11 HSM Backend
+### Unreleased - PIV Backend, ASCII Armor & Encrypt-to-Self
 **Release Date:** TBD (in development)
 **Status:** Unreleased — see [CHANGELOG](../../CHANGELOG.md) `[Unreleased]`
 
@@ -28,6 +28,20 @@ OpenSSL Encrypt follows [Semantic Versioning (SemVer)](https://semver.org/) for 
   HKDF-SHA256; ECDSA/RSA-PSS are rejected. New flags:
   `--hsm-pkcs11-lib`, `--hsm-piv-slot {9a,9c,9d,9e}`, `--hsm-biometric`.
   Requires `python-pkcs11`. See [PIV_BACKEND](PIV_BACKEND.md).
+
+- **ASCII armor** (`encrypt --armor` / `-a`): PEM-style Base64 output that
+  survives email, chat, YAML and copy-paste. The encrypted blob is wrapped in a
+  `BEGIN/END OPENSSL-ENCRYPT MESSAGE` envelope with an OpenPGP-style CRC-24
+  checksum for paste-truncation detection (fails closed on malformed armor).
+  `decrypt`/`info`/`verify` auto-detect armored input by content; the round-trip
+  is byte-exact. Covers symmetric, `stdin`→`stdout` streaming and
+  recipient/asymmetric output. New module `modules/armor.py`.
+
+- **Encrypt-to-self** (default on): when encrypting for recipients
+  (`--for-identity`), the sender's own identity (`--sign-with`) is added as an
+  extra recipient so the sender can decrypt their own outbound file. Reuses the
+  multi-recipient ML-KEM wrapping, de-duplicated by fingerprint. Opt out with
+  `--no-encrypt-to-self`.
 
 ### 1.4.5 (Current) - Dependency Security Updates
 **Release Date:** June 12, 2026

@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **ASCII armor** (`encrypt --armor` / `-a`): write PEM-style Base64 output that
+  is safe to paste into email, chat, YAML or a clipboard. The whole encrypted
+  blob is wrapped in a `-----BEGIN/END OPENSSL-ENCRYPT MESSAGE-----` envelope
+  with an OpenPGP-style CRC-24 checksum that detects paste truncation/corruption
+  (fails closed on malformed armor). `decrypt`, `info` and `verify` auto-detect
+  armored input by content — no flag required — and the round-trip is byte-exact.
+  Works across the symmetric, `stdin`→`stdout` streaming, and recipient
+  (asymmetric) output paths. New module `openssl_encrypt/modules/armor.py`
+  (covered by the signed integrity manifest).
+
+- **Encrypt-to-self** (`encrypt --for-identity …`, on by default): when
+  encrypting *for* recipients, the sender's own identity (`--sign-with`) is now
+  added as an additional recipient so the sender can later decrypt their own
+  outbound file — removing a common data-loss footgun. The sender slot reuses
+  the existing multi-recipient ML-KEM wrapping and is de-duplicated by
+  fingerprint. Opt out with `--no-encrypt-to-self`.
+
 - **PIV / PKCS#11 HSM backend** (`--hsm piv`): hardware-bound key derivation
   backed by a PIV private key on a PKCS#11 token (YubiKey Bio MPE, Token2 PIN+
   R3.3+, or any compliant PIV smart card). The key signs a deterministic
