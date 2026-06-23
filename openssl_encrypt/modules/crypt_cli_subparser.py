@@ -546,6 +546,13 @@ def setup_encrypt_parser(subparser):
     )
     subparser.add_argument("--output", "-o", help="Output file (optional)")
     subparser.add_argument(
+        "--armor",
+        "-a",
+        action="store_true",
+        help="Write ASCII-armored (PEM-style Base64) output that is safe to "
+        "paste into email, chat or YAML. decrypt auto-detects armored input.",
+    )
+    subparser.add_argument(
         "--overwrite",
         "-f",
         action="store_true",

@@ -55,7 +55,8 @@ from .crypt_utils import (
     show_security_recommendations,
     tty_clear_line,
 )
-from .file_permissions import PermissionLevel, set_permissions as _fp_set_permissions
+from .file_permissions import PermissionLevel
+from .file_permissions import set_permissions as _fp_set_permissions
 
 # Try to import the CLI helper module
 try:
@@ -1941,7 +1942,9 @@ def handle_keyserver_command(args):
                 return
 
             if not identity.is_own_identity:
-                eprint(f"✗ Cannot upload '{identity_name}': not your own identity (no private keys)")
+                eprint(
+                    f"✗ Cannot upload '{identity_name}': not your own identity (no private keys)"
+                )
                 return
 
             # Create bundle
@@ -2438,7 +2441,7 @@ def main_with_args(args=None):
 
     # Register handlers for common termination signals
     _sigs = [signal.SIGINT, signal.SIGTERM]
-    if hasattr(signal, 'SIGHUP'):
+    if hasattr(signal, "SIGHUP"):
         _sigs.append(signal.SIGHUP)
     for sig in _sigs:
         try:
@@ -4155,10 +4158,7 @@ def main_with_args(args=None):
                 )
                 sys.exit(1)
 
-            eprint(
-                f"\nPassphrase entropy: {entropy_bits:.1f} bits "
-                f"({args.dice_count} words)"
-            )
+            eprint(f"\nPassphrase entropy: {entropy_bits:.1f} bits " f"({args.dice_count} words)")
             display_password_with_timeout(passphrase)
             sys.exit(0)
 
@@ -4494,7 +4494,11 @@ def main_with_args(args=None):
 
         try:
             key, _, _ = generate_key(
-                password=derive_password.encode("utf-8") if isinstance(derive_password, str) else derive_password,
+                password=(
+                    derive_password.encode("utf-8")
+                    if isinstance(derive_password, str)
+                    else derive_password
+                ),
                 salt=salt,
                 hash_config=hash_config,
                 quiet=True,
@@ -4551,7 +4555,9 @@ def main_with_args(args=None):
 
         # Read stdin once into a temp file
         stdin_temp_file_early = tempfile.NamedTemporaryFile(delete=False)
-        _fp_set_permissions(stdin_temp_file_early.name, PermissionLevel.OWNER_ONLY)  # Security: Restrict to user read/write only
+        _fp_set_permissions(
+            stdin_temp_file_early.name, PermissionLevel.OWNER_ONLY
+        )  # Security: Restrict to user read/write only
         temp_files_to_cleanup.append(stdin_temp_file_early.name)
 
         # Copy all data from stdin to temp file
@@ -4568,6 +4574,34 @@ def main_with_args(args=None):
         args.input = stdin_temp_file_early.name
         if args.debug:
             print(f"DEBUG: Converted stdin to temp file: {args.input}", file=sys.stderr)
+
+    # Feature #2: transparently de-armor ASCII-armored input before any
+    # decrypt/info/verify path reads it. Detection is content-based (the PEM
+    # BEGIN marker), so no flag is required. The de-armored bytes are written
+    # to an owner-only temp file that all downstream readers (auto-detection,
+    # keystore, asymmetric, symmetric) consume like any encrypted file.
+    if args.action in ("decrypt", "info", "verify", "rekey") and getattr(args, "input", None):
+        import tempfile
+
+        from .armor import ArmorError, dearmor_file, is_armored_file
+
+        if is_armored_file(args.input):
+            try:
+                dearmored_bytes = dearmor_file(args.input)
+            except ArmorError as armor_err:
+                eprint(f"Error: input is ASCII-armored but malformed: {armor_err}")
+                sys.exit(1)
+            else:
+                with tempfile.NamedTemporaryFile(
+                    delete=False, suffix=".dearmored"
+                ) as dearmored_file:
+                    dearmored_file.write(dearmored_bytes)
+                    dearmored_path = dearmored_file.name
+                _fp_set_permissions(dearmored_path, PermissionLevel.OWNER_ONLY)
+                temp_files_to_cleanup.append(dearmored_path)
+                args.input = dearmored_path
+                if getattr(args, "debug", False):
+                    eprint(f"DEBUG: De-armored input to temp file: {args.input}")
 
     # Auto-detect encryption type for decrypt operations
     # Only run auto-detection if user didn't explicitly provide --with-key
@@ -4695,7 +4729,9 @@ def main_with_args(args=None):
                     else:
                         eprint(f"No password found in keyring for label '{args.keyring_load}'")
                 except ImportError:
-                    eprint("Error: keyring package not installed. Install with: pip install keyring")
+                    eprint(
+                        "Error: keyring package not installed. Install with: pip install keyring"
+                    )
                     sys.exit(1)
 
             if (
@@ -4842,7 +4878,9 @@ def main_with_args(args=None):
                                     f"\nPassword strength: {strength} (entropy: {entropy:.1f} bits)"
                                 )
                                 eprint(f"Password validation failed: {str(e)}")
-                                eprint("Use --force-password to bypass validation (not recommended)")
+                                eprint(
+                                    "Use --force-password to bypass validation (not recommended)"
+                                )
                             sys.exit(1)
 
                     password_secure.extend(env_password.encode())
@@ -4892,7 +4930,9 @@ def main_with_args(args=None):
                                     f"\nPassword strength: {strength} (entropy: {entropy:.1f} bits)"
                                 )
                                 eprint(f"Password validation failed: {str(e)}")
-                                eprint("Use --force-password to bypass validation (not recommended)")
+                                eprint(
+                                    "Use --force-password to bypass validation (not recommended)"
+                                )
                             sys.exit(1)
 
                     password_secure.extend(args.password.encode())
@@ -5941,6 +5981,12 @@ def main_with_args(args=None):
 
                         shutil.move(temp_output, output_file)
 
+                    # Feature #2: wrap the finished recipient file in ASCII armor.
+                    if getattr(args, "armor", False) and os.path.isfile(output_file):
+                        from .armor import armor_file
+
+                        armor_file(output_file)
+
                     if not args.quiet:
                         eprint("\nAsymmetric encryption successful! ✅")
                         eprint(
@@ -6862,7 +6908,14 @@ def main_with_args(args=None):
                     # Output the encrypted content to stdout
                     try:
                         with open(temp_output_file, "rb") as f:
-                            sys.stdout.buffer.write(f.read())
+                            encrypted_stdout_bytes = f.read()
+                        # Feature #2: armor the stream when requested so it is
+                        # safe to pipe into clipboards, chat or email.
+                        if getattr(args, "armor", False):
+                            from .armor import armor as _armor_bytes
+
+                            encrypted_stdout_bytes = _armor_bytes(encrypted_stdout_bytes)
+                        sys.stdout.buffer.write(encrypted_stdout_bytes)
                         sys.stdout.buffer.flush()
                     except Exception as e:
                         if not args.quiet:
@@ -7487,6 +7540,15 @@ def main_with_args(args=None):
                     )
 
             if success:
+                # Feature #2: wrap the finished file in ASCII armor if requested.
+                # Done as post-processing so it composes with every encryption
+                # path (symmetric, keystore) and does not disturb the binary
+                # format on disk before this point.
+                if getattr(args, "armor", False) and output_file and os.path.isfile(output_file):
+                    from .armor import armor_file
+
+                    armor_file(output_file)
+
                 # Security audit log for successful encryption
                 if security_logger:
                     security_logger.log_event(
@@ -8213,9 +8275,13 @@ def main_with_args(args=None):
                                         )
 
                                         if not args.quiet:
-                                            eprint("Successfully decrypted private key from keyfile")
+                                            eprint(
+                                                "Successfully decrypted private key from keyfile"
+                                            )
                                     except Exception as e:
-                                        eprint(f"Error decrypting private key: {e}. Wrong password?")
+                                        eprint(
+                                            f"Error decrypting private key: {e}. Wrong password?"
+                                        )
                                         eprint("Decryption may fail without a valid private key.")
                                         pqc_private_key = None
                                 else:
