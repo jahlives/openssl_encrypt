@@ -829,6 +829,26 @@ def setup_decrypt_parser(subparser):
         help="Number of passes for secure deletion (default: 3)",
     )
 
+    # Foreign-format interop (feature #5): read-only decryption of files made
+    # by other ecosystems. Opt-in and explicit.
+    foreign_group = subparser.add_argument_group("Foreign formats (interop, read-only)")
+    foreign_group.add_argument(
+        "--from",
+        dest="from_format",
+        choices=["age"],
+        help="Decrypt a foreign-format file instead of an openssl-encrypt file "
+        "(currently: age). The passphrase (for age -p / scrypt files) comes from "
+        "the usual --password / prompt.",
+    )
+    foreign_group.add_argument(
+        "--age-identity",
+        dest="age_identity",
+        metavar="FILE",
+        action="append",
+        help="age secret-key file (keys.txt with AGE-SECRET-KEY-1… lines) for "
+        "X25519 recipients; may be given multiple times.",
+    )
+
     # Display options
     subparser.add_argument(
         "--no-estimate",

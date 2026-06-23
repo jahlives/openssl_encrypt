@@ -4605,6 +4605,14 @@ def main_with_args(args=None):
                 if getattr(args, "debug", False):
                     eprint(f"DEBUG: De-armored input to temp file: {args.input}")
 
+    # Feature #5: foreign-format interop (read-only). When `decrypt --from` is
+    # set, route to the foreign decryptor here — BEFORE any native password
+    # acquisition, format auto-detection or other openssl-encrypt handling.
+    if args.action == "decrypt" and getattr(args, "from_format", None):
+        from .interop import decrypt_foreign_cli
+
+        sys.exit(decrypt_foreign_cli(args))
+
     # Auto-detect encryption type for decrypt operations
     # Only run auto-detection if user didn't explicitly provide --with-key
     # This avoids potential interference with symmetric HSM decryption
@@ -7737,6 +7745,9 @@ def main_with_args(args=None):
                 sys.exit(1)
 
         elif args.action == "decrypt":
+            # (Foreign-format interop, `--from`, is handled earlier in
+            # main_with_args, before native password/detection handling.)
+
             # Check if asymmetric mode by reading metadata
             try:
                 import base64
