@@ -1146,9 +1146,7 @@ class TestStreamingHMACKeyDerivation(unittest.TestCase):
         key = secrets.token_bytes(32)
         legacy_hmac_key = hashlib.sha256(key + b"oesc-trailer-hmac").digest()
 
-        enc = StreamingEncryptor(
-            key=key, algorithm="aes-gcm", chunk_size=1024, format_version=12
-        )
+        enc = StreamingEncryptor(key=key, algorithm="aes-gcm", chunk_size=1024, format_version=12)
         v12_hmac_key = enc._derive_hmac_key()
 
         self.assertNotEqual(legacy_hmac_key, v12_hmac_key)
@@ -1169,9 +1167,7 @@ class TestStreamingHMACKeyDerivation(unittest.TestCase):
         key = secrets.token_bytes(32)
         expected = hashlib.sha256(key + b"oesc-trailer-hmac").digest()
 
-        enc = StreamingEncryptor(
-            key=key, algorithm="aes-gcm", chunk_size=1024, format_version=11
-        )
+        enc = StreamingEncryptor(key=key, algorithm="aes-gcm", chunk_size=1024, format_version=11)
         legacy_hmac_key = enc._derive_hmac_key()
 
         self.assertEqual(legacy_hmac_key, expected)
@@ -1180,12 +1176,8 @@ class TestStreamingHMACKeyDerivation(unittest.TestCase):
         """Test that v12+ HKDF HMAC key is deterministic."""
         key = secrets.token_bytes(32)
 
-        enc1 = StreamingEncryptor(
-            key=key, algorithm="aes-gcm", chunk_size=1024, format_version=12
-        )
-        enc2 = StreamingEncryptor(
-            key=key, algorithm="aes-gcm", chunk_size=1024, format_version=12
-        )
+        enc1 = StreamingEncryptor(key=key, algorithm="aes-gcm", chunk_size=1024, format_version=12)
+        enc2 = StreamingEncryptor(key=key, algorithm="aes-gcm", chunk_size=1024, format_version=12)
 
         self.assertEqual(enc1._derive_hmac_key(), enc2._derive_hmac_key())
 
@@ -1193,9 +1185,7 @@ class TestStreamingHMACKeyDerivation(unittest.TestCase):
         """Test that encryptor and decryptor derive the same HMAC key for v12."""
         key = secrets.token_bytes(32)
 
-        enc = StreamingEncryptor(
-            key=key, algorithm="aes-gcm", chunk_size=1024, format_version=12
-        )
+        enc = StreamingEncryptor(key=key, algorithm="aes-gcm", chunk_size=1024, format_version=12)
         dec = StreamingDecryptor(
             key=key,
             algorithm="aes-gcm",
@@ -1211,12 +1201,8 @@ class TestStreamingHMACKeyDerivation(unittest.TestCase):
         key1 = secrets.token_bytes(32)
         key2 = secrets.token_bytes(32)
 
-        enc1 = StreamingEncryptor(
-            key=key1, algorithm="aes-gcm", chunk_size=1024, format_version=12
-        )
-        enc2 = StreamingEncryptor(
-            key=key2, algorithm="aes-gcm", chunk_size=1024, format_version=12
-        )
+        enc1 = StreamingEncryptor(key=key1, algorithm="aes-gcm", chunk_size=1024, format_version=12)
+        enc2 = StreamingEncryptor(key=key2, algorithm="aes-gcm", chunk_size=1024, format_version=12)
 
         self.assertNotEqual(enc1._derive_hmac_key(), enc2._derive_hmac_key())
 
@@ -1407,6 +1393,202 @@ class TestStreamingDecryptMemory(unittest.TestCase):
         with open(dec_path, "rb") as f:
             result = f.read()
         self.assertEqual(result, plaintext)
+
+
+class TestCascadeChunkNonceUniqueness(unittest.TestCase):
+    """Security regression: cascade + streaming must NOT reuse the per-chunk
+    cascade salt across chunks.
+
+    ``CascadeKeyDerivation.derive_layer_keys(master_key, salt)`` derives BOTH
+    each layer's key and nonce from ``(master_key, salt)``. If the same
+    ``cascade_salt`` is passed for every chunk, every chunk reuses identical
+    per-layer (key, nonce) pairs -- catastrophic AEAD nonce reuse. Each chunk
+    must therefore be encrypted under a distinct, deterministically derived
+    cascade salt. See docs/PLAN_streaming-cascade-nonce_and_envelope.md (#1).
+    """
+
+    def test_cascade_per_chunk_salt_is_unique(self):
+        """Each chunk must be encrypted under a distinct cascade salt."""
+        captured_salts = []
+
+        class _RecordingCascade:
+            def encrypt(self, plaintext, master_key, salt, associated_data=None):
+                captured_salts.append(bytes(salt))
+                return b"C" * (len(plaintext) + 16)
+
+        key = secrets.token_bytes(32)
+        cascade_salt = secrets.token_bytes(32)
+        chunk_size = 16
+        data = b"A" * (chunk_size * 4)  # 4 chunks
+        input_path = _create_temp_file(data)
+        output_enc = _create_temp_file(b"")
+
+        try:
+            enc = StreamingEncryptor(
+                key=key,
+                algorithm="cascade",
+                chunk_size=chunk_size,
+                cascade_encryptor=_RecordingCascade(),
+                cascade_salt=cascade_salt,
+                format_version=12,
+            )
+            chunk_count = enc.get_chunk_count(len(data))
+            metadata_b64 = base64.b64encode(b"{}")
+
+            enc.encrypt_file(
+                input_file=input_path,
+                output_file=output_enc,
+                metadata_b64=metadata_b64,
+                chunk_count=chunk_count,
+                quiet=True,
+            )
+
+            self.assertEqual(len(captured_salts), 4)
+            # Security property: the per-chunk salts must be pairwise distinct.
+            self.assertEqual(
+                len(set(captured_salts)),
+                len(captured_salts),
+                "cascade salt reused across chunks -> AEAD nonce reuse",
+            )
+            # And they must be DERIVED, never the raw static base salt.
+            self.assertNotIn(cascade_salt, captured_salts)
+        finally:
+            for p in (input_path, output_enc):
+                if os.path.exists(p):
+                    os.unlink(p)
+
+    def test_end_to_end_cascade_streaming_records_scheme_2(self):
+        """Real cascade+streaming encryption tags the per-chunk scheme and
+        round-trips (integration guard for the cascade nonce fix)."""
+        password = b"cascade-nonce-scheme-pw"
+        data = secrets.token_bytes(8 * 1024)  # multiple chunks at chunk_size=1024
+        input_path = _create_temp_file(data)
+        output_enc = _create_temp_file(b"")
+
+        try:
+            ok = encrypt_file(
+                input_file=input_path,
+                output_file=output_enc,
+                password=password,
+                hash_config={"sha256": 1, "pbkdf2_iterations": 0},
+                quiet=True,
+                chunk_size=1024,
+                streaming_threshold=1024,
+                algorithm="cascade",
+                cascade=True,
+                cipher_names=["aes-gcm", "chacha20-poly1305"],
+            )
+            self.assertTrue(ok)
+
+            with open(output_enc, "rb") as f:
+                raw = f.read()
+            meta = json.loads(base64.b64decode(raw.split(b":", 1)[0]))
+            self.assertTrue(meta["streaming"]["enabled"])
+            self.assertGreater(meta["streaming"]["chunk_count"], 1)
+            # Fixed scheme (2) must be recorded so decryption derives matching salts.
+            self.assertEqual(meta["streaming"]["cascade_nonce_scheme"], 2)
+
+            decrypted = decrypt_file(
+                input_file=output_enc, output_file=None, password=password, quiet=True
+            )
+            self.assertEqual(decrypted, data)
+        finally:
+            for p in (input_path, output_enc):
+                if os.path.exists(p):
+                    os.unlink(p)
+
+    def test_legacy_scheme1_file_decrypts_and_warns(self):
+        """A cascade+streaming file written with the legacy reused-salt scheme
+        (1) must still decrypt (read-compat) AND emit a security warning."""
+        from openssl_encrypt.modules.cascade import CascadeConfig, CascadeEncryption
+        from openssl_encrypt.modules.streaming import CASCADE_NONCE_SCHEME_LEGACY
+
+        key = secrets.token_bytes(32)
+        cascade_salt = secrets.token_bytes(32)
+        chunk_size = 1024
+        data = secrets.token_bytes(chunk_size * 3 + 17)  # 4 chunks
+        cipher_names = ["aes-gcm", "chacha20-poly1305"]
+
+        input_path = _create_temp_file(data)
+        output_enc = _create_temp_file(b"")
+        output_dec = _create_temp_file(b"")
+
+        try:
+            cfg = CascadeConfig(cipher_names=cipher_names, hkdf_hash="sha256")
+            casc_enc = CascadeEncryption(cfg, format_version=12, xchacha_nonce_format=2)
+
+            enc = StreamingEncryptor(
+                key=key,
+                algorithm="cascade",
+                chunk_size=chunk_size,
+                cascade_encryptor=casc_enc,
+                cascade_salt=cascade_salt,
+                format_version=12,
+                cascade_nonce_scheme=CASCADE_NONCE_SCHEME_LEGACY,  # simulate old file
+            )
+            chunk_count = enc.get_chunk_count(len(data))
+            original_hash = enc.hash_file(input_path)
+
+            # Legacy metadata: deliberately omits the cascade_nonce_scheme flag.
+            metadata = {
+                "format_version": 12,
+                "mode": "symmetric",
+                "aead_binding": True,
+                "streaming": {
+                    "enabled": True,
+                    "chunk_size": chunk_size,
+                    "chunk_count": chunk_count,
+                    "nonce_prefix": base64.b64encode(enc.nonce_prefix).decode("ascii"),
+                },
+                "hashes": {"original_hash": original_hash},
+                "encryption": {"cascade": True, "algorithm": "cascade"},
+            }
+            metadata_b64 = base64.b64encode(json.dumps(metadata).encode("utf-8"))
+
+            enc.encrypt_file(
+                input_file=input_path,
+                output_file=output_enc,
+                metadata_b64=metadata_b64,
+                chunk_count=chunk_count,
+                quiet=True,
+            )
+
+            casc_dec = CascadeEncryption(cfg, format_version=12, xchacha_nonce_format=2)
+            dec = StreamingDecryptor(
+                key=key,
+                algorithm="cascade",
+                nonce_prefix=enc.nonce_prefix,
+                chunk_size=chunk_size,
+                cascade_decryptor=casc_dec,
+                cascade_salt=cascade_salt,
+                format_version=12,
+                cascade_nonce_scheme=CASCADE_NONCE_SCHEME_LEGACY,
+            )
+
+            with self.assertLogs("openssl_encrypt.modules.streaming", level="WARNING") as cm:
+                result = dec.decrypt_file(
+                    input_file=output_enc,
+                    output_file=output_dec,
+                    metadata_b64=metadata_b64,
+                    expected_chunk_count=chunk_count,
+                    original_hash=original_hash,
+                    quiet=False,
+                )
+
+            self.assertTrue(result)
+            with open(output_dec, "rb") as f:
+                self.assertEqual(f.read(), data)
+            self.assertTrue(
+                any(
+                    "legacy" in m.lower() or "rekey" in m.lower() or "nonce" in m.lower()
+                    for m in cm.output
+                ),
+                f"expected a legacy-nonce security warning, got: {cm.output}",
+            )
+        finally:
+            for p in (input_path, output_enc, output_dec):
+                if os.path.exists(p):
+                    os.unlink(p)
 
 
 if __name__ == "__main__":

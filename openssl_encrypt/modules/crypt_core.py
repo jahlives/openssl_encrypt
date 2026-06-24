@@ -5891,6 +5891,12 @@ def encrypt_file(
             "nonce_prefix": _b64_streaming.b64encode(streaming_enc.nonce_prefix).decode("ascii"),
         }
 
+        # Record the cascade per-chunk nonce scheme so decryption can pick the
+        # matching salt derivation. Only meaningful for cascade streaming files;
+        # absence on read is treated as the legacy (scheme 1) reused-salt path.
+        if cascade and cipher_names:
+            metadata["streaming"]["cascade_nonce_scheme"] = streaming_enc.cascade_nonce_scheme
+
         # Add archive metadata if encrypting a directory
         if _is_directory_archive and _archive_manifest:
             metadata["archive"] = {
@@ -8965,12 +8971,17 @@ def decrypt_file(
             # If there's an error, we'll continue without a private key    # Decrypt the data
     # --- Streaming decryption path for format_version 12 ---
     if format_version == 12 and metadata.get("streaming", {}).get("enabled", False):
-        from .streaming import StreamingDecryptor
+        from .streaming import CASCADE_NONCE_SCHEME_LEGACY, StreamingDecryptor
 
         streaming_meta = metadata["streaming"]
         nonce_prefix = base64.b64decode(streaming_meta["nonce_prefix"])
         streaming_chunk_size = streaming_meta["chunk_size"]
         expected_chunk_count = streaming_meta["chunk_count"]
+        # Files written before the cascade-nonce fix lack this flag; treat them
+        # as legacy (scheme 1, reused cascade salt) for read-compatibility.
+        cascade_nonce_scheme = streaming_meta.get(
+            "cascade_nonce_scheme", CASCADE_NONCE_SCHEME_LEGACY
+        )
 
         # Prepare cascade decryptor if needed
         _cascade_dec_streaming = None
@@ -8999,6 +9010,7 @@ def decrypt_file(
             format_version=format_version,
             # Legacy streaming files lack the flag and used 12-byte nonces
             xchacha_nonce_format=metadata.get("encryption", {}).get("xchacha_nonce_format", 1),
+            cascade_nonce_scheme=cascade_nonce_scheme,
         )
 
         if not quiet:

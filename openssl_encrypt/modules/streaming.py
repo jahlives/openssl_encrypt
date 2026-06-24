@@ -47,6 +47,17 @@ PAYLOAD_VERSION = 1
 DEFAULT_CHUNK_SIZE = 1048576  # 1 MB
 DEFAULT_STREAMING_THRESHOLD = 10485760  # 10 MB
 
+# Cascade per-chunk nonce scheme.
+#   Scheme 1 (legacy): one cascade salt was reused for EVERY chunk. Because
+#     CascadeKeyDerivation derives each layer's (key, nonce) from
+#     (master_key, salt), this reused the per-layer AEAD nonce across all
+#     chunks -- catastrophic AEAD nonce reuse.
+#   Scheme 2: a unique cascade salt is derived per chunk via HKDF, so every
+#     chunk gets distinct per-layer (key, nonce) pairs.
+# New writes use scheme 2; files whose metadata lacks the flag are scheme 1.
+CASCADE_NONCE_SCHEME_LEGACY = 1
+CASCADE_NONCE_SCHEME_PER_CHUNK = 2
+
 # Algorithms that support streaming (AEAD ciphers only)
 STREAMING_SUPPORTED_ALGORITHMS = {
     "aes-gcm",
@@ -140,6 +151,41 @@ def derive_chunk_nonce(nonce_prefix: bytes, chunk_index: int, nonce_size: int = 
         info=info,
     )
     return hkdf.derive(nonce_prefix + struct.pack(">I", chunk_index))
+
+
+def derive_chunk_cascade_salt(cascade_salt: bytes, chunk_index: int) -> bytes:
+    """Derive a unique per-chunk cascade salt (scheme 2).
+
+    Cascade key/nonce derivation is a pure function of (master_key, salt), so a
+    constant cascade salt reused across chunks reuses every layer's AEAD nonce.
+    Deriving a fresh 32-byte salt per chunk index makes each chunk's per-layer
+    (key, nonce) pairs unique while keeping the cascade module itself unchanged.
+
+    Args:
+        cascade_salt: The base random cascade salt (32 bytes) for this file.
+        chunk_index: Zero-based chunk index.
+
+    Returns:
+        A 32-byte per-chunk cascade salt.
+
+    Raises:
+        ValidationError: If inputs are invalid.
+    """
+    if not isinstance(cascade_salt, (bytes, bytearray)):
+        raise ValidationError("cascade_salt must be bytes")
+    if len(cascade_salt) == 0:
+        raise ValidationError("cascade_salt must not be empty")
+    if chunk_index < 0:
+        raise ValidationError("chunk_index must be non-negative")
+
+    info = b"oesc-cascade-chunk-salt:" + struct.pack(">I", chunk_index)
+    hkdf = HKDF(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=bytes(cascade_salt),
+        info=info,
+    )
+    return hkdf.derive(bytes(cascade_salt) + struct.pack(">I", chunk_index))
 
 
 def build_chunk_aad(metadata_b64: bytes, chunk_index: int, chunk_count: int) -> bytes:
@@ -396,6 +442,7 @@ class StreamingEncryptor:
         cascade_salt: Optional[bytes] = None,
         format_version: Optional[int] = None,
         xchacha_nonce_format: int = 1,
+        cascade_nonce_scheme: int = CASCADE_NONCE_SCHEME_PER_CHUNK,
     ):
         """Initialize the streaming encryptor.
 
@@ -408,6 +455,8 @@ class StreamingEncryptor:
             format_version: File format version. For v12+, HMAC key uses HKDF.
             xchacha_nonce_format: 2 = real 192-bit XChaCha nonces (1.5+);
                 1 = legacy 12-byte chunk nonces.
+            cascade_nonce_scheme: 2 = unique per-chunk cascade salt (default,
+                new writes); 1 = legacy reused cascade salt (read-compat only).
         """
         self.key = key
         self.algorithm = algorithm
@@ -415,6 +464,7 @@ class StreamingEncryptor:
         self.cascade_encryptor = cascade_encryptor
         self.cascade_salt = cascade_salt
         self.format_version = format_version
+        self.cascade_nonce_scheme = cascade_nonce_scheme
         self.nonce_prefix = secrets.token_bytes(8)
         if algorithm == "xchacha20-poly1305" and xchacha_nonce_format == 2:
             self.nonce_size = 24
@@ -507,8 +557,16 @@ class StreamingEncryptor:
 
                 # Encrypt the chunk
                 if self.algorithm == "cascade" and self.cascade_encryptor:
+                    # Scheme 2 derives a unique cascade salt per chunk to avoid
+                    # per-layer AEAD nonce reuse; scheme 1 is legacy read-compat.
+                    if self.cascade_nonce_scheme >= CASCADE_NONCE_SCHEME_PER_CHUNK:
+                        chunk_cascade_salt = derive_chunk_cascade_salt(
+                            self.cascade_salt, chunk_index
+                        )
+                    else:
+                        chunk_cascade_salt = self.cascade_salt
                     ciphertext = self.cascade_encryptor.encrypt(
-                        plaintext, self.key, self.cascade_salt, associated_data=aad
+                        plaintext, self.key, chunk_cascade_salt, associated_data=aad
                     )
                 else:
                     ciphertext = encrypt_chunk(self.key, nonce, plaintext, aad, self.algorithm)
@@ -577,6 +635,7 @@ class StreamingDecryptor:
         cascade_salt: Optional[bytes] = None,
         format_version: Optional[int] = None,
         xchacha_nonce_format: int = 1,
+        cascade_nonce_scheme: int = CASCADE_NONCE_SCHEME_LEGACY,
     ):
         """Initialize the streaming decryptor.
 
@@ -590,6 +649,9 @@ class StreamingDecryptor:
             format_version: File format version. For v12+, HMAC key uses HKDF.
             xchacha_nonce_format: 2 = real 192-bit XChaCha nonces (1.5+);
                 1 = legacy 12-byte chunk nonces.
+            cascade_nonce_scheme: 2 = unique per-chunk cascade salt; 1 = legacy
+                reused cascade salt. Defaults to legacy so files written before
+                the fix (which lack the metadata flag) still decrypt.
         """
         self.key = key
         self.algorithm = algorithm
@@ -602,6 +664,7 @@ class StreamingDecryptor:
         self.cascade_decryptor = cascade_decryptor
         self.cascade_salt = cascade_salt
         self.format_version = format_version
+        self.cascade_nonce_scheme = cascade_nonce_scheme
 
     def _derive_hmac_key(self) -> bytearray:
         """Derive the HMAC key for trailer authentication.
@@ -659,6 +722,20 @@ class StreamingDecryptor:
             AuthenticationError: If chunk authentication or trailer HMAC fails.
             DecryptionError: If decryption fails.
         """
+        # Read-compat: warn when decrypting a cascade file written with the
+        # legacy reused-salt scheme (1), which reused per-layer AEAD nonces
+        # across chunks. The file still decrypts; the user should re-encrypt it.
+        if (
+            self.algorithm == "cascade"
+            and self.cascade_decryptor is not None
+            and self.cascade_nonce_scheme < CASCADE_NONCE_SCHEME_PER_CHUNK
+        ):
+            logger.warning(
+                "This cascade streaming file uses the legacy per-chunk nonce "
+                "scheme (1), which reused AEAD nonces across chunks. Re-encrypt "
+                "(rekey) it to upgrade to the fixed per-chunk scheme."
+            )
+
         max_ciphertext_len = self.chunk_size + self._MAX_CHUNK_OVERHEAD
 
         with open(input_file, "rb") as fin:
@@ -768,8 +845,16 @@ class StreamingDecryptor:
 
                     # Decrypt the chunk
                     if self.algorithm == "cascade" and self.cascade_decryptor:
+                        # Mirror the encryptor: scheme 2 uses a unique per-chunk
+                        # cascade salt; scheme 1 is legacy reused-salt read-compat.
+                        if self.cascade_nonce_scheme >= CASCADE_NONCE_SCHEME_PER_CHUNK:
+                            chunk_cascade_salt = derive_chunk_cascade_salt(
+                                self.cascade_salt, chunk_index
+                            )
+                        else:
+                            chunk_cascade_salt = self.cascade_salt
                         plaintext = self.cascade_decryptor.decrypt(
-                            ciphertext, self.key, self.cascade_salt, associated_data=aad
+                            ciphertext, self.key, chunk_cascade_salt, associated_data=aad
                         )
                     else:
                         plaintext = decrypt_chunk(self.key, nonce, ciphertext, aad, self.algorithm)
