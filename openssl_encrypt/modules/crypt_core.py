@@ -7771,6 +7771,175 @@ def _format_kdf_params(kdf_name: str, params: dict) -> str:
         return ", ".join(parts)
 
 
+def _flatten_derivation_config(derivation_config: dict) -> dict:
+    """Flatten a stored ``derivation_config`` into the flat hash_config that
+    ``generate_key`` expects -- byte-for-byte mirroring the reconstruction in
+    ``decrypt_file``. Used by the envelope rekey fast-path so the KEK it derives
+    is identical to the one a later decrypt will derive.
+    """
+    nested_hash_config = derivation_config.get("hash_config", {})
+    hash_config: dict = {}
+    for algo, config in nested_hash_config.items():
+        if isinstance(config, dict) and "rounds" in config:
+            hash_config[algo] = config["rounds"]
+        else:
+            hash_config[algo] = config
+    kdf_config = derivation_config.get("kdf_config", {})
+    for kdf_name, kdf_params in kdf_config.items():
+        if kdf_name in ["scrypt", "argon2", "balloon", "hkdf", "randomx"]:
+            hash_config[kdf_name] = kdf_params
+    hash_config["_is_from_decryption_metadata"] = True
+    return hash_config
+
+
+def _derive_envelope_kek(
+    password: bytes,
+    derivation_config: dict,
+    algorithm: str,
+    format_version: int,
+    xor_mode: str,
+) -> bytes:
+    """Derive the password KEK for an envelope file from its metadata, mirroring
+    ``decrypt_file`` (sequential vs independent-XOR by format_version/xor_mode).
+
+    Both the old-KEK (to unwrap) and new-KEK (to rewrap) in the rekey fast-path
+    go through this single path, so they are guaranteed consistent with what a
+    later decrypt computes. The fast-path is gated to non-HSM/pepper, non-PQC,
+    non-parallel files; anything else falls back to full re-encryption, so this
+    helper never needs those code paths.
+
+    Returns the KEK bytes (caller must ``secure_memzero`` it).
+    """
+    salt = base64.b64decode(derivation_config["salt"])
+    hash_config = _flatten_derivation_config(derivation_config)
+    if format_version >= 11 or xor_mode == "independent":
+        key, _, _ = generate_key_independent_xor(
+            password,
+            salt,
+            hash_config,
+            quiet=True,
+            algorithm=algorithm,
+            format_version=format_version,
+        )
+    else:
+        key, _, _ = generate_key(
+            password,
+            salt,
+            hash_config,
+            True,
+            algorithm,
+            format_version=format_version,
+        )
+    return key
+
+
+def _rekey_envelope_fast(
+    input_file: str,
+    output_file: Optional[str],
+    old_password: bytes,
+    new_password: bytes,
+    in_place: bool,
+    quiet: bool = False,
+) -> bool:
+    """Attempt the O(header) envelope rekey: unwrap the DEK with the old KEK and
+    rewrap it under a KEK from ``new_password``, rewriting only the metadata.
+
+    Returns:
+        True if the fast-path completed (file rewritten). False if the file is
+        not an eligible envelope file (caller should fall back to full re-encrypt).
+
+    Raises:
+        DecryptionError: If unwrapping with ``old_password`` fails (wrong password
+            or tampering) -- callers must NOT swallow this into a fallback.
+        RekeyError: If the envelope_aad invariant does not hold (should never
+            happen; indicates a metadata-handling bug -- fail closed).
+    """
+    from .envelope import envelope_aad, unwrap_dek, wrap_dek
+
+    with open(input_file, "rb") as f:
+        raw = f.read()
+    meta_b64, sep, payload = raw.partition(b":")
+    if not sep:
+        return False
+    try:
+        meta = json.loads(base64.b64decode(meta_b64))
+    except Exception:
+        return False
+    if not isinstance(meta, dict):
+        return False
+
+    encryption = meta.get("encryption", {})
+    wrapped_b64 = encryption.get("wrapped_dek")
+    derivation_config = meta.get("derivation_config")
+    format_version = meta.get("format_version")
+    # Only the formats envelope actually writes; unknown shapes fall back.
+    if not (wrapped_b64 and isinstance(derivation_config, dict) and format_version in (10, 12)):
+        return False
+
+    is_cascade = bool(encryption.get("cascade", False))
+    algorithm = "cascade" if is_cascade else encryption.get("algorithm")
+    if algorithm is None:
+        return False
+    xor_mode = meta.get("xor_mode", "sequential")
+
+    old_salt_len = len(base64.b64decode(derivation_config["salt"]))
+
+    # Unwrap with the old KEK. A wrong password makes unwrap_dek raise -- let it
+    # propagate (do NOT fall back, or we'd silently full-re-encrypt on bad input).
+    old_kek = _derive_envelope_kek(
+        old_password, derivation_config, algorithm, format_version, xor_mode
+    )
+    try:
+        dek = unwrap_dek(base64.b64decode(wrapped_b64), old_kek)
+    finally:
+        secure_memzero(old_kek)
+
+    try:
+        # Fresh metadata copy (independent parse) with only the KEK-gating fields
+        # rolled: new random salt + new wrapped DEK. Same KDF config retained.
+        new_meta = json.loads(base64.b64decode(meta_b64))
+        new_salt = secrets.token_bytes(old_salt_len)
+        new_meta["derivation_config"]["salt"] = base64.b64encode(new_salt).decode("ascii")
+
+        new_kek = _derive_envelope_kek(
+            new_password, new_meta["derivation_config"], algorithm, format_version, xor_mode
+        )
+        try:
+            new_wrapped = wrap_dek(bytes(dek), new_kek)
+        finally:
+            secure_memzero(new_kek)
+        new_meta["encryption"]["wrapped_dek"] = base64.b64encode(new_wrapped).decode("ascii")
+    finally:
+        secure_memzero(dek)
+
+    # Invariant: the bulk AAD must be unchanged, or the retained ciphertext would
+    # not authenticate. Fail closed if a metadata-handling bug ever breaks this.
+    if envelope_aad(new_meta) != envelope_aad(meta):
+        raise RekeyError("Envelope rekey would change the bound metadata subset")
+
+    new_payload = base64.b64encode(json.dumps(new_meta).encode("utf-8")) + b":" + payload
+
+    input_dir = os.path.dirname(os.path.abspath(input_file))
+    if in_place:
+        original_mode = stat.S_IMODE(os.stat(input_file).st_mode)
+        fd, tmp_path = tempfile.mkstemp(prefix=".rekey_env_", dir=input_dir)
+        try:
+            with os.fdopen(fd, "wb") as out:
+                out.write(new_payload)
+            os.replace(tmp_path, input_file)
+            os.chmod(input_file, original_mode)
+        except BaseException:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+            raise
+    else:
+        with open(output_file, "wb") as out:
+            out.write(new_payload)
+        set_secure_permissions(output_file)
+
+    return True
+
+
 def rekey_file(
     input_file: str,
     output_file: Optional[str],
@@ -7876,6 +8045,39 @@ def rekey_file(
         if in_place:
             original_stat = os.stat(input_file)
             original_mode = stat.S_IMODE(original_stat.st_mode)
+
+        # --- Envelope fast-path: rewrap the DEK instead of re-encrypting ---
+        # For an envelope file undergoing a pure credential rotation (no
+        # algorithm/format/cascade change; no HSM/pepper/PQC/parallel KDF; same
+        # KDF config), derive the old KEK, unwrap the DEK, rewrap it under a new
+        # KEK from new_password, and rewrite ONLY the metadata header -- the bulk
+        # ciphertext is retained verbatim. envelope_aad is invariant across this
+        # change by construction (only KEK-gating fields move), so the retained
+        # ciphertext still authenticates. Anything outside these conditions falls
+        # through to the full decrypt + re-encrypt below (always-correct fallback).
+        _fast_eligible = (
+            new_algorithm is None
+            and (new_format_version is None or new_format_version == original_format_version)
+            and not cascade
+            and not cipher_names
+            and pepper_plugin is None
+            and pepper_name is None
+            and hsm_plugin is None
+            and not parallel_kdf
+            and pqc_private_key is None
+            and hash_config is None
+        )
+        if _fast_eligible and _rekey_envelope_fast(
+            input_file=input_file,
+            output_file=output_file,
+            old_password=old_password,
+            new_password=new_password,
+            in_place=in_place,
+            quiet=quiet,
+        ):
+            if not quiet:
+                eprint("Rekey completed successfully (envelope fast-path).")
+            return True
 
         # Step 1: Decrypt to memory
         if not quiet:

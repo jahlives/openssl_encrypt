@@ -15,7 +15,7 @@ import secrets
 import tempfile
 import unittest
 
-from openssl_encrypt.modules.crypt_core import decrypt_file, encrypt_file
+from openssl_encrypt.modules.crypt_core import decrypt_file, encrypt_file, rekey_file
 from openssl_encrypt.modules.envelope import (
     DEK_SIZE,
     envelope_aad,
@@ -472,6 +472,174 @@ class TestEnvelopeBulkAADWiring(unittest.TestCase):
             self.assertTrue(raw.startswith(full_meta + b":"))
         finally:
             os.unlink(op)
+
+
+class TestEnvelopeRekeyFastPath(unittest.TestCase):
+    """Cycle 5c: the O(header) envelope rekey fast-path.
+
+    A pure credential rotation must rewrap the DEK and retain the bulk
+    ciphertext VERBATIM: same payload bytes, new password decrypts, old
+    password fails. This simultaneously proves the 5b AAD wiring (the retained
+    ciphertext only authenticates because envelope_aad excluded the rolled
+    fields) and the KEK derivation in both directions.
+    """
+
+    PW_OLD = b"old-rekey-password"
+    PW_NEW = b"new-rekey-password-different"
+
+    def _payload(self, path):
+        with open(path, "rb") as f:
+            return f.read().partition(b":")[2]
+
+    def _encrypt(self, data, **kw):
+        ip = _tmp(data)
+        op = _tmp()
+        base = dict(
+            input_file=ip,
+            output_file=op,
+            password=self.PW_OLD,
+            hash_config=dict(_FAST_HASH),
+            quiet=True,
+            envelope=True,
+        )
+        base.update(kw)
+        try:
+            self.assertTrue(encrypt_file(**base))
+        finally:
+            os.unlink(ip)
+        return op
+
+    def _assert_fast_rekey(self, data, **enc_kw):
+        op = self._encrypt(data, **enc_kw)
+        rp = _tmp()
+        try:
+            payload_before = self._payload(op)
+            self.assertTrue(
+                rekey_file(
+                    input_file=op,
+                    output_file=rp,
+                    old_password=self.PW_OLD,
+                    new_password=self.PW_NEW,
+                    quiet=True,
+                )
+            )
+            # Bulk ciphertext retained verbatim (the whole point of the fast-path).
+            self.assertEqual(self._payload(rp), payload_before)
+            # New password decrypts to the original plaintext.
+            self.assertEqual(
+                decrypt_file(input_file=rp, output_file=None, password=self.PW_NEW, quiet=True),
+                data,
+            )
+            # Old password no longer unwraps.
+            with self.assertRaises(Exception):
+                decrypt_file(input_file=rp, output_file=None, password=self.PW_OLD, quiet=True)
+        finally:
+            for p in (op, rp):
+                if os.path.exists(p):
+                    os.unlink(p)
+
+    def test_rekey_oneshot_aes_gcm(self):
+        """One-shot v10 envelope file: fast-path retains ciphertext."""
+        self._assert_fast_rekey(secrets.token_bytes(4096), algorithm="aes-gcm")
+
+    def test_rekey_streaming_v12(self):
+        """Streaming v12 envelope file (independent-XOR KEK): fast-path works."""
+        self._assert_fast_rekey(
+            secrets.token_bytes(8 * 1024),
+            algorithm="aes-gcm",
+            chunk_size=1024,
+            streaming_threshold=1024,
+        )
+
+    def test_rekey_cascade(self):
+        """Cascade envelope file: fast-path retains the cascade ciphertext."""
+        self._assert_fast_rekey(
+            secrets.token_bytes(4096),
+            algorithm="cascade",
+            cascade=True,
+            cipher_names=["aes-256-gcm", "chacha20-poly1305"],
+        )
+
+    def test_rekey_in_place(self):
+        """In-place fast rekey (output_file=None) rewrites the same file."""
+        data = secrets.token_bytes(2048)
+        op = self._encrypt(data, algorithm="aes-gcm")
+        try:
+            payload_before = self._payload(op)
+            self.assertTrue(
+                rekey_file(
+                    input_file=op,
+                    output_file=None,
+                    old_password=self.PW_OLD,
+                    new_password=self.PW_NEW,
+                    quiet=True,
+                )
+            )
+            self.assertEqual(self._payload(op), payload_before)
+            self.assertEqual(
+                decrypt_file(input_file=op, output_file=None, password=self.PW_NEW, quiet=True),
+                data,
+            )
+        finally:
+            if os.path.exists(op):
+                os.unlink(op)
+
+    def test_wrong_old_password_raises(self):
+        """A wrong old password must raise, not silently fall back/corrupt."""
+        op = self._encrypt(secrets.token_bytes(2048), algorithm="aes-gcm")
+        rp = _tmp()
+        try:
+            with self.assertRaises(Exception):
+                rekey_file(
+                    input_file=op,
+                    output_file=rp,
+                    old_password=b"wrong-password",
+                    new_password=self.PW_NEW,
+                    quiet=True,
+                )
+        finally:
+            for p in (op, rp):
+                if os.path.exists(p):
+                    os.unlink(p)
+
+    def test_nonenvelope_rekey_full_reencrypt(self):
+        """Non-envelope files fall back to full re-encrypt (payload changes)."""
+        data = secrets.token_bytes(4096)
+        ip = _tmp(data)
+        op = _tmp()
+        self.assertTrue(
+            encrypt_file(
+                input_file=ip,
+                output_file=op,
+                password=self.PW_OLD,
+                hash_config=dict(_FAST_HASH),
+                quiet=True,
+                algorithm="aes-gcm",
+            )  # NO envelope
+        )
+        os.unlink(ip)
+        rp = _tmp()
+        try:
+            payload_before = self._payload(op)
+            self.assertTrue(
+                rekey_file(
+                    input_file=op,
+                    output_file=rp,
+                    old_password=self.PW_OLD,
+                    new_password=self.PW_NEW,
+                    quiet=True,
+                )
+            )
+            # Full re-encrypt → fresh DEK/nonce → payload differs.
+            self.assertNotEqual(self._payload(rp), payload_before)
+            self.assertEqual(
+                decrypt_file(input_file=rp, output_file=None, password=self.PW_NEW, quiet=True),
+                data,
+            )
+        finally:
+            for p in (op, rp):
+                if os.path.exists(p):
+                    os.unlink(p)
 
 
 if __name__ == "__main__":
