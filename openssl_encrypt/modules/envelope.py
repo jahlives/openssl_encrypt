@@ -16,6 +16,8 @@ KEM machinery that ``PasswordWrapper`` instantiates.
 Wrapped format: ``[nonce:12][ciphertext:32][tag:16]`` = 60 bytes for a 32-byte DEK.
 """
 
+import copy
+import json
 import secrets
 
 from cryptography.hazmat.primitives import hashes
@@ -27,6 +29,21 @@ from .secure_memory import secure_memzero
 
 # 256-bit DEK for the AEAD bulk ciphers.
 DEK_SIZE = 32
+
+# --- Envelope bulk-AEAD AAD (Option A: stable-subset binding) ---------------
+# The envelope bulk ciphertext is AEAD-bound to a CANONICAL subset of the
+# metadata that EXCLUDES only the KEK-gating fields a credential rekey changes:
+# the whole ``derivation_config`` subtree (KDF salt + hash/kdf config) and
+# ``encryption.wrapped_dek``. Everything else affects interpretation of the
+# bulk ciphertext, is stable across rekey, and stays authenticated. This is
+# what lets the rekey fast-path rewrap the DEK and retain the bulk ciphertext
+# verbatim (``envelope_aad`` is invariant across rekey by construction).
+#
+# Deny-list (exclude a known-small set), NOT allow-list: any future metadata
+# field is authenticated by default; a mistake fails LOUDLY (broken round-trip
+# or rekey) instead of silently dropping authentication.
+_AAD_EXCLUDED_TOP = ("derivation_config",)
+_AAD_EXCLUDED_ENCRYPTION = ("wrapped_dek",)
 # Minimum acceptable KEK length (generate_key produces >= 32 bytes).
 _MIN_KEK_SIZE = 32
 _WRAP_NONCE_SIZE = 12
@@ -43,6 +60,45 @@ def generate_dek() -> bytearray:
         ``secure_memzero`` it after use).
     """
     return bytearray(secrets.token_bytes(DEK_SIZE))
+
+
+def envelope_aad(metadata: dict) -> bytes:
+    """Compute the envelope bulk-AEAD AAD from a metadata dict.
+
+    Returns a deterministic, canonical serialization of ``metadata`` with the
+    KEK-gating fields removed: the whole ``derivation_config`` subtree and
+    ``encryption.wrapped_dek``. Those are exactly the fields a credential rekey
+    changes, so excluding them keeps the AAD invariant across rekey while every
+    remaining (bulk-interpretation) field stays authenticated.
+
+    The serialization sorts keys and uses compact separators so that encrypt and
+    decrypt -- which build the metadata dict independently -- produce identical
+    bytes. Input is deep-copied; the caller's metadata is never mutated.
+
+    Args:
+        metadata: The full file metadata dict (as written to / read from the
+            file header).
+
+    Returns:
+        Canonical UTF-8 bytes suitable as AEAD associated data.
+
+    Raises:
+        ValidationError: If ``metadata`` is not a dict.
+    """
+    if not isinstance(metadata, dict):
+        raise ValidationError("metadata must be a dict")
+
+    reduced = copy.deepcopy(metadata)
+    for key in _AAD_EXCLUDED_TOP:
+        reduced.pop(key, None)
+    encryption = reduced.get("encryption")
+    if isinstance(encryption, dict):
+        for key in _AAD_EXCLUDED_ENCRYPTION:
+            encryption.pop(key, None)
+
+    return json.dumps(reduced, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode(
+        "utf-8"
+    )
 
 
 def _derive_wrap_key(kek: bytes) -> bytearray:
