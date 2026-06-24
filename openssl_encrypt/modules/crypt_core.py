@@ -5217,6 +5217,7 @@ def encrypt_file(
     chunk_size=None,
     no_streaming=False,
     streaming_threshold=None,
+    envelope=False,
 ):
     """
     Encrypt a file (or in-memory bytes) with a password using the specified algorithm.
@@ -5803,6 +5804,33 @@ def encrypt_file(
             hsm_pepper=combined_pepper,
             format_version=format_version,  # v10: Sequential XOR, v9: Secure chained salt
         )
+
+    # --- Envelope (DEK/KEK) wrapping (opt-in) ---
+    # When envelope mode is on, bulk data is encrypted under a random DEK, and
+    # that DEK is wrapped with the password-derived key (now acting as the KEK).
+    # The wrapped DEK is stored in metadata (encryption.wrapped_dek) so a future
+    # rekey only has to rewrap it. The KEK is then zeroed and ``key`` is rebound
+    # to the DEK, so every downstream bulk path (one-shot, cascade, streaming)
+    # transparently uses the DEK.
+    _envelope_wrapped_dek = None
+    if envelope:
+        from .envelope import generate_dek, wrap_dek, wrap_dek_cascade
+
+        _dek = generate_dek()
+        try:
+            if cascade and cipher_names:
+                # Cascade bulk: wrap the DEK under the SAME chain so the envelope
+                # is never the weak link (matches the bulk's guarantee).
+                _envelope_wrapped_dek = wrap_dek_cascade(
+                    bytes(_dek), key, cipher_names, cascade_hash
+                )
+            else:
+                _envelope_wrapped_dek = wrap_dek(bytes(_dek), key)
+        finally:
+            secure_memzero(key)
+            key = bytes(_dek)
+            secure_memzero(_dek)
+
     # --- Streaming encryption path ---
     # The streaming decision was made BEFORE key derivation (see above) so
     # that format_version-dependent derivation matches the v12 metadata.
@@ -5905,6 +5933,10 @@ def encrypt_file(
                 "original_path": _archive_original_path,
             }
 
+        if _envelope_wrapped_dek is not None:
+            metadata.setdefault("encryption", {})["wrapped_dek"] = base64.b64encode(
+                _envelope_wrapped_dek
+            ).decode("ascii")
         metadata_json = json.dumps(metadata).encode("utf-8")
         metadata_b64 = base64.b64encode(metadata_json)
 
@@ -5924,6 +5956,13 @@ def encrypt_file(
                 pct = ((idx + 1) / total) * 100 if total > 0 else 100
                 eprint(f"\rEncrypting: {pct:.1f}% ({idx + 1}/{total} chunks)", end="", flush=True)
 
+        # Envelope: bind chunks to the stable subset (file still stores full meta).
+        _streaming_bulk_aad = None
+        if _envelope_wrapped_dek is not None:
+            from .envelope import envelope_aad
+
+            _streaming_bulk_aad = envelope_aad(metadata)
+
         streaming_enc.encrypt_file(
             input_file=input_file,
             output_file=output_file,
@@ -5931,6 +5970,7 @@ def encrypt_file(
             chunk_count=chunk_count,
             quiet=quiet,
             progress_callback=progress_cb,
+            bulk_aad=_streaming_bulk_aad,
         )
 
         if progress and not quiet:
@@ -6679,6 +6719,10 @@ def encrypt_file(
                 "original_path": _archive_original_path,
             }
 
+        if _envelope_wrapped_dek is not None:
+            metadata.setdefault("encryption", {})["wrapped_dek"] = base64.b64encode(
+                _envelope_wrapped_dek
+            ).decode("ascii")
         metadata_json = json.dumps(metadata).encode("utf-8")
         metadata_b64 = base64.b64encode(metadata_json)
 
@@ -6738,15 +6782,28 @@ def encrypt_file(
         elif integrity and input_is_bytes and not quiet:
             eprint("Warning: --integrity skipped (requires file path input)")
 
+    # Bulk-AEAD AAD. Envelope files bind a stable metadata subset (Option A) so
+    # a future rekey can rewrap the DEK without re-encrypting; non-envelope files
+    # keep full-metadata binding, byte-for-byte unchanged.
+    if use_aead_binding:
+        if _envelope_wrapped_dek is not None:
+            from .envelope import envelope_aad
+
+            _bulk_aad = envelope_aad(metadata)
+        else:
+            _bulk_aad = metadata_b64
+    else:
+        _bulk_aad = None
+
     # Only show progress for larger files (> 1MB)
     if len(data) > 1024 * 1024 and not quiet:
         encrypted_data = with_progress_bar(
-            lambda: do_encrypt(aad=metadata_b64 if use_aead_binding else None),
+            lambda: do_encrypt(aad=_bulk_aad),
             "Encrypting data",
             quiet=quiet,
         )
     else:
-        encrypted_data = do_encrypt(aad=metadata_b64 if use_aead_binding else None)
+        encrypted_data = do_encrypt(aad=_bulk_aad)
 
     if debug:
         logger.debug(f"ENCRYPT:OUTPUT Encrypted data length: {len(encrypted_data)} bytes")
@@ -6945,6 +7002,10 @@ def encrypt_file(
 
         # If scrypt is used, add rounds to hash_config
         # Serialize and encode the metadata
+        if _envelope_wrapped_dek is not None:
+            metadata.setdefault("encryption", {})["wrapped_dek"] = base64.b64encode(
+                _envelope_wrapped_dek
+            ).decode("ascii")
         metadata_json = json.dumps(metadata).encode("utf-8")
         metadata_base64 = base64.b64encode(metadata_json)
 
@@ -7723,6 +7784,194 @@ def _format_kdf_params(kdf_name: str, params: dict) -> str:
         return ", ".join(parts)
 
 
+def _flatten_derivation_config(derivation_config: dict) -> dict:
+    """Flatten a stored ``derivation_config`` into the flat hash_config that
+    ``generate_key`` expects -- byte-for-byte mirroring the reconstruction in
+    ``decrypt_file``. Used by the envelope rekey fast-path so the KEK it derives
+    is identical to the one a later decrypt will derive.
+    """
+    nested_hash_config = derivation_config.get("hash_config", {})
+    hash_config: dict = {}
+    for algo, config in nested_hash_config.items():
+        if isinstance(config, dict) and "rounds" in config:
+            hash_config[algo] = config["rounds"]
+        else:
+            hash_config[algo] = config
+    kdf_config = derivation_config.get("kdf_config", {})
+    for kdf_name, kdf_params in kdf_config.items():
+        if kdf_name in ["scrypt", "argon2", "balloon", "hkdf", "randomx"]:
+            hash_config[kdf_name] = kdf_params
+    hash_config["_is_from_decryption_metadata"] = True
+    return hash_config
+
+
+def _derive_envelope_kek(
+    password: bytes,
+    derivation_config: dict,
+    algorithm: str,
+    format_version: int,
+    xor_mode: str,
+) -> bytes:
+    """Derive the password KEK for an envelope file from its metadata, mirroring
+    ``decrypt_file`` (sequential vs independent-XOR by format_version/xor_mode).
+
+    Both the old-KEK (to unwrap) and new-KEK (to rewrap) in the rekey fast-path
+    go through this single path, so they are guaranteed consistent with what a
+    later decrypt computes. The fast-path is gated to non-HSM/pepper, non-PQC,
+    non-parallel files; anything else falls back to full re-encryption, so this
+    helper never needs those code paths.
+
+    Returns the KEK bytes (caller must ``secure_memzero`` it).
+    """
+    salt = base64.b64decode(derivation_config["salt"])
+    hash_config = _flatten_derivation_config(derivation_config)
+    if format_version >= 11 or xor_mode == "independent":
+        key, _, _ = generate_key_independent_xor(
+            password,
+            salt,
+            hash_config,
+            quiet=True,
+            algorithm=algorithm,
+            format_version=format_version,
+        )
+    else:
+        key, _, _ = generate_key(
+            password,
+            salt,
+            hash_config,
+            True,
+            algorithm,
+            format_version=format_version,
+        )
+    return key
+
+
+def _rekey_envelope_fast(
+    input_file: str,
+    output_file: Optional[str],
+    old_password: bytes,
+    new_password: bytes,
+    in_place: bool,
+    quiet: bool = False,
+) -> bool:
+    """Attempt the O(header) envelope rekey: unwrap the DEK with the old KEK and
+    rewrap it under a KEK from ``new_password``, rewriting only the metadata.
+
+    Returns:
+        True if the fast-path completed (file rewritten). False if the file is
+        not an eligible envelope file (caller should fall back to full re-encrypt).
+
+    Raises:
+        DecryptionError: If unwrapping with ``old_password`` fails (wrong password
+            or tampering) -- callers must NOT swallow this into a fallback.
+        RekeyError: If the envelope_aad invariant does not hold (should never
+            happen; indicates a metadata-handling bug -- fail closed).
+    """
+    from .envelope import (
+        envelope_aad,
+        unwrap_dek,
+        unwrap_dek_cascade,
+        wrap_dek,
+        wrap_dek_cascade,
+    )
+
+    with open(input_file, "rb") as f:
+        raw = f.read()
+    meta_b64, sep, payload = raw.partition(b":")
+    if not sep:
+        return False
+    try:
+        meta = json.loads(base64.b64decode(meta_b64))
+    except Exception:
+        return False
+    if not isinstance(meta, dict):
+        return False
+
+    encryption = meta.get("encryption", {})
+    wrapped_b64 = encryption.get("wrapped_dek")
+    derivation_config = meta.get("derivation_config")
+    format_version = meta.get("format_version")
+    # Only the formats envelope actually writes; unknown shapes fall back.
+    if not (wrapped_b64 and isinstance(derivation_config, dict) and format_version in (10, 12)):
+        return False
+
+    is_cascade = bool(encryption.get("cascade", False))
+    algorithm = "cascade" if is_cascade else encryption.get("algorithm")
+    if algorithm is None:
+        return False
+    xor_mode = meta.get("xor_mode", "sequential")
+    # Cascade envelope files wrap the DEK under the same chain.
+    cipher_chain = encryption.get("cipher_chain")
+    hkdf_hash = encryption.get("hkdf_hash", "sha256")
+    if is_cascade and not cipher_chain:
+        return False  # malformed; let the full path handle/report it
+
+    old_salt_len = len(base64.b64decode(derivation_config["salt"]))
+
+    # Unwrap with the old KEK. A wrong password makes unwrap raise -- let it
+    # propagate (do NOT fall back, or we'd silently full-re-encrypt on bad input).
+    old_kek = _derive_envelope_kek(
+        old_password, derivation_config, algorithm, format_version, xor_mode
+    )
+    try:
+        if is_cascade:
+            dek = unwrap_dek_cascade(
+                base64.b64decode(wrapped_b64), old_kek, cipher_chain, hkdf_hash
+            )
+        else:
+            dek = unwrap_dek(base64.b64decode(wrapped_b64), old_kek)
+    finally:
+        secure_memzero(old_kek)
+
+    try:
+        # Fresh metadata copy (independent parse) with only the KEK-gating fields
+        # rolled: new random salt + new wrapped DEK. Same KDF config retained.
+        new_meta = json.loads(base64.b64decode(meta_b64))
+        new_salt = secrets.token_bytes(old_salt_len)
+        new_meta["derivation_config"]["salt"] = base64.b64encode(new_salt).decode("ascii")
+
+        new_kek = _derive_envelope_kek(
+            new_password, new_meta["derivation_config"], algorithm, format_version, xor_mode
+        )
+        try:
+            if is_cascade:
+                new_wrapped = wrap_dek_cascade(bytes(dek), new_kek, cipher_chain, hkdf_hash)
+            else:
+                new_wrapped = wrap_dek(bytes(dek), new_kek)
+        finally:
+            secure_memzero(new_kek)
+        new_meta["encryption"]["wrapped_dek"] = base64.b64encode(new_wrapped).decode("ascii")
+    finally:
+        secure_memzero(dek)
+
+    # Invariant: the bulk AAD must be unchanged, or the retained ciphertext would
+    # not authenticate. Fail closed if a metadata-handling bug ever breaks this.
+    if envelope_aad(new_meta) != envelope_aad(meta):
+        raise RekeyError("Envelope rekey would change the bound metadata subset")
+
+    new_payload = base64.b64encode(json.dumps(new_meta).encode("utf-8")) + b":" + payload
+
+    input_dir = os.path.dirname(os.path.abspath(input_file))
+    if in_place:
+        original_mode = stat.S_IMODE(os.stat(input_file).st_mode)
+        fd, tmp_path = tempfile.mkstemp(prefix=".rekey_env_", dir=input_dir)
+        try:
+            with os.fdopen(fd, "wb") as out:
+                out.write(new_payload)
+            os.replace(tmp_path, input_file)
+            os.chmod(input_file, original_mode)
+        except BaseException:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+            raise
+    else:
+        with open(output_file, "wb") as out:
+            out.write(new_payload)
+        set_secure_permissions(output_file)
+
+    return True
+
+
 def rekey_file(
     input_file: str,
     output_file: Optional[str],
@@ -7828,6 +8077,39 @@ def rekey_file(
         if in_place:
             original_stat = os.stat(input_file)
             original_mode = stat.S_IMODE(original_stat.st_mode)
+
+        # --- Envelope fast-path: rewrap the DEK instead of re-encrypting ---
+        # For an envelope file undergoing a pure credential rotation (no
+        # algorithm/format/cascade change; no HSM/pepper/PQC/parallel KDF; same
+        # KDF config), derive the old KEK, unwrap the DEK, rewrap it under a new
+        # KEK from new_password, and rewrite ONLY the metadata header -- the bulk
+        # ciphertext is retained verbatim. envelope_aad is invariant across this
+        # change by construction (only KEK-gating fields move), so the retained
+        # ciphertext still authenticates. Anything outside these conditions falls
+        # through to the full decrypt + re-encrypt below (always-correct fallback).
+        _fast_eligible = (
+            new_algorithm is None
+            and (new_format_version is None or new_format_version == original_format_version)
+            and not cascade
+            and not cipher_names
+            and pepper_plugin is None
+            and pepper_name is None
+            and hsm_plugin is None
+            and not parallel_kdf
+            and pqc_private_key is None
+            and hash_config is None
+        )
+        if _fast_eligible and _rekey_envelope_fast(
+            input_file=input_file,
+            output_file=output_file,
+            old_password=old_password,
+            new_password=new_password,
+            in_place=in_place,
+            quiet=quiet,
+        ):
+            if not quiet:
+                eprint("Rekey completed successfully (envelope fast-path).")
+            return True
 
         # Step 1: Decrypt to memory
         if not quiet:
@@ -7961,9 +8243,7 @@ def _hsm_plugins_compatible(provided_id: str, stored_id: str) -> bool:
     """
     if provided_id == stored_id:
         return True
-    return any(
-        provided_id in family and stored_id in family for family in HSM_COMPATIBLE_FAMILIES
-    )
+    return any(provided_id in family and stored_id in family for family in HSM_COMPATIBLE_FAMILIES)
 
 
 def _resolve_hsm_slot(cli_slot, stored_config: dict):
@@ -8804,6 +9084,33 @@ def decrypt_file(
             format_version=format_version,  # Use version from file metadata for backward compatibility
         )
 
+    # --- Envelope (DEK/KEK) unwrap (opt-in, auto-detected) ---
+    # If the file was written in envelope mode, the password-derived key is the
+    # KEK: unwrap the stored DEK and rebind ``key`` to it so every bulk
+    # decryption path uses the DEK. Files without wrapped_dek are unaffected.
+    _enc_meta = metadata.get("encryption", {}) if isinstance(metadata, dict) else {}
+    _wrapped_dek_b64 = _enc_meta.get("wrapped_dek")
+    _is_envelope = bool(_wrapped_dek_b64)
+    if _wrapped_dek_b64:
+        from .envelope import unwrap_dek, unwrap_dek_cascade
+
+        _kek = key
+        try:
+            if is_cascade and cascade_cipher_chain:
+                # Cascade envelope files wrap the DEK under the same chain.
+                _dek = unwrap_dek_cascade(
+                    base64.b64decode(_wrapped_dek_b64),
+                    _kek,
+                    cascade_cipher_chain,
+                    cascade_hkdf_hash,
+                )
+            else:
+                _dek = unwrap_dek(base64.b64decode(_wrapped_dek_b64), _kek)
+        finally:
+            secure_memzero(_kek)
+        key = bytes(_dek)
+        secure_memzero(_dek)
+
     # Helper function to get expected nonce size for each algorithm
     def get_nonce_size(alg, include_legacy=True):
         """Get the appropriate nonce size(s) for the given algorithm.
@@ -9028,6 +9335,13 @@ def decrypt_file(
                 pct = ((idx + 1) / total) * 100 if total > 0 else 100
                 eprint(f"\rDecrypting: {pct:.1f}% ({idx + 1}/{total} chunks)", end="", flush=True)
 
+        # Envelope files bound chunks to the stable subset; mirror that here.
+        _streaming_bulk_aad = None
+        if _is_envelope:
+            from .envelope import envelope_aad
+
+            _streaming_bulk_aad = envelope_aad(metadata)
+
         result = streaming_dec.decrypt_file(
             input_file=input_file,
             output_file=output_file,
@@ -9036,6 +9350,7 @@ def decrypt_file(
             original_hash=original_hash,
             quiet=quiet,
             progress_callback=progress_cb,
+            bulk_aad=_streaming_bulk_aad,
         )
 
         if progress and not quiet:
@@ -9065,10 +9380,16 @@ def decrypt_file(
         else:
             eprint("Decrypting content with " + algorithm, end=" ")
 
-    # For AEAD algorithms, prepare AAD from metadata
+    # For AEAD algorithms, prepare AAD from metadata. Envelope files bound the
+    # bulk to the stable subset (Option A); mirror that. Non-envelope files use
+    # the full metadata_b64 exactly as before.
     if aead_binding:
-        # Use the original metadata_b64 as AAD
-        aad_for_decrypt = metadata_b64
+        if _is_envelope:
+            from .envelope import envelope_aad
+
+            aad_for_decrypt = envelope_aad(metadata)
+        else:
+            aad_for_decrypt = metadata_b64
     else:
         aad_for_decrypt = None
 

@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Envelope encryption (DEK/KEK)** (`--envelope`, opt-in): bulk data is
+  encrypted under a random **Data Encryption Key (DEK)**, and the DEK is wrapped
+  by a **Key Encryption Key** derived from the password through the full,
+  unchanged KDF chain. Decryption auto-detects envelope files (no flag needed).
+  - **O(header) credential rekey**: changing the password rewraps the small DEK
+    and rewrites only the metadata header — the bulk ciphertext is retained
+    verbatim instead of being re-encrypted. This rotates the *access credential*,
+    not the data key; for true data-key rotation, re-encrypt under a fresh DEK.
+  - **Stable-subset AEAD binding**: the bulk is bound to a canonical subset of
+    the metadata that excludes only the KEK-gating fields a rekey changes (the
+    KDF salt/config and the wrapped DEK); every other field stays authenticated,
+    so a rekey keeps the ciphertext valid while tampering still fails closed.
+  - **Never the weak link**: for a `cascade` chain the DEK is wrapped under the
+    *same* chain (not single AES-256-GCM), preserving the cascade's
+    strongest-component guarantee. Single-cipher files use AES-256-GCM.
+  - Opt-in only and **fully backward-compatible**: files written without
+    `--envelope` are byte-for-byte unchanged and keep full-metadata AEAD binding.
+    DEK and KEK are zeroed on every path and never logged. Foundation for future
+    multi-password / multi-recipient wrapping.
+
 - **Foreign-format interop — decrypt `age` and OpenPGP files**
   (`decrypt --from age|pgp`): read-only decryption of files produced by other
   ecosystems, to ease migration. Implemented directly on `cryptography` — **no

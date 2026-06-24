@@ -7,7 +7,7 @@
 
 | Topic | Decision |
 |---|---|
-| Branch targets | **#1 → both** `feature/v1.4.x-development` **and** `feature/v1.5.x-development`; **#2 → `feature/v1.5.x-development` only** |
+| Branch targets | **#1 → both** `feature/v1.4.x-development` **and** `feature/v1.5.x-development`; **#2 → both** (REVISED 2026-06-24, was 1.5.x-only): build+harden on `feature/v1.5.x-development` FIRST, then port the frozen impl to `feature/v1.4.x-development`. **`v13` envelope format MUST be byte-identical across both lines** (shared known-answer vectors) so v13 files interop across 1.4.x↔1.5.x. |
 | #1 old-file compat | **Read-compat + warn**: new writes use fixed scheme; old (weak) cascade-streamed files still decrypt via legacy path + one-time security warning urging rekey |
 | #2 rollout | **Opt-in flag, default off** (decrypt auto-detects via metadata) |
 | Work order | **#1 first, fully shipped & committed, then #2** |
@@ -79,9 +79,18 @@ per-chunk `nonce` derived at line 503. `cascade.py` derives each layer's key+non
       it is regenerated at release time. **Release-time TODO: add 1.5.0 section to changelog.html.**
 - [x] **7. Post-change full suite** → `test-logs/postfix_cascade_nonce_fix.log`: 4991 passed, 25
       skipped, 4 xfailed, 0 failed (baseline 4988 + 3 new tests). No regressions.
-- [x] **8. Commit** on `feature/streaming-cascade-nonce-fix` — `38be75b0`.
-- [~] **9. Port to v1.4.x**: own baseline → apply → own post-change suite → commit on
-      `feature/v1.4.x-development`. (IN PROGRESS)
+- [x] **8. Commit** on `feature/streaming-cascade-nonce-fix` — `38be75b0` (amended `08cc2052`).
+- [x] **9. Port to v1.4.x** — DONE, but as a **regression guard only**. KEY FINDING: v1.4.x is
+      **NOT vulnerable** — its `CascadeEncryption.encrypt/decrypt` take a per-chunk `chunk_nonce`
+      folded into the salt (`effective_salt = salt + chunk_nonce`, cascade.py:316/365), passed by
+      both StreamingEncryptor and StreamingDecryptor. The bug was a v1.5.x-only refactor regression.
+      Per user decision: added 2 white-box regression-guard tests (encryptor + decryptor side) that
+      fail if `chunk_nonce` is ever dropped. No code fix, no changelog/version bump.
+      v1.4.x baseline 2617 → post-change 2619 passed, 0 failed. Commit `6470b1e6` on
+      `feature/v1.4.x-development`.
+      SEPARATE PRE-EXISTING v1.4.x ISSUE (out of scope, flagged to user): the high-level
+      `encrypt_file`→`decrypt_file` streaming roundtrip fails on v1.4.x (streaming-format_version
+      fix exists on v1.5.x only). Not pursued.
 
 ### Notes / deviations
 - `version.py` is **git-ignored** (generated from `version.py.template` by setup.py); only the
@@ -99,9 +108,14 @@ per-chunk `nonce` derived at line 503. `cascade.py` derives each layer's key+non
 ## Design (reuse the tested v7 asymmetric envelope pattern)
 - Random 32-byte **DEK** in `CryptoKey`/`SecureBytes`.
 - **KEK** derived from password via existing `generate_key()` KDF chain.
-- Wrap DEK with KEK using AES-256-GCM (same shape as `PasswordWrapper.wrap_password`,
-  `asymmetric_core.py`); store `wrapped_dek` (nonce‖ct‖tag) in metadata under `encryption.wrapped_dek`,
-  gated by new `format_version` (v13) + opt-in flag.
+- Wrap DEK with KEK using `PasswordWrapper.wrap_password(DEK, KEK)` (AES-256-GCM, nonce‖ct‖tag).
+- **DECISION (user, 2026-06-23): additive `encryption.wrapped_dek` field, NOT a new format_version.**
+  Existing format_version is preserved; presence of `wrapped_dek` triggers envelope mode and is
+  auto-detected on decrypt. Rationale: `format_version in [...]` is checked in many places + M11
+  fails closed on unknown versions → a v13 would be high blast-radius. Mirrors `cascade_nonce_scheme`.
+- KEK = today's password-derived key (`generate_key`). Bulk encrypt uses DEK instead of KEK.
+- Decrypt: derive KEK as today; if `encryption.wrapped_dek` present → DEK = unwrap_password(...),
+  use DEK for bulk; else use KEK directly (unchanged legacy path).
 - Bulk data AND streaming chunks encrypt under the DEK.
 - `secure_memzero` DEK+KEK on every exit path; never logged / never in exceptions.
 - **`rekey` fast path:** envelope file ⇒ unwrap DEK with old KEK, rewrap with new KEK, copy
@@ -117,21 +131,222 @@ per-chunk `nonce` derived at line 503. `cascade.py` derives each layer's key+non
 - Tests: new `test_envelope_encryption.py`; touch `test_rekey.py`
 
 ## TDD cycles — tasks
-- [ ] **0. Baseline** = post-change log of #1 (chained); confirm clean on v1.5.x.
-- [ ] **1. [Red→Green]** flag plumbing (`--envelope`) parsed & threaded.
-- [ ] **2. [Red→Green]** DEK generate + wrap/unwrap roundtrip (KEK from password); secure-wipe asserts.
-- [ ] **3. [Red→Green]** bulk encrypt/decrypt under DEK (format v13); non-envelope still works.
-- [ ] **4. [Red→Green]** streaming under DEK.
-- [ ] **5. [Red→Green]** `rekey` fast path: assert ciphertext bytes unchanged, only header rewrapped.
+- [x] **0. Baseline** on `feature/envelope-encryption` (off v1.5.x-dev) → `test-logs/baseline_envelope.log`: 4988 passed, 25 skipped, 4 xfailed, 0 failed.
+- [x] **1. [Red→Green]** DEK wrap/unwrap primitive — `modules/envelope.py` (`generate_dek`,
+      `wrap_dek`, `unwrap_dek`; AES-256-GCM, HKDF-domain-separated wrap key, `secure_memzero`).
+      9 tests in `test_envelope_encryption.py` (roundtrip, wrong-KEK, tamper, sizes, short-KEK). GREEN.
+      Standalone module (no PQ KEM dependency). Commit pending.
+- [x] **2. [Red→Green]** `--envelope` flag added to encrypt subparser, threaded to all 3
+      `encrypt_file(` CLI call sites (`envelope=getattr(args,"envelope",False)`).
+- [x] **3. [Red→Green]** bulk encrypt/decrypt under DEK via additive `encryption.wrapped_dek`
+      (existing format_version preserved). encrypt_file: DEK swap after KEK finalized (crypt_core
+      ~5807), wrapped_dek injected before each `json.dumps(metadata)` (3 sites). decrypt_file: unwrap
+      after KEK derived (~8829). No schema change needed (encryption.additionalProperties=true).
+      Non-envelope unchanged; decrypt auto-detects. Tests: aes-gcm/chacha/cascade roundtrip,
+      wrapped_dek present+base64+size, wrong-password fails, non-envelope has no wrapped_dek.
+- [x] **4. [Red→Green]** streaming under DEK — `test_envelope_streaming_roundtrip` (key=DEK flows
+      into StreamingEncryptor/Decryptor). 16 envelope tests green; cascade regression 78 green.
+- [ ] **5. [Red→Green]** `rekey` fast path — **BLOCKED: OPEN DESIGN DECISION (see below).** Deferred.
 - [ ] **6. [Green]** backward-compat: pre-envelope files decrypt unchanged.
 - [ ] **7. Security tests:** DEK/KEK zeroed on all paths; absent from logs & exception messages.
-- [ ] **8. Release artifacts** (all five) + bump `__version__` if cutting a version.
+- [ ] **8. Release artifacts** (CHANGELOG.md ### Added, version.py.template + version.py, flatpak
+      metainfo.xml; changelog.html release-time) + bump `__version__` if cutting a version.
 - [ ] **9. Post-change full suite** → `test-logs/postfix_envelope.log`; diff vs baseline; zero regressions.
 - [ ] **10. Commit** on `feature/envelope-encryption`.
 
 ---
 
+## ⚠️ OPEN DESIGN DECISION FOR TOMORROW — envelope rekey fast-path vs AEAD binding
+
+**Status:** Cycles 1–4 of Feature #2 are DONE and committed (envelope works end-to-end;
+`--envelope` opt-in; one-shot/cascade/streaming round-trip). Cycle 5 (the O(1) rekey fast-path —
+envelope's headline benefit) is **BLOCKED** on the decision below. Decide tomorrow, then implement.
+
+### The conflict (verified in code)
+- Bulk ciphertext is AEAD-bound to the FULL metadata: `aad = metadata_b64` (one-shot:
+  `aad_for_decrypt = metadata_b64` at decrypt; streaming: `build_chunk_aad(metadata_b64, ...)`).
+- `metadata_b64` includes the KDF **salt**, **kdf_config**, AND the new **`encryption.wrapped_dek`**.
+- A rekey with a new password MUST change salt → new KEK → new `wrapped_dek`. That changes the AAD,
+  so the OLD bulk ciphertext would fail authentication. ⇒ "keep ciphertext, only rewrap the DEK"
+  (true O(1) rekey) is **incompatible** with the current full-metadata AEAD binding.
+
+### The sound fix (standard envelope construction)
+Make the envelope bulk AEAD bind only a **stable subset** of metadata — algorithm, format_version,
+cascade chain (cipher_chain/layer_info), streaming params (chunk_size/chunk_count/nonce_prefix/
+cascade_nonce_scheme), encryption_data — and EXCLUDE the KEK-derivation fields
+(`derivation_config.salt`, `derivation_config.kdf_config`/`hash_config`, `encryption.wrapped_dek`).
+- **Why safe:** `wrapped_dek` is itself AES-GCM authenticated, so tampering with salt/kdf/wrapped_dek
+  just makes `unwrap_dek` fail closed; the DEK (actual bulk key) is unchanged by a rekey. Everything
+  that affects *interpretation* of the bulk ciphertext stays in the AAD; only the *access-gating*
+  KEK material is excluded. This is the conventional KEM/DEK envelope AAD split.
+- **Cost/risk:** security-sensitive change to AAD computation in BOTH encrypt and decrypt, across
+  one-shot + cascade + streaming. Needs a canonical stable-subset serializer (deterministic key
+  order) used identically on both sides, plus adversarial tests (tamper each excluded field ⇒
+  unwrap fails; tamper each included field ⇒ auth fails; cross-file wrapped_dek swap ⇒ fails).
+
+### Options (pick one tomorrow)
+- **A. Implement stable-subset AAD** (recommended) → enables true O(1) rekey (rewrap DEK + rewrite
+  metadata, copy bulk ciphertext verbatim). Most value; most care required.
+- **B. Ship envelope WITHOUT fast-path** → keep full-metadata binding; rekey stays full re-encrypt
+  even for envelope files. Envelope is then only DEK indirection (foundation for multi-recipient),
+  with little immediate user benefit. Low risk.
+- **C. Revert Feature #2** if the fast-path isn't worth the AAD change (cycles 1–4 are isolated on
+  `feature/envelope-encryption`, easy to shelve).
+
+## ✅ DECISION LOCKED (2026-06-24) — Option A, opt-in only
+
+**Chosen: Option A** (stable-subset bulk AAD enabling O(1) credential rekey + future
+multi-password/multi-KEK), subject to TWO HARD CONSTRAINTS and a fixed wrap construction.
+
+### Hard constraints (non-negotiable)
+1. **Must NEVER affect existing encryptions.** Every file without an envelope marker keeps
+   FULL-metadata AAD binding (`aad = metadata_b64`), byte-for-byte the current code. The
+   subset-AAD path is entered ONLY when `encryption.wrapped_dek` is present / `format_version`
+   is the envelope version (v13). The change is strictly additive + branched:
+   `if envelope: aad = envelope_aad(metadata) else: aad = metadata_b64`. No previously written
+   ciphertext is ever reinterpreted under the subset AAD.
+2. **Never the default.** Strictly opt-in via `--envelope` (already `envelope=False` default in
+   cycles 2-4). Option A only alters behavior *inside* the already-opt-in envelope branch.
+
+### Why the constraints hold (mode-confusion is fail-closed)
+**CORRECTION (2026-06-24, implementation): envelope does NOT use a new format_version.** The shipped
+implementation (cycles 2-4) reuses the existing version (v10 one-shot / v12 streaming) and detects
+envelope purely by **`encryption.wrapped_dek` presence**. No v13. (Bonus: makes the 1.4.x port
+easier — no new schema version.) Mode-confusion is therefore fail-closed via **KEY MISMATCH**, not a
+version field: the bulk key is the DEK (envelope) vs the password-key (non-envelope), so:
+- Strip `wrapped_dek` to force the legacy/full-AAD (password-is-bulk-key) path ⇒ wrong bulk key ⇒
+  fails closed.
+- Bolt a `wrapped_dek` onto a legacy file to force the subset path ⇒ unwrap yields a bogus DEK,
+  bulk was never under a DEK ⇒ fails closed.
+Neither silently downgrades an existing file. REQUIRED adversarial tests: add/remove `wrapped_dek`
+and flip `format_version` ⇒ each fails closed.
+
+### DEK-wrap cipher — FIXED, not user-configurable
+The AES-256-GCM that wraps the DEK (`wrapped_dek`) is **pinned, not a user choice.** Rationale:
+- It encrypts **32 bytes** — no perf/throughput/capability difference exists between AEADs at this
+  size, so a cipher menu buys nothing here.
+- A selectable wrap-algorithm identifier is a downgrade/confusion attack surface (the JWT `alg`
+  failure class). Fewer choices = smaller surface.
+- One wrap construction = one code path, one test matrix, auditable.
+- AES-256-GCM is FIPS, AES-NI-accelerated, exhaustively analyzed, and nonce-safe here (each wrap
+  key = `HKDF(KEK)` wraps exactly one DEK once with a fresh random nonce; rekey rolls the KEK).
+
+**One automatic refinement (NOT a knob):** the wrap must never be the weak link. When the **bulk is
+a cascade**, wrap the DEK under that **same cascade chain** (keyed from the KEK) so envelope
+preserves the cascade's strongest-surviving-component guarantee instead of collapsing the file's
+security to single AES-256. Driven by the file's `encryption.algorithm`/cascade-chain, which is
+already in the authenticated AAD subset ⇒ no new downgrade surface, nothing for the user to set.
+- Non-cascade bulk → AES-256-GCM wrap (fixed).
+- Cascade bulk → same cascade chain wraps the DEK.
+(RFC 3394 AES-KW is the purpose-built nonce-free alternative if ever wanted; GCM-random-nonce is
+sound and matches existing AEAD usage — staying with GCM.)
+
+### Rekey is CREDENTIAL rotation, not data-key rotation
+The fast-path rewraps the SAME DEK under a new KEK; the DEK never changes. This rotates *access*
+(old password can no longer unwrap) but NOT the bulk key. If the DEK may itself be compromised,
+that requires a full re-encrypt under a fresh DEK. ⇒ Keep a `--rotate-dek` / full-reencrypt option
+for true data-key rotation; document the distinction in CLI help + CHANGELOG so users don't assume
+fast rekey gives more than it does. (For small files the rekey speedup is ~nil anyway — the 2x KDF
+floor dominates — so the headline value of A here is the multi-password foundation, not speed.)
+
+### GATE before any code — ✅ PASSED (2026-06-24)
+Grep every reader of `derivation_config.salt` and confirm it feeds ONLY the KEK, never the
+bulk/DEK path. **RESULT: PASSED.** `derivation_config.salt` flows exclusively into
+`generate_key`/`multi_hash_password` (password→KEK) and the asymmetric private-key unwrap — all
+key-derivation. Bulk AEAD nonces are fresh `secrets.token_bytes(12)`; the bulk key is the KEK
+(non-envelope) or random DEK (envelope). The KDF salt never touches bulk key/nonce/AAD. So
+excluding `{derivation_config.salt, kdf_config/hash_config, wrapped_dek}` from the envelope bulk
+AAD is safe.
+
+**REFINEMENT the gate exposed — `encryption.cascade_salt` MUST be in the included (authenticated)
+subset.** It is a SEPARATE, bulk-side random salt (`secrets.token_bytes(32)`, stored under
+`encryption.cascade_salt`) that drives cascade key/nonce derivation and is STABLE across rekey
+(rekey keeps the bulk ciphertext → keeps cascade_salt). Distinct class from the KDF salt despite
+the shared name. ⇒ `envelope_aad` included subset = {format_version, mode, aead_binding,
+encryption.algorithm, cascade chain/cipher_chain/layer_info, **encryption.cascade_salt**,
+xchacha_nonce_format, streaming.{enabled,chunk_size,chunk_count,nonce_prefix,cascade_nonce_scheme},
+hashes.original_hash}. Excluded = {derivation_config.salt, derivation_config.hash_config/kdf_config,
+encryption.wrapped_dek}.
+
+### If A is chosen — implementation sketch
+1. Add `envelope_aad(metadata) -> bytes`: canonical JSON of the stable subset (sorted keys).
+2. encrypt_file + StreamingEncryptor + cascade: when envelope, use `envelope_aad` instead of
+   `metadata_b64` for the bulk AEAD AAD (a flag/param threaded down). Non-envelope unchanged.
+3. decrypt_file mirror: when `wrapped_dek` present, recompute `envelope_aad` for bulk decryption.
+4. rekey_file: envelope fast-path — read file, derive old KEK, unwrap DEK; derive new KEK (new
+   salt/kdf from new password/config), rewrap DEK; rewrite metadata (new salt/kdf/wrapped_dek),
+   keep payload bytes; recompute nothing on the bulk side because `envelope_aad` is unchanged.
+   Add test: bulk ciphertext bytes identical before/after rekey; new password decrypts; old fails.
+5. Full adversarial test pass (above).
+
+### Remaining Feature #2 cycles after the decision
+6 backward-compat (mostly green) · 7 security/wipe tests (DEK/KEK zeroed, never logged) ·
+8 release artifacts (CHANGELOG ### Added, version.py.template+version.py, flatpak metainfo.xml) ·
+9 post-change full suite → test-logs/postfix_envelope.log · 10 final commit.
+
 ## Progress log (newest first)
+- 2026-06-24 (impl 3): Cycles 7, 8, 9 DONE — Feature #2 COMPLETE on feature/envelope-encryption.
+  * 7 (01c4b672): key-material hygiene tests — DEK zeroed in place after encrypt/decrypt/rekey;
+    no key material in normal logs/output or unwrap exceptions. 5 tests, test-only.
+  * 8 (d6e89f75): release artifacts — CHANGELOG ### Added, version.py.template 1.5.0 entry, flatpak
+    metainfo.xml. (version.py git-ignored; flathub changelog.html release-time — both per DoD.)
+  * 9: FEATURE-BOUNDARY full suite (worksteal) -> test-logs/postfix_envelope.log: **5037 passed, 25
+    skipped, 4 xfailed, 0 failed, 0 error**. Reconciles: 4988 (v1.5.x base, pre-cascade-fix) + 16
+    (envelope cycles 2-4) + 33 (cycles 5/7) = 5037. No regressions. Envelope suite = 49 tests.
+  REMAINING: integrity manifest re-sign (BOOTSTRAP key, user) + merge to feature/v1.5.x-development;
+  THEN port Feature #2 to feature/v1.4.x-development (v13-free: envelope.py module + crypt_core
+  wiring, holding the wrapped_dek/envelope_aad/cascade-wrap format byte-identical via shared KATs).
+- 2026-06-24 (impl 2): Cycle 5d DONE.
+  * 5d-1 (891def19): adversarial matrix — strip/inject/swap wrapped_dek all fail closed; tampering
+    an authenticated field (encrypted_at, key-and-hash-neutral) fails = clean end-to-end proof that
+    envelope_aad is enforced. 5 tests.
+  * 5d-2 (fde35197): cascade-match DEK wrap — cascade bulk wraps the DEK under the SAME chain (never
+    the weak link); single-cipher keeps AES-256-GCM. wrap_dek_cascade/unwrap_dek_cascade (fixed wrap
+    salt, pinned fv); wired into encrypt/decrypt/rekey; driven by cipher_chain (already authenticated,
+    no new field/downgrade). 5 tests. Envelope suite 44; regression 246 passed, 0 failed.
+  REMAINING for Feature #2: cycle 7 security/wipe tests (DEK/KEK zeroed + never logged — note the
+  wipe code is already in place, this is the test pass), cycle 8 release artifacts (CHANGELOG/
+  version.py.template/version.py/flatpak metainfo), cycle 9 full suite, cycle 10 final state; then
+  the 1.4.x port (v13-free: envelope reuses v10/v12, so port is the module + wiring). CLI --envelope
+  already wired (cycle 2-4). cycle 6 backward-compat is moot (pre-release, opt-in, no v-bump).
+- 2026-06-24 (impl): Cycle 5 IMPLEMENTED on feature/envelope-encryption.
+  * 5a (e9b32fe6): envelope_aad() canonical stable-subset serializer. **DENY-LIST** (exclude
+    derivation_config + encryption.wrapped_dek; authenticate everything else) — user-approved,
+    reverses the earlier "allow-list" note; fail-safe direction (new fields authenticated by
+    default, mistakes fail loudly). 8 tests.
+  * 5b (7ce1ef6a): wired envelope_aad into the bulk AEAD (one-shot+cascade+streaming, encrypt+
+    decrypt). streaming.py gained an optional bulk_aad override; header still stores full metadata.
+    Detection = wrapped_dek presence (NO v13). 4 white-box tests.
+  * 5c (8f538be3): O(header) rekey fast-path — unwrap DEK with old KEK, rewrap under new KEK, rewrite
+    only metadata, retain ciphertext verbatim. _derive_envelope_kek mirrors decrypt's flatten +
+    sequential/independent-XOR branch (both KEKs through it). Gated to pure rotations; full-reencrypt
+    fallback otherwise; wrong pw raises. 6 tests (v10/v12/cascade/in-place/wrong-pw/non-envelope).
+  Regression each step green; combined 236 passed, 0 failed. REMAINING: 5d adversarial matrix
+  (mode-confusion add/remove wrapped_dek, cross-file swap, cascade-match wrap), then cycles 6-10
+  (backward-compat, security/wipe tests, release artifacts, full suite, final commit), then 1.4.x port.
+- 2026-06-24 (later 2): GATE PASSED — `derivation_config.salt` feeds ONLY the KEK (generate_key/
+  multi_hash_password) + asymmetric key-unwrap; bulk nonces are random `token_bytes(12)`, bulk key
+  is KEK/DEK. Excluding KDF salt/kdf_config/wrapped_dek from envelope bulk AAD is SAFE. Refinement:
+  `encryption.cascade_salt` is a separate bulk-side salt (stable across rekey) → MUST be in the
+  authenticated subset. Cycle 5 unblocked.
+- 2026-06-24 (later): REVISED branch target — Feature #2 now ships to BOTH 1.5.x and 1.4.x (was
+  1.5.x-only). Feasibility confirmed: v13 is free on both branches (both cap at v12, identical
+  schema sets v3-v12); 1.4.x already has aead_binding/streaming.py/cascade.py, only envelope.py is
+  missing. Approach: build+harden on 1.5.x first, then port the frozen impl to 1.4.x (same pattern
+  as #1). HARD CONSTRAINT: v13 envelope format byte-identical across both lines (shared KAT vectors)
+  so files interop 1.4.x↔1.5.x. Rationale: 1.5.x is alpha, 1.4.x is the stable/production line where
+  users actually are; multi-password only reaches users via 1.4.x.
+- 2026-06-24: DECISION LOCKED — Option A approved, opt-in only, two hard constraints (never affect
+  existing files; never default). DEK-wrap cipher fixed to AES-256-GCM (NOT user-configurable),
+  with automatic cascade-match when bulk is cascade. Keep `--rotate-dek`/full-reencrypt for true
+  data-key rotation. NEXT: run the salt-only-feeds-KEK gate, then implement cycles 5-10. Feature #1
+  (cascade nonce fix) merged to v1.5.x (d1f6f9dc) + signed (2e8ecb7c) + pushed to origin.
+- 2026-06-23 (later): Feature #1 committed on feature/streaming-cascade-nonce-fix (08cc2052).
+  v1.4.x regression-guard committed (6470b1e6) — v1.4.x was already protected via chunk_nonce.
+  Feature #2 cycles 1-4 committed on feature/envelope-encryption (cycle1 7e4a89cb; cycles2-4
+  17055935): envelope.py primitive + --envelope opt-in + encrypt/decrypt integration + streaming.
+  16 envelope tests green. Cycle 5 (rekey fast-path) BLOCKED on the AEAD-binding design decision
+  above — left for tomorrow. STOP POINT: resume by deciding A/B/C above.
 - 2026-06-23: Plan drafted. Branch `feature/streaming-cascade-nonce-fix` created off v1.5.x.
   Root cause confirmed (streaming.py:509-512). Baseline full suite running
   (`test-logs/baseline_cascade_nonce_fix.log`). Memory updated with the 5 changelog locations.
