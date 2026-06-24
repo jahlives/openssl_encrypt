@@ -85,6 +85,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `SECURITY.md`). Signing key rotated from the bootstrap key to the production
   key. Runbook: `openssl_encrypt/docs/SOURCE_INTEGRITY.md`.
 
+### Fixed
+
+- **Streaming files could not be decrypted** (full-pipeline `encrypt` → `decrypt`
+  via the streaming path). A streamed file records `format_version 12` in its
+  metadata, and decryption re-derives the password key from that stored version,
+  but encryption derived the key at the original `format_version` (default 10)
+  *before* the streaming decision was made — and the encrypt-side guard missed
+  v12 — so the encrypt and decrypt keys diverged and every chunk failed
+  authentication (`InvalidTag`). The streaming path now decides streaming and
+  pins `format_version 12` **before** key derivation, matching decryption.
+  Added full-pipeline regression coverage (`TestFullPipelineStreamingRoundtrip`)
+  — the prior streaming tests used fixed keys and bypassed the key-derivation
+  pipeline, which is why this went unnoticed. (Issue #50.)
+
 ## [1.4.5] - 2026-06-12
 
 ### Security
