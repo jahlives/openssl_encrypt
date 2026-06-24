@@ -285,6 +285,17 @@ encryption.wrapped_dek}.
 9 post-change full suite → test-logs/postfix_envelope.log · 10 final commit.
 
 ## Progress log (newest first)
+- 2026-06-24 (impl 3): Cycles 7, 8, 9 DONE — Feature #2 COMPLETE on feature/envelope-encryption.
+  * 7 (01c4b672): key-material hygiene tests — DEK zeroed in place after encrypt/decrypt/rekey;
+    no key material in normal logs/output or unwrap exceptions. 5 tests, test-only.
+  * 8 (d6e89f75): release artifacts — CHANGELOG ### Added, version.py.template 1.5.0 entry, flatpak
+    metainfo.xml. (version.py git-ignored; flathub changelog.html release-time — both per DoD.)
+  * 9: FEATURE-BOUNDARY full suite (worksteal) -> test-logs/postfix_envelope.log: **5037 passed, 25
+    skipped, 4 xfailed, 0 failed, 0 error**. Reconciles: 4988 (v1.5.x base, pre-cascade-fix) + 16
+    (envelope cycles 2-4) + 33 (cycles 5/7) = 5037. No regressions. Envelope suite = 49 tests.
+  REMAINING: integrity manifest re-sign (BOOTSTRAP key, user) + merge to feature/v1.5.x-development;
+  THEN port Feature #2 to feature/v1.4.x-development (v13-free: envelope.py module + crypt_core
+  wiring, holding the wrapped_dek/envelope_aad/cascade-wrap format byte-identical via shared KATs).
 - 2026-06-24 (impl 2): Cycle 5d DONE.
   * 5d-1 (891def19): adversarial matrix — strip/inject/swap wrapped_dek all fail closed; tampering
     an authenticated field (encrypted_at, key-and-hash-neutral) fails = clean end-to-end proof that
