@@ -209,8 +209,11 @@ multi-password/multi-KEK), subject to TWO HARD CONSTRAINTS and a fixed wrap cons
    cycles 2-4). Option A only alters behavior *inside* the already-opt-in envelope branch.
 
 ### Why the constraints hold (mode-confusion is fail-closed)
-The mode selector is itself authenticated: **`format_version` is in the stable-subset AAD and
-envelope uses its own version (v13).** Therefore:
+**CORRECTION (2026-06-24, implementation): envelope does NOT use a new format_version.** The shipped
+implementation (cycles 2-4) reuses the existing version (v10 one-shot / v12 streaming) and detects
+envelope purely by **`encryption.wrapped_dek` presence**. No v13. (Bonus: makes the 1.4.x port
+easier — no new schema version.) Mode-confusion is therefore fail-closed via **KEY MISMATCH**, not a
+version field: the bulk key is the DEK (envelope) vs the password-key (non-envelope), so:
 - Strip `wrapped_dek` to force the legacy/full-AAD (password-is-bulk-key) path ⇒ wrong bulk key ⇒
   fails closed.
 - Bolt a `wrapped_dek` onto a legacy file to force the subset path ⇒ unwrap yields a bogus DEK,
@@ -282,6 +285,21 @@ encryption.wrapped_dek}.
 9 post-change full suite → test-logs/postfix_envelope.log · 10 final commit.
 
 ## Progress log (newest first)
+- 2026-06-24 (impl): Cycle 5 IMPLEMENTED on feature/envelope-encryption.
+  * 5a (e9b32fe6): envelope_aad() canonical stable-subset serializer. **DENY-LIST** (exclude
+    derivation_config + encryption.wrapped_dek; authenticate everything else) — user-approved,
+    reverses the earlier "allow-list" note; fail-safe direction (new fields authenticated by
+    default, mistakes fail loudly). 8 tests.
+  * 5b (7ce1ef6a): wired envelope_aad into the bulk AEAD (one-shot+cascade+streaming, encrypt+
+    decrypt). streaming.py gained an optional bulk_aad override; header still stores full metadata.
+    Detection = wrapped_dek presence (NO v13). 4 white-box tests.
+  * 5c (8f538be3): O(header) rekey fast-path — unwrap DEK with old KEK, rewrap under new KEK, rewrite
+    only metadata, retain ciphertext verbatim. _derive_envelope_kek mirrors decrypt's flatten +
+    sequential/independent-XOR branch (both KEKs through it). Gated to pure rotations; full-reencrypt
+    fallback otherwise; wrong pw raises. 6 tests (v10/v12/cascade/in-place/wrong-pw/non-envelope).
+  Regression each step green; combined 236 passed, 0 failed. REMAINING: 5d adversarial matrix
+  (mode-confusion add/remove wrapped_dek, cross-file swap, cascade-match wrap), then cycles 6-10
+  (backward-compat, security/wipe tests, release artifacts, full suite, final commit), then 1.4.x port.
 - 2026-06-24 (later 2): GATE PASSED — `derivation_config.salt` feeds ONLY the KEK (generate_key/
   multi_hash_password) + asymmetric key-unwrap; bulk nonces are random `token_bytes(12)`, bulk key
   is KEK/DEK. Excluding KDF salt/kdf_config/wrapped_dek from envelope bulk AAD is SAFE. Refinement:
