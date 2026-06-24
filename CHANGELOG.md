@@ -252,6 +252,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   encrypt path. One-shot files keep the caller's version unchanged.
   Regression-tested across fv 9/10/11/12/default, plain and cascade
   (`test_streaming_format_version.py`).
+- **Cross-version envelope + cascade + XChaCha decryption**: a file written by
+  1.4.x with `--envelope`, a `cascade` chain containing `xchacha20-poly1305`,
+  could not be decrypted after upgrading to 1.5.x. 1.4.x wraps the DEK with the
+  legacy 12-byte XChaCha nonce and writes no `xchacha_nonce_format` flag, but the
+  envelope DEK-unwrap (`unwrap_dek_cascade`) hardcoded the new 192-bit format
+  (`xchacha_nonce_format=2`), so the DEK never authenticated and the file was
+  permanently unreadable. The break was unique to envelope + xchacha — the bulk
+  cascade path already defaulted an absent flag to legacy (1), so plain
+  cascade+xchacha and single xchacha files always interoperated. The DEK
+  wrap/unwrap now honor the file's `xchacha_nonce_format` (absent ⇒ legacy 1) at
+  both the decrypt and rekey paths; newly written 1.5.x files are unchanged and
+  still use the real 192-bit construction. Regression-tested against a committed
+  genuine 1.4.x vector (`testfiles/envelope_xchacha_v14/`,
+  `test_envelope_encryption.py`).
 
 ### Changed
 
