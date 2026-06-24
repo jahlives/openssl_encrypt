@@ -21,7 +21,9 @@ from openssl_encrypt.modules.envelope import (
     envelope_aad,
     generate_dek,
     unwrap_dek,
+    unwrap_dek_cascade,
     wrap_dek,
+    wrap_dek_cascade,
 )
 
 _FAST_HASH = {"sha256": 1, "pbkdf2_iterations": 0}
@@ -792,6 +794,82 @@ class TestEnvelopeAdversarial(unittest.TestCase):
                 decrypt_file(input_file=op, output_file=None, password=self.PW, quiet=True)
         finally:
             os.unlink(op)
+
+
+class TestEnvelopeCascadeWrap(unittest.TestCase):
+    """Cycle 5d-2: cascade-match DEK wrap.
+
+    When the bulk is a cascade chain, the DEK is wrapped under the SAME chain so
+    the envelope is never the weak link (breaking the wrap requires breaking
+    every layer, matching the bulk's guarantee) -- not reduced to single AES-GCM.
+    """
+
+    CHAIN = ["aes-256-gcm", "chacha20-poly1305"]
+
+    def test_cascade_wrap_roundtrip(self):
+        kek = secrets.token_bytes(32)
+        dek = bytes(generate_dek())
+        wrapped = wrap_dek_cascade(dek, kek, self.CHAIN)
+        self.assertEqual(bytes(unwrap_dek_cascade(wrapped, kek, self.CHAIN)), dek)
+
+    def test_cascade_wrap_is_not_single_gcm(self):
+        """Cascade wrap differs from (and is larger than) the 60-byte AES-GCM wrap."""
+        kek = secrets.token_bytes(32)
+        dek = bytes(generate_dek())
+        casc = wrap_dek_cascade(dek, kek, self.CHAIN)
+        gcm = wrap_dek(dek, kek)
+        self.assertNotEqual(casc, gcm)
+        self.assertGreater(len(casc), len(gcm))  # multi-layer overhead
+        self.assertNotIn(dek, casc)
+
+    def test_cascade_wrap_wrong_kek_fails(self):
+        kek = secrets.token_bytes(32)
+        dek = bytes(generate_dek())
+        wrapped = wrap_dek_cascade(dek, kek, self.CHAIN)
+        with self.assertRaises(Exception):
+            unwrap_dek_cascade(wrapped, secrets.token_bytes(32), self.CHAIN)
+
+    def test_cascade_wrap_wrong_chain_fails(self):
+        """Unwrapping with a different chain must fail (chain is authenticated)."""
+        kek = secrets.token_bytes(32)
+        dek = bytes(generate_dek())
+        wrapped = wrap_dek_cascade(dek, kek, self.CHAIN)
+        with self.assertRaises(Exception):
+            unwrap_dek_cascade(wrapped, kek, ["chacha20-poly1305", "aes-256-gcm"])
+
+    def test_cascade_envelope_file_uses_cascade_wrap(self):
+        """An end-to-end cascade envelope file stores a cascade-wrapped DEK
+        (longer than the 60-byte AES-GCM wrap), proving the wrap is matched."""
+        data = secrets.token_bytes(4096)
+        ip = _tmp(data)
+        op = _tmp()
+        try:
+            self.assertTrue(
+                encrypt_file(
+                    input_file=ip,
+                    output_file=op,
+                    password=b"cascade-wrap-pw",
+                    hash_config=dict(_FAST_HASH),
+                    quiet=True,
+                    envelope=True,
+                    algorithm="cascade",
+                    cascade=True,
+                    cipher_names=self.CHAIN,
+                )
+            )
+            meta = _read_metadata(op)
+            wrapped = base64.b64decode(meta["encryption"]["wrapped_dek"])
+            self.assertGreater(len(wrapped), 12 + DEK_SIZE + 16)  # not single AES-GCM
+            self.assertEqual(
+                decrypt_file(
+                    input_file=op, output_file=None, password=b"cascade-wrap-pw", quiet=True
+                ),
+                data,
+            )
+        finally:
+            for p in (ip, op):
+                if os.path.exists(p):
+                    os.unlink(p)
 
 
 if __name__ == "__main__":

@@ -5814,11 +5814,18 @@ def encrypt_file(
     # transparently uses the DEK.
     _envelope_wrapped_dek = None
     if envelope:
-        from .envelope import generate_dek, wrap_dek
+        from .envelope import generate_dek, wrap_dek, wrap_dek_cascade
 
         _dek = generate_dek()
         try:
-            _envelope_wrapped_dek = wrap_dek(bytes(_dek), key)
+            if cascade and cipher_names:
+                # Cascade bulk: wrap the DEK under the SAME chain so the envelope
+                # is never the weak link (matches the bulk's guarantee).
+                _envelope_wrapped_dek = wrap_dek_cascade(
+                    bytes(_dek), key, cipher_names, cascade_hash
+                )
+            else:
+                _envelope_wrapped_dek = wrap_dek(bytes(_dek), key)
         finally:
             secure_memzero(key)
             key = bytes(_dek)
@@ -7854,7 +7861,13 @@ def _rekey_envelope_fast(
         RekeyError: If the envelope_aad invariant does not hold (should never
             happen; indicates a metadata-handling bug -- fail closed).
     """
-    from .envelope import envelope_aad, unwrap_dek, wrap_dek
+    from .envelope import (
+        envelope_aad,
+        unwrap_dek,
+        unwrap_dek_cascade,
+        wrap_dek,
+        wrap_dek_cascade,
+    )
 
     with open(input_file, "rb") as f:
         raw = f.read()
@@ -7881,16 +7894,26 @@ def _rekey_envelope_fast(
     if algorithm is None:
         return False
     xor_mode = meta.get("xor_mode", "sequential")
+    # Cascade envelope files wrap the DEK under the same chain.
+    cipher_chain = encryption.get("cipher_chain")
+    hkdf_hash = encryption.get("hkdf_hash", "sha256")
+    if is_cascade and not cipher_chain:
+        return False  # malformed; let the full path handle/report it
 
     old_salt_len = len(base64.b64decode(derivation_config["salt"]))
 
-    # Unwrap with the old KEK. A wrong password makes unwrap_dek raise -- let it
+    # Unwrap with the old KEK. A wrong password makes unwrap raise -- let it
     # propagate (do NOT fall back, or we'd silently full-re-encrypt on bad input).
     old_kek = _derive_envelope_kek(
         old_password, derivation_config, algorithm, format_version, xor_mode
     )
     try:
-        dek = unwrap_dek(base64.b64decode(wrapped_b64), old_kek)
+        if is_cascade:
+            dek = unwrap_dek_cascade(
+                base64.b64decode(wrapped_b64), old_kek, cipher_chain, hkdf_hash
+            )
+        else:
+            dek = unwrap_dek(base64.b64decode(wrapped_b64), old_kek)
     finally:
         secure_memzero(old_kek)
 
@@ -7905,7 +7928,10 @@ def _rekey_envelope_fast(
             new_password, new_meta["derivation_config"], algorithm, format_version, xor_mode
         )
         try:
-            new_wrapped = wrap_dek(bytes(dek), new_kek)
+            if is_cascade:
+                new_wrapped = wrap_dek_cascade(bytes(dek), new_kek, cipher_chain, hkdf_hash)
+            else:
+                new_wrapped = wrap_dek(bytes(dek), new_kek)
         finally:
             secure_memzero(new_kek)
         new_meta["encryption"]["wrapped_dek"] = base64.b64encode(new_wrapped).decode("ascii")
@@ -9060,11 +9086,20 @@ def decrypt_file(
     _wrapped_dek_b64 = _enc_meta.get("wrapped_dek")
     _is_envelope = bool(_wrapped_dek_b64)
     if _wrapped_dek_b64:
-        from .envelope import unwrap_dek
+        from .envelope import unwrap_dek, unwrap_dek_cascade
 
         _kek = key
         try:
-            _dek = unwrap_dek(base64.b64decode(_wrapped_dek_b64), _kek)
+            if is_cascade and cascade_cipher_chain:
+                # Cascade envelope files wrap the DEK under the same chain.
+                _dek = unwrap_dek_cascade(
+                    base64.b64decode(_wrapped_dek_b64),
+                    _kek,
+                    cascade_cipher_chain,
+                    cascade_hkdf_hash,
+                )
+            else:
+                _dek = unwrap_dek(base64.b64decode(_wrapped_dek_b64), _kek)
         finally:
             secure_memzero(_kek)
         key = bytes(_dek)

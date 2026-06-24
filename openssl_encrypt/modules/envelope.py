@@ -51,6 +51,16 @@ _WRAP_TAG_SIZE = 16
 # Domain separation so an envelope wrap key is distinct from any other use of the KEK.
 _WRAP_INFO = b"openssl_encrypt.envelope.dek-wrap.v1"
 
+# Cascade DEK-wrap parameters. When the bulk is a cascade chain, the DEK is
+# wrapped under the SAME chain so the envelope is never the weak link (breaking
+# the wrap requires breaking every layer, matching the bulk's guarantee). A
+# FIXED wrap salt is safe: the wrap key (HKDF(KEK)) is unique per file and wraps
+# the DEK exactly once, so per-layer (key, nonce) pairs never repeat; a rekey
+# rolls the KEK and therefore the whole derivation. The format_version is pinned
+# so wrap/unwrap agree and stay interoperable across the 1.4.x / 1.5.x lines.
+_CASCADE_WRAP_SALT = b"oesc.envelope.cascade-wrap.salt1"  # exactly 32 bytes
+_CASCADE_WRAP_FORMAT_VERSION = 12
+
 
 def generate_dek() -> bytearray:
     """Generate a fresh random DEK.
@@ -181,5 +191,91 @@ def unwrap_dek(wrapped: bytes, kek: bytes) -> bytearray:
             # Generic message: never leak key material or crypto internals.
             raise DecryptionError("Envelope DEK unwrap failed", original_exception=e)
         return bytearray(plaintext)
+    finally:
+        secure_memzero(wrap_key)
+
+
+def wrap_dek_cascade(
+    dek: bytes, kek: bytes, cipher_names: list, hkdf_hash: str = "sha256"
+) -> bytes:
+    """Wrap a DEK under the same cascade chain that protects the bulk data.
+
+    Ensures the envelope is never weaker than the payload: an attacker must
+    break every cascade layer to recover the DEK, matching the bulk's
+    strongest-component guarantee (rather than reducing to a single AES-256-GCM).
+
+    Args:
+        dek: The data encryption key to protect.
+        kek: The password-derived key encryption key (>= 32 bytes).
+        cipher_names: The cascade cipher chain (same as the bulk's cipher_chain).
+        hkdf_hash: HKDF hash for the cascade key derivation.
+
+    Returns:
+        The cascade-wrapped DEK bytes.
+
+    Raises:
+        ValidationError: If inputs are the wrong type or too short.
+    """
+    from .cascade import CascadeConfig, CascadeEncryption
+
+    if not isinstance(dek, (bytes, bytearray)) or len(dek) == 0:
+        raise ValidationError("dek must be non-empty bytes")
+    if not isinstance(kek, (bytes, bytearray)) or len(kek) < _MIN_KEK_SIZE:
+        raise ValidationError(f"kek must be at least {_MIN_KEK_SIZE} bytes")
+    if not cipher_names:
+        raise ValidationError("cipher_names must be a non-empty cascade chain")
+
+    config = CascadeConfig(cipher_names=list(cipher_names), hkdf_hash=hkdf_hash)
+    enc = CascadeEncryption(
+        config, format_version=_CASCADE_WRAP_FORMAT_VERSION, xchacha_nonce_format=2
+    )
+    wrap_key = _derive_wrap_key(kek)
+    try:
+        return enc.encrypt(bytes(dek), bytes(wrap_key), _CASCADE_WRAP_SALT, associated_data=None)
+    finally:
+        secure_memzero(wrap_key)
+
+
+def unwrap_dek_cascade(
+    wrapped: bytes, kek: bytes, cipher_names: list, hkdf_hash: str = "sha256"
+) -> bytearray:
+    """Unwrap a DEK produced by :func:`wrap_dek_cascade`.
+
+    Args:
+        wrapped: The cascade-wrapped DEK blob.
+        kek: The password-derived key encryption key (>= 32 bytes).
+        cipher_names: The cascade cipher chain used to wrap (the bulk chain).
+        hkdf_hash: HKDF hash for the cascade key derivation.
+
+    Returns:
+        The recovered DEK as a mutable ``bytearray``.
+
+    Raises:
+        ValidationError: If inputs are the wrong type/size.
+        DecryptionError: If authentication fails (wrong KEK or tampering).
+    """
+    from .cascade import CascadeConfig, CascadeEncryption
+
+    if not isinstance(wrapped, (bytes, bytearray)) or len(wrapped) == 0:
+        raise ValidationError("wrapped must be non-empty bytes")
+    if not isinstance(kek, (bytes, bytearray)) or len(kek) < _MIN_KEK_SIZE:
+        raise ValidationError(f"kek must be at least {_MIN_KEK_SIZE} bytes")
+    if not cipher_names:
+        raise ValidationError("cipher_names must be a non-empty cascade chain")
+
+    config = CascadeConfig(cipher_names=list(cipher_names), hkdf_hash=hkdf_hash)
+    dec = CascadeEncryption(
+        config, format_version=_CASCADE_WRAP_FORMAT_VERSION, xchacha_nonce_format=2
+    )
+    wrap_key = _derive_wrap_key(kek)
+    try:
+        plaintext = dec.decrypt(
+            bytes(wrapped), bytes(wrap_key), _CASCADE_WRAP_SALT, associated_data=None
+        )
+        return bytearray(plaintext)
+    except (DecryptionError, ValidationError):
+        raise
+    except Exception as e:
+        raise DecryptionError("Envelope cascade DEK unwrap failed", original_exception=e)
     finally:
         secure_memzero(wrap_key)
