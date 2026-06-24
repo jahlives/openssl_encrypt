@@ -156,6 +156,25 @@ class TestEnvelopeIntegration(unittest.TestCase):
         """Envelope encrypt/decrypt round-trips for a cascade chain."""
         self._roundtrip(cascade=True, cipher_names=["aes-256-gcm", "chacha20-poly1305"])
 
+    def test_envelope_roundtrip_cascade_xchacha(self):
+        """Regression: envelope + cascade containing xchacha20-poly1305 round-trips.
+
+        Pins the three-feature combination (envelope DEK/KEK + cascade chain +
+        XChaCha 192-bit nonces). The DEK is wrapped under the same cascade chain
+        via wrap_dek_cascade(), so the wrapped_dek is present and the cascade
+        layer must use real 24-byte nonces (xchacha_nonce_format == 2), never the
+        legacy 12-byte format. Guards against either feature silently degrading
+        when combined.
+        """
+        meta = self._roundtrip(cascade=True, cipher_names=["aes-256-gcm", "xchacha20-poly1305"])
+        enc = meta["encryption"]
+        self.assertIn("wrapped_dek", enc, "envelope layer missing for cascade+xchacha")
+        self.assertEqual(
+            enc.get("xchacha_nonce_format"),
+            2,
+            "cascade xchacha layer must use real 192-bit nonces, not legacy format",
+        )
+
     def test_wrapped_dek_is_base64(self):
         """The stored wrapped_dek is base64 and decodes to the expected size."""
         meta = self._roundtrip(algorithm="aes-gcm")
