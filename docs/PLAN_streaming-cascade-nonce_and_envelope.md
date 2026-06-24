@@ -7,7 +7,7 @@
 
 | Topic | Decision |
 |---|---|
-| Branch targets | **#1 → both** `feature/v1.4.x-development` **and** `feature/v1.5.x-development`; **#2 → `feature/v1.5.x-development` only** |
+| Branch targets | **#1 → both** `feature/v1.4.x-development` **and** `feature/v1.5.x-development`; **#2 → both** (REVISED 2026-06-24, was 1.5.x-only): build+harden on `feature/v1.5.x-development` FIRST, then port the frozen impl to `feature/v1.4.x-development`. **`v13` envelope format MUST be byte-identical across both lines** (shared known-answer vectors) so v13 files interop across 1.4.x↔1.5.x. |
 | #1 old-file compat | **Read-compat + warn**: new writes use fixed scheme; old (weak) cascade-streamed files still decrypt via legacy path + one-time security warning urging rekey |
 | #2 rollout | **Opt-in flag, default off** (decrypt auto-detects via metadata) |
 | Work order | **#1 first, fully shipped & committed, then #2** |
@@ -268,6 +268,13 @@ subset. This gate decides the safety of the entire included/excluded partition.
 9 post-change full suite → test-logs/postfix_envelope.log · 10 final commit.
 
 ## Progress log (newest first)
+- 2026-06-24 (later): REVISED branch target — Feature #2 now ships to BOTH 1.5.x and 1.4.x (was
+  1.5.x-only). Feasibility confirmed: v13 is free on both branches (both cap at v12, identical
+  schema sets v3-v12); 1.4.x already has aead_binding/streaming.py/cascade.py, only envelope.py is
+  missing. Approach: build+harden on 1.5.x first, then port the frozen impl to 1.4.x (same pattern
+  as #1). HARD CONSTRAINT: v13 envelope format byte-identical across both lines (shared KAT vectors)
+  so files interop 1.4.x↔1.5.x. Rationale: 1.5.x is alpha, 1.4.x is the stable/production line where
+  users actually are; multi-password only reaches users via 1.4.x.
 - 2026-06-24: DECISION LOCKED — Option A approved, opt-in only, two hard constraints (never affect
   existing files; never default). DEK-wrap cipher fixed to AES-256-GCM (NOT user-configurable),
   with automatic cascade-match when bulk is cascade. Keep `--rotate-dek`/full-reencrypt for true
