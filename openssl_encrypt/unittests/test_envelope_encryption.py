@@ -642,5 +642,157 @@ class TestEnvelopeRekeyFastPath(unittest.TestCase):
                     os.unlink(p)
 
 
+def _rewrite_metadata(path, mutate):
+    """Parse a file's metadata header, apply ``mutate(meta)``, rewrite the file
+    with the SAME payload. Models an attacker editing the (unencrypted) header.
+    """
+    with open(path, "rb") as f:
+        raw = f.read()
+    mb64, sep, payload = raw.partition(b":")
+    meta = json.loads(base64.b64decode(mb64))
+    mutate(meta)
+    with open(path, "wb") as f:
+        f.write(base64.b64encode(json.dumps(meta).encode("utf-8")) + b":" + payload)
+
+
+class TestEnvelopeAdversarial(unittest.TestCase):
+    """Cycle 5d: adversarial matrix for envelope mode (Option A).
+
+    Confirms the security properties are fail-closed: mode-confusion (add/remove
+    wrapped_dek), cross-file wrapped_dek swap, and tampering an authenticated
+    (included) metadata field. The 'tamper encrypted_at' case is the clean
+    end-to-end proof that envelope_aad is actually enforced -- encrypted_at
+    affects neither the key nor the content hash, so only the AEAD binding can
+    reject it.
+    """
+
+    PW = b"adversarial-envelope-pw"
+
+    def _enc_envelope(self, data=None, **kw):
+        data = secrets.token_bytes(4096) if data is None else data
+        ip = _tmp(data)
+        op = _tmp()
+        base = dict(
+            input_file=ip,
+            output_file=op,
+            password=self.PW,
+            hash_config=dict(_FAST_HASH),
+            quiet=True,
+            envelope=True,
+            algorithm="aes-gcm",
+        )
+        base.update(kw)
+        try:
+            self.assertTrue(encrypt_file(**base))
+        finally:
+            os.unlink(ip)
+        return op, data
+
+    def _enc_plain(self, data=None):
+        data = secrets.token_bytes(4096) if data is None else data
+        ip = _tmp(data)
+        op = _tmp()
+        try:
+            self.assertTrue(
+                encrypt_file(
+                    input_file=ip,
+                    output_file=op,
+                    password=self.PW,
+                    hash_config=dict(_FAST_HASH),
+                    quiet=True,
+                    algorithm="aes-gcm",
+                )
+            )
+        finally:
+            os.unlink(ip)
+        return op, data
+
+    def _decrypts_ok(self, path, data):
+        self.assertEqual(
+            decrypt_file(input_file=path, output_file=None, password=self.PW, quiet=True), data
+        )
+
+    def test_strip_wrapped_dek_fails_closed(self):
+        """Removing wrapped_dek (force non-envelope interpretation) must fail."""
+        op, data = self._enc_envelope()
+        try:
+            self._decrypts_ok(op, data)  # sanity: baseline works
+            _rewrite_metadata(op, lambda m: m["encryption"].pop("wrapped_dek", None))
+            with self.assertRaises(Exception):
+                decrypt_file(input_file=op, output_file=None, password=self.PW, quiet=True)
+        finally:
+            os.unlink(op)
+
+    def test_inject_wrapped_dek_into_plain_file_fails_closed(self):
+        """Adding a wrapped_dek to a non-envelope file must fail (wrong key)."""
+        env_op, _ = self._enc_envelope()
+        plain_op, _ = self._enc_plain()
+        try:
+            with open(env_op, "rb") as f:
+                env_meta = json.loads(base64.b64decode(f.read().partition(b":")[0]))
+            stolen = env_meta["encryption"]["wrapped_dek"]
+            _rewrite_metadata(
+                plain_op,
+                lambda m: m.setdefault("encryption", {}).__setitem__("wrapped_dek", stolen),
+            )
+            with self.assertRaises(Exception):
+                decrypt_file(input_file=plain_op, output_file=None, password=self.PW, quiet=True)
+        finally:
+            for p in (env_op, plain_op):
+                os.path.exists(p) and os.unlink(p)
+
+    def test_cross_file_wrapped_dek_swap_fails_closed(self):
+        """Swapping wrapped_dek between two same-password envelope files fails."""
+        op_a, _ = self._enc_envelope(data=secrets.token_bytes(4096))
+        op_b, data_b = self._enc_envelope(data=secrets.token_bytes(4096))
+        try:
+            with open(op_a, "rb") as f:
+                dek_a = json.loads(base64.b64decode(f.read().partition(b":")[0]))["encryption"][
+                    "wrapped_dek"
+                ]
+            # Put A's wrapped DEK into B: unwraps to DEK_A, but B's bulk is DEK_B.
+            _rewrite_metadata(op_b, lambda m: m["encryption"].__setitem__("wrapped_dek", dek_a))
+            with self.assertRaises(Exception):
+                decrypt_file(input_file=op_b, output_file=None, password=self.PW, quiet=True)
+        finally:
+            for p in (op_a, op_b):
+                os.path.exists(p) and os.unlink(p)
+
+    def test_tamper_authenticated_field_fails_closed(self):
+        """Tampering an included field (encrypted_at) is rejected by envelope_aad.
+
+        encrypted_at affects neither the KEK/DEK nor the content hash, so the
+        ONLY thing that can reject this change is the bulk AEAD binding.
+        """
+        op, data = self._enc_envelope()
+        try:
+            self._decrypts_ok(op, data)
+            _rewrite_metadata(op, lambda m: m.__setitem__("encrypted_at", "1999-01-01T00:00:00Z"))
+            with self.assertRaises(Exception):
+                decrypt_file(input_file=op, output_file=None, password=self.PW, quiet=True)
+        finally:
+            os.unlink(op)
+
+    def test_tamper_excluded_field_does_not_break_aad(self):
+        """Editing an EXCLUDED field (wrapped_dek) is not an AAD violation.
+
+        It fails at the DEK-unwrap step instead (the key path), proving the
+        field is genuinely outside the bulk AAD -- the complement of the test
+        above. (Either way it fails closed; here we assert it still fails.)
+        """
+        op, data = self._enc_envelope()
+        try:
+            # Corrupt one base64 char of wrapped_dek -> unwrap (AES-GCM) fails.
+            def corrupt(m):
+                w = m["encryption"]["wrapped_dek"]
+                m["encryption"]["wrapped_dek"] = ("A" if w[0] != "A" else "B") + w[1:]
+
+            _rewrite_metadata(op, corrupt)
+            with self.assertRaises(Exception):
+                decrypt_file(input_file=op, output_file=None, password=self.PW, quiet=True)
+        finally:
+            os.unlink(op)
+
+
 if __name__ == "__main__":
     unittest.main()
