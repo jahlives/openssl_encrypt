@@ -7903,6 +7903,11 @@ def _rekey_envelope_fast(
     # Cascade envelope files wrap the DEK under the same chain.
     cipher_chain = encryption.get("cipher_chain")
     hkdf_hash = encryption.get("hkdf_hash", "sha256")
+    # The wrap carries no nonce-format flag; it mirrors the file's metadata
+    # (absent => legacy 1, as written by 1.4.x). Rekey only re-wraps the DEK and
+    # leaves the flag untouched, so unwrap and re-wrap must use this same value to
+    # stay self-consistent with what a later read will assume.
+    wrap_xchacha_format = encryption.get("xchacha_nonce_format", 1)
     if is_cascade and not cipher_chain:
         return False  # malformed; let the full path handle/report it
 
@@ -7916,7 +7921,11 @@ def _rekey_envelope_fast(
     try:
         if is_cascade:
             dek = unwrap_dek_cascade(
-                base64.b64decode(wrapped_b64), old_kek, cipher_chain, hkdf_hash
+                base64.b64decode(wrapped_b64),
+                old_kek,
+                cipher_chain,
+                hkdf_hash,
+                xchacha_nonce_format=wrap_xchacha_format,
             )
         else:
             dek = unwrap_dek(base64.b64decode(wrapped_b64), old_kek)
@@ -7935,7 +7944,13 @@ def _rekey_envelope_fast(
         )
         try:
             if is_cascade:
-                new_wrapped = wrap_dek_cascade(bytes(dek), new_kek, cipher_chain, hkdf_hash)
+                new_wrapped = wrap_dek_cascade(
+                    bytes(dek),
+                    new_kek,
+                    cipher_chain,
+                    hkdf_hash,
+                    xchacha_nonce_format=wrap_xchacha_format,
+                )
             else:
                 new_wrapped = wrap_dek(bytes(dek), new_kek)
         finally:
@@ -9097,12 +9112,17 @@ def decrypt_file(
         _kek = key
         try:
             if is_cascade and cascade_cipher_chain:
-                # Cascade envelope files wrap the DEK under the same chain.
+                # Cascade envelope files wrap the DEK under the same chain, in the
+                # same xchacha nonce format as the bulk. Honor the metadata flag
+                # (absent => legacy 1, as written by 1.4.x) instead of assuming the
+                # new 192-bit format, or 1.4.x envelope+xchacha files can never be
+                # unwrapped after upgrading.
                 _dek = unwrap_dek_cascade(
                     base64.b64decode(_wrapped_dek_b64),
                     _kek,
                     cascade_cipher_chain,
                     cascade_hkdf_hash,
+                    xchacha_nonce_format=_enc_meta.get("xchacha_nonce_format", 1),
                 )
             else:
                 _dek = unwrap_dek(base64.b64decode(_wrapped_dek_b64), _kek)

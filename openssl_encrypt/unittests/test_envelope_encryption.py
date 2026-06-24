@@ -1077,5 +1077,43 @@ class TestEnvelopeKeyHygiene(unittest.TestCase):
             self.assertNotIn(kek.hex(), msg)
 
 
+class TestEnvelopeCrossVersionXChaCha(unittest.TestCase):
+    """Forward-compat: 1.5.x must decrypt 1.4.x envelope+cascade+xchacha files.
+
+    1.4.x writes xchacha with a 12-byte legacy nonce and NO
+    ``xchacha_nonce_format`` flag, and wraps the DEK under the same cascade chain
+    in that legacy format. The bulk decrypt path already defaults an absent flag
+    to legacy (1); the envelope DEK-unwrap must do the same instead of assuming
+    the new 192-bit format (2), or the DEK can never be recovered and the file is
+    permanently undecryptable after upgrading 1.4.x -> 1.5.x.
+
+    The fixture is a genuine file produced by the feature/v1.4.x-development
+    code, committed verbatim so the guarantee cannot silently drift.
+    """
+
+    _FIX_DIR = os.path.join(os.path.dirname(__file__), "testfiles", "envelope_xchacha_v14")
+    VECTOR = os.path.join(_FIX_DIR, "envelope_cascade_xchacha_v14.enc")
+    PLAINTEXT = os.path.join(_FIX_DIR, "plaintext.bin")
+    PASSWORD = b"envelope-xchacha-cross-version-1.4.x"
+
+    def test_vector_has_legacy_shape(self):
+        """Guard the fixture itself: no nonce-format flag, but envelope+cascade."""
+        meta = _read_metadata(self.VECTOR)
+        enc = meta["encryption"]
+        self.assertNotIn("xchacha_nonce_format", enc, "fixture is not a legacy (1.4.x) file")
+        self.assertIn("wrapped_dek", enc)
+        self.assertTrue(enc.get("cascade"))
+        self.assertIn("xchacha20-poly1305", enc.get("cipher_chain", []))
+
+    def test_1_4_x_envelope_xchacha_decrypts(self):
+        """Regression: the 1.4.x golden vector decrypts on the current code."""
+        with open(self.PLAINTEXT, "rb") as f:
+            expected = f.read()
+        decrypted = decrypt_file(
+            input_file=self.VECTOR, output_file=None, password=self.PASSWORD, quiet=True
+        )
+        self.assertEqual(decrypted, expected)
+
+
 if __name__ == "__main__":
     unittest.main()

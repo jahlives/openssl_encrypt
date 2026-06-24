@@ -196,7 +196,11 @@ def unwrap_dek(wrapped: bytes, kek: bytes) -> bytearray:
 
 
 def wrap_dek_cascade(
-    dek: bytes, kek: bytes, cipher_names: list, hkdf_hash: str = "sha256"
+    dek: bytes,
+    kek: bytes,
+    cipher_names: list,
+    hkdf_hash: str = "sha256",
+    xchacha_nonce_format: int = 2,
 ) -> bytes:
     """Wrap a DEK under the same cascade chain that protects the bulk data.
 
@@ -209,6 +213,11 @@ def wrap_dek_cascade(
         kek: The password-derived key encryption key (>= 32 bytes).
         cipher_names: The cascade cipher chain (same as the bulk's cipher_chain).
         hkdf_hash: HKDF hash for the cascade key derivation.
+        xchacha_nonce_format: XChaCha nonce format for any xchacha layer. New
+            files use 2 (real 192-bit nonces); callers reading legacy 1.4.x files
+            must pass 1 so the wrap matches that file's bulk construction. The
+            wrap blob carries no flag of its own, so it must mirror whatever the
+            file's metadata declares (absent in metadata means legacy 1).
 
     Returns:
         The cascade-wrapped DEK bytes.
@@ -227,7 +236,9 @@ def wrap_dek_cascade(
 
     config = CascadeConfig(cipher_names=list(cipher_names), hkdf_hash=hkdf_hash)
     enc = CascadeEncryption(
-        config, format_version=_CASCADE_WRAP_FORMAT_VERSION, xchacha_nonce_format=2
+        config,
+        format_version=_CASCADE_WRAP_FORMAT_VERSION,
+        xchacha_nonce_format=xchacha_nonce_format,
     )
     wrap_key = _derive_wrap_key(kek)
     try:
@@ -237,7 +248,11 @@ def wrap_dek_cascade(
 
 
 def unwrap_dek_cascade(
-    wrapped: bytes, kek: bytes, cipher_names: list, hkdf_hash: str = "sha256"
+    wrapped: bytes,
+    kek: bytes,
+    cipher_names: list,
+    hkdf_hash: str = "sha256",
+    xchacha_nonce_format: int = 2,
 ) -> bytearray:
     """Unwrap a DEK produced by :func:`wrap_dek_cascade`.
 
@@ -246,6 +261,11 @@ def unwrap_dek_cascade(
         kek: The password-derived key encryption key (>= 32 bytes).
         cipher_names: The cascade cipher chain used to wrap (the bulk chain).
         hkdf_hash: HKDF hash for the cascade key derivation.
+        xchacha_nonce_format: XChaCha nonce format the wrap was produced with.
+            Must match the file's ``encryption.xchacha_nonce_format`` (absent
+            means legacy 1, as written by 1.4.x); passing the wrong value makes a
+            legacy file's DEK unrecoverable. Defaults to 2 for callers that only
+            ever produce new-format files.
 
     Returns:
         The recovered DEK as a mutable ``bytearray``.
@@ -265,7 +285,9 @@ def unwrap_dek_cascade(
 
     config = CascadeConfig(cipher_names=list(cipher_names), hkdf_hash=hkdf_hash)
     dec = CascadeEncryption(
-        config, format_version=_CASCADE_WRAP_FORMAT_VERSION, xchacha_nonce_format=2
+        config,
+        format_version=_CASCADE_WRAP_FORMAT_VERSION,
+        xchacha_nonce_format=xchacha_nonce_format,
     )
     wrap_key = _derive_wrap_key(kek)
     try:
