@@ -419,6 +419,13 @@ the 1.5 branch:
   `test_balloon_defaults_m3.py`, `test_kdf_wipe_m10a.py`,
   `test_secure_memzero_m10.py`, `test_metadata_schema_m11.py` and
   `test_portable_media.py` additions.
+- **Envelope + cascade + XChaCha regression test**: `test_envelope_encryption.py`
+  pins the three-feature combination — envelope mode over a `cascade` chain
+  containing `xchacha20-poly1305` round-trips, the `wrapped_dek` is present, and
+  the cascade layer uses real 192-bit nonces (`xchacha_nonce_format == 2`).
+  Existing cascade coverage exercised `chacha20-poly1305` only, so this guards
+  against either feature silently degrading when xchacha is combined with the
+  envelope DEK-wrap.
 
 ## [1.4.3] - 2026-03-30
 
