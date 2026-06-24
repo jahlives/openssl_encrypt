@@ -193,6 +193,64 @@ cascade_nonce_scheme), encryption_data — and EXCLUDE the KEK-derivation fields
 - **C. Revert Feature #2** if the fast-path isn't worth the AAD change (cycles 1–4 are isolated on
   `feature/envelope-encryption`, easy to shelve).
 
+## ✅ DECISION LOCKED (2026-06-24) — Option A, opt-in only
+
+**Chosen: Option A** (stable-subset bulk AAD enabling O(1) credential rekey + future
+multi-password/multi-KEK), subject to TWO HARD CONSTRAINTS and a fixed wrap construction.
+
+### Hard constraints (non-negotiable)
+1. **Must NEVER affect existing encryptions.** Every file without an envelope marker keeps
+   FULL-metadata AAD binding (`aad = metadata_b64`), byte-for-byte the current code. The
+   subset-AAD path is entered ONLY when `encryption.wrapped_dek` is present / `format_version`
+   is the envelope version (v13). The change is strictly additive + branched:
+   `if envelope: aad = envelope_aad(metadata) else: aad = metadata_b64`. No previously written
+   ciphertext is ever reinterpreted under the subset AAD.
+2. **Never the default.** Strictly opt-in via `--envelope` (already `envelope=False` default in
+   cycles 2-4). Option A only alters behavior *inside* the already-opt-in envelope branch.
+
+### Why the constraints hold (mode-confusion is fail-closed)
+The mode selector is itself authenticated: **`format_version` is in the stable-subset AAD and
+envelope uses its own version (v13).** Therefore:
+- Strip `wrapped_dek` to force the legacy/full-AAD (password-is-bulk-key) path ⇒ wrong bulk key ⇒
+  fails closed.
+- Bolt a `wrapped_dek` onto a legacy file to force the subset path ⇒ unwrap yields a bogus DEK,
+  bulk was never under a DEK ⇒ fails closed.
+Neither silently downgrades an existing file. REQUIRED adversarial tests: add/remove `wrapped_dek`
+and flip `format_version` ⇒ each fails closed.
+
+### DEK-wrap cipher — FIXED, not user-configurable
+The AES-256-GCM that wraps the DEK (`wrapped_dek`) is **pinned, not a user choice.** Rationale:
+- It encrypts **32 bytes** — no perf/throughput/capability difference exists between AEADs at this
+  size, so a cipher menu buys nothing here.
+- A selectable wrap-algorithm identifier is a downgrade/confusion attack surface (the JWT `alg`
+  failure class). Fewer choices = smaller surface.
+- One wrap construction = one code path, one test matrix, auditable.
+- AES-256-GCM is FIPS, AES-NI-accelerated, exhaustively analyzed, and nonce-safe here (each wrap
+  key = `HKDF(KEK)` wraps exactly one DEK once with a fresh random nonce; rekey rolls the KEK).
+
+**One automatic refinement (NOT a knob):** the wrap must never be the weak link. When the **bulk is
+a cascade**, wrap the DEK under that **same cascade chain** (keyed from the KEK) so envelope
+preserves the cascade's strongest-surviving-component guarantee instead of collapsing the file's
+security to single AES-256. Driven by the file's `encryption.algorithm`/cascade-chain, which is
+already in the authenticated AAD subset ⇒ no new downgrade surface, nothing for the user to set.
+- Non-cascade bulk → AES-256-GCM wrap (fixed).
+- Cascade bulk → same cascade chain wraps the DEK.
+(RFC 3394 AES-KW is the purpose-built nonce-free alternative if ever wanted; GCM-random-nonce is
+sound and matches existing AEAD usage — staying with GCM.)
+
+### Rekey is CREDENTIAL rotation, not data-key rotation
+The fast-path rewraps the SAME DEK under a new KEK; the DEK never changes. This rotates *access*
+(old password can no longer unwrap) but NOT the bulk key. If the DEK may itself be compromised,
+that requires a full re-encrypt under a fresh DEK. ⇒ Keep a `--rotate-dek` / full-reencrypt option
+for true data-key rotation; document the distinction in CLI help + CHANGELOG so users don't assume
+fast rekey gives more than it does. (For small files the rekey speedup is ~nil anyway — the 2x KDF
+floor dominates — so the headline value of A here is the multi-password foundation, not speed.)
+
+### GATE before any code
+Grep every reader of `derivation_config.salt` and confirm it feeds ONLY the KEK, never the
+bulk/DEK path. If anything bulk-side consumes the salt, that field MUST move into the authenticated
+subset. This gate decides the safety of the entire included/excluded partition.
+
 ### If A is chosen — implementation sketch
 1. Add `envelope_aad(metadata) -> bytes`: canonical JSON of the stable subset (sorted keys).
 2. encrypt_file + StreamingEncryptor + cascade: when envelope, use `envelope_aad` instead of
@@ -210,6 +268,11 @@ cascade_nonce_scheme), encryption_data — and EXCLUDE the KEK-derivation fields
 9 post-change full suite → test-logs/postfix_envelope.log · 10 final commit.
 
 ## Progress log (newest first)
+- 2026-06-24: DECISION LOCKED — Option A approved, opt-in only, two hard constraints (never affect
+  existing files; never default). DEK-wrap cipher fixed to AES-256-GCM (NOT user-configurable),
+  with automatic cascade-match when bulk is cascade. Keep `--rotate-dek`/full-reencrypt for true
+  data-key rotation. NEXT: run the salt-only-feeds-KEK gate, then implement cycles 5-10. Feature #1
+  (cascade nonce fix) merged to v1.5.x (d1f6f9dc) + signed (2e8ecb7c) + pushed to origin.
 - 2026-06-23 (later): Feature #1 committed on feature/streaming-cascade-nonce-fix (08cc2052).
   v1.4.x regression-guard committed (6470b1e6) — v1.4.x was already protected via chunk_nonce.
   Feature #2 cycles 1-4 committed on feature/envelope-encryption (cycle1 7e4a89cb; cycles2-4
