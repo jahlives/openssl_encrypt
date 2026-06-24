@@ -6429,9 +6429,38 @@ def encrypt_file(
     elif remote_pepper:
         combined_pepper = remote_pepper
 
+    # Streaming uses format_version 12 metadata, and decryption re-derives the
+    # password key from that stored version. Decide streaming and bump the
+    # format_version to 12 BEFORE key derivation so the encrypt-side key matches
+    # the decrypt-side key (issue #50). The full streaming setup runs below.
+    _will_stream = False
+    if not input_is_bytes and not no_streaming and output_file is not None:
+        from .streaming import DEFAULT_STREAMING_THRESHOLD, should_use_streaming
+
+        _pre_threshold = streaming_threshold if streaming_threshold else DEFAULT_STREAMING_THRESHOLD
+        try:
+            _pre_file_size = os.path.getsize(input_file)
+        except OSError:
+            _pre_file_size = 0
+        _will_stream = should_use_streaming(
+            file_size=_pre_file_size,
+            algorithm=algorithm_value,
+            threshold=_pre_threshold,
+            no_streaming=no_streaming,
+            input_is_bytes=input_is_bytes,
+        )
+    if _will_stream and format_version != 12:
+        if debug:
+            logger.debug(
+                f"STREAMING: forcing format_version {format_version} -> 12 before key "
+                f"derivation so the decrypt-side key matches (issue #50)"
+            )
+        format_version = 12
+
     # Generate key (now with combined pepper)
-    # v11: Independent XOR (Massey), v10: Sequential XOR, v9: Secure chained salt
-    if format_version == 11:
+    # v11+: Independent XOR (Massey), v10: Sequential XOR, v9: Secure chained salt
+    # v12 (streaming) derives like v11 so decrypt (which uses >= 11) matches.
+    if format_version >= 11:
         # Independent XOR mode - each algorithm processes original input
         if parallel_kdf:
             # Parallel execution via multiprocessing

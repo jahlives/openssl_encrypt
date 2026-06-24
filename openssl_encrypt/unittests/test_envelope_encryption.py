@@ -47,44 +47,6 @@ def _read_metadata(path: str) -> dict:
     return json.loads(base64.b64decode(raw.split(b":", 1)[0]))
 
 
-def _full_pipeline_streaming_works() -> bool:
-    """Probe whether encrypt_file -> decrypt_file round-trips a streaming file.
-
-    Envelope streaming can only be validated where the underlying streaming
-    pipeline itself round-trips. On the 1.4.x line, full-pipeline streaming via
-    encrypt_file is pre-existing broken (and has no test coverage), so the
-    streaming-specific envelope tests skip there. Returns True on 1.5.x.
-    """
-    data = secrets.token_bytes(4096)
-    ip = _tmp(data)
-    op = _tmp()
-    try:
-        encrypt_file(
-            input_file=ip,
-            output_file=op,
-            password=b"streaming-probe",
-            hash_config={"sha256": 1, "pbkdf2_iterations": 0},
-            quiet=True,
-            algorithm="aes-gcm",
-            chunk_size=1024,
-            streaming_threshold=1024,
-        )
-        return (
-            decrypt_file(input_file=op, output_file=None, password=b"streaming-probe", quiet=True)
-            == data
-        )
-    except Exception:
-        return False
-    finally:
-        for p in (ip, op):
-            if os.path.exists(p):
-                os.unlink(p)
-
-
-_STREAMING_PIPELINE_OK = _full_pipeline_streaming_works()
-_SKIP_STREAMING = "full-pipeline streaming not functional here (pre-existing 1.4.x issue)"
-
-
 class TestEnvelopeWrapUnwrap(unittest.TestCase):
     """wrap_dek() / unwrap_dek() round-trip and failure modes."""
 
@@ -227,7 +189,6 @@ class TestEnvelopeIntegration(unittest.TestCase):
                 if os.path.exists(p):
                     os.unlink(p)
 
-    @unittest.skipUnless(_STREAMING_PIPELINE_OK, _SKIP_STREAMING)
     def test_envelope_streaming_roundtrip(self):
         """Envelope mode works with the streaming path (key=DEK flows through)."""
         data = secrets.token_bytes(8 * 1024)
@@ -588,7 +549,6 @@ class TestEnvelopeRekeyFastPath(unittest.TestCase):
         """One-shot v10 envelope file: fast-path retains ciphertext."""
         self._assert_fast_rekey(secrets.token_bytes(4096), algorithm="aes-gcm")
 
-    @unittest.skipUnless(_STREAMING_PIPELINE_OK, _SKIP_STREAMING)
     def test_rekey_streaming_v12(self):
         """Streaming v12 envelope file (independent-XOR KEK): fast-path works."""
         self._assert_fast_rekey(
