@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Envelope encryption (DEK/KEK)** (`--envelope`, opt-in): bulk data is
+  encrypted under a random Data Encryption Key (DEK), and the DEK is wrapped by a
+  Key Encryption Key derived from the password through the full, unchanged KDF
+  chain. Decryption auto-detects envelope files. Enables **O(header) credential
+  rekey** (rewrap the small DEK + rewrite the metadata header; the bulk
+  ciphertext is retained verbatim — this rotates the *access credential*, not the
+  data key, so a full re-encrypt remains available for true data-key rotation).
+  The bulk AEAD binds a canonical stable subset of the metadata that excludes
+  only the KEK-gating fields a rekey changes, so a rekey keeps the ciphertext
+  valid while tampering any authenticated field still fails closed. For a
+  `cascade` chain the DEK is wrapped under the *same* chain so the envelope is
+  never the weak link. Opt-in and fully backward-compatible: non-envelope files
+  are byte-for-byte unchanged; DEK/KEK are zeroed on every path and never logged.
+  Foundation for future multi-password / multi-recipient wrapping. (Ported from
+  the 1.5.x line; the wrapped-DEK format is interoperable across both lines for
+  non-XChaCha cascade chains.)
+
 - **Detached file signing** (`sign` / `verify-signature`): post-quantum
   (ML-DSA-65) detached signatures over **arbitrary files**, closing the
   authenticity gap of symmetric AEAD (which gives confidentiality + integrity
