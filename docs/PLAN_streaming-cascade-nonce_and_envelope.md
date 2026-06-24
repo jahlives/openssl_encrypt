@@ -246,10 +246,24 @@ for true data-key rotation; document the distinction in CLI help + CHANGELOG so 
 fast rekey gives more than it does. (For small files the rekey speedup is ~nil anyway — the 2x KDF
 floor dominates — so the headline value of A here is the multi-password foundation, not speed.)
 
-### GATE before any code
+### GATE before any code — ✅ PASSED (2026-06-24)
 Grep every reader of `derivation_config.salt` and confirm it feeds ONLY the KEK, never the
-bulk/DEK path. If anything bulk-side consumes the salt, that field MUST move into the authenticated
-subset. This gate decides the safety of the entire included/excluded partition.
+bulk/DEK path. **RESULT: PASSED.** `derivation_config.salt` flows exclusively into
+`generate_key`/`multi_hash_password` (password→KEK) and the asymmetric private-key unwrap — all
+key-derivation. Bulk AEAD nonces are fresh `secrets.token_bytes(12)`; the bulk key is the KEK
+(non-envelope) or random DEK (envelope). The KDF salt never touches bulk key/nonce/AAD. So
+excluding `{derivation_config.salt, kdf_config/hash_config, wrapped_dek}` from the envelope bulk
+AAD is safe.
+
+**REFINEMENT the gate exposed — `encryption.cascade_salt` MUST be in the included (authenticated)
+subset.** It is a SEPARATE, bulk-side random salt (`secrets.token_bytes(32)`, stored under
+`encryption.cascade_salt`) that drives cascade key/nonce derivation and is STABLE across rekey
+(rekey keeps the bulk ciphertext → keeps cascade_salt). Distinct class from the KDF salt despite
+the shared name. ⇒ `envelope_aad` included subset = {format_version, mode, aead_binding,
+encryption.algorithm, cascade chain/cipher_chain/layer_info, **encryption.cascade_salt**,
+xchacha_nonce_format, streaming.{enabled,chunk_size,chunk_count,nonce_prefix,cascade_nonce_scheme},
+hashes.original_hash}. Excluded = {derivation_config.salt, derivation_config.hash_config/kdf_config,
+encryption.wrapped_dek}.
 
 ### If A is chosen — implementation sketch
 1. Add `envelope_aad(metadata) -> bytes`: canonical JSON of the stable subset (sorted keys).
@@ -268,6 +282,11 @@ subset. This gate decides the safety of the entire included/excluded partition.
 9 post-change full suite → test-logs/postfix_envelope.log · 10 final commit.
 
 ## Progress log (newest first)
+- 2026-06-24 (later 2): GATE PASSED — `derivation_config.salt` feeds ONLY the KEK (generate_key/
+  multi_hash_password) + asymmetric key-unwrap; bulk nonces are random `token_bytes(12)`, bulk key
+  is KEK/DEK. Excluding KDF salt/kdf_config/wrapped_dek from envelope bulk AAD is SAFE. Refinement:
+  `encryption.cascade_salt` is a separate bulk-side salt (stable across rekey) → MUST be in the
+  authenticated subset. Cycle 5 unblocked.
 - 2026-06-24 (later): REVISED branch target — Feature #2 now ships to BOTH 1.5.x and 1.4.x (was
   1.5.x-only). Feasibility confirmed: v13 is free on both branches (both cap at v12, identical
   schema sets v3-v12); 1.4.x already has aead_binding/streaming.py/cascade.py, only envelope.py is
