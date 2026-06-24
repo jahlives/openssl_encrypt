@@ -9,12 +9,17 @@ Cycle 1 covers the standalone wrap/unwrap primitive in modules/envelope.py.
 """
 
 import base64
+import contextlib
+import io
 import json
+import logging
 import os
 import secrets
 import tempfile
 import unittest
+from unittest import mock
 
+import openssl_encrypt.modules.envelope as envelope_mod
 from openssl_encrypt.modules.crypt_core import decrypt_file, encrypt_file, rekey_file
 from openssl_encrypt.modules.envelope import (
     DEK_SIZE,
@@ -870,6 +875,187 @@ class TestEnvelopeCascadeWrap(unittest.TestCase):
             for p in (ip, op):
                 if os.path.exists(p):
                     os.unlink(p)
+
+
+class _RecordingHandler(logging.Handler):
+    def __init__(self):
+        super().__init__(level=logging.DEBUG)
+        self.records = []
+
+    def emit(self, record):
+        try:
+            self.records.append(self.format(record))
+        except Exception:
+            self.records.append(str(record.msg))
+
+
+class TestEnvelopeKeyHygiene(unittest.TestCase):
+    """Cycle 7: key-material hygiene for envelope mode.
+
+    The DEK is zeroed in place on every path; key material never reaches normal
+    logs/output or exception messages. (The secure_memzero calls already exist
+    in the code; these tests prove the resulting properties.)
+    """
+
+    PW = b"hygiene-envelope-pw"
+    # Distinctive sentinel DEK so any leak is unmistakable.
+    SENTINEL = bytes.fromhex("deadbeef" * 8)
+
+    def _sentinel_dek_factory(self, captured):
+        def factory():
+            buf = bytearray(self.SENTINEL)
+            captured.append(buf)  # keep a reference to inspect after wiping
+            return buf
+
+        return factory
+
+    def _leak_forms(self):
+        return [self.SENTINEL.hex(), base64.b64encode(self.SENTINEL).decode(), str(self.SENTINEL)]
+
+    def test_dek_zeroized_in_place_after_encrypt(self):
+        """The DEK bytearray is securely zeroed after encryption."""
+        captured = []
+        ip = _tmp(secrets.token_bytes(2048))
+        op = _tmp()
+        try:
+            with mock.patch.object(
+                envelope_mod, "generate_dek", self._sentinel_dek_factory(captured)
+            ):
+                self.assertTrue(
+                    encrypt_file(
+                        input_file=ip,
+                        output_file=op,
+                        password=self.PW,
+                        hash_config=dict(_FAST_HASH),
+                        quiet=True,
+                        envelope=True,
+                        algorithm="aes-gcm",
+                    )
+                )
+            self.assertEqual(len(captured), 1)
+            self.assertEqual(bytes(captured[0]), b"\x00" * DEK_SIZE)  # wiped
+        finally:
+            for p in (ip, op):
+                os.path.exists(p) and os.unlink(p)
+
+    def test_dek_zeroized_in_place_after_decrypt(self):
+        """The unwrapped DEK bytearray is zeroed after decryption."""
+        ip = _tmp(secrets.token_bytes(2048))
+        op = _tmp()
+        captured = []
+        real_unwrap = envelope_mod.unwrap_dek
+
+        def spy(wrapped, kek):
+            r = real_unwrap(wrapped, kek)
+            captured.append(r)
+            return r
+
+        try:
+            self.assertTrue(
+                encrypt_file(
+                    input_file=ip,
+                    output_file=op,
+                    password=self.PW,
+                    hash_config=dict(_FAST_HASH),
+                    quiet=True,
+                    envelope=True,
+                    algorithm="aes-gcm",
+                )
+            )
+            with mock.patch.object(envelope_mod, "unwrap_dek", spy):
+                decrypt_file(input_file=op, output_file=None, password=self.PW, quiet=True)
+            self.assertEqual(len(captured), 1)
+            self.assertEqual(bytes(captured[0]), b"\x00" * DEK_SIZE)  # wiped
+        finally:
+            for p in (ip, op):
+                os.path.exists(p) and os.unlink(p)
+
+    def test_dek_zeroized_after_rekey_fast_path(self):
+        """Both the unwrapped DEK is zeroed after the rekey fast-path."""
+        ip = _tmp(secrets.token_bytes(2048))
+        op = _tmp()
+        rp = _tmp()
+        captured = []
+        real_unwrap = envelope_mod.unwrap_dek
+
+        def spy(wrapped, kek):
+            r = real_unwrap(wrapped, kek)
+            captured.append(r)
+            return r
+
+        try:
+            encrypt_file(
+                input_file=ip,
+                output_file=op,
+                password=self.PW,
+                hash_config=dict(_FAST_HASH),
+                quiet=True,
+                envelope=True,
+                algorithm="aes-gcm",
+            )
+            with mock.patch.object(envelope_mod, "unwrap_dek", spy):
+                self.assertTrue(
+                    rekey_file(
+                        input_file=op,
+                        output_file=rp,
+                        old_password=self.PW,
+                        new_password=b"new-hygiene-pw",
+                        quiet=True,
+                    )
+                )
+            self.assertTrue(captured)
+            for buf in captured:
+                self.assertEqual(bytes(buf), b"\x00" * DEK_SIZE)
+        finally:
+            for p in (ip, op, rp):
+                os.path.exists(p) and os.unlink(p)
+
+    def test_no_key_material_in_normal_logs_or_output(self):
+        """Normal (non-debug) envelope encrypt+decrypt must not emit the DEK."""
+        captured = []
+        handler = _RecordingHandler()
+        root = logging.getLogger()
+        root.addHandler(handler)
+        old_level = root.level
+        root.setLevel(logging.DEBUG)
+        ip = _tmp(secrets.token_bytes(2048))
+        op = _tmp()
+        out, err = io.StringIO(), io.StringIO()
+        try:
+            with mock.patch.object(
+                envelope_mod, "generate_dek", self._sentinel_dek_factory(captured)
+            ), contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                encrypt_file(
+                    input_file=ip,
+                    output_file=op,
+                    password=self.PW,
+                    hash_config=dict(_FAST_HASH),
+                    quiet=False,
+                    envelope=True,
+                    algorithm="aes-gcm",
+                )  # NOTE: debug=False — debug mode intentionally dumps crypto internals
+                decrypt_file(input_file=op, output_file=None, password=self.PW, quiet=False)
+            blob = "\n".join(handler.records) + out.getvalue() + err.getvalue()
+            for form in self._leak_forms():
+                self.assertNotIn(form, blob, "key material leaked to logs/output")
+        finally:
+            root.removeHandler(handler)
+            root.setLevel(old_level)
+            for p in (ip, op):
+                os.path.exists(p) and os.unlink(p)
+
+    def test_no_key_material_in_unwrap_exception(self):
+        """A failed unwrap (wrong KEK) must not leak key material in its message."""
+        kek = secrets.token_bytes(32)
+        dek = bytes(generate_dek())
+        wrapped = wrap_dek(dek, kek)
+        try:
+            unwrap_dek(wrapped, secrets.token_bytes(32))
+            self.fail("expected unwrap to raise")
+        except Exception as e:
+            msg = f"{e} {getattr(e, 'args', '')}"
+            self.assertNotIn(dek.hex(), msg)
+            self.assertNotIn(kek.hex(), msg)
 
 
 if __name__ == "__main__":
