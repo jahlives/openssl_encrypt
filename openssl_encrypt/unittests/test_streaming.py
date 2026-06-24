@@ -1591,5 +1591,90 @@ class TestCascadeChunkNonceUniqueness(unittest.TestCase):
                     os.unlink(p)
 
 
+class TestFullPipelineStreamingRoundtrip(unittest.TestCase):
+    """Full-pipeline streaming coverage (parity with 1.4.x / issue #50).
+
+    The streaming module tests use known keys and bypass the KDF pipeline. This
+    class exercises encrypt_file -> decrypt_file through the public API so that a
+    regression in the streaming key-derivation ordering (the password key must be
+    derived at the format_version that gets stored, v12) is caught. 1.5.x already
+    derives correctly; this test guards against future regressions.
+    """
+
+    _FAST = {"sha256": 1, "pbkdf2_iterations": 0}
+
+    def _roundtrip(self, algorithm="aes-gcm", cascade=False, cipher_names=None, **extra):
+        data = secrets.token_bytes(8 * 1024)  # several chunks at chunk_size=1024
+        ip = _create_temp_file(data)
+        op = _create_temp_file(b"")
+        try:
+            kw = dict(
+                input_file=ip,
+                output_file=op,
+                password=b"full-pipeline-streaming-pw",
+                hash_config=dict(self._FAST),
+                quiet=True,
+                chunk_size=1024,
+                streaming_threshold=1024,  # force the streaming path
+            )
+            if cascade:
+                kw.update(algorithm="cascade", cascade=True, cipher_names=cipher_names)
+            else:
+                kw.update(algorithm=algorithm)
+            kw.update(extra)
+            self.assertTrue(encrypt_file(**kw))
+
+            # Confirm it really streamed (format_version 12 metadata).
+            with open(op, "rb") as f:
+                meta = json.loads(base64.b64decode(f.read().split(b":", 1)[0]))
+            self.assertTrue(meta.get("streaming", {}).get("enabled"))
+            self.assertEqual(meta.get("format_version"), 12)
+
+            result = decrypt_file(
+                input_file=op,
+                output_file=None,
+                password=b"full-pipeline-streaming-pw",
+                quiet=True,
+            )
+            self.assertEqual(result, data)
+        finally:
+            for p in (ip, op):
+                if os.path.exists(p):
+                    os.unlink(p)
+
+    def test_aes_gcm_streaming_roundtrip(self):
+        self._roundtrip(algorithm="aes-gcm")
+
+    def test_chacha_streaming_roundtrip(self):
+        self._roundtrip(algorithm="chacha20-poly1305")
+
+    def test_cascade_streaming_roundtrip(self):
+        self._roundtrip(cascade=True, cipher_names=["aes-gcm", "chacha20-poly1305"])
+
+    def test_wrong_password_fails(self):
+        data = secrets.token_bytes(8 * 1024)
+        ip = _create_temp_file(data)
+        op = _create_temp_file(b"")
+        try:
+            self.assertTrue(
+                encrypt_file(
+                    input_file=ip,
+                    output_file=op,
+                    password=b"right-pw",
+                    hash_config=dict(self._FAST),
+                    quiet=True,
+                    algorithm="aes-gcm",
+                    chunk_size=1024,
+                    streaming_threshold=1024,
+                )
+            )
+            with self.assertRaises(Exception):
+                decrypt_file(input_file=op, output_file=None, password=b"wrong-pw", quiet=True)
+        finally:
+            for p in (ip, op):
+                if os.path.exists(p):
+                    os.unlink(p)
+
+
 if __name__ == "__main__":
     unittest.main()
