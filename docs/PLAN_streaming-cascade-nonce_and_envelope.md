@@ -285,6 +285,19 @@ encryption.wrapped_dek}.
 9 post-change full suite → test-logs/postfix_envelope.log · 10 final commit.
 
 ## Progress log (newest first)
+- 2026-06-24 (impl 2): Cycle 5d DONE.
+  * 5d-1 (891def19): adversarial matrix — strip/inject/swap wrapped_dek all fail closed; tampering
+    an authenticated field (encrypted_at, key-and-hash-neutral) fails = clean end-to-end proof that
+    envelope_aad is enforced. 5 tests.
+  * 5d-2 (fde35197): cascade-match DEK wrap — cascade bulk wraps the DEK under the SAME chain (never
+    the weak link); single-cipher keeps AES-256-GCM. wrap_dek_cascade/unwrap_dek_cascade (fixed wrap
+    salt, pinned fv); wired into encrypt/decrypt/rekey; driven by cipher_chain (already authenticated,
+    no new field/downgrade). 5 tests. Envelope suite 44; regression 246 passed, 0 failed.
+  REMAINING for Feature #2: cycle 7 security/wipe tests (DEK/KEK zeroed + never logged — note the
+  wipe code is already in place, this is the test pass), cycle 8 release artifacts (CHANGELOG/
+  version.py.template/version.py/flatpak metainfo), cycle 9 full suite, cycle 10 final state; then
+  the 1.4.x port (v13-free: envelope reuses v10/v12, so port is the module + wiring). CLI --envelope
+  already wired (cycle 2-4). cycle 6 backward-compat is moot (pre-release, opt-in, no v-bump).
 - 2026-06-24 (impl): Cycle 5 IMPLEMENTED on feature/envelope-encryption.
   * 5a (e9b32fe6): envelope_aad() canonical stable-subset serializer. **DENY-LIST** (exclude
     derivation_config + encryption.wrapped_dek; authenticate everything else) — user-approved,
