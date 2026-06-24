@@ -461,6 +461,7 @@ class StreamingEncryptor:
         chunk_count: int,
         quiet: bool = False,
         progress_callback: Optional[Callable[[int, int], None]] = None,
+        bulk_aad: Optional[bytes] = None,
     ) -> bool:
         """Pass 2: Encrypt file chunk by chunk, writing streaming output.
 
@@ -470,10 +471,15 @@ class StreamingEncryptor:
         Args:
             input_file: Path to the plaintext file.
             output_file: Path for the encrypted output file.
-            metadata_b64: Base64-encoded metadata (used as AAD prefix).
+            metadata_b64: Base64-encoded metadata (written to the file header).
             chunk_count: Pre-calculated total number of chunks.
             quiet: Suppress progress output.
             progress_callback: Optional callback(chunk_index, chunk_count).
+            bulk_aad: Optional override for the per-chunk AAD prefix. When None
+                (default), the full ``metadata_b64`` is bound (legacy/non-envelope
+                behavior). Envelope files pass the stable-subset ``envelope_aad``
+                so the bulk ciphertext survives a rekey that changes KEK-gating
+                metadata. The file header always stores the full ``metadata_b64``.
 
         Returns:
             True on success.
@@ -481,6 +487,10 @@ class StreamingEncryptor:
         Raises:
             EncryptionError: If encryption fails.
         """
+        # Per-chunk AAD prefix: envelope files bind a stable subset; everything
+        # else binds the full metadata. The header still stores full metadata.
+        aad_prefix = bulk_aad if bulk_aad is not None else metadata_b64
+
         # Collect all chunk tags for the trailer HMAC
         chunk_tags: List[bytes] = []
 
@@ -503,7 +513,7 @@ class StreamingEncryptor:
                 nonce = derive_chunk_nonce(self.nonce_prefix, chunk_index, self.nonce_size)
 
                 # Build per-chunk AAD
-                aad = build_chunk_aad(metadata_b64, chunk_index, chunk_count)
+                aad = build_chunk_aad(aad_prefix, chunk_index, chunk_count)
 
                 # Encrypt the chunk
                 if self.algorithm == "cascade" and self.cascade_encryptor:
@@ -637,6 +647,7 @@ class StreamingDecryptor:
         original_hash: Optional[str] = None,
         quiet: bool = False,
         progress_callback: Optional[Callable[[int, int], None]] = None,
+        bulk_aad: Optional[bytes] = None,
     ) -> Union[bool, bytes]:
         """Decrypt a streaming-format file chunk by chunk.
 
@@ -646,11 +657,15 @@ class StreamingDecryptor:
         Args:
             input_file: Path to the encrypted file.
             output_file: Path for decrypted output (None for in-memory return).
-            metadata_b64: Base64-encoded metadata (used as AAD prefix).
+            metadata_b64: Base64-encoded metadata (file header; default AAD prefix).
             expected_chunk_count: Expected chunk count from metadata.
             original_hash: Expected SHA-256 hash of the original file (if available).
             quiet: Suppress progress output.
             progress_callback: Optional callback(chunk_index, chunk_count).
+            bulk_aad: Optional override for the per-chunk AAD prefix; must mirror
+                the value used at encryption time. Envelope files pass the
+                stable-subset ``envelope_aad``; None (default) binds the full
+                ``metadata_b64`` as before.
 
         Returns:
             True on success (when output_file specified), or decrypted bytes.
@@ -659,6 +674,8 @@ class StreamingDecryptor:
             AuthenticationError: If chunk authentication or trailer HMAC fails.
             DecryptionError: If decryption fails.
         """
+        # Per-chunk AAD prefix must match the encryptor (see encrypt_file).
+        aad_prefix = bulk_aad if bulk_aad is not None else metadata_b64
         max_ciphertext_len = self.chunk_size + self._MAX_CHUNK_OVERHEAD
 
         with open(input_file, "rb") as fin:
@@ -764,7 +781,7 @@ class StreamingDecryptor:
                     nonce = derive_chunk_nonce(self.nonce_prefix, chunk_index, self.nonce_size)
 
                     # Build per-chunk AAD
-                    aad = build_chunk_aad(metadata_b64, chunk_index, expected_chunk_count)
+                    aad = build_chunk_aad(aad_prefix, chunk_index, expected_chunk_count)
 
                     # Decrypt the chunk
                     if self.algorithm == "cascade" and self.cascade_decryptor:

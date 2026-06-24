@@ -5943,6 +5943,13 @@ def encrypt_file(
                 pct = ((idx + 1) / total) * 100 if total > 0 else 100
                 eprint(f"\rEncrypting: {pct:.1f}% ({idx + 1}/{total} chunks)", end="", flush=True)
 
+        # Envelope: bind chunks to the stable subset (file still stores full meta).
+        _streaming_bulk_aad = None
+        if _envelope_wrapped_dek is not None:
+            from .envelope import envelope_aad
+
+            _streaming_bulk_aad = envelope_aad(metadata)
+
         streaming_enc.encrypt_file(
             input_file=input_file,
             output_file=output_file,
@@ -5950,6 +5957,7 @@ def encrypt_file(
             chunk_count=chunk_count,
             quiet=quiet,
             progress_callback=progress_cb,
+            bulk_aad=_streaming_bulk_aad,
         )
 
         if progress and not quiet:
@@ -6761,15 +6769,28 @@ def encrypt_file(
         elif integrity and input_is_bytes and not quiet:
             eprint("Warning: --integrity skipped (requires file path input)")
 
+    # Bulk-AEAD AAD. Envelope files bind a stable metadata subset (Option A) so
+    # a future rekey can rewrap the DEK without re-encrypting; non-envelope files
+    # keep full-metadata binding, byte-for-byte unchanged.
+    if use_aead_binding:
+        if _envelope_wrapped_dek is not None:
+            from .envelope import envelope_aad
+
+            _bulk_aad = envelope_aad(metadata)
+        else:
+            _bulk_aad = metadata_b64
+    else:
+        _bulk_aad = None
+
     # Only show progress for larger files (> 1MB)
     if len(data) > 1024 * 1024 and not quiet:
         encrypted_data = with_progress_bar(
-            lambda: do_encrypt(aad=metadata_b64 if use_aead_binding else None),
+            lambda: do_encrypt(aad=_bulk_aad),
             "Encrypting data",
             quiet=quiet,
         )
     else:
-        encrypted_data = do_encrypt(aad=metadata_b64 if use_aead_binding else None)
+        encrypted_data = do_encrypt(aad=_bulk_aad)
 
     if debug:
         logger.debug(f"ENCRYPT:OUTPUT Encrypted data length: {len(encrypted_data)} bytes")
@@ -7988,9 +8009,7 @@ def _hsm_plugins_compatible(provided_id: str, stored_id: str) -> bool:
     """
     if provided_id == stored_id:
         return True
-    return any(
-        provided_id in family and stored_id in family for family in HSM_COMPATIBLE_FAMILIES
-    )
+    return any(provided_id in family and stored_id in family for family in HSM_COMPATIBLE_FAMILIES)
 
 
 def _resolve_hsm_slot(cli_slot, stored_config: dict):
@@ -8837,6 +8856,7 @@ def decrypt_file(
     # decryption path uses the DEK. Files without wrapped_dek are unaffected.
     _enc_meta = metadata.get("encryption", {}) if isinstance(metadata, dict) else {}
     _wrapped_dek_b64 = _enc_meta.get("wrapped_dek")
+    _is_envelope = bool(_wrapped_dek_b64)
     if _wrapped_dek_b64:
         from .envelope import unwrap_dek
 
@@ -9066,6 +9086,13 @@ def decrypt_file(
                 pct = ((idx + 1) / total) * 100 if total > 0 else 100
                 eprint(f"\rDecrypting: {pct:.1f}% ({idx + 1}/{total} chunks)", end="", flush=True)
 
+        # Envelope files bound chunks to the stable subset; mirror that here.
+        _streaming_bulk_aad = None
+        if _is_envelope:
+            from .envelope import envelope_aad
+
+            _streaming_bulk_aad = envelope_aad(metadata)
+
         result = streaming_dec.decrypt_file(
             input_file=input_file,
             output_file=output_file,
@@ -9074,6 +9101,7 @@ def decrypt_file(
             original_hash=original_hash,
             quiet=quiet,
             progress_callback=progress_cb,
+            bulk_aad=_streaming_bulk_aad,
         )
 
         if progress and not quiet:
@@ -9103,10 +9131,16 @@ def decrypt_file(
         else:
             eprint("Decrypting content with " + algorithm, end=" ")
 
-    # For AEAD algorithms, prepare AAD from metadata
+    # For AEAD algorithms, prepare AAD from metadata. Envelope files bound the
+    # bulk to the stable subset (Option A); mirror that. Non-envelope files use
+    # the full metadata_b64 exactly as before.
     if aead_binding:
-        # Use the original metadata_b64 as AAD
-        aad_for_decrypt = metadata_b64
+        if _is_envelope:
+            from .envelope import envelope_aad
+
+            aad_for_decrypt = envelope_aad(metadata)
+        else:
+            aad_for_decrypt = metadata_b64
     else:
         aad_for_decrypt = None
 

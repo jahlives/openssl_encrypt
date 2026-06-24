@@ -361,5 +361,118 @@ class TestEnvelopeAAD(unittest.TestCase):
         self.assertEqual(envelope_aad(m), ref)
 
 
+class TestEnvelopeBulkAADWiring(unittest.TestCase):
+    """White-box: the streaming bulk_aad override actually binds chunks to the
+    given AAD (the stable subset), while the file header still stores the full
+    metadata. This is the mechanism (cycle 5b) that lets an envelope file
+    survive a rekey -- proven here with a known key, independent of the KDF.
+    """
+
+    def _encrypt(self, key, data, metadata_b64, bulk_aad, chunk_size=16):
+        from openssl_encrypt.modules.streaming import StreamingEncryptor
+
+        ip = _tmp(data)
+        op = _tmp()
+        enc = StreamingEncryptor(
+            key=key, algorithm="aes-gcm", chunk_size=chunk_size, format_version=12
+        )
+        chunk_count = enc.get_chunk_count(len(data))
+        try:
+            enc.encrypt_file(
+                input_file=ip,
+                output_file=op,
+                metadata_b64=metadata_b64,
+                chunk_count=chunk_count,
+                quiet=True,
+                bulk_aad=bulk_aad,
+            )
+        finally:
+            os.unlink(ip)
+        return op, enc.nonce_prefix, chunk_count
+
+    def _decrypt(self, key, op, nonce_prefix, chunk_count, metadata_b64, bulk_aad, chunk_size=16):
+        from openssl_encrypt.modules.streaming import StreamingDecryptor
+
+        dec = StreamingDecryptor(
+            key=key,
+            algorithm="aes-gcm",
+            nonce_prefix=nonce_prefix,
+            chunk_size=chunk_size,
+            format_version=12,
+        )
+        return dec.decrypt_file(
+            input_file=op,
+            output_file=None,
+            metadata_b64=metadata_b64,
+            expected_chunk_count=chunk_count,
+            quiet=True,
+            bulk_aad=bulk_aad,
+        )
+
+    def test_roundtrip_with_matching_override(self):
+        """Encrypt and decrypt with the same bulk_aad round-trips."""
+        key = secrets.token_bytes(32)
+        data = secrets.token_bytes(70)  # 5 chunks @ 16
+        full_meta = base64.b64encode(b'{"derivation_config":{"salt":"AAAA"}}')
+        bulk = b"STABLE-SUBSET-AAD"
+        op, npfx, cc = self._encrypt(key, data, full_meta, bulk)
+        try:
+            out = self._decrypt(key, op, npfx, cc, full_meta, bulk)
+            self.assertEqual(out, data)
+        finally:
+            os.unlink(op)
+
+    def test_override_is_what_was_bound_not_metadata(self):
+        """Chunks are bound to bulk_aad, NOT the metadata header.
+
+        Encrypt with bulk_aad=X; decrypting with the DEFAULT (bulk_aad=None,
+        i.e. the full metadata_b64) must FAIL -- proving the override was used.
+        """
+        key = secrets.token_bytes(32)
+        data = secrets.token_bytes(70)
+        full_meta = base64.b64encode(b'{"derivation_config":{"salt":"AAAA"},"x":1}')
+        bulk = b"STABLE-SUBSET-AAD"
+        op, npfx, cc = self._encrypt(key, data, full_meta, bulk)
+        try:
+            # Same bulk_aad → works.
+            self.assertEqual(self._decrypt(key, op, npfx, cc, full_meta, bulk), data)
+            # Default (binds full metadata) → fails: chunks were bound to `bulk`.
+            with self.assertRaises(Exception):
+                self._decrypt(key, op, npfx, cc, full_meta, None)
+        finally:
+            os.unlink(op)
+
+    def test_decrypt_independent_of_metadata_when_override_matches(self):
+        """A DIFFERENT metadata header but the SAME bulk_aad still decrypts.
+
+        Models a rekey: the KEK-gating metadata changed, but the stable subset
+        (bulk_aad) did not, so the retained ciphertext still authenticates.
+        """
+        key = secrets.token_bytes(32)
+        data = secrets.token_bytes(70)
+        meta_before = base64.b64encode(b'{"derivation_config":{"salt":"OLDSALT"}}')
+        meta_after = base64.b64encode(b'{"derivation_config":{"salt":"NEWSALT-DIFFERENT"}}')
+        bulk = b"STABLE-SUBSET-AAD"
+        op, npfx, cc = self._encrypt(key, data, meta_before, bulk)
+        try:
+            out = self._decrypt(key, op, npfx, cc, meta_after, bulk)
+            self.assertEqual(out, data)
+        finally:
+            os.unlink(op)
+
+    def test_header_stores_full_metadata(self):
+        """The file header is the full metadata_b64, regardless of bulk_aad."""
+        key = secrets.token_bytes(32)
+        data = secrets.token_bytes(40)
+        full_meta = base64.b64encode(b'{"derivation_config":{"salt":"AAAA"}}')
+        op, _, _ = self._encrypt(key, data, full_meta, b"different-aad")
+        try:
+            with open(op, "rb") as f:
+                raw = f.read()
+            self.assertTrue(raw.startswith(full_meta + b":"))
+        finally:
+            os.unlink(op)
+
+
 if __name__ == "__main__":
     unittest.main()
