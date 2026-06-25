@@ -20,6 +20,7 @@ from openssl_encrypt.modules.crypt_errors import AuthenticationError, Decryption
 from openssl_encrypt.modules.recovery_slots import (
     SLOT_TYPES,
     build_recovery_code_slot,
+    build_recovery_slots,
     canonical_slots,
     compute_slot_set_mac,
     generate_recovery_code,
@@ -198,6 +199,36 @@ class TestRecoveryCodeSlot(unittest.TestCase):
         other = build_recovery_code_slot(self.dek, self.code, slot_id="r2")
         self.assertNotEqual(self.slot["params"]["salt"], other["params"]["salt"])
         self.assertNotEqual(self.slot["wrap"], other["wrap"])
+
+
+class TestBuildRecoverySlots(unittest.TestCase):
+    def setUp(self):
+        self.dek = secrets.token_bytes(32)
+
+    def test_builds_recovery_code_slots_with_unique_ids(self):
+        creds = [
+            {"type": "recovery_code", "code": generate_recovery_code()},
+            {"type": "recovery_code", "code": generate_recovery_code()},
+        ]
+        slots = build_recovery_slots(self.dek, creds)
+        self.assertEqual(len(slots), 2)
+        self.assertEqual(len({s["id"] for s in slots}), 2)
+        for s in slots:
+            self.assertEqual(s["type"], "recovery_code")
+
+    def test_built_slots_unlock_to_same_dek(self):
+        code = generate_recovery_code()
+        slots = build_recovery_slots(self.dek, [{"type": "recovery_code", "code": code}])
+        self.assertEqual(bytes(unlock_recovery_code_slot(slots[0], code)), self.dek)
+
+    def test_empty_credentials_returns_empty_list(self):
+        self.assertEqual(build_recovery_slots(self.dek, []), [])
+
+    def test_unsupported_type_rejected(self):
+        from openssl_encrypt.modules.crypt_errors import ValidationError
+
+        with self.assertRaises(ValidationError):
+            build_recovery_slots(self.dek, [{"type": "no_such_type"}])
 
 
 if __name__ == "__main__":

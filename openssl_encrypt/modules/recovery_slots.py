@@ -216,3 +216,35 @@ def unlock_recovery_code_slot(slot: dict, code: str) -> bytearray:
     salt = base64.b64decode(slot["params"]["salt"])
     kek = _recovery_code_kek(code, salt)
     return unwrap_dek(base64.b64decode(slot["wrap"]), kek)
+
+
+# --- Slot-set construction dispatcher ------------------------------------
+
+
+def build_recovery_slots(dek: bytes, credentials: List[dict]) -> List[dict]:
+    """Build the recovery-slot list for a set of recovery credentials.
+
+    Args:
+        dek: The envelope DEK to wrap under each recovery credential.
+        credentials: A list of credential specs. Each must have a ``type`` in
+            SLOT_TYPES plus the type-specific material, e.g.
+            ``{"type": "recovery_code", "code": "<code>"}``.
+
+    Returns:
+        A list of stored-shape slot dicts with unique ids.
+
+    Raises:
+        ValidationError: If a credential has an unsupported or missing type.
+    """
+    from .crypt_errors import ValidationError
+
+    slots: List[dict] = []
+    for index, cred in enumerate(credentials or []):
+        ctype = cred.get("type")
+        if ctype == "recovery_code":
+            slots.append(
+                build_recovery_code_slot(dek, cred["code"], slot_id=f"recovery_code-{index}")
+            )
+        else:
+            raise ValidationError(f"Unsupported recovery slot type: {ctype!r}")
+    return slots
