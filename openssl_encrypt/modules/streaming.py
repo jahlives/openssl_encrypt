@@ -169,6 +169,7 @@ def encrypt_chunk(
     plaintext: bytes,
     aad: Optional[bytes],
     algorithm: str,
+    xchacha_nonce_format: int = 1,
 ) -> bytes:
     """Encrypt a single chunk using the specified algorithm.
 
@@ -181,6 +182,9 @@ def encrypt_chunk(
         plaintext: Chunk data to encrypt.
         aad: Additional authenticated data.
         algorithm: Algorithm name string.
+        xchacha_nonce_format: For xchacha20-poly1305, 2 selects the real
+            192-bit construction (24-byte chunk nonce); 1 (default) keeps the
+            legacy 12-byte chunk nonce.
 
     Returns:
         Ciphertext with AEAD tag appended.
@@ -206,7 +210,7 @@ def encrypt_chunk(
             # Import from crypt_core to reuse the XChaCha20 wrapper
             from .crypt_core import XChaCha20Poly1305 as XChaCha20
 
-            cipher = XChaCha20(key)
+            cipher = XChaCha20(key, nonce_format=xchacha_nonce_format)
             return cipher.encrypt(nonce, plaintext, aad)
 
         elif algorithm == "aes-gcm-siv":
@@ -246,6 +250,7 @@ def decrypt_chunk(
     ciphertext: bytes,
     aad: Optional[bytes],
     algorithm: str,
+    xchacha_nonce_format: int = 1,
 ) -> bytes:
     """Decrypt a single chunk using the specified algorithm.
 
@@ -280,7 +285,7 @@ def decrypt_chunk(
         elif algorithm == "xchacha20-poly1305":
             from .crypt_core import XChaCha20Poly1305 as XChaCha20
 
-            cipher = XChaCha20(key)
+            cipher = XChaCha20(key, nonce_format=xchacha_nonce_format)
             return cipher.decrypt(nonce, ciphertext, aad)
 
         elif algorithm == "aes-gcm-siv":
@@ -395,6 +400,7 @@ class StreamingEncryptor:
         cascade_encryptor=None,
         cascade_salt: Optional[bytes] = None,
         format_version: Optional[int] = None,
+        xchacha_nonce_format: int = 1,
     ):
         """Initialize the streaming encryptor.
 
@@ -405,6 +411,8 @@ class StreamingEncryptor:
             cascade_encryptor: CascadeEncryption instance for cascade mode.
             cascade_salt: Salt for cascade key derivation.
             format_version: File format version. For v12+, HMAC key uses HKDF.
+            xchacha_nonce_format: 2 = real 192-bit XChaCha per-chunk nonces
+                (24-byte, 1.5+); 1 = legacy 12-byte chunk nonces.
         """
         self.key = key
         self.algorithm = algorithm
@@ -412,8 +420,14 @@ class StreamingEncryptor:
         self.cascade_encryptor = cascade_encryptor
         self.cascade_salt = cascade_salt
         self.format_version = format_version
+        self.xchacha_nonce_format = xchacha_nonce_format
         self.nonce_prefix = secrets.token_bytes(8)
-        self.nonce_size = _get_nonce_size(algorithm)
+        # Real 192-bit XChaCha uses a full 24-byte per-chunk nonce; everything
+        # else (including legacy xchacha) keeps the historical sizes.
+        if algorithm == "xchacha20-poly1305" and xchacha_nonce_format == 2:
+            self.nonce_size = 24
+        else:
+            self.nonce_size = _get_nonce_size(algorithm)
 
     def _derive_hmac_key(self) -> bytearray:
         """Derive the HMAC key for trailer authentication.
@@ -519,7 +533,14 @@ class StreamingEncryptor:
                         chunk_nonce=nonce,
                     )
                 else:
-                    ciphertext = encrypt_chunk(self.key, nonce, plaintext, aad, self.algorithm)
+                    ciphertext = encrypt_chunk(
+                        self.key,
+                        nonce,
+                        plaintext,
+                        aad,
+                        self.algorithm,
+                        xchacha_nonce_format=self.xchacha_nonce_format,
+                    )
 
                 # Collect tag material (last 16 bytes of ciphertext for HMAC)
                 tag_material = ciphertext[-16:] if len(ciphertext) >= 16 else ciphertext
@@ -584,6 +605,7 @@ class StreamingDecryptor:
         cascade_decryptor=None,
         cascade_salt: Optional[bytes] = None,
         format_version: Optional[int] = None,
+        xchacha_nonce_format: int = 1,
     ):
         """Initialize the streaming decryptor.
 
@@ -595,12 +617,19 @@ class StreamingDecryptor:
             cascade_decryptor: CascadeEncryption instance for cascade mode.
             cascade_salt: Salt for cascade key derivation.
             format_version: File format version. For v12+, HMAC key uses HKDF.
+            xchacha_nonce_format: 2 = real 192-bit XChaCha per-chunk nonces
+                (24-byte, 1.5+); 1 = legacy 12-byte chunk nonces. Must match the
+                file's ``encryption.xchacha_nonce_format`` (absent => 1).
         """
         self.key = key
         self.algorithm = algorithm
         self.nonce_prefix = nonce_prefix
         self.chunk_size = chunk_size
-        self.nonce_size = _get_nonce_size(algorithm)
+        self.xchacha_nonce_format = xchacha_nonce_format
+        if algorithm == "xchacha20-poly1305" and xchacha_nonce_format == 2:
+            self.nonce_size = 24
+        else:
+            self.nonce_size = _get_nonce_size(algorithm)
         self.cascade_decryptor = cascade_decryptor
         self.cascade_salt = cascade_salt
         self.format_version = format_version
@@ -785,7 +814,14 @@ class StreamingDecryptor:
                             chunk_nonce=nonce,
                         )
                     else:
-                        plaintext = decrypt_chunk(self.key, nonce, ciphertext, aad, self.algorithm)
+                        plaintext = decrypt_chunk(
+                            self.key,
+                            nonce,
+                            ciphertext,
+                            aad,
+                            self.algorithm,
+                            xchacha_nonce_format=self.xchacha_nonce_format,
+                        )
 
                     # Write / collect plaintext
                     if fout is not None:

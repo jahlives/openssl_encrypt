@@ -6614,7 +6614,11 @@ def encrypt_file(
             from .cascade import CascadeConfig, CascadeEncryption
 
             cascade_config = CascadeConfig(cipher_names=cipher_names, hkdf_hash=cascade_hash)
-            _cascade_enc_streaming = CascadeEncryption(cascade_config, format_version=12)
+            # New cascade streaming files use the real 192-bit XChaCha layer
+            # (format 2); the matching metadata flag is set at the choke point.
+            _cascade_enc_streaming = CascadeEncryption(
+                cascade_config, format_version=12, xchacha_nonce_format=2
+            )
             _cascade_salt_streaming = secrets.token_bytes(32)
 
         # Create streaming encryptor
@@ -6626,6 +6630,10 @@ def encrypt_file(
             cascade_encryptor=_cascade_enc_streaming,
             cascade_salt=_cascade_salt_streaming,
             format_version=12,
+            # New single-cipher streaming xchacha files use the real 192-bit
+            # construction (24-byte per-chunk nonces); the matching metadata
+            # flag is set at the choke point below.
+            xchacha_nonce_format=2,
         )
 
         chunk_count = streaming_enc.get_chunk_count(file_size)
@@ -6677,15 +6685,12 @@ def encrypt_file(
             metadata.setdefault("encryption", {})["wrapped_dek"] = base64.b64encode(
                 _envelope_wrapped_dek
             ).decode("ascii")
-        # Real 192-bit XChaCha (1.5+): tag any non-streaming file whose data
-        # layer uses xchacha (single cipher or cascade chain) so decryption
-        # selects the real construction. Set here, before metadata_b64, so the
-        # flag is covered by the AEAD binding and cannot be downgraded.
-        # Format-version agnostic (v6/v8/v11/v12). Absent on legacy files, which
-        # keep their historical derivation.
-        # NOTE: streaming xchacha is finalized on a separate metadata path and
-        # is intentionally left unflagged until that path carries the real
-        # construction (so the flag never misrepresents the data).
+        # Real 192-bit XChaCha (1.5+): tag any streaming file whose data layer
+        # uses xchacha (single cipher or cascade chain) so decryption selects
+        # the real construction (24-byte per-chunk nonces). Set here, before
+        # metadata_b64, so the flag is covered by the AEAD binding and cannot be
+        # downgraded. Absent on legacy files, which keep their historical
+        # 12-byte chunk nonces.
         _enc_md = metadata.setdefault("encryption", {})
         if _enc_md.get("algorithm") == "xchacha20-poly1305" or (
             "xchacha20-poly1305" in (_enc_md.get("cipher_chain") or [])
@@ -7526,10 +7531,8 @@ def encrypt_file(
         # selects the real construction. Set here, before metadata_b64, so the
         # flag is covered by the AEAD binding and cannot be downgraded.
         # Format-version agnostic (v6/v8/v11/v12). Absent on legacy files, which
-        # keep their historical derivation.
-        # NOTE: streaming xchacha is finalized on a separate metadata path and
-        # is intentionally left unflagged until that path carries the real
-        # construction (so the flag never misrepresents the data).
+        # keep their historical derivation. (The streaming encrypt path sets the
+        # same flag at its own metadata choke point above.)
         _enc_md = metadata.setdefault("encryption", {})
         if _enc_md.get("algorithm") == "xchacha20-poly1305" or (
             "xchacha20-poly1305" in (_enc_md.get("cipher_chain") or [])
@@ -10080,6 +10083,13 @@ def decrypt_file(
         streaming_chunk_size = streaming_meta["chunk_size"]
         expected_chunk_count = streaming_meta["chunk_count"]
 
+        # Honor the file's XChaCha nonce format (absent => legacy 1) so 1.4.x
+        # streaming files keep decrypting through the legacy 12-byte chunk
+        # nonces while new files use the real 192-bit construction.
+        _streaming_xchacha_format = metadata.get("encryption", {}).get(
+            "xchacha_nonce_format", 1
+        )
+
         # Prepare cascade decryptor if needed
         _cascade_dec_streaming = None
         _cascade_salt_streaming = None
@@ -10090,7 +10100,9 @@ def decrypt_file(
                 cipher_names=cascade_cipher_chain, hkdf_hash=cascade_hkdf_hash
             )
             _cascade_dec_streaming = CascadeEncryption(
-                cascade_config, format_version=format_version
+                cascade_config,
+                format_version=format_version,
+                xchacha_nonce_format=_streaming_xchacha_format,
             )
             _cascade_salt_streaming = cascade_salt_decrypt
 
@@ -10102,6 +10114,7 @@ def decrypt_file(
             cascade_decryptor=_cascade_dec_streaming,
             cascade_salt=_cascade_salt_streaming,
             format_version=format_version,
+            xchacha_nonce_format=_streaming_xchacha_format,
         )
 
         if not quiet:
