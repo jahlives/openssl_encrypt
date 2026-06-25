@@ -265,18 +265,29 @@ class CascadeEncryption:
         decrypted = cascade.decrypt(ciphertext, master_key, salt)
     """
 
-    def __init__(self, config: CascadeConfig, format_version: Optional[int] = None):
+    def __init__(
+        self,
+        config: CascadeConfig,
+        format_version: Optional[int] = None,
+        xchacha_nonce_format: int = 1,
+    ):
         """Initialize cascade encryption with the given configuration.
 
         Args:
             config: Cascade configuration
             format_version: File format version for key derivation behavior
+            xchacha_nonce_format: Nonce handling for any XChaCha20-Poly1305
+                layer. 1 (default) keeps the historical HKDF nonce funnel so
+                legacy cascade files decrypt; 2 selects the real 192-bit
+                construction. Must match the file's
+                ``encryption.xchacha_nonce_format`` (absent => 1).
 
         Raises:
             CascadeConfigError: If any cipher is not available
         """
         self.config = config
         self.format_version = format_version
+        self.xchacha_nonce_format = xchacha_nonce_format
         self.key_derivation = CascadeKeyDerivation(config, format_version=format_version)
 
         # Validate all ciphers are available
@@ -284,6 +295,11 @@ class CascadeEncryption:
         for cipher_name in config.cipher_names:
             try:
                 cipher = get_cipher(cipher_name)
+                # Plumb the XChaCha nonce format down to the xchacha layer so
+                # new cascade files use the real construction while legacy
+                # files keep the HKDF nonce funnel.
+                if cipher.info().name == "xchacha20-poly1305":
+                    cipher.nonce_format = xchacha_nonce_format
                 self.ciphers.append(cipher)
             except Exception as e:
                 raise CascadeConfigError(f"Cipher '{cipher_name}' is not available: {e}")
