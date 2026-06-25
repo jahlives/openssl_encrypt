@@ -959,30 +959,45 @@ class TestSecurityEnhancements(unittest.TestCase):
         unpadded, valid = constant_time_pkcs7_unpad(data)
         self.assertFalse(valid)
 
-        # Test timing consistency for valid and invalid padding
-        def time_unpad(valid_padding):
-            if valid_padding:
-                # Create valid padding
-                data = b"test_data" + bytes([8] * 8)
-            else:
-                # Create invalid padding
-                data = b"test_data" + bytes([8] * 7) + bytes([7])
+        # Test timing consistency for valid and invalid padding.
+        #
+        # This is a security guard (no timing oracle on padding validity), not a
+        # benchmark, so the MEASUREMENT must tolerate scheduler jitter on
+        # loaded/parallel CI runners. The previous version compared the MEAN of
+        # only 10 samples with the low-resolution time.time(); a single
+        # preemption/GC outlier in one set inflated the ratio, making it flaky
+        # in CI (observed ratio ~1.97 vs a 1.5 threshold).
+        #
+        # Hardened approach: high-resolution clock (perf_counter), a warm-up,
+        # and the MEDIAN of many samples. The median rejects the occasional
+        # outlier that wrecked the mean, so the ratio sits at ~1.0 (measured max
+        # ~1.02 across repeated trials). Data is built once, outside the timed
+        # region.
+        valid_data = b"test_data" + bytes([8] * 8)
+        invalid_data = b"test_data" + bytes([8] * 7) + bytes([7])
 
-            start = time.time()
+        def time_one(data):
+            start = time.perf_counter()
             constant_time_pkcs7_unpad(data)
-            return time.time() - start
+            return time.perf_counter() - start
 
-        # Compare timing for valid and invalid padding
-        valid_times = [time_unpad(True) for _ in range(10)]
-        invalid_times = [time_unpad(False) for _ in range(10)]
+        # Warm up caches / branch predictors so early samples aren't skewed.
+        for _ in range(30):
+            constant_time_pkcs7_unpad(valid_data)
+            constant_time_pkcs7_unpad(invalid_data)
 
-        # Calculate means
-        valid_mean = statistics.mean(valid_times)
-        invalid_mean = statistics.mean(invalid_times)
+        samples = 151
+        valid_times = [time_one(valid_data) for _ in range(samples)]
+        invalid_times = [time_one(invalid_data) for _ in range(samples)]
 
-        # The timing difference should be minimal
-        # Allow for 50% difference as system scheduling can affect timing
-        ratio = max(valid_mean, invalid_mean) / min(valid_mean, invalid_mean)
+        # Median per-call time is far more stable than the mean of 10 raw samples.
+        valid_med = statistics.median(valid_times)
+        invalid_med = statistics.median(invalid_times)
+
+        # Valid vs invalid padding must take indistinguishable time. Threshold
+        # kept at 1.5; the tighter measurement makes this a stronger guard, not
+        # a looser one.
+        ratio = max(valid_med, invalid_med) / min(valid_med, invalid_med)
         self.assertLess(ratio, 1.5, "Timing difference too high for constant time unpadding")
 
     def test_secure_buffer_allocation(self):
