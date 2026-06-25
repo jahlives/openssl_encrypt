@@ -9244,6 +9244,20 @@ def decrypt_file(
         key = bytes(_dek)
         secure_memzero(_dek)
 
+        # If recovery slots are present, authenticate the slot SET with the
+        # recovered DEK on the password path too (the slot fields are excluded
+        # from the bulk AAD to allow post-hoc slot management, so this MAC is
+        # what detects stripping/injection/modification). Fail closed.
+        _dek_slots = _enc_meta.get("dek_slots")
+        if _dek_slots:
+            from .recovery_slots import verify_slot_set_mac
+
+            _slots_mac_b64 = _enc_meta.get("dek_slots_mac")
+            if not _slots_mac_b64 or not verify_slot_set_mac(
+                key, _dek_slots, base64.b64decode(_slots_mac_b64)
+            ):
+                raise AuthenticationError("Recovery slot set failed authentication")
+
     # Helper function to get expected nonce size for each algorithm
     def get_nonce_size(alg, include_legacy=True):
         """Get the appropriate nonce size(s) for the given algorithm.

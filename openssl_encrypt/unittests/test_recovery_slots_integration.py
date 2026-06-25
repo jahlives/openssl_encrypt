@@ -172,6 +172,85 @@ class TestShamirRecoveryRoundTrip(unittest.TestCase):
         self.assertEqual(_decrypt(enc, password=PASSWORD), PLAINTEXT)
 
 
+class TestSlotSetAdversarial(unittest.TestCase):
+    """The recovery-slot set is MAC-authenticated (DEK-keyed). Stripping,
+    injecting, modifying, or swapping slots must fail closed on BOTH the
+    password and recovery decryption paths."""
+
+    def _two_code_file(self):
+        c1, c2 = generate_recovery_code(), generate_recovery_code()
+        enc = _encrypt(
+            recovery_credentials=[
+                {"type": "recovery_code", "code": c1},
+                {"type": "recovery_code", "code": c2},
+            ]
+        )
+        return enc, c1, c2
+
+    @staticmethod
+    def _rebuild(file_bytes, mutate):
+        meta_b64, payload = file_bytes.split(b":", 1)
+        meta = json.loads(base64.b64decode(meta_b64))
+        mutate(meta)
+        new_b64 = base64.b64encode(json.dumps(meta, separators=(",", ":")).encode("utf-8"))
+        return new_b64 + b":" + payload
+
+    def _assert_fails(self, file_bytes, **decrypt_kwargs):
+        with self.assertRaises(
+            (AuthenticationError, DecryptionError, SecretSharingError, ValidationError, ValueError)
+        ):
+            _decrypt(file_bytes, **decrypt_kwargs)
+
+    def test_strip_slot_fails_password_path(self):
+        enc, _, _ = self._two_code_file()
+        tampered = self._rebuild(enc, lambda m: m["encryption"]["dek_slots"].pop())
+        self._assert_fails(tampered, password=PASSWORD)
+
+    def test_strip_slot_fails_recovery_path(self):
+        enc, c1, _ = self._two_code_file()
+        tampered = self._rebuild(enc, lambda m: m["encryption"]["dek_slots"].pop())
+        self._assert_fails(tampered, recovery_code=c1)
+
+    def test_inject_slot_fails(self):
+        enc, _, _ = self._two_code_file()
+
+        def inject(m):
+            bogus = dict(m["encryption"]["dek_slots"][0])
+            bogus["id"] = "evil"
+            m["encryption"]["dek_slots"].append(bogus)
+
+        self._assert_fails(self._rebuild(enc, inject), password=PASSWORD)
+
+    def test_modify_slot_wrap_fails(self):
+        enc, _, _ = self._two_code_file()
+
+        def modify(m):
+            blob = bytearray(base64.b64decode(m["encryption"]["dek_slots"][0]["wrap"]))
+            blob[-1] ^= 0x01
+            m["encryption"]["dek_slots"][0]["wrap"] = base64.b64encode(bytes(blob)).decode()
+
+        self._assert_fails(self._rebuild(enc, modify), password=PASSWORD)
+
+    def test_strip_mac_fails(self):
+        enc, _, _ = self._two_code_file()
+        self._assert_fails(
+            self._rebuild(enc, lambda m: m["encryption"].pop("dek_slots_mac")),
+            password=PASSWORD,
+        )
+
+    def test_swap_slots_between_files_fails(self):
+        enc_a, _, _ = self._two_code_file()
+        enc_b, _, _ = self._two_code_file()
+        meta_b = json.loads(base64.b64decode(enc_b.split(b":", 1)[0]))
+
+        def graft(m):
+            m["encryption"]["dek_slots"] = meta_b["encryption"]["dek_slots"]
+            m["encryption"]["dek_slots_mac"] = meta_b["encryption"]["dek_slots_mac"]
+
+        # File A's DEK won't validate B's slot-set MAC.
+        self._assert_fails(self._rebuild(enc_a, graft), password=PASSWORD)
+
+
 @unittest.skipIf(not LIBOQS_AVAILABLE, "liboqs not available")
 class TestPqcRecoveryRoundTrip(unittest.TestCase):
     """PQC recipient (escrow) recovery slot, end-to-end."""
