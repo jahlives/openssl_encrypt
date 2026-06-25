@@ -3355,6 +3355,10 @@ def main():
         "verify-integrity",
         "sign",
         "verify-signature",
+        "list-recovery",
+        "recover",
+        "add-recovery",
+        "remove-recovery",
     ]
 
     # Use subparser only if a subcommand is present
@@ -5002,6 +5006,26 @@ def main_with_args(args=None):
             from .file_signature import verify_signature_cli
 
             verify_signature_cli(args)
+            sys.exit(0)
+        except Exception as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
+
+    elif args.action in ("list-recovery", "recover", "add-recovery", "remove-recovery"):
+        try:
+            from .recovery_slots import (
+                add_recovery_cli,
+                list_recovery_cli,
+                recover_cli,
+                remove_recovery_cli,
+            )
+
+            {
+                "list-recovery": list_recovery_cli,
+                "recover": recover_cli,
+                "add-recovery": add_recovery_cli,
+                "remove-recovery": remove_recovery_cli,
+            }[args.action](args)
             sys.exit(0)
         except Exception as e:
             print(f"Error: {e}", file=sys.stderr)

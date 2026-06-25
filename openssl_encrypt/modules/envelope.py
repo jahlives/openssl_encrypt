@@ -43,7 +43,12 @@ DEK_SIZE = 32
 # field is authenticated by default; a mistake fails LOUDLY (broken round-trip
 # or rekey) instead of silently dropping authentication.
 _AAD_EXCLUDED_TOP = ("derivation_config",)
-_AAD_EXCLUDED_ENCRYPTION = ("wrapped_dek",)
+# wrapped_dek and the recovery-slot fields are KEK/recovery-gating, not bulk
+# interpretation: excluding them keeps the bulk AAD stable across credential
+# rekey AND post-hoc recovery-slot add/remove. The recovery-slot set has its
+# OWN DEK-keyed integrity MAC (encryption.dek_slots_mac), verified after the
+# DEK is recovered on every decryption path.
+_AAD_EXCLUDED_ENCRYPTION = ("wrapped_dek", "dek_slots", "dek_slots_mac")
 # Minimum acceptable KEK length (generate_key produces >= 32 bytes).
 _MIN_KEK_SIZE = 32
 _WRAP_NONCE_SIZE = 12

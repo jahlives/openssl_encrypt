@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Recovery slots** (envelope add-on, ported from the 1.5.x line): an envelope
+  file's Data Encryption Key can be wrapped under one or more *independent*
+  recovery credentials in addition to the password, so losing the password no
+  longer means losing the data. Three credential types on this line: a
+  generated high-entropy **recovery code** (HKDF), a memorable **recovery
+  passphrase** (Argon2id), and a **PQC escrow recipient** (ML-KEM public key,
+  API only). (Shamir k-of-n is intentionally not ported here — the
+  secret-sharing module is 1.5.x-only.) Decryption succeeds with the password
+  *or* any recovery credential. The recovery-slot SET is bound by a DEK-keyed
+  MAC (`encryption.dek_slots_mac`), verified on every decryption path, so
+  stripping/injecting/modifying/swapping slots fails closed; the slot fields are
+  excluded from the bulk AEAD AAD so slots can be added/removed post-hoc without
+  re-encrypting the bulk. **Purely additive and fully backward-compatible**:
+  files without recovery slots are byte-identical. CLI: `add-recovery`,
+  `remove-recovery`, `list-recovery`, `recover`. On-disk format pinned by
+  committed golden fixtures (`testfiles/recovery_slots/`). See
+  `docs/RECOVERY_SLOTS.md`.
+
 - **Real 192-bit XChaCha20-Poly1305 nonces** (spec-compliant per
   draft-irtf-cfrg-xchacha-03), backported from the 1.5.x line. Replaces the
   previous behavior where a 24-byte nonce was stored but only the first 12
