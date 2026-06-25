@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Recovery slots** (envelope add-on): an envelope file's Data Encryption Key
+  can be wrapped under one or more *independent* recovery credentials in
+  addition to the password, so losing the password no longer means losing the
+  data. Four credential types: a generated high-entropy **recovery code**
+  (HKDF), a memorable **recovery passphrase** (Argon2id), a **Shamir k-of-n**
+  split recovery secret (reuses the secret-sharing module), and a **PQC escrow
+  recipient** (ML-KEM public key). Decryption succeeds with the password *or*
+  any recovery credential. The recovery-slot SET is bound by a DEK-keyed MAC
+  (`encryption.dek_slots_mac`), verified on every decryption path, so
+  stripping, injecting, modifying, or swapping slots fails closed; the slot
+  fields are excluded from the bulk AEAD AAD so slots can be added/removed
+  post-hoc without re-encrypting the bulk. **Purely additive and fully
+  backward-compatible**: files without recovery slots are byte-identical and
+  the primary `wrapped_dek` stays canonical. CLI: `add-recovery`,
+  `remove-recovery`, `list-recovery`, and `recover` (decrypt via a recovery
+  credential). On-disk format pinned by committed golden fixtures
+  (`testfiles/recovery_slots/`). See `docs/RECOVERY_SLOTS.md`.
+
 - **Envelope encryption (DEK/KEK)** (`--envelope`, opt-in): bulk data is
   encrypted under a random **Data Encryption Key (DEK)**, and the DEK is wrapped
   by a **Key Encryption Key** derived from the password through the full,

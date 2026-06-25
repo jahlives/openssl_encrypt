@@ -1856,6 +1856,67 @@ def setup_combine_secrets_parser(subparser):
     )
 
 
+def setup_list_recovery_parser(subparser):
+    """Set up arguments for the list-recovery command."""
+    subparser.add_argument("--input", "-i", required=True, help="Encrypted file to inspect")
+
+
+def setup_recover_parser(subparser):
+    """Set up arguments for the recover command (decrypt via a recovery credential)."""
+    subparser.add_argument("--input", "-i", required=True, help="Encrypted file to recover")
+    subparser.add_argument("--output", "-o", required=True, help="Output (decrypted) file")
+    subparser.add_argument("--recovery-code", help="Recovery code to unlock the file")
+    subparser.add_argument(
+        "--recovery-passphrase",
+        action="store_true",
+        help="Prompt for a recovery passphrase to unlock the file",
+    )
+    subparser.add_argument(
+        "--recovery-share",
+        nargs="+",
+        metavar="SHARE",
+        help="Shamir share file(s) to reconstruct the recovery secret",
+    )
+    subparser.add_argument("-q", "--quiet", action="store_true", help="Suppress output")
+
+
+def setup_add_recovery_parser(subparser):
+    """Set up arguments for the add-recovery command."""
+    subparser.add_argument("--input", "-i", required=True, help="Existing envelope file")
+    subparser.add_argument("--output", "-o", required=True, help="Output file with the new slot")
+    # Unlock the existing file (to recover the DEK):
+    subparser.add_argument("-p", "--password", help="Password to unlock the file")
+    subparser.add_argument(
+        "--recovery-code", help="Existing recovery code to unlock the file (instead of --password)"
+    )
+    # New recovery credential to add (exactly one):
+    subparser.add_argument(
+        "--add-code", action="store_true", help="Add a freshly generated recovery code"
+    )
+    subparser.add_argument(
+        "--add-passphrase", action="store_true", help="Add a recovery passphrase (prompted)"
+    )
+    subparser.add_argument(
+        "--add-shares", metavar="K-of-N", help="Add a Shamir recovery secret split K-of-N"
+    )
+    subparser.add_argument(
+        "--shares-dir", default=".", help="Directory for generated Shamir share files"
+    )
+    subparser.add_argument("-q", "--quiet", action="store_true", help="Suppress output")
+
+
+def setup_remove_recovery_parser(subparser):
+    """Set up arguments for the remove-recovery command."""
+    subparser.add_argument("--input", "-i", required=True, help="Existing envelope file")
+    subparser.add_argument("--output", "-o", required=True, help="Output file without the slot")
+    subparser.add_argument("--slot-id", required=True, help="Id of the recovery slot to remove")
+    subparser.add_argument("-p", "--password", help="Password to unlock the file")
+    subparser.add_argument(
+        "--recovery-code", help="Recovery code to unlock the file (instead of --password)"
+    )
+    subparser.add_argument("-q", "--quiet", action="store_true", help="Suppress output")
+
+
 def setup_simple_parser(subparser):
     """Set up arguments for simple commands (security-info, check-argon2, check-pqc, version)."""
     # These commands don't need any special arguments
@@ -2432,6 +2493,35 @@ def create_subparser_main():
         formatter_class=argparse.RawTextHelpFormatter,
     )
     setup_combine_secrets_parser(combine_secrets_parser)
+
+    # Recovery-slot management (envelope DEK recovery credentials)
+    list_recovery_parser = subparsers.add_parser(
+        "list-recovery",
+        help="List the recovery slots on an envelope file",
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
+    setup_list_recovery_parser(list_recovery_parser)
+
+    recover_parser = subparsers.add_parser(
+        "recover",
+        help="Decrypt a file using a recovery credential (code/passphrase/shares)",
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
+    setup_recover_parser(recover_parser)
+
+    add_recovery_parser = subparsers.add_parser(
+        "add-recovery",
+        help="Add a recovery slot (code/passphrase/Shamir) to an envelope file",
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
+    setup_add_recovery_parser(add_recovery_parser)
+
+    remove_recovery_parser = subparsers.add_parser(
+        "remove-recovery",
+        help="Remove a recovery slot (by id) from an envelope file",
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
+    setup_remove_recovery_parser(remove_recovery_parser)
 
     verify_integrity_parser = subparsers.add_parser(
         "verify-integrity",
