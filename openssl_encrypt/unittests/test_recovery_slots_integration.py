@@ -19,9 +19,13 @@ from openssl_encrypt.modules.crypt_core import decrypt_file, encrypt_file
 from openssl_encrypt.modules.crypt_errors import (
     AuthenticationError,
     DecryptionError,
+    SecretSharingError,
     ValidationError,
 )
+import secrets
+
 from openssl_encrypt.modules.recovery_slots import generate_recovery_code
+from openssl_encrypt.modules.secret_sharing import split_secret
 
 PASSWORD = b"primary-password-correct-horse"
 PLAINTEXT = b"recovery-slot round-trip payload, several blocks long.\n" * 8
@@ -111,6 +115,49 @@ class TestRecoverySlotRoundTrip(unittest.TestCase):
             recovery_credentials=[{"type": "recovery_code", "code": code}],
         )
         self.assertEqual(_decrypt(enc, recovery_code=code), PLAINTEXT)
+        self.assertEqual(_decrypt(enc, password=PASSWORD), PLAINTEXT)
+
+
+class TestShamirRecoveryRoundTrip(unittest.TestCase):
+    """Shamir k-of-n recovery slot, end-to-end through encrypt/decrypt_file."""
+
+    def _encrypt_with_shamir(self, threshold=2, num_shares=3):
+        secret = secrets.token_bytes(32)
+        shares = split_secret(secret, threshold=threshold, num_shares=num_shares)
+        enc = _encrypt(
+            recovery_credentials=[
+                {
+                    "type": "shamir",
+                    "secret": secret,
+                    "threshold": threshold,
+                    "num_shares": num_shares,
+                }
+            ]
+        )
+        return enc, shares
+
+    def test_metadata_has_shamir_slot(self):
+        enc, _ = self._encrypt_with_shamir()
+        slot = _parse_meta(enc)["encryption"]["dek_slots"][0]
+        self.assertEqual(slot["type"], "shamir")
+        self.assertEqual(slot["params"]["shamir"]["threshold"], 2)
+        self.assertEqual(slot["params"]["shamir"]["num_shares"], 3)
+
+    def test_threshold_shares_decrypt(self):
+        enc, shares = self._encrypt_with_shamir(threshold=2, num_shares=3)
+        # any 2 of 3 shares reconstruct and decrypt
+        self.assertEqual(_decrypt(enc, recovery_shares=shares[:2]), PLAINTEXT)
+        self.assertEqual(_decrypt(enc, recovery_shares=[shares[0], shares[2]]), PLAINTEXT)
+
+    def test_below_threshold_fails(self):
+        enc, shares = self._encrypt_with_shamir(threshold=3, num_shares=5)
+        with self.assertRaises(
+            (AuthenticationError, DecryptionError, SecretSharingError, ValidationError, ValueError)
+        ):
+            _decrypt(enc, recovery_shares=shares[:2])
+
+    def test_password_still_works_with_shamir_slot(self):
+        enc, _ = self._encrypt_with_shamir()
         self.assertEqual(_decrypt(enc, password=PASSWORD), PLAINTEXT)
 
 

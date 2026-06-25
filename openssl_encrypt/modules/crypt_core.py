@@ -8342,6 +8342,7 @@ def decrypt_file(
     parallel_kdf=False,
     kdf_workers=None,
     recovery_code=None,
+    recovery_shares=None,
 ):
     """
     Decrypt a file with a password.
@@ -8395,7 +8396,7 @@ def decrypt_file(
             # In production, use our standardized validation error
             raise ValidationError(f"Input file does not exist: {input_file}")
 
-    if password is None and recovery_code is None:
+    if password is None and recovery_code is None and recovery_shares is None:
         raise ValidationError("Password cannot be None")
 
     # Ensure password is in bytes format with correct encoding
@@ -9092,7 +9093,7 @@ def decrypt_file(
     xor_mode = metadata.get("xor_mode", "sequential")  # Default to sequential for backward compat
 
     # v11+ uses independent XOR, v1-v10 use sequential (including v8/v10 sequential XOR)
-    if recovery_code is not None:
+    if recovery_code is not None or recovery_shares is not None:
         # Recovery path: the DEK is unlocked from a recovery slot at the
         # envelope-unwrap step below, so the password-derived KEK is not needed.
         key = None
@@ -9151,8 +9152,8 @@ def decrypt_file(
     _enc_meta = metadata.get("encryption", {}) if isinstance(metadata, dict) else {}
     _wrapped_dek_b64 = _enc_meta.get("wrapped_dek")
     _is_envelope = bool(_wrapped_dek_b64)
-    if recovery_code is not None:
-        # Recovery path: unlock the DEK from a matching recovery_code slot, then
+    if recovery_code is not None or recovery_shares is not None:
+        # Recovery path: unlock the DEK from a matching recovery slot, then
         # authenticate the whole slot set with the recovered DEK (detects any
         # stripping/injection/modification of recovery slots).
         from .crypt_errors import (
@@ -9160,20 +9161,40 @@ def decrypt_file(
             DecryptionError as _DecErr,
             ValidationError as _ValErr,
         )
-        from .recovery_slots import unlock_recovery_code_slot, verify_slot_set_mac
+        from .recovery_slots import (
+            unlock_recovery_code_slot,
+            unlock_shamir_slot,
+            verify_slot_set_mac,
+        )
 
         _slots = _enc_meta.get("dek_slots") or []
         _dek = None
-        for _slot in _slots:
-            if _slot.get("type") != "recovery_code":
-                continue
-            try:
-                _dek = unlock_recovery_code_slot(_slot, recovery_code)
-                break
-            except (_DecErr, _AuthErr, _ValErr):
-                continue
+        _shamir_secret = None
+        try:
+            if recovery_code is not None:
+                _want_type, _material = "recovery_code", recovery_code
+            else:
+                # Reconstruct the Shamir secret from the supplied shares.
+                from .secret_sharing import combine_shares
+
+                _shamir_secret = combine_shares(list(recovery_shares))
+                _want_type, _material = "shamir", _shamir_secret
+            for _slot in _slots:
+                if _slot.get("type") != _want_type:
+                    continue
+                try:
+                    if _want_type == "recovery_code":
+                        _dek = unlock_recovery_code_slot(_slot, _material)
+                    else:
+                        _dek = unlock_shamir_slot(_slot, _material)
+                    break
+                except (_DecErr, _AuthErr, _ValErr):
+                    continue
+        finally:
+            if isinstance(_shamir_secret, (bytes, bytearray)):
+                secure_memzero(bytearray(_shamir_secret))
         if _dek is None:
-            raise _DecErr("No recovery slot matched the supplied recovery code")
+            raise _DecErr("No recovery slot matched the supplied recovery material")
         _mac_b64 = _enc_meta.get("dek_slots_mac")
         if not _mac_b64 or not verify_slot_set_mac(
             bytes(_dek), _slots, base64.b64decode(_mac_b64)

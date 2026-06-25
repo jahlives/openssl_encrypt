@@ -48,6 +48,11 @@ _RECOVERY_CODE_INFO = b"openssl_encrypt.envelope.recovery-code-kek.v1"
 _RECOVERY_SLOT_SALT_BYTES = 16
 _BASE32_ALPHABET = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZ234567")
 
+# Shamir slots wrap the DEK under a high-entropy recovery secret that is split
+# k-of-n via modules/secret_sharing.py. The slot stores only the wrap and the
+# (informational) threshold parameters -- never the secret or any share.
+_SHAMIR_INFO = b"openssl_encrypt.envelope.shamir-secret-kek.v1"
+
 
 def canonical_slots(slots: List[dict]) -> bytes:
     """Deterministically serialize the recovery-slot list for MAC computation.
@@ -218,6 +223,90 @@ def unlock_recovery_code_slot(slot: dict, code: str) -> bytearray:
     return unwrap_dek(base64.b64decode(slot["wrap"]), kek)
 
 
+# --- Shamir (k-of-n) recovery slots --------------------------------------
+#
+# The recovery secret is generated and split into shares by the caller (reusing
+# modules/secret_sharing.py); this module only wraps the DEK under that secret
+# and unwraps it once the secret has been reconstructed from >= threshold
+# shares. The wrap mechanism mirrors recovery_code: HKDF(secret, salt) -> KEK.
+
+
+def _shamir_kek(secret: bytes, salt: bytes) -> bytes:
+    """Derive the 32-byte KEK for a Shamir slot from the recovery secret."""
+    return HKDF(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=bytes(salt),
+        info=_SHAMIR_INFO,
+    ).derive(bytes(secret))
+
+
+def build_shamir_slot(
+    dek: bytes,
+    secret: bytes,
+    slot_id: str,
+    threshold: int,
+    num_shares: int,
+    key_id: str = None,
+) -> dict:
+    """Wrap the DEK under a Shamir-split recovery secret.
+
+    The caller is responsible for splitting ``secret`` into shares (via
+    secret_sharing.split_secret) and distributing them; the slot itself stores
+    only the wrap and the threshold parameters.
+
+    Args:
+        dek: The envelope DEK to protect.
+        secret: The high-entropy recovery secret (will be Shamir-split).
+        slot_id: Unique identifier for this slot.
+        threshold: k -- minimum shares needed (informational, stored).
+        num_shares: n -- total shares created (informational, stored).
+        key_id: Optional share-set id to bind shares to this slot.
+
+    Returns:
+        A slot dict: ``{id, type, wrap, params:{salt, shamir:{...}}}``.
+    """
+    from .envelope import wrap_dek
+
+    salt = secrets.token_bytes(_RECOVERY_SLOT_SALT_BYTES)
+    kek = _shamir_kek(secret, salt)
+    wrapped = wrap_dek(bytes(dek), kek)
+    shamir_params = {"threshold": threshold, "num_shares": num_shares}
+    if key_id is not None:
+        shamir_params["key_id"] = key_id
+    return {
+        "id": slot_id,
+        "type": "shamir",
+        "wrap": base64.b64encode(wrapped).decode("ascii"),
+        "params": {"salt": base64.b64encode(salt).decode("ascii"), "shamir": shamir_params},
+    }
+
+
+def unlock_shamir_slot(slot: dict, secret: bytes) -> bytearray:
+    """Recover the DEK from a Shamir slot using the reconstructed secret.
+
+    Args:
+        slot: A shamir slot dict (as stored in metadata).
+        secret: The recovery secret reconstructed from >= threshold shares.
+
+    Returns:
+        The recovered DEK as a mutable bytearray (caller should zeroize).
+
+    Raises:
+        ValidationError: If the slot is malformed.
+        DecryptionError: If the secret is wrong or the slot was tampered with.
+    """
+    from .crypt_errors import ValidationError
+
+    if slot.get("type") != "shamir":
+        raise ValidationError("Not a shamir slot")
+    from .envelope import unwrap_dek
+
+    salt = base64.b64decode(slot["params"]["salt"])
+    kek = _shamir_kek(secret, salt)
+    return unwrap_dek(base64.b64decode(slot["wrap"]), kek)
+
+
 # --- Slot-set construction dispatcher ------------------------------------
 
 
@@ -244,6 +333,17 @@ def build_recovery_slots(dek: bytes, credentials: List[dict]) -> List[dict]:
         if ctype == "recovery_code":
             slots.append(
                 build_recovery_code_slot(dek, cred["code"], slot_id=f"recovery_code-{index}")
+            )
+        elif ctype == "shamir":
+            slots.append(
+                build_shamir_slot(
+                    dek,
+                    cred["secret"],
+                    slot_id=f"shamir-{index}",
+                    threshold=cred["threshold"],
+                    num_shares=cred["num_shares"],
+                    key_id=cred.get("key_id"),
+                )
             )
         else:
             raise ValidationError(f"Unsupported recovery slot type: {ctype!r}")

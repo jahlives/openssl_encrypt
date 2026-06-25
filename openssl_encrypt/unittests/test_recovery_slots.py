@@ -21,13 +21,16 @@ from openssl_encrypt.modules.recovery_slots import (
     SLOT_TYPES,
     build_recovery_code_slot,
     build_recovery_slots,
+    build_shamir_slot,
     canonical_slots,
     compute_slot_set_mac,
     generate_recovery_code,
     normalize_recovery_code,
     unlock_recovery_code_slot,
+    unlock_shamir_slot,
     verify_slot_set_mac,
 )
+from openssl_encrypt.modules.secret_sharing import combine_shares, split_secret
 
 
 def _slot(index: int, slot_type: str = "recovery_code") -> dict:
@@ -199,6 +202,46 @@ class TestRecoveryCodeSlot(unittest.TestCase):
         other = build_recovery_code_slot(self.dek, self.code, slot_id="r2")
         self.assertNotEqual(self.slot["params"]["salt"], other["params"]["salt"])
         self.assertNotEqual(self.slot["wrap"], other["wrap"])
+
+
+class TestShamirSlot(unittest.TestCase):
+    def setUp(self):
+        self.dek = secrets.token_bytes(32)
+        self.secret = secrets.token_bytes(32)
+        self.slot = build_shamir_slot(
+            self.dek, self.secret, slot_id="s1", threshold=2, num_shares=3
+        )
+
+    def test_slot_shape(self):
+        self.assertEqual(self.slot["type"], "shamir")
+        self.assertEqual(len(base64.b64decode(self.slot["wrap"])), 60)
+        self.assertIn("salt", self.slot["params"])
+        self.assertEqual(self.slot["params"]["shamir"]["threshold"], 2)
+        self.assertEqual(self.slot["params"]["shamir"]["num_shares"], 3)
+
+    def test_slot_does_not_contain_secret(self):
+        self.assertNotIn(self.secret, base64.b64decode(self.slot["wrap"]))
+
+    def test_unlock_with_secret_recovers_dek(self):
+        self.assertEqual(bytes(unlock_shamir_slot(self.slot, self.secret)), self.dek)
+
+    def test_wrong_secret_fails_closed(self):
+        from openssl_encrypt.modules.crypt_errors import DecryptionError
+
+        with self.assertRaises((AuthenticationError, DecryptionError)):
+            unlock_shamir_slot(self.slot, secrets.token_bytes(32))
+
+    def test_full_flow_split_combine_unlock(self):
+        """End-to-end with the real secret_sharing module: any k shares
+        reconstruct the secret that unlocks the slot."""
+        shares = split_secret(self.secret, threshold=2, num_shares=3)
+        import itertools
+
+        for combo in itertools.combinations(shares, 2):
+            recovered_secret = combine_shares(list(combo))
+            self.assertEqual(
+                bytes(unlock_shamir_slot(self.slot, recovered_secret)), self.dek
+            )
 
 
 class TestBuildRecoverySlots(unittest.TestCase):
