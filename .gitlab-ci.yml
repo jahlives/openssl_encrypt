@@ -20,8 +20,10 @@ stages:
 
 variables:
   PIP_CACHE_DIR: "$CI_PROJECT_DIR/.pip-cache"
-  # Use manually built base image (built with docker/build-base-image.sh)
-  DOCKER_IMAGE: registry.rm-rf.ch/world/openssl_encrypt/python-liboqs:3.13-alpine
+  # Use manually built base image (built with docker/build-base-image.sh).
+  # debian-slim (glibc) so pip installs manylinux wheels for C-extension KDFs
+  # (RandomX/whirlpool) instead of musl source builds, matching dev/prod output.
+  DOCKER_IMAGE: registry.rm-rf.ch/world/openssl_encrypt/python-liboqs:3.13-slim
   DOCS_ONLY: "false"
 
 
@@ -314,7 +316,7 @@ test:
     - pip install -r requirements.txt --break-system-packages
     - pip install setuptools pytest-xdist pytest-cov --break-system-packages  # Provides pkg_resources, parallel testing, and coverage
     # Build Threefish Rust extension
-    - apk add --no-cache rust cargo patchelf
+    - apt-get update && apt-get install -y --no-install-recommends cargo patchelf
     - pip install maturin --break-system-packages
     - cd threefish_native && PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1 maturin build --release && cd ..
     - pip install threefish_native/target/wheels/*.whl --break-system-packages
@@ -352,7 +354,7 @@ test:
 # This runs only if the main test job fails, typically due to missing image
 test-fallback:
   stage: test
-  image: python:3.13-alpine
+  image: python:3.13-slim
   tags:
     - high-cpu  # Use the runner with most cores for faster test execution
   variables:
@@ -360,9 +362,10 @@ test-fallback:
   before_script:
     - pip install -r requirements.txt --break-system-packages
     - pip install pytest pytest-xdist pytest-cov pytest-order setuptools --break-system-packages  # setuptools provides pkg_resources, parallel testing, and coverage
-    # Explicitly pin cryptography version to match the tests
-    # Install dependencies for building liboqs and Threefish (Alpine Linux packages)
-    - apk add git gcc g++ cmake ninja make go python3-dev openssl-dev musl-dev rust cargo patchelf
+    # Install dependencies for building liboqs and Threefish (Debian packages).
+    # glibc base so pip uses manylinux wheels for RandomX/whirlpool (matching
+    # dev/prod), keeping the fixture KDF output reproducible.
+    - apt-get update && apt-get install -y --no-install-recommends git build-essential cmake ninja-build golang python3-dev libssl-dev pkg-config cargo patchelf
     # Clone liboqs repository with submodules
     - git clone --recurse-submodules https://github.com/open-quantum-safe/liboqs.git
     # Build and install liboqs
