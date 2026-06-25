@@ -572,3 +572,165 @@ def build_recovery_slots(dek: bytes, credentials: List[dict]) -> List[dict]:
         else:
             raise ValidationError(f"Unsupported recovery slot type: {ctype!r}")
     return slots
+
+
+# --- CLI handlers --------------------------------------------------------
+#
+# These wrap the recovery-slot API (crypt_core add/remove/list_recovery_slots
+# and decrypt_file) for the list-recovery / add-recovery / remove-recovery /
+# recover subcommands. All human output goes to stderr via eprint (stdout is
+# reserved for piped data), matching secret_sharing's CLI convention.
+
+
+def _read_password(args, prompt="Password: "):
+    """Resolve a password from --password, $CRYPT_PASSWORD, or a prompt."""
+    import getpass
+    import os
+
+    pw = getattr(args, "password", None)
+    if pw is None:
+        pw = os.environ.get("CRYPT_PASSWORD")
+    if pw is None:
+        pw = getpass.getpass(prompt)
+    return pw.encode("utf-8") if isinstance(pw, str) else pw
+
+
+def _recover_kwargs_from_args(args):
+    """Build decrypt/unlock recovery kwargs from CLI args (one credential)."""
+    if getattr(args, "recovery_code", None):
+        return {"recovery_code": args.recovery_code}
+    if getattr(args, "recovery_passphrase", False):
+        import getpass
+
+        return {"recovery_passphrase": getpass.getpass("Recovery passphrase: ")}
+    if getattr(args, "recovery_share", None):
+        from .secret_sharing import Share
+
+        return {"recovery_shares": [Share.from_file(p) for p in args.recovery_share]}
+    return {}
+
+
+def list_recovery_cli(args) -> None:
+    """`list-recovery`: print the recovery slots in a file (no credential)."""
+    from .crypt_core import list_recovery_slots
+    from .crypt_utils import eprint
+
+    slots = list_recovery_slots(args.input)
+    if not slots:
+        eprint("No recovery slots on this file.")
+        return
+    eprint(f"{len(slots)} recovery slot(s):")
+    for s in slots:
+        line = f"  id={s['id']}  type={s['type']}"
+        if s.get("key_id"):
+            line += f"  key_id={s['key_id'][:16]}..."
+        eprint(line)
+
+
+def recover_cli(args) -> None:
+    """`recover`: decrypt a file using a recovery credential (not the password)."""
+    from .crypt_core import decrypt_file
+    from .crypt_utils import eprint
+
+    kwargs = _recover_kwargs_from_args(args)
+    if not kwargs:
+        raise ValueError(
+            "Provide a recovery credential: --recovery-code, "
+            "--recovery-passphrase, or --recovery-share"
+        )
+    decrypt_file(
+        input_file=args.input,
+        output_file=args.output,
+        quiet=getattr(args, "quiet", False),
+        **kwargs,
+    )
+    eprint(f"Recovered to: {args.output}")
+
+
+def add_recovery_cli(args) -> None:
+    """`add-recovery`: add a recovery slot to an existing envelope file.
+
+    Unlock with --password (or an existing --recovery-code); add one of
+    --add-code (generated and printed), --add-passphrase (prompted), or
+    --add-shares K-of-N (a Shamir-split recovery secret; shares written to
+    --shares-dir).
+    """
+    import getpass
+
+    from .crypt_core import add_recovery_slots
+    from .crypt_utils import eprint
+
+    # How to unlock the existing file (to recover the DEK).
+    unlock = {}
+    if getattr(args, "recovery_code", None):
+        unlock["recovery_code"] = args.recovery_code
+    else:
+        unlock["password"] = _read_password(args)
+
+    creds = []
+    generated_code = None
+    written_shares = []
+    if getattr(args, "add_code", False):
+        generated_code = generate_recovery_code()
+        creds.append({"type": "recovery_code", "code": generated_code})
+    elif getattr(args, "add_passphrase", False):
+        p1 = getpass.getpass("New recovery passphrase: ")
+        p2 = getpass.getpass("Confirm recovery passphrase: ")
+        if p1 != p2:
+            raise ValueError("Recovery passphrases do not match")
+        creds.append({"type": "passphrase", "passphrase": p1})
+    elif getattr(args, "add_shares", None):
+        import os
+
+        from .secret_sharing import split_secret
+
+        threshold, num_shares = _parse_k_of_n(args.add_shares)
+        secret = secrets.token_bytes(32)
+        shares = split_secret(secret, threshold, num_shares)
+        out_dir = getattr(args, "shares_dir", ".") or "."
+        os.makedirs(out_dir, exist_ok=True)
+        for sh in shares:
+            path = os.path.join(out_dir, f"recovery_share_{sh.metadata.share_index}.json")
+            sh.to_file(path)
+            written_shares.append(path)
+        creds.append(
+            {"type": "shamir", "secret": secret, "threshold": threshold, "num_shares": num_shares}
+        )
+    else:
+        raise ValueError("Specify --add-code, --add-passphrase, or --add-shares K-of-N")
+
+    add_recovery_slots(args.input, args.output, creds, **unlock)
+    eprint(f"Recovery slot added; wrote: {args.output}")
+    if generated_code is not None:
+        eprint("\n=== RECOVERY CODE (store this securely; it is shown only once) ===")
+        eprint(f"  {generated_code}")
+    for p in written_shares:
+        eprint(f"  wrote share: {p}")
+
+
+def remove_recovery_cli(args) -> None:
+    """`remove-recovery`: remove a recovery slot by id from an envelope file."""
+    from .crypt_core import remove_recovery_slot
+    from .crypt_utils import eprint
+
+    unlock = {}
+    if getattr(args, "recovery_code", None):
+        unlock["recovery_code"] = args.recovery_code
+    else:
+        unlock["password"] = _read_password(args)
+    remove_recovery_slot(args.input, args.output, args.slot_id, **unlock)
+    eprint(f"Removed recovery slot {args.slot_id!r}; wrote: {args.output}")
+
+
+def _parse_k_of_n(spec: str):
+    """Parse a 'K-of-N' threshold spec into (threshold, num_shares)."""
+    from .crypt_errors import ValidationError
+
+    try:
+        k_str, n_str = spec.lower().replace(" ", "").split("-of-")
+        k, n = int(k_str), int(n_str)
+    except Exception as exc:  # noqa: BLE001
+        raise ValidationError("--add-shares must look like 'K-of-N', e.g. 2-of-3") from exc
+    if k < 2 or n < k:
+        raise ValidationError("--add-shares requires 2 <= K <= N")
+    return k, n
