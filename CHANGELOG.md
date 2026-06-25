@@ -9,6 +9,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Real 192-bit XChaCha20-Poly1305 nonces** (spec-compliant per
+  draft-irtf-cfrg-xchacha-03), backported from the 1.5.x line. Replaces the
+  previous behavior where a 24-byte nonce was stored but only the first 12
+  bytes affected the keystream (96-bit effective — not a vulnerability thanks
+  to per-file keys, but not real XChaCha and not interoperable):
+  - New module `modules/xchacha.py` implements HChaCha20 on top of the
+    `cryptography` library's ChaCha20 (keystream feed-forward subtraction) —
+    no new runtime dependency. Pinned against the official §2.2.1 and §A.3
+    test vectors and an independent pure-Python reference
+    (`test_xchacha_primitives.py`).
+  - New files carry `encryption.xchacha_nonce_format: 2` in their metadata,
+    set before the AEAD binding so the flag is authenticated (stripping or
+    downgrading it fails decryption). Applies to one-shot, cascade, and
+    streaming (24-byte per-chunk nonces).
+  - **Fully backward compatible**: every pre-backport file (no flag) keeps
+    decrypting through its historical path — one-shot/streaming use the first
+    12 bytes; cascade uses the HKDF nonce funnel. Pinned by immutable fixtures
+    (`testfiles/xchacha_legacy/`); the new format is pinned by
+    `testfiles/xchacha_v2/`, which also confirms files written by the 1.5.x
+    line decrypt here (cross-version interop) — **except** envelope files
+    whose cascade chain contains XChaCha: the bulk uses the real construction
+    but the wrapped-DEK layer still uses the legacy derivation, so that
+    specific combination is not cross-version interoperable (consistent with
+    the envelope entry below). It round-trips correctly within this line.
+  - The PQC hybrid data layer intentionally keeps 12-byte nonces under
+    per-encryption KEM-derived keys.
+
 - **Envelope encryption (DEK/KEK)** (`--envelope`, opt-in): bulk data is
   encrypted under a random Data Encryption Key (DEK), and the DEK is wrapped by a
   Key Encryption Key derived from the password through the full, unchanged KDF
