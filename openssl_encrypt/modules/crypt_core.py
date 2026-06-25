@@ -8027,6 +8027,261 @@ def _rekey_envelope_fast(
     return True
 
 
+def _read_envelope_file(input_file: str):
+    """Read an encrypted file into (metadata dict, payload bytes)."""
+    with open(input_file, "rb") as f:
+        raw = f.read()
+    meta_b64, sep, payload = raw.partition(b":")
+    if not sep:
+        raise ValidationError("Not a valid encrypted file (missing metadata separator)")
+    meta = json.loads(base64.b64decode(meta_b64))
+    if not isinstance(meta, dict):
+        raise ValidationError("Malformed file metadata")
+    return meta, payload
+
+
+def list_recovery_slots(input_file: str) -> list:
+    """Summarize the recovery slots in an envelope file (no credential needed).
+
+    Returns a list of ``{"id", "type", "key_id"?}`` dicts. Empty if the file
+    has no recovery slots.
+    """
+    meta, _ = _read_envelope_file(input_file)
+    out = []
+    for slot in meta.get("encryption", {}).get("dek_slots", []) or []:
+        item = {"id": slot.get("id"), "type": slot.get("type")}
+        key_id = (slot.get("params") or {}).get("key_id")
+        if key_id:
+            item["key_id"] = key_id
+        out.append(item)
+    return out
+
+
+def _recover_envelope_dek(
+    meta: dict,
+    *,
+    password=None,
+    recovery_code=None,
+    recovery_passphrase=None,
+    recovery_shares=None,
+    recovery_private_key=None,
+) -> bytearray:
+    """Recover the envelope DEK from metadata via the password or any recovery
+    credential, then authenticate the existing slot set with it (fail-closed).
+
+    Returns the DEK as a bytearray (caller must secure_memzero it).
+    """
+    from .envelope import unwrap_dek, unwrap_dek_cascade
+    from .recovery_slots import (
+        unlock_passphrase_slot,
+        unlock_pqc_slot,
+        unlock_recovery_code_slot,
+        unlock_shamir_slot,
+        verify_slot_set_mac,
+    )
+
+    enc = meta.get("encryption", {})
+    wrapped_b64 = enc.get("wrapped_dek")
+    if not wrapped_b64:
+        raise ValidationError("File is not an envelope file (no wrapped_dek)")
+    slots = enc.get("dek_slots") or []
+    dek = None
+
+    if password is not None:
+        if isinstance(password, str):
+            password = password.encode("utf-8")
+        is_cascade = bool(enc.get("cascade", False))
+        algorithm = "cascade" if is_cascade else enc.get("algorithm")
+        kek = _derive_envelope_kek(
+            password,
+            meta.get("derivation_config"),
+            algorithm,
+            meta.get("format_version"),
+            meta.get("xor_mode", "sequential"),
+        )
+        try:
+            if is_cascade:
+                dek = unwrap_dek_cascade(
+                    base64.b64decode(wrapped_b64),
+                    kek,
+                    enc.get("cipher_chain"),
+                    enc.get("hkdf_hash", "sha256"),
+                    xchacha_nonce_format=enc.get("xchacha_nonce_format", 1),
+                )
+            else:
+                dek = unwrap_dek(base64.b64decode(wrapped_b64), kek)
+        finally:
+            secure_memzero(kek)
+    else:
+        _secret = None
+        try:
+            if recovery_code is not None:
+                _want, _mat = "recovery_code", recovery_code
+            elif recovery_passphrase is not None:
+                _want, _mat = "passphrase", recovery_passphrase
+            elif recovery_shares is not None:
+                from .secret_sharing import combine_shares
+
+                _secret = combine_shares(list(recovery_shares))
+                _want, _mat = "shamir", _secret
+            elif recovery_private_key is not None:
+                _want, _mat = "pqc", recovery_private_key
+            else:
+                raise ValidationError("No password or recovery credential supplied")
+            for slot in slots:
+                if slot.get("type") != _want:
+                    continue
+                try:
+                    if _want == "recovery_code":
+                        dek = unlock_recovery_code_slot(slot, _mat)
+                    elif _want == "passphrase":
+                        dek = unlock_passphrase_slot(slot, _mat)
+                    elif _want == "shamir":
+                        dek = unlock_shamir_slot(slot, _mat)
+                    else:
+                        dek = unlock_pqc_slot(slot, _mat)
+                    break
+                except Exception:
+                    continue
+        finally:
+            if isinstance(_secret, (bytes, bytearray)):
+                secure_memzero(bytearray(_secret))
+        if dek is None:
+            raise DecryptionError("No recovery slot matched the supplied credential")
+
+    if slots:
+        _mac_b64 = enc.get("dek_slots_mac")
+        if not _mac_b64 or not verify_slot_set_mac(bytes(dek), slots, base64.b64decode(_mac_b64)):
+            secure_memzero(dek)
+            raise AuthenticationError("Recovery slot set failed authentication")
+    return dek
+
+
+def _write_envelope_header(meta: dict, payload: bytes, input_file, output_file, in_place):
+    """Write metadata||payload, preserving the bulk payload verbatim."""
+    new_payload = base64.b64encode(json.dumps(meta).encode("utf-8")) + b":" + payload
+    if in_place:
+        original_mode = stat.S_IMODE(os.stat(input_file).st_mode)
+        input_dir = os.path.dirname(os.path.abspath(input_file))
+        fd, tmp_path = tempfile.mkstemp(prefix=".slotmgmt_", dir=input_dir)
+        try:
+            with os.fdopen(fd, "wb") as out:
+                out.write(new_payload)
+            os.replace(tmp_path, input_file)
+            os.chmod(input_file, original_mode)
+        except BaseException:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+            raise
+    else:
+        with open(output_file, "wb") as out:
+            out.write(new_payload)
+        set_secure_permissions(output_file)
+
+
+def add_recovery_slots(
+    input_file: str,
+    output_file: Optional[str],
+    recovery_credentials: list,
+    *,
+    in_place: bool = False,
+    password=None,
+    recovery_code=None,
+    recovery_passphrase=None,
+    recovery_shares=None,
+    recovery_private_key=None,
+) -> bool:
+    """Add recovery slots to an existing envelope file without re-encrypting
+    the bulk. The DEK is recovered via the supplied password or recovery
+    credential; the bulk ciphertext is retained verbatim.
+    """
+    from .envelope import envelope_aad
+    from .recovery_slots import build_recovery_slots, compute_slot_set_mac
+
+    meta, payload = _read_envelope_file(input_file)
+    aad_before = envelope_aad(meta)
+    dek = _recover_envelope_dek(
+        meta,
+        password=password,
+        recovery_code=recovery_code,
+        recovery_passphrase=recovery_passphrase,
+        recovery_shares=recovery_shares,
+        recovery_private_key=recovery_private_key,
+    )
+    try:
+        enc = meta.setdefault("encryption", {})
+        existing = list(enc.get("dek_slots") or [])
+        new_slots = build_recovery_slots(bytes(dek), recovery_credentials)
+        # Globally unique slot ids (avoid collisions with existing slots).
+        for slot in new_slots:
+            slot["id"] = f"{slot['type']}-{secrets.token_hex(4)}"
+        combined = existing + new_slots
+        enc["dek_slots"] = combined
+        enc["dek_slots_mac"] = base64.b64encode(
+            compute_slot_set_mac(bytes(dek), combined)
+        ).decode("ascii")
+    finally:
+        secure_memzero(dek)
+
+    # dek_slots/_mac are excluded from envelope_aad, so the bulk AAD is unchanged.
+    if envelope_aad(meta) != aad_before:
+        raise RekeyError("Recovery-slot change would alter the bound metadata subset")
+    _write_envelope_header(meta, payload, input_file, output_file, in_place)
+    return True
+
+
+def remove_recovery_slot(
+    input_file: str,
+    output_file: Optional[str],
+    slot_id: str,
+    *,
+    in_place: bool = False,
+    password=None,
+    recovery_code=None,
+    recovery_passphrase=None,
+    recovery_shares=None,
+    recovery_private_key=None,
+) -> bool:
+    """Remove a recovery slot (by id) from an existing envelope file without
+    re-encrypting the bulk. The DEK is recovered to re-MAC the remaining set.
+    """
+    from .envelope import envelope_aad
+    from .recovery_slots import compute_slot_set_mac
+
+    meta, payload = _read_envelope_file(input_file)
+    aad_before = envelope_aad(meta)
+    enc = meta.setdefault("encryption", {})
+    existing = list(enc.get("dek_slots") or [])
+    remaining = [s for s in existing if s.get("id") != slot_id]
+    if len(remaining) == len(existing):
+        raise ValidationError(f"No recovery slot with id {slot_id!r}")
+
+    dek = _recover_envelope_dek(
+        meta,
+        password=password,
+        recovery_code=recovery_code,
+        recovery_passphrase=recovery_passphrase,
+        recovery_shares=recovery_shares,
+        recovery_private_key=recovery_private_key,
+    )
+    try:
+        if remaining:
+            enc["dek_slots"] = remaining
+            enc["dek_slots_mac"] = base64.b64encode(
+                compute_slot_set_mac(bytes(dek), remaining)
+            ).decode("ascii")
+        else:
+            enc.pop("dek_slots", None)
+            enc.pop("dek_slots_mac", None)
+    finally:
+        secure_memzero(dek)
+
+    if envelope_aad(meta) != aad_before:
+        raise RekeyError("Recovery-slot change would alter the bound metadata subset")
+    _write_envelope_header(meta, payload, input_file, output_file, in_place)
+    return True
+
+
 def rekey_file(
     input_file: str,
     output_file: Optional[str],

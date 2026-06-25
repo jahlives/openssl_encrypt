@@ -15,7 +15,13 @@ import os
 import tempfile
 import unittest
 
-from openssl_encrypt.modules.crypt_core import decrypt_file, encrypt_file
+from openssl_encrypt.modules.crypt_core import (
+    add_recovery_slots,
+    decrypt_file,
+    encrypt_file,
+    list_recovery_slots,
+    remove_recovery_slot,
+)
 from openssl_encrypt.modules.crypt_errors import (
     AuthenticationError,
     DecryptionError,
@@ -323,6 +329,99 @@ class TestPqcRecoveryRoundTrip(unittest.TestCase):
     def test_password_still_works_with_pqc_slot(self):
         enc = self._encrypt_with_pqc()
         self.assertEqual(_decrypt(enc, password=PASSWORD), PLAINTEXT)
+
+
+class TestSlotManagement(unittest.TestCase):
+    """Post-hoc add/remove/list recovery slots without re-encrypting bulk."""
+
+    def _write(self, file_bytes) -> str:
+        fd, path = tempfile.mkstemp()
+        with os.fdopen(fd, "wb") as f:
+            f.write(file_bytes)
+        return path
+
+    def _payload(self, path):
+        with open(path, "rb") as f:
+            return f.read().split(b":", 1)[1]
+
+    def test_list_empty(self):
+        path = self._write(_encrypt(envelope=True))
+        try:
+            self.assertEqual(list_recovery_slots(path), [])
+        finally:
+            os.unlink(path)
+
+    def test_list_with_slot(self):
+        code = generate_recovery_code()
+        path = self._write(_encrypt(recovery_credentials=[{"type": "recovery_code", "code": code}]))
+        try:
+            slots = list_recovery_slots(path)
+            self.assertEqual(len(slots), 1)
+            self.assertEqual(slots[0]["type"], "recovery_code")
+        finally:
+            os.unlink(path)
+
+    def test_add_via_password_then_recover(self):
+        inp = self._write(_encrypt(envelope=True))
+        out = self._write(b"")
+        code = generate_recovery_code()
+        try:
+            payload_before = self._payload(inp)
+            add_recovery_slots(
+                inp, out, [{"type": "recovery_code", "code": code}], password=PASSWORD
+            )
+            # bulk payload retained verbatim
+            self.assertEqual(self._payload(out), payload_before)
+            with open(out, "rb") as f:
+                enc = f.read()
+            self.assertEqual(_decrypt(enc, recovery_code=code), PLAINTEXT)
+            self.assertEqual(_decrypt(enc, password=PASSWORD), PLAINTEXT)
+        finally:
+            for p in (inp, out):
+                os.unlink(p)
+
+    def test_add_via_existing_recovery_code(self):
+        c1 = generate_recovery_code()
+        inp = self._write(_encrypt(recovery_credentials=[{"type": "recovery_code", "code": c1}]))
+        out = self._write(b"")
+        c2 = generate_recovery_code()
+        try:
+            add_recovery_slots(
+                inp, out, [{"type": "recovery_code", "code": c2}], recovery_code=c1
+            )
+            with open(out, "rb") as f:
+                enc = f.read()
+            self.assertEqual(_decrypt(enc, recovery_code=c2), PLAINTEXT)
+            self.assertEqual(_decrypt(enc, recovery_code=c1), PLAINTEXT)
+        finally:
+            for p in (inp, out):
+                os.unlink(p)
+
+    def test_remove_slot(self):
+        c1, c2 = generate_recovery_code(), generate_recovery_code()
+        inp = self._write(
+            _encrypt(
+                recovery_credentials=[
+                    {"type": "recovery_code", "code": c1},
+                    {"type": "recovery_code", "code": c2},
+                ]
+            )
+        )
+        out = self._write(b"")
+        try:
+            slots = list_recovery_slots(inp)
+            remove_recovery_slot(inp, out, slots[0]["id"], password=PASSWORD)
+            with open(out, "rb") as f:
+                enc = f.read()
+            # removed code fails, remaining works, password works
+            with self.assertRaises((AuthenticationError, DecryptionError, ValidationError, ValueError)):
+                _decrypt(enc, recovery_code=c1)
+            self.assertEqual(_decrypt(enc, recovery_code=c2), PLAINTEXT)
+            self.assertEqual(_decrypt(enc, password=PASSWORD), PLAINTEXT)
+            self.assertEqual(len(list_recovery_slots(out)), 1)
+        finally:
+            for p in (inp, out):
+                os.unlink(p)
 
 
 if __name__ == "__main__":
