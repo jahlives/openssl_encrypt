@@ -28,11 +28,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     12 bytes; cascade uses the HKDF nonce funnel. Pinned by immutable fixtures
     (`testfiles/xchacha_legacy/`); the new format is pinned by
     `testfiles/xchacha_v2/`, which also confirms files written by the 1.5.x
-    line decrypt here (cross-version interop) — **except** envelope files
-    whose cascade chain contains XChaCha: the bulk uses the real construction
-    but the wrapped-DEK layer still uses the legacy derivation, so that
-    specific combination is not cross-version interoperable (consistent with
-    the envelope entry below). It round-trips correctly within this line.
+    line decrypt here (cross-version interop). This includes envelope files
+    whose cascade chain contains XChaCha: the wrapped-DEK layer uses the same
+    real 192-bit construction as the bulk (honoring the metadata flag on
+    unwrap and rekey), so envelope + cascade + XChaCha is fully interoperable
+    across both lines — pinned by the genuine legacy fixture
+    `testfiles/envelope_xchacha_v14/`, which still decrypts unchanged.
   - The PQC hybrid data layer intentionally keeps 12-byte nonces under
     per-encryption KEM-derived keys.
 
@@ -50,8 +51,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   never the weak link. Opt-in and fully backward-compatible: non-envelope files
   are byte-for-byte unchanged; DEK/KEK are zeroed on every path and never logged.
   Foundation for future multi-password / multi-recipient wrapping. (Ported from
-  the 1.5.x line; the wrapped-DEK format is interoperable across both lines for
-  non-XChaCha cascade chains.)
+  the 1.5.x line; the wrapped-DEK format is interoperable across both lines,
+  including XChaCha cascade chains once the real 192-bit nonce format is in
+  use — see the XChaCha entry above.)
 
 - **Detached file signing** (`sign` / `verify-signature`): post-quantum
   (ML-DSA-65) detached signatures over **arbitrary files**, closing the

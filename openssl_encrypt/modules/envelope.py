@@ -196,7 +196,11 @@ def unwrap_dek(wrapped: bytes, kek: bytes) -> bytearray:
 
 
 def wrap_dek_cascade(
-    dek: bytes, kek: bytes, cipher_names: list, hkdf_hash: str = "sha256"
+    dek: bytes,
+    kek: bytes,
+    cipher_names: list,
+    hkdf_hash: str = "sha256",
+    xchacha_nonce_format: int = 1,
 ) -> bytes:
     """Wrap a DEK under the same cascade chain that protects the bulk data.
 
@@ -209,6 +213,14 @@ def wrap_dek_cascade(
         kek: The password-derived key encryption key (>= 32 bytes).
         cipher_names: The cascade cipher chain (same as the bulk's cipher_chain).
         hkdf_hash: HKDF hash for the cascade key derivation.
+        xchacha_nonce_format: XChaCha nonce format for any xchacha layer in the
+            wrap chain. MUST mirror the file's bulk construction (i.e. the
+            file's ``encryption.xchacha_nonce_format``) so the envelope and the
+            bulk agree: 2 for new real-192-bit files, 1 for legacy files. The
+            wrap blob carries no flag of its own, so the caller is responsible
+            for passing the value the file's metadata declares (absent => 1).
+            Defaults to 1 so any caller that does not opt in stays byte-for-byte
+            on the legacy derivation.
 
     Returns:
         The cascade-wrapped DEK bytes.
@@ -226,7 +238,11 @@ def wrap_dek_cascade(
         raise ValidationError("cipher_names must be a non-empty cascade chain")
 
     config = CascadeConfig(cipher_names=list(cipher_names), hkdf_hash=hkdf_hash)
-    enc = CascadeEncryption(config, format_version=_CASCADE_WRAP_FORMAT_VERSION)
+    enc = CascadeEncryption(
+        config,
+        format_version=_CASCADE_WRAP_FORMAT_VERSION,
+        xchacha_nonce_format=xchacha_nonce_format,
+    )
     wrap_key = _derive_wrap_key(kek)
     try:
         return enc.encrypt(bytes(dek), bytes(wrap_key), _CASCADE_WRAP_SALT, associated_data=None)
@@ -235,7 +251,11 @@ def wrap_dek_cascade(
 
 
 def unwrap_dek_cascade(
-    wrapped: bytes, kek: bytes, cipher_names: list, hkdf_hash: str = "sha256"
+    wrapped: bytes,
+    kek: bytes,
+    cipher_names: list,
+    hkdf_hash: str = "sha256",
+    xchacha_nonce_format: int = 1,
 ) -> bytearray:
     """Unwrap a DEK produced by :func:`wrap_dek_cascade`.
 
@@ -244,6 +264,11 @@ def unwrap_dek_cascade(
         kek: The password-derived key encryption key (>= 32 bytes).
         cipher_names: The cascade cipher chain used to wrap (the bulk chain).
         hkdf_hash: HKDF hash for the cascade key derivation.
+        xchacha_nonce_format: XChaCha nonce format the wrap was produced with.
+            Must match the file's ``encryption.xchacha_nonce_format`` (absent
+            => legacy 1, as written by pre-backport 1.4.x); passing the wrong
+            value makes the DEK unrecoverable. Defaults to 1 so legacy files
+            unwrap unchanged.
 
     Returns:
         The recovered DEK as a mutable ``bytearray``.
@@ -262,7 +287,11 @@ def unwrap_dek_cascade(
         raise ValidationError("cipher_names must be a non-empty cascade chain")
 
     config = CascadeConfig(cipher_names=list(cipher_names), hkdf_hash=hkdf_hash)
-    dec = CascadeEncryption(config, format_version=_CASCADE_WRAP_FORMAT_VERSION)
+    dec = CascadeEncryption(
+        config,
+        format_version=_CASCADE_WRAP_FORMAT_VERSION,
+        xchacha_nonce_format=xchacha_nonce_format,
+    )
     wrap_key = _derive_wrap_key(kek)
     try:
         plaintext = dec.decrypt(

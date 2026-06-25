@@ -11,12 +11,14 @@ backward-compatibility regression suite.
 
 import base64
 import json
+import os
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
 from openssl_encrypt.modules import xchacha
-from openssl_encrypt.modules.crypt_core import decrypt_file, encrypt_file
+from openssl_encrypt.modules.crypt_core import decrypt_file, encrypt_file, rekey_file
 from openssl_encrypt.modules.crypt_errors import (
     AuthenticationError,
     DecryptionError,
@@ -368,6 +370,95 @@ class TestRegistryCipherModes(unittest.TestCase):
         ).derive(key)
         expected = ChaCha20Poly1305(key).encrypt(derived, b"registry legacy mode", None)
         self.assertEqual(bytes(sealed[24:]), expected)
+
+
+class TestEnvelopeCascadeXChaCha(unittest.TestCase):
+    """Envelope (DEK/KEK) + cascade + XChaCha: the wrapped DEK must use the same
+    real 192-bit construction as the bulk for new files, while genuine
+    pre-backport 1.4.x envelope files (no flag, legacy DEK wrap) keep
+    decrypting. Closes the envelope cross-version-interop gap."""
+
+    _V14_DIR = TESTFILES_DIR / "envelope_xchacha_v14"
+    V14_VECTOR = _V14_DIR / "envelope_cascade_xchacha_v14.enc"
+    V14_PLAINTEXT = _V14_DIR / "plaintext.bin"
+    V14_PASSWORD = b"envelope-xchacha-cross-version-1.4.x"
+
+    def _encrypt_envelope_cascade(self) -> bytes:
+        return encrypt_file(
+            input_file=PLAINTEXT,
+            output_file=None,
+            password=PASSWORD,
+            algorithm="cascade",
+            cascade=True,
+            cipher_names=["aes-gcm", "xchacha20-poly1305"],
+            envelope=True,
+            quiet=True,
+        )
+
+    def test_dek_wrap_uses_real_xchacha(self):
+        """Both the bulk and the wrapped DEK must use the real 24-byte
+        construction (>=2 real-XChaCha invocations), and the file round-trips."""
+        calls = []
+        original = xchacha.xchacha20poly1305_encrypt
+
+        def spy(key, nonce, plaintext, associated_data=None):
+            calls.append(len(nonce))
+            return original(key, nonce, plaintext, associated_data)
+
+        with mock.patch.object(xchacha, "xchacha20poly1305_encrypt", side_effect=spy):
+            encrypted = self._encrypt_envelope_cascade()
+
+        meta = _parse_metadata(encrypted)
+        self.assertIn("wrapped_dek", meta["encryption"], "envelope layer missing")
+        self.assertEqual(meta["encryption"].get("xchacha_nonce_format"), 2)
+        # Bulk xchacha layer + DEK-wrap xchacha layer => >= 2 real 24-byte calls.
+        self.assertGreaterEqual(
+            calls.count(24),
+            2,
+            f"DEK wrap did not use the real XChaCha construction: nonce sizes {calls}",
+        )
+        self.assertEqual(_decrypt_bytes(encrypted), PLAINTEXT)
+
+    def test_legacy_v14_envelope_fixture_decrypts(self):
+        """A genuine pre-backport 1.4.x envelope+cascade+xchacha file (no flag,
+        legacy DEK wrap) must still decrypt byte-for-byte."""
+        meta = _parse_metadata(self.V14_VECTOR.read_bytes())
+        self.assertNotIn(
+            "xchacha_nonce_format", meta["encryption"], "fixture is not a legacy file"
+        )
+        expected = self.V14_PLAINTEXT.read_bytes()
+        decrypted = decrypt_file(
+            input_file=str(self.V14_VECTOR),
+            output_file=None,
+            password=self.V14_PASSWORD,
+            quiet=True,
+        )
+        self.assertEqual(decrypted, expected)
+
+    def test_envelope_xchacha_rekey_preserves_format_and_roundtrips(self):
+        """Rekeying an envelope cascade+xchacha file must rewrap the DEK in the
+        same (real) nonce format and stay decryptable under the new password."""
+        with tempfile.TemporaryDirectory() as tmp:
+            enc_path = os.path.join(tmp, "enc.bin")
+            rekeyed = os.path.join(tmp, "rekeyed.bin")
+            with open(enc_path, "wb") as f:
+                f.write(self._encrypt_envelope_cascade())
+
+            self.assertTrue(
+                rekey_file(
+                    input_file=enc_path,
+                    output_file=rekeyed,
+                    old_password=PASSWORD,
+                    new_password=b"new-" + PASSWORD,
+                    quiet=True,
+                )
+            )
+            meta = _parse_metadata(Path(rekeyed).read_bytes())
+            self.assertEqual(meta["encryption"].get("xchacha_nonce_format"), 2)
+            self.assertEqual(
+                _decrypt_bytes(Path(rekeyed).read_bytes(), password=b"new-" + PASSWORD),
+                PLAINTEXT,
+            )
 
 
 if __name__ == "__main__":

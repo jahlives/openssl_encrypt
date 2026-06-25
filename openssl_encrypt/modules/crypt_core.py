@@ -6554,9 +6554,12 @@ def encrypt_file(
         try:
             if cascade and cipher_names:
                 # Cascade bulk: wrap the DEK under the SAME chain so the envelope
-                # is never the weak link (matches the bulk's guarantee).
+                # is never the weak link (matches the bulk's guarantee). New
+                # files use the real 192-bit XChaCha construction for any
+                # xchacha layer, so the DEK wrap must mirror the bulk (format 2)
+                # to keep envelope and bulk in the same nonce format.
                 _envelope_wrapped_dek = wrap_dek_cascade(
-                    bytes(_dek), key, cipher_names, cascade_hash
+                    bytes(_dek), key, cipher_names, cascade_hash, xchacha_nonce_format=2
                 )
             else:
                 _envelope_wrapped_dek = wrap_dek(bytes(_dek), key)
@@ -8680,10 +8683,19 @@ def _rekey_envelope_fast(
     old_kek = _derive_envelope_kek(
         old_password, derivation_config, algorithm, format_version, xor_mode
     )
+    # The rekey retains the bulk ciphertext verbatim, so the DEK wrap must stay
+    # in the file's existing XChaCha nonce format (absent => legacy 1) on both
+    # unwrap and rewrap -- otherwise the rewrapped DEK would no longer match the
+    # bulk's construction.
+    _xchacha_format = encryption.get("xchacha_nonce_format", 1)
     try:
         if is_cascade:
             dek = unwrap_dek_cascade(
-                base64.b64decode(wrapped_b64), old_kek, cipher_chain, hkdf_hash
+                base64.b64decode(wrapped_b64),
+                old_kek,
+                cipher_chain,
+                hkdf_hash,
+                xchacha_nonce_format=_xchacha_format,
             )
         else:
             dek = unwrap_dek(base64.b64decode(wrapped_b64), old_kek)
@@ -8702,7 +8714,13 @@ def _rekey_envelope_fast(
         )
         try:
             if is_cascade:
-                new_wrapped = wrap_dek_cascade(bytes(dek), new_kek, cipher_chain, hkdf_hash)
+                new_wrapped = wrap_dek_cascade(
+                    bytes(dek),
+                    new_kek,
+                    cipher_chain,
+                    hkdf_hash,
+                    xchacha_nonce_format=_xchacha_format,
+                )
             else:
                 new_wrapped = wrap_dek(bytes(dek), new_kek)
         finally:
@@ -9891,12 +9909,18 @@ def decrypt_file(
         _kek = key
         try:
             if is_cascade and cascade_cipher_chain:
-                # Cascade envelope files wrap the DEK under the same chain.
+                # Cascade envelope files wrap the DEK under the same chain, in
+                # the same XChaCha nonce format as the bulk. Honor the metadata
+                # flag (absent => legacy 1, as written by pre-backport 1.4.x)
+                # so both legacy and new-format envelope files unwrap correctly.
                 _dek = unwrap_dek_cascade(
                     base64.b64decode(_wrapped_dek_b64),
                     _kek,
                     cascade_cipher_chain,
                     cascade_hkdf_hash,
+                    xchacha_nonce_format=metadata.get("encryption", {}).get(
+                        "xchacha_nonce_format", 1
+                    ),
                 )
             else:
                 _dek = unwrap_dek(base64.b64decode(_wrapped_dek_b64), _kek)
