@@ -19,6 +19,7 @@ import unittest
 from openssl_encrypt.modules.crypt_errors import AuthenticationError, DecryptionError
 from openssl_encrypt.modules.recovery_slots import (
     SLOT_TYPES,
+    build_passphrase_slot,
     build_pqc_slot,
     build_recovery_code_slot,
     build_recovery_slots,
@@ -27,6 +28,7 @@ from openssl_encrypt.modules.recovery_slots import (
     compute_slot_set_mac,
     generate_recovery_code,
     normalize_recovery_code,
+    unlock_passphrase_slot,
     unlock_pqc_slot,
     unlock_recovery_code_slot,
     unlock_shamir_slot,
@@ -291,6 +293,43 @@ class TestPqcSlot(unittest.TestCase):
 
         with self.assertRaises((AuthenticationError, DecryptionError, Exception)):
             unlock_pqc_slot(self.slot, _priv_bytes(self.other_id))
+
+
+class TestPassphraseSlot(unittest.TestCase):
+    # small Argon2 params keep the test fast
+    PARAMS = {"time_cost": 1, "memory_cost": 8192, "parallelism": 1}
+
+    def setUp(self):
+        self.dek = secrets.token_bytes(32)
+        self.passphrase = b"a memorable backup passphrase"
+        self.slot = build_passphrase_slot(
+            self.dek, self.passphrase, slot_id="pw1", **self.PARAMS
+        )
+
+    def test_slot_shape(self):
+        self.assertEqual(self.slot["type"], "passphrase")
+        self.assertEqual(len(base64.b64decode(self.slot["wrap"])), 60)
+        self.assertIn("salt", self.slot["params"])
+        self.assertEqual(self.slot["params"]["argon2"]["time_cost"], 1)
+
+    def test_unlock_recovers_dek(self):
+        self.assertEqual(bytes(unlock_passphrase_slot(self.slot, self.passphrase)), self.dek)
+
+    def test_unlock_accepts_str(self):
+        self.assertEqual(
+            bytes(unlock_passphrase_slot(self.slot, "a memorable backup passphrase")),
+            self.dek,
+        )
+
+    def test_wrong_passphrase_fails_closed(self):
+        from openssl_encrypt.modules.crypt_errors import DecryptionError
+
+        with self.assertRaises((AuthenticationError, DecryptionError)):
+            unlock_passphrase_slot(self.slot, b"wrong passphrase")
+
+    def test_fresh_salt_per_slot(self):
+        other = build_passphrase_slot(self.dek, self.passphrase, slot_id="pw2", **self.PARAMS)
+        self.assertNotEqual(self.slot["params"]["salt"], other["params"]["salt"])
 
 
 class TestBuildRecoverySlots(unittest.TestCase):

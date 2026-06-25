@@ -172,6 +172,37 @@ class TestShamirRecoveryRoundTrip(unittest.TestCase):
         self.assertEqual(_decrypt(enc, password=PASSWORD), PLAINTEXT)
 
 
+class TestPassphraseRecoveryRoundTrip(unittest.TestCase):
+    RECOVERY_PW = b"my offline backup passphrase"
+    # small Argon2 params keep the test fast
+    A2 = {"time_cost": 1, "memory_cost": 8192, "parallelism": 1}
+
+    def _encrypt_with_passphrase(self):
+        return _encrypt(
+            recovery_credentials=[
+                {"type": "passphrase", "passphrase": self.RECOVERY_PW, **self.A2}
+            ]
+        )
+
+    def test_metadata_has_passphrase_slot(self):
+        slot = _parse_meta(self._encrypt_with_passphrase())["encryption"]["dek_slots"][0]
+        self.assertEqual(slot["type"], "passphrase")
+        self.assertIn("argon2", slot["params"])
+
+    def test_recovery_passphrase_decrypts(self):
+        enc = self._encrypt_with_passphrase()
+        self.assertEqual(_decrypt(enc, recovery_passphrase=self.RECOVERY_PW), PLAINTEXT)
+
+    def test_wrong_passphrase_fails(self):
+        enc = self._encrypt_with_passphrase()
+        with self.assertRaises((AuthenticationError, DecryptionError, ValidationError, ValueError)):
+            _decrypt(enc, recovery_passphrase=b"not the recovery passphrase")
+
+    def test_password_still_works(self):
+        enc = self._encrypt_with_passphrase()
+        self.assertEqual(_decrypt(enc, password=PASSWORD), PLAINTEXT)
+
+
 class TestSlotSetAdversarial(unittest.TestCase):
     """The recovery-slot set is MAC-authenticated (DEK-keyed). Stripping,
     injecting, modifying, or swapping slots must fail closed on BOTH the

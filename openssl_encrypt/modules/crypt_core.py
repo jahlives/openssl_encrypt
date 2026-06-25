@@ -8344,6 +8344,7 @@ def decrypt_file(
     recovery_code=None,
     recovery_shares=None,
     recovery_private_key=None,
+    recovery_passphrase=None,
 ):
     """
     Decrypt a file with a password.
@@ -8402,6 +8403,7 @@ def decrypt_file(
         and recovery_code is None
         and recovery_shares is None
         and recovery_private_key is None
+        and recovery_passphrase is None
     ):
         raise ValidationError("Password cannot be None")
 
@@ -9103,6 +9105,7 @@ def decrypt_file(
         recovery_code is not None
         or recovery_shares is not None
         or recovery_private_key is not None
+        or recovery_passphrase is not None
     )
     if _recovery_requested:
         # Recovery path: the DEK is unlocked from a recovery slot at the
@@ -9173,6 +9176,7 @@ def decrypt_file(
             ValidationError as _ValErr,
         )
         from .recovery_slots import (
+            unlock_passphrase_slot,
             unlock_pqc_slot,
             unlock_recovery_code_slot,
             unlock_shamir_slot,
@@ -9185,6 +9189,8 @@ def decrypt_file(
         try:
             if recovery_code is not None:
                 _want_type, _material = "recovery_code", recovery_code
+            elif recovery_passphrase is not None:
+                _want_type, _material = "passphrase", recovery_passphrase
             elif recovery_shares is not None:
                 # Reconstruct the Shamir secret from the supplied shares.
                 from .secret_sharing import combine_shares
@@ -9199,6 +9205,8 @@ def decrypt_file(
                 try:
                     if _want_type == "recovery_code":
                         _dek = unlock_recovery_code_slot(_slot, _material)
+                    elif _want_type == "passphrase":
+                        _dek = unlock_passphrase_slot(_slot, _material)
                     elif _want_type == "shamir":
                         _dek = unlock_shamir_slot(_slot, _material)
                     else:

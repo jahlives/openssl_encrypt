@@ -307,6 +307,107 @@ def unlock_shamir_slot(slot: dict, secret: bytes) -> bytearray:
     return unwrap_dek(base64.b64decode(slot["wrap"]), kek)
 
 
+# --- Passphrase recovery slots -------------------------------------------
+#
+# A recovery passphrase is human-chosen (lower entropy than a recovery code),
+# so its KEK is derived with a slow memory-hard KDF (Argon2id) rather than
+# HKDF. The Argon2 parameters are stored in the slot so unlock can reproduce
+# the KEK. Self-contained (uses argon2-cffi directly; no generate_key coupling).
+
+_PASSPHRASE_ARGON2_TIME = 3
+_PASSPHRASE_ARGON2_MEMORY = 65536  # KiB (64 MiB)
+_PASSPHRASE_ARGON2_PARALLELISM = 4
+
+
+def _passphrase_kek(passphrase: bytes, salt: bytes, time_cost, memory_cost, parallelism) -> bytes:
+    """Derive a 32-byte KEK from a recovery passphrase via Argon2id."""
+    import argon2
+
+    if isinstance(passphrase, str):
+        passphrase = passphrase.encode("utf-8")
+    return argon2.low_level.hash_secret_raw(
+        secret=bytes(passphrase),
+        salt=bytes(salt),
+        time_cost=time_cost,
+        memory_cost=memory_cost,
+        parallelism=parallelism,
+        hash_len=32,
+        type=argon2.low_level.Type.ID,
+    )
+
+
+def build_passphrase_slot(
+    dek: bytes,
+    passphrase: bytes,
+    slot_id: str,
+    time_cost: int = _PASSPHRASE_ARGON2_TIME,
+    memory_cost: int = _PASSPHRASE_ARGON2_MEMORY,
+    parallelism: int = _PASSPHRASE_ARGON2_PARALLELISM,
+) -> dict:
+    """Wrap the DEK under a recovery passphrase (Argon2id-derived KEK).
+
+    Args:
+        dek: The envelope DEK to protect.
+        passphrase: The recovery passphrase (str or bytes).
+        slot_id: Unique identifier for this slot.
+        time_cost / memory_cost / parallelism: Argon2id parameters (stored so
+            unlock can reproduce the KEK).
+
+    Returns:
+        A slot dict with the Argon2 parameters in params.
+    """
+    from .envelope import wrap_dek
+
+    salt = secrets.token_bytes(_RECOVERY_SLOT_SALT_BYTES)
+    kek = _passphrase_kek(passphrase, salt, time_cost, memory_cost, parallelism)
+    wrapped = wrap_dek(bytes(dek), kek)
+    return {
+        "id": slot_id,
+        "type": "passphrase",
+        "wrap": base64.b64encode(wrapped).decode("ascii"),
+        "params": {
+            "salt": base64.b64encode(salt).decode("ascii"),
+            "argon2": {
+                "time_cost": time_cost,
+                "memory_cost": memory_cost,
+                "parallelism": parallelism,
+            },
+        },
+    }
+
+
+def unlock_passphrase_slot(slot: dict, passphrase: bytes) -> bytearray:
+    """Recover the DEK from a passphrase slot.
+
+    Args:
+        slot: A passphrase slot dict (as stored in metadata).
+        passphrase: The recovery passphrase (str or bytes).
+
+    Returns:
+        The recovered DEK as a mutable bytearray (caller should zeroize).
+
+    Raises:
+        ValidationError: If the slot is malformed.
+        DecryptionError: If the passphrase is wrong or the slot was tampered.
+    """
+    from .crypt_errors import ValidationError
+
+    if slot.get("type") != "passphrase":
+        raise ValidationError("Not a passphrase slot")
+    from .envelope import unwrap_dek
+
+    params = slot["params"]
+    a = params["argon2"]
+    kek = _passphrase_kek(
+        passphrase,
+        base64.b64decode(params["salt"]),
+        a["time_cost"],
+        a["memory_cost"],
+        a["parallelism"],
+    )
+    return unwrap_dek(base64.b64decode(slot["wrap"]), kek)
+
+
 # --- PQC recipient recovery slots ----------------------------------------
 #
 # Wrap the DEK under a recovery recipient's ML-KEM public key (e.g. an offline
@@ -455,6 +556,17 @@ def build_recovery_slots(dek: bytes, credentials: List[dict]) -> List[dict]:
                     cred["kem_algorithm"],
                     slot_id=f"pqc-{index}",
                     key_id=cred.get("key_id"),
+                )
+            )
+        elif ctype == "passphrase":
+            kwargs = {
+                k: cred[k]
+                for k in ("time_cost", "memory_cost", "parallelism")
+                if k in cred
+            }
+            slots.append(
+                build_passphrase_slot(
+                    dek, cred["passphrase"], slot_id=f"passphrase-{index}", **kwargs
                 )
             )
         else:
