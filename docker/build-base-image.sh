@@ -13,7 +13,11 @@ LIBOQS_VERSION="0.12.0"
 REGISTRY="registry.rm-rf.ch"
 PROJECT_PATH="world/openssl_encrypt"
 IMAGE_NAME="python-liboqs"
-TAG="${PYTHON_VERSION}-alpine"
+# debian-slim (glibc) base: lets pip install the manylinux RandomX/whirlpool
+# wheels instead of source-building them against musl, so C-extension KDFs
+# (RandomX in particular) produce the SAME output as a normal `pip install`
+# on glibc -- which is what the committed test fixtures were created with.
+TAG="${PYTHON_VERSION}-slim"
 
 # Full image name (lowercase for registry compatibility)
 FULL_IMAGE="${REGISTRY}/${PROJECT_PATH}/${IMAGE_NAME}:${TAG}"
@@ -104,13 +108,13 @@ fi
 echo "Creating Dockerfile for python-liboqs base image..."
 cat > docker/Dockerfile.base << EOF
 # Build stage
-FROM python:${PYTHON_VERSION}-alpine AS builder
+FROM python:${PYTHON_VERSION}-slim AS builder
 
-# Install build dependencies for liboqs (Alpine Linux packages)
-RUN apk add --no-cache \\
-    git gcc g++ cmake ninja make go \\
-    python3-dev openssl-dev musl-dev \\
-    linux-headers pkgconfig
+# Install build dependencies for liboqs (Debian packages)
+RUN apt-get update && apt-get install -y --no-install-recommends \\
+    git build-essential cmake ninja-build golang \\
+    python3-dev libssl-dev pkg-config \\
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Clone and build liboqs ${LIBOQS_VERSION}
 WORKDIR /build
@@ -136,10 +140,12 @@ COPY requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt --break-system-packages
 
 # Runtime stage
-FROM python:${PYTHON_VERSION}-alpine
+FROM python:${PYTHON_VERSION}-slim
 
 # Install minimal runtime dependencies (no build tools!)
-RUN apk add --no-cache openssl libstdc++ libgcc
+RUN apt-get update && apt-get install -y --no-install-recommends \\
+    openssl libssl3 libstdc++6 \\
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Copy liboqs libraries and Python bindings from builder
 COPY --from=builder /usr/local/lib/liboqs.so* /usr/local/lib/
@@ -160,7 +166,7 @@ RUN python -c "import oqs; print('liboqs version:', oqs.oqs_version())" && \\
 
 # Add build metadata
 LABEL org.opencontainers.image.title="Python liboqs Base Image"
-LABEL org.opencontainers.image.description="Python ${PYTHON_VERSION} Alpine with liboqs ${LIBOQS_VERSION} for PQC testing"
+LABEL org.opencontainers.image.description="Python ${PYTHON_VERSION} debian-slim (glibc) with liboqs ${LIBOQS_VERSION} for PQC testing"
 LABEL org.opencontainers.image.version="${LIBOQS_VERSION}"
 LABEL org.opencontainers.image.created="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 LABEL org.opencontainers.image.source="https://gitlab.rm-rf.ch/world/openssl_encrypt"
