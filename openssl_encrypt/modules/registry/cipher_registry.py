@@ -720,9 +720,17 @@ class XChaCha20Poly1305(CipherBase):
     Recommended for long-lived keys where nonce space exhaustion is
     a concern. Uses 24-byte nonces (vs 12-byte for standard ChaCha20).
 
-    Note: Uses HKDF to derive 12-byte nonce from 24-byte input for
-    compatibility with cryptography library.
+    Nonce handling is controlled by the ``nonce_format`` instance attribute,
+    plumbed from the file metadata by cascade callers:
+
+    - 1 (legacy/default): HKDF-SHA256 funnels the 24-byte nonce down to a
+      12-byte ChaCha20 nonce under the same key (96-bit effective). Required
+      to decrypt pre-1.5 cascade files.
+    - 2 (1.5+): real XChaCha20-Poly1305 with HChaCha20 subkey derivation per
+      draft-irtf-cfrg-xchacha-03 -- the full 192-bit nonce is used.
     """
+
+    nonce_format: int = 1
 
     @classmethod
     def info(cls) -> AlgorithmInfo:
@@ -800,6 +808,16 @@ class XChaCha20Poly1305(CipherBase):
 
             # Store original nonce in output
             original_nonce = nonce
+
+            if self.nonce_format == 2:
+                # Real 192-bit XChaCha20-Poly1305 (1.5+)
+                from ..xchacha import xchacha20poly1305_encrypt
+
+                encrypted = xchacha20poly1305_encrypt(
+                    key_bytes, bytes(nonce), plaintext_bytes, associated_data
+                )
+                return original_nonce + encrypted
+
             processed_nonce = self._process_nonce(key_bytes, nonce)
 
             from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
@@ -838,6 +856,19 @@ class XChaCha20Poly1305(CipherBase):
                     raise ValidationError("Ciphertext too short")
                 nonce = ciphertext[:24]
                 ciphertext = ciphertext[24:]
+
+            if self.nonce_format == 2:
+                # Real 192-bit XChaCha20-Poly1305 (1.5+)
+                from ..crypt_errors import AuthenticationError as CryptAuthError
+                from ..xchacha import xchacha20poly1305_decrypt
+
+                try:
+                    plaintext = xchacha20poly1305_decrypt(
+                        key_bytes, bytes(nonce), bytes(ciphertext), associated_data
+                    )
+                    return SecureBytes(plaintext)
+                except CryptAuthError:
+                    raise AuthenticationError("Authentication tag verification failed")
 
             processed_nonce = self._process_nonce(key_bytes, nonce)
 

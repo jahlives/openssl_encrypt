@@ -6677,16 +6677,19 @@ def encrypt_file(
             metadata.setdefault("encryption", {})["wrapped_dek"] = base64.b64encode(
                 _envelope_wrapped_dek
             ).decode("ascii")
-        # Real 192-bit XChaCha (1.5+): tag single-cipher xchacha files so
-        # decryption selects the real construction. Set here, before
-        # metadata_b64, so the flag is covered by the AEAD binding and cannot be
-        # downgraded. Format-version agnostic (v6/v8/v11/v12). Absent on legacy
-        # files, which used only the first 12 bytes of the stored nonce.
-        # NOTE: cascade and streaming xchacha layers still use their historical
-        # derivations and are intentionally left unflagged until those paths
-        # carry the real construction (so the flag never misrepresents the data).
+        # Real 192-bit XChaCha (1.5+): tag any non-streaming file whose data
+        # layer uses xchacha (single cipher or cascade chain) so decryption
+        # selects the real construction. Set here, before metadata_b64, so the
+        # flag is covered by the AEAD binding and cannot be downgraded.
+        # Format-version agnostic (v6/v8/v11/v12). Absent on legacy files, which
+        # keep their historical derivation.
+        # NOTE: streaming xchacha is finalized on a separate metadata path and
+        # is intentionally left unflagged until that path carries the real
+        # construction (so the flag never misrepresents the data).
         _enc_md = metadata.setdefault("encryption", {})
-        if not _enc_md.get("cascade") and _enc_md.get("algorithm") == "xchacha20-poly1305":
+        if _enc_md.get("algorithm") == "xchacha20-poly1305" or (
+            "xchacha20-poly1305" in (_enc_md.get("cipher_chain") or [])
+        ):
             _enc_md["xchacha_nonce_format"] = 2
         metadata_json = json.dumps(metadata).encode("utf-8")
         metadata_b64 = base64.b64encode(metadata_json)
@@ -7428,8 +7431,12 @@ def encrypt_file(
             # Create cascade configuration
             cascade_config = CascadeConfig(cipher_names=cipher_names, hkdf_hash=cascade_hash)
 
-            # Create cascade encryption instance
-            cascade_enc = CascadeEncryption(cascade_config, format_version=format_version)
+            # Create cascade encryption instance. New files use the real
+            # 192-bit XChaCha construction for any xchacha layer (format 2);
+            # the matching metadata flag is set at the choke point below.
+            cascade_enc = CascadeEncryption(
+                cascade_config, format_version=format_version, xchacha_nonce_format=2
+            )
 
             # Generate cascade salt
             cascade_salt_bytes = secrets.token_bytes(32)
@@ -7514,16 +7521,19 @@ def encrypt_file(
             metadata.setdefault("encryption", {})["wrapped_dek"] = base64.b64encode(
                 _envelope_wrapped_dek
             ).decode("ascii")
-        # Real 192-bit XChaCha (1.5+): tag single-cipher xchacha files so
-        # decryption selects the real construction. Set here, before
-        # metadata_b64, so the flag is covered by the AEAD binding and cannot be
-        # downgraded. Format-version agnostic (v6/v8/v11/v12). Absent on legacy
-        # files, which used only the first 12 bytes of the stored nonce.
-        # NOTE: cascade and streaming xchacha layers still use their historical
-        # derivations and are intentionally left unflagged until those paths
-        # carry the real construction (so the flag never misrepresents the data).
+        # Real 192-bit XChaCha (1.5+): tag any non-streaming file whose data
+        # layer uses xchacha (single cipher or cascade chain) so decryption
+        # selects the real construction. Set here, before metadata_b64, so the
+        # flag is covered by the AEAD binding and cannot be downgraded.
+        # Format-version agnostic (v6/v8/v11/v12). Absent on legacy files, which
+        # keep their historical derivation.
+        # NOTE: streaming xchacha is finalized on a separate metadata path and
+        # is intentionally left unflagged until that path carries the real
+        # construction (so the flag never misrepresents the data).
         _enc_md = metadata.setdefault("encryption", {})
-        if not _enc_md.get("cascade") and _enc_md.get("algorithm") == "xchacha20-poly1305":
+        if _enc_md.get("algorithm") == "xchacha20-poly1305" or (
+            "xchacha20-poly1305" in (_enc_md.get("cipher_chain") or [])
+        ):
             _enc_md["xchacha_nonce_format"] = 2
         metadata_json = json.dumps(metadata).encode("utf-8")
         metadata_b64 = base64.b64encode(metadata_json)
@@ -10199,7 +10209,16 @@ def decrypt_file(
             cascade_config = CascadeConfig(
                 cipher_names=cascade_cipher_chain, hkdf_hash=cascade_hkdf_hash
             )
-            cascade_dec = CascadeEncryption(cascade_config, format_version=format_version)
+            # Honor the file's XChaCha nonce format (absent => legacy 1) so
+            # 1.4.x cascade files keep decrypting through the HKDF funnel while
+            # new files use the real 192-bit construction.
+            cascade_dec = CascadeEncryption(
+                cascade_config,
+                format_version=format_version,
+                xchacha_nonce_format=metadata.get("encryption", {}).get(
+                    "xchacha_nonce_format", 1
+                ),
+            )
 
             # Decrypt using cascade
             decrypted_data = cascade_dec.decrypt(
