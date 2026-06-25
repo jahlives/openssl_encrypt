@@ -257,10 +257,18 @@ def deprecated_algorithm(algorithm: str, context: Optional[str] = None) -> Calla
 
 
 class XChaCha20Poly1305:
-    def __init__(self, key):
+    def __init__(self, key, nonce_format=1):
         # Validate key before use
         if key is None:
             raise ValidationError("Key cannot be None")
+
+        # nonce_format selects the construction:
+        #   1 (legacy/default): store 24 bytes, use the first 12 directly as a
+        #     ChaCha20-Poly1305 nonce (96-bit effective). Every pre-1.5 file
+        #     relies on this; it MUST stay byte-for-byte unchanged.
+        #   2 (1.5+): real XChaCha20-Poly1305 with HChaCha20 subkey derivation
+        #     per draft-irtf-cfrg-xchacha-03 — the full 192-bit nonce is used.
+        self.nonce_format = nonce_format
 
         # Validate key length (should be 32 bytes for ChaCha20-Poly1305)
         try:
@@ -392,6 +400,15 @@ class XChaCha20Poly1305:
         """
         # Validate inputs
         self._validate_data(data)
+
+        # Real 192-bit XChaCha20-Poly1305 (1.5+): use the full 24-byte nonce.
+        if self.nonce_format == 2:
+            from .xchacha import xchacha20poly1305_encrypt
+
+            return xchacha20poly1305_encrypt(
+                self.key, bytes(nonce), bytes(data), associated_data
+            )
+
         truncated_nonce = self._process_nonce(nonce)
 
         # Process associated data
@@ -429,6 +446,15 @@ class XChaCha20Poly1305:
         """
         # Validate inputs
         self._validate_data(data)
+
+        # Real 192-bit XChaCha20-Poly1305 (1.5+): use the full 24-byte nonce.
+        if self.nonce_format == 2:
+            from .xchacha import xchacha20poly1305_decrypt
+
+            return xchacha20poly1305_decrypt(
+                self.key, bytes(nonce), bytes(data), associated_data
+            )
+
         truncated_nonce = self._process_nonce(nonce)
 
         # Process associated data
@@ -6651,6 +6677,17 @@ def encrypt_file(
             metadata.setdefault("encryption", {})["wrapped_dek"] = base64.b64encode(
                 _envelope_wrapped_dek
             ).decode("ascii")
+        # Real 192-bit XChaCha (1.5+): tag single-cipher xchacha files so
+        # decryption selects the real construction. Set here, before
+        # metadata_b64, so the flag is covered by the AEAD binding and cannot be
+        # downgraded. Format-version agnostic (v6/v8/v11/v12). Absent on legacy
+        # files, which used only the first 12 bytes of the stored nonce.
+        # NOTE: cascade and streaming xchacha layers still use their historical
+        # derivations and are intentionally left unflagged until those paths
+        # carry the real construction (so the flag never misrepresents the data).
+        _enc_md = metadata.setdefault("encryption", {})
+        if not _enc_md.get("cascade") and _enc_md.get("algorithm") == "xchacha20-poly1305":
+            _enc_md["xchacha_nonce_format"] = 2
         metadata_json = json.dumps(metadata).encode("utf-8")
         metadata_b64 = base64.b64encode(metadata_json)
 
@@ -6782,18 +6819,13 @@ def encrypt_file(
             else:
                 return secrets.token_bytes(12), 12
         elif alg == EncryptionAlgorithm.XCHACHA20_POLY1305:
-            # XChaCha20-Poly1305 is designed to use a 24-byte nonce
-            # The cryptography library's implementation expects a 12-byte nonce
-            # We store 24 bytes in the file header for security but use 12 for actual encryption
-            if test_mode:
-                # In test mode, we use 12-byte nonces for compatibility with existing tests
-                return secrets.token_bytes(12), 12
-            else:
-                # In production, we store 24 bytes but use only first 12 for actual encryption
-                # This achieves the security benefit of 24-byte nonces while maintaining compatibility
-                # with the cryptography library which expects 12-byte nonces
-                nonce = secrets.token_bytes(24)
-                return nonce, 12
+            # Real 192-bit XChaCha20-Poly1305 (1.5+): the full 24-byte nonce is
+            # stored AND used via HChaCha20 subkey derivation. New files are
+            # always written in this format (signaled by
+            # encryption.xchacha_nonce_format=2). Unlike the legacy path there
+            # is no test-mode 12-byte shortcut: the real construction requires
+            # all 24 bytes.
+            return secrets.token_bytes(24), 24
         elif alg == EncryptionAlgorithm.CAMELLIA:
             # Camellia in CBC mode requires a full block (16 bytes) for IV
             return secrets.token_bytes(16), 16
@@ -7095,7 +7127,8 @@ def encrypt_file(
                     logger.debug(f"ENCRYPT:XCHACHA20 Key length: {len(key)} bytes")
                     logger.debug(f"ENCRYPT:XCHACHA20 Using {nonce_size}-byte nonce for encryption")
 
-                cipher = XChaCha20Poly1305(key)
+                # New files always use the real 192-bit construction (format 2).
+                cipher = XChaCha20Poly1305(key, nonce_format=2)
                 encrypted_payload = cipher.encrypt(nonce[:nonce_size], data, aad)
 
                 if debug:
@@ -7481,6 +7514,17 @@ def encrypt_file(
             metadata.setdefault("encryption", {})["wrapped_dek"] = base64.b64encode(
                 _envelope_wrapped_dek
             ).decode("ascii")
+        # Real 192-bit XChaCha (1.5+): tag single-cipher xchacha files so
+        # decryption selects the real construction. Set here, before
+        # metadata_b64, so the flag is covered by the AEAD binding and cannot be
+        # downgraded. Format-version agnostic (v6/v8/v11/v12). Absent on legacy
+        # files, which used only the first 12 bytes of the stored nonce.
+        # NOTE: cascade and streaming xchacha layers still use their historical
+        # derivations and are intentionally left unflagged until those paths
+        # carry the real construction (so the flag never misrepresents the data).
+        _enc_md = metadata.setdefault("encryption", {})
+        if not _enc_md.get("cascade") and _enc_md.get("algorithm") == "xchacha20-poly1305":
+            _enc_md["xchacha_nonce_format"] = 2
         metadata_json = json.dumps(metadata).encode("utf-8")
         metadata_b64 = base64.b64encode(metadata_json)
 
@@ -9881,12 +9925,15 @@ def decrypt_file(
             else:
                 return [(12, 12)]
         elif alg == EncryptionAlgorithm.XCHACHA20_POLY1305.value:
+            # Real 192-bit XChaCha (1.5+) is signaled by the metadata flag; the
+            # full 24-byte stored nonce is used via HChaCha20 (effective == 24).
+            if metadata.get("encryption", {}).get("xchacha_nonce_format") == 2:
+                return [(24, 24)]
             if include_legacy:
-                # Try 24-byte first (correct stored size, use first 12 bytes for actual encryption),
-                # then fallback to legacy 12-byte format
+                # Legacy files: 24 bytes stored but only the first 12 used,
+                # with a fallback to the even older 12-byte stored format.
                 return [(24, 12), (12, 12)]
             else:
-                # Even with 24-byte stored nonce, we use 12 bytes for actual encryption with the library
                 return [(24, 12)]
         elif alg == EncryptionAlgorithm.CAMELLIA.value:
             return [(16, 16)]
@@ -10515,7 +10562,11 @@ def decrypt_file(
                                 logger.debug(f"DECRYPT:XCHACHA20 Key length: {len(key)} bytes")
                                 logger.debug(f"DECRYPT:XCHACHA20 Ciphertext: {ciphertext.hex()}")
 
-                            cipher = XChaCha20Poly1305(key)
+                            # Honor the file's nonce format (absent => legacy 1).
+                            _xchacha_format = metadata.get("encryption", {}).get(
+                                "xchacha_nonce_format", 1
+                            )
+                            cipher = XChaCha20Poly1305(key, nonce_format=_xchacha_format)
                             # Show warning when using legacy size
                             if stored_size != 24 and not quiet:
                                 eprint(
