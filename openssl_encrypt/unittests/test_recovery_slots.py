@@ -16,10 +16,15 @@ import base64
 import secrets
 import unittest
 
+from openssl_encrypt.modules.crypt_errors import AuthenticationError, DecryptionError
 from openssl_encrypt.modules.recovery_slots import (
     SLOT_TYPES,
+    build_recovery_code_slot,
     canonical_slots,
     compute_slot_set_mac,
+    generate_recovery_code,
+    normalize_recovery_code,
+    unlock_recovery_code_slot,
     verify_slot_set_mac,
 )
 
@@ -141,6 +146,58 @@ class TestVerifySlotSetMac(unittest.TestCase):
 
     def test_rejects_empty_mac(self):
         self.assertFalse(verify_slot_set_mac(self.dek, self.slots, b""))
+
+
+class TestRecoveryCode(unittest.TestCase):
+    def test_generate_returns_str(self):
+        self.assertIsInstance(generate_recovery_code(), str)
+
+    def test_generated_codes_are_unique(self):
+        self.assertNotEqual(generate_recovery_code(), generate_recovery_code())
+
+    def test_normalize_is_tolerant_of_spacing_and_case(self):
+        code = generate_recovery_code()
+        noisy = "  " + code.lower().replace("-", " ") + "  "
+        self.assertEqual(normalize_recovery_code(code), normalize_recovery_code(noisy))
+
+    def test_normalize_yields_high_entropy(self):
+        # >= 256 bits of decoded key material
+        self.assertGreaterEqual(len(normalize_recovery_code(generate_recovery_code())), 32)
+
+
+class TestRecoveryCodeSlot(unittest.TestCase):
+    def setUp(self):
+        self.dek = secrets.token_bytes(32)
+        self.code = generate_recovery_code()
+        self.slot = build_recovery_code_slot(self.dek, self.code, slot_id="r1")
+
+    def test_slot_shape(self):
+        self.assertEqual(self.slot["type"], "recovery_code")
+        self.assertEqual(self.slot["id"], "r1")
+        self.assertIn("wrap", self.slot)
+        self.assertIn("salt", self.slot["params"])
+        # wrap blob is the 60-byte AES-GCM envelope wrap, base64-encoded
+        self.assertEqual(len(base64.b64decode(self.slot["wrap"])), 60)
+
+    def test_wrap_is_not_plaintext_dek(self):
+        self.assertNotIn(self.dek, base64.b64decode(self.slot["wrap"]))
+
+    def test_unlock_recovers_dek(self):
+        recovered = unlock_recovery_code_slot(self.slot, self.code)
+        self.assertEqual(bytes(recovered), self.dek)
+
+    def test_unlock_tolerates_formatting(self):
+        recovered = unlock_recovery_code_slot(self.slot, "  " + self.code.lower() + " ")
+        self.assertEqual(bytes(recovered), self.dek)
+
+    def test_wrong_code_fails_closed(self):
+        with self.assertRaises((AuthenticationError, DecryptionError)):
+            unlock_recovery_code_slot(self.slot, generate_recovery_code())
+
+    def test_each_slot_uses_fresh_salt(self):
+        other = build_recovery_code_slot(self.dek, self.code, slot_id="r2")
+        self.assertNotEqual(self.slot["params"]["salt"], other["params"]["salt"])
+        self.assertNotEqual(self.slot["wrap"], other["wrap"])
 
 
 if __name__ == "__main__":
