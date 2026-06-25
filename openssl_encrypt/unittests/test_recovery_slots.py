@@ -15,6 +15,7 @@ an attacker without the DEK cannot forge it.
 import base64
 import secrets
 import unittest
+from unittest import mock
 
 from openssl_encrypt.modules.crypt_errors import AuthenticationError, DecryptionError
 from openssl_encrypt.modules.recovery_slots import (
@@ -360,6 +361,42 @@ class TestBuildRecoverySlots(unittest.TestCase):
 
         with self.assertRaises(ValidationError):
             build_recovery_slots(self.dek, [{"type": "no_such_type"}])
+
+
+class TestKeyHygiene(unittest.TestCase):
+    """Per-slot KEKs must be zeroized as soon as the wrap/unwrap completes."""
+
+    def _assert_kek_zeroized(self, build_call):
+        import openssl_encrypt.modules.envelope as env
+
+        captured = {}
+        real = env.wrap_dek
+
+        def spy(dek, kek):
+            captured["kek"] = kek  # the bytearray the build site will zeroize
+            return real(dek, kek)
+
+        with mock.patch.object(env, "wrap_dek", spy):
+            build_call()
+        self.assertIn("kek", captured)
+        self.assertEqual(len(captured["kek"]), 32)
+        self.assertTrue(
+            all(b == 0 for b in captured["kek"]), "KEK was not zeroized after wrap"
+        )
+
+    def test_recovery_code_kek_zeroized(self):
+        dek = secrets.token_bytes(32)
+        self._assert_kek_zeroized(
+            lambda: build_recovery_code_slot(dek, generate_recovery_code(), "r1")
+        )
+
+    def test_passphrase_kek_zeroized(self):
+        dek = secrets.token_bytes(32)
+        self._assert_kek_zeroized(
+            lambda: build_passphrase_slot(
+                dek, b"pw", "pw1", time_cost=1, memory_cost=8192, parallelism=1
+            )
+        )
 
 
 if __name__ == "__main__":

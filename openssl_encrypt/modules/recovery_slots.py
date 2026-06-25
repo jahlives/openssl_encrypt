@@ -32,6 +32,7 @@ from typing import List
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
+from .secure_memory import secure_memzero
 from .secure_ops import constant_time_compare
 
 # The recovery-credential types a slot may use to wrap the DEK.
@@ -165,13 +166,16 @@ def normalize_recovery_code(code: str) -> bytes:
 
 def _recovery_code_kek(code: str, salt: bytes) -> bytes:
     """Derive the 32-byte KEK for a recovery-code slot."""
-    material = normalize_recovery_code(code)
-    return HKDF(
-        algorithm=hashes.SHA256(),
-        length=32,
-        salt=bytes(salt),
-        info=_RECOVERY_CODE_INFO,
-    ).derive(material)
+    material = bytearray(normalize_recovery_code(code))
+    try:
+        return HKDF(
+            algorithm=hashes.SHA256(),
+            length=32,
+            salt=bytes(salt),
+            info=_RECOVERY_CODE_INFO,
+        ).derive(bytes(material))
+    finally:
+        secure_memzero(material)
 
 
 def build_recovery_code_slot(dek: bytes, code: str, slot_id: str) -> dict:
@@ -188,8 +192,11 @@ def build_recovery_code_slot(dek: bytes, code: str, slot_id: str) -> dict:
     from .envelope import wrap_dek
 
     salt = secrets.token_bytes(_RECOVERY_SLOT_SALT_BYTES)
-    kek = _recovery_code_kek(code, salt)
-    wrapped = wrap_dek(bytes(dek), kek)
+    kek = bytearray(_recovery_code_kek(code, salt))
+    try:
+        wrapped = wrap_dek(bytes(dek), kek)
+    finally:
+        secure_memzero(kek)
     return {
         "id": slot_id,
         "type": "recovery_code",
@@ -219,8 +226,11 @@ def unlock_recovery_code_slot(slot: dict, code: str) -> bytearray:
     from .envelope import unwrap_dek
 
     salt = base64.b64decode(slot["params"]["salt"])
-    kek = _recovery_code_kek(code, salt)
-    return unwrap_dek(base64.b64decode(slot["wrap"]), kek)
+    kek = bytearray(_recovery_code_kek(code, salt))
+    try:
+        return unwrap_dek(base64.b64decode(slot["wrap"]), kek)
+    finally:
+        secure_memzero(kek)
 
 
 # --- Shamir (k-of-n) recovery slots --------------------------------------
@@ -269,8 +279,11 @@ def build_shamir_slot(
     from .envelope import wrap_dek
 
     salt = secrets.token_bytes(_RECOVERY_SLOT_SALT_BYTES)
-    kek = _shamir_kek(secret, salt)
-    wrapped = wrap_dek(bytes(dek), kek)
+    kek = bytearray(_shamir_kek(secret, salt))
+    try:
+        wrapped = wrap_dek(bytes(dek), kek)
+    finally:
+        secure_memzero(kek)
     shamir_params = {"threshold": threshold, "num_shares": num_shares}
     if key_id is not None:
         shamir_params["key_id"] = key_id
@@ -303,8 +316,11 @@ def unlock_shamir_slot(slot: dict, secret: bytes) -> bytearray:
     from .envelope import unwrap_dek
 
     salt = base64.b64decode(slot["params"]["salt"])
-    kek = _shamir_kek(secret, salt)
-    return unwrap_dek(base64.b64decode(slot["wrap"]), kek)
+    kek = bytearray(_shamir_kek(secret, salt))
+    try:
+        return unwrap_dek(base64.b64decode(slot["wrap"]), kek)
+    finally:
+        secure_memzero(kek)
 
 
 # --- Passphrase recovery slots -------------------------------------------
@@ -359,8 +375,11 @@ def build_passphrase_slot(
     from .envelope import wrap_dek
 
     salt = secrets.token_bytes(_RECOVERY_SLOT_SALT_BYTES)
-    kek = _passphrase_kek(passphrase, salt, time_cost, memory_cost, parallelism)
-    wrapped = wrap_dek(bytes(dek), kek)
+    kek = bytearray(_passphrase_kek(passphrase, salt, time_cost, memory_cost, parallelism))
+    try:
+        wrapped = wrap_dek(bytes(dek), kek)
+    finally:
+        secure_memzero(kek)
     return {
         "id": slot_id,
         "type": "passphrase",
@@ -398,14 +417,19 @@ def unlock_passphrase_slot(slot: dict, passphrase: bytes) -> bytearray:
 
     params = slot["params"]
     a = params["argon2"]
-    kek = _passphrase_kek(
-        passphrase,
-        base64.b64decode(params["salt"]),
-        a["time_cost"],
-        a["memory_cost"],
-        a["parallelism"],
+    kek = bytearray(
+        _passphrase_kek(
+            passphrase,
+            base64.b64decode(params["salt"]),
+            a["time_cost"],
+            a["memory_cost"],
+            a["parallelism"],
+        )
     )
-    return unwrap_dek(base64.b64decode(slot["wrap"]), kek)
+    try:
+        return unwrap_dek(base64.b64decode(slot["wrap"]), kek)
+    finally:
+        secure_memzero(kek)
 
 
 # --- PQC recipient recovery slots ----------------------------------------
@@ -452,14 +476,15 @@ def build_pqc_slot(
     wrapper = PasswordWrapper(kem_algorithm, quiet=True)
     encapsulated_key, shared_secret = wrapper.encapsulate(recipient_public_key)
     shared = bytearray(shared_secret)
+    kek = None
     try:
         salt = secrets.token_bytes(_RECOVERY_SLOT_SALT_BYTES)
-        kek = _pqc_kek(bytes(shared), salt)
+        kek = bytearray(_pqc_kek(bytes(shared), salt))
         wrapped = wrap_dek(bytes(dek), kek)
     finally:
-        from .secure_memory import secure_memzero
-
         secure_memzero(shared)
+        if kek is not None:
+            secure_memzero(kek)
     params = {
         "salt": base64.b64encode(salt).decode("ascii"),
         "kem_algorithm": kem_algorithm,
@@ -503,11 +528,14 @@ def unlock_pqc_slot(slot: dict, recipient_private_key: bytes) -> bytearray:
         base64.b64decode(params["encapsulated_key"]), recipient_private_key
     )
     shared = bytearray(shared_secret)
+    kek = None
     try:
-        kek = _pqc_kek(bytes(shared), base64.b64decode(params["salt"]))
+        kek = bytearray(_pqc_kek(bytes(shared), base64.b64decode(params["salt"])))
         return unwrap_dek(base64.b64decode(slot["wrap"]), kek)
     finally:
         secure_memzero(shared)
+        if kek is not None:
+            secure_memzero(kek)
 
 
 # --- Slot-set construction dispatcher ------------------------------------
