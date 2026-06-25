@@ -19,6 +19,7 @@ import unittest
 from openssl_encrypt.modules.crypt_errors import AuthenticationError, DecryptionError
 from openssl_encrypt.modules.recovery_slots import (
     SLOT_TYPES,
+    build_pqc_slot,
     build_recovery_code_slot,
     build_recovery_slots,
     build_shamir_slot,
@@ -26,11 +27,23 @@ from openssl_encrypt.modules.recovery_slots import (
     compute_slot_set_mac,
     generate_recovery_code,
     normalize_recovery_code,
+    unlock_pqc_slot,
     unlock_recovery_code_slot,
     unlock_shamir_slot,
     verify_slot_set_mac,
 )
 from openssl_encrypt.modules.secret_sharing import combine_shares, split_secret
+
+try:
+    from openssl_encrypt.modules.identity import Identity
+    from openssl_encrypt.modules.pqc_signing import LIBOQS_AVAILABLE
+except Exception:  # pragma: no cover
+    LIBOQS_AVAILABLE = False
+
+
+def _priv_bytes(identity):
+    with identity.encryption_private_key as pk:
+        return pk.get_bytes()
 
 
 def _slot(index: int, slot_type: str = "recovery_code") -> dict:
@@ -242,6 +255,42 @@ class TestShamirSlot(unittest.TestCase):
             self.assertEqual(
                 bytes(unlock_shamir_slot(self.slot, recovered_secret)), self.dek
             )
+
+
+@unittest.skipIf(not LIBOQS_AVAILABLE, "liboqs not available")
+class TestPqcSlot(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.recovery_id = Identity.generate("RecoveryEscrow", None, "escrow-pass")
+        cls.other_id = Identity.generate("Other", None, "other-pass")
+
+    def setUp(self):
+        self.dek = secrets.token_bytes(32)
+        self.slot = build_pqc_slot(
+            self.dek,
+            self.recovery_id.encryption_public_key,
+            self.recovery_id.encryption_algorithm,
+            slot_id="p1",
+            key_id=self.recovery_id.fingerprint,
+        )
+
+    def test_slot_shape(self):
+        self.assertEqual(self.slot["type"], "pqc")
+        self.assertEqual(len(base64.b64decode(self.slot["wrap"])), 60)
+        self.assertIn("salt", self.slot["params"])
+        self.assertEqual(self.slot["params"]["kem_algorithm"], self.recovery_id.encryption_algorithm)
+        self.assertIn("encapsulated_key", self.slot["params"])
+        self.assertEqual(self.slot["params"]["key_id"], self.recovery_id.fingerprint)
+
+    def test_unlock_with_private_key_recovers_dek(self):
+        recovered = unlock_pqc_slot(self.slot, _priv_bytes(self.recovery_id))
+        self.assertEqual(bytes(recovered), self.dek)
+
+    def test_wrong_identity_fails_closed(self):
+        from openssl_encrypt.modules.crypt_errors import DecryptionError
+
+        with self.assertRaises((AuthenticationError, DecryptionError, Exception)):
+            unlock_pqc_slot(self.slot, _priv_bytes(self.other_id))
 
 
 class TestBuildRecoverySlots(unittest.TestCase):

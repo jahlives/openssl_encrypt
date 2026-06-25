@@ -27,6 +27,17 @@ import secrets
 from openssl_encrypt.modules.recovery_slots import generate_recovery_code
 from openssl_encrypt.modules.secret_sharing import split_secret
 
+try:
+    from openssl_encrypt.modules.identity import Identity
+    from openssl_encrypt.modules.pqc_signing import LIBOQS_AVAILABLE
+except Exception:  # pragma: no cover
+    LIBOQS_AVAILABLE = False
+
+
+def _priv_bytes(identity):
+    with identity.encryption_private_key as pk:
+        return pk.get_bytes()
+
 PASSWORD = b"primary-password-correct-horse"
 PLAINTEXT = b"recovery-slot round-trip payload, several blocks long.\n" * 8
 
@@ -158,6 +169,49 @@ class TestShamirRecoveryRoundTrip(unittest.TestCase):
 
     def test_password_still_works_with_shamir_slot(self):
         enc, _ = self._encrypt_with_shamir()
+        self.assertEqual(_decrypt(enc, password=PASSWORD), PLAINTEXT)
+
+
+@unittest.skipIf(not LIBOQS_AVAILABLE, "liboqs not available")
+class TestPqcRecoveryRoundTrip(unittest.TestCase):
+    """PQC recipient (escrow) recovery slot, end-to-end."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.escrow = Identity.generate("Escrow", None, "escrow-pass")
+        cls.stranger = Identity.generate("Stranger", None, "stranger-pass")
+
+    def _encrypt_with_pqc(self):
+        return _encrypt(
+            recovery_credentials=[
+                {
+                    "type": "pqc",
+                    "public_key": self.escrow.encryption_public_key,
+                    "kem_algorithm": self.escrow.encryption_algorithm,
+                    "key_id": self.escrow.fingerprint,
+                }
+            ]
+        )
+
+    def test_metadata_has_pqc_slot(self):
+        slot = _parse_meta(self._encrypt_with_pqc())["encryption"]["dek_slots"][0]
+        self.assertEqual(slot["type"], "pqc")
+        self.assertEqual(slot["params"]["kem_algorithm"], self.escrow.encryption_algorithm)
+        self.assertIn("encapsulated_key", slot["params"])
+
+    def test_escrow_private_key_decrypts(self):
+        enc = self._encrypt_with_pqc()
+        self.assertEqual(
+            _decrypt(enc, recovery_private_key=_priv_bytes(self.escrow)), PLAINTEXT
+        )
+
+    def test_stranger_key_fails_closed(self):
+        enc = self._encrypt_with_pqc()
+        with self.assertRaises((AuthenticationError, DecryptionError, ValidationError, ValueError, Exception)):
+            _decrypt(enc, recovery_private_key=_priv_bytes(self.stranger))
+
+    def test_password_still_works_with_pqc_slot(self):
+        enc = self._encrypt_with_pqc()
         self.assertEqual(_decrypt(enc, password=PASSWORD), PLAINTEXT)
 
 

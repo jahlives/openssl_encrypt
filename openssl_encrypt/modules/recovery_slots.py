@@ -307,6 +307,108 @@ def unlock_shamir_slot(slot: dict, secret: bytes) -> bytearray:
     return unwrap_dek(base64.b64decode(slot["wrap"]), kek)
 
 
+# --- PQC recipient recovery slots ----------------------------------------
+#
+# Wrap the DEK under a recovery recipient's ML-KEM public key (e.g. an offline
+# escrow identity). KEM-encapsulation yields a shared secret; the DEK is wrapped
+# under an HKDF of that secret. Recovery requires the recipient's private key.
+
+_PQC_INFO = b"openssl_encrypt.envelope.pqc-recipient-kek.v1"
+
+
+def _pqc_kek(shared_secret: bytes, salt: bytes) -> bytes:
+    """Derive the 32-byte KEK from a KEM shared secret."""
+    return HKDF(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=bytes(salt),
+        info=_PQC_INFO,
+    ).derive(bytes(shared_secret))
+
+
+def build_pqc_slot(
+    dek: bytes,
+    recipient_public_key: bytes,
+    kem_algorithm: str,
+    slot_id: str,
+    key_id: str = None,
+) -> dict:
+    """Wrap the DEK under a recovery recipient's ML-KEM public key.
+
+    Args:
+        dek: The envelope DEK to protect.
+        recipient_public_key: The recovery recipient's KEM public key.
+        kem_algorithm: The KEM algorithm (e.g. "ML-KEM-768").
+        slot_id: Unique identifier for this slot.
+        key_id: Optional recipient fingerprint, stored for display/selection.
+
+    Returns:
+        A slot dict with the encapsulated key in params.
+    """
+    from .asymmetric_core import PasswordWrapper
+    from .envelope import wrap_dek
+
+    wrapper = PasswordWrapper(kem_algorithm, quiet=True)
+    encapsulated_key, shared_secret = wrapper.encapsulate(recipient_public_key)
+    shared = bytearray(shared_secret)
+    try:
+        salt = secrets.token_bytes(_RECOVERY_SLOT_SALT_BYTES)
+        kek = _pqc_kek(bytes(shared), salt)
+        wrapped = wrap_dek(bytes(dek), kek)
+    finally:
+        from .secure_memory import secure_memzero
+
+        secure_memzero(shared)
+    params = {
+        "salt": base64.b64encode(salt).decode("ascii"),
+        "kem_algorithm": kem_algorithm,
+        "encapsulated_key": base64.b64encode(encapsulated_key).decode("ascii"),
+    }
+    if key_id is not None:
+        params["key_id"] = key_id
+    return {
+        "id": slot_id,
+        "type": "pqc",
+        "wrap": base64.b64encode(wrapped).decode("ascii"),
+        "params": params,
+    }
+
+
+def unlock_pqc_slot(slot: dict, recipient_private_key: bytes) -> bytearray:
+    """Recover the DEK from a PQC slot using the recipient's private key.
+
+    Args:
+        slot: A pqc slot dict (as stored in metadata).
+        recipient_private_key: The recovery recipient's KEM private key bytes.
+
+    Returns:
+        The recovered DEK as a mutable bytearray (caller should zeroize).
+
+    Raises:
+        ValidationError: If the slot is malformed.
+        DecryptionError: If the key is wrong or the slot was tampered with.
+    """
+    from .crypt_errors import ValidationError
+
+    if slot.get("type") != "pqc":
+        raise ValidationError("Not a pqc slot")
+    from .asymmetric_core import PasswordWrapper
+    from .envelope import unwrap_dek
+    from .secure_memory import secure_memzero
+
+    params = slot["params"]
+    wrapper = PasswordWrapper(params["kem_algorithm"], quiet=True)
+    shared_secret = wrapper.decapsulate(
+        base64.b64decode(params["encapsulated_key"]), recipient_private_key
+    )
+    shared = bytearray(shared_secret)
+    try:
+        kek = _pqc_kek(bytes(shared), base64.b64decode(params["salt"]))
+        return unwrap_dek(base64.b64decode(slot["wrap"]), kek)
+    finally:
+        secure_memzero(shared)
+
+
 # --- Slot-set construction dispatcher ------------------------------------
 
 
@@ -342,6 +444,16 @@ def build_recovery_slots(dek: bytes, credentials: List[dict]) -> List[dict]:
                     slot_id=f"shamir-{index}",
                     threshold=cred["threshold"],
                     num_shares=cred["num_shares"],
+                    key_id=cred.get("key_id"),
+                )
+            )
+        elif ctype == "pqc":
+            slots.append(
+                build_pqc_slot(
+                    dek,
+                    cred["public_key"],
+                    cred["kem_algorithm"],
+                    slot_id=f"pqc-{index}",
                     key_id=cred.get("key_id"),
                 )
             )
