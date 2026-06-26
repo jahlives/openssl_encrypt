@@ -9,6 +9,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Hidden ("whitened") file format** (`--hidden-header`, opt-in): wraps the
+  encrypted output in an outer layer so the whole file is indistinguishable
+  from random bytes, hiding the identifiable `base64(metadata):base64(body)`
+  header that otherwise fingerprints a file as ours and leaks the derivation
+  profile. Only the small metadata header is whitened; the body is kept raw
+  (no double-encryption), so streaming and bounded memory are preserved. Two
+  modes share one byte-identical layout (`salt | nonce | whitened_len |
+  header_region | auth | body`) so the presence of a second password is not
+  observable:
+  - **Keyless** (default when `--hidden-header` is given without a second
+    password): the outer key is derived cheaply from the *public* salt. This is
+    **anti-fingerprinting only** — a party who has the tool can reverse the
+    public transform; it defeats bulk/passive fingerprinting, not a targeted
+    analyst.
+  - **Keyed** (`--second-password`/`--second-password-fd`/
+    `--second-password-prompt`): the outer key is derived from a *second*
+    password through a fixed heavy chain (100k×SHA3-512 → 5×Argon2id → scrypt →
+    HKDF), giving real **metadata confidentiality** even against an adversary
+    who has the tool. The length field is whitened with a password-derived key,
+    so a keyed file has no length-based distinguisher and a wrong second
+    password fails as an authentication error. Keyed mode authenticates the
+    header (XChaCha20-Poly1305, AAD = `salt|nonce|whitened_len`); keyless mode
+    is deliberately tagless (no free "this is our file" oracle).
+  Supported on the symmetric, keystore-wrapped, and asymmetric (PQC) paths,
+  for both buffered and streaming files. Decryption auto-detects legacy vs
+  hidden (no magic bytes); `--legacy-format` forces the legacy path. **Purely
+  additive and backward-compatible**: without `--hidden-header` the output is
+  byte-for-byte the legacy format. The outer KDF profile is fixed and pinned to
+  a version (it cannot be stored without re-leaking the fingerprint). See
+  `docs/HIDDEN_HEADER.md`.
+
 - **Recovery slots** (envelope add-on): an envelope file's Data Encryption Key
   can be wrapped under one or more *independent* recovery credentials in
   addition to the password, so losing the password no longer means losing the
