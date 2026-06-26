@@ -2837,6 +2837,30 @@ def main_with_args(args=None):
         help="Input file or directory (supports glob patterns for shred action)",
     )
     parser.add_argument("--output", "-o", help="Output file (optional for decrypt)")
+    # Hidden-format second password (for reading a keyed hidden file's metadata
+    # with `info`). The interactive fallback also applies on a TTY.
+    parser.add_argument(
+        "--second-password",
+        metavar="PW",
+        help="Second password to read a keyed hidden file (DEPRECATED: visible "
+        "in process list; prefer --second-password-fd or --second-password-prompt).",
+    )
+    parser.add_argument(
+        "--second-password-fd",
+        type=int,
+        metavar="FD",
+        help="Read the second password from file descriptor FD.",
+    )
+    parser.add_argument(
+        "--second-password-prompt",
+        action="store_true",
+        help="Prompt interactively for the second password.",
+    )
+    parser.add_argument(
+        "--no-second-password-prompt",
+        action="store_true",
+        help="Never prompt for a second password, even at an interactive terminal.",
+    )
     parser.add_argument(
         "--overwrite",
         "-f",
@@ -3593,9 +3617,9 @@ def main_with_args(args=None):
     # Resolve the optional second password (hidden keyed mode) exactly once, so
     # an interactive prompt is shown at most a single time per invocation.
     _hidden_second_password = _resolve_second_password(args)
-    # On decrypt, fall back to an interactive prompt for a keyed hidden file
-    # (TTY-gated, suppressible with --no-second-password-prompt).
-    if getattr(args, "action", None) == "decrypt":
+    # On decrypt/info, fall back to an interactive prompt for a keyed hidden
+    # file (TTY-gated, suppressible with --no-second-password-prompt).
+    if getattr(args, "action", None) in ("decrypt", "info"):
         _hidden_second_password = _resolve_second_password_with_fallback(
             args, _hidden_second_password
         )
@@ -7844,7 +7868,12 @@ def main_with_args(args=None):
 
                 json_output = getattr(args, "json", False)
                 list_files = getattr(args, "list_files", False)
-                print_file_info(args.input, json_output=json_output, list_files=list_files)
+                print_file_info(
+                    args.input,
+                    json_output=json_output,
+                    list_files=list_files,
+                    second_password=_hidden_second_password,
+                )
                 sys.exit(0)
             except ValueError as e:
                 print(f"Error: {e}", file=sys.stderr)

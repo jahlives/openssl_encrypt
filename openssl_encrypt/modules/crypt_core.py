@@ -7299,12 +7299,14 @@ def _read_metadata_only(file_path, secure_mode=False):
         raise ValueError("Invalid file format: no metadata separator found")
 
 
-def extract_file_metadata(input_file):
+def extract_file_metadata(input_file, second_password=None):
     """
     Extract basic metadata from encrypted file without decryption.
 
     Args:
         input_file (str): Path to the encrypted file
+        second_password: Optional second password to read a keyed hidden file's
+            metadata (keyless hidden files need none).
 
     Returns:
         dict: Metadata including format_version, algorithm, and encryption_data
@@ -7315,7 +7317,10 @@ def extract_file_metadata(input_file):
     try:
         # Transparently peel a hidden ("whitened") file's header (keyless;
         # keyed metadata is confidential without the second password).
-        _hidden = _maybe_peel_hidden(input_file, False, None, None)
+        _second_pw = (
+            second_password.encode("utf-8") if isinstance(second_password, str) else second_password
+        )
+        _hidden = _maybe_peel_hidden(input_file, False, _second_pw, None)
         if _hidden is not None:
             metadata_b64, _ = _hidden
         else:
@@ -7367,7 +7372,12 @@ def extract_file_metadata(input_file):
         raise ValueError(f"Invalid file format: {str(e)}")
 
 
-def print_file_info(input_file: str, json_output: bool = False, list_files: bool = False) -> dict:
+def print_file_info(
+    input_file: str,
+    json_output: bool = False,
+    list_files: bool = False,
+    second_password=None,
+) -> dict:
     """
     Display encrypted file metadata without decrypting.
 
@@ -7375,6 +7385,8 @@ def print_file_info(input_file: str, json_output: bool = False, list_files: bool
         input_file: Path to the encrypted file
         json_output: If True, print raw JSON instead of pretty-print
         list_files: If True, show individual files in archive manifests
+        second_password: Optional second password to read a keyed hidden file's
+            metadata (keyless hidden files need none).
 
     Returns:
         dict: The full metadata dictionary
@@ -7382,7 +7394,7 @@ def print_file_info(input_file: str, json_output: bool = False, list_files: bool
     Raises:
         ValueError: If the file is not a valid encrypted file
     """
-    info = extract_file_metadata(input_file)
+    info = extract_file_metadata(input_file, second_password=second_password)
     metadata = info["metadata"]
 
     if json_output:
