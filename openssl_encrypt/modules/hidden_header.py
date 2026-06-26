@@ -30,13 +30,22 @@ Security notes:
 """
 
 import hashlib
+import secrets
 from dataclasses import dataclass
-from typing import Optional, Union
+from typing import Optional, Tuple, Union
 
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms
 from cryptography.hazmat.primitives.hashes import SHA512
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
-from .crypt_errors import KeyDerivationError, ValidationError
+from .crypt_errors import AuthenticationError, KeyDerivationError, ValidationError
+from .secure_memory import secure_memzero
+from .xchacha import (
+    XCHACHA_NONCE_SIZE,
+    hchacha20,
+    xchacha20poly1305_decrypt,
+    xchacha20poly1305_encrypt,
+)
 
 # Try to import argon2 (required for keyed mode). Keyless mode does not need it.
 try:
@@ -271,3 +280,213 @@ def derive_outer_key(
     if password is None:
         return _derive_keyless(salt, length)
     return _derive_keyed(salt, password, length, profile)
+
+
+# ---------------------------------------------------------------------------
+# Hidden-format container: wrap / unwrap
+#
+# Layout (identical for keyless and keyed so the two are indistinguishable):
+#
+#   salt(16) | nonce(24) | whitened_len(4) | header_region(L) | auth(16) | body
+#
+# whitened_len  = big-endian uint32(L) XOR keystream(len_key, nonce)
+# header_region = keyed : XChaCha20-Poly1305 ciphertext of the header
+#                 keyless: header XOR keystream(stream_key, nonce)
+# auth          = keyed : Poly1305 tag (AAD = salt | nonce | whitened_len)
+#                 keyless: 16 random decoy bytes (no tag -> no format oracle)
+# ---------------------------------------------------------------------------
+
+SALT_LEN = 16
+NONCE_LEN = XCHACHA_NONCE_SIZE  # 24
+LEN_FIELD_LEN = 4
+AUTH_LEN = 16  # Poly1305 tag size (keyed) / decoy size (keyless)
+HEADER_OFFSET = SALT_LEN + NONCE_LEN + LEN_FIELD_LEN  # 44
+
+# Hard upper bound on the declared header length, independent of the input
+# size, to stop a corrupt/hostile blob from driving a huge allocation before
+# the remaining-bytes check runs.
+_MAX_HEADER_LEN = 64 * 1024 * 1024
+
+
+def _xchacha_keystream(key: bytes, nonce: bytes, n: int) -> bytes:
+    """Return ``n`` bytes of raw (unauthenticated) XChaCha20 keystream.
+
+    Used for keyless header whitening and for whitening the length field. The
+    construction matches XChaCha20: an HChaCha20 subkey from the first 16 nonce
+    bytes, then ChaCha20 with a 4-byte little-endian counter (starting at 0)
+    and a 12-byte nonce of ``b"\\x00" * 4 || nonce[16:24]``.
+
+    Args:
+        key: 32-byte key.
+        nonce: 24-byte nonce.
+        n: Number of keystream bytes to produce.
+
+    Returns:
+        ``n`` bytes of keystream.
+    """
+    if n == 0:
+        return b""
+    subkey = bytearray(hchacha20(key, nonce[:16]))
+    try:
+        cc_nonce = b"\x00\x00\x00\x00" + b"\x00\x00\x00\x00" + nonce[16:24]  # 16 bytes
+        cipher = Cipher(algorithms.ChaCha20(bytes(subkey), cc_nonce), mode=None)
+        return cipher.encryptor().update(b"\x00" * n)
+    finally:
+        secure_memzero(subkey)
+
+
+def _subkeys(salt: bytes, second_password, profile: KeyedProfile) -> Tuple[bytes, bytes]:
+    """Derive the two domain-separated subkeys for one file.
+
+    The outer key is derived once (64 bytes) and split: the first half is the
+    AEAD / header-whitening key, the second half is the length-whitening key.
+    Splitting HKDF output gives two independent keys, so the length keystream
+    never overlaps the AEAD's Poly1305 key stream.
+
+    Args:
+        salt: The public per-file salt.
+        second_password: Optional second password (bytes-like) or ``None``.
+        profile: Keyed-mode cost parameters.
+
+    Returns:
+        Tuple ``(stream_key, len_key)``, each 32 bytes.
+    """
+    okey = bytearray(derive_outer_key(salt, second_password, length=64, profile=profile))
+    try:
+        return bytes(okey[:32]), bytes(okey[32:])
+    finally:
+        secure_memzero(okey)
+
+
+def _validate_format_salt(salt) -> bytes:
+    """Validate that the salt is exactly the format's fixed salt length."""
+    if not isinstance(salt, _BytesLike):
+        raise ValidationError(f"Salt must be a bytes-like object, got {type(salt).__name__}")
+    if len(salt) != SALT_LEN:
+        raise ValidationError(f"Salt must be exactly {SALT_LEN} bytes, got {len(salt)}")
+    return bytes(salt)
+
+
+def wrap_hidden(
+    header_bytes: Union[bytes, bytearray, memoryview],
+    body_bytes: Union[bytes, bytearray, memoryview],
+    salt: Union[bytes, bytearray, memoryview],
+    second_password: Optional[Union[bytes, bytearray, memoryview]] = None,
+    *,
+    profile: KeyedProfile = PRODUCTION_KEYED_PROFILE,
+) -> bytes:
+    """Wrap a (header, body) pair into the hidden raw-binary container.
+
+    Args:
+        header_bytes: The raw metadata header to hide.
+        body_bytes: The raw encrypted body (kept as-is, not re-encrypted).
+        salt: The public per-file salt (exactly :data:`SALT_LEN` bytes).
+        second_password: Optional second password selecting keyed mode.
+        profile: Keyed-mode cost parameters (defaults to production).
+
+    Returns:
+        The hidden-format bytes.
+
+    Raises:
+        ValidationError: For malformed inputs.
+    """
+    if not isinstance(header_bytes, _BytesLike):
+        raise ValidationError(f"header_bytes must be bytes-like, got {type(header_bytes).__name__}")
+    if not isinstance(body_bytes, _BytesLike):
+        raise ValidationError(f"body_bytes must be bytes-like, got {type(body_bytes).__name__}")
+    salt = _validate_format_salt(salt)
+    header_bytes = bytes(header_bytes)
+    body_bytes = bytes(body_bytes)
+
+    keyed = _validate_second_password(second_password) is not None
+    nonce = secrets.token_bytes(NONCE_LEN)
+    stream_key, len_key = _subkeys(salt, second_password, profile)
+    try:
+        # Whiten the length field (same in both modes).
+        length_plain = len(header_bytes).to_bytes(LEN_FIELD_LEN, "big")
+        len_ks = _xchacha_keystream(len_key, nonce, LEN_FIELD_LEN)
+        whitened_len = bytes(a ^ b for a, b in zip(length_plain, len_ks))
+
+        if keyed:
+            aad = salt + nonce + whitened_len
+            ct_and_tag = xchacha20poly1305_encrypt(stream_key, nonce, header_bytes, aad)
+            header_region = ct_and_tag[:-AUTH_LEN]
+            auth = ct_and_tag[-AUTH_LEN:]
+        else:
+            ks = _xchacha_keystream(stream_key, nonce, len(header_bytes))
+            header_region = bytes(a ^ b for a, b in zip(header_bytes, ks))
+            auth = secrets.token_bytes(AUTH_LEN)  # decoy, never verified
+
+        return salt + nonce + whitened_len + header_region + auth + body_bytes
+    finally:
+        secure_memzero(bytearray(stream_key))
+        secure_memzero(bytearray(len_key))
+
+
+def unwrap_hidden(
+    blob: Union[bytes, bytearray, memoryview],
+    second_password: Optional[Union[bytes, bytearray, memoryview]] = None,
+    *,
+    profile: KeyedProfile = PRODUCTION_KEYED_PROFILE,
+) -> Tuple[bytes, bytes]:
+    """Reverse :func:`wrap_hidden`, returning ``(header_bytes, body_bytes)``.
+
+    In keyed mode the Poly1305 tag is verified; a wrong second password or any
+    tampering raises :class:`AuthenticationError`. In keyless mode there is no
+    tag (by design), so a wrong-mode/garbage input simply yields a meaningless
+    header that the inner pipeline will reject.
+
+    Args:
+        blob: The hidden-format bytes.
+        second_password: Optional second password selecting keyed mode.
+        profile: Keyed-mode cost parameters (defaults to production).
+
+    Returns:
+        Tuple ``(header_bytes, body_bytes)``.
+
+    Raises:
+        ValidationError: If the blob is truncated or declares an impossible
+            header length.
+        AuthenticationError: In keyed mode, if authentication fails.
+    """
+    if not isinstance(blob, _BytesLike):
+        raise ValidationError(f"blob must be bytes-like, got {type(blob).__name__}")
+    blob = bytes(blob)
+    if len(blob) < HEADER_OFFSET + AUTH_LEN:
+        raise ValidationError("Hidden blob too short to contain a header")
+
+    salt = blob[:SALT_LEN]
+    nonce = blob[SALT_LEN : SALT_LEN + NONCE_LEN]
+    whitened_len = blob[SALT_LEN + NONCE_LEN : HEADER_OFFSET]
+
+    keyed = _validate_second_password(second_password) is not None
+    stream_key, len_key = _subkeys(salt, second_password, profile)
+    try:
+        len_ks = _xchacha_keystream(len_key, nonce, LEN_FIELD_LEN)
+        header_len = int.from_bytes(bytes(a ^ b for a, b in zip(whitened_len, len_ks)), "big")
+        if header_len > _MAX_HEADER_LEN or HEADER_OFFSET + header_len + AUTH_LEN > len(blob):
+            # In keyed mode the length field is whitened with a password-derived
+            # key, so an inconsistent length means a wrong second password or
+            # tampering -- surface it as an authentication failure, not a
+            # generic "malformed" error (and indistinguishable from random for
+            # anyone without the password). In keyless mode it is genuinely
+            # malformed input.
+            if keyed:
+                raise AuthenticationError("Integrity verification failed")
+            raise ValidationError("Hidden blob declares an inconsistent header length")
+
+        header_region = blob[HEADER_OFFSET : HEADER_OFFSET + header_len]
+        auth = blob[HEADER_OFFSET + header_len : HEADER_OFFSET + header_len + AUTH_LEN]
+        body = blob[HEADER_OFFSET + header_len + AUTH_LEN :]
+
+        if keyed:
+            aad = salt + nonce + whitened_len
+            header = xchacha20poly1305_decrypt(stream_key, nonce, header_region + auth, aad)
+        else:
+            ks = _xchacha_keystream(stream_key, nonce, header_len)
+            header = bytes(a ^ b for a, b in zip(header_region, ks))
+
+        return header, body
+    finally:
+        secure_memzero(bytearray(stream_key))
+        secure_memzero(bytearray(len_key))
