@@ -40,7 +40,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   still defaults to legacy); the 1.4.x line keeps the legacy default and offers
   the hidden format only via `--hidden-header` (flipping a stable line's default
   would break older readers). The outer KDF profile is fixed and pinned to
-  a version (it cannot be stored without re-leaking the fingerprint). See
+  a version (it cannot be stored without re-leaking the fingerprint). On
+  decrypt, a keyed file with a missing/wrong second password fails with the same
+  generic error as any wrong/corrupt input (no oracle); an **interactive,
+  TTY-gated second-password prompt** offers it before failing (suppressible with
+  `--no-second-password-prompt`, never fires in scripts). See
   `docs/HIDDEN_HEADER.md`.
 
 - **Recovery slots** (envelope add-on): an envelope file's Data Encryption Key

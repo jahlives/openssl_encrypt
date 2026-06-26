@@ -96,6 +96,29 @@ Second-password sources, in priority order: `--second-password-fd FD`,
 `--second-password PW` (DEPRECATED — visible in the process list),
 `--second-password-prompt`.
 
+### Interactive second-password fallback
+
+On a bare `decrypt` (no `--second-password*`), the CLI tries keyless first and,
+if the file is a hidden file that does **not** peel keyless (i.e. keyed — or
+just random/corrupt), prompts once for a second password before failing. The
+prompt is:
+
+* **TTY-gated** — it never fires in a pipe/script/headless run; those keep the
+  silent generic error (`Security validation check failed`), so there is no
+  behavioral signal to automated triage and no risk of a script hanging.
+* **suppressible** with `--no-second-password-prompt` (and skipped under
+  `--legacy-format`) — use this on a shared/observed/recorded terminal or any
+  "prove this is just random data" situation where you want the tool to stay
+  silent even interactively.
+* **neutrally worded** — it fires on any non-keyless-peelable input, so it never
+  asserts "this is one of our files". The peek is a single cheap HKDF (no inner
+  KDF, no double-decrypt).
+
+The generic error is intentional: a keyed file with a missing/wrong second
+password is indistinguishable (to the tool and to an attacker) from a wrong,
+corrupt, or non-ours file — the tool genuinely cannot tell, which *is* the
+deniability property.
+
 ## Notes and current limitations
 
 * Supported on the symmetric, keystore-wrapped, and asymmetric (PQC) paths, for

@@ -462,6 +462,12 @@ def _add_hidden_header_args(subparser):
         action="store_true",
         help="Prompt interactively for the second password (keyed hidden mode).",
     )
+    group.add_argument(
+        "--no-second-password-prompt",
+        action="store_true",
+        help="Decrypt only: never prompt for a second password, even at an "
+        "interactive terminal (stay silent on keyed/unreadable files).",
+    )
 
 
 def setup_encrypt_parser(subparser):
