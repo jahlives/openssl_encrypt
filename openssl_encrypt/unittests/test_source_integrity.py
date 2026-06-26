@@ -147,7 +147,7 @@ class TestInstallableSubset(unittest.TestCase):
         )
 
     def test_shipped_allowlist_installable_subset(self) -> None:
-        """The shipped allowlist yields the installable .py files only (50 on 1.5.x)."""
+        """The shipped allowlist yields the installable .py files only (54 on 1.5.x)."""
         from openssl_encrypt.integrity.allowlist import (
             default_allowlist_path,
             filter_installable,
@@ -155,7 +155,7 @@ class TestInstallableSubset(unittest.TestCase):
         )
 
         inst = filter_installable(load_allowlist(default_allowlist_path()))
-        self.assertEqual(len(inst), 50)
+        self.assertEqual(len(inst), 54)
         self.assertTrue(all(e.startswith("openssl_encrypt/") for e in inst))
         self.assertNotIn("requirements.txt", inst)
         self.assertFalse(any(e.startswith("threefish_native/") for e in inst))
