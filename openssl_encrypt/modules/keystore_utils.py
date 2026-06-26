@@ -31,6 +31,14 @@ def extract_key_id_from_metadata(encrypted_file: str, verbose: bool = False) -> 
         with open(encrypted_file, "rb") as f:
             data = f.read(8192)  # Read enough for the header - increased to 8KB for large PQC keys
 
+        # Transparently peel a hidden ("whitened") file (keyless) to its
+        # legacy-equivalent bytes before locating the metadata separator.
+        from .hidden_header import is_hidden_format, to_legacy_bytes
+
+        if is_hidden_format(data):
+            with open(encrypted_file, "rb") as f:
+                data = to_legacy_bytes(f.read())
+
         # Find the colon separator
         colon_pos = data.find(b":")
         if colon_pos > 0:
@@ -210,6 +218,13 @@ def extract_key_id_from_metadata(encrypted_file: str, verbose: bool = False) -> 
                 8192
             )  # Read enough for header with embedded key - increased to 8KB for large PQC keys
 
+        # Peel a hidden ("whitened") file (keyless) before parsing the header.
+        from .hidden_header import is_hidden_format, to_legacy_bytes
+
+        if is_hidden_format(header_data):
+            with open(encrypted_file, "rb") as f:
+                header_data = to_legacy_bytes(f.read())
+
         # Try to detect if there's an embedded private key
         try:
             parts = header_data.split(b":", 1)
@@ -367,6 +382,13 @@ def get_pqc_key_for_decryption(args, hash_config=None, metadata=None):
                 # Read the file to extract the embedded private key
                 with open(args.input, "rb") as f:
                     file_data = f.read(8192)  # Read enough to get the embedded key
+
+                # Peel a hidden ("whitened") file (keyless) first.
+                from .hidden_header import is_hidden_format, to_legacy_bytes
+
+                if is_hidden_format(file_data):
+                    with open(args.input, "rb") as f:
+                        file_data = to_legacy_bytes(f.read())
 
                 parts = file_data.split(b":", 1)
                 if len(parts) > 1:

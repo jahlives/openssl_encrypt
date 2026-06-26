@@ -120,6 +120,11 @@ class FileVerifier:
         try:
             with open(self.input_file, "rb") as f:
                 self._file_content = f.read()
+            # Transparently peel a hidden ("whitened") file to legacy-equivalent
+            # bytes so the structural checks below work unchanged (keyless).
+            from .hidden_header import to_legacy_bytes
+
+            self._file_content = to_legacy_bytes(self._file_content)
         except OSError as e:
             return self._add_result(
                 "file_readable",

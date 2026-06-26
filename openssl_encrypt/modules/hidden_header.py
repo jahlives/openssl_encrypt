@@ -647,3 +647,39 @@ def is_hidden_format(data: Union[bytes, bytearray, memoryview]) -> bool:
     if len(data) < HEADER_OFFSET + AUTH_LEN:
         return False
     return not looks_like_legacy(data)
+
+
+def to_legacy_bytes(
+    data: Union[bytes, bytearray, memoryview],
+    second_password: Optional[Union[bytes, bytearray, memoryview]] = None,
+    *,
+    profile: KeyedProfile = PRODUCTION_KEYED_PROFILE,
+) -> bytes:
+    """Return legacy ``base64(meta):base64(body)`` bytes for any input.
+
+    A shim for format-parsing call sites so they transparently handle hidden
+    files: if ``data`` is a hidden file that can be peeled (keyless always;
+    keyed with the right ``second_password``), the reconstructed legacy bytes
+    are returned. Otherwise ``data`` is returned unchanged -- legacy files pass
+    through, and a keyed file without the password (which cannot and must not be
+    peeled) reads as "not our format" by the caller.
+
+    Args:
+        data: File bytes (whole file).
+        second_password: Optional second password for keyed hidden files.
+        profile: Keyed-mode cost parameters (defaults to production).
+
+    Returns:
+        Reconstructed legacy bytes, or ``data`` unchanged.
+    """
+    if not isinstance(data, _BytesLike):
+        raise ValidationError(f"data must be bytes-like, got {type(data).__name__}")
+    data = bytes(data)
+    if not is_hidden_format(data):
+        return data
+    try:
+        header, body = unwrap_hidden(data, second_password=second_password, profile=profile)
+    except (AuthenticationError, ValidationError):
+        # Cannot peel (e.g. keyed file without the password) -> leave unchanged.
+        return data
+    return base64.b64encode(header) + b":" + base64.b64encode(body)

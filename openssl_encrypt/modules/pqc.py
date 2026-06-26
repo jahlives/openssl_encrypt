@@ -818,7 +818,10 @@ class PQCipher:
                         import json
 
                         # Common metadata extraction pattern for our file format
-                        parts = file_contents.split(b":", 1)
+                        # (peel a hidden/whitened file to legacy-equivalent bytes first)
+                        from .hidden_header import to_legacy_bytes
+
+                        parts = to_legacy_bytes(file_contents).split(b":", 1)
                         if len(parts) > 1 and len(parts[0]) > 0:
                             try:
                                 metadata_json = base64.b64decode(parts[0]).decode("utf-8")

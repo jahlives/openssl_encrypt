@@ -9,7 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Hidden ("whitened") file format** (`--hidden-header`, opt-in): wraps the
+- **Hidden ("whitened") file format** (**now the DEFAULT output on 1.5.x**; opt
+  out with `--legacy-format`): wraps the
   encrypted output in an outer layer so the whole file is indistinguishable
   from random bytes, hiding the identifiable `base64(metadata):base64(body)`
   header that otherwise fingerprints a file as ours and leaks the derivation
@@ -34,9 +35,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     is deliberately tagless (no free "this is our file" oracle).
   Supported on the symmetric, keystore-wrapped, and asymmetric (PQC) paths,
   for both buffered and streaming files. Decryption auto-detects legacy vs
-  hidden (no magic bytes); `--legacy-format` forces the legacy path. **Purely
-  additive and backward-compatible**: without `--hidden-header` the output is
-  byte-for-byte the legacy format. The outer KDF profile is fixed and pinned to
+  hidden (no magic bytes); `--legacy-format` forces the legacy path. On 1.5.x
+  new CLI encryptions default to keyless-hidden (the `encrypt_file` library API
+  still defaults to legacy); the 1.4.x line keeps the legacy default and offers
+  the hidden format only via `--hidden-header` (flipping a stable line's default
+  would break older readers). The outer KDF profile is fixed and pinned to
   a version (it cannot be stored without re-leaking the fingerprint). See
   `docs/HIDDEN_HEADER.md`.
 

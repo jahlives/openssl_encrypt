@@ -141,6 +141,11 @@ def encrypt_file_with_keystore(
             with open(output_file, "rb") as f:
                 content = f.read()
 
+            # Peel a hidden ("whitened") file (keyless) to legacy-equivalent bytes.
+            from .hidden_header import to_legacy_bytes
+
+            content = to_legacy_bytes(content)
+
             # Find the colon separator
             colon_pos = content.find(b":")
             if colon_pos > 0:
@@ -201,7 +206,16 @@ def encrypt_file_with_keystore(
     if key_id is not None:
         # Open the encrypted file and check metadata
         with open(output_file, "rb") as f:
-            content = f.read(32768)  # Read enough for the header - sized for large PQC keys (HQC-256)
+            content = f.read(
+                32768
+            )  # Read enough for the header - sized for large PQC keys (HQC-256)
+
+        # Peel a hidden ("whitened") file (keyless) before locating the separator.
+        from .hidden_header import is_hidden_format, to_legacy_bytes
+
+        if is_hidden_format(content):
+            with open(output_file, "rb") as f:
+                content = to_legacy_bytes(f.read())
 
         # Find the colon separator
         colon_pos = content.find(b":")
@@ -316,9 +330,7 @@ def encrypt_file_with_keystore(
                         else:
                             # Safe to rewrite — no AEAD binding on this file
                             new_metadata_json = json.dumps(metadata)
-                            new_metadata_b64 = base64.b64encode(
-                                new_metadata_json.encode("utf-8")
-                            )
+                            new_metadata_b64 = base64.b64encode(new_metadata_json.encode("utf-8"))
 
                             # Rewrite the file with updated metadata
                             with open(output_file, "rb") as f:
@@ -330,9 +342,7 @@ def encrypt_file_with_keystore(
 
                             if not quiet:
                                 if dual_encryption:
-                                    eprint(
-                                        "Updated metadata with key ID and dual encryption flag"
-                                    )
+                                    eprint("Updated metadata with key ID and dual encryption flag")
                                 else:
                                     eprint("Updated metadata with key ID")
                 except json.JSONDecodeError:
@@ -390,6 +400,13 @@ def decrypt_file_with_keystore(
         with open(input_file, "rb") as f:
             content = f.read(32768)  # Read enough for the header - sized for large PQC keys
 
+        # Peel a hidden ("whitened") file (keyless) before locating the separator.
+        from .hidden_header import is_hidden_format, to_legacy_bytes
+
+        if is_hidden_format(content):
+            with open(input_file, "rb") as f:
+                content = to_legacy_bytes(f.read())
+
         # Find the colon separator
         colon_pos = content.find(b":")
         if colon_pos > 0:
@@ -436,6 +453,12 @@ def decrypt_file_with_keystore(
             try:
                 with open(input_file, "rb") as f:
                     content = f.read(32768)  # Read enough for the header - sized for large PQC keys
+
+                from .hidden_header import is_hidden_format, to_legacy_bytes
+
+                if is_hidden_format(content):
+                    with open(input_file, "rb") as f:
+                        content = to_legacy_bytes(f.read())
 
                 # Find the colon separator
                 colon_pos = content.find(b":")
@@ -487,6 +510,12 @@ def decrypt_file_with_keystore(
             if not "metadata" in locals() or metadata is None:
                 with open(input_file, "rb") as f:
                     content = f.read(32768)  # Read enough for the header - sized for large PQC keys
+
+                from .hidden_header import is_hidden_format, to_legacy_bytes
+
+                if is_hidden_format(content):
+                    with open(input_file, "rb") as f:
+                        content = to_legacy_bytes(f.read())
 
                 # Find the colon separator
                 colon_pos = content.find(b":")
@@ -637,6 +666,7 @@ def decrypt_file_with_keystore(
         import getpass
 
         from .keystore_cli import KeyNotFoundError, PQCKeystore
+
         # Check if keystore file exists
         if not os.path.exists(keystore_file):
             if not quiet:

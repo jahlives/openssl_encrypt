@@ -7313,7 +7313,13 @@ def extract_file_metadata(input_file):
         ValueError: If file format is invalid
     """
     try:
-        metadata_b64, _ = _read_metadata_only(input_file, secure_mode=False)
+        # Transparently peel a hidden ("whitened") file's header (keyless;
+        # keyed metadata is confidential without the second password).
+        _hidden = _maybe_peel_hidden(input_file, False, None, None)
+        if _hidden is not None:
+            metadata_b64, _ = _hidden
+        else:
+            metadata_b64, _ = _read_metadata_only(input_file, secure_mode=False)
         # MED-8 Security fix: Use secure JSON validation for metadata parsing
         metadata_json = base64.b64decode(metadata_b64).decode("utf-8")
         try:

@@ -147,7 +147,7 @@ class TestInstallableSubset(unittest.TestCase):
         )
 
     def test_shipped_allowlist_installable_subset(self) -> None:
-        """The shipped allowlist yields the installable .py files only (49 on 1.5.x)."""
+        """The shipped allowlist yields the installable .py files only (50 on 1.5.x)."""
         from openssl_encrypt.integrity.allowlist import (
             default_allowlist_path,
             filter_installable,
@@ -155,7 +155,7 @@ class TestInstallableSubset(unittest.TestCase):
         )
 
         inst = filter_installable(load_allowlist(default_allowlist_path()))
-        self.assertEqual(len(inst), 49)
+        self.assertEqual(len(inst), 50)
         self.assertTrue(all(e.startswith("openssl_encrypt/") for e in inst))
         self.assertNotIn("requirements.txt", inst)
         self.assertFalse(any(e.startswith("threefish_native/") for e in inst))
@@ -342,15 +342,30 @@ def _make_ephemeral_key(gpg: str, home: Path) -> tuple:
     env = {"GNUPGHOME": str(home), "PATH": os.environ.get("PATH", "")}
     subprocess.run(
         [
-            gpg, "--homedir", str(home), "--batch", "--pinentry-mode", "loopback",
-            "--passphrase", "", "--quick-generate-key",
-            "Integrity Test <test@example.invalid>", "ed25519", "sign", "0",
+            gpg,
+            "--homedir",
+            str(home),
+            "--batch",
+            "--pinentry-mode",
+            "loopback",
+            "--passphrase",
+            "",
+            "--quick-generate-key",
+            "Integrity Test <test@example.invalid>",
+            "ed25519",
+            "sign",
+            "0",
         ],
-        check=True, capture_output=True, env=env,
+        check=True,
+        capture_output=True,
+        env=env,
     )
     listing = subprocess.run(
         [gpg, "--homedir", str(home), "--batch", "--with-colons", "--list-keys"],
-        check=True, capture_output=True, env=env, text=True,
+        check=True,
+        capture_output=True,
+        env=env,
+        text=True,
     ).stdout
     fpr = ""
     for line in listing.splitlines():
@@ -359,7 +374,9 @@ def _make_ephemeral_key(gpg: str, home: Path) -> tuple:
             break
     pub = subprocess.run(
         [gpg, "--homedir", str(home), "--batch", "--armor", "--export", fpr],
-        check=True, capture_output=True, env=env,
+        check=True,
+        capture_output=True,
+        env=env,
     ).stdout
     return fpr, pub
 
@@ -412,9 +429,7 @@ class TestGpgRunner(unittest.TestCase):
         from openssl_encrypt.integrity.gpg_runner import detached_sign, verify_detached
 
         sig = detached_sign(self.data, self.fpr, home=self.home)
-        result = verify_detached(
-            self.data, sig, public_key=self.pub, expected_fingerprint="0" * 40
-        )
+        result = verify_detached(self.data, sig, public_key=self.pub, expected_fingerprint="0" * 40)
         self.assertFalse(result.good)
 
     def test_missing_gpg_binary_raises_unavailable(self) -> None:
@@ -559,9 +574,7 @@ class TestSyncAllManifests(unittest.TestCase):
             src_files,
             {"openssl_encrypt/cli.py", "openssl_encrypt/modules/m.py", "requirements.txt"},
         )
-        self.assertEqual(
-            inst_files, {"openssl_encrypt/cli.py", "openssl_encrypt/modules/m.py"}
-        )
+        self.assertEqual(inst_files, {"openssl_encrypt/cli.py", "openssl_encrypt/modules/m.py"})
 
     def test_idempotent(self) -> None:
         """A second run with no changes rewrites nothing."""
@@ -761,11 +774,15 @@ class TestUpdateManifest(unittest.TestCase):
         from openssl_encrypt.integrity.update_manifest import generate_manifest
 
         b1 = generate_manifest(
-            self.root, allowlist_path=self.allowlist, key_fingerprint=self.fpr,
+            self.root,
+            allowlist_path=self.allowlist,
+            key_fingerprint=self.fpr,
             manifest_path=self.manifest_path,
         )
         b2 = generate_manifest(
-            self.root, allowlist_path=self.allowlist, key_fingerprint=self.fpr,
+            self.root,
+            allowlist_path=self.allowlist,
+            key_fingerprint=self.fpr,
             manifest_path=self.manifest_path,
         )
         self.assertEqual(b1, b2)
@@ -776,9 +793,13 @@ class TestUpdateManifest(unittest.TestCase):
         from openssl_encrypt.integrity.update_manifest import generate_manifest
 
         blob = generate_manifest(
-            self.root, allowlist_path=self.allowlist, key_fingerprint=self.fpr,
-            manifest_path=self.manifest_path, signature_path=self.sig_path,
-            sign=True, home=self.home,
+            self.root,
+            allowlist_path=self.allowlist,
+            key_fingerprint=self.fpr,
+            manifest_path=self.manifest_path,
+            signature_path=self.sig_path,
+            sign=True,
+            home=self.home,
         )
         result = verify_detached(blob, self.sig_path.read_bytes(), public_key=self.pub)
         self.assertTrue(result.good)
@@ -788,7 +809,9 @@ class TestUpdateManifest(unittest.TestCase):
         from openssl_encrypt.integrity.update_manifest import check_manifest, generate_manifest
 
         generate_manifest(
-            self.root, allowlist_path=self.allowlist, key_fingerprint=self.fpr,
+            self.root,
+            allowlist_path=self.allowlist,
+            key_fingerprint=self.fpr,
             manifest_path=self.manifest_path,
         )
         self.assertTrue(
@@ -805,13 +828,16 @@ class TestUpdateManifest(unittest.TestCase):
         from openssl_encrypt.integrity.update_manifest import check_manifest, generate_manifest
 
         generate_manifest(
-            self.root, allowlist_path=self.allowlist, key_fingerprint=self.fpr,
+            self.root,
+            allowlist_path=self.allowlist,
+            key_fingerprint=self.fpr,
             manifest_path=self.manifest_path,
         )
         (self.root / "pkg" / "a.py").write_text("alpha-changed\n", encoding="utf-8")
         self.assertFalse(
-            check_manifest(self.root, allowlist_path=self.allowlist,
-                           manifest_path=self.manifest_path)
+            check_manifest(
+                self.root, allowlist_path=self.allowlist, manifest_path=self.manifest_path
+            )
         )
 
     def test_sync_is_idempotent_no_resign(self) -> None:
@@ -819,16 +845,24 @@ class TestUpdateManifest(unittest.TestCase):
         from openssl_encrypt.integrity.update_manifest import sync_manifest
 
         changed1 = sync_manifest(
-            self.root, allowlist_path=self.allowlist, key_fingerprint=self.fpr,
-            manifest_path=self.manifest_path, signature_path=self.sig_path,
-            sign=True, home=self.home,
+            self.root,
+            allowlist_path=self.allowlist,
+            key_fingerprint=self.fpr,
+            manifest_path=self.manifest_path,
+            signature_path=self.sig_path,
+            sign=True,
+            home=self.home,
         )
         self.assertTrue(changed1)
         sig_before = self.sig_path.read_bytes()
         changed2 = sync_manifest(
-            self.root, allowlist_path=self.allowlist, key_fingerprint=self.fpr,
-            manifest_path=self.manifest_path, signature_path=self.sig_path,
-            sign=True, home=self.home,
+            self.root,
+            allowlist_path=self.allowlist,
+            key_fingerprint=self.fpr,
+            manifest_path=self.manifest_path,
+            signature_path=self.sig_path,
+            sign=True,
+            home=self.home,
         )
         self.assertFalse(changed2)
         self.assertEqual(self.sig_path.read_bytes(), sig_before)
@@ -838,15 +872,23 @@ class TestUpdateManifest(unittest.TestCase):
         from openssl_encrypt.integrity.update_manifest import sync_manifest
 
         sync_manifest(
-            self.root, allowlist_path=self.allowlist, key_fingerprint=self.fpr,
-            manifest_path=self.manifest_path, signature_path=self.sig_path,
-            sign=True, home=self.home,
+            self.root,
+            allowlist_path=self.allowlist,
+            key_fingerprint=self.fpr,
+            manifest_path=self.manifest_path,
+            signature_path=self.sig_path,
+            sign=True,
+            home=self.home,
         )
         (self.root / "pkg" / "a.py").write_text("alpha-v2\n", encoding="utf-8")
         changed = sync_manifest(
-            self.root, allowlist_path=self.allowlist, key_fingerprint=self.fpr,
-            manifest_path=self.manifest_path, signature_path=self.sig_path,
-            sign=True, home=self.home,
+            self.root,
+            allowlist_path=self.allowlist,
+            key_fingerprint=self.fpr,
+            manifest_path=self.manifest_path,
+            signature_path=self.sig_path,
+            sign=True,
+            home=self.home,
         )
         self.assertTrue(changed)
 
@@ -855,8 +897,9 @@ class TestUpdateManifest(unittest.TestCase):
         from openssl_encrypt.integrity.update_manifest import check_manifest
 
         self.assertFalse(
-            check_manifest(self.root, allowlist_path=self.allowlist,
-                           manifest_path=self.manifest_path)
+            check_manifest(
+                self.root, allowlist_path=self.allowlist, manifest_path=self.manifest_path
+            )
         )
 
     def test_check_passes_with_valid_signature(self) -> None:

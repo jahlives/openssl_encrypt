@@ -101,8 +101,18 @@ class TestHiddenHeaderCLI(unittest.TestCase):
         p = self._decrypt("--second-password", "wrong-pw")
         self.assertNotEqual(p.returncode, 0)
 
-    def test_legacy_default_round_trip(self):
-        self._encrypt()  # no hidden flag -> legacy format (current default)
+    def test_default_is_hidden_round_trip(self):
+        # 1.5.x: hidden (keyless) is the DEFAULT output with no flags.
+        self._encrypt()
+        self.assertTrue(_is_hidden(self.enc))
+        p = self._decrypt()
+        self.assertEqual(p.returncode, 0, msg=p.stderr.decode(errors="replace"))
+        with open(self.dec, "rb") as f:
+            self.assertEqual(f.read(), PLAINTEXT)
+
+    def test_legacy_format_optout_round_trip(self):
+        # --legacy-format opts back into the legacy base64 format.
+        self._encrypt("--legacy-format")
         self.assertFalse(_is_hidden(self.enc))
         p = self._decrypt()
         self.assertEqual(p.returncode, 0, msg=p.stderr.decode(errors="replace"))

@@ -102,9 +102,14 @@ Second-password sources, in priority order: `--second-password-fd FD`,
   both buffered and streaming files.
 * Decryption from non-seekable input (stdin / `/dev/*` / `/proc/*`) currently
   keeps legacy behavior; hidden detection applies to regular files.
-* Tools that parse the raw file format directly (e.g. `info`-style inspection,
-  the desktop GUI/mobile apps) are being updated to route hidden files through
-  the same peel step; until then, prefer the CLI `decrypt` path for hidden
-  files.
-* Keyless mode is the *default* only when `--hidden-header` is supplied without
-  a second password; the global default output format remains legacy for now.
+* Format-parsing call sites (`info`/`extract_file_metadata`, `verify`, the
+  keystore and PQC helpers, CLI type-detection) route hidden files through a
+  shared peel step, so they work transparently on keyless-hidden files. Keyed
+  files still require the second password to inspect. The desktop GUI/mobile
+  apps are library callers and are not yet updated with hidden-format UI.
+* **Default behavior differs by line.** On **1.5.x**, new CLI encryptions
+  default to **keyless-hidden** (opt out with `--legacy-format`); the
+  `encrypt_file` library API still defaults to legacy. On **1.4.x**, the default
+  stays **legacy** and the hidden format is `--hidden-header`-only — flipping a
+  stable patch line's default would make files unreadable by older 1.4.x
+  releases.

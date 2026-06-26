@@ -139,6 +139,14 @@ def detect_encryption_type(input_file: str) -> dict:
         with open(input_file, "rb") as f:
             content = f.read()
 
+        # Transparently peel a hidden ("whitened") file to its legacy-equivalent
+        # bytes so the format/version detection below works unchanged. Keyless
+        # files peel without a password; keyed files without the password fall
+        # through to the symmetric default and are handled by decrypt_file.
+        from .hidden_header import to_legacy_bytes
+
+        content = to_legacy_bytes(content)
+
         metadata = None
 
         # Try new format: base64(metadata):base64(data)
@@ -2436,11 +2444,14 @@ def _resolve_second_password(args):
 
 
 def _hidden_for_encrypt(args, second_password):
-    """Decide encrypt-time hidden mode: legacy override wins, else hidden if the
-    flag is set or a second password was provided."""
-    if getattr(args, "legacy_format", False):
-        return False
-    return bool(getattr(args, "hidden_header", False) or second_password is not None)
+    """Decide encrypt-time hidden mode.
+
+    On the 1.5.x line the hidden ("whitened") format is the DEFAULT output:
+    every new file is hidden unless the user opts out with --legacy-format.
+    A second password additionally selects keyed mode (vs keyless). This is a
+    CLI-level default; the encrypt_file library API still defaults to legacy.
+    """
+    return not getattr(args, "legacy_format", False)
 
 
 def _hidden_for_decrypt(args):
