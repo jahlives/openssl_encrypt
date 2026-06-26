@@ -29,7 +29,9 @@ Security notes:
   callers should treat the returned key as sensitive and zeroize it.
 """
 
+import base64
 import hashlib
+import re
 import secrets
 from dataclasses import dataclass
 from typing import Optional, Tuple, Union
@@ -490,3 +492,80 @@ def unwrap_hidden(
     finally:
         secure_memzero(bytearray(stream_key))
         secure_memzero(bytearray(len_key))
+
+
+# ---------------------------------------------------------------------------
+# Format detection
+#
+# The hidden format has no magic bytes (that would be a fingerprint), so
+# detection works by recognizing the *legacy* structure and treating anything
+# else of sufficient length as hidden. Legacy files are
+# ``base64(metadata_json) ":" base64(body)``: the bytes before the first colon
+# are pure base64 (the alphabet excludes ":") and decode to a JSON object.
+# Random/whitened bytes match this with negligible probability.
+#
+# Misdetection is non-destructive: a mis-routed file fails to decrypt and the
+# user can override with an explicit flag.
+# ---------------------------------------------------------------------------
+
+_B64_PREFIX_RE = re.compile(rb"^[A-Za-z0-9+/]+={0,2}$")
+
+
+def looks_like_legacy(data: Union[bytes, bytearray, memoryview]) -> bool:
+    """Return True if ``data`` looks like a legacy ``base64(meta):...`` file.
+
+    The caller should pass enough of the file to contain the metadata-ending
+    colon (the whole file for buffered reads, or a generous header read for
+    streaming). If the colon is not present in ``data``, the file is not
+    recognized as legacy.
+
+    Args:
+        data: File bytes (or a prefix) to classify.
+
+    Returns:
+        True if the prefix before the first colon is base64 that decodes to a
+        JSON object, else False.
+
+    Raises:
+        ValidationError: If ``data`` is not bytes-like.
+    """
+    if not isinstance(data, _BytesLike):
+        raise ValidationError(f"data must be bytes-like, got {type(data).__name__}")
+    data = bytes(data)
+
+    colon = data.find(b":")
+    if colon <= 0:
+        return False
+    candidate = data[:colon]
+    # Legacy base64 metadata has no embedded colon and is a multiple of 4.
+    if len(candidate) % 4 != 0 or not _B64_PREFIX_RE.match(candidate):
+        return False
+    try:
+        decoded = base64.b64decode(candidate, validate=True)
+    except Exception:  # binascii.Error / ValueError on malformed base64
+        return False
+    # Metadata is a JSON object; a real legacy header starts with "{".
+    return decoded[:1] == b"{"
+
+
+def is_hidden_format(data: Union[bytes, bytearray, memoryview]) -> bool:
+    """Return True if ``data`` should be decrypted as a hidden-format file.
+
+    A file is treated as hidden when it is long enough to be a valid hidden
+    container and does not look like a legacy file.
+
+    Args:
+        data: File bytes (or a prefix) to classify.
+
+    Returns:
+        True for hidden-format files, False for legacy or too-short input.
+
+    Raises:
+        ValidationError: If ``data`` is not bytes-like.
+    """
+    if not isinstance(data, _BytesLike):
+        raise ValidationError(f"data must be bytes-like, got {type(data).__name__}")
+    data = bytes(data)
+    if len(data) < HEADER_OFFSET + AUTH_LEN:
+        return False
+    return not looks_like_legacy(data)
