@@ -4521,6 +4521,8 @@ def decrypt_file_asymmetric(
     quiet: bool = False,
     progress: bool = False,
     verbose: bool = False,
+    second_password=None,
+    hidden_header=None,
 ):
     """
     Decrypt a file asymmetrically encrypted with Format V7.
@@ -4575,13 +4577,27 @@ def decrypt_file_asymmetric(
     with open(input_file, "rb") as f:
         content = f.read()
 
-    # Parse format: base64(metadata):base64(encrypted_data)
-    if b":" not in content:
-        raise ValueError("Invalid encrypted file format - missing colon separator")
+    # Detect and peel the hidden ("whitened") format. Auto-detect unless the
+    # caller forces it on/off. Peeling reconstructs the legacy base64 pieces the
+    # rest of this function already expects.
+    from .hidden_header import is_hidden_format, unwrap_hidden
 
-    colon_pos = content.index(b":")
-    metadata_b64 = content[:colon_pos]
-    encrypted_data_b64 = content[colon_pos + 1 :]
+    _is_hidden = hidden_header if hidden_header is not None else is_hidden_format(content)
+    if hidden_header is not False and _is_hidden:
+        _second_pw = (
+            second_password.encode("utf-8") if isinstance(second_password, str) else second_password
+        )
+        header_bytes, raw_body = unwrap_hidden(content, second_password=_second_pw)
+        metadata_b64 = base64.b64encode(header_bytes)
+        encrypted_data_b64 = base64.b64encode(raw_body)
+    else:
+        # Parse format: base64(metadata):base64(encrypted_data)
+        if b":" not in content:
+            raise ValueError("Invalid encrypted file format - missing colon separator")
+
+        colon_pos = content.index(b":")
+        metadata_b64 = content[:colon_pos]
+        encrypted_data_b64 = content[colon_pos + 1 :]
 
     try:
         metadata_json = base64.b64decode(metadata_b64)
@@ -4790,6 +4806,8 @@ def encrypt_file_asymmetric(
     quiet: bool = False,
     progress: bool = False,
     verbose: bool = False,
+    hidden_header: bool = False,
+    second_password=None,
 ):
     """
     Encrypt a file asymmetrically for one or more recipients.
@@ -5006,7 +5024,26 @@ def encrypt_file_asymmetric(
             encrypted_data_b64 = base64.b64encode(nonce + ciphertext)
 
             with open(output_file, "wb") as f:
-                f.write(metadata_b64 + b":" + encrypted_data_b64)
+                if hidden_header:
+                    # Hidden ("whitened") format: wrap the raw metadata header and
+                    # the raw body so the file is indistinguishable from random.
+                    from .hidden_header import wrap_hidden
+
+                    _second_pw = (
+                        second_password.encode("utf-8")
+                        if isinstance(second_password, str)
+                        else second_password
+                    )
+                    f.write(
+                        wrap_hidden(
+                            metadata_json.encode("utf-8"),
+                            nonce + ciphertext,
+                            salt,
+                            second_password=_second_pw,
+                        )
+                    )
+                else:
+                    f.write(metadata_b64 + b":" + encrypted_data_b64)
 
             if not quiet:
                 eprint(f"File encrypted successfully: {output_file} ✅")
