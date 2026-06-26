@@ -2338,7 +2338,9 @@ def _handle_template_analyze(template_mgr: TemplateManager, args):
                 priority_icon = (
                     "🚨"
                     if rec["priority"] == "critical"
-                    else "⚠️" if rec["priority"] == "high" else "💡"
+                    else "⚠️"
+                    if rec["priority"] == "high"
+                    else "💡"
                 )
                 eprint(f"   {i}. {priority_icon} {rec['title']}")
                 eprint(f"      {rec['description']}")
@@ -3541,6 +3543,46 @@ def _validate_generate_password_args(
         )
 
 
+def _resolve_second_password(args):
+    """Resolve the optional second password (keyed hidden mode) to bytes or None.
+
+    Priority: ``--second-password-fd`` > ``--second-password`` >
+    ``--second-password-prompt``. Returns ``None`` when none is supplied (the
+    keyless / non-hidden case). The trailing newline from fd/prompt sources is
+    stripped, mirroring the primary-password handling.
+    """
+    fd = getattr(args, "second_password_fd", None)
+    if fd is not None:
+        with os.fdopen(os.dup(fd), "rb") as f:
+            return f.read().split(b"\n", 1)[0]
+    val = getattr(args, "second_password", None)
+    if val:
+        return val.encode("utf-8")
+    if getattr(args, "second_password_prompt", False):
+        import getpass
+
+        return getpass.getpass("Enter second password (hidden keyed mode): ").encode("utf-8")
+    return None
+
+
+def _hidden_for_encrypt(args, second_password):
+    """Decide encrypt-time hidden mode: legacy override wins, else hidden if the
+    flag is set or a second password was provided."""
+    if getattr(args, "legacy_format", False):
+        return False
+    return bool(getattr(args, "hidden_header", False) or second_password is not None)
+
+
+def _hidden_for_decrypt(args):
+    """Decide decrypt-time hidden handling as a tri-state: True (force), False
+    (force legacy), or None (auto-detect)."""
+    if getattr(args, "hidden_header", False):
+        return True
+    if getattr(args, "legacy_format", False):
+        return False
+    return None
+
+
 def main_with_args(args=None):
     """Main logic with pre-parsed arguments (or None to parse from command line)"""
     # Original main function continues below...
@@ -4608,11 +4650,21 @@ def main_with_args(args=None):
         "chunk_size": None,
         "no_streaming": False,
         "streaming_threshold": None,
+        # Hidden-header (whitened format) defaults
+        "hidden_header": False,
+        "legacy_format": False,
+        "second_password": None,
+        "second_password_fd": None,
+        "second_password_prompt": False,
     }
 
     for attr, default_val in default_attrs.items():
         if not hasattr(args, attr):
             setattr(args, attr, default_val)
+
+    # Resolve the optional second password (hidden keyed mode) exactly once, so
+    # an interactive prompt is shown at most a single time per invocation.
+    _hidden_second_password = _resolve_second_password(args)
 
     # Store the original user-provided algorithm name from command line
     import sys
@@ -6215,9 +6267,9 @@ def main_with_args(args=None):
                                             policy_params["check_common_passwords"] = False
 
                                         if args.custom_password_list:
-                                            policy_params["common_passwords_path"] = (
-                                                args.custom_password_list
-                                            )
+                                            policy_params[
+                                                "common_passwords_path"
+                                            ] = args.custom_password_list
 
                                         # Create policy and validate password
                                         policy = PasswordPolicy(
@@ -7237,6 +7289,8 @@ def main_with_args(args=None):
                         quiet=args.quiet,
                         progress=args.progress,
                         verbose=args.verbose,
+                        hidden_header=_hidden_for_encrypt(args, _hidden_second_password),
+                        second_password=_hidden_second_password,
                     )
 
                     # Handle temp file if overwrite mode
@@ -7779,6 +7833,8 @@ def main_with_args(args=None):
                             verbose=args.verbose,
                             pqc_store_private_key=args.pqc_store_key,
                             pqc_dual_encryption=getattr(args, "pqc_dual_encrypt_key", False),
+                            hidden_header=_hidden_for_encrypt(args, _hidden_second_password),
+                            second_password=_hidden_second_password,
                         )
                     else:
                         # Handle cascade encryption parameters
@@ -7979,6 +8035,8 @@ def main_with_args(args=None):
                             no_streaming=getattr(args, "no_streaming", False),
                             streaming_threshold=_streaming_threshold,
                             envelope=getattr(args, "envelope", False),
+                            hidden_header=_hidden_for_encrypt(args, _hidden_second_password),
+                            second_password=_hidden_second_password,
                         )
 
                     if success:
@@ -8253,6 +8311,8 @@ def main_with_args(args=None):
                     no_streaming=getattr(args, "no_streaming", False),
                     streaming_threshold=_streaming_threshold,
                     envelope=getattr(args, "envelope", False),
+                    hidden_header=_hidden_for_encrypt(args, _hidden_second_password),
+                    second_password=_hidden_second_password,
                 )
 
                 if success:
@@ -8713,6 +8773,8 @@ def main_with_args(args=None):
                         progress=args.progress,
                         verbose=args.verbose,
                         pqc_store_private_key=args.pqc_store_key,
+                        hidden_header=_hidden_for_encrypt(args, _hidden_second_password),
+                        second_password=_hidden_second_password,
                     )
                 else:
                     # Handle cascade encryption parameters
@@ -8908,6 +8970,8 @@ def main_with_args(args=None):
                         no_streaming=getattr(args, "no_streaming", False),
                         streaming_threshold=_streaming_threshold,
                         envelope=getattr(args, "envelope", False),
+                        hidden_header=_hidden_for_encrypt(args, _hidden_second_password),
+                        second_password=_hidden_second_password,
                     )
 
                 # Handle steganography if requested
@@ -9220,6 +9284,8 @@ def main_with_args(args=None):
                                         quiet=args.quiet,
                                         progress=args.progress,
                                         verbose=args.verbose,
+                                        hidden_header=_hidden_for_decrypt(args),
+                                        second_password=_hidden_second_password,
                                     )
 
                                     try:
@@ -9406,6 +9472,8 @@ def main_with_args(args=None):
                                     quiet=args.quiet,
                                     progress=args.progress,
                                     verbose=args.verbose,
+                                    hidden_header=_hidden_for_decrypt(args),
+                                    second_password=_hidden_second_password,
                                 )
 
                                 # Handle temp file if overwrite mode
@@ -9783,6 +9851,8 @@ def main_with_args(args=None):
                             dual_encryption=getattr(args, "dual_encrypt_key", False),
                             progress=args.progress,
                             verbose=args.verbose,
+                            hidden_header=_hidden_for_decrypt(args),
+                            second_password=_hidden_second_password,
                         )
                     else:
                         # Use standard decryption
@@ -9803,6 +9873,8 @@ def main_with_args(args=None):
                             verify_integrity=getattr(args, "verify_integrity", False),
                             parallel_kdf=getattr(args, "parallel_kdf", False),
                             kdf_workers=getattr(args, "kdf_workers", None),
+                            hidden_header=_hidden_for_decrypt(args),
+                            second_password=_hidden_second_password,
                         )
                     if success:
                         # Apply the original permissions to the temp file
@@ -10010,6 +10082,8 @@ def main_with_args(args=None):
                         dual_encryption=getattr(args, "dual_encrypt_key", False),
                         progress=args.progress,
                         verbose=args.verbose,
+                        hidden_header=_hidden_for_decrypt(args),
+                        second_password=_hidden_second_password,
                     )
                 else:
                     # Use standard decryption
@@ -10028,6 +10102,8 @@ def main_with_args(args=None):
                         hsm_slot=getattr(args, "hsm_slot", None),
                         no_estimate=getattr(args, "no_estimate", False),
                         verify_integrity=getattr(args, "verify_integrity", False),
+                        hidden_header=_hidden_for_decrypt(args),
+                        second_password=_hidden_second_password,
                     )
                 if success:
                     # Security audit log for successful decryption
@@ -10181,6 +10257,8 @@ def main_with_args(args=None):
                         dual_encryption=getattr(args, "dual_encrypt_key", False),
                         progress=args.progress,
                         verbose=args.verbose,
+                        hidden_header=_hidden_for_decrypt(args),
+                        second_password=_hidden_second_password,
                     )
                 else:
                     # Use standard decryption
@@ -10199,6 +10277,8 @@ def main_with_args(args=None):
                         hsm_slot=getattr(args, "hsm_slot", None),
                         no_estimate=getattr(args, "no_estimate", False),
                         verify_integrity=getattr(args, "verify_integrity", False),
+                        hidden_header=_hidden_for_decrypt(args),
+                        second_password=_hidden_second_password,
                     )
                 try:
                     # Try to decode as text

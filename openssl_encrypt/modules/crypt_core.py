@@ -20,6 +20,7 @@ import json
 import logging
 import math
 import os
+import re
 import secrets
 import stat
 import sys
@@ -405,9 +406,7 @@ class XChaCha20Poly1305:
         if self.nonce_format == 2:
             from .xchacha import xchacha20poly1305_encrypt
 
-            return xchacha20poly1305_encrypt(
-                self.key, bytes(nonce), bytes(data), associated_data
-            )
+            return xchacha20poly1305_encrypt(self.key, bytes(nonce), bytes(data), associated_data)
 
         truncated_nonce = self._process_nonce(nonce)
 
@@ -451,9 +450,7 @@ class XChaCha20Poly1305:
         if self.nonce_format == 2:
             from .xchacha import xchacha20poly1305_decrypt
 
-            return xchacha20poly1305_decrypt(
-                self.key, bytes(nonce), bytes(data), associated_data
-            )
+            return xchacha20poly1305_decrypt(self.key, bytes(nonce), bytes(data), associated_data)
 
         truncated_nonce = self._process_nonce(nonce)
 
@@ -5267,6 +5264,8 @@ def decrypt_file_asymmetric(
     quiet: bool = False,
     progress: bool = False,
     verbose: bool = False,
+    second_password=None,
+    hidden_header=None,
 ):
     """
     Decrypt a file asymmetrically encrypted with Format V7.
@@ -5321,13 +5320,27 @@ def decrypt_file_asymmetric(
     with open(input_file, "rb") as f:
         content = f.read()
 
-    # Parse format: base64(metadata):base64(encrypted_data)
-    if b":" not in content:
-        raise ValueError("Invalid encrypted file format - missing colon separator")
+    # Detect and peel the hidden ("whitened") format. Auto-detect unless the
+    # caller forces it on/off. Peeling reconstructs the legacy base64 pieces the
+    # rest of this function already expects.
+    from .hidden_header import is_hidden_format, unwrap_hidden
 
-    colon_pos = content.index(b":")
-    metadata_b64 = content[:colon_pos]
-    encrypted_data_b64 = content[colon_pos + 1 :]
+    _is_hidden = hidden_header if hidden_header is not None else is_hidden_format(content)
+    if hidden_header is not False and _is_hidden:
+        _second_pw = (
+            second_password.encode("utf-8") if isinstance(second_password, str) else second_password
+        )
+        header_bytes, raw_body = unwrap_hidden(content, second_password=_second_pw)
+        metadata_b64 = base64.b64encode(header_bytes)
+        encrypted_data_b64 = base64.b64encode(raw_body)
+    else:
+        # Parse format: base64(metadata):base64(encrypted_data)
+        if b":" not in content:
+            raise ValueError("Invalid encrypted file format - missing colon separator")
+
+        colon_pos = content.index(b":")
+        metadata_b64 = content[:colon_pos]
+        encrypted_data_b64 = content[colon_pos + 1 :]
 
     try:
         metadata_json = base64.b64decode(metadata_b64)
@@ -5538,6 +5551,8 @@ def encrypt_file_asymmetric(
     quiet: bool = False,
     progress: bool = False,
     verbose: bool = False,
+    hidden_header: bool = False,
+    second_password=None,
 ):
     """
     Encrypt a file asymmetrically for one or more recipients.
@@ -5772,7 +5787,26 @@ def encrypt_file_asymmetric(
             encrypted_data_b64 = base64.b64encode(nonce + ciphertext)
 
             with open(output_file, "wb") as f:
-                f.write(metadata_b64 + b":" + encrypted_data_b64)
+                if hidden_header:
+                    # Hidden ("whitened") format: wrap the raw metadata header and
+                    # the raw body so the file is indistinguishable from random.
+                    from .hidden_header import wrap_hidden
+
+                    _second_pw = (
+                        second_password.encode("utf-8")
+                        if isinstance(second_password, str)
+                        else second_password
+                    )
+                    f.write(
+                        wrap_hidden(
+                            metadata_json.encode("utf-8"),
+                            nonce + ciphertext,
+                            salt,
+                            second_password=_second_pw,
+                        )
+                    )
+                else:
+                    f.write(metadata_b64 + b":" + encrypted_data_b64)
 
             if not quiet:
                 eprint(f"File encrypted successfully: {output_file} ✅")
@@ -5987,6 +6021,8 @@ def encrypt_file(
     streaming_threshold=None,
     envelope=False,
     recovery_credentials=None,
+    hidden_header=False,
+    second_password=None,
 ):
     """
     Encrypt a file (or in-memory bytes) with a password using the specified algorithm.
@@ -6572,12 +6608,8 @@ def encrypt_file(
             if recovery_credentials:
                 from .recovery_slots import build_recovery_slots, compute_slot_set_mac
 
-                _envelope_dek_slots = build_recovery_slots(
-                    bytes(_dek), recovery_credentials
-                )
-                _envelope_dek_slots_mac = compute_slot_set_mac(
-                    bytes(_dek), _envelope_dek_slots
-                )
+                _envelope_dek_slots = build_recovery_slots(bytes(_dek), recovery_credentials)
+                _envelope_dek_slots_mac = compute_slot_set_mac(bytes(_dek), _envelope_dek_slots)
         finally:
             secure_memzero(key)
             key = bytes(_dek)
@@ -6708,9 +6740,7 @@ def encrypt_file(
         if _envelope_dek_slots:
             _enc_md = metadata.setdefault("encryption", {})
             _enc_md["dek_slots"] = _envelope_dek_slots
-            _enc_md["dek_slots_mac"] = base64.b64encode(
-                _envelope_dek_slots_mac
-            ).decode("ascii")
+            _enc_md["dek_slots_mac"] = base64.b64encode(_envelope_dek_slots_mac).decode("ascii")
         # Real 192-bit XChaCha (1.5+): tag any streaming file whose data layer
         # uses xchacha (single cipher or cascade chain) so decryption selects
         # the real construction (24-byte per-chunk nonces). Set here, before
@@ -6752,6 +6782,9 @@ def encrypt_file(
 
             _streaming_bulk_aad = envelope_aad(metadata)
 
+        _hidden_sp_bytes = (
+            second_password.encode("utf-8") if isinstance(second_password, str) else second_password
+        )
         streaming_enc.encrypt_file(
             input_file=input_file,
             output_file=output_file,
@@ -6760,6 +6793,9 @@ def encrypt_file(
             quiet=quiet,
             progress_callback=progress_cb,
             bulk_aad=_streaming_bulk_aad,
+            hidden_header=hidden_header,
+            hidden_salt=salt,
+            hidden_second_password=_hidden_sp_bytes,
         )
 
         if progress and not quiet:
@@ -7557,9 +7593,7 @@ def encrypt_file(
         if _envelope_dek_slots:
             _enc_md = metadata.setdefault("encryption", {})
             _enc_md["dek_slots"] = _envelope_dek_slots
-            _enc_md["dek_slots_mac"] = base64.b64encode(
-                _envelope_dek_slots_mac
-            ).decode("ascii")
+            _enc_md["dek_slots_mac"] = base64.b64encode(_envelope_dek_slots_mac).decode("ascii")
         # Real 192-bit XChaCha (1.5+): tag any non-streaming file whose data
         # layer uses xchacha (single cipher or cascade chain) so decryption
         # selects the real construction. Set here, before metadata_b64, so the
@@ -7857,9 +7891,7 @@ def encrypt_file(
         if _envelope_dek_slots:
             _enc_md = metadata.setdefault("encryption", {})
             _enc_md["dek_slots"] = _envelope_dek_slots
-            _enc_md["dek_slots_mac"] = base64.b64encode(
-                _envelope_dek_slots_mac
-            ).decode("ascii")
+            _enc_md["dek_slots_mac"] = base64.b64encode(_envelope_dek_slots_mac).decode("ascii")
         metadata_json = json.dumps(metadata).encode("utf-8")
         metadata_base64 = base64.b64encode(metadata_json)
 
@@ -7920,11 +7952,21 @@ def encrypt_file(
         # AEAD: metadata was already created and encoded before encryption
         metadata_base64 = metadata_b64
 
-    # Base64 encode the encrypted data
-    encrypted_data = base64.b64encode(encrypted_data)
+    if hidden_header:
+        # Hidden ("whitened") format: wrap the raw metadata header and the raw
+        # body so the whole file is indistinguishable from random. The body is
+        # NOT re-encrypted or base64-encoded -- only the header is whitened.
+        from .hidden_header import wrap_hidden
 
-    # Build the output bytes
-    output_bytes = metadata_base64 + b":" + encrypted_data
+        _second_pw = (
+            second_password.encode("utf-8") if isinstance(second_password, str) else second_password
+        )
+        header_bytes = base64.b64decode(metadata_base64)
+        output_bytes = wrap_hidden(header_bytes, encrypted_data, salt, second_password=_second_pw)
+    else:
+        # Legacy format: base64(metadata) ":" base64(body)
+        encrypted_data = base64.b64encode(encrypted_data)
+        output_bytes = metadata_base64 + b":" + encrypted_data
 
     # Return bytes if no output file specified (in-memory mode)
     if output_file is None:
@@ -8676,13 +8718,7 @@ def _rekey_envelope_fast(
         RekeyError: If the envelope_aad invariant does not hold (should never
             happen; indicates a metadata-handling bug -- fail closed).
     """
-    from .envelope import (
-        envelope_aad,
-        unwrap_dek,
-        unwrap_dek_cascade,
-        wrap_dek,
-        wrap_dek_cascade,
-    )
+    from .envelope import envelope_aad, unwrap_dek, unwrap_dek_cascade, wrap_dek, wrap_dek_cascade
 
     with open(input_file, "rb") as f:
         raw = f.read()
@@ -8956,9 +8992,9 @@ def add_recovery_slots(
             slot["id"] = f"{slot['type']}-{secrets.token_hex(4)}"
         combined = existing + new_slots
         enc["dek_slots"] = combined
-        enc["dek_slots_mac"] = base64.b64encode(
-            compute_slot_set_mac(bytes(dek), combined)
-        ).decode("ascii")
+        enc["dek_slots_mac"] = base64.b64encode(compute_slot_set_mac(bytes(dek), combined)).decode(
+            "ascii"
+        )
     finally:
         secure_memzero(dek)
 
@@ -9314,6 +9350,73 @@ def _resolve_hsm_slot(cli_slot, stored_config: dict):
     return stored_config.get("slot")
 
 
+_HIDDEN_DETECT_CAP = 4 * 1024 * 1024  # bound on bytes scanned to classify a file
+_HIDDEN_KEEP_READING_RE = re.compile(rb"^[A-Za-z0-9+/=]*$")
+
+
+def _maybe_peel_hidden(input_file, secure_mode, second_password, hidden_header):
+    """Detect a hidden-format file and peel only its (whitened) header.
+
+    Peeling the header yields the original metadata plus the offset at which the
+    raw body begins. Buffered files reconstruct the legacy bytes from that
+    offset; streaming files read the body directly from the offset, preserving
+    bounded memory use. The downstream pipeline is unchanged either way.
+
+    Detection reads incrementally and stops as soon as the answer is known: a
+    legacy file reveals its metadata-terminating colon early, a hidden file
+    reveals a non-base64 (random) byte early.
+
+    Args:
+        input_file: Path to the encrypted file.
+        secure_mode: Whether to open with symlink protection.
+        second_password: Optional second password (selects keyed mode).
+        hidden_header: ``True`` forces hidden, ``False`` forces legacy (skip),
+            ``None`` auto-detects.
+
+    Returns:
+        ``(metadata_b64, body_offset)`` if the file is hidden, else ``None``.
+    """
+    if hidden_header is False:
+        return None
+
+    # Only seekable regular files are supported for now; stdin/special files
+    # keep their existing (legacy) behavior untouched.
+    if (
+        input_file == "/dev/stdin"
+        or input_file.startswith("/proc/")
+        or input_file.startswith("/dev/")
+    ):
+        return None
+
+    from .hidden_header import is_hidden_format, read_hidden_header
+
+    try:
+        with safe_open_file(input_file, "rb", secure_mode=secure_mode) as f:
+            buf = b""
+            while len(buf) < _HIDDEN_DETECT_CAP:
+                chunk = f.read(65536)
+                if not chunk:
+                    break
+                buf += chunk
+                if b":" in buf:
+                    break  # legacy boundary visible -> let is_hidden_format decide
+                if not _HIDDEN_KEEP_READING_RE.match(buf):
+                    break  # a non-base64 byte -> hidden (random) data
+    except (OSError, ValidationError):
+        return None
+
+    decided_hidden = True if hidden_header is True else is_hidden_format(buf)
+    if not decided_hidden:
+        return None
+
+    _second_pw = (
+        second_password.encode("utf-8") if isinstance(second_password, str) else second_password
+    )
+    with safe_open_file(input_file, "rb", secure_mode=secure_mode) as f:
+        header_bytes, body_offset = read_hidden_header(f, second_password=_second_pw)
+    return base64.b64encode(header_bytes), body_offset
+
+
 @secure_decrypt_error_handler
 def decrypt_file(
     input_file,
@@ -9337,6 +9440,8 @@ def decrypt_file(
     recovery_code=None,
     recovery_passphrase=None,
     recovery_private_key=None,
+    second_password=None,
+    hidden_header=None,
 ):
     """
     Decrypt a file with a password.
@@ -9467,10 +9572,23 @@ def decrypt_file(
     if not quiet:
         eprint(f"\nReading encrypted file: {input_file}")
 
+    # Detect and peel a hidden-format file before reading metadata. For a hidden
+    # file this returns the metadata (base64) plus the offset where the raw body
+    # begins; the body is reconstructed (buffered) or read at the offset
+    # (streaming) further below, so the downstream pipeline is unchanged.
+    _hidden = _maybe_peel_hidden(input_file, secure_mode, second_password, hidden_header)
+    _hidden_body_offset = None
+
     # Read metadata incrementally (avoids loading full file for streaming v12)
     file_content = None  # Only populated for non-streaming path (needed for secure cleanup)
     try:
-        metadata_b64, _fallback_content = _read_metadata_only(input_file, secure_mode=secure_mode)
+        if _hidden is not None:
+            metadata_b64, _hidden_body_offset = _hidden
+            _fallback_content = None
+        else:
+            metadata_b64, _fallback_content = _read_metadata_only(
+                input_file, secure_mode=secure_mode
+            )
         # MED-8 Security fix: Use secure JSON validation for metadata parsing
         metadata_json = base64.b64decode(metadata_b64).decode("utf-8")
         try:
@@ -9496,7 +9614,14 @@ def decrypt_file(
             encrypted_data = b""  # Placeholder; streaming decryptor reads file directly
         else:
             # Non-streaming: load the full encrypted payload
-            if _fallback_content is not None:
+            if _hidden_body_offset is not None:
+                # Hidden buffered file: read the raw body from the peeled offset
+                # and reconstruct the legacy base64(meta):base64(body) bytes.
+                with safe_open_file(input_file, "rb", secure_mode=secure_mode) as f:
+                    f.seek(_hidden_body_offset)
+                    _raw_body = f.read()
+                file_content = metadata_b64 + b":" + base64.b64encode(_raw_body)
+            elif _fallback_content is not None:
                 # Non-seekable input (stdin): already have full content
                 file_content = _fallback_content
                 _fallback_content = None
@@ -10184,11 +10309,9 @@ def decrypt_file(
         # Recovery path: unlock the DEK from a matching recovery slot, then
         # authenticate the whole slot set with the recovered DEK (detects any
         # stripping/injection/modification of recovery slots).
-        from .crypt_errors import (
-            AuthenticationError as _AuthErr,
-            DecryptionError as _DecErr,
-            ValidationError as _ValErr,
-        )
+        from .crypt_errors import AuthenticationError as _AuthErr
+        from .crypt_errors import DecryptionError as _DecErr
+        from .crypt_errors import ValidationError as _ValErr
         from .recovery_slots import (
             unlock_passphrase_slot,
             unlock_pqc_slot,
@@ -10220,9 +10343,7 @@ def decrypt_file(
         if _dek is None:
             raise _DecErr("No recovery slot matched the supplied recovery material")
         _mac_b64 = _enc_meta.get("dek_slots_mac")
-        if not _mac_b64 or not verify_slot_set_mac(
-            bytes(_dek), _slots, base64.b64decode(_mac_b64)
-        ):
+        if not _mac_b64 or not verify_slot_set_mac(bytes(_dek), _slots, base64.b64decode(_mac_b64)):
             secure_memzero(_dek)
             raise _AuthErr("Recovery slot set failed authentication")
         key = bytes(_dek)
@@ -10447,9 +10568,7 @@ def decrypt_file(
         # Honor the file's XChaCha nonce format (absent => legacy 1) so 1.4.x
         # streaming files keep decrypting through the legacy 12-byte chunk
         # nonces while new files use the real 192-bit construction.
-        _streaming_xchacha_format = metadata.get("encryption", {}).get(
-            "xchacha_nonce_format", 1
-        )
+        _streaming_xchacha_format = metadata.get("encryption", {}).get("xchacha_nonce_format", 1)
 
         # Prepare cascade decryptor if needed
         _cascade_dec_streaming = None
@@ -10513,6 +10632,7 @@ def decrypt_file(
             quiet=quiet,
             progress_callback=progress_cb,
             bulk_aad=_streaming_bulk_aad,
+            payload_start_override=_hidden_body_offset,
         )
 
         if progress and not quiet:
@@ -10589,9 +10709,7 @@ def decrypt_file(
             cascade_dec = CascadeEncryption(
                 cascade_config,
                 format_version=format_version,
-                xchacha_nonce_format=metadata.get("encryption", {}).get(
-                    "xchacha_nonce_format", 1
-                ),
+                xchacha_nonce_format=metadata.get("encryption", {}).get("xchacha_nonce_format", 1),
             )
 
             # Decrypt using cascade

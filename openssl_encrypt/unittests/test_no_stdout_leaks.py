@@ -23,22 +23,22 @@ STDOUT_WHITELIST = [
     ("crypt_cli.py", 2969, "JSON keyserver bundle"),
     ("crypt_cli.py", 3200, "JSON telemetry events"),
     # crypt_cli.py — decrypted plaintext outputs
-    ("crypt_cli.py", 9194, "asymmetric decrypted plaintext"),
-    ("crypt_cli.py", 9197, "asymmetric decrypted plaintext (quiet)"),
-    ("crypt_cli.py", 9386, "asymmetric decrypted plaintext path 2"),
-    ("crypt_cli.py", 9389, "asymmetric decrypted plaintext path 2 (quiet)"),
-    ("crypt_cli.py", 10171, "symmetric decrypted text content"),
+    ("crypt_cli.py", 9296, "asymmetric decrypted plaintext"),
+    ("crypt_cli.py", 9299, "asymmetric decrypted plaintext (quiet)"),
+    ("crypt_cli.py", 9490, "asymmetric decrypted plaintext path 2"),
+    ("crypt_cli.py", 9493, "asymmetric decrypted plaintext path 2 (quiet)"),
+    ("crypt_cli.py", 10287, "symmetric decrypted text content"),
     # crypt_cli.py — derive-password output to stdout
-    ("crypt_cli.py", 5726, "derive-password hex output"),
-    ("crypt_cli.py", 5730, "derive-password base64 output"),
+    ("crypt_cli.py", 5811, "derive-password hex output"),
+    ("crypt_cli.py", 5815, "derive-password base64 output"),
     # file_signature.py — verify-signature --json result (machine-readable, stdout)
     ("modules/file_signature.py", 425, "verify-signature JSON result"),
     # crypt_core.py — JSON data output
-    ("crypt_core.py", 8101, "print_file_info JSON output"),
+    ("crypt_core.py", 8185, "print_file_info JSON output"),
     # crypt_core.py — protected DO NOT CHANGE block
-    ("crypt_core.py", 10400, "PQC key decryption status (protected)"),
-    ("crypt_core.py", 10407, "PQC key decryption failure (protected)"),
-    ("crypt_core.py", 10413, "PQC key decryption error (protected)"),
+    ("crypt_core.py", 10521, "PQC key decryption status (protected)"),
+    ("crypt_core.py", 10528, "PQC key decryption failure (protected)"),
+    ("crypt_core.py", 10534, "PQC key decryption error (protected)"),
     # crypt_utils.py — eprint() helper's own print() call
     ("crypt_utils.py", 25, "eprint() helper implementation"),
     # usb_creator.py — decrypted text content
