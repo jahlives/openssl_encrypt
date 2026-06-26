@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Hidden ("whitened") file format** (`--hidden-header`, opt-in; ported from
+  the 1.5.x line): wraps the encrypted output in an outer layer so the whole
+  file is indistinguishable from random bytes, hiding the identifiable
+  `base64(metadata):base64(body)` header that fingerprints a file as ours and
+  leaks the derivation profile. Only the small metadata header is whitened; the
+  body is kept raw (no double-encryption), preserving streaming and bounded
+  memory. Two modes share one byte-identical layout (so the presence of a
+  second password is not observable): **keyless** (outer key from the *public*
+  salt — anti-fingerprinting only, reversible by anyone with the tool) and
+  **keyed** (`--second-password…` → fixed heavy chain 100k×SHA3-512 →
+  5×Argon2id → scrypt → HKDF, giving real metadata confidentiality even against
+  an analyst who has the tool). Supported on the symmetric, keystore-wrapped,
+  and asymmetric (PQC) paths, buffered and streaming. Decryption auto-detects
+  legacy vs hidden (no magic bytes); `--legacy-format` forces legacy. **Purely
+  additive and backward-compatible** — without `--hidden-header` the output is
+  byte-for-byte the legacy format. See `docs/HIDDEN_HEADER.md`.
+
 - **Recovery slots** (envelope add-on, ported from the 1.5.x line): an envelope
   file's Data Encryption Key can be wrapped under one or more *independent*
   recovery credentials in addition to the password, so losing the password no
