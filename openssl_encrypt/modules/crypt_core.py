@@ -5614,14 +5614,6 @@ def encrypt_file(
             input_is_bytes=input_is_bytes,
         )
 
-    if hidden_header and _use_streaming:
-        # Streaming support for the hidden format is added in a later increment;
-        # until then, refuse rather than silently emit a non-hidden file.
-        raise ValidationError(
-            "Hidden-header mode is not yet supported for streaming (large) files; "
-            "use --no-streaming for now"
-        )
-
     if _use_streaming and format_version != 12:
         if debug:
             logger.debug(
@@ -5992,6 +5984,9 @@ def encrypt_file(
 
             _streaming_bulk_aad = envelope_aad(metadata)
 
+        _hidden_sp_bytes = (
+            second_password.encode("utf-8") if isinstance(second_password, str) else second_password
+        )
         streaming_enc.encrypt_file(
             input_file=input_file,
             output_file=output_file,
@@ -6000,6 +5995,9 @@ def encrypt_file(
             quiet=quiet,
             progress_callback=progress_cb,
             bulk_aad=_streaming_bulk_aad,
+            hidden_header=hidden_header,
+            hidden_salt=salt,
+            hidden_second_password=_hidden_sp_bytes,
         )
 
         if progress and not quiet:
@@ -8592,11 +8590,12 @@ _HIDDEN_KEEP_READING_RE = re.compile(rb"^[A-Za-z0-9+/=]*$")
 
 
 def _maybe_peel_hidden(input_file, secure_mode, second_password, hidden_header):
-    """Detect a hidden-format file and reconstruct its legacy-equivalent bytes.
+    """Detect a hidden-format file and peel only its (whitened) header.
 
-    The hidden format is an outer envelope; peeling it yields the exact
-    ``base64(metadata) ":" base64(body)`` bytes the rest of the decryption
-    pipeline already understands, so no downstream parser needs to change.
+    Peeling the header yields the original metadata plus the offset at which the
+    raw body begins. Buffered files reconstruct the legacy bytes from that
+    offset; streaming files read the body directly from the offset, preserving
+    bounded memory use. The downstream pipeline is unchanged either way.
 
     Detection reads incrementally and stops as soon as the answer is known: a
     legacy file reveals its metadata-terminating colon early, a hidden file
@@ -8610,8 +8609,7 @@ def _maybe_peel_hidden(input_file, secure_mode, second_password, hidden_header):
             ``None`` auto-detects.
 
     Returns:
-        Reconstructed legacy bytes if the file is hidden, else ``None`` (the
-        caller proceeds with the normal legacy path).
+        ``(metadata_b64, body_offset)`` if the file is hidden, else ``None``.
     """
     if hidden_header is False:
         return None
@@ -8625,7 +8623,7 @@ def _maybe_peel_hidden(input_file, secure_mode, second_password, hidden_header):
     ):
         return None
 
-    from .hidden_header import is_hidden_format, unwrap_hidden
+    from .hidden_header import is_hidden_format, read_hidden_header
 
     try:
         with safe_open_file(input_file, "rb", secure_mode=secure_mode) as f:
@@ -8646,15 +8644,12 @@ def _maybe_peel_hidden(input_file, secure_mode, second_password, hidden_header):
     if not decided_hidden:
         return None
 
-    # Read the full file and peel the outer layer. (Streaming-sized hidden
-    # files are produced only in a later increment, so a full read is safe.)
-    with safe_open_file(input_file, "rb", secure_mode=secure_mode) as f:
-        blob = f.read()
     _second_pw = (
         second_password.encode("utf-8") if isinstance(second_password, str) else second_password
     )
-    header_bytes, raw_body = unwrap_hidden(blob, second_password=_second_pw)
-    return base64.b64encode(header_bytes) + b":" + base64.b64encode(raw_body)
+    with safe_open_file(input_file, "rb", secure_mode=secure_mode) as f:
+        header_bytes, body_offset = read_hidden_header(f, second_password=_second_pw)
+    return base64.b64encode(header_bytes), body_offset
 
 
 @secure_decrypt_error_handler
@@ -8812,20 +8807,19 @@ def decrypt_file(
     if not quiet:
         eprint(f"\nReading encrypted file: {input_file}")
 
-    # Detect and peel a hidden-format file before reading metadata. If the file
-    # is hidden, this returns the reconstructed legacy-equivalent bytes which
-    # are then fed through the unchanged downstream pipeline via the same
-    # in-memory path used for non-seekable input.
-    _hidden_reconstructed = _maybe_peel_hidden(
-        input_file, secure_mode, second_password, hidden_header
-    )
+    # Detect and peel a hidden-format file before reading metadata. For a hidden
+    # file this returns the metadata (base64) plus the offset where the raw body
+    # begins; the body is reconstructed (buffered) or read at the offset
+    # (streaming) further below, so the downstream pipeline is unchanged.
+    _hidden = _maybe_peel_hidden(input_file, secure_mode, second_password, hidden_header)
+    _hidden_body_offset = None
 
     # Read metadata incrementally (avoids loading full file for streaming v12)
     file_content = None  # Only populated for non-streaming path (needed for secure cleanup)
     try:
-        if _hidden_reconstructed is not None:
-            metadata_b64 = _hidden_reconstructed.split(b":", 1)[0]
-            _fallback_content = _hidden_reconstructed
+        if _hidden is not None:
+            metadata_b64, _hidden_body_offset = _hidden
+            _fallback_content = None
         else:
             metadata_b64, _fallback_content = _read_metadata_only(
                 input_file, secure_mode=secure_mode
@@ -8855,7 +8849,14 @@ def decrypt_file(
             encrypted_data = b""  # Placeholder; streaming decryptor reads file directly
         else:
             # Non-streaming: load the full encrypted payload
-            if _fallback_content is not None:
+            if _hidden_body_offset is not None:
+                # Hidden buffered file: read the raw body from the peeled offset
+                # and reconstruct the legacy base64(meta):base64(body) bytes.
+                with safe_open_file(input_file, "rb", secure_mode=secure_mode) as f:
+                    f.seek(_hidden_body_offset)
+                    _raw_body = f.read()
+                file_content = metadata_b64 + b":" + base64.b64encode(_raw_body)
+            elif _fallback_content is not None:
                 # Non-seekable input (stdin): already have full content
                 file_content = _fallback_content
                 _fallback_content = None
@@ -9854,6 +9855,7 @@ def decrypt_file(
             quiet=quiet,
             progress_callback=progress_cb,
             bulk_aad=_streaming_bulk_aad,
+            payload_start_override=_hidden_body_offset,
         )
 
         if progress and not quiet:

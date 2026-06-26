@@ -512,11 +512,19 @@ class StreamingEncryptor:
         quiet: bool = False,
         progress_callback: Optional[Callable[[int, int], None]] = None,
         bulk_aad: Optional[bytes] = None,
+        hidden_header: bool = False,
+        hidden_salt: Optional[bytes] = None,
+        hidden_second_password: Optional[bytes] = None,
     ) -> bool:
         """Pass 2: Encrypt file chunk by chunk, writing streaming output.
 
         The output format is:
             metadata_b64 : OESC <payload_version:u32le> [chunks...] <chunk_count:u32le> <hmac:32B>
+
+        In hidden-header mode the leading ``metadata_b64 ":"`` framing is
+        replaced by the whitened hidden header (wrap_hidden of the raw metadata
+        with an empty body); the OESC payload that follows is byte-for-byte
+        identical, and per-chunk AAD still binds the same ``metadata_b64``.
 
         Args:
             input_file: Path to the plaintext file.
@@ -545,9 +553,21 @@ class StreamingEncryptor:
         chunk_tags: List[bytes] = []
 
         with open(input_file, "rb") as fin, open(output_file, "wb") as fout:
-            # Write metadata + separator
-            fout.write(metadata_b64)
-            fout.write(b":")
+            # Write the header framing: hidden whitened header, or legacy
+            # metadata + colon separator.
+            if hidden_header:
+                from .hidden_header import wrap_hidden
+
+                header_prefix = wrap_hidden(
+                    base64.b64decode(metadata_b64),
+                    b"",
+                    hidden_salt,
+                    second_password=hidden_second_password,
+                )
+                fout.write(header_prefix)
+            else:
+                fout.write(metadata_b64)
+                fout.write(b":")
 
             # Write magic + payload version
             fout.write(STREAMING_MAGIC)
@@ -711,6 +731,7 @@ class StreamingDecryptor:
         quiet: bool = False,
         progress_callback: Optional[Callable[[int, int], None]] = None,
         bulk_aad: Optional[bytes] = None,
+        payload_start_override: Optional[int] = None,
     ) -> Union[bool, bytes]:
         """Decrypt a streaming-format file chunk by chunk.
 
@@ -756,23 +777,28 @@ class StreamingDecryptor:
         max_ciphertext_len = self.chunk_size + self._MAX_CHUNK_OVERHEAD
 
         with open(input_file, "rb") as fin:
-            # --- Locate the colon separator (metadata : payload) ---
-            # Read in small blocks to avoid loading the whole file.
-            colon_pos = -1
-            search_buf = b""
-            while True:
-                block = fin.read(8192)
-                if not block:
-                    break
-                search_buf += block
-                idx = search_buf.find(b":")
-                if idx != -1:
-                    colon_pos = idx
-                    break
-            if colon_pos == -1:
-                raise DecryptionError("Invalid streaming file: no metadata separator found")
+            if payload_start_override is not None:
+                # Hidden-header files have no colon separator; the caller already
+                # peeled the whitened header and supplies the body offset.
+                payload_start = payload_start_override
+            else:
+                # --- Locate the colon separator (metadata : payload) ---
+                # Read in small blocks to avoid loading the whole file.
+                colon_pos = -1
+                search_buf = b""
+                while True:
+                    block = fin.read(8192)
+                    if not block:
+                        break
+                    search_buf += block
+                    idx = search_buf.find(b":")
+                    if idx != -1:
+                        colon_pos = idx
+                        break
+                if colon_pos == -1:
+                    raise DecryptionError("Invalid streaming file: no metadata separator found")
 
-            payload_start = colon_pos + 1
+                payload_start = colon_pos + 1
 
             # --- Read and verify header (magic + version = 8 bytes) ---
             fin.seek(payload_start)

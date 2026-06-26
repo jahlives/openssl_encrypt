@@ -425,6 +425,44 @@ def wrap_hidden(
         secure_memzero(bytearray(len_key))
 
 
+def _derive_header_len(salt, nonce, whitened_len, second_password, profile):
+    """Derive the stream key and recover the (whitened) header length.
+
+    Returns ``(stream_key, header_len, keyed)``. The caller owns ``stream_key``
+    and must zeroize it. The length subkey is zeroized here.
+    """
+    keyed = _validate_second_password(second_password) is not None
+    stream_key, len_key = _subkeys(salt, second_password, profile)
+    try:
+        len_ks = _xchacha_keystream(len_key, nonce, LEN_FIELD_LEN)
+        header_len = int.from_bytes(bytes(a ^ b for a, b in zip(whitened_len, len_ks)), "big")
+    finally:
+        secure_memzero(bytearray(len_key))
+    return stream_key, header_len, keyed
+
+
+def _reject_bad_header_len(header_len, available, keyed):
+    """Reject an out-of-range header length.
+
+    In keyed mode the length was whitened with a password-derived key, so a bad
+    length means a wrong password or tampering -> AuthenticationError. In
+    keyless mode it is genuinely malformed input -> ValidationError.
+    """
+    if header_len > _MAX_HEADER_LEN or header_len + AUTH_LEN > available:
+        if keyed:
+            raise AuthenticationError("Integrity verification failed")
+        raise ValidationError("Hidden blob declares an inconsistent header length")
+
+
+def _decrypt_header_region(stream_key, salt, nonce, whitened_len, header_region, auth, keyed):
+    """Recover the header bytes from the (whitened/encrypted) header region."""
+    if keyed:
+        aad = salt + nonce + whitened_len
+        return xchacha20poly1305_decrypt(stream_key, nonce, header_region + auth, aad)
+    ks = _xchacha_keystream(stream_key, nonce, len(header_region))
+    return bytes(a ^ b for a, b in zip(header_region, ks))
+
+
 def unwrap_hidden(
     blob: Union[bytes, bytearray, memoryview],
     second_password: Optional[Union[bytes, bytearray, memoryview]] = None,
@@ -461,37 +499,77 @@ def unwrap_hidden(
     nonce = blob[SALT_LEN : SALT_LEN + NONCE_LEN]
     whitened_len = blob[SALT_LEN + NONCE_LEN : HEADER_OFFSET]
 
-    keyed = _validate_second_password(second_password) is not None
-    stream_key, len_key = _subkeys(salt, second_password, profile)
+    stream_key, header_len, keyed = _derive_header_len(
+        salt, nonce, whitened_len, second_password, profile
+    )
     try:
-        len_ks = _xchacha_keystream(len_key, nonce, LEN_FIELD_LEN)
-        header_len = int.from_bytes(bytes(a ^ b for a, b in zip(whitened_len, len_ks)), "big")
-        if header_len > _MAX_HEADER_LEN or HEADER_OFFSET + header_len + AUTH_LEN > len(blob):
-            # In keyed mode the length field is whitened with a password-derived
-            # key, so an inconsistent length means a wrong second password or
-            # tampering -- surface it as an authentication failure, not a
-            # generic "malformed" error (and indistinguishable from random for
-            # anyone without the password). In keyless mode it is genuinely
-            # malformed input.
-            if keyed:
-                raise AuthenticationError("Integrity verification failed")
-            raise ValidationError("Hidden blob declares an inconsistent header length")
-
+        _reject_bad_header_len(header_len, len(blob) - HEADER_OFFSET, keyed)
         header_region = blob[HEADER_OFFSET : HEADER_OFFSET + header_len]
         auth = blob[HEADER_OFFSET + header_len : HEADER_OFFSET + header_len + AUTH_LEN]
         body = blob[HEADER_OFFSET + header_len + AUTH_LEN :]
-
-        if keyed:
-            aad = salt + nonce + whitened_len
-            header = xchacha20poly1305_decrypt(stream_key, nonce, header_region + auth, aad)
-        else:
-            ks = _xchacha_keystream(stream_key, nonce, header_len)
-            header = bytes(a ^ b for a, b in zip(header_region, ks))
-
+        header = _decrypt_header_region(
+            stream_key, salt, nonce, whitened_len, header_region, auth, keyed
+        )
         return header, body
     finally:
         secure_memzero(bytearray(stream_key))
-        secure_memzero(bytearray(len_key))
+
+
+def read_hidden_header(
+    stream,
+    second_password: Optional[Union[bytes, bytearray, memoryview]] = None,
+    *,
+    profile: KeyedProfile = PRODUCTION_KEYED_PROFILE,
+) -> Tuple[bytes, int]:
+    """Peel only the header from a hidden file, leaving the body in place.
+
+    Reads just the outer header from ``stream`` (a binary file-like object
+    positioned at the start) and returns ``(header_bytes, body_offset)`` so a
+    large/streaming body can be read directly from ``body_offset`` without
+    loading it into memory.
+
+    Args:
+        stream: Binary readable positioned at offset 0.
+        second_password: Optional second password selecting keyed mode.
+        profile: Keyed-mode cost parameters (defaults to production).
+
+    Returns:
+        Tuple ``(header_bytes, body_offset)`` where ``body_offset`` is the byte
+        offset at which the raw body begins.
+
+    Raises:
+        ValidationError: If the stream is truncated or declares an impossible
+            header length.
+        AuthenticationError: In keyed mode, if authentication fails.
+    """
+    head = stream.read(HEADER_OFFSET)
+    if head is None or len(head) < HEADER_OFFSET:
+        raise ValidationError("Hidden stream too short to contain a header")
+    salt = head[:SALT_LEN]
+    nonce = head[SALT_LEN : SALT_LEN + NONCE_LEN]
+    whitened_len = head[SALT_LEN + NONCE_LEN : HEADER_OFFSET]
+
+    stream_key, header_len, keyed = _derive_header_len(
+        salt, nonce, whitened_len, second_password, profile
+    )
+    try:
+        if header_len > _MAX_HEADER_LEN:
+            if keyed:
+                raise AuthenticationError("Integrity verification failed")
+            raise ValidationError("Hidden stream declares an inconsistent header length")
+        region_and_auth = stream.read(header_len + AUTH_LEN)
+        if region_and_auth is None or len(region_and_auth) < header_len + AUTH_LEN:
+            if keyed:
+                raise AuthenticationError("Integrity verification failed")
+            raise ValidationError("Hidden stream truncated within header")
+        header_region = region_and_auth[:header_len]
+        auth = region_and_auth[header_len:]
+        header = _decrypt_header_region(
+            stream_key, salt, nonce, whitened_len, header_region, auth, keyed
+        )
+        return header, HEADER_OFFSET + header_len + AUTH_LEN
+    finally:
+        secure_memzero(bytearray(stream_key))
 
 
 # ---------------------------------------------------------------------------
