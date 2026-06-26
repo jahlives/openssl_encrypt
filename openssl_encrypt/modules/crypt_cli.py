@@ -3583,6 +3583,77 @@ def _hidden_for_decrypt(args):
     return None
 
 
+def _resolve_second_password_with_fallback(args, explicit_second_password):
+    """Resolve the decrypt-time second password, with an interactive fallback.
+
+    An explicit ``--second-password*`` always wins. Otherwise, on a bare
+    decrypt, peek the input: if it is a hidden file that does NOT peel keyless
+    (i.e. keyed, or just random/corrupt), and the session is interactive, prompt
+    once for a second password. The prompt is deliberately:
+
+    * **TTY-gated** -- never fires in a pipe/script, so headless runs keep the
+      silent generic-error behavior (no behavioral oracle, no automation hang);
+    * **suppressible** with ``--no-second-password-prompt`` (and skipped under
+      ``--legacy-format``);
+    * **neutrally worded** -- it fires on any non-keyless-peelable input, so it
+      never asserts "this is one of our files".
+
+    The keyless peek is cheap (a single HKDF over the public salt + a small
+    header), so there is no double-decrypt and no expensive keyed KDF here.
+
+    Args:
+        args: Parsed CLI namespace.
+        explicit_second_password: Result of :func:`_resolve_second_password`.
+
+    Returns:
+        The second password as ``bytes``, or ``None``.
+    """
+    if explicit_second_password is not None:
+        return explicit_second_password
+    if getattr(args, "no_second_password_prompt", False) or getattr(args, "legacy_format", False):
+        return None
+    try:
+        if not sys.stdin.isatty():
+            return None
+    except Exception:
+        return None
+
+    input_file = getattr(args, "input", None)
+    if not input_file:
+        return None
+    if (
+        input_file == "/dev/stdin"
+        or input_file.startswith("/proc/")
+        or input_file.startswith("/dev/")
+    ):
+        return None
+
+    from .crypt_errors import AuthenticationError, ValidationError
+    from .hidden_header import is_hidden_format, read_hidden_header
+
+    try:
+        with open(input_file, "rb") as f:
+            prefix = f.read(65536)
+    except OSError:
+        return None
+    if not is_hidden_format(prefix):
+        return None  # legacy file -> normal path, no prompt
+
+    # Hidden file: a cheap keyless header peel. If it succeeds, the file is
+    # keyless and needs no second password.
+    try:
+        with open(input_file, "rb") as f:
+            read_hidden_header(f, second_password=None)
+        return None
+    except (ValidationError, AuthenticationError):
+        pass  # keyed (or random/corrupt) -> offer the prompt
+    except OSError:
+        return None
+
+    entered = getpass.getpass("Enter second password (blank to abort): ")
+    return entered.encode("utf-8") if entered else None
+
+
 def main_with_args(args=None):
     """Main logic with pre-parsed arguments (or None to parse from command line)"""
     # Original main function continues below...
@@ -4656,6 +4727,7 @@ def main_with_args(args=None):
         "second_password": None,
         "second_password_fd": None,
         "second_password_prompt": False,
+        "no_second_password_prompt": False,
     }
 
     for attr, default_val in default_attrs.items():
@@ -4665,6 +4737,12 @@ def main_with_args(args=None):
     # Resolve the optional second password (hidden keyed mode) exactly once, so
     # an interactive prompt is shown at most a single time per invocation.
     _hidden_second_password = _resolve_second_password(args)
+    # On decrypt, fall back to an interactive prompt for a keyed hidden file
+    # (TTY-gated, suppressible with --no-second-password-prompt).
+    if getattr(args, "action", None) == "decrypt":
+        _hidden_second_password = _resolve_second_password_with_fallback(
+            args, _hidden_second_password
+        )
 
     # Store the original user-provided algorithm name from command line
     import sys

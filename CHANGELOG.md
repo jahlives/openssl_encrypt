@@ -22,9 +22,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   5×Argon2id → scrypt → HKDF, giving real metadata confidentiality even against
   an analyst who has the tool). Supported on the symmetric, keystore-wrapped,
   and asymmetric (PQC) paths, buffered and streaming. Decryption auto-detects
-  legacy vs hidden (no magic bytes); `--legacy-format` forces legacy. **Purely
-  additive and backward-compatible** — without `--hidden-header` the output is
-  byte-for-byte the legacy format. See `docs/HIDDEN_HEADER.md`.
+  legacy vs hidden (no magic bytes); `--legacy-format` forces legacy. On
+  decrypt, a keyed file with a missing/wrong second password fails with the same
+  generic error as any wrong/corrupt input (no oracle); an **interactive,
+  TTY-gated second-password prompt** offers it before failing (suppressible with
+  `--no-second-password-prompt`, never fires in scripts). **Purely additive and
+  backward-compatible** — without `--hidden-header` the output is byte-for-byte
+  the legacy format. See `docs/HIDDEN_HEADER.md`.
 
 - **Recovery slots** (envelope add-on, ported from the 1.5.x line): an envelope
   file's Data Encryption Key can be wrapped under one or more *independent*

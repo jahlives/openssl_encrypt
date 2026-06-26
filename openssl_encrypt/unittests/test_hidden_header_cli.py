@@ -101,6 +101,14 @@ class TestHiddenHeaderCLI(unittest.TestCase):
         p = self._decrypt("--second-password", "wrong-pw")
         self.assertNotEqual(p.returncode, 0)
 
+    def test_keyed_no_password_noninteractive_fails_fast(self):
+        # The interactive fallback is TTY-gated: under a non-interactive
+        # subprocess (stdin is a pipe) a keyed file must fail fast with the
+        # generic error rather than hanging on a prompt.
+        self._encrypt("--hidden-header", "--second-password", SECOND_PW)
+        p = self._decrypt()  # no second password, non-TTY
+        self.assertNotEqual(p.returncode, 0)
+
     def test_legacy_default_round_trip(self):
         self._encrypt()  # no hidden flag -> legacy format (current default)
         self.assertFalse(_is_hidden(self.enc))
