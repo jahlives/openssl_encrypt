@@ -423,6 +423,47 @@ def _add_hash_kdf_arguments(subparser):
     )
 
 
+def _add_hidden_header_args(subparser):
+    """Add the hidden ("whitened") file-format options shared by encrypt/decrypt.
+
+    The hidden format makes the output indistinguishable from random by
+    whitening the identifiable metadata header. Keyless mode is
+    anti-fingerprinting only; supplying a second password enables keyed mode,
+    which gives real metadata confidentiality.
+    """
+    group = subparser.add_argument_group("hidden format options")
+    group.add_argument(
+        "--hidden-header",
+        action="store_true",
+        help="Produce/expect the hidden (whitened) format that looks like random "
+        "bytes. Keyless unless a second password is given.",
+    )
+    group.add_argument(
+        "--legacy-format",
+        action="store_true",
+        help="Force the legacy base64 metadata format (disable hidden-header "
+        "handling, including auto-detection on decrypt).",
+    )
+    group.add_argument(
+        "--second-password",
+        metavar="PW",
+        help="Second password enabling keyed hidden mode (real metadata "
+        "confidentiality). DEPRECATED: visible in process list; prefer "
+        "--second-password-fd or --second-password-prompt.",
+    )
+    group.add_argument(
+        "--second-password-fd",
+        type=int,
+        metavar="FD",
+        help="Read the second password from file descriptor FD.",
+    )
+    group.add_argument(
+        "--second-password-prompt",
+        action="store_true",
+        help="Prompt interactively for the second password (keyed hidden mode).",
+    )
+
+
 def setup_encrypt_parser(subparser):
     """Set up arguments specific to the encrypt command."""
     # Get only algorithms available in 1.0.0
@@ -536,6 +577,8 @@ def setup_encrypt_parser(subparser):
         action="store_true",
         help="Force acceptance of weak passwords (use with caution)",
     )
+
+    _add_hidden_header_args(subparser)
 
     # I/O options
     subparser.add_argument(
@@ -801,6 +844,8 @@ def setup_decrypt_parser(subparser):
         action="store_true",
         help="Force acceptance of weak passwords (use with caution)",
     )
+
+    _add_hidden_header_args(subparser)
 
     # I/O options
     subparser.add_argument(
