@@ -13,9 +13,10 @@
 #   - threefish_native/Cargo.lock       (gitignored, not tracked)
 #   - tests, plugins, data, schemas, templates
 
-# --- Core cryptographic / security modules (37) ---
+# --- Core cryptographic / security modules (38) ---
 openssl_encrypt/modules/piv_backend.py
 openssl_encrypt/modules/crypt_core.py
+openssl_encrypt/modules/hidden_header.py
 openssl_encrypt/modules/envelope.py
 openssl_encrypt/modules/recovery_slots.py
 openssl_encrypt/modules/crypt_utils.py
