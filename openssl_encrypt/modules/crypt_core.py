@@ -8123,6 +8123,11 @@ def extract_file_metadata(input_file, second_password=None):
             second_password.encode("utf-8") if isinstance(second_password, str) else second_password
         )
         _hidden = _maybe_peel_hidden(input_file, False, _second_pw, None)
+        # Record the outer format so the reconstructed CLI can reproduce it. A
+        # second password is only ever supplied (and only succeeds) for a keyed
+        # file, since keyless peels without one.
+        _was_hidden = _hidden is not None
+        _was_keyed = _was_hidden and _second_pw is not None
         if _hidden is not None:
             metadata_b64, _ = _hidden
         else:
@@ -8163,6 +8168,8 @@ def extract_file_metadata(input_file, second_password=None):
             "algorithm": algorithm,
             "encryption_data": encryption_data,
             "metadata": metadata,
+            "hidden": _was_hidden,
+            "keyed": _was_keyed,
         }
 
         # Add xor_mode if present in metadata
@@ -8329,13 +8336,18 @@ def print_file_info(input_file: str, json_output: bool = False, second_password=
     # NOT included; only the deterministic configuration.
     eprint()
     eprint("  Reconstructed CLI:")
-    for line in _reconstruct_cli_from_metadata(metadata).splitlines():
+    _recon = _reconstruct_cli_from_metadata(
+        metadata, hidden=info.get("hidden", False), keyed=info.get("keyed", False)
+    )
+    for line in _recon.splitlines():
         eprint(f"    {line}")
 
     return metadata
 
 
-def _reconstruct_cli_from_metadata(metadata: dict) -> str:
+def _reconstruct_cli_from_metadata(
+    metadata: dict, hidden: bool = False, keyed: bool = False
+) -> str:
     """
     Reconstruct an ``openssl_encrypt encrypt`` CLI line from file metadata.
 
@@ -8378,6 +8390,15 @@ def _reconstruct_cli_from_metadata(metadata: dict) -> str:
     hash_config = derivation.get("hash_config") or {}
     _append_hash_rounds_flags(lines, hash_config)
     _append_whirlpool_flags(lines, hash_config.get("whirlpool"))
+
+    # Hidden ("whitened") format flags. --hidden-header reproduces the format;
+    # keyed files additionally need the second password (shown as the safe
+    # prompt form).
+    if keyed:
+        lines.append("  --hidden-header")
+        lines.append("  --second-password-prompt")
+    elif hidden:
+        lines.append("  --hidden-header")
 
     return " \\\n".join(lines)
 
