@@ -80,6 +80,28 @@ class TestHiddenHeaderCLI(unittest.TestCase):
         )
         return p
 
+    def _info(self, *extra):
+        return self._run("info", "-i", self.enc, *extra)
+
+    def test_info_keyless(self):
+        self._encrypt("--hidden-header")
+        p = self._info()
+        self.assertEqual(p.returncode, 0, msg=p.stderr.decode(errors="replace"))
+        self.assertIn(b"Format Version", p.stdout + p.stderr)
+
+    def test_info_keyed_with_second_password(self):
+        self._encrypt("--hidden-header", "--second-password", SECOND_PW)
+        p = self._info("--second-password", SECOND_PW)
+        self.assertEqual(p.returncode, 0, msg=p.stderr.decode(errors="replace"))
+        self.assertIn(b"Format Version", p.stdout + p.stderr)
+
+    def test_info_keyed_no_password_fails(self):
+        # Non-interactive: keyed file without the second password fails generic
+        # (no hang, no metadata leak).
+        self._encrypt("--hidden-header", "--second-password", SECOND_PW)
+        p = self._info()
+        self.assertNotEqual(p.returncode, 0)
+
     def test_keyless_round_trip(self):
         self._encrypt("--hidden-header")
         self.assertTrue(_is_hidden(self.enc))

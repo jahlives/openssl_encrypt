@@ -8102,7 +8102,7 @@ def _read_metadata_only(file_path, secure_mode=False):
         raise ValueError("Invalid file format: no metadata separator found")
 
 
-def extract_file_metadata(input_file):
+def extract_file_metadata(input_file, second_password=None):
     """
     Extract basic metadata from encrypted file without decryption.
 
@@ -8116,7 +8116,17 @@ def extract_file_metadata(input_file):
         ValueError: If file format is invalid
     """
     try:
-        metadata_b64, _ = _read_metadata_only(input_file, secure_mode=False)
+        # Transparently peel a hidden ("whitened") file's header: keyless
+        # always, keyed when the second password is supplied (keyed metadata is
+        # confidential without it).
+        _second_pw = (
+            second_password.encode("utf-8") if isinstance(second_password, str) else second_password
+        )
+        _hidden = _maybe_peel_hidden(input_file, False, _second_pw, None)
+        if _hidden is not None:
+            metadata_b64, _ = _hidden
+        else:
+            metadata_b64, _ = _read_metadata_only(input_file, secure_mode=False)
         # MED-8 Security fix: Use secure JSON validation for metadata parsing
         metadata_json = base64.b64decode(metadata_b64).decode("utf-8")
         try:
@@ -8164,13 +8174,15 @@ def extract_file_metadata(input_file):
         raise ValueError(f"Invalid file format: {str(e)}")
 
 
-def print_file_info(input_file: str, json_output: bool = False) -> dict:
+def print_file_info(input_file: str, json_output: bool = False, second_password=None) -> dict:
     """
     Display encrypted file metadata without decrypting.
 
     Args:
         input_file: Path to the encrypted file
         json_output: If True, print raw JSON instead of pretty-print
+        second_password: Optional second password to read a keyed hidden file's
+            metadata (keyless hidden files need none).
 
     Returns:
         dict: The full metadata dictionary
@@ -8178,7 +8190,7 @@ def print_file_info(input_file: str, json_output: bool = False) -> dict:
     Raises:
         ValueError: If the file is not a valid encrypted file
     """
-    info = extract_file_metadata(input_file)
+    info = extract_file_metadata(input_file, second_password=second_password)
     metadata = info["metadata"]
 
     if json_output:
