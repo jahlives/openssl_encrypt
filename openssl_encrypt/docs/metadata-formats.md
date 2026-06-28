@@ -30,7 +30,7 @@ OpenSSL Encrypt uses structured metadata to store encryption parameters, algorit
 - **Version 5**: Configurable data encryption algorithms for PQC
 - **Version 6**: Reserved for future use
 - **Version 7**: Secure chained salt derivation (v1.3.4 branch - identical to v9)
-- **Version 8**: Multi-round KDF support (deprecated - security vulnerability)
+- **Version 8**: Cascade encryption + sequential XOR (transitional, superseded by v9; read with the secure rule — see "Note on v8")
 - **Version 9**: Secure chained salt derivation for multi-round KDFs (v1.4.0+ default)
 - **Version 10-11**: Independent XOR key composition mode
 - **Version 12**: Reduced algorithm set with streaming chunked encryption for large files (v1.5.0+ default)
@@ -59,7 +59,7 @@ v10-11 (Independent XOR) → v12 (Streaming Chunked + Reduced Algorithms)
                                     ↓
                               Current Default (v1.5.0+)
 
-v8 (Multi-round KDF) - Deprecated immediately due to security vulnerability
+v8 (Cascade + sequential XOR) - Transitional; superseded by v9 (read with the secure salt rule)
 ```
 
 ### Key Improvements by Version
@@ -276,14 +276,30 @@ Specifies the symmetric encryption algorithm used for data encryption:
 
 **⚠️ SECURITY CRITICAL UPDATE**
 
-Format version 9 addresses a critical security vulnerability discovered in version 8's multi-round KDF salt derivation. Version 8 and below used predictable salt derivation that allowed attackers to precompute all round salts, enabling optimized rainbow table attacks.
+Format version 9 addresses a critical security vulnerability in multi-round KDF
+salt derivation. Affected files used predictable salt derivation that allowed
+attackers to precompute all round salts, enabling optimized rainbow table attacks.
 
-### Security Vulnerability (v8 and below)
+> **⚠️ Correction (current code is authoritative).** Earlier revisions of this
+> document said "v8 and below" decrypt with the legacy/predictable rule. **That is
+> not how the shipped code behaves.** The secure chained-salt rule is gated at
+> **`format_version >= 7`**, so **v7, v8, v9, v10+ all use secure derivation**;
+> only **v3–v6** use the legacy predictable rule. v8 used predictable salt **only
+> in pre-release builds (alpha.1 … beta.9)**; the fix shipped in beta.10 and
+> commit `22059bab` deliberately unified v8 with v10 ("v8 ≡ v10"). No stable
+> release ever wrote v8 as a default (the encrypt default was always v9), so
+> predictable-salt v8 files are not expected to exist — and a hypothetical one
+> would **not** decrypt under current code. Read the snippets below as the
+> *historical* vulnerability; the real version boundary is `< 7` (legacy) vs
+> `>= 7` (secure).
 
-In format versions ≤8, multi-round KDF salt derivation was predictable:
+### Security Vulnerability (the legacy rule, format_version < 7)
+
+In the affected versions (v3–v6, and v8 in pre-release builds only), multi-round
+KDF salt derivation was predictable:
 
 ```python
-# INSECURE (v8 and below)
+# INSECURE (legacy rule: v3–v6, and v8 in pre-release builds only)
 for round_num in range(kdf_rounds):
     if round_num == 0:
         round_salt = base_salt  # From metadata
@@ -398,15 +414,15 @@ def multi_round_kdf(password, base_salt, rounds, format_version):
 
     for i in range(rounds):
         # Version-aware salt derivation
-        if format_version >= 9:
-            # V9+ secure chained salt derivation
+        if format_version >= 7:
+            # v7+ secure chained salt derivation (v7, v8, v9, v10+)
             if i == 0:
                 round_salt = base_salt
             else:
                 # Chained: use previous output as salt
                 round_salt = current_password[:16]
         else:
-            # Legacy: predictable derivation (v8 and below)
+            # Legacy: predictable derivation (v3–v6 only)
             if i == 0:
                 round_salt = base_salt
             else:
@@ -424,7 +440,7 @@ def multi_round_kdf(password, base_salt, rounds, format_version):
 
 Version 9 maintains full backward compatibility:
 
-- **Decryption**: v8 and below files decrypt correctly using legacy salt derivation
+- **Decryption**: v3–v6 files decrypt using the legacy salt derivation; v7+ (incl. v8) decrypt using the secure chained derivation — the gate is `format_version >= 7`
 - **Encryption**: New files automatically use v9 with secure chained salt
 - **Detection**: Format version in metadata determines which method to use
 - **Migration**: Re-encryption recommended but not required
@@ -442,7 +458,7 @@ The security fix has minimal performance impact:
 
 #### Attack Complexity Comparison
 
-| Metric | v8 (Vulnerable) | v9 (Secure) | Improvement |
+| Metric | Legacy rule (v3–v6) | Secure rule (v7+) | Improvement |
 |--------|----------------|-------------|-------------|
 | **Salt Precomputation** | ✅ Possible | ❌ Impossible | ∞ |
 | **Parallel Attack** | ✅ Possible | ❌ Impossible | ∞ |
@@ -452,8 +468,8 @@ The security fix has minimal performance impact:
 #### Security Level Increase
 
 For a 3-round KDF configuration:
-- **v8**: Attacker can precompute all salts, then parallelize password guessing
-- **v9**: Attacker must compute all 3 rounds sequentially for each password guess
+- **Legacy rule (v3–v6)**: Attacker can precompute all salts, then parallelize password guessing
+- **Secure rule (v7+)**: Attacker must compute all 3 rounds sequentially for each password guess
 - **Result**: **Effective security increases by factor of KDF rounds**
 
 ### Migration Recommendations
@@ -500,36 +516,40 @@ Format versions 7 and 9 are **cryptographically identical** and implement the sa
 
 ### Implementation Unity
 
-Both v7 and v9 use identical secure chained salt derivation:
+v7, v8, and v9 all use identical secure chained salt derivation:
 
 ```python
-# Both v7 and v9 use this pattern:
-if format_version >= 7 and format_version != 8:
-    # Secure chained salt derivation
+# Current shipped pattern (v1.4.0+):
+if format_version >= 7:
+    # Secure chained salt derivation (v7, v8, v9, v10+)
     round_salt = previous_output[:16]
 else:
-    # Legacy predictable derivation (v1-6, v8)
+    # Legacy predictable derivation (v3–v6 only)
     round_salt = hashlib.sha256(base_salt + str(round_num).encode()).digest()[:16]
 ```
 
 ### Key Properties
 
-1. **Cryptographic Equivalence**: v7 and v9 produce identical keys for the same inputs
-2. **Security Level**: Both provide the same security improvements over v8 and below
+1. **Cryptographic Equivalence**: v7, v8, and v9 produce identical keys for the same inputs (v8 ≡ v10)
+2. **Security Level**: All of v7+ provide the same security improvement over the legacy (v3–v6) rule
 3. **Interoperability**: Files encrypted with v7 decrypt correctly in v1.4.0+
-4. **v8 Exception**: v8 deliberately excluded from secure derivation for backward compatibility
 
 ### Version Selection
 
 - **v1.3.4 (releases/1.3.4)**: Creates v7 files
-- **v1.4.0+ (feature/v1.4.0-development)**: Creates v9 files by default
-- **Both versions**: Can decrypt v7, v8, and v9 files correctly
+- **v1.4.0+**: Creates v9 files by default (v11 Independent XOR for STANDARD/PARANOID templates from 1.4.2)
+- **All current versions**: Can decrypt v7, v8, and v9 files correctly using the secure rule
 
-### Why v8 is Different
+### Note on v8 (historical)
 
-Version 8 remains vulnerable to maintain backward compatibility for existing v8 files. Files encrypted with v8 can still be decrypted, but new encryptions use v7 (in v1.3.4) or v9 (in v1.4.0+).
-
-**Important**: The check `format_version != 8` ensures v8 continues to use predictable salt derivation for decryption, while v7 and v9 both use secure chained derivation.
+An earlier dev-branch version of this check was `format_version >= 7 and
+format_version != 8`, which kept v8 on the *predictable* rule. That exclusion was
+**removed in commit `22059bab` (v1.4.0)** so that v8 derives identically to v10
+("v8 ≡ v10"). v8 used predictable salt only in **pre-release builds (alpha.1 …
+beta.9)**; the fix shipped in beta.10. Because no stable release ever wrote v8 as
+a default (the encrypt default was always v9), predictable-salt v8 files are not
+expected to exist — and a hypothetical one would **not** decrypt under current
+code, which reads v8 with the secure rule. Do not reintroduce the `!= 8` gate.
 
 ## Version 12 Specification
 
@@ -827,7 +847,7 @@ done
 | **v5** | ✅ Yes | ✅ Yes | Full support |
 | **v6** | ✅ Yes | ✅ Yes | Full support |
 | **v7** | ✅ Yes | ✅ Yes | **Secure chained salt** - v1.3.4 branch (cryptographically identical to v9) |
-| **v8** | ✅ Yes | ❌ No | **Deprecated - Security vulnerability** |
+| **v8** | ✅ Yes | ❌ No (not default) | Transitional cascade format; **read with the secure salt rule** (v8 ≡ v10), superseded by v9 |
 | **v9** | ✅ Yes | ✅ Yes | **v1.4.0 default** - Secure chained salt derivation |
 | **v10-11** | ✅ Yes | ✅ Yes | Independent XOR key composition mode |
 | **v12** | ✅ Yes | ✅ Yes | **Current default (v1.5.0+)** - Streaming chunked encryption, reduced algorithm set |
@@ -838,7 +858,7 @@ done
 2. **Algorithm Support**: Legacy algorithms remain supported for decryption
 3. **Security Maintenance**: Security patches applied to all supported versions
 4. **Deprecation Notice**: 12-month notice before removing support
-5. **v8 Security Exception**: v8 deprecated immediately due to security vulnerability (no 12-month notice)
+5. **v8**: a transitional format superseded by v9; current code reads v8 with the secure salt rule (v8 ≡ v10). It was never a stable write-default, so no predictable-salt v8 files are expected. See "Note on v8".
 
 ### Legacy Algorithm Mapping
 
@@ -898,17 +918,11 @@ def parse_metadata(metadata_bytes):
         raise InvalidMetadataError("Missing format_version field")
 
     version = metadata['format_version']
-    if version < 3 or version > 9:
+    if version < 3 or version > 12:  # MIN_FORMAT_VERSION..MAX_FORMAT_VERSION
         raise UnsupportedFormatError(f"Unsupported format version: {version}")
 
-    # Check for deprecated v8
-    if version == 8:
-        import warnings
-        warnings.warn(
-            "Format version 8 is deprecated due to security vulnerability. "
-            "Consider re-encrypting with version 9.",
-            DeprecationWarning
-        )
+    # v8 is a transitional format superseded by v9; it is read with the secure
+    # salt rule (v8 >= 7), so no special handling is required.
 
     # Version-specific validation
     if version >= 4:

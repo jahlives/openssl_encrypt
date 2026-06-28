@@ -376,15 +376,22 @@ with `hashed[:32]` (src: crypt_core.py:1364-1376,1421-1435,1511-1523). RandomX u
 its own always-chained construction (first salt `SHA256(salt || password[:16] ||
 b"randomx_salt")[:16]`, then `password[:32]`, src: crypt_core.py:3331-3364).
 
-> **⚠️ DISCREPANCY to resolve.** The shipped code gates the secure rule at
-> `format_version >= 7` with **no `!= 8` exception** (confirmed: a grep for
-> `format_version != 8` finds nothing), so **v7, v8, v9, v10+ all use the secure
-> rule**. However ADVISORY 2026-01 / `docs/metadata-formats.md` describe the fix
-> as landing at **v9** and treat **v8** as still using the predictable derivation
-> (and the v8 schema is titled accordingly). A reference decryptor MUST follow the
-> code (`>= 7` secure) to read real files; the maintainer should reconcile the
-> advisory wording with the shipped gate. Files at `format_version ≤ 6` use the
-> legacy rule.
+**v8 status (resolved).** The shipped code gates the secure rule at
+`format_version >= 7` with **no `!= 8` exception**, so **v7, v8, v9, v10+ all use
+the secure rule** — a reference decryptor MUST do the same. This was a
+*deliberate* decision: the gate evolved `>= 9` → `>= 7 and != 8` → `>= 7`
+(commit `22059bab`, "v8 ≡ v10"), making v8 derive identically to v10. v8 used
+predictable salt only in **pre-release builds** (alpha.1 … beta.9); the fix
+shipped in beta.10 and **every stable release (v1.4.0 … v1.4.5) reads/writes v8
+as secure**. Crucially, **no release ever wrote v8 as a default** — the encrypt
+default was always v9 (secure), and v8 was not CLI-selectable during the
+predictable window — so no predictable-salt v8 files are expected to exist.
+Consequence: a hypothetical legacy predictable-salt v8 file (if one were ever
+produced programmatically on a pre-beta.10 build) would **not** decrypt under
+current code; this is accepted as out of scope. Files at `format_version ≤ 6` use
+the legacy rule. *(Note: `docs/metadata-formats.md` and SECURITY.md ADVISORY
+2026-01 historically described v8 as "decrypts via legacy / vulnerable"; those
+were corrected to match this code-authoritative behavior.)*
 
 ### 7.3 XOR composition (v8 / v10 / v11)
 

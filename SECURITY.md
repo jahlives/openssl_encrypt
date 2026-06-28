@@ -231,11 +231,22 @@ relevant.
 ### ADVISORY 2026-01: Predictable Salt Derivation in Multi-Round KDF — Resolved
 
 **Severity:** High (CVSSv3 8.1) · **CWE-330** (Use of Insufficiently Random Values)
-**Affected Versions:** all versions using multi-round KDF configurations on
-format versions ≤ 6/8 (rounds > 1)
+**Affected on-disk versions:** files written at **format_version ≤ 6** with
+multi-round KDF configs (rounds > 1). Format version 8 used the predictable rule
+**only in pre-release builds** (1.4.0 alpha.1 … beta.9) and was never a stable
+write-default, so predictable-salt v8 files are not expected to exist.
 **Fixed In:** secure chained salt derivation — Format Version 7 (v1.3.4, 1.3.x
 line) and Format Version 9 (v1.4.1, 1.4.x line); the two implementations are
 unified and equivalent.
+
+> **Status note (current code).** The shipped decryptor gates the secure rule at
+> `format_version >= 7`, so **v7, v8, v9, and v10+ are all read with the secure
+> derivation** — only v3–v6 use the legacy predictable rule. v8 was deliberately
+> aligned with v10 (commit `22059bab`, v1.4.0); see
+> [docs/FORMAT.md](docs/FORMAT.md) §7.2 and
+> [metadata-formats.md](openssl_encrypt/docs/metadata-formats.md). A hypothetical
+> predictable-salt v8 file (only producible on a pre-beta.10 build) would not
+> decrypt under current code; this is accepted as out of scope.
 
 **Summary:** in the affected format versions, each round's salt for multi-round
 KDFs was derived predictably from the base salt stored in plaintext metadata:
