@@ -2,7 +2,7 @@
 
 > **Status:** DRAFT — populated from the implementation and citation-backed.
 > **Spec version:** 0.2 (code-derived)
-> **Covers tool versions:** 1.4.x and 1.5.x (highest shipped format_version: 12)
+> **Covers tool versions:** 1.4.x and 1.5.x (highest format_version: 13)
 > **Last updated:** 2026-06-28
 > **Editor:** Tobias <…>
 >
@@ -393,7 +393,7 @@ the legacy rule. *(Note: `docs/metadata-formats.md` and SECURITY.md ADVISORY
 2026-01 historically described v8 as "decrypts via legacy / vulnerable"; those
 were corrected to match this code-authoritative behavior.)*
 
-### 7.3 XOR composition (v8 / v10 / v11)
+### 7.3 XOR composition (v8 / v10 / v11 / v13)
 
 Combine primitive: `xor_bytes_secure` — byte-wise XOR of equal-length
 `SecureBytes` (src: crypt_core.py:1582-1626).
@@ -410,12 +410,27 @@ Combine primitive: `xor_bytes_secure` — byte-wise XOR of equal-length
   (src: crypt_core.py:2396), followed by a cipher-specific final transform
   (SHA-256 / SHA-512 / HKDF / base64, src: crypt_core.py:2412-2482). This is a
   robust XOR-combiner: secure if ≥1 component is unbroken (output/PRF sense).
+- **Independent XOR + per-component salts** (`format_version >= 13`): identical to
+  v11, except each component (each enabled hash/KDF stage) gets a **distinct,
+  domain-separated salt** instead of the shared `salt_0`
+  (src: `_indep_xor_component_salt`, crypt_core.py). Per component `name`:
+  `component_salt = HKDF-SHA256(IKM=salt_0, salt=none,
+  info=b"openssl_encrypt.indep-xor.v13.salt:" + name, length=len(salt_0))`, where
+  `name` ∈ {`sha256`,`sha512`,`sha3_256`,`sha3_512`,`blake2b`,`blake3`,`shake256`,
+  `argon2`,`scrypt`,`balloon`,`hkdf`,`randomx`}. The shared input
+  `SHA256(pw‖salt_0)` and the initial-hash component are **unchanged** (they are
+  singular and cannot duplicate). This retires the cancellation footgun below
+  while keeping the robust-combiner proof. v13 metadata shape == v11; the
+  derivation is parallel-incompatible (the parallel path delegates to sequential
+  for v13). **This derivation is pinned for cross-line byte-identity** — do not
+  alter the `info` string or output length.
 
 Hashes are iterated in dict-insertion order; XOR itself is commutative, so order
-does not change the v11 result, but **duplicate identical stages cancel to zero**
-(cancellation caveat, src: crypt_core.py:2085-2091) and order matters for the
-sequential chain. Independent-XOR multi-round chaining uses `result[:32]`
-(src: crypt_core.py:1887, parallel_kdf.py:320).
+does not change the v11/v13 result. At **v11/v12** the components share `salt_0`,
+so **duplicate identical stages would cancel to zero** (cancellation caveat,
+src: crypt_core.py:2085-2091) — this is retired at **v13** by the distinct
+per-component salts. Order matters for the sequential chain. Independent-XOR
+multi-round chaining uses `result[:32]` (src: crypt_core.py:1887, parallel_kdf.py).
 
 ### 7.4 Hidden-header outer key
 
@@ -743,7 +758,7 @@ A paste-safe wrapper over the binary container (src: armor.py):
 
 - A released version **MUST** decrypt every `format_version` it (or any prior
   release) ever wrote. Decryption support is **append-only**. Supported on-disk
-  range: `MIN_FORMAT_VERSION = 3` … `MAX_FORMAT_VERSION = 12` (src: verify.py:46-47).
+  range: `MIN_FORMAT_VERSION = 3` … `MAX_FORMAT_VERSION = 13` (src: verify.py:46-47).
 - **Encryption** defaults track the newest version; older versions MAY be retired
   for *writing*.
 - **1.5.0 removed the following entirely (encrypt *and* decrypt)**
@@ -821,7 +836,7 @@ blake3, shake128, shake256` (src: crypt_core.py:4248-4262). Whirlpool removed in
 
 ## 15. Format-version history (normative)
 
-`MIN_FORMAT_VERSION = 3`, `MAX_FORMAT_VERSION = 12` (src: verify.py:46-47). There
+`MIN_FORMAT_VERSION = 3`, `MAX_FORMAT_VERSION = 13` (src: verify.py:46-47). There
 is **no v0/v1/v2 on disk**. Per-version JSON schemas live in
 `openssl_encrypt/schemas/metadata_v{3..12}_schema.json`.
 
@@ -838,6 +853,7 @@ is **no v0/v1/v2 on disk**. Per-version JSON schemas live in
 | 10      | 1.4.x             | **sequential XOR** composition of stage outputs                     | §7.3 — order-sensitive |
 | 11      | 1.4.0b10          | **Independent XOR** key derivation (robust XOR-combiner)            | §7.3 |
 | 12      | 1.4.x             | **streaming chunked** AEAD (per-chunk HKDF nonces, trailer HMAC); `OESC` magic; current default | §8.4 |
+| 13      | 1.4.x / 1.5.x     | **Independent XOR + per-component domain-separated salts** (retires XOR cancellation); metadata shape == v11; same number/meaning on both lines | §7.3 |
 
 **⚠️ UNVERIFIED:** exact introducing tool-version of v6 (schema exists; no
 changelog line pins it). See §7.2 for the v8 secure-vs-legacy salt discrepancy.

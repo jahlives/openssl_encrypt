@@ -68,7 +68,14 @@
   the same `(pw+salt)`, so the property holds only while no two are the *same
   function with identical params* (XOR of identical outputs = 0). Recommend
   per-component domain separation, e.g. `HKDF(salt, info=algo_name)`.
-  *(Track the matching impl + test as a separate hardening item.)*
+  **ADDRESSED in code at `format_version 13`** (2026-06-28): the
+  `_indep_xor_component_salt` helper derives a distinct
+  `HKDF-SHA256(salt_0, info="openssl_encrypt.indep-xor.v13.salt:"+name)` per
+  component, so identical components can no longer cancel; v9/v11/v12 keep the
+  shared salt (decrypt-compat). Gated, opt-in, byte-identical on both lines
+  (cross-line golden vector in `test_format_v13_xor_domsep.py`). We chose this
+  over the sequential re-injection construction — see
+  `TODO_sequential-xor-reinjection.md` for the rationale.
 - [x] If sequential XOR stays an option, document the recommended hardening:
   **re-inject the original password (or a stable commitment) into every round**
   so no early link can sever the pw dependency — and note it still lacks a clean

@@ -2130,6 +2130,36 @@ def normalize_to_key_length_secure(data, target_length: int) -> "SecureBytes":
                 secure_memzero(bytearray(data_bytes))
 
 
+def _indep_xor_component_salt(base_salt: bytes, name: str, format_version: int) -> bytes:
+    """Per-component salt for Independent XOR key derivation.
+
+    ``format_version >= 13``: derive a **distinct, domain-separated** salt for each
+    XOR component (each enabled hash/KDF stage) via HKDF-SHA256, so two components
+    can never produce identical outputs that cancel under XOR — retiring the
+    shared-``(pw+salt)`` cancellation footgun while keeping the robust-combiner
+    (strongest-link) design. The shared input ``SHA256(pw||salt_0)`` and the
+    initial-hash component are intentionally left unchanged (they cannot duplicate).
+
+    ``format_version < 13`` (v9/v11/v12): returns ``base_salt`` unchanged, so all
+    existing files derive bit-identically.
+
+    The derivation is **pinned** for cross-line (1.4.x/1.5.x) byte-identity: do not
+    change the ``info`` string or the output length.
+    """
+    if format_version is None or format_version < 13:
+        return base_salt
+
+    from cryptography.hazmat.primitives import hashes as crypto_hashes
+    from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+
+    return HKDF(
+        algorithm=crypto_hashes.SHA256(),
+        length=len(base_salt),
+        salt=None,
+        info=b"openssl_encrypt.indep-xor.v13.salt:" + name.encode("ascii"),
+    ).derive(base_salt)
+
+
 def compute_hash_independent(
     password: bytes,
     salt: bytes,
@@ -2561,13 +2591,12 @@ def generate_key_independent_xor(
       - It does NOT cover COST: total attacker work is the SUM of all components
         in both this and the sequential mode. "Strongest component" buys
         robustness, not extra memory-hardness / ASIC resistance.
-      - Cancellation caveat: because every component shares the same
-        (password + salt), the property holds only while no two components are
-        the SAME function with identical params (XOR of identical outputs = 0).
-        Avoid duplicate identical stages; prefer per-component domain separation
-        (e.g. HKDF(salt, info=algo_name)). A future format version re-injects the
-        original password/salt per round to retire this footgun
-        (see docs/TODO_sequential-xor-reinjection.md).
+      - Cancellation caveat (retired at format_version 13): with a shared
+        (password + salt), two components that are the SAME function with
+        identical params would XOR to 0. format_version >= 13 derives a distinct
+        HKDF domain-separated salt per component (see _indep_xor_component_salt),
+        so identical components can no longer cancel; v9/v11/v12 use the shared
+        salt and rely on the components being distinct functions.
 
     Trade-off: Attackers can parallelize computation of individual algorithms,
     but the key remains secure as long as at least one algorithm is unbroken.
@@ -2706,7 +2735,7 @@ def generate_key_independent_xor(
 
                 result = compute_hash_independent(
                     password=algorithm_input,  # Use initial hash instead of raw password
-                    salt=salt,
+                    salt=_indep_xor_component_salt(salt, algo, format_version),
                     algorithm=algo,
                     rounds=rounds,
                     key_length=key_length,
@@ -2740,7 +2769,7 @@ def generate_key_independent_xor(
 
             result = compute_kdf_independent(
                 password=algorithm_input,  # Use initial hash instead of raw password
-                salt=salt,
+                salt=_indep_xor_component_salt(salt, "argon2", format_version),
                 kdf_type="argon2",
                 kdf_config=argon2_config,
                 key_length=key_length,
@@ -2767,7 +2796,7 @@ def generate_key_independent_xor(
 
             result = compute_kdf_independent(
                 password=algorithm_input,  # Use initial hash instead of raw password
-                salt=salt,
+                salt=_indep_xor_component_salt(salt, "scrypt", format_version),
                 kdf_type="scrypt",
                 kdf_config=scrypt_config,
                 key_length=key_length,
@@ -2794,7 +2823,7 @@ def generate_key_independent_xor(
 
             result = compute_kdf_independent(
                 password=algorithm_input,  # Use initial hash instead of raw password
-                salt=salt,
+                salt=_indep_xor_component_salt(salt, "balloon", format_version),
                 kdf_type="balloon",
                 kdf_config=balloon_config,
                 key_length=key_length,
@@ -2818,7 +2847,7 @@ def generate_key_independent_xor(
             hkdf_config = kdf_config_section["hkdf"]
             result = compute_kdf_independent(
                 password=algorithm_input,  # Use initial hash instead of raw password
-                salt=salt,
+                salt=_indep_xor_component_salt(salt, "hkdf", format_version),
                 kdf_type="hkdf",
                 kdf_config=hkdf_config,
                 key_length=key_length,
@@ -2846,7 +2875,7 @@ def generate_key_independent_xor(
 
                 result = compute_kdf_independent(
                     password=algorithm_input,
-                    salt=salt,
+                    salt=_indep_xor_component_salt(salt, "randomx", format_version),
                     kdf_type="randomx",
                     kdf_config=randomx_config,
                     key_length=key_length,
@@ -8175,7 +8204,7 @@ def extract_file_metadata(input_file, second_password=None):
         format_version = metadata.get("format_version", 1)
 
         # Extract algorithm based on format version
-        if format_version in [4, 5, 6, 7, 8, 9, 10, 11, 12]:
+        if format_version in [4, 5, 6, 7, 8, 9, 10, 11, 12, 13]:
             encryption = metadata.get("encryption", {})
             algorithm = encryption.get("algorithm", EncryptionAlgorithm.FERNET.value)
             encryption_data = encryption.get("encryption_data", "aes-gcm")
@@ -9764,7 +9793,7 @@ def decrypt_file(
 
     # For format_version 4, 5, 6, 7, 8, 9, 10, or 11, set correct hash_config for printing purposes
     # This doesn't change the actual metadata, just passes the right info to print_hash_config
-    if format_version in [4, 5, 6, 7, 8, 9, 10, 11, 12]:
+    if format_version in [4, 5, 6, 7, 8, 9, 10, 11, 12, 13]:
         # If verbose, pass the full metadata to print_hash_config for proper display
         if verbose:
             print_hash_config_metadata = metadata
@@ -9774,7 +9803,7 @@ def decrypt_file(
         print_hash_config_metadata = metadata.get("hash_config", {})
 
     # Handle format version 4, 5, 6, 7, 8, 9, 10, 11, or 12
-    if format_version in [4, 5, 6, 7, 8, 9, 10, 11, 12]:
+    if format_version in [4, 5, 6, 7, 8, 9, 10, 11, 12, 13]:
         # Extract information from new hierarchical structure
         derivation_config = metadata["derivation_config"]
         salt = base64.b64decode(derivation_config["salt"])
@@ -9830,7 +9859,7 @@ def decrypt_file(
         # Check if this is V8+ cascade format
         is_cascade = encryption.get("cascade", False)
 
-        if format_version in [8, 9, 10, 11, 12] and is_cascade:
+        if format_version in [8, 9, 10, 11, 12, 13] and is_cascade:
             # Extract cascade information
             cascade_cipher_chain = encryption.get("cipher_chain", [])
             cascade_hkdf_hash = encryption.get("hkdf_hash", "sha256")
@@ -10500,7 +10529,7 @@ def decrypt_file(
     if pqc_has_private_key:
         try:
             # Handle different format versions
-            if format_version in [4, 5, 6, 7, 8, 9, 10, 11, 12]:
+            if format_version in [4, 5, 6, 7, 8, 9, 10, 11, 12, 13]:
                 # Get encrypted private key from v4+ structure
                 encrypted_private_key = base64.b64decode(metadata["encryption"]["pqc_private_key"])
             else:  # format_version 3
