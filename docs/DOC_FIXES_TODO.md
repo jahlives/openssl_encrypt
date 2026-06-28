@@ -39,9 +39,14 @@
   (default) template sets `randomx.enabled = True` (10 rounds), asserted by
   `test_standard_template.py`. Only the bare `--enable-randomx` CLI flag defaults
   off. Per maintainer decision (2026-06-28) this is a **docs-only** fix: we
-  document the *reality* (RandomX is on in STANDARD) but reframe it honestly as an
-  exotic PoW / defense-in-depth, not the load-bearing anti-ASIC defense
-  (Argon2id memory-hardness is). The template default was **not** changed.
+  document the *reality* (RandomX is on in STANDARD) and frame it correctly as
+  **defense-in-depth**. RandomX is **not** a memory-hard password KDF and does
+  not replace Argon2id's per-guess cost (Argon2id memory-hardness stays the
+  primary, load-bearing anti-ASIC lever). But RandomX *does* contribute real
+  anti-ASIC value by a different mechanism: it is heavily optimized for commodity
+  CPUs (Monero's anti-ASIC PoW), so a default CPU is near-optimal and specialized
+  hardware is highly unlikely to beat it — it makes custom silicon an even worse
+  bet on top of Argon2id. The template default was **not** changed.
 
 ## 2. KDF composition modes (independent vs sequential XOR)
 
