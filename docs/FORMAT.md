@@ -1,9 +1,9 @@
 # openssl_encrypt — On-Disk Format Specification
 
-> **Status:** DRAFT / scaffold — not yet normative.
-> **Spec version:** 0.1 (skeleton)
+> **Status:** DRAFT — populated from the implementation and citation-backed.
+> **Spec version:** 0.2 (code-derived)
 > **Covers tool versions:** 1.4.x and 1.5.x (highest shipped format_version: 12)
-> **Last updated:** YYYY-MM-DD
+> **Last updated:** 2026-06-28
 > **Editor:** Tobias <…>
 >
 > This document is the **authoritative description of the bytes written to
@@ -14,8 +14,10 @@
 > 3. Anchor the project's compatibility promise: *every released version MUST
 >    decrypt every format_version it ever produced* (see §13).
 >
-> Anything marked **`TODO`** or **`⚠️ VERIFY`** is a placeholder requiring an
-> authoritative value from the implementation; do not treat it as fact yet.
+> Values below were extracted from the `feature/v1.5.x-development` tree and are
+> annotated with `(src: file:line)` so any claim can be re-checked. Items that
+> could **not** be confirmed from code are marked **`⚠️ UNVERIFIED`** and must be
+> resolved before this leaves DRAFT.
 
 ---
 
@@ -48,7 +50,18 @@ they are **not** described here.
 
 ## 2. Notation & conventions
 
-- **Byte order:** all multi-byte integer length fields are **`TODO` (big-endian / little-endian — VERIFY)**.
+- **Byte order:** there is **no single endianness** — it depends on the
+  subsystem, and an implementer MUST respect each:
+  - **Hidden-header** length field: **big-endian** uint32
+    (`int.to_bytes(4, "big")`, src: hidden_header.py:408,438).
+  - **Streaming** on-disk framing (payload version, per-chunk index and length,
+    trailer chunk count): **little-endian** uint32 (`struct.pack("<I", …)`,
+    src: streaming.py:574,609-610,624).
+  - **Streaming** HKDF/AAD *inputs* (chunk index inside nonce/salt/AAD
+    derivation): **big-endian** uint32 (`struct.pack(">I", …)`,
+    src: streaming.py:146,208). These never appear as on-disk length prefixes.
+  - The single-cipher and cascade bulk bodies use **no length prefix** — the
+    nonce is a fixed-width raw byte prefix (§8.1).
 - **Encoding of binary fields inside metadata:** standard Base64,
   [RFC 4648] §4 (`+`/`/` alphabet, `=` padding). *Note:* the implementation uses
   URL-safe Base64 internally for some derived **key material**; that never
@@ -58,25 +71,40 @@ they are **not** described here.
 - **`HKDF`** is HKDF-[RFC 5869]; the hash is SHA-256 unless stated otherwise.
 - **Hashes** named below (`sha256`, `sha3_256`, `blake3`, …) use the standard
   algorithm identifiers from §14.4.
-- JSON is encoded as UTF-8. Field **insertion order is significant** for some
-  versions (XOR composition, see §7.3) and MUST be preserved on round-trip.
+- JSON is encoded as UTF-8. Field **insertion order is significant** for the
+  non-envelope AEAD AAD (§6) and for sequential XOR composition (§7.3) and MUST
+  be preserved on round-trip.
 
 ---
 
 ## 3. Container at a glance
 
-openssl_encrypt writes one of two physical containers. The **format byte**
-(first byte) and a sniff of the leading bytes select the parser:
+openssl_encrypt writes one of two physical containers. There is **no magic byte**
+for the hidden container (by design — it must be indistinguishable from random),
+so detection works by recognising the *standard* shape and treating everything
+else as hidden (src: hidden_header.py:575-649, crypt_core.py:8685-8742):
 
-| Container          | Leading bytes                              | Plaintext metadata? | §   |
-|--------------------|--------------------------------------------|---------------------|-----|
-| Standard           | Base64 alphabet up to a `:` (0x3A)         | Yes (Base64 JSON)   | §4.1 |
-| Hidden / whitened  | High-entropy salt+nonce (no `:` structure) | No (header is encrypted) | §4.2 |
+| Container          | Discriminator                                                  | Plaintext metadata? | §   |
+|--------------------|----------------------------------------------------------------|---------------------|-----|
+| Standard           | A Base64-alphabet prefix (`len % 4 == 0`) up to the first `:` (0x3A) that decodes and begins with `{` | Yes (Base64 JSON)   | §4.1 |
+| Hidden / whitened  | Anything ≥ 60 bytes that does **not** match the above ("does not look legacy") | No (header is encrypted) | §4.2 |
 
-> **⚠️ VERIFY — format detection.** Describe the exact discriminator the decoder
-> uses to tell a standard file from a hidden file (e.g. "attempt Base64-until-`:`
-> parse; on failure, fall back to the whitened parser", or a magic/length test).
-> A decryptor needs this to be deterministic and unambiguous.
+**Detection algorithm (normative, src: hidden_header.py:592-649):**
+
+1. If `len(file) < HEADER_OFFSET + AUTH_LEN` (i.e. **< 60 bytes**) → treat as
+   standard/legacy (too short to be a hidden blob).
+2. `looks_like_legacy(file)`:
+   - `colon = file.find(b":")`; if `colon <= 0` → **not legacy** (so a file with
+     no `:` separator is classified as **hidden**, not rejected outright here).
+   - the candidate prefix (bytes before the first `:`) MUST satisfy
+     `len % 4 == 0` and match `^[A-Za-z0-9+/]+={0,2}$`, MUST Base64-decode with
+     `validate=True`, and the decoded bytes MUST start with `b"{"`.
+   - if all hold → **standard**; else → **hidden**.
+3. The CLI may force the parser (`hidden_header=True/False`); `None` = auto-detect
+   (src: crypt_core.py:8705-8742).
+
+When scanning a stream, the hidden-detector reads up to
+`_HIDDEN_DETECT_CAP = 4 MiB` in 64 KiB blocks (src: crypt_core.py:8685).
 
 ---
 
@@ -91,183 +119,340 @@ openssl_encrypt writes one of two physical containers. The **format byte**
 └──────────────────────────────┴───────┴───────────────────────────────┘
 ```
 
-- The metadata region is everything up to the **first** `:` (0x3A) byte.
-- A reader MUST locate the separator without buffering the whole payload
-  (the reference reader scans in 8 KiB blocks up to a **2 MiB** metadata cap).
-- A file with no `:` separator is **invalid**.
-- The payload framing (nonce/tag placement, chunking) is determined by the
-  metadata; see §8.
-
-> **⚠️ VERIFY — payload framing.** Specify exactly how the symmetric nonce(s) and
-> authentication tag(s) are laid out in `payload` for each mode:
-> single-cipher one-shot, cascade, and streaming. Is the nonce prefixed?
-> Is the tag appended by the AEAD library or framed by us? Document per mode.
+- The metadata region is everything up to the **first** `:` (0x3A) byte
+  (src: crypt_core.py:7178-7180 write; 4616-4620 / 7304 read).
+- A reader MUST locate the separator without buffering the whole payload. The
+  reference reader scans incrementally in **8 KiB** blocks
+  (`_BLOCK_SIZE = 8192`) up to a **2 MiB** metadata cap
+  (`_MAX_METADATA_SIZE = 2*1024*1024`); exceeding the cap with no `:` →
+  `ValueError("…no metadata separator found")` (src: crypt_core.py:7290-7320).
+- A file with no `:` separator is invalid for the standard parser
+  (`ValueError("…missing colon separator")`, src: crypt_core.py:4616-4618) — but
+  see §3: such a file is normally routed to the hidden parser first.
+- **Payload framing** is determined by the metadata; see §8. For single-cipher
+  and cascade the payload after `:` is **Base64-encoded**
+  (`base64.b64encode`, src: crypt_core.py:7179); for **streaming** the payload is
+  **raw binary** starting with the `OESC` magic (§8.4, src: streaming.py:569-574).
 
 ### 4.2 Hidden ("whitened") container — profile version 1
 
 No plaintext magic bytes or JSON; the entire header is encrypted and
 length-whitened so the file is indistinguishable from random of the same size.
-Domain-separated by purpose:
+Implemented in `hidden_header.py`. Domain-separated by purpose
+(src: hidden_header.py:64-67):
 
-- keyless:  `oe-hidden-header/keyless/v1`
-- keyed:    `oe-hidden-header/keyed/v1`   (gated by a second password)
+- keyless:  `b"oe-hidden-header/keyless/v1"`
+- keyed:    `b"oe-hidden-header/keyed/v1"`   (gated by a second password)
 
-Physical layout:
+Physical layout (src: hidden_header.py:290-305):
 
 ```
 ┌──────────┬───────────┬──────────────┬───────────────┬──────────┬────────┐
-│ salt     │ nonce     │ whitened_len │ header_region │ auth tag │ body   │
-│ SALT_LEN │ NONCE_LEN │ LEN_FIELD    │ header_len    │ AUTH_LEN │  …     │
+│ salt     │ nonce     │ whitened_len │ header_region │ auth     │ body   │
+│ 16 B     │ 24 B      │ 4 B          │ header_len    │ 16 B     │  …     │
 └──────────┴───────────┴──────────────┴───────────────┴──────────┴────────┘
                                        └─ encrypted standard header (§5)
 ```
 
-- `HEADER_OFFSET = SALT_LEN + NONCE_LEN + LEN_FIELD = 44 bytes` (fixed for
-  profile v1).
-- The outer key is derived via `HKDF(..., info="outer-key")` from the password
-  (keyed) or from a fixed keyless secret; see §7.4.
-- `whitened_len` encodes the true `header_len` after de-whitening; bounds:
-  `header_len ≤ 64 MiB` (`_MAX_HEADER_LEN`).
+- **Field lengths (fixed for profile v1):** `SALT_LEN = 16`,
+  `NONCE_LEN = 24` (XChaCha nonce), `LEN_FIELD_LEN = 4`, `AUTH_LEN = 16`, so
+  `HEADER_OFFSET = 16 + 24 + 4 = 44` bytes (src: hidden_header.py:301-305).
+  Minimum valid blob = `HEADER_OFFSET + AUTH_LEN = 60` bytes.
+- **Outer AEAD:** XChaCha20-Poly1305 in **keyed** mode (`AUTH` = 16-byte
+  Poly1305 tag; AAD = `salt || nonce || whitened_len`, src: hidden_header.py:413,461).
+  In **keyless** mode the header is XORed with a raw XChaCha20 keystream and
+  `AUTH` is 16 **random decoy** bytes (no real tag), preserving indistinguishability
+  (src: hidden_header.py:417-420,462-463).
+- **Length whitening:** `whitened_len = uint32_be(header_len) XOR
+  XChaCha20_keystream(len_key, nonce)[:4]` (src: hidden_header.py:408-410). On read,
+  `header_len ≤ _MAX_HEADER_LEN = 64 MiB`; over-range or inconsistent length →
+  authentication/validation error (src: hidden_header.py:310,444-454).
 - `header_region` decrypts to a **standard metadata object** (§5); from there
-  decryption proceeds as for the standard container.
+  decryption proceeds as for the standard container (the decryptor re-wraps it to
+  the legacy `b64(meta):payload` form internally, src: crypt_core.py:4604-4613).
+- **Keyed vs keyless gating:** presence of a non-empty *second password* selects
+  keyed; `None`/empty selects keyless (src: hidden_header.py:403,434).
 
-> **⚠️ VERIFY — exact field lengths.** Fill in `SALT_LEN`, `NONCE_LEN`,
-> `LEN_FIELD` (such that they sum to 44), and `AUTH_LEN`. State the outer AEAD
-> (e.g. XChaCha20-Poly1305 / AES-256-GCM) and the length-whitening transform.
+Outer-key derivation is in §7.4.
 
 ---
 
 ## 5. The metadata object
 
-A JSON object. Schema below applies to **format_version ≥ 8**; see §15 for the
-history and §5.4 for legacy shapes.
+A JSON object. The schema below applies to **format_version ≥ 8**; see §15 for the
+history and §5.4 for legacy shapes. Authoritative builder: `create_metadata_v8`
+(src: crypt_core.py:4136-4242).
 
 ### 5.1 Top-level fields
 
 | Field               | Type    | Presence            | Meaning                                              |
 |---------------------|---------|---------------------|------------------------------------------------------|
 | `format_version`    | int     | REQUIRED            | On-disk format version (§15). Drives all parsing.    |
-| `mode`              | string  | REQUIRED            | `"symmetric"` or `"asymmetric"`.                     |
+| `mode`              | string  | REQUIRED            | `"symmetric"` (src: crypt_core.py:4234) or `"asymmetric"` (§10, format_version 7 path). |
 | `derivation_config` | object  | REQUIRED (symmetric)| KDF/salt parameters (§5.2).                          |
 | `hashes`            | object  | REQUIRED            | `original_hash`, optional `encrypted_hash` (§5.3).   |
 | `encryption`        | object  | REQUIRED            | Cipher parameters; shape depends on cascade (§8).    |
-| `aead_binding`      | bool    | OPTIONAL            | `true` ⇒ metadata is bound as AEAD AAD (§6).         |
+| `aead_binding`      | bool    | OPTIONAL            | `true` ⇒ metadata is bound as AEAD AAD (§6). Set only when AAD mode is on (src: crypt_core.py:4241-4242). |
+| `encrypted_at`      | string  | OPTIONAL            | UTC timestamp `%Y-%m-%dT%H:%M:%SZ` (src: crypt_core.py:4356). |
+| `archive`           | object  | OPTIONAL            | Present when a directory was encrypted (src: crypt_core.py:6800-6805). |
+| `signature`         | object  | OPTIONAL            | Asymmetric-mode metadata signature (§10/§11).        |
+
+Envelope fields (`wrapped_dek`, `dek_slots`, `dek_slots_mac`) live **inside**
+`encryption`, not at top level (§9; src: crypt_core.py:6807-6816).
 
 ### 5.2 `derivation_config`
 
 ```jsonc
 "derivation_config": {
   "salt": "<b64>",                       // primary KDF salt
-  "hash_config": { "sha3_256": { "rounds": 10000 }, … },
+  "hash_config": { "sha3_512": { "rounds": 10000 }, … },
   "kdf_config":  { "argon2": { … }, "balloon": { … }, "scrypt": { … },
                    "hkdf": { … }, "randomx": { … } }
 }
 ```
 
-- `hash_config` keys are iterative hash stages (§14.4); `rounds: 0` ⇒ disabled.
-- `kdf_config` keys are memory-hard / KDF stages (§14.3). `randomx` is **opt-in**
-  (disabled by default) and SHOULD NOT be relied on as a security parameter.
-- **Order matters** for XOR-composition versions (§7.3).
+- `hash_config` keys are iterative hash stages (§14.4); `rounds: 0` ⇒ disabled
+  (the entry is still written, but the stage is skipped, src: crypt_core.py:1210,2199).
+  Accepted hash keys: `sha512, sha384, sha256, sha224, sha3_512, sha3_384,
+  sha3_256, sha3_224, blake2b, blake2s, blake3, shake256, shake128`
+  (src: crypt_core.py:4248-4262).
+- `kdf_config` keys are memory-hard / KDF stages (§14.3): `scrypt, argon2,
+  balloon, hkdf, randomx` (src: crypt_core.py:4266-4269). `randomx` is **opt-in**
+  in spirit but **is enabled in the STANDARD template** (src: crypt_cli.py:627);
+  it is a CPU-bound PoW, not a vetted password KDF — SHOULD be treated as
+  defense-in-depth, not the primary cost parameter.
+- **Insertion order matters** — see §6 (the non-envelope AAD is the literal
+  `json.dumps(metadata)` without `sort_keys`) and §7.3 (XOR composition).
 
-> **TODO — per-KDF parameter tables.** Document the exact parameter object for
-> each KDF (Argon2: time/memory/parallelism/variant; Balloon: space/time/hash;
-> scrypt: N/r/p; RandomX: rounds/height). Include accepted ranges and defaults.
+**Per-KDF parameter objects** (keys as written; defaults as read by the sequential
+`generate_key`, src: crypt_core.py:2857-3353):
+
+| KDF      | Keys (on disk)                                              | Defaults (sequential read)                          |
+|----------|------------------------------------------------------------|-----------------------------------------------------|
+| argon2   | `enabled, time_cost, memory_cost, parallelism, hash_len, type, rounds` | time_cost 3, memory_cost 65536 (KiB), parallelism 4, type 2 (=Argon2id), rounds 1; `hash_len` forced to key length |
+| balloon  | `enabled, time_cost, space_cost, parallelism, hash_len, rounds`        | time_cost 3, space_cost 65536, parallelism 4, rounds 1; output 32 B |
+| scrypt   | `enabled, n, r, p, rounds`                                  | n/r/p REQUIRED (no defaults — KeyError if missing), rounds 1; output 32 B |
+| hkdf     | `enabled, algorithm, rounds`                                | algorithm `sha256` (sha224/384/512 accepted), info `b"openssl_encrypt_hkdf"`, rounds 1 |
+| randomx  | `enabled, rounds, mode, height, hash_len`                  | rounds 1, mode `light`, height 1 |
+
+> **Note:** the **independent-XOR** path (§7.3) reads slightly different defaults
+> (argon2 time_cost 2 / memory_cost 102400 / parallelism 8; hkdf info
+> `b"independent-xor-hkdf"`) (src: crypt_core.py:1858-2049). The template presets
+> QUICK/STANDARD/PARANOID set their own values (src: crypt_cli.py:585,607,640).
+> No centralized numeric range-clamping was found — out-of-range values surface as
+> library errors from argon2/scrypt/balloon. **⚠️ UNVERIFIED:** accepted ranges.
 
 ### 5.3 `hashes`
 
 | Field            | Type   | Presence | Meaning                                            |
 |------------------|--------|----------|----------------------------------------------------|
-| `original_hash`  | string | REQUIRED | Hash of the **plaintext** (algorithm: **`TODO`**). |
-| `encrypted_hash` | string | OPTIONAL | Hash of the **ciphertext** for tamper pre-check.   |
+| `original_hash`  | string | REQUIRED | **SHA-256 hex** of the **plaintext** (src: crypt_core.py:921-942,6106). |
+| `encrypted_hash` | string | OPTIONAL | **SHA-256 hex** of the **ciphertext**, for a tamper pre-check. |
 
-> **⚠️ VERIFY** which hash function produces these, what they cover exactly, and
-> whether they are security-relevant or convenience-only (AEAD already provides
-> integrity — clarify the role so implementers don't over-rely on them).
+- Both are SHA-256 hex digests, compared in constant time on decrypt
+  (src: crypt_core.py:10497-10505, 9300-9308).
+- `encrypted_hash` is written **only on the non-AEAD path** and is **omitted for
+  all AEAD ciphers** (`include_encrypted_hash=False`, src: crypt_core.py:6791,6909-6914).
+  For AEAD files the tag provides ciphertext/metadata integrity; `original_hash`
+  is a post-decryption plaintext check (defense-in-depth, **not** the primary
+  integrity mechanism). For legacy/non-AEAD ciphers (Fernet), `encrypted_hash`
+  **is** the security-relevant ciphertext-tamper check.
 
-### 5.4 Legacy metadata shapes (format_version ≤ 7)
+### 5.4 Legacy metadata shapes (format_version 3–7)
 
-> **TODO.** Versions 0–7 used different, flatter structures and have in-code
-> converters (`convert_metadata_v3_to_v4`, `v4↔v5`, …). A decryptor that targets
-> only current files MAY ignore these, but the **reference** decryptor MUST
-> support them (compatibility promise, §13). Document each legacy shape or
-> explicitly scope them to "decrypt-only via the reference implementation".
+The on-disk floor is **format_version 3** (`MIN_FORMAT_VERSION = 3`,
+src: verify.py:46); there is **no v0/v1/v2** on disk (in-code `…get("format_version", 1)`
+defaults are memory sentinels, not real formats). In-code converters bridge the
+shapes (all in crypt_core.py):
+
+- **v3 — flat.** Top-level `salt`, `hash_config` (flat `{algo: int_rounds}`),
+  `original_hash`, `encrypted_hash`, `algorithm`, flat `scrypt`/`argon2`/`balloon`,
+  flat `pqc_*`. (`convert_metadata_v3_to_v4`, src: crypt_core.py:3612.)
+- **v4 — nested.** Introduces `derivation_config{salt,hash_config:{algo:{rounds}},
+  kdf_config}`, `hashes{…}`, `encryption{algorithm,…}` — the structure v5–v12
+  retain. (`convert_metadata_v4_to_v3`, src: crypt_core.py:3741.)
+- **v5 — adds `encryption.encryption_data`** (configurable bulk algorithm for PQC).
+  (`convert_metadata_v4_to_v5` / `v5_to_v4`, src: crypt_core.py:3719,3698.)
+- **v6 — adds formal HSM validation** fields (schema title).
+- **v7 — adds PQC-signature support for asymmetric mode**, and is the first
+  version under the secure chained-salt rule (§7.2).
+
+A decryptor targeting only current files MAY ignore v3–v5, but the **reference**
+decryptor MUST support them (§13).
 
 ---
 
 ## 6. AEAD associated-data (AAD) binding
 
-When `aead_binding` is `true`, a **stable subset** of the metadata is supplied
-as the AEAD associated data for the bulk encryption, so header tampering is
-detected on decrypt.
+When `aead_binding` is `true`, metadata is supplied as the AEAD associated data
+for the bulk encryption, so header tampering is detected on decrypt. There are
+**two distinct AAD constructions** — pick by whether the file is an envelope file
+(presence of `encryption.wrapped_dek`):
 
-- The AAD is a canonical serialization of the metadata **excluding** fields that
-  are themselves keying/recovery material, namely (envelope mode):
-  `encryption.wrapped_dek`, `encryption.dek_slots`, `encryption.dek_slots_mac`.
-  Those are protected by their **own** DEK-keyed MAC instead (§9).
+### 6.1 Non-envelope AEAD (the common case)
 
-> **⚠️ VERIFY — canonicalization.** This is the single most audit-sensitive part
-> of the spec. Specify **exactly**:
-> 1. which keys are included vs. excluded, per mode and per version;
-> 2. the canonical byte serialization (key ordering, whitespace, encoding) so
->    encrypt and decrypt produce byte-identical AAD;
-> 3. what changed across versions (the README notes metadata-binding was
->    incomplete before 1.3.0 — pin the exact version that fixed it).
+The AAD is the **literal `metadata_b64` bytes** — i.e.
+`base64( json.dumps(metadata) )` using **default `json` separators and NO
+`sort_keys`** (src: crypt_core.py:6817-6818, 6879-6887). On decrypt the SAME
+bytes are taken directly from the file header (not re-serialized), so the AAD is
+byte-identical regardless of Python dict quirks — **which is exactly why metadata
+insertion order is load-bearing** (§5.2). Decrypt selects it at
+crypt_core.py:9988-9996.
+
+### 6.2 Envelope AEAD (canonical, sorted)
+
+For envelope files the AAD is `envelope_aad(metadata)` — a **canonical**
+serialization (src: envelope.py:80-116):
+
+```python
+json.dumps(reduced, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+```
+
+`reduced` is a deep copy of the metadata with these keys removed
+(src: envelope.py:45,51,106-112):
+
+- the **entire top-level `derivation_config`** subtree, **and**
+- `encryption.wrapped_dek`, `encryption.dek_slots`, `encryption.dek_slots_mac`.
+
+These are excluded because they change on rekey / recovery-slot edits; the slot
+set has its own DEK-keyed MAC (§9). Everything else (`format_version`, `mode`,
+`hashes`, `aead_binding`, `encryption.algorithm`/cascade fields, `archive`) stays
+authenticated.
+
+> **Correction to earlier drafts:** the exclusion set includes the **whole
+> `derivation_config`**, not only the three envelope keys. An implementer MUST
+> exclude `derivation_config` from the envelope AAD.
+
+### 6.3 Version history
+
+Before **1.3.0**, AEAD ciphers passed `None` as AAD despite the docs claiming
+binding — metadata tampering was only caught post-KDF, not by the AEAD tag. 1.3.0
+fixed this (src: README.md:507-519; CHANGELOG dates 1.3.0 to 2025-12-15). The
+non-envelope full-metadata binding is byte-for-byte unchanged since 1.3.0; the
+envelope canonical AAD is a later addition on the envelope feature line.
 
 ---
 
 ## 7. Key derivation
 
-### 7.1 Chained KDF pipeline
+### 7.1 Chained KDF pipeline (sequential path, v1–v10)
+
+Driver: `generate_key` (src: crypt_core.py:2512). The stage order is a **fixed
+precedence**, not config order:
+
+1. **Iterative hashes first**, via `multi_hash_password`
+   (src: crypt_core.py:1035,2726). Within this stage, hash algorithms run in
+   **dict-insertion order** (src: crypt_core.py:1202-1203).
+2. **Then the memory-hard / KDF stages in this hard-coded sequence:**
+   `argon2 → balloon → scrypt → hkdf → randomx`
+   (src: crypt_core.py:2834,3013,3137,3232,3321).
+
+The sequential chain passes each stage's raw output forward as the next stage's
+password (`password = SecureBytes(result)`); there is no inter-stage length
+normalization on the pure-sequential path. The final output length is set by the
+cipher: 32 B (AES-256-GCM/ChaCha20/XChaCha20/AES-GCM-SIV/Fernet/cascade/PQC-hybrid),
+64 B (AES-SIV, Threefish-512), 128 B (Threefish-1024) (src: crypt_core.py:2603-2643).
+
+For XOR composition (§7.3), each collected intermediate is normalized to the key
+length with **`normalize_to_key_length_secure`** = HKDF-SHA256, `salt=None`,
+`info=b"v10_xor_normalize"` (src: crypt_core.py:1635,1668-1674).
+
+### 7.2 Chained-salt derivation — **security-critical**
+
+Each round's salt is derived from the previous round's **output**, not from a
+predictable counter. This is the fix for **ADVISORY 2026-01**.
+
+**Code-authoritative rule** (verified across argon2/balloon/scrypt/hkdf,
+src: crypt_core.py:2904-2920, 3035-3051, 3153-3169, 3268-3279):
 
 ```
-password ── stage₁(salt₀) ─→ out₁ ── stage₂(salt₁=f(out₁)) ─→ out₂ ─→ … ─→ KEK
+round 0:                 round_salt = base_salt
+format_version >= 7:     round_salt = (previous round output)[:16]      # SECURE
+format_version  < 7:     round_salt = SHA256(base_salt || str(i))[:16]  # LEGACY (predictable)
 ```
 
-Stages are the enabled entries of `hash_config` then `kdf_config`, applied in a
-defined order. The final output is the **key-encryption key (KEK)** used either
-directly as the data key or to wrap a DEK (§9).
+Hash-stage keyed chaining (blake2b/blake3/shake256) follows the same `>= 7` gate
+with `hashed[:32]` (src: crypt_core.py:1364-1376,1421-1435,1511-1523). RandomX uses
+its own always-chained construction (first salt `SHA256(salt || password[:16] ||
+b"randomx_salt")[:16]`, then `password[:32]`, src: crypt_core.py:3331-3364).
 
-> **TODO — exact pipeline order.** State the canonical stage ordering (hashes
-> before KDFs? config order? a fixed precedence?) and how outputs are normalized
-> to the next stage's input length. This must be reproducible from metadata
-> alone.
+> **⚠️ DISCREPANCY to resolve.** The shipped code gates the secure rule at
+> `format_version >= 7` with **no `!= 8` exception** (confirmed: a grep for
+> `format_version != 8` finds nothing), so **v7, v8, v9, v10+ all use the secure
+> rule**. However ADVISORY 2026-01 / `docs/metadata-formats.md` describe the fix
+> as landing at **v9** and treat **v8** as still using the predictable derivation
+> (and the v8 schema is titled accordingly). A reference decryptor MUST follow the
+> code (`>= 7` secure) to read real files; the maintainer should reconcile the
+> advisory wording with the shipped gate. Files at `format_version ≤ 6` use the
+> legacy rule.
 
-### 7.2 Chained-salt derivation (format_version ≥ 9) — **security-critical**
+### 7.3 XOR composition (v8 / v10 / v11)
 
-Each round's salt is derived from the previous round's output, rather than from
-a predictable counter. This is the fix for **ADVISORY 2026-01** (predictable
-salt derivation in the multi-round KDF).
+Combine primitive: `xor_bytes_secure` — byte-wise XOR of equal-length
+`SecureBytes` (src: crypt_core.py:1582-1626).
 
-> **⚠️ VERIFY — salt chaining function.** Specify `saltᵢ = f(outᵢ₋₁, …)` exactly
-> (the function, any domain separation, output length). Files at
-> `format_version ≤ 8` use the **legacy** derivation and MUST be decrypted with
-> the legacy rule — document both.
+- **Sequential XOR** (`use_xor_composition = format_version >= 10 or
+  format_version == 8`, src: crypt_core.py:2649): the sequential chain runs
+  end-to-end, but each stage *also* contributes a normalized snapshot to an
+  accumulator, and the key is the XOR of all snapshots (src: crypt_core.py:3493).
+  A broken/entropy-collapsing **early** stage propagates forward → bounded by the
+  weakest early link.
+- **Independent XOR** (`format_version >= 11`, src: crypt_core.py:5820,9564):
+  every component gets the **same** input `x = SHA256(password || salt)`
+  (src: crypt_core.py:2175,2184) and `K = H1(x) ⊕ H2(x) ⊕ … ⊕ Hn(x)`
+  (src: crypt_core.py:2396), followed by a cipher-specific final transform
+  (SHA-256 / SHA-512 / HKDF / base64, src: crypt_core.py:2412-2482). This is a
+  robust XOR-combiner: secure if ≥1 component is unbroken (output/PRF sense).
 
-### 7.3 XOR composition (format_version ≥ 10)
-
-> **TODO.** v10 introduced XOR-composition of stage outputs. Document the
-> composition (`key = out_a ⊕ out_b ⊕ …`), why dict/insertion order must be
-> preserved, and how this interacts with §7.1 ordering.
+Hashes are iterated in dict-insertion order; XOR itself is commutative, so order
+does not change the v11 result, but **duplicate identical stages cancel to zero**
+(cancellation caveat, src: crypt_core.py:2085-2091) and order matters for the
+sequential chain. Independent-XOR multi-round chaining uses `result[:32]`
+(src: crypt_core.py:1887, parallel_kdf.py:320).
 
 ### 7.4 Hidden-header outer key
 
-> **TODO.** Document the outer-key derivation for the whitened container (§4.2):
-> KDF, the `info="outer-key"` domain string, keyed vs. keyless secret source.
+`derive_outer_key(salt, second_password, length, profile)`
+(src: hidden_header.py:246-284); `_subkeys` requests 64 bytes and splits into a
+32-byte `stream_key` (AEAD/whitening) + 32-byte `len_key` (length whitening)
+(src: hidden_header.py:340-360).
+
+- **Keyless** (no secret): `HKDF(SHA512, length, salt=DOMAIN_KEYLESS,
+  info=b"outer-key").derive(file_salt)` (src: hidden_header.py:165-180). The
+  `info="outer-key"` string applies **only** to keyless.
+- **Keyed** (second password): a heavy chain
+  `material = SHA3-512(DOMAIN_KEYED || salt || password)`, then 100 000 rounds of
+  `SHA3-512(material || salt)`, then 5 chained Argon2id passes (time_cost 3,
+  128 MiB/pass, parallelism 4, 64-byte output), then scrypt (n=2¹⁵, r=8, p=1,
+  64-byte), then `HKDF(SHA512, length, salt=salt,
+  info=DOMAIN_KEYED || b"|final")` (src: hidden_header.py:183-239, profile 107-116).
 
 ### 7.5 Hardware pepper (HSM / PIV / FIDO2)
 
-An optional **pepper** is mixed into derivation from a hardware token:
-HMAC-SHA1 challenge–response (YubiKey/OnlyKey), or a deterministic signature
-(Ed25519 / RSA PKCS#1 v1.5) normalized into a pepper (PIV/PKCS#11 — Token2 R3.3,
-YubiKey Bio MPE).
+The optional pepper is **mixed in at stage 0**, concatenated into the password
+material before any hashing (`password || salt || hsm_pepper` in
+`multi_hash_password`; `SecureBytes(password || hsm_pepper)` before the initial
+hash in the independent-XOR path) — it is **not** a separate KDF stage and not a
+per-round input (src: crypt_core.py:1185,2758,2167). When both an HSM pepper and a
+remote pepper exist they are concatenated `hsm_pepper || remote_pepper`
+(src: crypt_core.py:5810).
 
-- The metadata records **which** plugin/slot was used so decryption can re-derive
-  (`hsm_plugin_name`, `hsm_slot_used`, `pepper_plugin_name`, `pepper_name`).
-- The secret itself is **never** stored; re-provisioning the token changes the
-  output.
+**Metadata fields actually written** (under `encryption`, src: crypt_core.py:3922-3931)
+— note these differ from the in-code parameter names:
 
-> **⚠️ VERIFY** the exact mixing point (is the pepper an extra KDF input? applied
-> to which stage?) and the field names/locations as actually written.
+| On-disk key            | Meaning                       |
+|------------------------|-------------------------------|
+| `hsm_plugin`           | HSM plugin name               |
+| `hsm_config.slot`      | HSM slot used                 |
+| `pepper_plugin`        | pepper plugin name            |
+| `pepper_name`          | pepper name                   |
+
+PIV/PKCS#11 pepper derivation (src: piv_backend.py:110-161): HKDF-SHA256 with
+fixed salt `b"openssl_encrypt-piv-v1"`, challenge `info=b"piv-challenge"`
+(64 B), pepper `info=b"piv-pepper"` (32 B) over the deterministic signature
+(Ed25519 / RSA-PKCS1v1.5 only; ECDSA rejected, determinism enforced by
+double-sign-and-compare). **⚠️ UNVERIFIED:** exact byte length of the FIDO2/YubiKey
+HMAC-SHA1 challenge-response pepper.
 
 ---
 
@@ -279,11 +464,29 @@ YubiKey Bio MPE).
 "encryption": {
   "cascade": false,
   "algorithm": "<cipher-id>",            // §14.1
-  "encryption_data": "aes-gcm",          // bulk AEAD; §14.1
+  "encryption_data": "<bulk-aead-id>",   // §14.1
   "pq_security_bits": 128,
   "xchacha_nonce_format": 2              // present iff XChaCha (see §8.3)
 }
 ```
+(src: crypt_core.py:4216-4229.)
+
+**On-disk framing:** `nonce || ciphertext || tag`, then the whole blob is
+Base64-encoded into the standard container. The nonce is a raw fixed-width prefix;
+the 16-byte AEAD tag is appended to the ciphertext by the library
+(src: crypt_core.py:6385-6536,7179). Per-cipher nonce/tag sizes:
+
+| Algorithm            | Nonce | Tag | Notes                                            |
+|----------------------|:-----:|:---:|--------------------------------------------------|
+| aes-256-gcm          | 12    | 16  |                                                  |
+| aes-256-gcm-siv      | 12    | 16  | nonce-misuse resistant                           |
+| aes-256-siv          | 16*   | 16  | *16-byte nonce stored but **not** used (deterministic SIV); key 64 B |
+| chacha20-poly1305    | 12    | 16  |                                                  |
+| xchacha20-poly1305   | 24    | 16  | 24-byte nonce on new files (§8.3); key 32 B      |
+| threefish-512        | 32    | 16  | Threefish-512-CTR + Poly1305 (§14.1); key 64 B   |
+| threefish-1024       | 64    | 16  | Threefish-1024-CTR + Poly1305; key 128 B         |
+
+(src: crypt_core.py:6140-6168; registry cipher_registry.py.)
 
 ### 8.2 Cascade mode (multi-layer)
 
@@ -292,220 +495,355 @@ YubiKey Bio MPE).
   "cascade": true,
   "cipher_chain": ["aes-256-gcm", "xchacha20-poly1305", …],  // applied in order
   "hkdf_hash": "sha256",
-  "cascade_salt": "<b64>",
-  "layer_info": [ … ],                   // per-layer overhead/nonce metadata
+  "cascade_salt": "<b64>",               // 32 random bytes (secrets.token_bytes(32))
+  "layer_info": [ {"cipher": "<id>", "key_size": <int>, "tag_size": <int>}, … ],
   "total_overhead": <int>,
   "pq_security_bits": 256
 }
 ```
+(src: crypt_core.py:4204-4215, 6722,6731-6738.)
 
-> **TODO.** Specify `layer_info` element schema, per-layer key derivation
-> (HKDF(`hkdf_hash`, `cascade_salt`) → per-layer keys), nesting order
-> (encrypt order vs. decrypt order), and per-layer nonce handling.
+- **`layer_info`** element schema is exactly `{cipher, key_size, tag_size}`
+  (src: crypt_core.py:6731-6738, cascade.py:483-489).
+- **Per-layer key/nonce derivation** (`CascadeKeyDerivation.derive_layer_keys`,
+  src: cascade.py:175-238): for each layer with cipher name `c`,
+  - `key   = HKDF(hkdf_hash, len=key_size,   salt=layer_salt, info=b"cascade:key:"   || c || prev_prefix).derive(master_key)`
+  - `nonce = HKDF(hkdf_hash, len=nonce_size, salt=layer_salt, info=b"cascade:nonce:" || c || prev_prefix).derive(master_key)`
+  - `prev_prefix = key[:16]` carried to the next layer (first layer: empty).
+- **Per-layer salt (format_version ≥ 12):** `layer_salt = HKDF(hkdf_hash, 32,
+  salt=None, info=b"cascade:salt:" || str(i)).derive(master_salt)`; legacy (< 12)
+  all layers share `cascade_salt` (src: cascade.py:156-173,196-207).
+- **AAD per layer:** v12+ applies AAD on **every** layer; legacy only on layer 0
+  (src: cascade.py:329-335,373-382).
+- **Order:** encrypt plaintext → layer 0 → 1 → … → ciphertext; decrypt reverses
+  (src: cascade.py:331-385). Each layer prepends its (HKDF-derived) nonce to its
+  own output; decrypt extracts it from the layer ciphertext (`nonce=None`).
 
 ### 8.3 XChaCha nonce format
 
-- `xchacha_nonce_format: 2` ⇒ **true 192-bit random nonce** (1.5+).
-- Absent ⇒ legacy nonce handling; also absent on PQC-hybrid files, whose data
-  layer uses 12-byte nonces under per-file keys.
-
-> **⚠️ VERIFY** the legacy (format 1 / absent) nonce construction so old files
-> remain decryptable, and confirm the 192-bit derivation/placement.
+- `xchacha_nonce_format: 2` ⇒ **true 192-bit (24-byte) random nonce**, real
+  XChaCha20-Poly1305 (HChaCha20 subkey per draft-irtf-cfrg-xchacha-03)
+  (src: xchacha.py:36-132). New files always write `2`
+  (src: crypt_core.py:4229, 5935,6718).
+- **Absent / `1` (legacy):** the metadata getter defaults to `1`
+  (src: crypt_core.py:8056 etc.). Two legacy behaviors:
+  - **single-cipher legacy:** pre-1.5 files stored a **12-byte** nonce and used
+    direct ChaCha20-Poly1305 (src: crypt_core.py:351-358,397-404).
+  - **registry/cascade legacy (format 1):** a 24-byte nonce is funnelled to 12 via
+    `HKDF(SHA256, 12, salt=nonce[:16], info=nonce[16:]).derive(key)`, then plain
+    ChaCha20-Poly1305 (src: cipher_registry.py:648-673).
+- **PQC-hybrid data layer** uses 12-byte AES-GCM nonces under per-file HKDF keys
+  and omits `xchacha_nonce_format` (src: crypt_core.py:4226-4227,6334-6341).
 
 ### 8.4 Streaming / chunked payload (format_version 12)
 
-Constant-memory encryption of large inputs: the payload is a sequence of
-AEAD chunks with per-chunk nonces derived via HKDF-SHA256.
+Constant-memory encryption. Streaming files are written with metadata
+`format_version = 12` (src: crypt_core.py:5940-5948) and a **raw binary** payload
+after the `:` (or after a whitened header in hidden mode).
 
-> **TODO.** Specify: chunk size, the per-chunk nonce derivation (counter? HKDF
-> info?), how the final/short chunk and total length are authenticated against
-> truncation/reordering, and the on-disk chunk framing.
+**On-disk layout** (src: streaming.py:7-9,429-433,573-631):
+
+```
+OESC | payload_version(u32le=1) | [ chunk ]* | chunk_count(u32le) | HMAC-SHA256(32 B)
+chunk := chunk_index(u32le) | ciphertext_len(u32le) | ciphertext(=ct||tag16)
+```
+
+- Magic `STREAMING_MAGIC = b"OESC"`; `PAYLOAD_VERSION = 1`
+  (src: streaming.py:45-46).
+- `DEFAULT_CHUNK_SIZE = 1 MiB`; streaming kicks in above
+  `DEFAULT_STREAMING_THRESHOLD = 10 MiB` (src: streaming.py:47-48).
+- **Per-chunk nonce is derived, not stored:** an 8-byte random `nonce_prefix` is
+  generated per file (src: streaming.py:468); per chunk,
+  `nonce = HKDF(SHA256, nonce_size, salt=nonce_prefix,
+  info=b"oesc-chunk-nonce:" || u32be(index)).derive(nonce_prefix || u32be(index))`
+  (src: streaming.py:121-153). `nonce_size` per §8.1 (24 for XChaCha v2).
+- **Anti-truncation / reordering** is enforced three ways:
+  1. per-chunk AAD `aad_prefix || b":" || u32be(index) || b":" || u32be(count)`
+     (`aad_prefix` = `metadata_b64` or the envelope `bulk_aad`)
+     (src: streaming.py:191-209);
+  2. the stored `chunk_index` is checked against a running counter on decrypt
+     (src: streaming.py:855-861);
+  3. the trailer `chunk_count` and a 32-byte **HMAC-SHA256** over the
+     concatenation of every chunk's 16-byte tag (key =
+     `HKDF(SHA256, 32, salt=None, info=b"openssl_encrypt-streaming-hmac-key")
+     .derive(key)`; legacy key `SHA256(key || b"oesc-trailer-hmac")`)
+     (src: streaming.py:483-493,623-633,905-942).
+- `ciphertext_len` is capped at `chunk_size + 1024` on read
+  (`_MAX_CHUNK_OVERHEAD`, src: streaming.py:722,864-868).
+- **Cascade-over-streaming** derives a fresh 32-byte per-chunk cascade salt
+  (`info=b"oesc-cascade-chunk-salt:" || u32be(index)`, scheme 2 = default for new
+  writes); the **decryptor defaults to the legacy single-salt scheme 1** for files
+  written before the fix and warns (src: streaming.py:50-59,156-188,445,668-685).
 
 ---
 
 ## 9. Envelope (DEK/KEK) wrapping & recovery slots
 
 Optional two-tier keying so a credential change (`rekey`) rewraps only a small
-key instead of re-encrypting the payload.
+key instead of re-encrypting the payload. Implemented in `envelope.py` /
+`recovery_slots.py`.
 
-- A random **DEK** encrypts the bulk (§8).
+- A random **32-byte DEK** (`DEK_SIZE = 32`, `secrets.token_bytes`) encrypts the
+  bulk (§8) (src: envelope.py:31,70-77).
 - The DEK is wrapped by the **KEK** (the §7 output):
-  - **Non-cascade:** AES-256-GCM, wrap key = `HKDF-SHA256(KEK,
-    info="openssl_encrypt.envelope.dek-wrap.v1")` (domain-separated).
-  - **Cascade bulk:** the DEK is wrapped under the **same** cascade chain (fixed
-    32-byte salt `oesc.envelope.cascade-wrap.salt1`) so the envelope is never the
-    weaker link.
-- Stored fields (under `encryption`): `wrapped_dek`, plus recovery slots
-  `dek_slots` and their integrity tag `dek_slots_mac` (a **DEK-keyed** MAC,
-  verified after unwrap). These three are **excluded from the AEAD AAD** (§6).
+  - **Non-cascade:** AES-256-GCM, wrap key =
+    `HKDF-SHA256(KEK, salt=None, info=b"openssl_encrypt.envelope.dek-wrap.v1")`;
+    output `nonce(12) || ct || tag(16)` = 60 bytes
+    (src: envelope.py:57,119-162).
+  - **Cascade bulk:** the same wrap key feeds `CascadeEncryption.encrypt` under a
+    fixed 32-byte salt `b"oesc.envelope.cascade-wrap.salt1"`, pinned at
+    `_CASCADE_WRAP_FORMAT_VERSION = 12` (src: envelope.py:66-67,203-252).
+- Stored under `encryption`: `wrapped_dek` (b64), `dek_slots` (raw JSON list),
+  `dek_slots_mac` (b64). These three are **excluded from the AEAD AAD** (§6;
+  src: crypt_core.py:6009-6018).
+- **`dek_slots_mac`** is an HMAC-SHA256 over `canonical_slots(dek_slots)` keyed by
+  `HKDF-SHA256(DEK, salt=None, info=b"openssl_encrypt.envelope.slot-set-mac.v1")`,
+  verified **after** unwrap, fail-closed (src: recovery_slots.py:42,75-96;
+  crypt_core.py:9705-9713). `canonical_slots` = `json.dumps(slots, sort_keys=True,
+  separators=(",",":"), ensure_ascii=True)` (src: recovery_slots.py:58-72).
 
-**Recovery slots** let multiple independent credentials each unwrap the DEK:
+**Recovery slots** let multiple independent credentials each unwrap the DEK. Each
+slot is `{id, type, wrap (b64 of the standard AES-256-GCM DEK wrap), params{…}}`;
+only the KEK derivation differs by type (per-slot 16-byte salt;
+src: recovery_slots.py:39-49):
 
-| Slot type        | 1.4.x | 1.5.x | Notes                                  |
-|------------------|:-----:|:-----:|----------------------------------------|
-| recovery code    |  ✓    |  ✓    |                                        |
-| passphrase       |  ✓    |  ✓    |                                        |
-| PQC recipient    |  ✓    |  ✓    | escrow to a public key                 |
-| Shamir (k-of-n)  |  —    |  ✓    | 1.5.x only                             |
+| Slot type      | 1.4.x | 1.5.x | KEK derivation                                                                 |
+|----------------|:-----:|:-----:|--------------------------------------------------------------------------------|
+| recovery_code  |  ✓    |  ✓    | `HKDF-SHA256(code, salt, info=b"…recovery-code-kek.v1")`; 256-bit base32 code   |
+| passphrase     |  ✓    |  ✓    | Argon2id (time_cost 3, memory 64 MiB, parallelism 4); params stored in slot     |
+| pqc            |  ✓    |  ✓    | ML-KEM encapsulate → `HKDF-SHA256(ss, salt, info=b"…pqc-recipient-kek.v1")`     |
+| shamir (k-of-n)|  —    |  ✓    | reconstruct secret → `HKDF-SHA256(secret, salt, info=b"…shamir-secret-kek.v1")` |
 
-> **TODO.** Specify each slot's binary layout, the slot-set MAC input, and the
-> wrap of the DEK per slot type. Pin the `format_version`(s) that carry
-> envelope/recovery so wrap/unwrap stay interoperable across 1.4.x ↔ 1.5.x.
+(src: recovery_slots.py:124-538; info strings prefixed `openssl_encrypt.envelope.`.)
+Shamir shares are written out-of-band as `recovery_share_<i>.json`; the slot stores
+only `{threshold, num_shares}` (src: recovery_slots.py:287-295,710-726).
+
+> **⚠️ UNVERIFIED:** no explicit `format_version` constant gates the *presence* of
+> envelope/recovery fields (they are additive under `encryption`); the cascade
+> DEK-wrap internally pins v12. The "shamir = 1.5.x only" split is a product
+> statement, not a code-level version gate found in `recovery_slots.py`.
 
 ---
 
 ## 10. Asymmetric / PQC recipient encryption
 
-`mode: "asymmetric"`. The bulk symmetric key is encapsulated to one or more
-recipient public keys via a KEM; classical+PQC **hybrid** is the default intent.
+`mode: "asymmetric"` (format_version 7 path, `encrypt_file_asymmetric`,
+src: crypt_core.py:4822-5094).
 
-Relevant `encryption` fields (Base64): `pqc_public_key`, `pqc_private_key`
-(when key is bundled/escrowed), `pqc_key_salt`, `pqc_sig_hkdf_salt`.
+> **Correction to earlier drafts — there is NO classical+PQC hybrid KEM combiner
+> in the recipient path.** Recipient encapsulation is **PQC-only, ML-KEM-768**
+> (hardcoded `PasswordWrapper("ML-KEM-768")`, src: crypt_core.py:4936). The word
+> "hybrid" elsewhere (the `pqc_*` single-keypair bulk mode) means **PQC-KEM +
+> symmetric AEAD**, not classical + PQC. No X25519/ECDH secret-concatenation
+> combiner exists (`grep` finds none). **⚠️ UNVERIFIED / NOT PRESENT:** the
+> "classical + PQC shared-secret → HKDF" combiner the scaffold assumed.
 
-- **Multi-recipient:** the file key is wrapped to each recipient public key.
-- **Encrypt-to-self (1.5+ default):** the sender's own identity public key is
-  added as an additional recipient so outbound files stay decryptable by the
-  sender.
-
-> **TODO.** Specify: KEM identifiers (§14.2) and the hybrid combiner (how the
-> classical + PQC shared secrets are combined into the KEK — e.g. concatenation
-> then HKDF, with domain separation), the per-recipient wrap structure, and how
-> recipients are enumerated on disk.
+- **Wrap:** a random bulk password encrypts the data (AES-256-GCM, 12-byte nonce,
+  `derived_key[:32]`); that password is wrapped per recipient. The per-recipient
+  AES-256-GCM **wrap key is a bare SHA-256**:
+  `SHA256(b"openssl_encrypt.password_wrap.v1" || shared_secret)` (no HKDF, no AAD;
+  output `nonce(12) || ct || tag(16)`) (src: asymmetric_core.py:200-223).
+- **Recipients on disk:** `metadata["asymmetric"]["recipients"]` is a JSON **list**;
+  each entry = `{key_id, kem_algorithm, encapsulated_key (b64), encrypted_password
+  (b64)}`. Sender block = `metadata["asymmetric"]["sender"] = {key_id,
+  sig_algorithm: "ML-DSA-65"}` (src: crypt_core.py:4979-4994).
+- **Encrypt-to-self (1.5+ default):** the sender's own identity public key is added
+  as an additional recipient (deduped by fingerprint), default on
+  (src: identity.py:1000-1028).
+- **Metadata signature:** the whole metadata (minus any `signature` key) is
+  canonicalized by `MetadataCanonicalizer` (`sort_keys=True,
+  separators=(",",":"), ensure_ascii=False`) and signed with ML-DSA-65; stored as
+  `metadata["signature"] = {algorithm: "ML-DSA-65", value: b64}`
+  (src: asymmetric_core.py:336-404, crypt_core.py:5027-5037).
+- **`pqc_*` single-keypair fields** (separate bulk mode, under `encryption`):
+  `pqc_public_key`, `pqc_private_key` (only if self-decrypt requested),
+  `pqc_key_salt`, `pqc_sig_hkdf_salt` (32-byte random, v12+)
+  (src: crypt_core.py:3896-3917).
 
 ---
 
 ## 11. Detached signatures
 
-`sign` / `verify-signature` produce a **detached** signature over a
-domain-separated hash of the target (optionally binding the encrypted file's
-metadata). Hybrid by default (classical + PQC, e.g. `Ed25519 + ML-DSA-65`); a
-break in either component alone MUST NOT forge.
+`sign` / `verify-signature` produce a **detached** sidecar
+(src: file_signature.py).
 
-> **TODO.** Specify the signature container (fields, ordering), the
-> domain-separation string, exactly what bytes are hashed/signed, and how
-> verification reports **which** component(s) verified (not just pass/fail).
-> Signature identifiers are in §14.2; PEM label is `SIGNATURE` (§12).
+- **Sidecar fields** (`build_signature`, src: file_signature.py:148-158):
+  `openssl_encrypt_signature` (=1), `algorithm`, `hash_algorithm` (`"SHA-512"`),
+  `file_hash` (lowercase hex SHA-512 of the target file), `signer_fingerprint`,
+  `signed_at` (RFC3339 UTC), `signatures` (list of
+  `{component: <algo.lower()>, value: <b64 raw sig>}`). Serialized with
+  `json.dumps(sig, sort_keys=True, indent=2)` → **on-disk key order is
+  alphabetical** (src: file_signature.py:168).
+- **Signed bytes:** `b"openssl-encrypt/detached-file-signature/v1" || b"\x00" ||
+  canonical`, where `canonical = json.dumps(core, sort_keys=True,
+  separators=(",",":"))` and `core = {algorithm, file_hash, hash_algorithm,
+  signed_at, signer_fingerprint, version}` (src: file_signature.py:92-110). The
+  target file is bound **via its SHA-512 `file_hash`**, and the `signatures` list
+  itself is excluded from the signed payload.
+- **Algorithms:** v1 emits a **single** component, **ML-DSA-65** by default
+  (`DEFAULT_SIG_ALGORITHM`, src: file_signature.py:48). The `signatures` list is
+  structured so a classical (e.g. Ed25519) component can be added later without a
+  format break. **⚠️ UNVERIFIED / aspirational:** the "Ed25519 + ML-DSA-65 hybrid
+  default" — only ML-DSA-65 is currently written (src: file_signature.py:16-18,155-157).
+- **Verification reports per-component** results
+  (`components = [{component, valid}, …]`); overall valid = file-hash match AND
+  all components valid (src: file_signature.py:231-293). PEM label = `SIGNATURE`
+  (src: file_signature.py:42; §12). Signer key is resolved from the local identity
+  store by fingerprint, fail-closed if unknown.
+
+The detached-file domain tag is distinct from the asymmetric-metadata signature
+(§10), so signatures cannot be replayed across contexts.
 
 ---
 
 ## 12. ASCII armor (transport encoding)
 
-A paste-safe wrapper over the binary container:
+A paste-safe wrapper over the binary container (src: armor.py):
 
 ```
 -----BEGIN OPENSSL-ENCRYPT MESSAGE-----
-<base64 of the binary container>
+<base64 of the binary container, wrapped at 64 cols>
 =XXXX            ← OpenPGP-style CRC-24 checksum line
 -----END OPENSSL-ENCRYPT MESSAGE-----
 ```
 
-- Custom PEM labels: `MESSAGE` (ciphertext) and `SIGNATURE` (detached signatures).
-- `decrypt` auto-detects armored vs. binary input.
-- Round-trip MUST be byte-exact: armor → de-armor → identical container bytes.
-
-> **⚠️ VERIFY** the exact header/label strings, the CRC-24 parameters
-> (polynomial/init, matching OpenPGP [RFC 4880] §6.1), and any header lines
-> beyond BEGIN/END.
+- Marker prefixes `-----BEGIN OPENSSL-ENCRYPT ` / `-----END OPENSSL-ENCRYPT `,
+  suffix `-----`; labels `MESSAGE` (ciphertext) and `SIGNATURE` (detached
+  signatures) (src: armor.py:34-40,95-100). Lines wrap at `LINE_WIDTH = 64`.
+- **CRC-24** matches OpenPGP [RFC 4880] §6.1: `init = 0xB704CE`,
+  `poly = 0x1864CFB`, 24-bit, MSB-first; emitted as `=` + b64 of the 3 CRC bytes
+  (src: armor.py:45-77).
+- The **encoder emits no header lines**; the decoder tolerates optional
+  `Key: value` header lines terminated by a blank line (src: armor.py:95-115,201-206).
+- Auto-detection sniffs the first **256 bytes** for the BEGIN prefix
+  (`is_armored_file`, src: armor.py:226-245); `dearmor` fails closed on missing
+  markers, label mismatch, bad base64, or CRC mismatch.
 
 ---
 
 ## 13. Compatibility & deprecation policy
 
 - A released version **MUST** decrypt every `format_version` it (or any prior
-  release) ever wrote. Decryption support is **append-only**.
-- **Encryption** defaults track the newest version; older versions MAY be
-  retired for *writing*.
-- **1.5.0 removed deprecated algorithms entirely** (encrypt *and* decrypt). Files
-  using them, or hidden/steganographic data, or the TESTDATA PQC simulation
-  format, **must be migrated with 1.4.x before upgrading**. Such files are
-  explicitly **out of the 1.5.x decryptor's scope** — this is the one sanctioned
-  exception to the append-only rule and MUST be called out in release notes.
-
-> **TODO.** Maintain the canonical list of "write-retired" and "read-dropped"
-> algorithms/versions per release here.
+  release) ever wrote. Decryption support is **append-only**. Supported on-disk
+  range: `MIN_FORMAT_VERSION = 3` … `MAX_FORMAT_VERSION = 12` (src: verify.py:46-47).
+- **Encryption** defaults track the newest version; older versions MAY be retired
+  for *writing*.
+- **1.5.0 removed the following entirely (encrypt *and* decrypt)**
+  (src: VERSION.md:26-45; `DEPRECATED_ALGORITHMS` now empty,
+  algorithm_warnings.py:120-124):
+  - **Algorithms:** AES-OCB3, Camellia, Whirlpool (hash), PBKDF2 (KDF), the legacy
+    **Kyber** algorithm names, and the **TESTDATA PQC simulation** format.
+  - **Subsystems:** steganography (numpy dropped), the D-Bus service/client, the
+    in-package security/KAT testing framework, and advisory config tooling.
+  Files using any removed algorithm — or hidden/steganographic data — are
+  **explicitly out of the 1.5.x decryptor's scope** and **must be migrated with
+  1.4.x before upgrading** (decrypt + re-encrypt with a supported algorithm such
+  as AES-GCM or an ML-KEM-768 hybrid). This is the one sanctioned exception to the
+  append-only rule and is called out in the release notes.
+- Earlier deprecations: AES-OCB3 blocked for new encryption in v1.0.1/1.0.2;
+  PBKDF2 + Whirlpool deprecated in v1.2.0 (src: VERSION.md).
 
 ---
 
 ## 14. Algorithm identifier registry
 
 Identifiers as they appear on disk. Aliases are accepted on input; the
-**canonical** id (first column) is what SHOULD be written.
+**canonical** id (first column) is what SHOULD be written
+(src: cipher_registry.py, kem_registry.py, signature_registry.py).
 
 ### 14.1 Symmetric ciphers / bulk AEAD
 
-| Canonical id           | Aliases                                   | Notes        |
-|------------------------|-------------------------------------------|--------------|
-| `aes-256-gcm`          | `aes-gcm`, `aes256-gcm`, `aesgcm`         | AEAD         |
-| `aes-256-gcm-siv`      | `aes-gcm-siv`, `aesgcmsiv`                | nonce-misuse |
-| `aes-256-siv`          | `aes-siv`, `aessiv`                       | nonce-misuse |
-| `chacha20-poly1305`    | `chacha20`, `chacha20poly1305`            | AEAD         |
-| `xchacha20-poly1305`   | `xchacha20`, `xchacha20poly1305`          | 192-bit nonce (§8.3) |
-| `threefish-512`        | `tf512`, `threefish512`                   | ⚠️ VERIFY AEAD construction |
-| `threefish-1024`       | `tf1024`, `threefish1024`                 | ⚠️ VERIFY AEAD construction |
+| Canonical id           | Aliases                                   | key/nonce/tag | Notes        |
+|------------------------|-------------------------------------------|:-------------:|--------------|
+| `aes-256-gcm`          | `aes-gcm`, `aes256-gcm`, `aesgcm`         | 32/12/16      | AEAD         |
+| `aes-256-gcm-siv`      | `aes-gcm-siv`, `aesgcmsiv`                | 32/12/16      | nonce-misuse |
+| `aes-256-siv`          | `aes-siv`, `aessiv`                       | 64/0/16       | deterministic (nonce stored unused) |
+| `chacha20-poly1305`    | `chacha20`, `chacha20poly1305`            | 32/12/16      | AEAD         |
+| `xchacha20-poly1305`   | `xchacha20`, `xchacha20poly1305`          | 32/24/16      | 192-bit nonce (§8.3) |
+| `threefish-512`        | `tf512`, `threefish512`                   | 64/32/16      | Threefish-512-CTR + Poly1305 (native ext) |
+| `threefish-1024`       | `tf1024`, `threefish1024`                 | 128/64/16     | Threefish-1024-CTR + Poly1305 (native ext) |
 
-> **⚠️ VERIFY** the Threefish mode (how confidentiality+integrity are achieved;
-> it is not an AEAD on its own) and pin the exact list shipped in 1.5.0's
-> "reduced algorithm set".
+**Threefish AEAD** = Threefish-*n*-CTR for confidentiality with Poly1305 for
+integrity (an encrypt-then-MAC-style AEAD), implemented in the optional
+`threefish_native` C extension; decrypt raises on `"Authentication failed"`
+(src: cipher_registry.py:787-1096). **Removed in 1.5.0** (decrypt-only via 1.4.x):
+AES-OCB3, Camellia, Fernet's role as a default; the registry docstring mentioning
+OCB3/Camellia is stale — neither is registered.
 
-### 14.2 KEMs (recipient encapsulation) and signatures
+### 14.2 KEMs and signatures (shipped in 1.5.0)
 
-| KEMs            | Signatures                                              |
-|-----------------|---------------------------------------------------------|
-| `ML-KEM-512`    | `ML-DSA-44` / `ML-DSA-65` / `ML-DSA-87`                 |
-| `ML-KEM-768`    | `MAYO-1` / `MAYO-3` / `MAYO-5`                           |
-| `ML-KEM-1024`   | `CROSS-128` / `CROSS-192` / `CROSS-256` (`cross-rsdp`)  |
-| `HQC-128`       | `SLH-DSA-SHA2-128F` / `-192F` / `-256F`                  |
-| `HQC-192`       | `Falcon-512` / `Falcon-1024`                             |
-| `HQC-256`       | classical: `Ed25519`, `RSA` (hybrid component / pepper) |
+Canonical → liboqs identifier (src: kem_registry.py:540-549,
+signature_registry.py:991-1016):
 
-> **TODO** confirm which are *shipped* in 1.5.0 vs. legacy-only, and the
-> backing library identifiers (liboqs names).
+| KEMs (→ liboqs)              | Signatures (→ liboqs)                                              |
+|-----------------------------|-------------------------------------------------------------------|
+| `ml-kem-512` → ML-KEM-512   | `ml-dsa-44/65/87` → ML-DSA-44/65/87                               |
+| `ml-kem-768` → ML-KEM-768   | `slh-dsa-sha2-128f/192f/256f` → SPHINCS+-SHA2-128f/192f/256f-simple|
+| `ml-kem-1024` → ML-KEM-1024 | `fn-dsa-512/1024` → Falcon-512/1024                               |
+| `hqc-128` → HQC-128         | `mayo-1/3/5` → MAYO-1/3/5                                          |
+| `hqc-192` → HQC-192         | `cross-128/192/256` → cross-rsdp-{128,192,256}-balanced           |
+| `hqc-256` → HQC-256         | classical Ed25519 / RSA used only as pepper/identity components    |
+
+Legacy-only (in the `PQAlgorithm` enum but **not registered** → not shipped):
+Kyber-512/768/1024, MAYO-2. Dilithium/Falcon/SPHINCS+ names are accepted as
+aliases that normalize to the ML-DSA/FN-DSA/SLH-DSA canonical ids
+(src: pqc.py:106-139).
 
 ### 14.3 KDFs
 
-`argon2` (Argon2id), `balloon`, `scrypt`, `hkdf`, `randomx` (opt-in, default off).
+`argon2` (Argon2id), `balloon`, `scrypt`, `hkdf`, `randomx` (CPU-bound PoW,
+enabled in STANDARD; treat as defense-in-depth — §5.2). PBKDF2 removed in 1.5.0.
 
 ### 14.4 Hash functions
 
-`sha256`, `sha384`, `sha512`, `sha3_224`, `sha3_256`, `sha3_384`, `sha3_512`,
-`blake2b`, `blake2s`, `blake3`, `shake128`, `shake256`.
+`sha256, sha384, sha512, sha3_224, sha3_256, sha3_384, sha3_512, blake2b, blake2s,
+blake3, shake128, shake256` (src: crypt_core.py:4248-4262). Whirlpool removed in 1.5.0.
 
 ---
 
 ## 15. Format-version history (normative)
 
-> The crux of the spec. Each row pins what a decryptor must know. Fill in the
-> empty/`TODO` cells from VERSION.md + the metadata creators.
+`MIN_FORMAT_VERSION = 3`, `MAX_FORMAT_VERSION = 12` (src: verify.py:46-47). There
+is **no v0/v1/v2 on disk**. Per-version JSON schemas live in
+`openssl_encrypt/schemas/metadata_v{3..12}_schema.json`.
 
-| Version | Introduced in | Summary                                                        | Decrypt notes |
-|:-------:|:--------------|:---------------------------------------------------------------|:--------------|
-| 0–3     | early          | **TODO** flat legacy structures                                | reference impl only |
-| 4 / 5   | **TODO**       | metadata restructure (converters v3↔v4↔v5)                     | **TODO** |
-| 6 / 7   | **TODO**       | **TODO**                                                       | **TODO** |
-| 8       | **TODO**       | cascade encryption support; current `encryption` shape         | §8 |
-| 9       | 1.4.x          | **chained-salt derivation** (ADVISORY 2026-01); current default| §7.2 — legacy salt for ≤8 |
-| 10      | 1.4.x          | **XOR composition** of stage outputs                           | §7.3 — order-sensitive |
-| 11      | 1.4.x (1.4.0b10)| **Independent XOR** key derivation — robust XOR-combiner over per-component KDF outputs | §7.3 — order-sensitive |
-| 12      | 1.4.x          | **streaming chunked** AEAD (per-chunk HKDF nonces); 1.5.x additionally enforces the reduced algorithm set on this version | §8.4 |
-| 13      | *(reserved)*   | **Not allocated.** Highest shipped version is 12. Envelope/recovery-slot (§9) and XChaCha nonce-format work lives on an unmerged feature branch; do not assume a v13 on disk. | — |
+| Version | Introduced in     | Summary                                                              | Decrypt notes |
+|:-------:|:------------------|:--------------------------------------------------------------------|:--------------|
+| 0–2     | — (not on disk)   | code sentinels only; never written                                  | n/a |
+| 3       | early (≤ 0.7.0)   | **flat** metadata structure                                         | reference impl only |
+| 4       | 0.7.2             | **nested** `derivation_config`/`hashes`/`encryption` (converters v3↔v4) | §5.4 |
+| 5       | 0.8.1             | adds `encryption.encryption_data` (converters v4↔v5)                | §5.4 |
+| 6       | 1.4.0 era ⚠️       | adds formal **HSM validation** fields                               | §7.5 |
+| 7       | 1.3.4             | adds **PQC signatures** (asymmetric mode); first under secure chained-salt (§7.2) | §7.2, §10 |
+| 8       | 1.4.0-alpha       | adds **cascade** encryption; also uses **sequential XOR** (`==8`)   | §7.3 — see §7.2 ⚠️ |
+| 9       | 1.4.0b8           | **secure chained-salt derivation** as the default (ADVISORY 2026-01) | §7.2 |
+| 10      | 1.4.x             | **sequential XOR** composition of stage outputs                     | §7.3 — order-sensitive |
+| 11      | 1.4.0b10          | **Independent XOR** key derivation (robust XOR-combiner)            | §7.3 |
+| 12      | 1.4.x             | **streaming chunked** AEAD (per-chunk HKDF nonces, trailer HMAC); `OESC` magic; current default | §8.4 |
+
+**⚠️ UNVERIFIED:** exact introducing tool-version of v6 (schema exists; no
+changelog line pins it). See §7.2 for the v8 secure-vs-legacy salt discrepancy.
 
 ---
 
 ## 16. Test vectors (KAT corpus)
 
-To make the spec verifiable, ship a frozen corpus alongside it:
+Golden corpus root: `openssl_encrypt/unittests/testfiles/`:
 
-- For **each** `format_version`, at least one `{plaintext, password/keys,
-  parameters} → ciphertext` golden file, with the parameters pinned.
-- KATs for primitives where exact wording matters: XChaCha 192-bit, the AEAD
-  constructions, the hybrid KEM combiner, and the cascade chain.
-- A CI job asserting the **current** build decrypts the **entire historical
-  corpus** (enforces §13).
+- `v5/`, `v7/`, `v12/` — golden encrypted files per format version (v12 holds the
+  large cipher × hash × KDF matrix, `test_v12_<cipher>_<hash>=<rounds>_<kdf>=<rounds>.txt`).
+- `xchacha_legacy/`, `xchacha_v2/` — XChaCha nonce-format-1 vs -2 cross-version vectors.
+- `envelope_xchacha_v14/` — envelope + XChaCha 1.4.x cross-version fixtures.
+- `recovery_slots/` — recovery-slot golden fixtures (`recovery_code.enc`,
+  `passphrase.enc`, `shamir.enc`, `shamir_share_{1,2,3}.json`; fixed password `1234`).
+- `openpgp/`, `openpgp_pubkey/` — OpenPGP interop fixtures.
 
-> **TODO.** Point to the corpus location (e.g. `tests/format_vectors/`) and the
-> generator/verifier. Some pieces already exist (XChaCha primitive KATs, age
-> interop vectors, cross-backend determinism, recovery-slot golden fixtures) —
-> consolidate them under one documented index.
+Primitive KATs are hardcoded in tests (no standalone generators): XChaCha
+(`test_xchacha_primitives.py`, draft-irtf-cfrg-xchacha-03 §2.2.1 + Appendix A.3),
+age interop (`test_interop_age.py`, `test_interop_age_cli.py`), OpenPGP interop
+(`test_interop_openpgp.py`), recovery-slot golden (`test_recovery_slots_golden.py`).
+The former in-package KAT harness (`modules/testing/kat_tests.py`) was removed from
+the 1.5.0 shipped surface (§13).
 
 ---
 
@@ -518,7 +856,7 @@ This section is **non-normative**; the threat model lives in
   envelope mode, the `dek_slots_mac`) verifies. Never act on header fields
   pre-authentication beyond what is needed to derive keys.
 - The bulk AEAD provides integrity; `hashes.*` are **not** a substitute and
-  SHOULD NOT be the sole integrity check.
+  SHOULD NOT be the sole integrity check (§5.3).
 - Foreign-format parsers (age/OpenPGP) consume untrusted third-party files and
   are a distinct attack surface (fuzz/bound them); they are out of this spec.
 - Plaintext **length is not hidden** by the standard container (size leaks).
@@ -528,31 +866,33 @@ This section is **non-normative**; the threat model lives in
 
 ## 18. Open questions / TODO index
 
-A consolidated checklist of everything to resolve before this leaves DRAFT:
+Resolved in this revision (see the cited sections). Remaining items before this
+leaves DRAFT:
 
-- [ ] §2 integer endianness of length fields
-- [ ] §3 / §4.1 exact standard-vs-hidden detection + payload nonce/tag framing
-- [ ] §4.2 hidden-header field lengths (`SALT_LEN`/`NONCE_LEN`/`LEN_FIELD`/`AUTH_LEN`) + outer AEAD + whitening
-- [ ] §5.2 per-KDF parameter schemas, ranges, defaults
-- [ ] §5.3 which hash backs `original_hash`/`encrypted_hash` and their role
-- [ ] §5.4 legacy metadata shapes (v0–7) or explicit scoping
-- [ ] §6 **AAD canonicalization** (the audit-critical item) + per-version diffs
-- [ ] §7.1 canonical KDF pipeline order + normalization
-- [ ] §7.2 chained-salt function (+ legacy rule for ≤8)
-- [ ] §7.3 XOR-composition definition
-- [ ] §7.4 hidden-header outer-key derivation
-- [ ] §7.5 hardware-pepper mixing point + field names
-- [ ] §8.2 cascade `layer_info` schema + per-layer keying/nonces
-- [ ] §8.3 legacy XChaCha nonce construction
-- [ ] §8.4 streaming chunk size/nonce/framing/anti-truncation
-- [ ] §9 recovery-slot binary layouts + slot-set MAC + pinned versions
-- [ ] §10 hybrid KEM combiner + per-recipient wrap + recipient enumeration
-- [ ] §11 signature container + domain separation + signed bytes
-- [ ] §12 armor labels + CRC-24 parameters
-- [ ] §13 write-retired / read-dropped lists per release
-- [ ] §14 shipped-vs-legacy algorithm sets + liboqs names + Threefish mode
-- [x] §15 identify v11 (Independent XOR) and v13 (reserved — not allocated; max shipped is 12); v0–8 rows still TODO
-- [ ] §16 corpus location + consolidated KAT index
+- [x] §2 integer endianness (mixed: hidden=BE, streaming framing=LE, streaming KDF inputs=BE)
+- [x] §3/§4.1 standard-vs-hidden detection + payload nonce/tag framing
+- [x] §4.2 hidden-header field lengths + outer AEAD (XChaCha20-Poly1305) + whitening
+- [x] §5.2 per-KDF parameter schemas/defaults — **⚠️ ranges still UNVERIFIED**
+- [x] §5.3 hashes are SHA-256; role clarified
+- [x] §5.4 legacy metadata shapes (v3–v7) characterized
+- [x] §6 **AAD canonicalization** — two paths; envelope also excludes `derivation_config`
+- [x] §7.1 KDF pipeline order + normalization (`v10_xor_normalize`)
+- [x] §7.2 chained-salt function — **⚠️ v8 secure-vs-legacy discrepancy to reconcile**
+- [x] §7.3 XOR composition (v8/v10 sequential, v11 independent)
+- [x] §7.4 hidden-header outer-key derivation (keyless vs keyed chains)
+- [x] §7.5 hardware-pepper mixing point + actual field names — **⚠️ FIDO2 pepper length UNVERIFIED**
+- [x] §8.2 cascade `layer_info` schema + per-layer keying/nonces
+- [x] §8.3 legacy XChaCha nonce construction
+- [x] §8.4 streaming chunk size/nonce/framing/anti-truncation
+- [x] §9 recovery-slot schemas + slot-set MAC — **⚠️ shamir/version gating UNVERIFIED**
+- [x] §10 recipient encryption is **ML-KEM-768-only** (no classical+PQC combiner) — **⚠️ corrects scaffold**
+- [x] §11 signature container + domain separation + signed bytes — **⚠️ hybrid Ed25519 aspirational**
+- [x] §12 armor labels + CRC-24 parameters
+- [x] §13 write-retired / read-dropped lists (1.5.0)
+- [x] §14 shipped-vs-legacy algorithm sets + liboqs names + Threefish mode
+- [x] §15 version table (v3–v12) — **⚠️ v6 introducing version UNVERIFIED**
+- [x] §16 corpus location + KAT index
+- [ ] Independent code review of every `(src: …)` citation before declaring NORMATIVE
 
 ---
 
@@ -562,6 +902,8 @@ A consolidated checklist of everything to resolve before this leaves DRAFT:
 - [RFC 4648] — Base64
 - [RFC 5869] — HKDF
 - [RFC 4880] — OpenPGP (CRC-24 / armor lineage)
+- draft-irtf-cfrg-xchacha-03 — XChaCha20-Poly1305
 - FIPS 203 (ML-KEM), FIPS 204 (ML-DSA), FIPS 205 (SLH-DSA)
-- Internal: [SECURITY.md](../SECURITY.md), [VERSION.md](VERSION.md),
+- Internal: [SECURITY.md](../SECURITY.md),
+  [VERSION.md](../openssl_encrypt/docs/VERSION.md),
   [HIDDEN_HEADER.md](HIDDEN_HEADER.md), [RECOVERY_SLOTS.md](RECOVERY_SLOTS.md)
