@@ -21,6 +21,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `< 13` decrypt unchanged; v13 is byte-identical across the 1.4.x and 1.5.x lines
   (pinned by a cross-line golden vector). v13 uses the sequential derivation, so
   `--parallel-kdf` falls back to sequential for v13 (with a notice).
+- **Sequential XOR last-stage cancellation fixed (KDF cost bypass)** — ADVISORY
+  2026-02: in sequential XOR (`--xor`, `format_version 8`/`10`) the chain's final
+  value was XOR'd into the key *in addition to* the last stage's own snapshot,
+  which are equal — so they cancelled and the **last stage dropped out of the
+  key**. For Argon2-only (Argon2 is last) the key reduced to the cheap **initial**
+  `SHA256(pw+salt)` computed before the chain (the original password/salt, not the
+  derived values), bypassing the configured Argon2 cost. `--xor` now writes
+  **format_version 13** (`xor_mode: "sequential"`) with the redundant append
+  removed, so every stage contributes. Existing v8/v10 files still decrypt
+  (derivation preserved) but are weak until re-encrypted. v13 routes XOR mode by
+  the on-disk `xor_mode` field (independent vs sequential), not the version.
 - **Hidden ("whitened") file format** (`--hidden-header`, opt-in; ported from
   the 1.5.x line): wraps the encrypted output in an outer layer so the whole
   file is indistinguishable from random bytes, hiding the identifiable
