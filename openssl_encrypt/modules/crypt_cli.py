@@ -6850,7 +6850,7 @@ def main_with_args(args=None):
                         if use_independent_xor:
                             format_version = 13  # Independent XOR + per-component domain-separated salts (v13)
                         elif use_xor:
-                            format_version = 10  # Sequential XOR
+                            format_version = 13  # Sequential XOR (v13, cancellation fixed)
                         else:
                             format_version = 9  # Default (secure chained salt)
 
@@ -6877,6 +6877,7 @@ def main_with_args(args=None):
                             pepper_plugin=pepper_plugin_instance,
                             pepper_name=pepper_name_to_use,
                             format_version=format_version,
+                            xor_mode=("sequential" if use_xor else None),
                             parallel_kdf=getattr(args, "parallel_kdf", False),
                             kdf_workers=getattr(args, "kdf_workers", None),
                             chunk_size=_streaming_chunk_size,
@@ -7080,7 +7081,7 @@ def main_with_args(args=None):
                 if use_independent_xor:
                     format_version = 13  # Independent XOR + per-component domain-separated salts (v13)
                 elif use_xor:
-                    format_version = 10  # Sequential XOR
+                    format_version = 13  # Sequential XOR (v13, cancellation fixed)
                 else:
                     format_version = 9  # Default (secure chained salt)
 
@@ -7105,6 +7106,7 @@ def main_with_args(args=None):
                     pepper_plugin=pepper_plugin_instance,
                     pepper_name=pepper_name_to_use,
                     format_version=format_version,
+                    xor_mode=("sequential" if use_xor else None),
                     chunk_size=_streaming_chunk_size,
                     no_streaming=getattr(args, "no_streaming", False),
                     streaming_threshold=_streaming_threshold,
@@ -7718,7 +7720,7 @@ def main_with_args(args=None):
                     if use_independent_xor:
                         format_version = 13  # Independent XOR + per-component domain-separated salts (v13)
                     elif use_xor:
-                        format_version = 10  # Sequential XOR
+                        format_version = 13  # Sequential XOR (v13, cancellation fixed)
                     else:
                         format_version = 9  # Default (secure chained salt)
 
@@ -7745,6 +7747,7 @@ def main_with_args(args=None):
                         pepper_plugin=pepper_plugin_instance,
                         pepper_name=pepper_name_to_use,
                         format_version=format_version,
+                        xor_mode=("sequential" if use_xor else None),
                         chunk_size=_streaming_chunk_size,
                         no_streaming=getattr(args, "no_streaming", False),
                         streaming_threshold=_streaming_threshold,
@@ -9037,7 +9040,7 @@ def main_with_args(args=None):
                 if use_independent_xor:
                     rekey_format_version = 13  # Independent XOR (v13)
                 elif use_xor:
-                    rekey_format_version = 10
+                    rekey_format_version = 13  # Sequential XOR (v13)
                 else:
                     rekey_format_version = None  # Inherit from file
 

@@ -19,8 +19,8 @@
     },
     "xor_mode": {
       "type": "string",
-      "const": "independent",
-      "description": "XOR composition mode - independent parallel processing where each algorithm receives original input (Massey composition)"
+      "enum": ["independent", "sequential"],
+      "description": "XOR composition mode at v13: 'independent' (each component gets the original input under a per-component domain-separated salt; robust XOR-combiner) or 'sequential' (chained stages XOR-combined, with the last-stage cancellation bug fixed)"
     },
     "mode": {
       "type": "string",

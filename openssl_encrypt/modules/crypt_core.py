@@ -3506,12 +3506,20 @@ def generate_key(
             )
             logger.debug(f"V10-XOR: Sequential result before XOR: {bytes(password).hex()}")
 
-        # The sequential result is NOT in the accumulator yet - add it now
-        sequential_result = normalize_to_key_length_secure(password, key_length)
-        xor_accumulator.append(sequential_result)  # SecureBytes object
-
-        if debug:
-            logger.debug(f"V10-XOR: Added sequential chain final result")
+        # CANCELLATION BUG (v8/v10) vs FIX (format_version >= 13):
+        # The chain's final value equals the LAST stage's output, which is already
+        # in the accumulator as that stage's own snapshot. Appending it again makes
+        # the last stage XOR with itself -> 0 -> the last stage cancels out of the
+        # key (a single memory-hard KDF placed last is then fully bypassed).
+        # v8/v10 keep the buggy append so existing files still decrypt (append-only);
+        # v13+ skips it so every stage contributes and the last stage's cost is paid.
+        if format_version is None or format_version < 13:
+            sequential_result = normalize_to_key_length_secure(password, key_length)
+            xor_accumulator.append(sequential_result)  # SecureBytes object
+            if debug:
+                logger.debug(f"V10-XOR: Added sequential chain final result (legacy)")
+        elif debug:
+            logger.debug(f"V13-XOR: Skipped redundant final-result append (cancellation fix)")
             for idx, val in enumerate(xor_accumulator):
                 logger.debug(f"V10-XOR:   [{idx}] {val.hex()}")
 
@@ -5309,6 +5317,7 @@ def encrypt_file(
     recovery_credentials=None,
     hidden_header=False,
     second_password=None,
+    xor_mode=None,
 ):
     """
     Encrypt a file (or in-memory bytes) with a password using the specified algorithm.
@@ -5844,9 +5853,23 @@ def encrypt_file(
     elif remote_pepper:
         combined_pepper = remote_pepper
 
+    # Resolve the XOR composition mode. `xor_mode` decouples mode from version so
+    # that v13 can hold EITHER mode (independent per-component salts, or fixed
+    # sequential). When unset, infer from the version for backward compatibility
+    # (v11/12/13 -> independent; v8/9/10 -> sequential).
+    if xor_mode == "independent":
+        is_independent_xor = True
+        meta_xor_mode = "independent"
+    elif xor_mode == "sequential":
+        is_independent_xor = False
+        meta_xor_mode = "sequential"
+    else:
+        is_independent_xor = format_version >= 11
+        meta_xor_mode = None  # let the metadata builder infer from the version
+
     # Generate key (now with combined pepper)
-    # v11+: Independent XOR (robust XOR-combiner), v10: Sequential XOR, v9: Secure chained salt
-    if format_version >= 11:
+    # Independent XOR (robust XOR-combiner) vs sequential/chained derivation.
+    if is_independent_xor:
         # Independent XOR mode - each algorithm processes original input
         if parallel_kdf:
             # Parallel execution via multiprocessing
@@ -6045,6 +6068,11 @@ def encrypt_file(
             _enc_md = metadata.setdefault("encryption", {})
             _enc_md["dek_slots"] = _envelope_dek_slots
             _enc_md["dek_slots_mac"] = base64.b64encode(_envelope_dek_slots_mac).decode("ascii")
+        # v13 can carry EITHER xor mode and the decrypt path routes purely by the
+        # xor_mode field, so always stamp it explicitly for v13 (some builders, e.g.
+        # the cascade v8 path, do not write it). (v13 is never streaming.)
+        if format_version == 13:
+            metadata["xor_mode"] = "independent" if is_independent_xor else "sequential"
         metadata_json = json.dumps(metadata).encode("utf-8")
         metadata_b64 = base64.b64encode(metadata_json)
 
@@ -6843,6 +6871,11 @@ def encrypt_file(
             _enc_md = metadata.setdefault("encryption", {})
             _enc_md["dek_slots"] = _envelope_dek_slots
             _enc_md["dek_slots_mac"] = base64.b64encode(_envelope_dek_slots_mac).decode("ascii")
+        # v13 can carry EITHER xor mode and the decrypt path routes purely by the
+        # xor_mode field, so always stamp it explicitly for v13 (some builders, e.g.
+        # the cascade v8 path, do not write it). (v13 is never streaming.)
+        if format_version == 13:
+            metadata["xor_mode"] = "independent" if is_independent_xor else "sequential"
         metadata_json = json.dumps(metadata).encode("utf-8")
         metadata_b64 = base64.b64encode(metadata_json)
 
@@ -7132,6 +7165,11 @@ def encrypt_file(
             _enc_md = metadata.setdefault("encryption", {})
             _enc_md["dek_slots"] = _envelope_dek_slots
             _enc_md["dek_slots_mac"] = base64.b64encode(_envelope_dek_slots_mac).decode("ascii")
+        # v13 can carry EITHER xor mode and the decrypt path routes purely by the
+        # xor_mode field, so always stamp it explicitly for v13 (some builders, e.g.
+        # the cascade v8 path, do not write it). (v13 is never streaming.)
+        if format_version == 13:
+            metadata["xor_mode"] = "independent" if is_independent_xor else "sequential"
         metadata_json = json.dumps(metadata).encode("utf-8")
         metadata_base64 = base64.b64encode(metadata_json)
 
@@ -8000,7 +8038,7 @@ def _derive_envelope_kek(
     """
     salt = base64.b64decode(derivation_config["salt"])
     hash_config = _flatten_derivation_config(derivation_config)
-    if format_version >= 11 or xor_mode == "independent":
+    if xor_mode == "independent" or format_version in (11, 12):
         key, _, _ = generate_key_independent_xor(
             password,
             salt,
@@ -9590,7 +9628,7 @@ def decrypt_file(
         # Recovery path: the DEK is unlocked from a recovery slot at the
         # envelope-unwrap step below, so the password-derived KEK is not needed.
         key = None
-    elif format_version >= 11 or xor_mode == "independent":
+    elif xor_mode == "independent" or format_version in (11, 12):
         # Independent XOR mode (robust XOR-combiner)
         if parallel_kdf:
             # Parallel execution via multiprocessing
