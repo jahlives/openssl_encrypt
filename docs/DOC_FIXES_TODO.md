@@ -12,31 +12,36 @@
 
 ## 1. README — KDF attack-resistance claims (factual fixes)
 
-- [ ] **`Attack Resistance` table** — the row *"GPU/ASIC parallelization →
+- [x] **`Attack Resistance` table** — the row *"GPU/ASIC parallelization →
   sequential dependency forces single-threaded computation"* misattributes the
   defense. Re-attribute anti-GPU/ASIC to the **memory-hardness** of
   Argon2id/Balloon (RAM bandwidth/capacity per lane bounds how many guesses run
   in parallel). Note that sequential dependency only blocks *intra-guess*
   parallelism, which does **not** stop *guess-level* parallelism — the attack
   that matters.
-- [ ] **`Computational Cost Estimates` table** — the "~10²²–10³¹ years" figures
+- [x] **`Computational Cost Estimates` table** — the "~10²²–10³¹ years" figures
   assume a **single-threaded attacker**. Drop that assumption or relabel the
   numbers as an idealized upper bound a massively parallel attacker undercuts by
   the parallelism factor (10⁴–10⁶+). Make clear the per-guess *cost*
   (memory-hardness), not the chaining, is what bounds throughput.
-- [ ] **`Chained Key Derivation` section** — reframe the value of chaining /
+- [x] **`Chained Key Derivation` section** — reframe the value of chaining /
   multiple KDFs as **defense-in-depth** (robustness if one KDF is buggy/broken)
   plus prevention of cross-guess precomputation via per-round salts — **not**
   added ASIC/GPU resistance. State that total attacker cost is the *sum* of stage
   costs (dominated by the strongest), which a single well-parametrized KDF also
   achieves.
-- [ ] Add: the most effective lever for ASIC/GPU resistance is **Argon2id memory
+- [x] Add: the most effective lever for ASIC/GPU resistance is **Argon2id memory
   size**, because memory (not function identity) drives ASIC-resistance.
   Optional justification: Litecoin-scrypt ASICs exist only because of its 128 KB
   parameter.
-- [ ] Reconcile any text presenting **RandomX** as a security feature — document
-  it as opt-in, **disabled by default**, exotic (a PoW, not a vetted KDF), and
-  not relied upon as a security parameter (matches `enabled: False`).
+- [x] Reconcile any text presenting **RandomX** as a security feature.
+  **NOTE / correction:** RandomX is **not** disabled by default — the STANDARD
+  (default) template sets `randomx.enabled = True` (10 rounds), asserted by
+  `test_standard_template.py`. Only the bare `--enable-randomx` CLI flag defaults
+  off. Per maintainer decision (2026-06-28) this is a **docs-only** fix: we
+  document the *reality* (RandomX is on in STANDARD) but reframe it honestly as an
+  exotic PoW / defense-in-depth, not the load-bearing anti-ASIC defense
+  (Argon2id memory-hardness is). The template default was **not** changed.
 
 ## 2. KDF composition modes (independent vs sequential XOR)
 

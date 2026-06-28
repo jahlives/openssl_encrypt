@@ -44,14 +44,14 @@ Technological tools are not neutral. We believe that encryption should empower i
 
 For deep-dives into the cryptographic design and security policies of this project, please refer to the specialized documentation in the `docs/` folder:
 
-* **[Technical Architecture](openssl_encrypt/docs/architecture.md)**: Detailed explanation of the Hybrid PQC-flow, the Hardened KDF Chain (Argon2id + RandomX), and the AEAD Metadata Binding.
+* **[Technical Architecture](openssl_encrypt/docs/architecture.md)**: Detailed explanation of the Hybrid PQC-flow, the memory-hard KDF chain (Argon2id-anchored, with optional RandomX), and the AEAD Metadata Binding.
 * **[Security Policy](openssl_encrypt/docs/security.md)**: Information on our "Defense in Depth" strategy, anti-oracle policies, and how to responsibly disclose vulnerabilities.
 
 ### Key Security Features at a Glance:
 * **Post-Quantum Ready**: Hybrid encryption using NIST-standardized KEMs (HQC, CROSS, MAYO).
 * **Deterministic AEAD**: AES-SIV support for maximum protection against nonce-misuse.
 * **Metadata Integrity**: Cryptographic binding of headers to prevent tampering (on AEAD-supported ciphers).
-* **Hardware-Resistant KDF**: Sequential Argon2id and RandomX hashing to neutralize ASIC/GPU brute-force clusters.
+* **Memory-Hard KDF**: Argon2id (and Balloon) memory-hardness bounds an attacker's guess rate — this is the primary defense against ASIC/GPU brute-force clusters. The STANDARD template also chains RandomX (10 rounds), but RandomX is a proof-of-work function, not a vetted password KDF; treat it as defense-in-depth, not the load-bearing anti-ASIC defense, and raise Argon2id memory to harden further.
 * **Hardware Token Binding (HSM)**: YubiKey/OnlyKey HMAC-SHA1 challenge-response, FIDO2, and PIV/PKCS#11 smart-card support — the hardware-derived pepper is never stored, so decryption requires the physical token. YubiKey and OnlyKey are interchangeable within a same-secret fleet.
 * **Cascade Multi-Layer Encryption**: Independent AES-256-GCM + ChaCha20-Poly1305 layers (default in the STANDARD template) for defense-in-depth.
 * **Threefish-512/1024**: Native AEAD ciphers with 256/512-bit post-quantum security margins.
@@ -440,20 +440,24 @@ Password + Salt₀ → KDF₁ → Result₁ → Salt₁ = f(Result₁) → KDF�
 
 **Design Properties:**
 
-- **Sequential Dependency**: Each round requires the previous round’s result
-- **Dynamic Salting**: Salts are derived from previous outputs, not predictable in advance
-- **Memory-Hard Functions**: Argon2 and Balloon hashing require significant memory per attempt
+- **Memory-Hard Functions**: Argon2id and Balloon hashing require significant memory per guess — this is what bounds an attacker's parallelism (RAM bandwidth/capacity per lane caps how many guesses run at once), and is therefore the actual source of GPU/ASIC resistance.
+- **Dynamic Salting**: Per-round salts are derived from previous outputs, not predictable in advance, which prevents cross-guess precomputation.
+- **Sequential Dependency**: Each round requires the previous round’s result. This blocks *intra-guess* parallelism only; it does **not** stop *guess-level* parallelism (an attacker simply runs many independent guesses in parallel), which is the attack that matters.
+
+**Why chaining / multiple KDFs?** The value of chaining is **defense-in-depth**: if one KDF turns out to be buggy or broken, the others still stand. It is **not** a source of added GPU/ASIC resistance. An attacker's total cost is the **sum of the stage costs** (dominated by the strongest stage) — exactly what a single, well-parametrized memory-hard KDF also achieves. The most effective single lever for ASIC/GPU resistance is **Argon2id memory size**, because memory (not the function's identity) is what bounds purpose-built hardware. (Scrypt-based ASICs exist for Litecoin precisely because its 128 KB memory parameter is small enough to fit on-die.)
 
 ### Attack Resistance
 
-The chained architecture provides several security properties:
+The architecture provides several security properties:
 
-|Attack Vector           |Mitigation                                              |
-|------------------------|--------------------------------------------------------|
-|GPU/ASIC parallelization|Sequential dependency forces single-threaded computation|
-|Rainbow tables          |Dynamic per-round salts prevent precomputation          |
-|Time-memory trade-offs  |Cannot cache intermediate results across attempts       |
-|Quantum key recovery    |Hybrid PQC modes (ML-KEM, HQC) for key encapsulation    |
+|Attack Vector           |Mitigation                                                       |
+|------------------------|-----------------------------------------------------------------|
+|GPU/ASIC parallelization|Memory-hardness of Argon2id/Balloon caps guesses-per-second; raise Argon2id memory to harden further|
+|Rainbow tables          |Dynamic per-round salts prevent precomputation                   |
+|Time-memory trade-offs  |Memory-hard KDFs penalize trading memory for computation         |
+|Quantum key recovery    |Hybrid PQC modes (ML-KEM, HQC) for key encapsulation             |
+
+> **Note:** sequential chaining is *not* listed as the anti-parallelization defense. Chaining only serializes the work *within* a single guess; it cannot prevent an attacker from evaluating many guesses concurrently. Per-guess cost (memory-hardness), not the chaining, is what bounds attacker throughput.
 
 ### Computational Cost Estimates
 
@@ -463,12 +467,12 @@ The chained architecture provides several security properties:
 |60 bits (10 random chars)|Balloon ×5       |~40s        |~10²⁵ years          |
 |80 bits (13 random chars)|Balloon ×5       |~40s        |~10³¹ years          |
 
-*Estimates assume: 95-character set, uniformly random password, single-threaded attack, no implementation flaws. Actual security depends on password quality and operational security.
+*These figures are an **idealized upper bound** computed as (search space × time-per-guess) for a single evaluator. A massively parallel attacker undercuts them by their parallelism factor (commonly 10⁴–10⁶+ across a GPU/ASIC cluster), so treat the numbers as a ceiling, not a guarantee. What actually bounds a real attacker is the **per-guess memory-hard cost** (raise Argon2id memory to push it up), not the round chaining. Estimates further assume a 95-character set, a uniformly random password, and no implementation flaws; actual security depends on password quality and operational security.
 
 ### Security Considerations
 
 - Strong passwords (12+ random characters) make brute-force computationally infeasible
-- Sequential chaining prevents parallelization of key derivation
+- Memory-hard KDFs (Argon2id/Balloon) bound how fast an attacker can guess; sequential chaining only serializes work *within* a guess and does not prevent guess-level parallelism
 - Post-quantum algorithms provide resistance against quantum key-recovery attacks
 - **Limitations**: Implementation bugs, side-channel attacks, weak passwords, or compromised systems remain potential risks. No cryptographic system provides absolute guarantees.
 
