@@ -399,11 +399,27 @@ Combine primitive: `xor_bytes_secure` — byte-wise XOR of equal-length
 `SecureBytes` (src: crypt_core.py:1582-1626).
 
 - **Sequential XOR** (`use_xor_composition = format_version >= 10 or
-  format_version == 8`, src: crypt_core.py:2649): the sequential chain runs
-  end-to-end, but each stage *also* contributes a normalized snapshot to an
-  accumulator, and the key is the XOR of all snapshots (src: crypt_core.py:3493).
-  A broken/entropy-collapsing **early** stage propagates forward → bounded by the
-  weakest early link.
+  format_version == 8`): the sequential chain runs end-to-end, but each stage
+  *also* contributes a normalized snapshot to an accumulator, and the key is the
+  XOR of all snapshots.
+  - **⚠️ v8/v10 CANCELLATION BUG (cost bypass).** These versions also append the
+    chain's *final value* to the accumulator — but that equals the **last stage's**
+    own snapshot, so the two XOR to zero and the **last stage cancels out of the
+    key**. The surviving terms are the **initial** snapshot
+    `SHA256(plaintext-pw ‖ salt_0)` — computed *before* the chain runs, so it uses
+    the original password and salt, not the derived/chained values — XOR'd with any
+    earlier non-final stage snapshots. With a single memory-hard KDF (Argon2-only)
+    Argon2 is last, so the key reduces to exactly that cheap initial hash,
+    **independent of the configured Argon2 cost** (a cost bypass). Affects
+    `format_version ∈ {8, 10}` (`--xor`), not v9/v11/v13. See ADVISORY 2026-02 in
+    [SECURITY.md](../SECURITY.md). Existing v8/v10 files **keep** this derivation
+    (decrypt-compat, append-only) — re-encrypt to fix.
+  - **Fix at `format_version >= 13`** (`xor_mode: "sequential"`): the redundant
+    final-result append is skipped, so every stage contributes and the last
+    stage's cost is paid (src: the `format_version < 13` gate around the
+    `sequential_result` append in crypt_core.py). The per-stage chained inputs
+    already differentiate the components, so no per-component salt is added here
+    (that is the independent-mode fix).
 - **Independent XOR** (`format_version >= 11`, src: crypt_core.py:5820,9564):
   every component gets the **same** input `x = SHA256(password || salt)`
   (src: crypt_core.py:2175,2184) and `K = H1(x) ⊕ H2(x) ⊕ … ⊕ Hn(x)`
@@ -431,6 +447,15 @@ so **duplicate identical stages would cancel to zero** (cancellation caveat,
 src: crypt_core.py:2085-2091) — this is retired at **v13** by the distinct
 per-component salts. Order matters for the sequential chain. Independent-XOR
 multi-round chaining uses `result[:32]` (src: crypt_core.py:1887, parallel_kdf.py).
+
+**Mode routing (v13 holds both modes).** From v13, the on-disk `xor_mode` field —
+not the version — selects the derivation: a v13 file is **independent** iff
+`xor_mode == "independent"`, otherwise **sequential**. Decrypt routes by this
+(`xor_mode == "independent" or format_version in (11, 12)`); v11/v12 are always
+independent (caught by the version), v8/v10/v13-sequential are sequential. Encrypt
+stamps `xor_mode` explicitly for every v13 file. Older code that equated
+`format_version >= 11` with "independent" was corrected to this `xor_mode`-driven
+routing.
 
 ### 7.4 Hidden-header outer key
 
@@ -853,7 +878,7 @@ is **no v0/v1/v2 on disk**. Per-version JSON schemas live in
 | 10      | 1.4.x             | **sequential XOR** composition of stage outputs                     | §7.3 — order-sensitive |
 | 11      | 1.4.0b10          | **Independent XOR** key derivation (robust XOR-combiner)            | §7.3 |
 | 12      | 1.4.x             | **streaming chunked** AEAD (per-chunk HKDF nonces, trailer HMAC); `OESC` magic; current default | §8.4 |
-| 13      | 1.4.x / 1.5.x     | **Independent XOR + per-component domain-separated salts** (retires XOR cancellation); metadata shape == v11; same number/meaning on both lines; **default for Independent XOR** (STANDARD/PARANOID, `--independent-xor`, rekey); v11 decrypt-only | §7.3 |
+| 13      | 1.4.x / 1.5.x     | **Corrected XOR derivation**; `xor_mode` selects the variant: **independent** (per-component domain-separated salts; default for `--independent-xor` / STANDARD / PARANOID / rekey) or **sequential** (last-stage cancellation fixed; `--xor`). Decrypt routes by `xor_mode`. metadata shape == v11; same number/meaning on both lines; v8/v10/v11 stay decrypt-only | §7.3 |
 
 **⚠️ UNVERIFIED:** exact introducing tool-version of v6 (schema exists; no
 changelog line pins it). See §7.2 for the v8 secure-vs-legacy salt discrepancy.

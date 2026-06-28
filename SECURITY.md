@@ -228,6 +228,52 @@ relevant.
 
 ## Security Advisories
 
+### ADVISORY 2026-02: Sequential-XOR Last-Stage Cancellation (KDF Cost Bypass) — Resolved
+
+**Severity:** High · **CWE-916** (Use of Password Hash With Insufficient Computational Effort)
+**Affected on-disk versions:** files written in **sequential XOR** mode —
+`format_version ∈ {8, 10}` (the `--xor` / `--use-xor-composition` option). **Not**
+affected: the default `format_version 9`, independent XOR (`v11`/`v13`), or
+streaming (`v12`).
+
+**Summary:** in sequential XOR, the key is the XOR of each stage's normalized
+output snapshot. The code *also* appended the chain's final value to that
+accumulator — but the final value equals the **last stage's own snapshot**, so the
+two XOR to **zero** and the last stage cancels out of the key entirely:
+
+```python
+# accumulator already contains the last stage's snapshot, then:
+sequential_result = normalize(final_chain_value)   # == last stage's snapshot
+xor_accumulator.append(sequential_result)          # XORs to 0 -> last stage cancels
+```
+
+**Impact:** the last enabled stage's output cancels out of the key, so the key no
+longer depends on it. The surviving terms are the **initial** hash snapshot —
+`SHA256(plaintext-password ‖ original-salt)`, computed *before* the chain runs
+(not a derived/chained value) — XOR'd with any earlier, non-final stage snapshots.
+For an **Argon2-only** configuration (a common choice) Argon2 *is* the last stage,
+so the key reduces to exactly that cheap initial `SHA256(pw‖salt)`, **independent
+of the configured Argon2 time/memory cost**: an attacker derives the key at
+plain-SHA256 speed, bypassing the advertised memory-hardness. With additional
+(hash) stages the key is the initial hash XOR'd with those cheap, non-memory-hard
+snapshots; with multiple KDFs only the last cancels (cost reduced, not
+eliminated). Either way the memory-hard KDF placed last is bypassed.
+
+**Fixed In:** `format_version 13` (`xor_mode: "sequential"`, v1.4.x **and** v1.5.x),
+which drops the redundant append so every stage contributes. `--xor` now writes
+v13.
+
+**Mitigation:**
+- Re-encrypt any `--xor` files (especially single-KDF configs). The default mode
+  and independent XOR (now the default for templates) were never affected.
+- Existing v8/v10 files still **decrypt** (their derivation is preserved,
+  append-only), but remain weak until re-encrypted. Check with
+  `openssl-encrypt info -i file.enc` (look for `xor_mode: sequential` and
+  `format_version` 8/10).
+
+**Disclosure:** found during internal review of the XOR composition modes; fixed
+before any third-party disclosure. **Credit:** internal security review.
+
 ### ADVISORY 2026-01: Predictable Salt Derivation in Multi-Round KDF — Resolved
 
 **Severity:** High (CVSSv3 8.1) · **CWE-330** (Use of Insufficiently Random Values)

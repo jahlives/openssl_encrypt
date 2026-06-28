@@ -398,6 +398,17 @@ inflated KDF metadata parameters, not cosmetic output.
   `< 13` decrypt unchanged; v13 is byte-identical across the 1.4.x and 1.5.x lines
   (pinned by a cross-line golden vector). v13 uses the sequential derivation, so
   `--parallel-kdf` falls back to sequential for v13 (with a notice).
+- **Sequential XOR last-stage cancellation fixed (KDF cost bypass)** — ADVISORY
+  2026-02: in sequential XOR (`--xor`, `format_version 8`/`10`) the chain's final
+  value was XOR'd into the key *in addition to* the last stage's own snapshot,
+  which are equal — so they cancelled and the **last stage dropped out of the
+  key**. For Argon2-only (Argon2 is last) the key reduced to the cheap **initial**
+  `SHA256(pw+salt)` computed before the chain (the original password/salt, not the
+  derived values), bypassing the configured Argon2 cost. `--xor` now writes
+  **format_version 13** (`xor_mode: "sequential"`) with the redundant append
+  removed, so every stage contributes. Existing v8/v10 files still decrypt
+  (derivation preserved) but are weak until re-encrypted. v13 routes XOR mode by
+  the on-disk `xor_mode` field (independent vs sequential), not the version.
 - **Cascade + streaming per-chunk nonce reuse fixed**: streaming encryption of
   a `cascade` chain reused a single cascade salt for every chunk. Because each
   cascade layer derives its key *and* AEAD nonce from `(master_key, salt)`, this
