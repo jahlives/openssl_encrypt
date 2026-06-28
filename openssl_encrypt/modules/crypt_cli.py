@@ -8101,7 +8101,7 @@ def main_with_args(args=None):
                             sys.exit(1)
 
                         if use_independent_xor:
-                            format_version = 11  # Independent XOR (robust XOR-combiner)
+                            format_version = 13  # Independent XOR + per-component domain-separated salts (v13)
                         elif use_xor:
                             format_version = 10  # Sequential XOR
                         else:
@@ -8381,7 +8381,7 @@ def main_with_args(args=None):
                     sys.exit(1)
 
                 if use_independent_xor:
-                    format_version = 11  # Independent XOR (robust XOR-combiner)
+                    format_version = 13  # Independent XOR + per-component domain-separated salts (v13)
                 elif use_xor:
                     format_version = 10  # Sequential XOR
                 else:
@@ -9038,7 +9038,7 @@ def main_with_args(args=None):
                         sys.exit(1)
 
                     if use_independent_xor:
-                        format_version = 11  # Independent XOR (robust XOR-combiner)
+                        format_version = 13  # Independent XOR + per-component domain-separated salts (v13)
                     elif use_xor:
                         format_version = 10  # Sequential XOR
                     else:
@@ -10435,7 +10435,7 @@ def main_with_args(args=None):
                 use_independent_xor = getattr(args, "independent_xor", False)
 
                 if use_independent_xor:
-                    rekey_format_version = 11
+                    rekey_format_version = 13  # Independent XOR (v13)
                 elif use_xor:
                     rekey_format_version = 10
                 else:
