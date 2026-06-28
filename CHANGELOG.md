@@ -508,6 +508,7 @@ files remain decryptable.
 
 - **Key zeroization in streaming/cascade/crypt_core**: All derived intermediate keys zeroed via `SecureBytes`/`secure_memzero` immediately after use
 - **HKDF for keystore password wrap key**: Replaced bare SHA-256 with HKDF for deriving the keystore password wrap key
+- **HKDF for recipient (asymmetric) password wrap key**: Replaced bare SHA-256 with HKDF-SHA256 (`password_wrap.v2`) for deriving the per-recipient AES-256-GCM key that wraps the bulk password under the ML-KEM shared secret; decryption falls back to the legacy bare-SHA256 (`v1`) derivation so existing recipient files still open
 - **HKDF for streaming HMAC key** (v12+): Per-encryption HMAC key derived via HKDF rather than direct KDF output
 - **Per-layer salt and AAD for cascade** (v12+): Each cascade layer receives an independently derived salt; all layers bound to the ciphertext via AAD (H6/H7/M12)
 - **HKDF for pepper and PQC signature keys** (v12+): Pepper and PQC signature keys derived via HKDF with `format_version` wired through the derivation context (M15/M18/C2)
