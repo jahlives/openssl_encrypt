@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Format version 13 — Independent XOR with per-component domain-separated
+  salts** (opt-in, non-breaking): the Independent XOR key derivation (v11) fed
+  every hash/KDF component the *same* `salt_0`, so two components that were the
+  same function with identical parameters could XOR to zero (cancellation). v13
+  derives a distinct `HKDF-SHA256(salt_0, info="openssl_encrypt.indep-xor.v13.salt:"
+  + name)` salt per component, retiring the footgun while keeping the
+  robust-combiner (strongest-link) guarantee. Files `< 13` are unaffected and
+  decrypt unchanged; v13 is byte-identical across the 1.4.x and 1.5.x lines
+  (pinned by a cross-line golden vector). v13 uses the sequential derivation
+  (the parallel KDF path delegates to it).
 - **Hidden ("whitened") file format** (`--hidden-header`, opt-in; ported from
   the 1.5.x line): wraps the encrypted output in an outer layer so the whole
   file is indistinguishable from random bytes, hiding the identifiable
