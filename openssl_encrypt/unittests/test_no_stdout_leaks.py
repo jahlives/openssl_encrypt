@@ -34,11 +34,11 @@ STDOUT_WHITELIST = [
     # file_signature.py — verify-signature --json result (machine-readable, stdout)
     ("modules/file_signature.py", 425, "verify-signature JSON result"),
     # crypt_core.py — JSON data output
-    ("crypt_core.py", 8185, "print_file_info JSON output"),
+    ("crypt_core.py", 8254, "print_file_info JSON output"),
     # crypt_core.py — protected DO NOT CHANGE block
-    ("crypt_core.py", 10521, "PQC key decryption status (protected)"),
-    ("crypt_core.py", 10528, "PQC key decryption failure (protected)"),
-    ("crypt_core.py", 10534, "PQC key decryption error (protected)"),
+    ("crypt_core.py", 10604, "PQC key decryption status (protected)"),
+    ("crypt_core.py", 10611, "PQC key decryption failure (protected)"),
+    ("crypt_core.py", 10617, "PQC key decryption error (protected)"),
     # crypt_utils.py — eprint() helper's own print() call
     ("crypt_utils.py", 25, "eprint() helper implementation"),
     # usb_creator.py — decrypted text content
