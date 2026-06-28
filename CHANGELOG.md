@@ -281,6 +281,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Asymmetric recipient files written by 1.4.x now decrypt on 1.5.x**: the
+  per-recipient password-wrap key derivation was upgraded from bare SHA-256 to
+  HKDF-SHA256 (`password_wrap.v2`) on the 1.4.x line, but the change was never
+  forward-ported, so 1.5.x derived a different wrap key and failed to decrypt
+  recipient files produced by 1.4.x. Forward-ported the HKDF derivation;
+  `unwrap_password` now tries HKDF/v2 first and falls back to the legacy
+  bare-SHA256 (`v1`) derivation, so both lines write v2 and read v2+v1 and
+  recipient files are cross-line interoperable (with a regression test pinning
+  it). The bare-SHA256 derivation was itself cryptographically sound — an ML-KEM
+  shared secret is already a uniform 32-byte key — so this is an interop /
+  robustness fix, not a confidentiality fix.
 - **OnlyKey plugin now works with real hardware**: device construction no
   longer fails with "24828 is not a valid PID" — the plugin masquerades as
   an OTP-only YubiKey (`PID.YKS_OTP`), since yubikit's PID enum only
