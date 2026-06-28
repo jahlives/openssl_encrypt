@@ -44,7 +44,11 @@ GOLDEN_KEY_HEX = "1a969679dc31bf8552a661345a050198c099bb88decfe57d0dbd3537150fdf
 
 
 def _seq_key(cfg, fv):
-    key, _, _ = generate_key(PASSWORD.encode(), SALT, cfg, True, "aes-gcm", format_version=fv)
+    # Keyword args: generate_key's positional signature differs across the 1.4.x /
+    # 1.5.x lines (1.4.x has an extra pbkdf2_iterations param), so pin by keyword.
+    key, _, _ = generate_key(
+        PASSWORD.encode(), SALT, cfg, quiet=True, algorithm="aes-gcm", format_version=fv
+    )
     return bytes(key)
 
 
