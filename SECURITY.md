@@ -127,6 +127,11 @@ A core requirement of this tool is the cryptographic binding of file metadata
 (the JSON header) to the encrypted payload, achieved through **Authenticated
 Encryption with Associated Data (AEAD)**.
 
+> The authoritative, byte-level description of the container — including exactly
+> which metadata fields are bound as AAD and how they are canonicalized — lives in
+> the [On-Disk Format Specification](docs/FORMAT.md) (§6). This policy document
+> states intent; FORMAT.md is normative for interoperability.
+
 ### Metadata Binding (AAD)
 
 **AEAD algorithms (full AAD binding)** — the Base64-encoded metadata header is

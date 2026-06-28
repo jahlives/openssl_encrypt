@@ -45,7 +45,8 @@ Technological tools are not neutral. We believe that encryption should empower i
 For deep-dives into the cryptographic design and security policies of this project, please refer to the specialized documentation in the `docs/` folder:
 
 * **[Technical Architecture](openssl_encrypt/docs/architecture.md)**: Detailed explanation of the Hybrid PQC-flow, the memory-hard KDF chain (Argon2id-anchored, with optional RandomX), and the AEAD Metadata Binding.
-* **[Security Policy](openssl_encrypt/docs/security.md)**: Information on our "Defense in Depth" strategy, anti-oracle policies, and how to responsibly disclose vulnerabilities.
+* **[On-Disk Format Specification](docs/FORMAT.md)**: The authoritative, implementer-facing description of the bytes written to disk — container layouts, metadata schema, AAD binding, key derivation, and the format-version history. (Currently a working draft.)
+* **[Security Policy](SECURITY.md)**: Threat model and non-goals, supported versions, cryptographic standards, anti-oracle policy, source-code integrity, and how to responsibly disclose vulnerabilities.
 
 ### Key Security Features at a Glance:
 * **Post-Quantum Ready**: Hybrid encryption using NIST-standardized KEMs (HQC, CROSS, MAYO).

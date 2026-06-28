@@ -88,13 +88,18 @@
 
 ## 4. Cross-references & consistency
 
-- [ ] Link the new **FORMAT.md** from README and SECURITY.md; finish its §18
-  index — especially **§6 AAD canonicalization** and the **§15 version table
-  (identify v11 and v13)**.
-- [ ] Mirror the **v1.5.0 removals / migration notes** consistently across
-  README, CHANGELOG, SECURITY.md, and FORMAT.md §13 (decrypt-only exception);
-  confirm steganography removal is documented as **1.5.x-only** (retained in
-  1.4.x).
+- [x] Link the new **FORMAT.md** from README and SECURITY.md (README docs index
+  + SECURITY.md AEAD section); **§15 version table** resolved: v11 = Independent
+  XOR, v13 = *reserved / not allocated* (highest shipped version is 12; corrected
+  the FORMAT.md header and the v12 "introduced in" to 1.4.x). *(Deferred to the
+  FORMAT.md spec task: the deep **§6 AAD canonicalization** write-up and the
+  v0–8 §15 rows — these need source verification, not a doc cross-ref.)*
+- [x] Mirror the **v1.5.0 removals / migration notes** — on **1.4.x**: FORMAT.md
+  §13 documents the decrypt-only exception, and the 1.4.x README/CHANGELOG
+  correctly present steganography + deprecated algorithms as **retained**
+  (removal is **1.5.x-only**), so no contradiction. *(The reciprocal mirroring
+  into the 1.5.x README/CHANGELOG/SECURITY is done on that branch — see the
+  cross-branch port.)*
 
 ---
 

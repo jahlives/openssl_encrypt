@@ -2,7 +2,7 @@
 
 > **Status:** DRAFT / scaffold — not yet normative.
 > **Spec version:** 0.1 (skeleton)
-> **Covers tool versions:** 1.4.x and 1.5.x (format_version ≤ 13)
+> **Covers tool versions:** 1.4.x and 1.5.x (highest shipped format_version: 12)
 > **Last updated:** YYYY-MM-DD
 > **Editor:** Tobias <…>
 >
@@ -485,9 +485,9 @@ Identifiers as they appear on disk. Aliases are accepted on input; the
 | 8       | **TODO**       | cascade encryption support; current `encryption` shape         | §8 |
 | 9       | 1.4.x          | **chained-salt derivation** (ADVISORY 2026-01); current default| §7.2 — legacy salt for ≤8 |
 | 10      | 1.4.x          | **XOR composition** of stage outputs                           | §7.3 — order-sensitive |
-| 11      | **TODO**       | **TODO** (⚠️ identify)                                          | **TODO** |
-| 12      | 1.5.x          | **streaming chunked** AEAD; reduced algorithm set              | §8.4 |
-| 13      | 1.5.x          | **TODO** (envelope / nonce-format related — ⚠️ identify)       | §9 / §8.3 |
+| 11      | 1.4.x (1.4.0b10)| **Independent XOR** key derivation — robust XOR-combiner over per-component KDF outputs | §7.3 — order-sensitive |
+| 12      | 1.4.x          | **streaming chunked** AEAD (per-chunk HKDF nonces); 1.5.x additionally enforces the reduced algorithm set on this version | §8.4 |
+| 13      | *(reserved)*   | **Not allocated.** Highest shipped version is 12. Envelope/recovery-slot (§9) and XChaCha nonce-format work lives on an unmerged feature branch; do not assume a v13 on disk. | — |
 
 ---
 
@@ -551,7 +551,7 @@ A consolidated checklist of everything to resolve before this leaves DRAFT:
 - [ ] §12 armor labels + CRC-24 parameters
 - [ ] §13 write-retired / read-dropped lists per release
 - [ ] §14 shipped-vs-legacy algorithm sets + liboqs names + Threefish mode
-- [ ] §15 fill the version table (esp. v11, v13)
+- [x] §15 identify v11 (Independent XOR) and v13 (reserved — not allocated; max shipped is 12); v0–8 rows still TODO
 - [ ] §16 corpus location + consolidated KAT index
 
 ---
