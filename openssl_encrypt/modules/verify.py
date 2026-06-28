@@ -44,7 +44,7 @@ class FileVerifier:
 
     # Supported format version range
     MIN_FORMAT_VERSION = 3
-    MAX_FORMAT_VERSION = 12
+    MAX_FORMAT_VERSION = 13
 
     # Streaming constants
     STREAMING_MAGIC = b"OESC"
