@@ -12,6 +12,58 @@ Our security model doesn't just focus on data confidentiality but emphasizes
 **Metadata Integrity** and **Quantum Resistance**. We believe in transparency;
 our cryptographic choices are documented to allow public audit and verification.
 
+## Threat Model & Non-Goals
+
+Stating what the tool defends against — and, just as importantly, what it does
+**not** — keeps the security claims elsewhere in this document honest. The
+cost/strength estimates in the README and the protections below are only
+meaningful within this model.
+
+### Adversary capabilities (assumed)
+
+We assume an adversary who can:
+
+- obtain the **encrypted container** (at rest or in transit) and any number of
+  ciphertexts, and store them indefinitely (e.g. "harvest now, decrypt later");
+- read, modify, truncate, reorder, or replay the container's **bytes and
+  metadata** before it reaches the recipient;
+- run **massively parallel** offline guessing against the password/KDF using
+  GPU/ASIC clusters (this is why per-guess memory-hardness, not chaining, is the
+  load-bearing defense — see the README KDF section);
+- access a **future cryptographically-relevant quantum computer** (motivating the
+  hybrid PQC layer).
+
+### Protected assets
+
+- **Confidentiality** of the plaintext payload.
+- **Integrity / authenticity** of the payload *and* of the metadata bound as AEAD
+  associated data (tampering is detected on decrypt; see *Metadata Binding*).
+- **Key-recovery resistance** against classical and (via hybrid KEMs) quantum
+  attackers, bounded by password strength and KDF parameters.
+
+### Non-goals (explicitly NOT defended)
+
+- **A compromised endpoint.** If the machine running the tool is compromised
+  (malware, a hostile OS, a memory-scraping attacker with the process live), the
+  password and plaintext are exposed. Secure-memory handling is best-effort
+  hardening, not a defense against a privileged local attacker.
+- **Traffic analysis & metadata-about-metadata.** File existence, size, count,
+  timing, and access patterns are not concealed.
+- **Plaintext-length confidentiality.** The standard container does **not** hide
+  the plaintext size — ciphertext length leaks plaintext length (minus framing
+  overhead). Length-hiding padding is a future consideration (see
+  [`docs/FORMAT.md`](docs/FORMAT.md) §17).
+- **Side-channels in the host/runtime.** Constant-time behavior cannot be
+  guaranteed under CPython (timing, cache, GC, and memory-deallocation
+  side-channels are out of scope); we rely on a generic-error policy
+  (see *Anti-Oracle Policy*) rather than provable constant-time execution.
+- **Supply-chain compromise of the distribution itself.** The integrity tripwire
+  (below) detects casual tampering, not a determined supply-chain attacker — see
+  the scope note in *Source-Code Integrity Verification*.
+- **Foreign-format parsing safety.** Read-only consumption of third-party formats
+  (age / OpenPGP) is a distinct, untrusted attack surface and is not covered by
+  these guarantees.
+
 ## Supported Versions
 
 We take security seriously and provide security updates for the following versions:
@@ -46,6 +98,16 @@ gpg --verify openssl_encrypt/integrity/manifest.json.asc \
 > The built-in `openssl-encrypt verify-integrity` command is a convenience tripwire,
 > not cryptographic proof — the verifier ships in the same package it checks. Only
 > manual `gpg` verification against an out-of-band fingerprint is authoritative.
+>
+> **Scope (what this is *not*).** The signed manifest detects casual or accidental
+> tampering of the covered source files after the fact. It is **not** a substitute
+> for proper supply-chain integrity — signed/attested release artifacts,
+> reproducible builds, and verification of dependencies — and it does not protect
+> against an attacker who controls the distribution channel (they can ship a
+> matching signature). It also carries an ongoing **maintenance cost**: the
+> manifest must be re-signed whenever a covered file legitimately changes, or
+> verification produces false alarms. Treat it as defense-in-depth, not as the
+> primary supply-chain control.
 >
 > **Note:** the source-integrity signing key has been rotated from the development
 > bootstrap key to the production key generated on a trusted machine (fingerprint

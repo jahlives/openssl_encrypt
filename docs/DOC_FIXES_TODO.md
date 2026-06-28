@@ -74,14 +74,14 @@
 
 ## 3. SECURITY.md — threat model & scope
 
-- [ ] Add an explicit, written **threat model / non-goals** section: adversary
+- [x] Add an explicit, written **threat model / non-goals** section: adversary
   capabilities, protected assets, and what is *not* defended (compromised
   endpoint, traffic analysis, CPython timing/side-channels, plaintext-length
   leakage). This anchors the cost-claim corrections above.
-- [ ] Document that **plaintext length is not hidden** by the standard container
+- [x] Document that **plaintext length is not hidden** by the standard container
   (size leaks); note optional padding as a future consideration
   *(cross-ref FORMAT.md §17)*.
-- [ ] Re-scope the **Source-Code Integrity** wording: keep the honest
+- [x] Re-scope the **Source-Code Integrity** wording: keep the honest
   "convenience tripwire" framing, but state it does not substitute for
   supply-chain measures (signed/attested releases, reproducible builds), and
   acknowledge the maintenance cost.
