@@ -1,7 +1,17 @@
-# TODO (next session) — KDF re-injection robustness for the sequential / XOR composition
+# TODO — KDF re-injection robustness for the sequential / XOR composition
 
-> **Status:** planned, not started
-> **Target:** next working session
+> **⚠️ SUPERSEDED (2026-06-28).** After analysis we did **not** build the
+> sequential re-injection construction below. Its only unique benefit is
+> intra-guess *thread-binding*, which is **not** the load-bearing defense
+> (per-guess memory-hardness is — see DOC_FIXES §1), while its provable wins
+> (cancellation-kill, broken-link robustness) come more cheaply — and *with* the
+> strongest-link proof — from **independent XOR with distinct domain-separated
+> per-component salts**. That was implemented instead as **`format_version 13`**
+> (`_indep_xor_component_salt`; `test_format_v13_xor_domsep.py`), opt-in,
+> byte-identical on both lines. The construction below is **declined / archived**
+> for reference; revisit only if a hard *thread-binding* requirement appears.
+
+> **Status:** SUPERSEDED by format_version 13 (independent-XOR per-component salts)
 > **Owner:** Tobias
 > **Branches:** must land on **both** `feature/v1.4.x-development` **and**
 > `feature/v1.5.x-development` (see gating).
