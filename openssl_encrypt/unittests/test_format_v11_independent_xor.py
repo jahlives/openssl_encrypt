@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Unit tests for metadata format version 11 (Independent XOR composition - Massey).
+Unit tests for metadata format version 11 (Independent XOR composition - robust XOR-combiner).
 
 Tests v11 encryption/decryption, independent XOR composition logic, and various algorithm combinations.
 Verifies that each algorithm processes the original input independently (no chaining).
@@ -24,7 +24,7 @@ from openssl_encrypt.modules.crypt_core import (
 
 
 class TestFormatV11IndependentXOR(unittest.TestCase):
-    """Test suite for metadata format version 11 (Independent XOR - Massey)."""
+    """Test suite for metadata format version 11 (Independent XOR - robust XOR-combiner)."""
 
     def setUp(self):
         """Set up test environment."""

@@ -495,7 +495,7 @@ the 1.5 branch:
 ### Added
 
 - **Simple/Pro mode for desktop GUI**: New default "Simple" mode hides all advanced crypto options, showing only Encrypt, Decrypt, and Settings tabs. Uses CLI `--standard` template automatically. Pro mode toggle in Settings restores full UI with all algorithms, KDFs, cascade, steganography, and identity management
-- **Independent XOR (v11) as default key derivation**: STANDARD and PARANOID templates now automatically enable Massey's Independent XOR composition for stronger key derivation security guarantees
+- **Independent XOR (v11) as default key derivation**: STANDARD and PARANOID templates now automatically enable Independent XOR composition (a robust XOR-combiner) for stronger key derivation security guarantees
 - **RandomX support in independent XOR path**: RandomX KDF now works correctly in both parallel and non-parallel v11 key derivation paths
 - **Progress bars for Argon2 and RandomX in XOR mode**: Multi-round KDF operations now display progress bars when using `--progress` flag in independent XOR (v11) mode
 
@@ -620,8 +620,8 @@ the 1.5 branch:
 
 ### Added
 
-- **Format Version 11: Independent XOR Key Derivation (Massey Composition)**
-  - **New Cryptographic Approach**: Implements Massey's Independent XOR composition where each hash/KDF algorithm processes the same original input (password + salt), and outputs are XOR'd together
+- **Format Version 11: Independent XOR Key Derivation (robust XOR-combiner)**
+  - **New Cryptographic Approach**: Implements Independent XOR composition (robust XOR-combiner; Herzberg, HKNRR) where each hash/KDF algorithm processes the same original input (password + salt), and outputs are XOR'd together
   - **Security Guarantee**: Provides "strongest component" security - the derived key is at least as secure as the strongest constituent algorithm, even if all others are compromised
   - **CLI Flag**: New `--independent-xor` flag enables v11 format with Independent XOR composition
   - **Distinction from v10**: Unlike v10 sequential XOR (chains algorithms for anti-parallelization), v11 processes all algorithms independently for maximum cryptographic assurance

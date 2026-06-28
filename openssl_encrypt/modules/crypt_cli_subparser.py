@@ -808,7 +808,7 @@ def setup_encrypt_parser(subparser):
         default=False,
         help="Enable independent XOR key derivation (format v11). "
         "Each algorithm processes the original password+salt independently (no chaining). "
-        "Provides strongest-component security guarantee (Massey). "
+        "Provides strongest-component security guarantee (robust XOR-combiner). "
         "Trade-off: Attackers can parallelize, but key is as strong as strongest algorithm. "
         "Mutually exclusive with --use-xor-composition. "
         "Files require openssl_encrypt 1.4.x+ to decrypt.",
@@ -1461,7 +1461,7 @@ def setup_rekey_parser(subparser):
         action="store_true",
         default=False,
         help="Enable independent XOR key derivation (format v11). "
-        "Provides strongest-component security guarantee (Massey).",
+        "Provides strongest-component security guarantee (robust XOR-combiner).",
     )
 
     # Integrity options

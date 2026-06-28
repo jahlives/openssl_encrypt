@@ -44,14 +44,15 @@ Technological tools are not neutral. We believe that encryption should empower i
 
 For deep-dives into the cryptographic design and security policies of this project, please refer to the specialized documentation in the `docs/` folder:
 
-* **[Technical Architecture](openssl_encrypt/docs/architecture.md)**: Detailed explanation of the Hybrid PQC-flow, the Hardened KDF Chain (Argon2id + RandomX), and the AEAD Metadata Binding.
-* **[Security Policy](openssl_encrypt/docs/security.md)**: Information on our "Defense in Depth" strategy, anti-oracle policies, and how to responsibly disclose vulnerabilities.
+* **[Technical Architecture](openssl_encrypt/docs/architecture.md)**: Detailed explanation of the Hybrid PQC-flow, the memory-hard KDF chain (Argon2id-anchored, with optional RandomX), and the AEAD Metadata Binding.
+* **[On-Disk Format Specification](docs/FORMAT.md)**: The authoritative, implementer-facing description of the bytes written to disk — container layouts, metadata schema, AAD binding, key derivation, and the format-version history. (Currently a working draft.)
+* **[Security Policy](SECURITY.md)**: Threat model and non-goals, supported versions, cryptographic standards, anti-oracle policy, source-code integrity, and how to responsibly disclose vulnerabilities.
 
 ### Key Security Features at a Glance:
 * **Post-Quantum Ready**: Hybrid encryption using NIST-standardized KEMs (HQC, CROSS, MAYO).
 * **Deterministic AEAD**: AES-SIV support for maximum protection against nonce-misuse.
 * **Metadata Integrity**: Cryptographic binding of headers to prevent tampering (on AEAD-supported ciphers).
-* **Hardware-Resistant KDF**: Sequential Argon2id and RandomX hashing to neutralize ASIC/GPU brute-force clusters.
+* **Memory-Hard KDF**: Argon2id (and Balloon) memory-hardness bounds an attacker's guess rate — this is the primary defense against ASIC/GPU brute-force clusters. The STANDARD template also chains RandomX (10 rounds), but RandomX is a proof-of-work function, not a vetted password KDF; treat it as defense-in-depth, not the load-bearing anti-ASIC defense, and raise Argon2id memory to harden further.
 ---
 ## Breaking Changes in v1.5.0
 
@@ -103,7 +104,7 @@ The `numpy` production dependency was dropped along with steganography.
 ## v1.4.0 Development Series
 
 **What's New in v1.4.0b10:**
-- **Format Version 11: Independent XOR Key Derivation (Massey)**: New `--independent-xor` flag enables Massey's Independent XOR composition providing "strongest component" security guarantee - key remains secure even if all algorithms except the strongest are broken
+- **Format Version 11: Independent XOR Key Derivation**: New `--independent-xor` flag enables a robust XOR-combiner (Herzberg; Harnik–Kilian–Naor–Reingold–Rosen) composition providing a "strongest component" guarantee for output/PRF indistinguishability — the key stays secure as long as at least one component is unbroken (this concerns output security against a broken component, not per-guess cost; see the *KDF Composition Modes* section)
 - **Parallel KDF Processing**: Optional `--parallel-kdf` flag for ~2.7x performance improvement (8.5s → 3.1s with 8 algorithms on 8-core CPU) using multiprocessing for true CPU parallelism
 - **Worker Control**: `--kdf-workers N` flag to specify parallel worker count (default: auto-detect based on CPU cores)
 - **Enhanced Security Guarantee**: Independent XOR provides maximum cryptographic assurance against future algorithm breaks, distinct from v10 sequential XOR's anti-parallelization approach
@@ -531,20 +532,60 @@ Password + Salt₀ → KDF₁ → Result₁ → Salt₁ = f(Result₁) → KDF�
 
 **Design Properties:**
 
-- **Sequential Dependency**: Each round requires the previous round’s result
-- **Dynamic Salting**: Salts are derived from previous outputs, not predictable in advance
-- **Memory-Hard Functions**: Argon2 and Balloon hashing require significant memory per attempt
+- **Memory-Hard Functions**: Argon2id and Balloon hashing require significant memory per guess — this is what bounds an attacker's parallelism (RAM bandwidth/capacity per lane caps how many guesses run at once), and is therefore the actual source of GPU/ASIC resistance.
+- **Dynamic Salting**: Per-round salts are derived from previous outputs, not predictable in advance, which prevents cross-guess precomputation.
+- **Sequential Dependency**: Each round requires the previous round’s result. This blocks *intra-guess* parallelism only; it does **not** stop *guess-level* parallelism (an attacker simply runs many independent guesses in parallel), which is the attack that matters.
+
+**Why chaining / multiple KDFs?** The value of chaining is **defense-in-depth**: if one KDF turns out to be buggy or broken, the others still stand. It is **not** a source of added GPU/ASIC resistance. An attacker's total cost is the **sum of the stage costs** (dominated by the strongest stage) — exactly what a single, well-parametrized memory-hard KDF also achieves. The most effective single lever for ASIC/GPU resistance is **Argon2id memory size**, because memory (not the function's identity) is what bounds purpose-built hardware. (Scrypt-based ASICs exist for Litecoin precisely because its 128 KB memory parameter is small enough to fit on-die.)
+
+### KDF Composition Modes (Independent vs Sequential XOR)
+
+When several hash/KDF algorithms are combined, the tool supports two composition
+modes with **different security guarantees**. Pick deliberately:
+
+- **Independent XOR** (format v11, the STANDARD/PARANOID default) — every algorithm
+  derives from the **same** `(password + salt)` input and the outputs are XOR'd:
+  `K = H₁(x) ⊕ H₂(x) ⊕ … ⊕ Hₙ(x)`. This is a **robust XOR-combiner** for PRFs
+  (Herzberg; Harnik–Kilian–Naor–Reingold–Rosen): for **output / PRF
+  indistinguishability**, the result is **as strong as the strongest component** —
+  it stays secure as long as **at least one** component is unbroken. Use this mode
+  when you want the strongest-link guarantee.
+- **Sequential XOR** (format v10) — each round feeds the previous round's output
+  forward. The robust-combiner guarantee does **not** hold here: a broken or
+  entropy-collapsing **early** round propagates into every later round (XOR can't
+  rescue what already collapsed), so security is bounded by the **weakest early
+  link**. Its only gain over independent mode is intra-guess sequentiality
+  (thread-binding).
+
+**Scope of the "strongest component" claim.** It is precisely about **output
+indistinguishability**, and it bites only against a **broken / entropy-collapsing**
+component. It does **not** cover *cost*: total work is the **sum of all components**
+in *both* modes (a merely cheap-but-full-entropy component is harmless and is not
+what the guarantee is about). So don't read "strongest link" as buying extra
+memory-hardness or ASIC resistance — that comes from each component's own cost
+parameters (see above).
+
+**Cancellation caveat (independent XOR).** Because all components share the same
+`(password + salt)`, the strongest-link property holds only while no two
+components are the **same function with identical parameters** — XOR of two
+identical outputs is zero. Avoid configuring duplicate identical stages; the
+robust fix is per-component domain separation (e.g. `HKDF(salt, info=algo_name)`).
+A future format version re-injects the original password and salt into every round
+to retire this footgun and to harden sequential mode against a broken early link
+— see [`docs/TODO_sequential-xor-reinjection.md`](docs/TODO_sequential-xor-reinjection.md).
 
 ### Attack Resistance
 
-The chained architecture provides several security properties:
+The architecture provides several security properties:
 
-|Attack Vector           |Mitigation                                              |
-|------------------------|--------------------------------------------------------|
-|GPU/ASIC parallelization|Sequential dependency forces single-threaded computation|
-|Rainbow tables          |Dynamic per-round salts prevent precomputation          |
-|Time-memory trade-offs  |Cannot cache intermediate results across attempts       |
-|Quantum key recovery    |Hybrid PQC modes (ML-KEM, HQC) for key encapsulation    |
+|Attack Vector           |Mitigation                                                       |
+|------------------------|-----------------------------------------------------------------|
+|GPU/ASIC parallelization|Memory-hardness of Argon2id/Balloon caps guesses-per-second; raise Argon2id memory to harden further|
+|Rainbow tables          |Dynamic per-round salts prevent precomputation                   |
+|Time-memory trade-offs  |Memory-hard KDFs penalize trading memory for computation         |
+|Quantum key recovery    |Hybrid PQC modes (ML-KEM, HQC) for key encapsulation             |
+
+> **Note:** sequential chaining is *not* listed as the anti-parallelization defense. Chaining only serializes the work *within* a single guess; it cannot prevent an attacker from evaluating many guesses concurrently. Per-guess cost (memory-hardness), not the chaining, is what bounds attacker throughput.
 
 ### Computational Cost Estimates
 
@@ -554,12 +595,12 @@ The chained architecture provides several security properties:
 |60 bits (10 random chars)|Balloon ×5       |~40s        |~10²⁵ years          |
 |80 bits (13 random chars)|Balloon ×5       |~40s        |~10³¹ years          |
 
-*Estimates assume: 95-character set, uniformly random password, single-threaded attack, no implementation flaws. Actual security depends on password quality and operational security.
+*These figures are an **idealized upper bound** computed as (search space × time-per-guess) for a single evaluator. A massively parallel attacker undercuts them by their parallelism factor (commonly 10⁴–10⁶+ across a GPU/ASIC cluster), so treat the numbers as a ceiling, not a guarantee. What actually bounds a real attacker is the **per-guess memory-hard cost** (raise Argon2id memory to push it up), not the round chaining. Estimates further assume a 95-character set, a uniformly random password, and no implementation flaws; actual security depends on password quality and operational security.
 
 ### Security Considerations
 
 - Strong passwords (12+ random characters) make brute-force computationally infeasible
-- Sequential chaining prevents parallelization of key derivation
+- Memory-hard KDFs (Argon2id/Balloon) bound how fast an attacker can guess; sequential chaining only serializes work *within* a guess and does not prevent guess-level parallelism
 - Post-quantum algorithms provide resistance against quantum key-recovery attacks
 - **Limitations**: Implementation bugs, side-channel attacks, weak passwords, or compromised systems remain potential risks. No cryptographic system provides absolute guarantees.
 
