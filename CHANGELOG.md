@@ -387,15 +387,17 @@ inflated KDF metadata parameters, not cosmetic output.
 ### Security
 
 - **Format version 13 — Independent XOR with per-component domain-separated
-  salts** (opt-in, non-breaking): the Independent XOR key derivation (v11) fed
-  every hash/KDF component the *same* `salt_0`, so two components that were the
-  same function with identical parameters could XOR to zero (cancellation). v13
-  derives a distinct `HKDF-SHA256(salt_0, info="openssl_encrypt.indep-xor.v13.salt:"
-  + name)` salt per component, retiring the footgun while keeping the
-  robust-combiner (strongest-link) guarantee. Files `< 13` are unaffected and
-  decrypt unchanged; v13 is byte-identical across the 1.4.x and 1.5.x lines
-  (pinned by a cross-line golden vector). v13 uses the sequential derivation
-  (the parallel KDF path delegates to it).
+  salts** (now the **default** for Independent XOR; non-breaking): the Independent
+  XOR key derivation (v11) fed every hash/KDF component the *same* `salt_0`, so two
+  components that were the same function with identical parameters could XOR to
+  zero (cancellation). v13 derives a distinct
+  `HKDF-SHA256(salt_0, info="openssl_encrypt.indep-xor.v13.salt:" + name)` salt per
+  component, retiring the footgun while keeping the robust-combiner (strongest-link)
+  guarantee. **`--independent-xor`, the STANDARD/PARANOID templates, and rekey now
+  write v13**; v11 remains fully supported for **decryption** (append-only). Files
+  `< 13` decrypt unchanged; v13 is byte-identical across the 1.4.x and 1.5.x lines
+  (pinned by a cross-line golden vector). v13 uses the sequential derivation, so
+  `--parallel-kdf` falls back to sequential for v13 (with a notice).
 - **Cascade + streaming per-chunk nonce reuse fixed**: streaming encryption of
   a `cascade` chain reused a single cascade salt for every chunk. Because each
   cascade layer derives its key *and* AEAD nonce from `(master_key, salt)`, this

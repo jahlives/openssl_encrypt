@@ -853,7 +853,7 @@ is **no v0/v1/v2 on disk**. Per-version JSON schemas live in
 | 10      | 1.4.x             | **sequential XOR** composition of stage outputs                     | §7.3 — order-sensitive |
 | 11      | 1.4.0b10          | **Independent XOR** key derivation (robust XOR-combiner)            | §7.3 |
 | 12      | 1.4.x             | **streaming chunked** AEAD (per-chunk HKDF nonces, trailer HMAC); `OESC` magic; current default | §8.4 |
-| 13      | 1.4.x / 1.5.x     | **Independent XOR + per-component domain-separated salts** (retires XOR cancellation); metadata shape == v11; same number/meaning on both lines | §7.3 |
+| 13      | 1.4.x / 1.5.x     | **Independent XOR + per-component domain-separated salts** (retires XOR cancellation); metadata shape == v11; same number/meaning on both lines; **default for Independent XOR** (STANDARD/PARANOID, `--independent-xor`, rekey); v11 decrypt-only | §7.3 |
 
 **⚠️ UNVERIFIED:** exact introducing tool-version of v6 (schema exists; no
 changelog line pins it). See §7.2 for the v8 secure-vs-legacy salt discrepancy.
