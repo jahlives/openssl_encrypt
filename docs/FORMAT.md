@@ -637,19 +637,30 @@ only `{threshold, num_shares}` (src: recovery_slots.py:287-295,710-726).
 `mode: "asymmetric"` (format_version 7 path, `encrypt_file_asymmetric`,
 src: crypt_core.py:4822-5094).
 
-> **Correction to earlier drafts — there is NO classical+PQC hybrid KEM combiner
-> in the recipient path.** Recipient encapsulation is **PQC-only, ML-KEM-768**
-> (hardcoded `PasswordWrapper("ML-KEM-768")`, src: crypt_core.py:4936). The word
-> "hybrid" elsewhere (the `pqc_*` single-keypair bulk mode) means **PQC-KEM +
-> symmetric AEAD**, not classical + PQC. No X25519/ECDH secret-concatenation
-> combiner exists (`grep` finds none). **⚠️ UNVERIFIED / NOT PRESENT:** the
-> "classical + PQC shared-secret → HKDF" combiner the scaffold assumed.
+> **There is NO classical+PQC hybrid KEM combiner in the recipient path.**
+> Recipient encapsulation is **PQC-only, ML-KEM** (`PasswordWrapper` accepts only
+> ML-KEM-512/768/1024, default ML-KEM-768; src: asymmetric_core.py:65-88). The
+> word "hybrid" elsewhere (e.g. `ml-kem-768-hybrid`) means **PQC-KEM + classical
+> *symmetric* AEAD** (data under AES/ChaCha, key wrapped by the KEM), **not**
+> classical + PQC KEM. The only X25519 in the tree is **age-format interop**
+> (`--age-identity`), not a native KEM. So **recipient confidentiality rests
+> solely on ML-KEM** — a legitimate choice (NIST permits standalone ML-KEM) but
+> **not** the classical+PQC "belt-and-suspenders" hybrid (à la X25519+ML-KEM in
+> TLS) that hedges against a future ML-KEM break.
 
 - **Wrap:** a random bulk password encrypts the data (AES-256-GCM, 12-byte nonce,
   `derived_key[:32]`); that password is wrapped per recipient. The per-recipient
-  AES-256-GCM **wrap key is a bare SHA-256**:
-  `SHA256(b"openssl_encrypt.password_wrap.v1" || shared_secret)` (no HKDF, no AAD;
-  output `nonce(12) || ct || tag(16)`) (src: asymmetric_core.py:200-223).
+  AES-256-GCM **wrap key = `HKDF-SHA256(salt=None,
+  info=b"openssl_encrypt.password_wrap.v2").derive(shared_secret)`** (no AAD;
+  output `nonce(12) || ct || tag(16)`) (src: asymmetric_core.py:205-216).
+  > **Format note.** The `…password_wrap.v2` HKDF derivation replaced an earlier
+  > **bare SHA-256** of the shared secret (`…password_wrap.v1`). Decrypt tries
+  > HKDF/v2 first and **falls back to the legacy v1 bare-SHA256** so existing
+  > recipient files still open (src: asymmetric_core.py:287-309). Both lines
+  > (1.4.x and 1.5.x) now write v2 and read v2+v1, so recipient files are
+  > cross-line interoperable. (The bare-SHA256 v1 derivation was itself
+  > cryptographically sound — an ML-KEM shared secret is already a uniform 32-byte
+  > key per FIPS 203 — but HKDF aligns this spot with the rest of the codebase.)
 - **Recipients on disk:** `metadata["asymmetric"]["recipients"]` is a JSON **list**;
   each entry = `{key_id, kem_algorithm, encapsulated_key (b64), encrypted_password
   (b64)}`. Sender block = `metadata["asymmetric"]["sender"] = {key_id,
