@@ -4,7 +4,8 @@ Parallel Key Derivation Module for v11 Independent XOR.
 This module provides parallel execution of hash algorithms and KDFs with proper
 progress reporting via multiprocessing.Queue.
 
-Implements Massey's Independent XOR composition where each algorithm processes
+Implements a robust XOR-combiner (Herzberg; Harnik-Kilian-Naor-Reingold-Rosen)
+for Independent XOR composition where each algorithm processes
 the same input in parallel, providing "strongest component" security guarantee.
 """
 
@@ -507,7 +508,8 @@ def generate_key_independent_xor_parallel(
     """
     Generate encryption key using Independent XOR composition with parallel processing.
 
-    Based on Massey's work: K = H1(x) ⊕ H2(x) ⊕ ... ⊕ Hn(x)
+    Robust XOR-combiner for PRFs (Herzberg; Harnik-Kilian-Naor-Reingold-Rosen):
+    K = H1(x) ⊕ H2(x) ⊕ ... ⊕ Hn(x)
 
     Each algorithm receives the SAME input and runs in parallel via multiprocessing.
     Progress is aggregated and displayed via Queue-based communication.
@@ -734,7 +736,7 @@ def generate_key_independent_xor_parallel(
             )
 
             eprint(
-                f"✅ Combined {len(xor_components)} independent components using XOR (Massey) "
+                f"✅ Combined {len(xor_components)} independent components using XOR "
                 f"[{parallel_time:.1f}s parallel, ~{sequential_estimate:.1f}s sequential estimate]"
             )
 

@@ -446,6 +446,42 @@ Password + Salt₀ → KDF₁ → Result₁ → Salt₁ = f(Result₁) → KDF�
 
 **Why chaining / multiple KDFs?** The value of chaining is **defense-in-depth**: if one KDF turns out to be buggy or broken, the others still stand. It is **not** a source of added GPU/ASIC resistance. An attacker's total cost is the **sum of the stage costs** (dominated by the strongest stage) — exactly what a single, well-parametrized memory-hard KDF also achieves. The most effective single lever for ASIC/GPU resistance is **Argon2id memory size**, because memory (not the function's identity) is what bounds purpose-built hardware. (Scrypt-based ASICs exist for Litecoin precisely because its 128 KB memory parameter is small enough to fit on-die.)
 
+### KDF Composition Modes (Independent vs Sequential XOR)
+
+When several hash/KDF algorithms are combined, the tool supports two composition
+modes with **different security guarantees**. Pick deliberately:
+
+- **Independent XOR** (format v11, the STANDARD/PARANOID default) — every algorithm
+  derives from the **same** `(password + salt)` input and the outputs are XOR'd:
+  `K = H₁(x) ⊕ H₂(x) ⊕ … ⊕ Hₙ(x)`. This is a **robust XOR-combiner** for PRFs
+  (Herzberg; Harnik–Kilian–Naor–Reingold–Rosen): for **output / PRF
+  indistinguishability**, the result is **as strong as the strongest component** —
+  it stays secure as long as **at least one** component is unbroken. Use this mode
+  when you want the strongest-link guarantee.
+- **Sequential XOR** (format v10) — each round feeds the previous round's output
+  forward. The robust-combiner guarantee does **not** hold here: a broken or
+  entropy-collapsing **early** round propagates into every later round (XOR can't
+  rescue what already collapsed), so security is bounded by the **weakest early
+  link**. Its only gain over independent mode is intra-guess sequentiality
+  (thread-binding).
+
+**Scope of the "strongest component" claim.** It is precisely about **output
+indistinguishability**, and it bites only against a **broken / entropy-collapsing**
+component. It does **not** cover *cost*: total work is the **sum of all components**
+in *both* modes (a merely cheap-but-full-entropy component is harmless and is not
+what the guarantee is about). So don't read "strongest link" as buying extra
+memory-hardness or ASIC resistance — that comes from each component's own cost
+parameters (see above).
+
+**Cancellation caveat (independent XOR).** Because all components share the same
+`(password + salt)`, the strongest-link property holds only while no two
+components are the **same function with identical parameters** — XOR of two
+identical outputs is zero. Avoid configuring duplicate identical stages; the
+robust fix is per-component domain separation (e.g. `HKDF(salt, info=algo_name)`).
+A future format version re-injects the original password and salt into every round
+to retire this footgun and to harden sequential mode against a broken early link
+— see [`docs/TODO_sequential-xor-reinjection.md`](docs/TODO_sequential-xor-reinjection.md).
+
 ### Attack Resistance
 
 The architecture provides several security properties:

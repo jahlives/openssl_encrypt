@@ -2145,7 +2145,7 @@ def compute_hash_independent(
 
     For Independent XOR mode (v11/v9): each algorithm gets the SAME input
     (initial SHA-256 hash of password+salt), providing "strongest component"
-    security guarantee (Massey).
+    security guarantee (robust XOR-combiner; Herzberg, HKNRR).
 
     This is different from sequential XOR (v8/v10) where each algorithm
     processes the output of the previous algorithm.
@@ -2546,14 +2546,35 @@ def generate_key_independent_xor(
     """
     Generate encryption key using Independent XOR composition.
 
-    Based on Massey's work: K = H1(x) ⊕ H2(x) ⊕ ... ⊕ Hn(x)
+    Robust XOR-combiner for PRFs (Herzberg; Harnik-Kilian-Naor-Reingold-Rosen):
+        K = H1(x) ⊕ H2(x) ⊕ ... ⊕ Hn(x)
 
-    Each algorithm receives the SAME input (password + salt).
-    The XOR of all outputs provides "strongest component" security -
-    the key is at least as secure as its strongest constituent algorithm.
+    Each algorithm receives the SAME input (password + salt). The XOR of all
+    outputs is a robust combiner: for OUTPUT / PRF INDISTINGUISHABILITY it is at
+    least as strong as its strongest constituent component, i.e. it stays secure
+    as long as at least one component is unbroken.
+
+    Scope of that guarantee (read carefully):
+      - It concerns output indistinguishability and bites only against a BROKEN
+        or entropy-collapsing component. A merely cheap (low-cost but
+        full-entropy) component is harmless and is NOT what the guarantee covers.
+      - It does NOT cover COST: total attacker work is the SUM of all components
+        in both this and the sequential mode. "Strongest component" buys
+        robustness, not extra memory-hardness / ASIC resistance.
+      - Cancellation caveat: because every component shares the same
+        (password + salt), the property holds only while no two components are
+        the SAME function with identical params (XOR of identical outputs = 0).
+        Avoid duplicate identical stages; prefer per-component domain separation
+        (e.g. HKDF(salt, info=algo_name)). A future format version re-injects the
+        original password/salt per round to retire this footgun
+        (see docs/TODO_sequential-xor-reinjection.md).
 
     Trade-off: Attackers can parallelize computation of individual algorithms,
     but the key remains secure as long as at least one algorithm is unbroken.
+
+    NOTE: the sequential XOR mode (format v10) does NOT inherit this robust-
+    combiner guarantee; a broken EARLY round there propagates forward and bounds
+    security by the weakest early link.
 
     Args:
         password: User password (bytes)
@@ -2864,7 +2885,7 @@ def generate_key_independent_xor(
         final_key = xor_bytes_secure(xor_components)
 
         if not quiet:
-            eprint(f"✅ Combined {len(xor_components)} independent components using XOR (Massey)")
+            eprint(f"✅ Combined {len(xor_components)} independent components using XOR")
 
         # 4. Generate IV
         iv = os.urandom(16)
@@ -4697,7 +4718,7 @@ def create_metadata_v6(
 
     # Add XOR mode indicator for v8/v10/v11/v12
     if format_version >= 11:
-        metadata["xor_mode"] = "independent"  # Independent XOR (Massey)
+        metadata["xor_mode"] = "independent"  # Independent XOR (robust XOR-combiner)
     elif format_version in [8, 10]:
         metadata["xor_mode"] = "sequential"  # Sequential chained XOR
 
@@ -6521,7 +6542,7 @@ def encrypt_file(
         format_version = 12
 
     # Generate key (now with combined pepper)
-    # v11+: Independent XOR (Massey), v10: Sequential XOR, v9: Secure chained salt
+    # v11+: Independent XOR (robust XOR-combiner), v10: Sequential XOR, v9: Secure chained salt
     # v12 (streaming) derives like v11 so decrypt (which uses >= 11) matches.
     if format_version >= 11:
         # Independent XOR mode - each algorithm processes original input
@@ -10281,7 +10302,7 @@ def decrypt_file(
         # envelope-unwrap step below, so the password-derived KEK is not needed.
         key = None
     elif format_version >= 11 or xor_mode == "independent":
-        # Independent XOR mode (Massey)
+        # Independent XOR mode (robust XOR-combiner)
         if parallel_kdf:
             # Parallel execution via multiprocessing
             from .parallel_kdf import generate_key_independent_xor_parallel

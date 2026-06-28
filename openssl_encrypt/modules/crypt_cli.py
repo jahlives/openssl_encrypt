@@ -8101,7 +8101,7 @@ def main_with_args(args=None):
                             sys.exit(1)
 
                         if use_independent_xor:
-                            format_version = 11  # Independent XOR (Massey)
+                            format_version = 11  # Independent XOR (robust XOR-combiner)
                         elif use_xor:
                             format_version = 10  # Sequential XOR
                         else:
@@ -8381,7 +8381,7 @@ def main_with_args(args=None):
                     sys.exit(1)
 
                 if use_independent_xor:
-                    format_version = 11  # Independent XOR (Massey)
+                    format_version = 11  # Independent XOR (robust XOR-combiner)
                 elif use_xor:
                     format_version = 10  # Sequential XOR
                 else:
@@ -9038,7 +9038,7 @@ def main_with_args(args=None):
                         sys.exit(1)
 
                     if use_independent_xor:
-                        format_version = 11  # Independent XOR (Massey)
+                        format_version = 11  # Independent XOR (robust XOR-combiner)
                     elif use_xor:
                         format_version = 10  # Sequential XOR
                     else:

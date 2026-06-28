@@ -45,7 +45,7 @@
 
 ## 2. KDF composition modes (independent vs sequential XOR)
 
-- [ ] Document the **two modes and their different guarantees** explicitly:
+- [x] Document the **two modes and their different guarantees** explicitly:
   - *Independent XOR* — provably **as strong as the strongest component** for
     **output/PRF security** (robust XOR-combiner: secure if ≥1 component is).
     This is the mode to lean on for the strongest-link claim.
@@ -53,22 +53,22 @@
     broken/entropy-collapsing *early* round propagates through later rounds
     (XOR can't rescue), so it's bounded by the **weakest early link**. Its only
     gain is intra-guess sequentiality.
-- [ ] **Scope the "strongest component" claim precisely** (in the
+- [x] **Scope the "strongest component" claim precisely** (in the
   `generate_key_independent_xor` docstring + docs): it concerns **output
   indistinguishability** and bites only against a **broken/entropy-collapsing**
   link. A merely *cheap* (low-cost but full-entropy) link is harmless in either
   mode and is not what the guarantee covers — so don't present "strongest link"
   as covering cost/memory-hardness (cost is sum-of-components in both modes).
-- [ ] Document the **cancellation caveat** for independent XOR: components share
+- [x] Document the **cancellation caveat** for independent XOR: components share
   the same `(pw+salt)`, so the property holds only while no two are the *same
   function with identical params* (XOR of identical outputs = 0). Recommend
   per-component domain separation, e.g. `HKDF(salt, info=algo_name)`.
   *(Track the matching impl + test as a separate hardening item.)*
-- [ ] If sequential XOR stays an option, document the recommended hardening:
+- [x] If sequential XOR stays an option, document the recommended hardening:
   **re-inject the original password (or a stable commitment) into every round**
   so no early link can sever the pw dependency — and note it still lacks a clean
   combiner proof.
-- [ ] Replace any **"Massey XOR"** naming with the correct literature term:
+- [x] Replace any **"Massey XOR"** naming with the correct literature term:
   **robust combiner** / XOR-combiner for PRFs (Herzberg;
   Harnik–Kilian–Naor–Reingold–Rosen).
 
