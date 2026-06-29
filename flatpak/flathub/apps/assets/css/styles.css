@@ -305,6 +305,16 @@
       color: white;
   }
 
+  .stable {
+      background: #20c997;
+      color: white;
+  }
+
+  .dev {
+      background: #6c757d;
+      color: white;
+  }
+
   /* Footer */
   footer {
       margin-top: 50px;
