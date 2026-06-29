@@ -37,7 +37,7 @@ Technological tools are not neutral. We believe that encryption should empower i
 
 > **Note:** Because of these ethical protections, this project is considered **Ethical Source**, not "Open Source" according to the OSI definition, as we intentionally restrict usage for harmful purposes.
 
-> "The Software shall be used for Good, not Evil." — *Inspired by the JSON License & HL 2.1*
+> "The Software shall be used for Good, not Evil." — *Inspired by the JSON License & HL 3.0*
 ---
 
 ## Documentation & Security Architecture

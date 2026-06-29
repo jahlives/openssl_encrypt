@@ -40,7 +40,7 @@
    - Create PR to Flathub
 
 ## Requirements for Flathub:
-- ✅ Open source license (you have MIT)
+- ✅ License declared: Hippocratic-3.0 (Ethical Source, not OSI-approved)
 - ✅ Stable release (tag required)
 - ✅ Working desktop application
 - ✅ Proper AppStream metadata
