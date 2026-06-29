@@ -1,7 +1,8 @@
 # openssl_encrypt — On-Disk Format Specification
 
-> **Status:** DRAFT — populated from the implementation and citation-backed.
-> **Spec version:** 0.3 (code-derived)
+> **Status:** REVIEWED — every claim code-verified against the 1.5.x tree in the
+> 2026-06-29 citation sweep (see §18).
+> **Spec version:** 0.4 (code-derived; full citation sweep)
 > **Covers tool versions:** 1.4.x and 1.5.x (highest format_version: 13)
 > **Last updated:** 2026-06-29
 > **Editor:** Tobi <jahlives@gmx.ch>
@@ -15,9 +16,13 @@
 >    decrypt every format_version it ever produced* (see §13).
 >
 > Values below were extracted from the `feature/v1.5.x-development` tree and are
-> annotated with `(src: file:line)` so any claim can be re-checked. Items that
-> could **not** be confirmed from code are marked **`⚠️ UNVERIFIED`** and must be
-> resolved before this leaves DRAFT.
+> annotated with `(src: file:line)`. A full citation sweep on 2026-06-29 verified
+> every claim against the code. **Citation policy:** the named **file + nearby
+> symbol** is the authoritative anchor; **line numbers are indicative** and drift
+> as the (large) source files grow — resolve a citation by its file and the
+> symbol/claim it describes, not by the exact line. No `⚠️ UNVERIFIED` items
+> remain; the one residual unknown (the introducing tool-version of
+> format_version 6) is documented in §15.
 
 ---
 
@@ -120,18 +125,18 @@ When scanning a stream, the hidden-detector reads up to
 ```
 
 - The metadata region is everything up to the **first** `:` (0x3A) byte
-  (src: crypt_core.py:7178-7180 write; 4616-4620 / 7304 read).
+  (src: crypt_core.py:7247 write; 4656-4658 / 7371 read).
 - A reader MUST locate the separator without buffering the whole payload. The
   reference reader scans incrementally in **8 KiB** blocks
   (`_BLOCK_SIZE = 8192`) up to a **2 MiB** metadata cap
   (`_MAX_METADATA_SIZE = 2*1024*1024`); exceeding the cap with no `:` →
-  `ValueError("…no metadata separator found")` (src: crypt_core.py:7290-7320).
+  `ValueError("…no metadata separator found")` (src: crypt_core.py:7357-7387).
 - A file with no `:` separator is invalid for the standard parser
-  (`ValueError("…missing colon separator")`, src: crypt_core.py:4616-4618) — but
+  (`ValueError("…missing colon separator")`, src: crypt_core.py:4654) — but
   see §3: such a file is normally routed to the hidden parser first.
 - **Payload framing** is determined by the metadata; see §8. For single-cipher
   and cascade the payload after `:` is **Base64-encoded**
-  (`base64.b64encode`, src: crypt_core.py:7179); for **streaming** the payload is
+  (`base64.b64encode`, src: crypt_core.py:7246); for **streaming** the payload is
   **raw binary** starting with the `OESC` magic (§8.4, src: streaming.py:569-574).
 
 ### 4.2 Hidden ("whitened") container — profile version 1
@@ -192,13 +197,13 @@ history and §5.4 for legacy shapes. Authoritative builder: `create_metadata_v8`
 | `derivation_config` | object  | REQUIRED (symmetric)| KDF/salt parameters (§5.2).                          |
 | `hashes`            | object  | REQUIRED            | `original_hash`, optional `encrypted_hash` (§5.3).   |
 | `encryption`        | object  | REQUIRED            | Cipher parameters; shape depends on cascade (§8).    |
-| `aead_binding`      | bool    | OPTIONAL            | `true` ⇒ metadata is bound as AEAD AAD (§6). Set only when AAD mode is on (src: crypt_core.py:4241-4242). |
-| `encrypted_at`      | string  | OPTIONAL            | UTC timestamp `%Y-%m-%dT%H:%M:%SZ` (src: crypt_core.py:4356). |
-| `archive`           | object  | OPTIONAL            | Present when a directory was encrypted (src: crypt_core.py:6800-6805). |
+| `aead_binding`      | bool    | OPTIONAL            | `true` ⇒ metadata is bound as AEAD AAD (§6). Set only when AAD mode is on (src: crypt_core.py:4279). |
+| `encrypted_at`      | string  | OPTIONAL            | UTC timestamp `%Y-%m-%dT%H:%M:%SZ` (src: crypt_core.py:4393). |
+| `archive`           | object  | OPTIONAL            | Present when a directory was encrypted (src: crypt_core.py:6055). |
 | `signature`         | object  | OPTIONAL            | Asymmetric-mode metadata signature (§10/§11).        |
 
 Envelope fields (`wrapped_dek`, `dek_slots`, `dek_slots_mac`) live **inside**
-`encryption`, not at top level (§9; src: crypt_core.py:6807-6816).
+`encryption`, not at top level (§9; src: crypt_core.py:6062,6069-6070).
 
 ### 5.2 `derivation_config`
 
@@ -212,12 +217,12 @@ Envelope fields (`wrapped_dek`, `dek_slots`, `dek_slots_mac`) live **inside**
 ```
 
 - `hash_config` keys are iterative hash stages (§14.4); `rounds: 0` ⇒ disabled
-  (the entry is still written, but the stage is skipped, src: crypt_core.py:1210,2199).
+  (the entry is still written, but the stage is skipped, src: crypt_core.py:1210).
   Accepted hash keys: `sha512, sha384, sha256, sha224, sha3_512, sha3_384,
   sha3_256, sha3_224, blake2b, blake2s, blake3, shake256, shake128`
-  (src: crypt_core.py:4248-4262).
+  (src: crypt_core.py:7734-7747, `_SUPPORTED_HASH_KEYS`).
 - `kdf_config` keys are memory-hard / KDF stages (§14.3): `scrypt, argon2,
-  balloon, hkdf, randomx` (src: crypt_core.py:4266-4269). `randomx` is **opt-in**
+  balloon, hkdf, randomx` (src: crypt_core.py:1858-1877 docstring). `randomx` is **opt-in**
   in spirit but **is enabled in the STANDARD template** (src: crypt_cli.py:627);
   it is a CPU-bound PoW, not a vetted password KDF — SHOULD be treated as
   defense-in-depth, not the primary cost parameter.
@@ -225,7 +230,7 @@ Envelope fields (`wrapped_dek`, `dek_slots`, `dek_slots_mac`) live **inside**
   `json.dumps(metadata)` without `sort_keys`) and §7.3 (XOR composition).
 
 **Per-KDF parameter objects** (keys as written; defaults as read by the sequential
-`generate_key`, src: crypt_core.py:2857-3353):
+`generate_key`, src: crypt_core.py:2541-3568):
 
 | KDF      | Keys (on disk)                                              | Defaults (sequential read)                          |
 |----------|------------------------------------------------------------|-----------------------------------------------------|
@@ -253,13 +258,13 @@ Envelope fields (`wrapped_dek`, `dek_slots`, `dek_slots_mac`) live **inside**
 
 | Field            | Type   | Presence | Meaning                                            |
 |------------------|--------|----------|----------------------------------------------------|
-| `original_hash`  | string | REQUIRED | **SHA-256 hex** of the **plaintext** (src: crypt_core.py:921-942,6106). |
+| `original_hash`  | string | REQUIRED | **SHA-256 hex** of the **plaintext** (src: crypt_core.py:921-942 hashing; 4216 metadata). |
 | `encrypted_hash` | string | OPTIONAL | **SHA-256 hex** of the **ciphertext**, for a tamper pre-check. |
 
 - Both are SHA-256 hex digests, compared in constant time on decrypt
-  (src: crypt_core.py:10497-10505, 9300-9308).
+  (src: crypt_core.py:9369, 10566).
 - `encrypted_hash` is written **only on the non-AEAD path** and is **omitted for
-  all AEAD ciphers** (`include_encrypted_hash=False`, src: crypt_core.py:6791,6909-6914).
+  all AEAD ciphers** (`include_encrypted_hash=False`, src: crypt_core.py:6031,6825,6848).
   For AEAD files the tag provides ciphertext/metadata integrity; `original_hash`
   is a post-decryption plaintext check (defense-in-depth, **not** the primary
   integrity mechanism). For legacy/non-AEAD ciphers (Fernet), `encrypted_hash`
@@ -304,7 +309,7 @@ The AAD is the **literal `metadata_b64` bytes** — i.e.
 bytes are taken directly from the file header (not re-serialized), so the AAD is
 byte-identical regardless of Python dict quirks — **which is exactly why metadata
 insertion order is load-bearing** (§5.2). Decrypt selects it at
-crypt_core.py:9988-9996.
+crypt_core.py:10007-10011.
 
 ### 6.2 Envelope AEAD (canonical, sorted)
 
@@ -430,7 +435,7 @@ Combine primitive: `xor_bytes_secure` — byte-wise XOR of equal-length
 - **Independent XOR** (`format_version >= 11`, src: crypt_core.py:5820,9564):
   every component gets the **same** input `x = SHA256(password || salt)`
   (src: crypt_core.py:2175,2184) and `K = H1(x) ⊕ H2(x) ⊕ … ⊕ Hn(x)`
-  (src: crypt_core.py:2396), followed by a cipher-specific final transform
+  (src: crypt_core.py:2425, `final_key = xor_bytes_secure(...)`), followed by a cipher-specific final transform
   (SHA-256 / SHA-512 / HKDF / base64, src: crypt_core.py:2412-2482). This is a
   robust XOR-combiner: secure if ≥1 component is unbroken (output/PRF sense).
 - **Independent XOR + per-component salts** (`format_version >= 13`): identical to
@@ -453,7 +458,7 @@ does not change the v11/v13 result. At **v11/v12** the components share `salt_0`
 so **duplicate identical stages would cancel to zero** (cancellation caveat,
 src: crypt_core.py:2085-2091) — this is retired at **v13** by the distinct
 per-component salts. Order matters for the sequential chain. Independent-XOR
-multi-round chaining uses `result[:32]` (src: crypt_core.py:1887, parallel_kdf.py).
+multi-round chaining uses `result[:32]` (src: crypt_core.py:1917,2059, parallel_kdf.py).
 
 **Mode routing (v13 holds both modes).** From v13, the on-disk `xor_mode` field —
 not the version — selects the derivation: a v13 file is **independent** iff
@@ -546,7 +551,9 @@ the 16-byte AEAD tag is appended to the ciphertext by the library
 | threefish-512        | 32    | 16  | Threefish-512-CTR + Poly1305 (§14.1); key 64 B   |
 | threefish-1024       | 64    | 16  | Threefish-1024-CTR + Poly1305; key 128 B         |
 
-(src: crypt_core.py:6140-6168; registry cipher_registry.py.)
+(src: per-cipher `nonce_size`/`tag_size` in cipher_registry.py — AES-GCM 187-188,
+AES-GCM-SIV 310-311, AES-SIV 413-414, ChaCha20 512-513, XChaCha20 634-635,
+Threefish-512 819-820, Threefish-1024 978-979.)
 
 ### 8.2 Cascade mode (multi-layer)
 
@@ -584,7 +591,7 @@ the 16-byte AEAD tag is appended to the ciphertext by the library
 - `xchacha_nonce_format: 2` ⇒ **true 192-bit (24-byte) random nonce**, real
   XChaCha20-Poly1305 (HChaCha20 subkey per draft-irtf-cfrg-xchacha-03)
   (src: xchacha.py:36-132). New files always write `2`
-  (src: crypt_core.py:4229, 5935,6718).
+  (src: crypt_core.py:4043,4266,5987,6000,6775).
 - **Absent / `1` (legacy):** the metadata getter defaults to `1`
   (src: crypt_core.py:8056 etc.). Two legacy behaviors:
   - **single-cipher legacy:** pre-1.5 files stored a **12-byte** nonce and used
@@ -710,8 +717,9 @@ src: crypt_core.py:4822-5094).
   info=b"openssl_encrypt.password_wrap.v2").derive(shared_secret)`** (no AAD;
   output `nonce(12) || ct || tag(16)`) (src: asymmetric_core.py:205-216).
   > **Format note.** The `…password_wrap.v2` HKDF derivation replaced an earlier
-  > **bare SHA-256** of the shared secret (`…password_wrap.v1`). Decrypt tries
-  > HKDF/v2 first and **falls back to the legacy v1 bare-SHA256** so existing
+  > **domain-separated SHA-256**, `SHA-256(b"openssl_encrypt.password_wrap.v1" ||
+  > shared_secret)` (`…password_wrap.v1` — NOT a bare hash of the secret). Decrypt
+  > tries HKDF/v2 first and **falls back to the legacy v1** derivation so existing
   > recipient files still open (src: asymmetric_core.py:287-309). Both lines
   > (1.4.x and 1.5.x) now write v2 and read v2+v1, so recipient files are
   > cross-line interoperable. (The bare-SHA256 v1 derivation was itself
@@ -873,10 +881,12 @@ signature_registry.py:991-1016):
 | `hqc-192` → HQC-192         | `cross-128/192/256` → cross-rsdp-{128,192,256}-balanced           |
 | `hqc-256` → HQC-256         | classical Ed25519 / RSA used only as pepper/identity components    |
 
-Legacy-only (in the `PQAlgorithm` enum but **not registered** → not shipped):
-Kyber-512/768/1024, MAYO-2. Dilithium/Falcon/SPHINCS+ names are accepted as
-aliases that normalize to the ML-DSA/FN-DSA/SLH-DSA canonical ids
-(src: pqc.py:106-139).
+Legacy-only (defined in the liboqs backend but **not registered** → not shipped):
+Kyber-512/768/1024 and MAYO-2 exist as names in `pqc_liboqs.py` (src:
+pqc_liboqs.py:51-54,79); the modern `PQAlgorithm` enum in `pqc.py` does **not**
+list them (only ML-KEM, HQC, MAYO-1/3/5, ML-DSA/FN-DSA/SLH-DSA — src:
+pqc.py:70-102). Dilithium/Falcon/SPHINCS+ names are accepted as aliases that
+normalize to the ML-DSA/FN-DSA/SLH-DSA canonical ids.
 
 ### 14.3 KDFs
 
@@ -960,10 +970,14 @@ This section is **non-normative**; the threat model lives in
 
 ## 18. Open questions / TODO index
 
-Spec 0.3 verified every previously-flagged item against the code (see the cited
-sections). The only residual unknown is the exact tool-version that introduced
-format_version 6 (§15). Remaining before this leaves DRAFT: the full citation
-review (last item below).
+Spec 0.3 verified every previously-flagged item against the code, **and the
+2026-06-29 full citation sweep checked all 147 `(src: …)` references** across §§1–16
+(seven-part fan-out over the 1.5.x tree). Outcome: claims are sound; two were
+corrected (§10 v1 password-wrap is domain-separated SHA-256, not bare; §14 legacy
+Kyber/MAYO-2 live in `pqc_liboqs.py`, not the `pqc.py` enum), and the
+genuinely-misrouted `crypt_core.py` citations were repointed. Remaining residual
+unknown: the exact tool-version that introduced format_version 6 (§15). Per the
+header **citation policy**, line numbers are indicative — resolve by file+symbol.
 
 - [x] §2 integer endianness (mixed: hidden=BE, streaming framing=LE, streaming KDF inputs=BE)
 - [x] §3/§4.1 standard-vs-hidden detection + payload nonce/tag framing
@@ -988,8 +1002,9 @@ review (last item below).
 - [x] §14 shipped-vs-legacy algorithm sets + liboqs names + Threefish mode
 - [x] §15 version table (v3–v13) — complete; v6's introducing tool-version is the one residual unknown (see §15 note)
 - [x] §16 corpus location + KAT index
-- [ ] Independent code review of every `(src: …)` citation before declaring NORMATIVE
-  (spec 0.3 verified the §5.2/§7.2/§7.5/§9/§10/§11/§15 citations against the 1.5.x tree)
+- [x] Independent code review of every `(src: …)` citation (2026-06-29 sweep, all
+  147 references; claims verified, 2 corrected, misrouted citations repointed —
+  line numbers indicative per the header citation policy)
 
 ---
 
