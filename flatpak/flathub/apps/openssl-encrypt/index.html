@@ -13,7 +13,8 @@
 
           <div class="stats">
               <h3>&#128196; Application Info</h3>
-              <p><strong>Version:</strong> 1.4.5 (Latest Stable) | <strong>Size:</strong> ~140 MB | <strong>License:</strong> Hippocratic-3.0 | <strong>Platform:</strong> Linux Flatpak</p>
+              <p><strong>Version:</strong> 1.4.7 (Latest Stable) | <strong>Size:</strong> ~140 MB | <strong>License:</strong> Hippocratic-3.0 | <strong>Platform:</strong> Linux Flatpak</p>
+              <p><strong>Version:</strong> 1.4.6-stable | <strong>Size:</strong> ~140 MB | <strong>License:</strong> Hippocratic-3.0 | <strong>Platform:</strong> Linux Flatpak</p>
               <p><strong>Version:</strong> 1.4.0-stable | <strong>Size:</strong> ~140 MB | <strong>License:</strong> Hippocratic-3.0 | <strong>Platform:</strong> Linux Flatpak</p>
               <p><strong>Version:</strong> 1.3.5-stable | <strong>Size:</strong> ~140 MB | <strong>License:</strong> Hippocratic-3.0 | <strong>Platform:</strong> Linux Flatpak</p>
               <p><strong>Version:</strong> 1.3.4-stable | <strong>Size:</strong> ~140 MB | <strong>License:</strong> Hippocratic-3.0 | <strong>Platform:</strong> Linux Flatpak</p>
@@ -44,6 +45,7 @@
                           <li>XChaCha20-Poly1305</li>
                           <li>Fernet (AES-128-CBC)</li>
                           <li>AES-GCM-SIV</li>
+                          <li>Threefish-512/1024 (native AEAD)</li>
                       </ul>
                   </div>
 
@@ -55,33 +57,21 @@
                           <li>MAYO (1/3/5 multivariate)</li>
                           <li>CROSS (128/192/256 code-based)</li>
                           <li>Kyber hybrid encryption</li>
+                          <li>ML-DSA-65 signatures (Dilithium)</li>
                           <li>Quantum-resistant key exchange</li>
                           <li>Future-proof security</li>
                       </ul>
                   </div>
 
                   <div class="feature-category">
-                      <h3>&#128273; Key Derivation Functions</h3>
+                      <h3>&#128273; Key Derivation &amp; Hashing</h3>
                       <ul>
-                          <li>HKDF (RFC 5869 modern standard)</li>
-                          <li>Argon2 (recommended)</li>
-                          <li>Scrypt</li>
-                          <li>Balloon Hashing</li>
-                          <li>PBKDF2 (legacy)</li>
-                          <li>Configurable iterations</li>
-                          <li>Salt generation</li>
-                      </ul>
-                  </div>
-
-                  <div class="feature-category">
-                      <h3>&#128221; Hash Algorithms</h3>
-                      <ul>
-                          <li>SHA-2 Family (224/256/384/512-bit)</li>
-                          <li>SHA-3 Family (224/256/384/512-bit)</li>
-                          <li>BLAKE3 (ultra-fast tree-based)</li>
-                          <li>BLAKE2b (high-performance)</li>
-                          <li>SHAKE (128/256 extendable-output)</li>
-                          <li>Whirlpool (legacy)</li>
+                          <li>Argon2id, Scrypt, Balloon (memory-hard)</li>
+                          <li>RandomX (CPU-optimized, anti-ASIC)</li>
+                          <li>HKDF (RFC 5869)</li>
+                          <li>SHA-2 / SHA-3 (224/256/384/512-bit), SHAKE</li>
+                          <li>BLAKE3 (tree-based), BLAKE2b</li>
+                          <li>Configurable rounds &amp; salt generation</li>
                       </ul>
                   </div>
 
@@ -98,13 +88,31 @@
                   </div>
 
                   <div class="feature-category">
+                      <h3>&#128179; Hardware Tokens (HSM)</h3>
+                      <ul>
+                          <li>YubiKey (HMAC-SHA1 challenge-response)</li>
+                          <li>OnlyKey (cross-device fleet)</li>
+                          <li>FIDO2 security keys</li>
+                          <li>PIV / PKCS#11 smart cards</li>
+                          <li>Hardware-derived pepper (never stored)</li>
+                      </ul>
+                  </div>
+
+                  <div class="feature-category">
                       <h3>&#128274; Security Features</h3>
                       <ul>
                           <li>Secure memory handling</li>
-                          <li>Military-grade secure deletion</li>
+                          <li>Secure file deletion</li>
                           <li>Constant-time operations</li>
                           <li>Password strength validation</li>
                           <li>Environment variable support</li>
+                          <li>Cascade multi-layer encryption</li>
+                          <li>Streaming chunked encryption (constant-memory)</li>
+                          <li>AEAD metadata binding (tamper detection)</li>
+                          <li>Envelope encryption &amp; fast credential rekey</li>
+                          <li>ASCII armor output (paste-safe)</li>
+                          <li>Source-code integrity (PGP-signed manifest)</li>
+                          <li>Detached post-quantum signatures</li>
                       </ul>
                   </div>
               </div>
@@ -115,9 +123,32 @@
 
               <div class="changelog-item">
                   <div class="version">
+                      1.4.7
+                      <span class="release-type stable">STABLE RELEASE</span>
+                      <span class="release-type minor">DOCS</span>
+                  </div>
+                  <div class="description">
+                      Documentation and packaging release: refreshed the project page and README (rendered as the PyPI page) for the 1.4.6 feature set, including the key-derivation documentation, which now reflects format version 13 as the Independent XOR default. No functional, CLI, or on-disk format changes.
+                  </div>
+              </div>
+
+              <div class="changelog-item">
+                  <div class="version">
+                      1.4.6
+                      <span class="release-type stable">STABLE RELEASE</span>
+                      <span class="release-type minor">FEATURE</span>
+                      <span class="release-type security">SECURITY</span>
+                  </div>
+                  <div class="description">
+                      Major feature release. New PIV / PKCS#11 hardware-token backend (--hsm piv) for smart cards and tokens; source-code integrity verification via a PGP-signed manifest (verify-integrity); opt-in envelope encryption (--envelope) for low-cost credential rotation; detached post-quantum signatures (ML-DSA-65) via sign / verify-signature; and ASCII armor (encrypt --armor). Independent XOR key derivation now uses per-component domain-separated salts (format version 13) by default. Security fix: the optional, non-default sequential XOR mode could bypass the configured KDF cost in a single-KDF configuration — fixed and disclosed as GHSA-vxf9-vwp6-2w43 (CWE-916); default configurations were unaffected. Existing files remain decryptable.
+                  </div>
+              </div>
+
+              <div class="changelog-item">
+                  <div class="version">
                       1.4.5
                       <span class="release-type stable">STABLE RELEASE</span>
-                      <span class="release-type minor">SECURITY</span>
+                      <span class="release-type security">SECURITY</span>
                   </div>
                   <div class="description">
                       Security dependency update: urllib3 2.7.0, cryptography 46.0.7, pillow 12.2.0, idna 3.15 — fixes for CVE-2026-44431/44432, CVE-2026-39892, a PSD decoder out-of-bounds write, and an idna DoS. New CI check keeps flatpak dependency pins aligned with the package requirements.
@@ -128,7 +159,7 @@
                   <div class="version">
                       1.4.4
                       <span class="release-type stable">STABLE RELEASE</span>
-                      <span class="release-type minor">SECURITY</span>
+                      <span class="release-type security">SECURITY</span>
                   </div>
                   <div class="description">
                       Security hardening release: authenticated keystore format, D-Bus polkit authorization, fail-closed PQC algorithm resolution, plugin sandbox enforcement, per-drive USB salts. New: cross-device YubiKey/OnlyKey HSM decryption, encrypt-CLI reconstruction from file metadata via the info action, Diceware passphrase generation, HSM-aware derive-password. Threefish extension builds on Python 3.14. Requires Python 3.11+.
@@ -237,7 +268,7 @@
               <div class="changelog-item">
                   <div class="version">
                       1.1.0-dev
-                      <span class="release-type stable">DEV RELEASE</span>
+                      <span class="release-type dev">DEV RELEASE</span>
                       <span class="release-type minor">MINOR</span>
                   </div>
                   <div class="description">
