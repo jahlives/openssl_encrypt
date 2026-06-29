@@ -13,13 +13,15 @@
 
           <div class="stats">
               <h3>&#128202; Release Statistics</h3>
-              <p><strong>Total Releases:</strong> 37 versions | <strong>Development Period:</strong> v0.1.0 &rarr; v1.4.5 | <strong>Latest:</strong> 1.4.5 (Stable)</p>
-              <p><strong>Major Milestones:</strong> Initial Release (0.1.0), Post-Quantum Support (0.5.2), Feature Complete (0.6.0), Stable Release (1.0.0), Extended PQC (1.1.0), Steganography & QR Codes (1.3.0), Critical Security Fix (1.3.4), Stable Release (1.4.0), Streaming Encryption (1.4.1), Simple/Pro GUI & Modernized Defaults (1.4.2), GUI Launcher Fix (1.4.3), Security Hardening &amp; HSM Fleet (1.4.4), Security Dependency Update (1.4.5)</p>
+              <p><strong>Total Releases:</strong> 39 versions | <strong>Development Period:</strong> v0.1.0 &rarr; v1.4.7 | <strong>Latest:</strong> 1.4.7 (Stable)</p>
+              <p><strong>Major Milestones:</strong> Initial Release (0.1.0), Post-Quantum Support (0.5.2), Feature Complete (0.6.0), Stable Release (1.0.0), Extended PQC (1.1.0), Steganography & QR Codes (1.3.0), Critical Security Fix (1.3.4), Stable Release (1.4.0), Streaming Encryption (1.4.1), Simple/Pro GUI & Modernized Defaults (1.4.2), GUI Launcher Fix (1.4.3), Security Hardening &amp; HSM Fleet (1.4.4), Security Dependency Update (1.4.5), PIV/Integrity/Envelope &amp; PQ Signing (1.4.6), Documentation Update (1.4.7)</p>
           </div>
 
           <div class="toc">
               <h3>&#128203; Table of Contents</h3>
               <ul>
+                  <li><a href="#v1-4-7">1.4.7 - Documentation Update</a></li>
+                  <li><a href="#v1-4-6">1.4.6 - PIV, Integrity, Envelope &amp; PQ Signing</a></li>
                   <li><a href="#v1-4-5">1.4.5 - Security Dependency Update</a></li>
                   <li><a href="#v1-4-4">1.4.4 - Security Hardening &amp; HSM Fleet</a></li>
                   <li><a href="#v1-4-3">1.4.3 - GUI Launcher Fix</a></li>
@@ -67,6 +69,31 @@
 
           <!-- Stable Release Series (1.4.x) -->
           <h2>&#128640; Stable Release Series (1.4.x)</h2>
+
+          <div class="changelog-item" id="v1-4-7">
+              <div class="version">
+                  1.4.7
+                  <span class="release-type stable">STABLE RELEASE</span>
+                  <span class="release-type minor">DOCS</span>
+              </div>
+              <div class="date">2026-06-29</div>
+              <div class="description">
+                  Documentation and packaging release: refreshed the project page and README (rendered as the PyPI project page) for the 1.4.6 feature set, including the KDF composition documentation, which now reflects <strong>format version 13</strong> as the Independent XOR default. No functional, CLI, or on-disk format changes; cut to refresh the immutable PyPI project page after the 1.4.6 upload.
+              </div>
+          </div>
+
+          <div class="changelog-item" id="v1-4-6">
+              <div class="version">
+                  1.4.6
+                  <span class="release-type stable">STABLE RELEASE</span>
+                  <span class="release-type minor">FEATURE</span>
+                  <span class="release-type minor">SECURITY</span>
+              </div>
+              <div class="date">2026-06-29</div>
+              <div class="description">
+                  Major feature release. <strong>PIV / PKCS#11 hardware-token backend</strong> (<code>--hsm piv</code>) deriving the key-derivation pepper from a PIV private key on a smart card or token (YubiKey Bio, Token2, or any compliant PIV card); deterministic across devices. <strong>Source-code integrity verification</strong> (<code>verify-integrity</code>) backed by a PGP-signed SHA-512 manifest. <strong>Envelope encryption</strong> (<code>--envelope</code>): data is encrypted under a random key wrapped by the password, enabling low-cost credential rekey (rewrap the key instead of re-encrypting the file). <strong>Detached post-quantum signatures</strong> (ML-DSA-65) via <code>sign</code> / <code>verify-signature</code>, adding authenticity that symmetric AEAD alone cannot provide. <strong>ASCII armor</strong> (<code>encrypt --armor</code>) writes paste-safe PEM-style Base64 with CRC-24 truncation detection. Independent XOR key derivation now uses per-component domain-separated salts (<strong>format version 13</strong>) by default. <strong>Security fix:</strong> the optional, non-default sequential XOR mode could bypass the configured KDF cost in a single-KDF configuration — fixed and disclosed as <strong>GHSA-vxf9-vwp6-2w43</strong> (CWE-916); default configurations were unaffected. Existing files remain decryptable.
+              </div>
+          </div>
 
           <div class="changelog-item" id="v1-4-5">
               <div class="version">
