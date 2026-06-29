@@ -90,11 +90,27 @@ openssl_encrypt decrypt -i secret.enc -o secret.txt --password ... \
 # Force the legacy format / legacy decode
 openssl_encrypt encrypt ... --legacy-format
 openssl_encrypt decrypt ... --legacy-format
+
+# Armor an EXISTING encrypted file for paste-safe transport (no decryption,
+# no password) — e.g. to store a binary/hidden file in a password manager:
+openssl_encrypt armor   -i secret.enc -o secret.asc
+openssl_encrypt dearmor -i secret.asc -o secret.enc   # reverse; '-o -' / /dev/stdout to stream
+
+# Decrypt straight from a password manager / pipe; the keyed second-password
+# prompt is shown on /dev/tty even though the ciphertext is on stdin:
+pw-manager show master | openssl_encrypt decrypt -i /dev/stdin -o secret.txt
 ```
 
 Second-password sources, in priority order: `--second-password-fd FD`,
 `--second-password PW` (DEPRECATED — visible in the process list),
 `--second-password-prompt`.
+
+`armor`/`dearmor` are a pure, reversible transport transform over the whole
+container; `decrypt`/`info`/`verify`/`rekey` auto-de-armor input, so no flag is
+needed on the way back in. **Caveat for hidden files:** the armor markers
+(`-----BEGIN OPENSSL-ENCRYPT …-----`) are a public fingerprint, so armoring a
+hidden file negates its "looks random" property (keyed *confidentiality* is
+unaffected). See FORMAT.md §12.
 
 ### Interactive second-password fallback
 
@@ -103,9 +119,13 @@ if the file is a hidden file that does **not** peel keyless (i.e. keyed — or
 just random/corrupt), prompts once for a second password before failing. The
 prompt is:
 
-* **TTY-gated** — it never fires in a pipe/script/headless run; those keep the
-  silent generic error (`Security validation check failed`), so there is no
-  behavioral signal to automated triage and no risk of a script hanging.
+* **terminal-gated** — it fires whenever a controlling terminal is reachable for
+  the prompt (`/dev/tty`), which `getpass` reads independently of stdin. So it
+  works even when the ciphertext itself arrives on stdin
+  (`pw-manager show … | decrypt -i /dev/stdin`), yet stays silent in a genuinely
+  headless run (cron/CI, no tty anywhere) — those keep the silent generic error
+  (`Security validation check failed`), so there is no behavioral signal to
+  automated triage and no risk of a script hanging.
 * **suppressible** with `--no-second-password-prompt` (and skipped under
   `--legacy-format`) — use this on a shared/observed/recorded terminal or any
   "prove this is just random data" situation where you want the tool to stay
@@ -123,8 +143,11 @@ deniability property.
 
 * Supported on the symmetric, keystore-wrapped, and asymmetric (PQC) paths, for
   both buffered and streaming files.
-* Decryption from non-seekable input (stdin / `/dev/*` / `/proc/*`) currently
-  keeps legacy behavior; hidden detection applies to regular files.
+* Hidden decryption from **piped stdin** works for `decrypt`/`info`: the stream
+  is buffered to a temp file, de-armored if needed, then hidden-detected, and the
+  keyed second-password prompt is offered on `/dev/tty`. Other non-seekable inputs
+  (`/dev/*` other than stdin, `/proc/*`) still skip the peek/prompt (they cannot
+  be re-read), so a keyed hidden file there needs an explicit `--second-password*`.
 * Tools that parse the raw file format directly (e.g. `info`-style inspection,
   the desktop GUI/mobile apps) are being updated to route hidden files through
   the same peel step; until then, prefer the CLI `decrypt` path for hidden
