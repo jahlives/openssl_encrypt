@@ -15,10 +15,10 @@
     <ul>
       <li>Multiple symmetric encryption algorithms (AES-GCM, ChaCha20-Poly1305, Fernet, etc.)</li>
       <li>Post-quantum cryptography (ML-KEM, HQC, Kyber) for quantum-resistant protection</li>
-      <li>Advanced password protection with multiple KDF options (Argon2, PBKDF2, Scrypt)</li>
-      <li>Secure file operations with military-grade secure deletion</li>
+      <li>Advanced password protection with multiple KDF options (Argon2, Scrypt)</li>
+      <li>Secure file operations with secure deletion</li>
       <li>Both GUI and command-line interfaces</li>
-      <li>Comprehensive cryptographic hash support (SHA-3, BLAKE2b, Whirlpool)</li>
+      <li>Comprehensive cryptographic hash support (SHA-3, BLAKE2b)</li>
     </ul>
     <p>
       Perfect for individuals and organizations requiring the highest levels of data protection,
