@@ -4,7 +4,7 @@ A Python-based file encryption tool with modern ciphers, post-quantum algorithms
 
 Built to encrypt anything from grandma's pie recipe to the nuclear launch codes — with parameters to satisfy every paranoia level in between. Sensible, secure defaults out of the box; fully tunable KDF chains and cipher choices when you want to crank the cost to match the threat.
 
-> **Looking for the stable release?** The latest stable version is [v1.4.5](https://github.com/jahlives/openssl_encrypt/releases/tag/v1.4.5) on the releases/1.4.x branch.
+> **Looking for the stable release?** The latest stable version is [v1.4.7](https://github.com/jahlives/openssl_encrypt/releases/tag/v1.4.7) on the releases/1.4.x branch.
 
 ## History
 
@@ -58,12 +58,18 @@ For deep-dives into the cryptographic design and security policies of this proje
 * **Threefish-512/1024**: Native AEAD ciphers with 256/512-bit post-quantum security margins.
 * **Streaming Chunked Encryption**: Constant-memory authenticated encryption for multi-gigabyte files (format v12).
 ---
-## 🚀 What's New in v1.4.5
+## 🚀 What's New in v1.4.7
 
-**Current Release:** v1.4.5 | **Status:** Stable | **Tests:** 2315+ passing
+**Current Release:** v1.4.7 | **Status:** Stable | **Tests:** 2900+ passing
 
 Everything that landed since v1.4.1:
 
+- **Documentation & packaging (1.4.7)**: README and PyPI project-page updates reflecting the 1.4.6 feature set; no functional or on-disk changes.
+- **PIV / PKCS#11 hardware tokens (1.4.6)**: signature-based HSM backend (`--hsm piv`) that derives the KDF pepper from a PIV private key on a PKCS#11 token (YubiKey Bio MPE, Token2 PIN+, or any compliant PIV smart card); deterministic across devices, across Ed25519 and RSA-2048/3072/4096.
+- **Source-code integrity verification (1.4.6)**: `verify-integrity` checks the core cryptographic/security modules against a PGP-signed SHA-512 manifest; the authoritative check is a manual `gpg` against the out-of-band fingerprint published in SECURITY.md.
+- **Envelope encryption & O(header) rekey (1.4.6)**: `--envelope` encrypts data under a random DEK and wraps it with the password-derived KEK through the full KDF chain, so changing the password rewrites only the metadata header instead of re-encrypting the payload.
+- **Detached signing & ASCII armor (1.4.6)**: `sign` / `verify-signature` produce and verify a detached ML-DSA-65 signature over any file (closing the symmetric-AEAD authenticity gap, where anyone who knows the password can forge a valid file); `encrypt --armor` emits paste-safe Base64 with a CRC-24 truncation guard.
+- **Independent XOR v13 default & sequential-XOR KDF-cost fix (1.4.6, ADVISORY 2026-02)**: Independent XOR now derives per-component domain-separated salts (format v13) and is the STANDARD/PARANOID default; the sequential `--xor` mode no longer cancels its last KDF stage out of the key. Existing files remain decryptable.
 - **Security dependency update (1.4.5)**: urllib3 2.7.0, cryptography 46.0.7, pillow 12.2.0, idna 3.15 — fixes for CVE-2026-44431/44432, CVE-2026-39892, a PSD decoder out-of-bounds write, and an idna DoS. A new CI check keeps flatpak dependency pins aligned with the package requirements.
 - **Security hardening batch (1.4.4)**: Authenticated v2 keystore format (HMAC-SHA256, fails closed on tampering), D-Bus per-caller authorization with polkit, fail-closed PQC algorithm resolution, plugin sandbox enforcement (file/network/process restrictions), unique per-drive salts for portable USB drives, TOFU key-change detection in the identity layer
 - **OnlyKey HSM plugin & cross-device fleet decryption (1.4.4)**: Hardware-bound key derivation via OnlyKey challenge-response; YubiKey and OnlyKey provisioned with the same HMAC-SHA1 secret decrypt each other's files (`--hsm onlykey` / `--hsm yubikey`, `--hsm-slot` overrides the stored slot)
@@ -73,7 +79,9 @@ Everything that landed since v1.4.1:
 - **Platform support**: Python 3.11+ required; Python 3.14 fully supported including the Threefish native extension (PyO3 0.26)
 
 **Release History:**
-- **v1.4.5** (Current) - Security dependency update (CVE fixes) and flatpak pin CI guard
+- **v1.4.7** (Current) - Documentation/packaging release: README and PyPI project page updated for the 1.4.6 feature set (no functional changes)
+- **v1.4.6** - PIV/PKCS#11 HSM backend, source-code integrity manifest, envelope encryption with O(header) rekey, detached ML-DSA-65 signing, ASCII armor, Independent XOR v13 default, sequential-XOR KDF-cost fix (ADVISORY 2026-02), streaming decrypt fix
+- **v1.4.5** - Security dependency update (CVE fixes) and flatpak pin CI guard
 - **v1.4.4** - Security hardening batch, OnlyKey HSM plugin with cross-device fleet decryption, `info` CLI reconstruction, Diceware passphrases, Python 3.14 support
 - **v1.4.3** - Flatpak GUI launcher fix
 - **v1.4.2** - Simple/Pro GUI modes, modernized STANDARD template (cascade by default, Independent XOR v11)
@@ -452,19 +460,19 @@ Password + Salt₀ → KDF₁ → Result₁ → Salt₁ = f(Result₁) → KDF�
 When several hash/KDF algorithms are combined, the tool supports two composition
 modes with **different security guarantees**. Pick deliberately:
 
-- **Independent XOR** (format v11, the STANDARD/PARANOID default) — every algorithm
+- **Independent XOR** (format v13, the STANDARD/PARANOID default; v11 still readable) — every algorithm
   derives from the **same** `(password + salt)` input and the outputs are XOR'd:
   `K = H₁(x) ⊕ H₂(x) ⊕ … ⊕ Hₙ(x)`. This is a **robust XOR-combiner** for PRFs
   (Herzberg; Harnik–Kilian–Naor–Reingold–Rosen): for **output / PRF
   indistinguishability**, the result is **as strong as the strongest component** —
   it stays secure as long as **at least one** component is unbroken. Use this mode
   when you want the strongest-link guarantee.
-- **Sequential XOR** (format v10) — each round feeds the previous round's output
-  forward. The robust-combiner guarantee does **not** hold here: a broken or
-  entropy-collapsing **early** round propagates into every later round (XOR can't
-  rescue what already collapsed), so security is bounded by the **weakest early
-  link**. Its only gain over independent mode is intra-guess sequentiality
-  (thread-binding).
+- **Sequential XOR** (format v10, or v13 with `xor_mode: sequential`) — each round
+  feeds the previous round's output forward. The robust-combiner guarantee does
+  **not** hold here: a broken or entropy-collapsing **early** round propagates into
+  every later round (XOR can't rescue what already collapsed), so security is bounded
+  by the **weakest early link**. Its only gain over independent mode is intra-guess
+  sequentiality (thread-binding).
 
 **Scope of the "strongest component" claim.** It is precisely about **output
 indistinguishability**, and it bites only against a **broken / entropy-collapsing**
@@ -474,14 +482,17 @@ what the guarantee is about). So don't read "strongest link" as buying extra
 memory-hardness or ASIC resistance — that comes from each component's own cost
 parameters (see above).
 
-**Cancellation caveat (independent XOR).** Because all components share the same
-`(password + salt)`, the strongest-link property holds only while no two
-components are the **same function with identical parameters** — XOR of two
-identical outputs is zero. Avoid configuring duplicate identical stages; the
-robust fix is per-component domain separation (e.g. `HKDF(salt, info=algo_name)`).
-A future format version re-injects the original password and salt into every round
-to retire this footgun and to harden sequential mode against a broken early link
-— see [`docs/TODO_sequential-xor-reinjection.md`](docs/TODO_sequential-xor-reinjection.md).
+**Cancellation caveat (independent XOR) — fixed in format v13.** Because all
+components share the same `(password + salt)`, the strongest-link property holds
+only while no two components are the **same function with identical parameters** —
+XOR of two identical outputs is zero. The robust fix is per-component domain
+separation, and **format version 13 (1.4.6) implements exactly this**: every
+component gets a distinct `HKDF-SHA256(salt₀, info="…indep-xor.v13.salt:" + name)`
+salt, retiring the footgun, and v13 is now the Independent XOR default. The same
+release also fixed a **sequential-XOR** defect in which the chain's last KDF stage
+cancelled out of the key (single-KDF/no-prior-hash configs bypassed the KDF cost) —
+see ADVISORY 2026-02 in [SECURITY.md](SECURITY.md). Files written by older versions
+remain decryptable; re-encrypt to adopt v13.
 
 ### Attack Resistance
 

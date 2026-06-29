@@ -5,6 +5,19 @@ All notable changes to the openssl_encrypt project will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.7] - 2026-06-29
+
+### Changed
+
+- **Documentation / packaging release.** Updated `README.md` (which is rendered as
+  the PyPI project page) for the 1.4.6 feature set: refreshed the "What's New" and
+  release-history sections, and corrected the "KDF Composition Modes" section, which
+  still described Independent XOR v11 as the default and pointed at a superseded TODO
+  — it now documents format version 13 (per-component domain-separated salts) as the
+  default and notes the sequential-XOR KDF-cost fix (ADVISORY 2026-02) as shipped. No
+  functional or on-disk format changes; published to refresh the PyPI project page
+  (PyPI artifacts are immutable, so the README fix required a new version).
+
 ## [1.4.6] - 2026-06-29
 
 ### Added
