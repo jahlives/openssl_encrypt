@@ -19,7 +19,7 @@ To install follow the [guide](https://github.com/jahlives/openssl_encrypt/wiki/I
 
 ## Ethical Commitment & Usage Restrictions
 
-This project is committed to the protection of human rights and the prevention of mass surveillance. To reflect these values, it is licensed under the **Hippocratic License 2.1**.
+This project is committed to the protection of human rights and the prevention of mass surveillance. To reflect these values, it is licensed under the **Hippocratic License 3.0**.
 
 While the source code is public, usage is subject to strict ethical conditions. We prioritize human rights over traditional "neutral" open-source definitions.
 
