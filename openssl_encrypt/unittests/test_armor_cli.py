@@ -211,5 +211,144 @@ class TestArmorStdoutStream(ArmorCLITestBase):
         self.assertIn(message, out)
 
 
+class TestArmorDearmorSubcommands(ArmorCLITestBase):
+    """Standalone ``armor`` / ``dearmor`` subcommands operating on an existing
+    encrypted file (no decryption, no password — a pure transport transform)."""
+
+    PW = "TestPassword123!"
+
+    def _cli(self, args, stdin_bytes=None):
+        """Run ``python -m openssl_encrypt <args>`` in a real subprocess."""
+        import subprocess
+
+        proc = subprocess.Popen(
+            [sys.executable, "-m", "openssl_encrypt", "--quiet"] + args,
+            stdin=subprocess.PIPE if stdin_bytes is not None else None,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            cwd=os.getcwd(),
+        )
+        out, err = proc.communicate(input=stdin_bytes, timeout=120)
+        return proc.returncode, out, err
+
+    def _make_encrypted(self, path):
+        """Produce a binary (non-armored) encrypted file at ``path``."""
+        try:
+            rc, _out, err = self._cli(
+                [
+                    "encrypt",
+                    "--input",
+                    self.test_file,
+                    "--output",
+                    path,
+                    "--force-password",
+                    "--algorithm",
+                    "fernet",
+                    "--argon2-rounds",
+                    "3",
+                    "--password",
+                    self.PW,
+                ]
+            )
+        except FileNotFoundError:
+            self.skipTest("module not accessible for subprocess test")
+        self.assertEqual(rc, 0, err.decode("utf-8", "replace"))
+        self.assertTrue(os.path.exists(path))
+        self.assertFalse(is_armored_file(path), "fixture should be binary, not armored")
+        return path
+
+    def test_armor_then_dearmor_roundtrip_byte_identical(self):
+        """armor an existing file, dearmor it back -> byte-identical ciphertext."""
+        enc = self._make_encrypted(os.path.join(self.test_dir, "msg.enc"))
+        with open(enc, "rb") as f:
+            original = f.read()
+
+        asc = os.path.join(self.test_dir, "msg.asc")
+        rc, _o, err = self._cli(["armor", "-i", enc, "-o", asc])
+        self.assertEqual(rc, 0, err.decode("utf-8", "replace"))
+        self.assertTrue(is_armored_file(asc), "armor subcommand did not produce armor")
+        with open(asc, "rb") as f:
+            f.read().decode("ascii")  # paste-safe
+
+        back = os.path.join(self.test_dir, "msg.back")
+        rc, _o, err = self._cli(["dearmor", "-i", asc, "-o", back])
+        self.assertEqual(rc, 0, err.decode("utf-8", "replace"))
+        with open(back, "rb") as f:
+            self.assertEqual(f.read(), original, "dearmor must restore exact bytes")
+
+    def test_armored_file_still_decrypts(self):
+        """A file armored after encryption decrypts normally (auto-detected)."""
+        enc = self._make_encrypted(os.path.join(self.test_dir, "msg.enc"))
+        asc = os.path.join(self.test_dir, "msg.asc")
+        self.assertEqual(self._cli(["armor", "-i", enc, "-o", asc])[0], 0)
+
+        dec = os.path.join(self.test_dir, "msg.dec")
+        rc, _o, err = self._cli(
+            ["decrypt", "-i", asc, "-o", dec, "--password", self.PW, "--force-password"]
+        )
+        self.assertEqual(rc, 0, err.decode("utf-8", "replace"))
+        with open(dec, "rb") as f:
+            self.assertEqual(f.read(), self.plaintext)
+
+    def test_armor_default_output_path(self):
+        """`armor -i FILE` with no -o writes FILE.asc."""
+        enc = self._make_encrypted(os.path.join(self.test_dir, "msg.enc"))
+        rc, _o, err = self._cli(["armor", "-i", enc])
+        self.assertEqual(rc, 0, err.decode("utf-8", "replace"))
+        self.assertTrue(is_armored_file(enc + ".asc"))
+
+    def test_armor_to_stdout(self):
+        """`armor -i FILE -o /dev/stdout` emits the armored block on stdout."""
+        enc = self._make_encrypted(os.path.join(self.test_dir, "msg.enc"))
+        rc, out, err = self._cli(["armor", "-i", enc, "-o", "/dev/stdout"])
+        self.assertEqual(rc, 0, err.decode("utf-8", "replace"))
+        self.assertTrue(out.startswith(b"-----BEGIN OPENSSL-ENCRYPT MESSAGE-----"))
+
+    def test_dearmor_to_stdout_roundtrip(self):
+        """`dearmor -i FILE.asc -o /dev/stdout` emits the raw ciphertext bytes."""
+        enc = self._make_encrypted(os.path.join(self.test_dir, "msg.enc"))
+        with open(enc, "rb") as f:
+            original = f.read()
+        asc = os.path.join(self.test_dir, "msg.asc")
+        self.assertEqual(self._cli(["armor", "-i", enc, "-o", asc])[0], 0)
+
+        rc, out, err = self._cli(["dearmor", "-i", asc, "-o", "/dev/stdout"])
+        self.assertEqual(rc, 0, err.decode("utf-8", "replace"))
+        self.assertEqual(out, original)
+
+    def test_dearmor_rejects_non_armored_input(self):
+        """dearmor on a binary (non-armored) file fails cleanly, no output file."""
+        enc = self._make_encrypted(os.path.join(self.test_dir, "msg.enc"))
+        out = os.path.join(self.test_dir, "msg.out")
+        rc, _o, err = self._cli(["dearmor", "-i", enc, "-o", out])
+        self.assertEqual(rc, 1)
+        self.assertIn(b"not", err.lower())
+        self.assertFalse(os.path.exists(out))
+
+    def test_armor_rejects_already_armored_input(self):
+        """armoring an already-armored file fails (no silent double-wrap)."""
+        enc = self._make_encrypted(os.path.join(self.test_dir, "msg.enc"))
+        asc = os.path.join(self.test_dir, "msg.asc")
+        self.assertEqual(self._cli(["armor", "-i", enc, "-o", asc])[0], 0)
+        rc, _o, err = self._cli(["armor", "-i", asc, "-o", asc + ".2"])
+        self.assertEqual(rc, 1)
+        self.assertIn(b"already", err.lower())
+
+    def test_armor_refuses_to_overwrite_without_force(self):
+        """Existing output is protected unless --force is given."""
+        enc = self._make_encrypted(os.path.join(self.test_dir, "msg.enc"))
+        asc = os.path.join(self.test_dir, "msg.asc")
+        with open(asc, "wb") as f:
+            f.write(b"do not clobber me")
+        rc, _o, err = self._cli(["armor", "-i", enc, "-o", asc])
+        self.assertEqual(rc, 1)
+        with open(asc, "rb") as f:
+            self.assertEqual(f.read(), b"do not clobber me")
+        # With --force it proceeds.
+        rc, _o, err = self._cli(["armor", "-i", enc, "-o", asc, "--force"])
+        self.assertEqual(rc, 0, err.decode("utf-8", "replace"))
+        self.assertTrue(is_armored_file(asc))
+
+
 if __name__ == "__main__":
     unittest.main()

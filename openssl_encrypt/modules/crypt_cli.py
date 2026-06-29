@@ -3326,6 +3326,8 @@ def main():
         "encrypt",
         "decrypt",
         "rekey",
+        "armor",
+        "dearmor",
         "shred",
         "generate-password",
         "derive-password",
@@ -3573,6 +3575,32 @@ def _hidden_for_encrypt(args, second_password):
     return bool(getattr(args, "hidden_header", False) or second_password is not None)
 
 
+def _can_prompt_on_tty():
+    """Return True if an interactive password prompt can be shown.
+
+    The second-password prompt uses :func:`getpass.getpass`, which reads from
+    the controlling terminal (``/dev/tty``) rather than ``stdin``. So a prompt
+    is possible even when ``stdin`` carries piped ciphertext — e.g.
+    ``armor file | decrypt -i /dev/stdin`` — as long as a controlling terminal
+    exists. Genuinely headless contexts (cron, CI, daemons) have neither an
+    openable ``/dev/tty`` nor a tty on any std stream, so the prompt stays
+    suppressed there (no automation hang, no behavioural oracle).
+    """
+    try:
+        fd = os.open("/dev/tty", os.O_RDWR)
+        os.close(fd)
+        return True
+    except OSError:
+        pass
+    for stream in (sys.stdin, sys.stdout, sys.stderr):
+        try:
+            if stream.isatty():
+                return True
+        except Exception:
+            pass
+    return False
+
+
 def _hidden_for_decrypt(args):
     """Decide decrypt-time hidden handling as a tri-state: True (force), False
     (force legacy), or None (auto-detect)."""
@@ -3591,8 +3619,11 @@ def _resolve_second_password_with_fallback(args, explicit_second_password):
     (i.e. keyed, or just random/corrupt), and the session is interactive, prompt
     once for a second password. The prompt is deliberately:
 
-    * **TTY-gated** -- never fires in a pipe/script, so headless runs keep the
-      silent generic-error behavior (no behavioral oracle, no automation hang);
+    * **terminal-gated** -- fires only when a controlling terminal is reachable
+      for getpass (``/dev/tty``); headless runs (cron/CI, no tty anywhere) keep
+      the silent generic-error behavior (no behavioral oracle, no automation
+      hang). It DOES fire when stdin is a pipe but a terminal is present, so
+      ``armor ... | decrypt -i /dev/stdin`` can prompt;
     * **suppressible** with ``--no-second-password-prompt`` (and skipped under
       ``--legacy-format``);
     * **neutrally worded** -- it fires on any non-keyless-peelable input, so it
@@ -3612,10 +3643,10 @@ def _resolve_second_password_with_fallback(args, explicit_second_password):
         return explicit_second_password
     if getattr(args, "no_second_password_prompt", False) or getattr(args, "legacy_format", False):
         return None
-    try:
-        if not sys.stdin.isatty():
-            return None
-    except Exception:
+    # Gate on whether a controlling terminal is reachable for getpass (/dev/tty),
+    # not on stdin being a tty: the ciphertext may itself arrive on stdin via a
+    # pipe (armor ... | decrypt -i /dev/stdin) while a terminal is still present.
+    if not _can_prompt_on_tty():
         return None
 
     input_file = getattr(args, "input", None)
@@ -4760,13 +4791,11 @@ def main_with_args(args=None):
 
     # Resolve the optional second password (hidden keyed mode) exactly once, so
     # an interactive prompt is shown at most a single time per invocation.
+    # NOTE: only the *explicit* forms (--second-password / -fd / -prompt) are
+    # resolved here. The auto-detect fallback (keyless peek + prompt) runs later,
+    # AFTER stdin buffering and de-armoring, so it can peek a seekable file even
+    # when the ciphertext arrives on stdin (e.g. armor ... | decrypt -i /dev/stdin).
     _hidden_second_password = _resolve_second_password(args)
-    # On decrypt/info, fall back to an interactive prompt for a keyed hidden
-    # file (TTY-gated, suppressible with --no-second-password-prompt).
-    if getattr(args, "action", None) in ("decrypt", "info"):
-        _hidden_second_password = _resolve_second_password_with_fallback(
-            args, _hidden_second_password
-        )
 
     # Store the original user-provided algorithm name from command line
     import sys
@@ -5126,6 +5155,11 @@ def main_with_args(args=None):
     elif args.action == "hsm":
         handle_hsm_command(args)
         sys.exit(0)
+
+    elif args.action in ("armor", "dearmor"):
+        from .armor import run_armor_cli
+
+        sys.exit(run_armor_cli(args))
 
     elif args.action == "verify-integrity":
         from pathlib import Path
@@ -5999,6 +6033,16 @@ def main_with_args(args=None):
                 args.input = dearmored_path
                 if getattr(args, "debug", False):
                     eprint(f"DEBUG: De-armored input to temp file: {args.input}")
+
+    # Auto-detect second password for a keyed hidden file (terminal-gated,
+    # suppressible with --no-second-password-prompt). Run AFTER stdin buffering
+    # and de-armoring so args.input is a seekable file even when the ciphertext
+    # arrived on stdin — only then can the cheap keyless peek decide whether a
+    # prompt is warranted. A no-op when an explicit second password was given.
+    if args.action in ("decrypt", "info"):
+        _hidden_second_password = _resolve_second_password_with_fallback(
+            args, _hidden_second_password
+        )
 
     # Auto-detect encryption type for decrypt operations
     # Only run auto-detection if user didn't explicitly provide --with-key
