@@ -776,6 +776,18 @@ A paste-safe wrapper over the binary container (src: armor.py):
 - Auto-detection sniffs the first **256 bytes** for the BEGIN prefix
   (`is_armored_file`, src: armor.py:226-245); `dearmor` fails closed on missing
   markers, label mismatch, bad base64, or CRC mismatch.
+- **Where it is applied:** `decrypt`/`info`/`verify`/`rekey` transparently
+  de-armor armored input before parsing (content-sniffed, no flag); `encrypt
+  --armor` wraps output. The standalone `armor` / `dearmor` subcommands apply or
+  reverse this transform on an existing file without encrypting/decrypting
+  (pure, keyless, reversible: `dearmor(armor(x)) == x`, src: armor.py:run_armor_cli).
+- **Interaction with the hidden container (§4.2):** armor wraps the *whole*
+  binary container, including a hidden/whitened blob. The
+  `-----BEGIN OPENSSL-ENCRYPT …-----` markers are a public, plaintext
+  fingerprint, so **armoring a hidden file negates its indistinguishability**
+  (anti-fingerprinting) guarantee — though the metadata/data confidentiality of a
+  *keyed* hidden file is unaffected. Use armor on hidden files only when transport
+  encoding is worth more than "looks random."
 
 ---
 
