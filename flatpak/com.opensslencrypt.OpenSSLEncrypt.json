@@ -87,17 +87,17 @@
     },
     {
       "name": "pcsc-lite",
+      "buildsystem": "meson",
       "config-opts": [
-        "--disable-libudev",
-        "--disable-libsystemd",
-        "--without-systemdsystemunitdir",
-        "--disable-serial",
-        "--disable-usb",
-        "--disable-libusb",
-        "--disable-polkit"
+        "-Dlibudev=false",
+        "-Dlibsystemd=false",
+        "-Dserial=false",
+        "-Dusb=false",
+        "-Dlibusb=false",
+        "-Dpolkit=false"
       ],
       "post-install": [
-        "rm /app/sbin/pcscd",
+        "rm -f /app/sbin/pcscd",
         "rmdir /app/sbin || true"
       ],
       "sources": [
