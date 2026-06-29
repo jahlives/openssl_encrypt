@@ -1,10 +1,10 @@
 # openssl_encrypt — On-Disk Format Specification
 
 > **Status:** DRAFT — populated from the implementation and citation-backed.
-> **Spec version:** 0.2 (code-derived)
+> **Spec version:** 0.3 (code-derived)
 > **Covers tool versions:** 1.4.x and 1.5.x (highest format_version: 13)
-> **Last updated:** 2026-06-28
-> **Editor:** Tobias <…>
+> **Last updated:** 2026-06-29
+> **Editor:** Tobi <jahlives@gmx.ch>
 >
 > This document is the **authoritative description of the bytes written to
 > disk** by openssl_encrypt. Its goals:
@@ -239,8 +239,15 @@ Envelope fields (`wrapped_dek`, `dek_slots`, `dek_slots_mac`) live **inside**
 > (argon2 time_cost 2 / memory_cost 102400 / parallelism 8; hkdf info
 > `b"independent-xor-hkdf"`) (src: crypt_core.py:1858-2049). The template presets
 > QUICK/STANDARD/PARANOID set their own values (src: crypt_cli.py:585,607,640).
-> No centralized numeric range-clamping was found — out-of-range values surface as
-> library errors from argon2/scrypt/balloon. **⚠️ UNVERIFIED:** accepted ranges.
+> **Accepted ranges (verified).** No centralized numeric range-clamping is done in
+> application code: parameters are passed straight to the backends, so out-of-range
+> values surface as **library exceptions on decrypt** — argon2-cffi requires
+> `time_cost ≥ 1`, `memory_cost ≥ 8 KiB`, `parallelism ≥ 1`; scrypt requires `n` a
+> power of two `≥ 1`, `r ≥ 1`, `p ≥ 1`. The only in-code clamps are in the Balloon
+> backend: `space_cost ≤ 1 000 000` and `time_cost ≤ 100 000`
+> (src: balloon.py:64-66,120-124). An implementer reproduces the stored parameters
+> verbatim; there is no additional normative accepted-range table to honour beyond
+> these backend limits.
 
 ### 5.3 `hashes`
 
@@ -498,8 +505,14 @@ PIV/PKCS#11 pepper derivation (src: piv_backend.py:110-161): HKDF-SHA256 with
 fixed salt `b"openssl_encrypt-piv-v1"`, challenge `info=b"piv-challenge"`
 (64 B), pepper `info=b"piv-pepper"` (32 B) over the deterministic signature
 (Ed25519 / RSA-PKCS1v1.5 only; ECDSA rejected, determinism enforced by
-double-sign-and-compare). **⚠️ UNVERIFIED:** exact byte length of the FIDO2/YubiKey
-HMAC-SHA1 challenge-response pepper.
+double-sign-and-compare). **Pepper byte lengths by device (verified):** FIDO2
+(hmac-secret / CredRandom) = **32 B**
+(src: plugins/hsm/fido2_pepper/__init__.py:520-524); YubiKey and OnlyKey
+(HMAC-SHA1 challenge-response) = **20 B**
+(src: plugins/hsm/yubikey_challenge_response/__init__.py:182-183,
+onlykey_challenge_response/__init__.py:275); PIV/PKCS#11 = **32 B** (HKDF-SHA256
+normalised, configurable, src: piv_backend.py:123). All are mixed in at stage 0
+(see above), never as a separate KDF stage.
 
 ---
 
@@ -665,10 +678,13 @@ src: recovery_slots.py:39-49):
 Shamir shares are written out-of-band as `recovery_share_<i>.json`; the slot stores
 only `{threshold, num_shares}` (src: recovery_slots.py:287-295,710-726).
 
-> **⚠️ UNVERIFIED:** no explicit `format_version` constant gates the *presence* of
-> envelope/recovery fields (they are additive under `encryption`); the cascade
-> DEK-wrap internally pins v12. The "shamir = 1.5.x only" split is a product
-> statement, not a code-level version gate found in `recovery_slots.py`.
+> **Version gating (verified).** No `format_version` constant gates the *presence*
+> of envelope/recovery fields — they are purely additive under `encryption`, and a
+> reader detects them by presence rather than by version
+> (src: crypt_core.py:5949-5953,6061-6070). The cascade DEK-wrap internally pins
+> v12 for its wrap-key derivation only (src: envelope.py:67). The
+> "shamir = 1.5.x only" split is a product/release statement, **not** a code-level
+> version gate in `recovery_slots.py` (all four slot types are handled uniformly).
 
 ---
 
@@ -741,8 +757,11 @@ src: crypt_core.py:4822-5094).
 - **Algorithms:** v1 emits a **single** component, **ML-DSA-65** by default
   (`DEFAULT_SIG_ALGORITHM`, src: file_signature.py:48). The `signatures` list is
   structured so a classical (e.g. Ed25519) component can be added later without a
-  format break. **⚠️ UNVERIFIED / aspirational:** the "Ed25519 + ML-DSA-65 hybrid
-  default" — only ML-DSA-65 is currently written (src: file_signature.py:16-18,155-157).
+  format break. **Not yet implemented (verified):** no Ed25519 component is signed
+  or verified anywhere — only ML-DSA-65 is written; the multi-component
+  `signatures` array merely reserves room for a future hybrid
+  (src: file_signature.py:16-18,144-157,262-275). The asymmetric-mode *metadata*
+  signature is likewise ML-DSA-65-only (src: crypt_core.py:5066).
 - **Verification reports per-component** results
   (`components = [{component, valid}, …]`); overall valid = file-hash match AND
   all components valid (src: file_signature.py:231-293). PEM label = `SIGNATURE`
@@ -883,17 +902,21 @@ is **no v0/v1/v2 on disk**. Per-version JSON schemas live in
 | 3       | early (≤ 0.7.0)   | **flat** metadata structure                                         | reference impl only |
 | 4       | 0.7.2             | **nested** `derivation_config`/`hashes`/`encryption` (converters v3↔v4) | §5.4 |
 | 5       | 0.8.1             | adds `encryption.encryption_data` (converters v4↔v5)                | §5.4 |
-| 6       | 1.4.0 era ⚠️       | adds formal **HSM validation** fields                               | §7.5 |
+| 6       | pre-1.4.0 (unpinned) | adds formal **HSM validation** fields (`create_metadata_v6`)       | §7.5 |
 | 7       | 1.3.4             | adds **PQC signatures** (asymmetric mode); first under secure chained-salt (§7.2) | §7.2, §10 |
-| 8       | 1.4.0-alpha       | adds **cascade** encryption; also uses **sequential XOR** (`==8`)   | §7.3 — see §7.2 ⚠️ |
+| 8       | 1.4.0-alpha       | adds **cascade** encryption; also uses **sequential XOR** (`==8`); decrypts as secure (≡ v10) | §7.3, §7.2 |
 | 9       | 1.4.0b8           | **secure chained-salt derivation** as the default (ADVISORY 2026-01) | §7.2 |
 | 10      | 1.4.x             | **sequential XOR** composition of stage outputs                     | §7.3 — order-sensitive |
 | 11      | 1.4.0b10          | **Independent XOR** key derivation (robust XOR-combiner)            | §7.3 |
 | 12      | 1.4.x             | **streaming chunked** AEAD (per-chunk HKDF nonces, trailer HMAC); `OESC` magic; current default | §8.4 |
 | 13      | 1.4.x / 1.5.x     | **Corrected XOR derivation**; `xor_mode` selects the variant: **independent** (per-component domain-separated salts; default for `--independent-xor` / STANDARD / PARANOID / rekey) or **sequential** (last-stage cancellation fixed; `--xor`). Decrypt routes by `xor_mode`. metadata shape == v11; same number/meaning on both lines; v8/v10/v11 stay decrypt-only | §7.3 |
 
-**⚠️ UNVERIFIED:** exact introducing tool-version of v6 (schema exists; no
-changelog line pins it). See §7.2 for the v8 secure-vs-legacy salt discrepancy.
+**One residual unknown:** the exact introducing tool-version of **v6** is not
+pinned by any CHANGELOG line or git commit — the format exists in code
+(`create_metadata_v6`, adding the HSM-validation fields) and predates the 1.4.0
+alphas, but the precise version is undocumented. Everything else in this table is
+code-/changelog-confirmed; `MIN_FORMAT_VERSION = 3`, `MAX_FORMAT_VERSION = 13`
+(src: verify.py:46-47). The v8 salt question is settled in §7.2 (v8 ≡ v10, secure).
 
 ---
 
@@ -937,33 +960,36 @@ This section is **non-normative**; the threat model lives in
 
 ## 18. Open questions / TODO index
 
-Resolved in this revision (see the cited sections). Remaining items before this
-leaves DRAFT:
+Spec 0.3 verified every previously-flagged item against the code (see the cited
+sections). The only residual unknown is the exact tool-version that introduced
+format_version 6 (§15). Remaining before this leaves DRAFT: the full citation
+review (last item below).
 
 - [x] §2 integer endianness (mixed: hidden=BE, streaming framing=LE, streaming KDF inputs=BE)
 - [x] §3/§4.1 standard-vs-hidden detection + payload nonce/tag framing
 - [x] §4.2 hidden-header field lengths + outer AEAD (XChaCha20-Poly1305) + whitening
-- [x] §5.2 per-KDF parameter schemas/defaults — **⚠️ ranges still UNVERIFIED**
+- [x] §5.2 per-KDF parameter schemas/defaults — ranges are backend-enforced only (Balloon caps verified; no app-level clamps)
 - [x] §5.3 hashes are SHA-256; role clarified
 - [x] §5.4 legacy metadata shapes (v3–v7) characterized
 - [x] §6 **AAD canonicalization** — two paths; envelope also excludes `derivation_config`
 - [x] §7.1 KDF pipeline order + normalization (`v10_xor_normalize`)
-- [x] §7.2 chained-salt function — **⚠️ v8 secure-vs-legacy discrepancy to reconcile**
+- [x] §7.2 chained-salt function — v8 reconciled (secure rule gated at `>= 7`; v8 ≡ v10)
 - [x] §7.3 XOR composition (v8/v10 sequential, v11 independent)
 - [x] §7.4 hidden-header outer-key derivation (keyless vs keyed chains)
-- [x] §7.5 hardware-pepper mixing point + actual field names — **⚠️ FIDO2 pepper length UNVERIFIED**
+- [x] §7.5 hardware-pepper mixing point + field names — pepper lengths verified (FIDO2 32 B; YubiKey/OnlyKey 20 B; PIV 32 B)
 - [x] §8.2 cascade `layer_info` schema + per-layer keying/nonces
 - [x] §8.3 legacy XChaCha nonce construction
 - [x] §8.4 streaming chunk size/nonce/framing/anti-truncation
-- [x] §9 recovery-slot schemas + slot-set MAC — **⚠️ shamir/version gating UNVERIFIED**
-- [x] §10 recipient encryption is **ML-KEM-768-only** (no classical+PQC combiner) — **⚠️ corrects scaffold**
-- [x] §11 signature container + domain separation + signed bytes — **⚠️ hybrid Ed25519 aspirational**
+- [x] §9 recovery-slot schemas + slot-set MAC — gating verified (additive; no format_version gate; shamir split = product policy)
+- [x] §10 recipient encryption is **ML-KEM-768-only** (no classical+PQC combiner) — verified (decrypt reads 512/768/1024)
+- [x] §11 signature container + domain separation + signed bytes — single ML-DSA-65 confirmed; Ed25519 hybrid not implemented (array reserves room)
 - [x] §12 armor labels + CRC-24 parameters
 - [x] §13 write-retired / read-dropped lists (1.5.0)
 - [x] §14 shipped-vs-legacy algorithm sets + liboqs names + Threefish mode
-- [x] §15 version table (v3–v12) — **⚠️ v6 introducing version UNVERIFIED**
+- [x] §15 version table (v3–v13) — complete; v6's introducing tool-version is the one residual unknown (see §15 note)
 - [x] §16 corpus location + KAT index
 - [ ] Independent code review of every `(src: …)` citation before declaring NORMATIVE
+  (spec 0.3 verified the §5.2/§7.2/§7.5/§9/§10/§11/§15 citations against the 1.5.x tree)
 
 ---
 
