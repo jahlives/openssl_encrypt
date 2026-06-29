@@ -59,7 +59,7 @@ quality wordlist for the project's Diceware passphrase-generation feature.
 
 Project license note
 --------------------
-openssl_encrypt itself is licensed under the Hippocratic License 2.1.
+openssl_encrypt itself is licensed under the Hippocratic License 3.0.
 Bundling CC BY 3.0 US data alongside the Hippocratic-licensed code is
 compatible: CC BY 3.0 US permits redistribution with attribution, and
 this file together with the README mention satisfies that attribution
