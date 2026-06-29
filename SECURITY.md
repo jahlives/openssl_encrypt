@@ -52,7 +52,7 @@ We assume an adversary who can:
 - **Plaintext-length confidentiality.** The standard container does **not** hide
   the plaintext size — ciphertext length leaks plaintext length (minus framing
   overhead). Length-hiding padding is a future consideration (see
-  [`docs/FORMAT.md`](docs/FORMAT.md) §17).
+  [`openssl_encrypt/docs/FORMAT.md`](openssl_encrypt/docs/FORMAT.md) §17).
 - **Side-channels in the host/runtime.** Constant-time behavior cannot be
   guaranteed under CPython (timing, cache, GC, and memory-deallocation
   side-channels are out of scope); we rely on a generic-error policy
@@ -129,7 +129,7 @@ Encryption with Associated Data (AEAD)**.
 
 > The authoritative, byte-level description of the container — including exactly
 > which metadata fields are bound as AAD and how they are canonicalized — lives in
-> the [On-Disk Format Specification](docs/FORMAT.md) (§6). This policy document
+> the [On-Disk Format Specification](openssl_encrypt/docs/FORMAT.md) (§6). This policy document
 > states intent; FORMAT.md is normative for interoperability.
 
 > **Removed in v1.5.0:** AES-OCB3, Camellia, the Whirlpool hash, the PBKDF2 KDF
@@ -289,7 +289,7 @@ unified and equivalent.
 > `format_version >= 7`, so **v7, v8, v9, and v10+ are all read with the secure
 > derivation** — only v3–v6 use the legacy predictable rule. v8 was deliberately
 > aligned with v10 (commit `22059bab`, v1.4.0); see
-> [docs/FORMAT.md](docs/FORMAT.md) §7.2 and
+> [openssl_encrypt/docs/FORMAT.md](openssl_encrypt/docs/FORMAT.md) §7.2 and
 > [metadata-formats.md](openssl_encrypt/docs/metadata-formats.md). A hypothetical
 > predictable-salt v8 file (only producible on a pre-beta.10 build) would not
 > decrypt under current code; this is accepted as out of scope.

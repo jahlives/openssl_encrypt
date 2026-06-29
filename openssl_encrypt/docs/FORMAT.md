@@ -424,7 +424,7 @@ Combine primitive: `xor_bytes_secure` — byte-wise XOR of equal-length
     Argon2 is last, so the key reduces to exactly that cheap initial hash,
     **independent of the configured Argon2 cost** (a cost bypass). Affects
     `format_version ∈ {8, 10}` (`--xor`), not v9/v11/v13. See ADVISORY 2026-02 in
-    [SECURITY.md](../SECURITY.md). Existing v8/v10 files **keep** this derivation
+    [SECURITY.md](../../SECURITY.md). Existing v8/v10 files **keep** this derivation
     (decrypt-compat, append-only) — re-encrypt to fix.
   - **Fix at `format_version >= 13`** (`xor_mode: "sequential"`): the redundant
     final-result append is skipped, so every stage contributes and the last
@@ -954,7 +954,7 @@ the 1.5.0 shipped surface (§13).
 ## 17. Security considerations
 
 This section is **non-normative**; the threat model lives in
-[SECURITY.md](../SECURITY.md). Highlights an implementer must respect:
+[SECURITY.md](../../SECURITY.md). Highlights an implementer must respect:
 
 - Treat the metadata as **attacker-controlled** until the AEAD tag (and, in
   envelope mode, the `dek_slots_mac`) verifies. Never act on header fields
@@ -1016,6 +1016,6 @@ header **citation policy**, line numbers are indicative — resolve by file+symb
 - [RFC 4880] — OpenPGP (CRC-24 / armor lineage)
 - draft-irtf-cfrg-xchacha-03 — XChaCha20-Poly1305
 - FIPS 203 (ML-KEM), FIPS 204 (ML-DSA), FIPS 205 (SLH-DSA)
-- Internal: [SECURITY.md](../SECURITY.md),
-  [VERSION.md](../openssl_encrypt/docs/VERSION.md),
+- Internal: [SECURITY.md](../../SECURITY.md),
+  [VERSION.md](VERSION.md),
   [HIDDEN_HEADER.md](HIDDEN_HEADER.md), [RECOVERY_SLOTS.md](RECOVERY_SLOTS.md)
