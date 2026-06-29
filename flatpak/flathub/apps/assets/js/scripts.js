@@ -5,7 +5,7 @@
 
       // Fallback: show manual installation instructions
       setTimeout(function() {
-          alert('If the automatic installation didn\'t work, run this command:\n\nflatpak install custom-repo ' + appId);
+          alert('If the automatic installation didn\'t work, run this command:\n\nflatpak install openssl-encrypt ' + appId);
       }, 1000);
   }
 
