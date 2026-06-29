@@ -13,7 +13,8 @@
 
           <div class="stats">
               <h3>&#128196; Application Info</h3>
-              <p><strong>Version:</strong> 1.4.2 (Latest Stable) | <strong>Size:</strong> ~140 MB | <strong>License:</strong> Hippocratic-3.0 | <strong>Platform:</strong> Linux Flatpak</p>
+              <p><strong>Version:</strong> 1.4.7 (Latest Stable) | <strong>Size:</strong> ~140 MB | <strong>License:</strong> Hippocratic-3.0 | <strong>Platform:</strong> Linux Flatpak</p>
+              <p><strong>Version:</strong> 1.4.6-stable | <strong>Size:</strong> ~140 MB | <strong>License:</strong> Hippocratic-3.0 | <strong>Platform:</strong> Linux Flatpak</p>
               <p><strong>Version:</strong> 1.4.0-stable | <strong>Size:</strong> ~140 MB | <strong>License:</strong> Hippocratic-3.0 | <strong>Platform:</strong> Linux Flatpak</p>
               <p><strong>Version:</strong> 1.3.5-stable | <strong>Size:</strong> ~140 MB | <strong>License:</strong> Hippocratic-3.0 | <strong>Platform:</strong> Linux Flatpak</p>
               <p><strong>Version:</strong> 1.3.4-stable | <strong>Size:</strong> ~140 MB | <strong>License:</strong> Hippocratic-3.0 | <strong>Platform:</strong> Linux Flatpak</p>
@@ -112,6 +113,62 @@
 
           <section id="changelog">
               <h2>&#128203; Recent Updates</h2>
+
+              <div class="changelog-item">
+                  <div class="version">
+                      1.4.7
+                      <span class="release-type stable">STABLE RELEASE</span>
+                      <span class="release-type minor">DOCS</span>
+                  </div>
+                  <div class="description">
+                      Documentation and packaging release: refreshed the project page and README (rendered as the PyPI page) for the 1.4.6 feature set, including the key-derivation documentation, which now reflects format version 13 as the Independent XOR default. No functional, CLI, or on-disk format changes.
+                  </div>
+              </div>
+
+              <div class="changelog-item">
+                  <div class="version">
+                      1.4.6
+                      <span class="release-type stable">STABLE RELEASE</span>
+                      <span class="release-type minor">FEATURE</span>
+                      <span class="release-type minor">SECURITY</span>
+                  </div>
+                  <div class="description">
+                      Major feature release. New PIV / PKCS#11 hardware-token backend (--hsm piv) for smart cards and tokens; source-code integrity verification via a PGP-signed manifest (verify-integrity); opt-in envelope encryption (--envelope) for low-cost credential rotation; detached post-quantum signatures (ML-DSA-65) via sign / verify-signature; and ASCII armor (encrypt --armor). Independent XOR key derivation now uses per-component domain-separated salts (format version 13) by default. Security fix: the optional, non-default sequential XOR mode could bypass the configured KDF cost in a single-KDF configuration — fixed and disclosed as GHSA-vxf9-vwp6-2w43 (CWE-916); default configurations were unaffected. Existing files remain decryptable.
+                  </div>
+              </div>
+
+              <div class="changelog-item">
+                  <div class="version">
+                      1.4.5
+                      <span class="release-type stable">STABLE RELEASE</span>
+                      <span class="release-type minor">SECURITY</span>
+                  </div>
+                  <div class="description">
+                      Security dependency update: urllib3 2.7.0, cryptography 46.0.7, pillow 12.2.0, idna 3.15 — fixes for CVE-2026-44431/44432, CVE-2026-39892, a PSD decoder out-of-bounds write, and an idna DoS. New CI check keeps flatpak dependency pins aligned with the package requirements.
+                  </div>
+              </div>
+
+              <div class="changelog-item">
+                  <div class="version">
+                      1.4.4
+                      <span class="release-type stable">STABLE RELEASE</span>
+                      <span class="release-type minor">SECURITY</span>
+                  </div>
+                  <div class="description">
+                      Security hardening release: authenticated keystore format, D-Bus polkit authorization, fail-closed PQC algorithm resolution, plugin sandbox enforcement, per-drive USB salts. New: cross-device YubiKey/OnlyKey HSM decryption, encrypt-CLI reconstruction from file metadata via the info action, Diceware passphrase generation, HSM-aware derive-password. Threefish extension builds on Python 3.14. Requires Python 3.11+.
+                  </div>
+              </div>
+
+              <div class="changelog-item">
+                  <div class="version">
+                      1.4.3
+                      <span class="release-type stable">STABLE RELEASE</span>
+                      <span class="release-type minor">BUGFIX</span>
+                  </div>
+                  <div class="description">
+                      Fix Flutter GUI launcher in Flatpak: corrected binary name so --gui flag works correctly.
+                  </div>
+              </div>
 
               <div class="changelog-item">
                   <div class="version">
