@@ -141,7 +141,7 @@ EOF
         # Commit the metainfo.xml changes so flatpak-builder can use them
         echo "   Committing metainfo.xml changes to git..."
         git add "$METAINFO_FILE"
-        if git commit -m "Update metainfo.xml with version $VERSION for flatpak build"; then
+        if git commit -m "Update metainfo.xml with version $VERSION for flatpak build" --no-verify; then
             echo "   ✅ Successfully committed metainfo.xml changes"
             echo "   ⏱️  Waiting 3 seconds for git changes to propagate..."
         else
