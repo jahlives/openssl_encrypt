@@ -2237,6 +2237,8 @@ def main():
         "encrypt",
         "decrypt",
         "rekey",
+        "armor",
+        "dearmor",
         "shred",
         "generate-password",
         "derive-password",
@@ -3941,6 +3943,11 @@ def main_with_args(args=None):
     elif args.action == "hsm":
         handle_hsm_command(args)
         sys.exit(0)
+
+    elif args.action in ("armor", "dearmor"):
+        from .armor import run_armor_cli
+
+        sys.exit(run_armor_cli(args))
 
     elif args.action == "verify-integrity":
         from pathlib import Path

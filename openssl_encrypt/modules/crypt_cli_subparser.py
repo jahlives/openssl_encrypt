@@ -1745,6 +1745,34 @@ def setup_derive_password_parser(subparser):
     _add_keyring_arguments(subparser)
 
 
+def setup_armor_parser(subparser):
+    """Set up arguments for the armor / dearmor transport-codec commands.
+
+    Shared by both subcommands: ``armor`` wraps an existing encrypted file in
+    a paste-safe PEM/Base64 envelope; ``dearmor`` recovers the raw binary form.
+    Neither needs a password — armor is a pure, reversible transport transform.
+    """
+    subparser.add_argument(
+        "--input",
+        "-i",
+        required=True,
+        help="Input file (encrypted file to armor / armored file to dearmor)",
+    )
+    subparser.add_argument(
+        "--output",
+        "-o",
+        help="Output file. Default: <input>.asc when armoring, or the input "
+        "with a trailing .asc stripped (else <input>.bin) when dearmoring. "
+        "Use '-' or /dev/stdout to write to stdout.",
+    )
+    subparser.add_argument(
+        "--force",
+        "-f",
+        action="store_true",
+        help="Overwrite the output file if it already exists",
+    )
+
+
 def setup_verify_parser(subparser):
     """Set up arguments for the verify command."""
     subparser.add_argument(
@@ -2409,6 +2437,20 @@ def create_subparser_main():
         formatter_class=argparse.RawTextHelpFormatter,
     )
     setup_rekey_parser(rekey_parser)
+
+    armor_parser = subparsers.add_parser(
+        "armor",
+        help="ASCII-armor an existing encrypted file (paste-safe Base64 envelope)",
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
+    setup_armor_parser(armor_parser)
+
+    dearmor_parser = subparsers.add_parser(
+        "dearmor",
+        help="Recover the raw binary form of an ASCII-armored file",
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
+    setup_armor_parser(dearmor_parser)
 
     shred_parser = subparsers.add_parser(
         "shred",

@@ -273,3 +273,80 @@ def dearmor_file(path: str) -> bytes:
     """
     with open(path, "rb") as f:
         return dearmor(f.read())
+
+
+# Output targets that are character devices / streams rather than regular files;
+# overwrite protection and "already exists" checks do not apply to these.
+_STREAM_TARGETS = ("/dev/stdout", "/dev/stderr", "/dev/fd/1", "/dev/fd/2")
+
+
+def run_armor_cli(args) -> int:
+    """Handle the ``armor`` and ``dearmor`` subcommands.
+
+    Wraps an existing encrypted file in ASCII armor (``armor``) or recovers the
+    raw binary payload from an armored file (``dearmor``). This is a pure,
+    keyless transport transform: no password is needed and no decryption is
+    performed, so the ciphertext and its inner AEAD authentication are preserved
+    byte-for-byte (``dearmor(armor(x)) == x``).
+
+    Output defaults: ``armor`` writes ``<input>.asc``; ``dearmor`` strips a
+    trailing ``.asc`` (or appends ``.bin`` if absent). ``-o -`` is an alias for
+    ``/dev/stdout``. Existing regular output files are protected unless
+    ``--force`` is given; stream targets (stdout/stderr) are always written.
+
+    Args:
+        args: Parsed CLI namespace with ``action`` (``"armor"``/``"dearmor"``),
+            ``input``, optional ``output``, ``force``, and ``quiet``.
+
+    Returns:
+        Process exit code: ``0`` on success, ``1`` on any handled error.
+    """
+    import os
+    import sys
+
+    action = args.action
+    in_path = args.input
+    quiet = getattr(args, "quiet", False)
+
+    def _err(msg: str) -> int:
+        print(f"Error: {msg}", file=sys.stderr)
+        return 1
+
+    try:
+        with open(in_path, "rb") as f:
+            data = f.read()
+    except OSError as exc:
+        return _err(f"cannot read input {in_path!r}: {exc}")
+
+    if action == "armor":
+        if is_armored(data):
+            return _err(f"{in_path!r} is already ASCII-armored")
+        out_data = armor(data)
+        default_out = in_path + ".asc"
+    else:  # dearmor
+        if not is_armored(data):
+            return _err(f"{in_path!r} is not ASCII-armored")
+        try:
+            out_data = dearmor(data)
+        except ArmorError as exc:
+            return _err(f"malformed armor in {in_path!r}: {exc}")
+        default_out = in_path[:-4] if in_path.endswith(".asc") else in_path + ".bin"
+
+    out_path = getattr(args, "output", None) or default_out
+    if out_path == "-":
+        out_path = "/dev/stdout"
+
+    is_stream = out_path in _STREAM_TARGETS
+    if not is_stream and os.path.exists(out_path) and not getattr(args, "force", False):
+        return _err(f"output {out_path!r} exists (use --force to overwrite)")
+
+    try:
+        with open(out_path, "wb") as f:
+            f.write(out_data)
+    except OSError as exc:
+        return _err(f"cannot write output {out_path!r}: {exc}")
+
+    if not quiet and not is_stream:
+        verb = "Armored" if action == "armor" else "De-armored"
+        print(f"{verb} {in_path} -> {out_path}", file=sys.stderr)
+    return 0
