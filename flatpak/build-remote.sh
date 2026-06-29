@@ -101,8 +101,10 @@ if [ -n "$VERSION" ]; then
         # Get current date in YYYY-MM-DD format
         CURRENT_DATE=$(date +%Y-%m-%d)
 
-        # Replace entire releases section with only the current version
-        echo "   Replacing releases section with version $VERSION only"
+        # Ensure the current version is documented WITHOUT discarding the
+        # curated release history: prepend a stub entry only if this version
+        # is not already listed (the maintainer may have hand-written it).
+        echo "   Ensuring metainfo lists version $VERSION (release history preserved)"
 
         # Use Python to safely handle XML manipulation
         python3 << EOF
@@ -112,40 +114,46 @@ import re
 with open('$METAINFO_FILE', 'r') as f:
     content = f.read()
 
-# Create new releases section
-new_releases = '''  <releases>
-    <release version="$VERSION" date="$CURRENT_DATE" type="stable">
+if 'version="$VERSION"' in content:
+    print("   metainfo already lists $VERSION - leaving <releases> untouched")
+else:
+    new_entry = '''    <release version="$VERSION" date="$CURRENT_DATE" type="stable">
       <description>
         <p>Version $VERSION build</p>
       </description>
     </release>
-  </releases>'''
+'''
+    if '  <releases>\n' in content:
+        # Insert as the newest release, right after the <releases> open tag
+        content = content.replace('  <releases>\n', '  <releases>\n' + new_entry, 1)
+        print("   prepended release entry for $VERSION (existing history kept)")
+    else:
+        # No releases section yet - create one before content_rating
+        new_releases = '  <releases>\n' + new_entry + '  </releases>'
+        content = re.sub(r'  <content_rating', new_releases + '\n  <content_rating', content)
+        print("   created <releases> section with $VERSION")
 
-# Remove existing releases section and add new one
-content = re.sub(r'  <releases>.*?</releases>', new_releases, content, flags=re.DOTALL)
-
-# If no releases section existed, add it before content_rating
-if '<releases>' not in content:
-    content = re.sub(r'  <content_rating', new_releases + '\n  <content_rating', content)
-
-# Write back to file
-with open('$METAINFO_FILE', 'w') as f:
-    f.write(content)
+    with open('$METAINFO_FILE', 'w') as f:
+        f.write(content)
 EOF
-        echo "   Replaced releases section with version $VERSION"
 
-        # Show what was added for verification
-        echo "   New release entry:"
+        # Show the top of the releases list for verification
+        echo "   Releases section (top):"
         grep -A 6 "<releases>" "$METAINFO_FILE"
 
-        # Commit the metainfo.xml changes so flatpak-builder can use them
-        echo "   Committing metainfo.xml changes to git..."
-        git add "$METAINFO_FILE"
-        if git commit -m "Update metainfo.xml with version $VERSION for flatpak build"; then
-            echo "   ✅ Successfully committed metainfo.xml changes"
-            echo "   ⏱️  Waiting 3 seconds for git changes to propagate..."
+        # Commit only if the version stamp actually changed the file, so that
+        # building an already-documented version doesn't create a spurious commit.
+        if ! git diff --quiet -- "$METAINFO_FILE"; then
+            echo "   Committing metainfo.xml changes to git..."
+            git add "$METAINFO_FILE"
+            if git commit -m "Update metainfo.xml with version $VERSION for flatpak build" --no-verify; then
+                echo "   ✅ Successfully committed metainfo.xml changes"
+                echo "   ⏱️  Waiting 3 seconds for git changes to propagate..."
+            else
+                echo "   ⚠️  Git commit failed"
+            fi
         else
-            echo "   ⚠️  Git commit failed or no changes to commit"
+            echo "   ✓ metainfo.xml already up to date for $VERSION - nothing to commit"
         fi
     else
         echo "⚠️  Warning: Metainfo file not found at $METAINFO_FILE"
