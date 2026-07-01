@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Pattern-aware password strength estimation**: password strength feedback now
+  detects predictable structure (dictionary words, l33t substitutions, keyboard
+  walks, ascending/descending sequences, repeats, dates) instead of relying on
+  the raw character-space entropy alone, which over-rated structured passwords
+  (e.g. `Password1!`). Uses the optional [`zxcvbn`](https://pypi.org/project/zxcvbn/)
+  package when installed, and a built-in heuristic fallback otherwise — `zxcvbn`
+  is **not** a production dependency. Behaviour is **advisory by default**: the
+  displayed strength label and new "Password weakness" warnings reflect the
+  pattern-aware estimate, but the `--min-password-entropy` gate still uses the
+  raw measure, so passwords accepted before remain accepted. The new
+  `--strict-strength` flag (enabled automatically by the `paranoid` policy) makes
+  the gate reject passwords whose pattern-aware strength is too low. This only
+  affects password validation when encrypting; it never affects decryption.
 - **Hidden ("whitened") file format** (**now the DEFAULT output on 1.5.x**; opt
   out with `--legacy-format`): wraps the
   encrypted output in an outer layer so the whole file is indistinguishable

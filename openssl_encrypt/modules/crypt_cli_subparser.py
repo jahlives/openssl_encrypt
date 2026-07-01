@@ -1496,6 +1496,11 @@ def setup_rekey_parser(subparser):
         help="Minimum password entropy override",
     )
     policy_group.add_argument(
+        "--strict-strength",
+        action="store_true",
+        help="Gate on the pattern-aware strength estimate instead of raw entropy",
+    )
+    policy_group.add_argument(
         "--disable-common-password-check",
         action="store_true",
         help="Disable common password list check",
@@ -1725,6 +1730,11 @@ def setup_derive_password_parser(subparser):
         "--min-password-entropy",
         type=float,
         default=None,
+        help=argparse.SUPPRESS,
+    )
+    subparser.add_argument(
+        "--strict-strength",
+        action="store_true",
         help=argparse.SUPPRESS,
     )
     subparser.add_argument(

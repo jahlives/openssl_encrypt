@@ -3402,6 +3402,15 @@ def main_with_args(args=None):
         help="Minimum password entropy in bits (overrides policy level)",
     )
     policy_group.add_argument(
+        "--strict-strength",
+        action="store_true",
+        help=(
+            "Gate on the pattern-aware strength estimate instead of raw entropy, "
+            "so predictable passwords (dictionary words, sequences, keyboard walks) "
+            "are rejected. Enabled automatically by the paranoid policy."
+        ),
+    )
+    policy_group.add_argument(
         "--disable-common-password-check",
         action="store_true",
         help="Disable checking against common password lists",
@@ -4415,6 +4424,7 @@ def main_with_args(args=None):
             policy_params = {}
             if args.min_password_entropy is not None:
                 policy_params["min_entropy"] = args.min_password_entropy
+            policy_params["strict_strength"] = getattr(args, "strict_strength", False)
 
             if args.disable_common_password_check:
                 policy_params["check_common_passwords"] = False
@@ -5031,6 +5041,7 @@ def main_with_args(args=None):
                         policy_params = {}
                         if args.min_password_entropy is not None:
                             policy_params["min_entropy"] = args.min_password_entropy
+                        policy_params["strict_strength"] = getattr(args, "strict_strength", False)
 
                         if args.disable_common_password_check:
                             policy_params["check_common_passwords"] = False
@@ -5084,6 +5095,9 @@ def main_with_args(args=None):
 
                             if args.min_password_entropy is not None:
                                 policy_params["min_entropy"] = args.min_password_entropy
+                            policy_params["strict_strength"] = getattr(
+                                args, "strict_strength", False
+                            )
 
                             if args.disable_common_password_check:
                                 policy_params["check_common_passwords"] = False
@@ -5136,6 +5150,9 @@ def main_with_args(args=None):
 
                             if args.min_password_entropy is not None:
                                 policy_params["min_entropy"] = args.min_password_entropy
+                            policy_params["strict_strength"] = getattr(
+                                args, "strict_strength", False
+                            )
 
                             if args.disable_common_password_check:
                                 policy_params["check_common_passwords"] = False
@@ -5197,6 +5214,9 @@ def main_with_args(args=None):
 
                                         if args.min_password_entropy is not None:
                                             policy_params["min_entropy"] = args.min_password_entropy
+                                        policy_params["strict_strength"] = getattr(
+                                            args, "strict_strength", False
+                                        )
 
                                         if args.disable_common_password_check:
                                             policy_params["check_common_passwords"] = False
