@@ -1047,46 +1047,54 @@ class CamelliaCipher:
 
 def string_entropy(password: str) -> float:
     """
-    Calculate password entropy in bits using a timing-resistant approach.
-    Higher entropy = more random = stronger password.
+    Estimate password entropy in bits using a character-pool (search-space) model.
 
-    This function uses a constant-time approach to prevent timing attacks
-    that could leak information about password composition.
+    The estimate is ``log2(pool_size) * unique_characters`` where ``pool_size`` is
+    the combined size of every character class present in the password. Counting
+    unique characters rather than length neutralises trivial repetition (e.g.
+    "aaaa" scores the same as "a").
+
+    Security note: this is a coarse heuristic that measures character diversity
+    only. It does NOT detect dictionary words, keyboard walks, l33t substitutions
+    or other predictable patterns, so structured passwords such as "Password1!"
+    are over-rated. It is intended as lightweight user guidance, not as a
+    guarantee of resistance to guessing. It is not constant-time and must not be
+    relied upon where timing side channels on the password matter.
+
+    Args:
+        password: The password to evaluate.
+
+    Returns:
+        Estimated entropy in bits (0.0 for an empty password).
     """
     # Convert to string if not already
     password = str(password)
 
-    # Always check all character sets regardless of content
-    # This makes the function run in constant time relative to character types
-    char_sets = [0, 0, 0, 0]  # Use integers instead of booleans for constant-time ops
-    char_nums = [26, 26, 10, 32]  # lowercase, uppercase, digits, symbols
-
-    # Constant-time character type detection
+    # Character-class flags. A dedicated non-ASCII class ensures Unicode
+    # passwords (accented letters, other scripts, emoji) contribute entropy
+    # instead of being scored at zero.
+    has_lower = has_upper = has_digit = has_symbol = has_other = 0
     for char in password:
-        # Update each set with a constant-time operation
-        # The | operator ensures we don't short-circuit evaluation
-        char_sets[0] |= int(char.islower())
-        char_sets[1] |= int(char.isupper())
-        char_sets[2] |= int(char.isdigit())
-        char_sets[3] |= int(not char.isalnum() and char.isascii())
+        if char.isascii():
+            has_lower |= int(char.islower())
+            has_upper |= int(char.isupper())
+            has_digit |= int(char.isdigit())
+            has_symbol |= int(not char.isalnum())
+        else:
+            has_other = 1
 
-    # Calculate character set size in a constant-time way
-    char_amount = 0
-    for i in range(4):
-        # Multiply by 0 or 1 instead of conditional addition
-        char_amount += char_nums[i] * char_sets[i]
+    # Combined search-space size. 26/26/10/32 mirror the ASCII lowercase,
+    # uppercase, digit and printable-symbol alphabets; 100 is a deliberately
+    # conservative lower bound for "some non-ASCII character was used".
+    char_amount = (
+        26 * has_lower + 26 * has_upper + 10 * has_digit + 32 * has_symbol + 100 * has_other
+    )
 
     # Ensure we have at least one character type
     char_amount = max(char_amount, 1)
 
-    # Calculate unique characters in constant time
-    # by creating a fixed-size array of character counts
-    char_counts = [0] * 128  # ASCII range
-    for char in password:
-        if ord(char) < 128:  # Handle only ASCII for simplicity
-            char_counts[ord(char)] = 1
-
-    unique_chars = sum(char_counts)
+    # Count unique characters across the full Unicode range (not just ASCII).
+    unique_chars = len(set(password))
 
     # Calculate and return entropy
     return math.log2(char_amount) * unique_chars
