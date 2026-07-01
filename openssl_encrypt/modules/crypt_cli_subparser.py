@@ -1532,6 +1532,31 @@ def setup_shred_parser(subparser):
     )
 
 
+def setup_check_password_parser(subparser):
+    """Set up arguments specific to the check-password command.
+
+    Read-only strength/policy report for a password supplied interactively, via
+    the CRYPT_PASSWORD environment variable, or piped on stdin. Never writes,
+    encrypts, or echoes the password.
+    """
+    subparser.add_argument(
+        "--password-policy",
+        default="standard",
+        choices=["none", "minimal", "basic", "standard", "paranoid"],
+        help="Policy level to evaluate against (default: standard; 'none' reports strength only)",
+    )
+    subparser.add_argument(
+        "--strict-strength",
+        action="store_true",
+        help="Gate the policy on the pattern-aware estimate instead of raw entropy",
+    )
+    subparser.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit the report as JSON on stdout (human report otherwise goes to stderr)",
+    )
+
+
 def setup_generate_password_parser(subparser):
     """Set up arguments specific to the generate-password command."""
     subparser.add_argument(
@@ -2510,6 +2535,13 @@ def create_subparser_main():
         formatter_class=argparse.RawTextHelpFormatter,
     )
     setup_simple_parser(check_pqc_parser)
+
+    check_password_parser = subparsers.add_parser(
+        "check-password",
+        help="Report the strength of a password (read-only; no encryption)",
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
+    setup_check_password_parser(check_password_parser)
 
     version_parser = subparsers.add_parser(
         "version",

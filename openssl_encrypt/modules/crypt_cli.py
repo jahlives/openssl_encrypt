@@ -717,6 +717,7 @@ def preprocess_global_args(argv):
         "security-info",
         "check-argon2",
         "check-pqc",
+        "check-password",
         "version",
         "show-version-file",
         "create-usb",
@@ -2249,6 +2250,7 @@ def main():
         "identity",
         "check-argon2",
         "check-pqc",
+        "check-password",
         "version",
         "show-version-file",
         "create-usb",
@@ -2742,6 +2744,7 @@ def main_with_args(args=None):
             "security-info",
             "check-argon2",
             "check-pqc",
+            "check-password",
             "version",
             "show-version-file",
             "create-usb",
@@ -4329,6 +4332,37 @@ def main_with_args(args=None):
             eprint(f"❌ Error reloading plugin: {e}")
             sys.exit(1)
 
+    elif args.action == "check-password":
+        # Read-only strength/policy report for a supplied password. The password
+        # is taken from CRYPT_PASSWORD, then a non-tty stdin pipe, then an
+        # interactive prompt -- never from argv (which would leak via history/ps).
+        # NB: getpass is used module-wide in main_with_args; do not import it
+        # locally here or it becomes a function-local name and unbinds elsewhere.
+        import json
+
+        from .password_policy import build_strength_report, format_strength_report
+
+        if "CRYPT_PASSWORD" in os.environ:
+            _pw = os.environ["CRYPT_PASSWORD"]
+        elif not sys.stdin.isatty():
+            _pw = sys.stdin.readline().rstrip("\n")
+        else:
+            _pw = getpass.getpass("Password to check: ")
+
+        _report = build_strength_report(
+            _pw,
+            policy_level=getattr(args, "password_policy", "standard"),
+            strict_strength=getattr(args, "strict_strength", False),
+        )
+        if getattr(args, "json", False):
+            print(json.dumps(_report, indent=2))
+        else:
+            eprint(format_strength_report(_report))
+
+        # Exit non-zero when a policy was applied and the password failed it,
+        # so the command is usable as a scriptable gate.
+        sys.exit(0 if _report["valid"] else 1)
+
     elif args.action == "generate-password":
         # Validate --dice mutual exclusion with character-class flags and
         # reject --dice-* options used without --dice. The handler-level
@@ -4765,6 +4799,7 @@ def main_with_args(args=None):
         "security-info",
         "check-argon2",
         "check-pqc",
+        "check-password",
         "version",
         "show-version-file",
     ]:
