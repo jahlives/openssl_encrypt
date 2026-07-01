@@ -300,8 +300,8 @@ with attribution in
 `check-password` reports the strength of a password without encrypting anything.
 It detects predictable structure (dictionary words, l33t substitutions, keyboard
 walks, sequences, repeats, dates) rather than relying on raw character-space
-entropy alone. The password is read from `CRYPT_PASSWORD`, a piped stdin, or an
-interactive prompt — never from the command line.
+entropy alone. The password is read from `-p`, `CRYPT_PASSWORD`, a piped stdin,
+or an interactive prompt (in that order of precedence).
 
 ```bash
 # Interactive prompt; human-readable report on stderr
@@ -312,6 +312,9 @@ CRYPT_PASSWORD='correct horse battery staple' openssl_encrypt check-password --j
 
 # Use as a scriptable gate: non-zero exit if it fails the policy
 echo -n "$pw" | openssl_encrypt check-password --password-policy paranoid --strict-strength
+
+# Quick check via -p (discouraged: visible in shell history and process list)
+openssl_encrypt check-password -p 'candidate-password'
 ```
 
 Pattern-aware detection uses the optional `zxcvbn` package when installed and a

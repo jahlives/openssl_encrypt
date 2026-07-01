@@ -107,6 +107,44 @@ class TestCheckPasswordCli(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertIn("Weakness:", proc.stderr)
 
+    def _run_no_env(self, *args):
+        # Run with -p and no CRYPT_PASSWORD, stdin closed so it can't fall back.
+        env = {k: v for k, v in os.environ.items() if k != "CRYPT_PASSWORD"}
+        return subprocess.run(
+            [sys.executable, "-m", "openssl_encrypt.crypt", "check-password", *args],
+            capture_output=True,
+            text=True,
+            env=env,
+            stdin=subprocess.DEVNULL,
+        )
+
+    def test_password_flag_reports_and_warns(self):
+        proc = self._run_no_env("-p", STRONG, "--json")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertTrue(json.loads(proc.stdout)["valid"])
+        # The insecure -p source must emit a warning to stderr.
+        self.assertIn("Warning", proc.stderr)
+
+    def test_password_flag_takes_precedence_over_env(self):
+        # -p wins over CRYPT_PASSWORD: a strong -p passes even if env is weak.
+        env = dict(os.environ, CRYPT_PASSWORD="weak")
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "openssl_encrypt.crypt",
+                "check-password",
+                "-p",
+                STRONG,
+                "--json",
+            ],
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(json.loads(proc.stdout)["length"], len(STRONG))
+
 
 if __name__ == "__main__":
     unittest.main()

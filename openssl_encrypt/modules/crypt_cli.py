@@ -5553,16 +5553,23 @@ def main_with_args(args=None):
             sys.exit(1)
 
     elif args.action == "check-password":
-        # Read-only strength/policy report for a supplied password. The password
-        # is taken from CRYPT_PASSWORD, then a non-tty stdin pipe, then an
-        # interactive prompt -- never from argv (which would leak via history/ps).
+        # Read-only strength/policy report for a supplied password. Source order:
+        # -p/--password (discouraged), then CRYPT_PASSWORD, then a non-tty stdin
+        # pipe, then an interactive prompt. The safer sources avoid leaking the
+        # password via shell history / the process list.
         # NB: getpass is used module-wide in main_with_args; do not import it
         # locally here or it becomes a function-local name and unbinds elsewhere.
         import json
 
         from .password_policy import build_strength_report, format_strength_report
 
-        if "CRYPT_PASSWORD" in os.environ:
+        if getattr(args, "password", None) is not None:
+            eprint(
+                "Warning: passing the password via -p leaves it in your shell "
+                "history and the process list; prefer stdin or CRYPT_PASSWORD."
+            )
+            _pw = args.password
+        elif "CRYPT_PASSWORD" in os.environ:
             _pw = os.environ["CRYPT_PASSWORD"]
         elif not sys.stdin.isatty():
             _pw = sys.stdin.readline().rstrip("\n")
