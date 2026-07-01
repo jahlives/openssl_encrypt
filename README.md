@@ -692,6 +692,8 @@ blake3>=1.0.0
 liboqs-python          # Extended PQC support (HQC, ML-DSA, etc.)
                        # Requires liboqs (https://github.com/open-quantum-safe/liboqs)
 tkinter                # GUI (usually included with Python)
+zxcvbn                 # Pattern-aware password strength estimation
+                       # (falls back to a built-in heuristic when absent)
 ```
 
 **Install:**

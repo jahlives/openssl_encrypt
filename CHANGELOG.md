@@ -5,6 +5,33 @@ All notable changes to the openssl_encrypt project will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.8] - Unreleased
+
+### Added
+
+- **Pattern-aware password strength estimation**: password strength feedback now
+  detects predictable structure (dictionary words, l33t substitutions, keyboard
+  walks, ascending/descending sequences, repeats, dates) instead of relying on
+  the raw character-space entropy alone, which over-rated structured passwords
+  (e.g. `Password1!`). Uses the optional [`zxcvbn`](https://pypi.org/project/zxcvbn/)
+  package when installed, and a built-in heuristic fallback otherwise — `zxcvbn`
+  is **not** a production dependency. Behaviour is **advisory by default**: the
+  displayed strength label and new "Password weakness" warnings reflect the
+  pattern-aware estimate, but the `--min-password-entropy` gate still uses the
+  raw measure, so passwords accepted before remain accepted. The new
+  `--strict-strength` flag (enabled automatically by the `paranoid` policy) makes
+  the gate reject passwords whose pattern-aware strength is too low. This only
+  affects password validation when encrypting; it never affects decryption.
+  (Backported from 1.5.x.)
+
+### Fixed
+
+- **`string_entropy` Unicode handling**: non-ASCII characters (accented letters,
+  other scripts, emoji) were excluded from the unique-character count and could
+  score a password at 0.0 bits. They now contribute to the estimate, and the
+  misleading "constant-time" claim in the docstring was corrected. ASCII scores
+  are unchanged. (Backported from 1.5.x.)
+
 ## [1.4.7] - 2026-06-29
 
 ### Changed

@@ -8,6 +8,12 @@ pytest-cov>=4.1.0,<5.0.0
 black>=26.3.1,<27.0.0
 pylint>=3.0.0,<4.0.0
 
+# Optional runtime extra: pattern-aware password strength estimation.
+# Not a production dependency -- password_policy falls back to a built-in
+# heuristic when it is absent. Pinned here so the test suite exercises the
+# zxcvbn code path.
+zxcvbn>=4.5.0,<5.0.0
+
 # Dependency management
 pip-tools>=7.4.0,<8.0.0
 
