@@ -13,10 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of a password without encrypting anything. Prints the pattern-aware strength
   category, entropy (pattern-aware and raw), detected-weakness warnings, and
   pass/fail against a chosen `--password-policy` (with `--strict-strength`
-  supported). The password is read from `CRYPT_PASSWORD`, a piped stdin, or an
-  interactive prompt — never from argv. Human output goes to stderr; `--json`
-  emits a machine-readable report on stdout. Exits non-zero when a policy is
-  applied and the password fails it, so it can be used as a scriptable gate.
+  supported). The password is read from `CRYPT_PASSWORD`, a piped stdin, an
+  interactive prompt, or (discouraged, with a warning) the `-p`/`--password`
+  flag. Human output goes to stderr; `--json` emits a machine-readable report on
+  stdout. Exits non-zero when a policy is applied and the password fails it, so
+  it can be used as a scriptable gate.
 - **Pattern-aware password strength estimation**: password strength feedback now
   detects predictable structure (dictionary words, l33t substitutions, keyboard
   walks, ascending/descending sequences, repeats, dates) instead of relying on

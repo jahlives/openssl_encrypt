@@ -1535,10 +1535,16 @@ def setup_shred_parser(subparser):
 def setup_check_password_parser(subparser):
     """Set up arguments specific to the check-password command.
 
-    Read-only strength/policy report for a password supplied interactively, via
-    the CRYPT_PASSWORD environment variable, or piped on stdin. Never writes,
-    encrypts, or echoes the password.
+    Read-only strength/policy report for a password supplied via ``-p``, the
+    CRYPT_PASSWORD environment variable, piped on stdin, or an interactive
+    prompt. Never writes, encrypts, or echoes the password.
     """
+    subparser.add_argument(
+        "--password",
+        "-p",
+        help="Password to check (DEPRECATED: visible in the process list and "
+        "shell history. Prefer stdin, an interactive prompt, or CRYPT_PASSWORD)",
+    )
     subparser.add_argument(
         "--password-policy",
         default="standard",
