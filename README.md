@@ -295,6 +295,28 @@ The bundled wordlist is the [EFF Large Wordlist for Passphrases](https://www.eff
 with attribution in
 [`openssl_encrypt/data/EFF_WORDLIST_LICENSE.txt`](openssl_encrypt/data/EFF_WORDLIST_LICENSE.txt).
 
+### Password Strength Checking
+
+`check-password` reports the strength of a password without encrypting anything.
+It detects predictable structure (dictionary words, l33t substitutions, keyboard
+walks, sequences, repeats, dates) rather than relying on raw character-space
+entropy alone. The password is read from `CRYPT_PASSWORD`, a piped stdin, or an
+interactive prompt — never from the command line.
+
+```bash
+# Interactive prompt; human-readable report on stderr
+openssl_encrypt check-password
+
+# From an environment variable, JSON report on stdout
+CRYPT_PASSWORD='correct horse battery staple' openssl_encrypt check-password --json
+
+# Use as a scriptable gate: non-zero exit if it fails the policy
+echo -n "$pw" | openssl_encrypt check-password --password-policy paranoid --strict-strength
+```
+
+Pattern-aware detection uses the optional `zxcvbn` package when installed and a
+built-in heuristic fallback otherwise.
+
 ### Security Enhancements
 
 - SecureBytes implementation across all cryptographic registries (KDF, Cipher, Signature, KEM)

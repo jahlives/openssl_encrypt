@@ -626,6 +626,73 @@ def get_pattern_strength(password: str) -> StrengthResult:
     return estimate_strength(password)
 
 
+def build_strength_report(
+    password: str,
+    policy_level: str = "standard",
+    strict_strength: bool = False,
+) -> Dict:
+    """Build a structured strength/policy report for a password.
+
+    Pure function (no I/O, does not print or log the password). Combines the
+    pattern-aware estimate with a policy evaluation so callers (e.g. the
+    ``check-password`` CLI command) can render human or JSON output.
+
+    Args:
+        password: The password to analyse.
+        policy_level: Policy level to evaluate against, or "none" to skip the
+            policy check and only report strength.
+        strict_strength: Gate the policy on the pattern-aware estimate instead of
+            the raw search-space entropy (see :class:`PasswordPolicy`).
+
+    Returns:
+        A JSON-serialisable dict with the estimate, the resolved policy result
+        and any failure messages.
+    """
+    est = estimate_strength(password)
+
+    valid = True
+    failures: List[str] = []
+    if policy_level and policy_level.lower() != "none":
+        policy = PasswordPolicy(policy_level=policy_level, strict_strength=strict_strength)
+        # quiet=True keeps only requirement failures (no informational label).
+        valid, failures = policy.validate_password(password, quiet=True)
+        strict_strength = policy.strict_strength
+
+    return {
+        "length": len(password),
+        "raw_bits": round(est.raw_bits, 1),
+        "bits": round(est.bits, 1),
+        "category": est.category,
+        "warnings": list(est.warnings),
+        "source": est.source,
+        "policy_level": policy_level,
+        "strict_strength": strict_strength,
+        "valid": valid,
+        "failures": failures,
+    }
+
+
+def format_strength_report(report: Dict) -> str:
+    """Render a human-readable (stderr-friendly) view of a strength report."""
+    lines = [
+        f"Password strength: {report['category']} "
+        f"({report['bits']:.1f} bits pattern-aware, {report['raw_bits']:.1f} bits raw)",
+        f"Estimator backend: {report['source']}",
+    ]
+    for warning in report["warnings"]:
+        lines.append(f"Weakness: {warning}")
+
+    level = report.get("policy_level")
+    if level and str(level).lower() != "none":
+        status = "PASS" if report["valid"] else "FAIL"
+        strict = " (strict)" if report.get("strict_strength") else ""
+        lines.append(f"Policy '{level}'{strict}: {status}")
+        for failure in report["failures"]:
+            lines.append(f"  - {failure}")
+
+    return "\n".join(lines)
+
+
 # Direct API functions for easy use
 def validate_password(
     password: str, policy_level: str = "standard", quiet: bool = False
