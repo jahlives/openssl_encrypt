@@ -415,6 +415,12 @@ class SecureMemoryAllocator:
         )
         self.quiet = not self.debug_mode  # Quiet mode is the opposite of debug mode
 
+        # Memory-locking status, surfaced to callers regardless of debug mode
+        # (issue #62). Locking failures mean sensitive data may be swappable.
+        self.last_lock_succeeded = None
+        self.lock_failure_count = 0
+        self._lock_warning_emitted = False
+
         # Attempt to configure advanced memory protections
         self._setup_advanced_protections()
 
@@ -558,9 +564,21 @@ class SecureMemoryAllocator:
 
             # Apply platform-specific memory protections
             lock_success = self._try_lock_memory(secure_container)
+            self.last_lock_succeeded = lock_success
 
-            if not lock_success and self.debug_mode:
-                eprint("Warning: Memory locking failed")
+            if not lock_success:
+                # Surface the failure regardless of debug mode: swappable secrets
+                # are a security-relevant condition, not a debug detail (issue #62).
+                # Deduplicated to one warning per allocator instance to avoid
+                # per-allocation spam on systems that cannot lock at all.
+                self.lock_failure_count += 1
+                if not self._lock_warning_emitted:
+                    self._lock_warning_emitted = True
+                    eprint(
+                        "SECURITY WARNING: could not lock memory to prevent swapping "
+                        "(mlock/VirtualLock failed); sensitive data may be written to swap. "
+                        "Check RLIMIT_MEMLOCK / process privileges."
+                    )
 
             # Apply additional cold boot attack countermeasures
             self._apply_cold_boot_protections(secure_container)
@@ -711,21 +729,26 @@ class SecureMemoryAllocator:
                     else:
                         return False
 
-                    # Load the C library
+                    # Load the C library (use_errno so get_errno() is meaningful)
                     try:
-                        libc = ctypes.CDLL(libc_name)
+                        libc = ctypes.CDLL(libc_name, use_errno=True)
                     except OSError:
                         return False
 
                     # Check if mlock function exists
                     if hasattr(libc, "mlock"):
+                        # Declare prototypes so ctypes marshals the 64-bit address
+                        # as a pointer instead of truncating it to a C int (#61).
+                        libc.mlock.argtypes = [ctypes.c_void_p, ctypes.c_size_t]
+                        libc.mlock.restype = ctypes.c_int
                         # Create a memoryview to safely access buffer
                         try:
                             # Get buffer address with validation
+                            # from_buffer() raises on real failure (caught below);
+                            # do NOT test truthiness -- a zero first byte makes the
+                            # c_char falsy and would silently abort locking of any
+                            # zeroed buffer, which is what allocate() produces (#61).
                             c_buffer = ctypes.c_char.from_buffer(buffer)
-                            if not c_buffer:
-                                return False
-
                             addr = ctypes.addressof(c_buffer)
                             size = buffer_len
 
@@ -765,12 +788,16 @@ class SecureMemoryAllocator:
                         return False
 
                     if hasattr(kernel32, "VirtualLock"):
+                        # Declare prototypes so the 64-bit address is not truncated (#61).
+                        kernel32.VirtualLock.argtypes = [ctypes.c_void_p, ctypes.c_size_t]
+                        kernel32.VirtualLock.restype = ctypes.c_int
                         try:
                             # Get buffer address with validation
+                            # from_buffer() raises on real failure (caught below);
+                            # do NOT test truthiness -- a zero first byte makes the
+                            # c_char falsy and would silently abort locking of any
+                            # zeroed buffer, which is what allocate() produces (#61).
                             c_buffer = ctypes.c_char.from_buffer(buffer)
-                            if not c_buffer:
-                                return False
-
                             addr = ctypes.addressof(c_buffer)
                             size = buffer_len
 
@@ -873,20 +900,24 @@ class SecureMemoryAllocator:
                     else:
                         return False
 
-                    # Load the C library
+                    # Load the C library (use_errno so get_errno() is meaningful)
                     try:
-                        libc = ctypes.CDLL(libc_name)
+                        libc = ctypes.CDLL(libc_name, use_errno=True)
                     except OSError:
                         return False
 
                     # Check if munlock function exists
                     if hasattr(libc, "munlock"):
+                        # Declare prototypes so the 64-bit address is not truncated (#61).
+                        libc.munlock.argtypes = [ctypes.c_void_p, ctypes.c_size_t]
+                        libc.munlock.restype = ctypes.c_int
                         try:
                             # Get buffer address with validation
+                            # from_buffer() raises on real failure (caught below);
+                            # do NOT test truthiness -- a zero first byte makes the
+                            # c_char falsy and would silently abort locking of any
+                            # zeroed buffer, which is what allocate() produces (#61).
                             c_buffer = ctypes.c_char.from_buffer(buffer)
-                            if not c_buffer:
-                                return False
-
                             addr = ctypes.addressof(c_buffer)
                             size = buffer_len
 
@@ -919,12 +950,16 @@ class SecureMemoryAllocator:
 
                     # Check if VirtualUnlock function exists
                     if hasattr(kernel32, "VirtualUnlock"):
+                        # Declare prototypes so the 64-bit address is not truncated (#61).
+                        kernel32.VirtualUnlock.argtypes = [ctypes.c_void_p, ctypes.c_size_t]
+                        kernel32.VirtualUnlock.restype = ctypes.c_int
                         try:
                             # Get buffer address with validation
+                            # from_buffer() raises on real failure (caught below);
+                            # do NOT test truthiness -- a zero first byte makes the
+                            # c_char falsy and would silently abort locking of any
+                            # zeroed buffer, which is what allocate() produces (#61).
                             c_buffer = ctypes.c_char.from_buffer(buffer)
-                            if not c_buffer:
-                                return False
-
                             addr = ctypes.addressof(c_buffer)
                             size = buffer_len
 
