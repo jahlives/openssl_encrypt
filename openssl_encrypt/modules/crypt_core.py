@@ -974,21 +974,19 @@ class CamelliaCipher:
 
             # Split ciphertext and authentication tag
             tag_size = 32  # SHA-256 HMAC produces 32 bytes
-            if len(data) < tag_size:
-                # Try without HMAC, might be legacy data
-                cipher = Cipher(algorithms.Camellia(bytes(self.key)), modes.CBC(nonce))
-                decryptor = cipher.decryptor()
-                padded_data = decryptor.update(data) + decryptor.finalize()
+            block_size = algorithms.Camellia.block_size // 8  # 16 bytes
 
-                # Use constant-time unpadding
-                unpadded_data, padding_valid = constant_time_pkcs7_unpad(
-                    padded_data, algorithms.Camellia.block_size
-                )
-
-                if not padding_valid:
-                    raise DecryptionError("Invalid padding in decrypted data")
-
-                return unpadded_data
+            # SECURITY (issue #53): reject anything that cannot be an authentic
+            # Camellia message *before* any CBC decryption. Authentic output is a
+            # ciphertext (a positive whole number of blocks) followed by a 32-byte
+            # HMAC. A short input previously triggered an unauthenticated CBC
+            # decrypt whose distinct "Invalid padding" error formed a padding
+            # oracle and whose success bypassed authentication entirely. Fail with
+            # the same generic error as a MAC mismatch so the two are
+            # indistinguishable and no plaintext is ever released unauthenticated.
+            ciphertext_len = len(data) - tag_size
+            if ciphertext_len < block_size or (ciphertext_len % block_size) != 0:
+                raise AuthenticationError("Message authentication failed")
 
             # Normal case with HMAC
             ciphertext = data[:-tag_size]
