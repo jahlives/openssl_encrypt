@@ -6233,13 +6233,13 @@ def main_with_args(args=None):
                 and not getattr(args, "password_fd", None)
                 and not getattr(args, "keyring_load", None)
             ):
-                # Warn about --password being visible in process list
-                if not args.quiet:
-                    eprint(
-                        "WARNING: --password is visible in process list. "
-                        "Use --password-file or OPENSSL_ENCRYPT_PASSWORD env var instead.",
-                        file=sys.stderr,
-                    )
+                # Warn about --password being visible in process list. A security
+                # warning must not be silenced by the output-verbosity flag (#67).
+                eprint(
+                    "WARNING: --password is visible in process list. "
+                    "Use --password-file or OPENSSL_ENCRYPT_PASSWORD env var instead.",
+                    file=sys.stderr,
+                )
 
             # Store password in keyring if requested (before secure_string wipes it)
             if args.password and getattr(args, "keyring_store", None):
@@ -6576,7 +6576,8 @@ def main_with_args(args=None):
                                 pass
 
                 if rekey_pw_arg:
-                    if not rekey_pw_file and rekey_pw_fd is None and not args.quiet:
+                    # Security warning: not silenced by --quiet (#67).
+                    if not rekey_pw_file and rekey_pw_fd is None:
                         eprint(
                             "WARNING: --rekey-password is visible in process list. "
                             "Use --rekey-password-file or OPENSSL_ENCRYPT_REKEY_PASSWORD env var instead.",
@@ -8207,7 +8208,9 @@ def main_with_args(args=None):
                             sys.exit(1)
 
                         if use_independent_xor:
-                            format_version = 13  # Independent XOR + per-component domain-separated salts (v13)
+                            format_version = (
+                                13  # Independent XOR + per-component domain-separated salts (v13)
+                            )
                         elif use_xor:
                             format_version = 13  # Sequential XOR (v13, cancellation fixed)
                         else:
@@ -8488,7 +8491,9 @@ def main_with_args(args=None):
                     sys.exit(1)
 
                 if use_independent_xor:
-                    format_version = 13  # Independent XOR + per-component domain-separated salts (v13)
+                    format_version = (
+                        13  # Independent XOR + per-component domain-separated salts (v13)
+                    )
                 elif use_xor:
                     format_version = 13  # Sequential XOR (v13, cancellation fixed)
                 else:
@@ -9146,7 +9151,9 @@ def main_with_args(args=None):
                         sys.exit(1)
 
                     if use_independent_xor:
-                        format_version = 13  # Independent XOR + per-component domain-separated salts (v13)
+                        format_version = (
+                            13  # Independent XOR + per-component domain-separated salts (v13)
+                        )
                     elif use_xor:
                         format_version = 13  # Sequential XOR (v13, cancellation fixed)
                     else:
