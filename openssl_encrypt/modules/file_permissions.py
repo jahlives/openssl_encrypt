@@ -139,12 +139,9 @@ def _apply_dacl(path: str, dacl: "win32security.ACL") -> None:
     """
     # PROTECTED_DACL_SECURITY_INFORMATION disables inheritance from parent
     security_info = (
-        win32security.DACL_SECURITY_INFORMATION
-        | win32security.PROTECTED_DACL_SECURITY_INFORMATION
+        win32security.DACL_SECURITY_INFORMATION | win32security.PROTECTED_DACL_SECURITY_INFORMATION
     )
-    sd = win32security.GetFileSecurity(
-        str(path), win32security.OWNER_SECURITY_INFORMATION
-    )
+    sd = win32security.GetFileSecurity(str(path), win32security.OWNER_SECURITY_INFORMATION)
     sd.SetSecurityDescriptorDacl(True, dacl, False)
     win32security.SetFileSecurity(str(path), security_info, sd)
 
@@ -163,8 +160,7 @@ def _dacl_matches_level(path: str, level: PermissionLevel) -> bool:
     try:
         sd = win32security.GetFileSecurity(
             str(path),
-            win32security.DACL_SECURITY_INFORMATION
-            | win32security.OWNER_SECURITY_INFORMATION,
+            win32security.DACL_SECURITY_INFORMATION | win32security.OWNER_SECURITY_INFORMATION,
         )
         dacl = sd.GetSecurityDescriptorDacl()
         if dacl is None:
@@ -328,9 +324,7 @@ def get_posix_mode(path) -> int:
         return stat.S_IMODE(os.stat(path_str).st_mode)
 
 
-def create_secure_directory(
-    path, level: PermissionLevel = PermissionLevel.OWNER_FULL
-) -> Path:
+def create_secure_directory(path, level: PermissionLevel = PermissionLevel.OWNER_FULL) -> Path:
     """
     Create a directory with secure permissions set atomically.
 
@@ -372,9 +366,7 @@ def create_secure_directory(
     return path
 
 
-def create_secure_file(
-    path, level: PermissionLevel = PermissionLevel.OWNER_ONLY
-) -> int:
+def create_secure_file(path, level: PermissionLevel = PermissionLevel.OWNER_ONLY) -> int:
     """
     Open/create a file with secure permissions, returning a file descriptor.
 
@@ -404,14 +396,30 @@ def create_secure_file(
                 os.close(fd)
                 raise
     else:
+        # O_NOFOLLOW rejects a symlink at the final path component, so a planted
+        # symlink cannot redirect the truncate+write to an arbitrary file (#58).
+        flags = os.O_CREAT | os.O_WRONLY | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
         umask_val = 0o777 & ~posix_mode
         old_umask = os.umask(umask_val)
         try:
-            fd = os.open(
-                path_str, os.O_CREAT | os.O_WRONLY | os.O_TRUNC, posix_mode
-            )
+            fd = os.open(path_str, flags, posix_mode)
         finally:
             os.umask(old_umask)
+
+        # open()'s mode argument is ignored when the file already exists, so an
+        # attacker-pre-created (e.g. world-readable) or foreign-owned target would
+        # otherwise keep its permissions/owner while we write secrets into it.
+        # Reject non-regular / foreign-owned targets and enforce the mode (#58).
+        try:
+            st = os.fstat(fd)
+            if not stat.S_ISREG(st.st_mode):
+                raise OSError(f"Refusing to open non-regular secure file: {path_str}")
+            if st.st_uid != os.geteuid():
+                raise OSError(f"Refusing to open secure file owned by another user: {path_str}")
+            os.fchmod(fd, posix_mode)
+        except Exception:
+            os.close(fd)
+            raise
 
     return fd
 
@@ -442,9 +450,7 @@ def copy_permissions(source, target) -> None:
 
     if sys.platform == "win32" and _HAS_WIN32:
         # Copy the DACL from source to target
-        sd = win32security.GetFileSecurity(
-            source_str, win32security.DACL_SECURITY_INFORMATION
-        )
+        sd = win32security.GetFileSecurity(source_str, win32security.DACL_SECURITY_INFORMATION)
         dacl = sd.GetSecurityDescriptorDacl()
 
         security_info = (
