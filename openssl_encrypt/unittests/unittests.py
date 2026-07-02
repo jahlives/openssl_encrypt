@@ -2767,14 +2767,18 @@ class TestMetadataCanonicalizer(unittest.TestCase):
         self.assertNotIn("should_be_removed", canonical_str)
 
     def test_canonicalize_nested_signature_removal(self):
-        """Test removal of signature in nested structures"""
-        metadata = {"top_level": {"nested": {"signature": "should_be_removed"}}}
+        """Only the top-level 'signature' is stripped; nested ones are retained (#86)."""
+        metadata = {
+            "signature": "top_should_be_removed",
+            "top_level": {"nested": {"signature": "nested_should_be_kept"}},
+        }
 
-        canonical = MetadataCanonicalizer.canonicalize(metadata)
-        canonical_str = canonical.decode("utf-8")
+        canonical_str = MetadataCanonicalizer.canonicalize(metadata).decode("utf-8")
 
-        # No signature fields should appear anywhere
-        self.assertNotIn('"signature"', canonical_str)
+        # The top-level envelope signature is excluded (it cannot sign itself);
+        # nested 'signature' fields must remain inside the signed transcript.
+        self.assertNotIn("top_should_be_removed", canonical_str)
+        self.assertIn("nested_should_be_kept", canonical_str)
 
     def test_canonicalize_sorted_keys(self):
         """Test that keys are sorted"""

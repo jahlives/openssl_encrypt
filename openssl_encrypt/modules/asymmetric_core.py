@@ -379,8 +379,9 @@ class MetadataCanonicalizer:
         if not isinstance(metadata, dict):
             raise ValueError("Metadata must be a dictionary")
 
-        # Create a deep copy to avoid modifying original
-        metadata_copy = MetadataCanonicalizer._deep_copy_without_signature(metadata)
+        # Create a deep copy to avoid modifying original, removing ONLY the
+        # top-level 'signature' key (the envelope signature cannot sign itself).
+        metadata_copy = MetadataCanonicalizer._strip_top_level_signature(metadata)
 
         try:
             # Serialize with sorted keys, no whitespace, UTF-8
@@ -403,29 +404,37 @@ class MetadataCanonicalizer:
             raise TypeError(f"Cannot canonicalize metadata: {e}")
 
     @staticmethod
-    def _deep_copy_without_signature(obj):
-        """
-        Recursively copy object structure, removing 'signature' keys.
-
-        Args:
-            obj: Object to copy (dict, list, or primitive)
-
-        Returns:
-            Deep copy without any 'signature' keys
-        """
+    def _deep_copy(obj):
+        """Recursively deep-copy a JSON-compatible structure (no key removal)."""
         if isinstance(obj, dict):
-            # Copy dict, excluding 'signature' key
-            return {
-                key: MetadataCanonicalizer._deep_copy_without_signature(value)
-                for key, value in obj.items()
-                if key != "signature"
-            }
+            return {key: MetadataCanonicalizer._deep_copy(value) for key, value in obj.items()}
         elif isinstance(obj, list):
-            # Recursively copy list elements
-            return [MetadataCanonicalizer._deep_copy_without_signature(item) for item in obj]
+            return [MetadataCanonicalizer._deep_copy(item) for item in obj]
         else:
             # Primitives (str, int, float, bool, None) are copied by value
             return obj
+
+    @staticmethod
+    def _strip_top_level_signature(metadata):
+        """Copy the metadata dict, removing ONLY the top-level 'signature' key.
+
+        SECURITY (#86): a previous version removed every key named 'signature' at
+        any depth, so a nested 'signature' field (e.g. per-recipient/per-key) would
+        fall outside the signed transcript and be alterable without invalidating the
+        outer signature. Only the top-level envelope signature is excluded; nested
+        'signature' fields stay in the canonical bytes and are therefore signed.
+
+        Args:
+            metadata: The metadata dict to canonicalize.
+
+        Returns:
+            A deep copy of ``metadata`` without its top-level ``signature`` key.
+        """
+        return {
+            key: MetadataCanonicalizer._deep_copy(value)
+            for key, value in metadata.items()
+            if key != "signature"
+        }
 
     @staticmethod
     def verify_determinism(metadata: Dict) -> bool:
