@@ -859,7 +859,15 @@ class SecureMemoryAllocator:
         Returns:
             bool: True if freeing was successful and verified, False otherwise
         """
-        if secure_container in self.allocated_blocks:
+        # Locate the block by IDENTITY. SecureBytes subclasses bytearray, so
+        # `in` / `list.remove` compare by content; once secure_memzero() zeroes
+        # the container it would compare equal to any other all-zero tracked block
+        # and remove() could drop the wrong (still-live) allocation (#64).
+        index = next(
+            (i for i, block in enumerate(self.allocated_blocks) if block is secure_container),
+            None,
+        )
+        if index is not None:
             # Get container size before unlocking for tracking
             container_size = len(secure_container)
 
@@ -869,8 +877,8 @@ class SecureMemoryAllocator:
             # Securely zero memory and verify
             zero_success = secure_memzero(secure_container)
 
-            # Update allocation tracking
-            self.allocated_blocks.remove(secure_container)
+            # Update allocation tracking (remove by index found via identity)
+            del self.allocated_blocks[index]
             self.total_allocated -= container_size
 
             # Perform garbage collection to help prevent memory leaks
