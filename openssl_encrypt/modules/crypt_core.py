@@ -2413,9 +2413,16 @@ def generate_key_independent_xor(
                 if debug:
                     logger.debug(f"INDEPENDENT-XOR: Added RandomX component #{len(xor_components)}")
             except (ImportError, OSError) as e:
-                if not quiet:
-                    eprint(f"⚠️ RandomX not available, skipping ({e})")
-                logger.warning(f"RandomX KDF skipped in independent XOR: {e}")
+                # SECURITY (#71): RandomX is explicitly enabled, so a failure must
+                # NOT be silently skipped -- dropping it can collapse the derived
+                # key to a single un-stretched sha256(password+salt). Fail closed,
+                # like every other KDF in this path (which let errors propagate).
+                logger.warning(f"RandomX KDF enabled but unavailable: {e}")
+                raise ValidationError(
+                    "RandomX KDF is enabled but unavailable; refusing to derive a "
+                    "weaker key. Install RandomX support or disable RandomX in the "
+                    f"KDF configuration. ({e})"
+                ) from e
 
         # Verify we have at least one component
         if len(xor_components) == 0:
