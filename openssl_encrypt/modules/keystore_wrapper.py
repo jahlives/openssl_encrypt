@@ -270,13 +270,24 @@ def encrypt_file_with_keystore(
                                         "hash_config"
                                     ]["pqc_public_key"]
 
-                        # Write the updated metadata back to the file
+                        # Write the updated metadata back atomically (temp file +
+                        # os.replace) so a crash mid-write cannot corrupt or
+                        # truncate the output file (#78).
                         new_metadata_json = json.dumps(clean_metadata)
                         new_metadata_b64 = base64.b64encode(new_metadata_json.encode("utf-8"))
 
-                        with open(output_file, "wb") as f:
-                            f.write(new_metadata_b64)
-                            f.write(encrypted_data)
+                        tmp_output = f"{output_file}.tmp"
+                        try:
+                            with open(tmp_output, "wb") as f:
+                                f.write(new_metadata_b64)
+                                f.write(encrypted_data)
+                            os.replace(tmp_output, output_file)
+                        finally:
+                            if os.path.exists(tmp_output):
+                                try:
+                                    os.remove(tmp_output)
+                                except OSError:
+                                    pass
 
                         # Verify removal was successful
                         with open(output_file, "rb") as f:
