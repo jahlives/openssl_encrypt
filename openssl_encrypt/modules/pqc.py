@@ -881,12 +881,20 @@ class PQCipher:
 
                 # No need for debug output on nonce
 
-                # Check if this is a simulated ciphertext (legacy format)
+                # Check if this is a simulated ciphertext (legacy format).
+                # SECURITY (CRIT-3 / issue #65): simulation mode derives a weak
+                # deterministic shared secret from largely public data. Like the
+                # TESTDATA formats it is only honoured under the explicit
+                # allow_legacy_testdata opt-in; otherwise a crafted SIMULATED_PQC
+                # prefix would force an attacker-selectable downgrade on the normal
+                # decrypt path. When not opted in, the header is treated as an
+                # ordinary (bogus) KEM ciphertext and fails authentication.
                 sim_header = b"SIMULATED_PQC_v1"
                 simulation_detected = False
 
                 if (
-                    len(encapsulated_key) >= len(sim_header)
+                    _allow_legacy
+                    and len(encapsulated_key) >= len(sim_header)
                     and encapsulated_key[: len(sim_header)] == sim_header
                 ):
                     simulation_detected = True
