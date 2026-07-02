@@ -1530,20 +1530,24 @@ class PQCKeystore:
             ]:
                 # Decrypt with AES-GCM
                 cipher = AESGCM(derived_key)
-                # BUGFIX: Try methods in consistent order for compatibility
+                # Try the header AAD FIRST (what the encryptor uses), so the
+                # method/params binding is preferred; empty/None remain only as
+                # legacy fallbacks for old records. This matches _encrypt_with_
+                # derived_key and the ChaCha20 branch (#85). Not exploitable for
+                # current records (AES-GCM binds the AAD, so an empty-AAD decrypt
+                # cannot succeed on a header-AAD ciphertext), but consistency here
+                # prevents preferring an unbound interpretation.
                 try:
-                    plaintext = cipher.decrypt(nonce, ciphertext, associated_data=b"")
+                    plaintext = cipher.decrypt(
+                        nonce,
+                        ciphertext,
+                        associated_data=json.dumps(header).encode("utf-8"),
+                    )
                 except Exception:
                     try:
-                        # Then try with None
-                        plaintext = cipher.decrypt(nonce, ciphertext, associated_data=None)
+                        plaintext = cipher.decrypt(nonce, ciphertext, associated_data=b"")
                     except Exception:
-                        # Finally try with header
-                        plaintext = cipher.decrypt(
-                            nonce,
-                            ciphertext,
-                            associated_data=json.dumps(header).encode("utf-8"),
-                        )
+                        plaintext = cipher.decrypt(nonce, ciphertext, associated_data=None)
 
             else:
                 raise ValidationError(f"Unsupported protection method: {method}")
