@@ -308,6 +308,19 @@ def get_keystore_password(args) -> str:
     # Check if a password file is provided
     if hasattr(args, "keystore_password_file") and args.keystore_password_file:
         try:
+            # Warn if the password file is readable/writable by group or others
+            # (#101). A warning, not a refusal, to match the tool's other advisory
+            # checks; restrict with chmod 600.
+            try:
+                if os.stat(args.keystore_password_file).st_mode & 0o077:
+                    if not getattr(args, "quiet", False):
+                        eprint(
+                            f"Warning: keystore password file "
+                            f"'{args.keystore_password_file}' is accessible to group/others; "
+                            f"restrict it (chmod 600)."
+                        )
+            except OSError:
+                pass
             with open(args.keystore_password_file, "r") as f:
                 return f.read().strip()
         except Exception as e:
