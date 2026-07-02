@@ -396,12 +396,30 @@ def create_secure_file(path, level: PermissionLevel = PermissionLevel.OWNER_ONLY
                 os.close(fd)
                 raise
     else:
+        # O_NOFOLLOW rejects a symlink at the final path component, so a planted
+        # symlink cannot redirect the truncate+write to an arbitrary file (#58).
+        flags = os.O_CREAT | os.O_WRONLY | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
         umask_val = 0o777 & ~posix_mode
         old_umask = os.umask(umask_val)
         try:
-            fd = os.open(path_str, os.O_CREAT | os.O_WRONLY | os.O_TRUNC, posix_mode)
+            fd = os.open(path_str, flags, posix_mode)
         finally:
             os.umask(old_umask)
+
+        # open()'s mode argument is ignored when the file already exists, so an
+        # attacker-pre-created (e.g. world-readable) or foreign-owned target would
+        # otherwise keep its permissions/owner while we write secrets into it.
+        # Reject non-regular / foreign-owned targets and enforce the mode (#58).
+        try:
+            st = os.fstat(fd)
+            if not stat.S_ISREG(st.st_mode):
+                raise OSError(f"Refusing to open non-regular secure file: {path_str}")
+            if st.st_uid != os.geteuid():
+                raise OSError(f"Refusing to open secure file owned by another user: {path_str}")
+            os.fchmod(fd, posix_mode)
+        except Exception:
+            os.close(fd)
+            raise
 
     return fd
 
