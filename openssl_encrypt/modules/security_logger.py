@@ -24,7 +24,9 @@ Usage:
 
 import json
 import logging
+import math
 import os
+import re
 import secrets
 import threading
 import time
@@ -33,6 +35,41 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
+
+# A contiguous run of high-entropy token characters (hex / base64-ish), long
+# enough to look like a key, token, or ciphertext rather than ordinary text.
+# '/' , '.' and '-' are excluded so file paths and UUIDs are not false positives.
+_SECRET_TOKEN_RE = re.compile(r"[A-Za-z0-9+_=]{32,}")
+
+# Environment variables known to carry secrets; a logged value equal to one of
+# these is redacted even if it is short/low-entropy (e.g. a plain password).
+_SECRET_ENV_VARS = ("CRYPT_PASSWORD", "OPENSSL_ENCRYPT_PASSWORD")
+
+_REDACTED = "***REDACTED***"
+
+
+def _shannon_entropy(s: str) -> float:
+    """Shannon entropy of a string in bits per character."""
+    if not s:
+        return 0.0
+    counts: Dict[str, int] = {}
+    for ch in s:
+        counts[ch] = counts.get(ch, 0) + 1
+    n = len(s)
+    return -sum((c / n) * math.log2(c / n) for c in counts.values())
+
+
+def _value_looks_secret(value: str) -> bool:
+    """Whether a string value looks like a secret regardless of its field name."""
+    for var in _SECRET_ENV_VARS:
+        env_val = os.environ.get(var)
+        if env_val and value == env_val:
+            return True
+    # A long token-charset run is only treated as secret if it is actually
+    # high-entropy, so long low-entropy values (e.g. "x" * 500) are truncated,
+    # not redacted.
+    match = _SECRET_TOKEN_RE.search(value)
+    return bool(match and _shannon_entropy(match.group()) >= 3.0)
 
 
 class SecurityAuditLogger:
@@ -194,19 +231,30 @@ class SecurityAuditLogger:
             "user": os.getenv("USER", "unknown"),
         }
 
-        # Add details, filtering sensitive fields
-        filtered_details = {}
-        for key, value in details.items():
-            if any(sensitive in key.lower() for sensitive in sensitive_fields):
-                filtered_details[key] = "***REDACTED***"
-            else:
-                # Truncate long values
-                if isinstance(value, str) and len(value) > 256:
-                    filtered_details[key] = value[:256] + "...[truncated]"
-                else:
-                    filtered_details[key] = value
+        # Redact by field NAME (blocklist) and, recursively, by VALUE shape so a
+        # secret stored under a differently-named field is not logged verbatim
+        # (#56). Keys are matched against sensitive_fields; string values are
+        # redacted when they look like a secret, otherwise truncated if long.
+        def _scrub(value):
+            if isinstance(value, dict):
+                return {
+                    k: (
+                        "***REDACTED***"
+                        if any(s in str(k).lower() for s in sensitive_fields)
+                        else _scrub(v)
+                    )
+                    for k, v in value.items()
+                }
+            if isinstance(value, (list, tuple)):
+                return [_scrub(v) for v in value]
+            if isinstance(value, str):
+                if _value_looks_secret(value):
+                    return _REDACTED
+                if len(value) > 256:
+                    return value[:256] + "...[truncated]"
+            return value
 
-        event["details"] = filtered_details
+        event["details"] = _scrub(details)
 
         # Write to log file
         self._write_to_log(event)
