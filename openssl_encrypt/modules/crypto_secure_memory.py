@@ -23,6 +23,7 @@ from .secure_allocator import (
     SecureBytes,
     allocate_secure_crypto_buffer,
     check_all_crypto_buffer_integrity,
+    crypto_buffer_integrity,
     free_secure_crypto_buffer,
 )
 from .secure_memory import secure_memzero
@@ -92,20 +93,23 @@ class CryptoSecureBuffer:
     def clear(self):
         """Explicitly clear and free the buffer."""
         if hasattr(self, "block_id") and hasattr(self, "buffer") and self.buffer is not None:
+            block_id = self.block_id
             try:
-                # Clear the buffer data
+                # Zero the protected region through the memoryview.
                 for i in range(len(self.buffer)):
                     self.buffer[i] = 0
-
-                # Free the block
-                free_secure_crypto_buffer(self.block_id)
             except (TypeError, AttributeError):
-                # Handle any errors during cleanup
                 pass
             finally:
-                # Remove attributes to prevent accidental use after clearing
-                self.block_id = None
+                # Release the memoryview export BEFORE freeing so the block can be
+                # wiped/munlocked cleanly, then remove attributes to prevent
+                # accidental use after clearing.
                 self.buffer = None
+                self.block_id = None
+                try:
+                    free_secure_crypto_buffer(block_id)
+                except Exception:
+                    pass
 
     @secure_memory_error_handler
     def get_bytes(self) -> bytes:
@@ -126,7 +130,7 @@ class CryptoSecureBuffer:
         """Get the buffer contents as a string, assuming UTF-8 encoding (use with caution)."""
         if self.buffer is None:
             raise SecureMemoryError("Buffer not available", "Buffer has been cleared")
-        return self.buffer.decode("utf-8")
+        return bytes(self.buffer).decode("utf-8")
 
     def check_integrity(self) -> bool:
         """
@@ -137,7 +141,7 @@ class CryptoSecureBuffer:
         """
         if not hasattr(self, "buffer") or self.buffer is None:
             return False
-        return self.buffer.check_integrity()
+        return crypto_buffer_integrity(self.block_id)
 
     def __enter__(self):
         """Support for use as a context manager."""
