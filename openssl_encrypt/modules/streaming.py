@@ -673,6 +673,7 @@ class StreamingDecryptor:
     # Maximum allowed ciphertext per chunk: chunk_size + generous AEAD overhead.
     # Prevents memory exhaustion from a crafted ciphertext_len field.
     _MAX_CHUNK_OVERHEAD = 1024  # AEAD tag + padding headroom
+    _MAX_METADATA_SCAN = 4 * 1024 * 1024  # colon-scan cap when metadata length unknown (#72)
 
     def decrypt_file(
         self,
@@ -723,7 +724,13 @@ class StreamingDecryptor:
                 payload_start = payload_start_override
             else:
                 # --- Locate the colon separator (metadata : payload) ---
-                # Read in small blocks to avoid loading the whole file.
+                # The on-disk format is `metadata_b64 + b":" + payload` and base64
+                # never contains ':', so the separator is at exactly
+                # len(metadata_b64). Bound the scan to that (with slack) so a
+                # crafted file whose first ':' is far in (or absent) is rejected
+                # quickly instead of being read into memory -- a pre-auth OOM DoS
+                # (#72). Falls back to a fixed cap if the caller passed no metadata.
+                scan_limit = (len(metadata_b64) + 1) if metadata_b64 else self._MAX_METADATA_SCAN
                 colon_pos = -1
                 search_buf = b""
                 while True:
@@ -735,6 +742,8 @@ class StreamingDecryptor:
                     if idx != -1:
                         colon_pos = idx
                         break
+                    if len(search_buf) > scan_limit:
+                        break  # separator not where it must be -> invalid/tampered
                 if colon_pos == -1:
                     raise DecryptionError("Invalid streaming file: no metadata separator found")
 
