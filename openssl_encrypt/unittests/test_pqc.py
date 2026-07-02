@@ -1489,12 +1489,18 @@ def _is_pqc_algorithm(algorithm_name: str) -> bool:
     ids=lambda name: f"existing_decryption_{name.replace('test1_', '').replace('.txt', '')}",
 )
 # Add isolation marker for each test to prevent race conditions
-def test_file_decryption_v3(filename):
+def test_file_decryption_v3(filename, monkeypatch):
     """Test decryption of a specific test file."""
     algorithm_name = filename.replace("test1_", "").replace(".txt", "")
 
     if _is_pqc_algorithm(algorithm_name) and not LIBOQS_AVAILABLE:
         pytest.skip("liboqs not available - skipping PQC algorithm test")
+
+    if _is_pqc_algorithm(algorithm_name):
+        # Legacy v3 PQC fixtures use the insecure TESTDATA simulation format;
+        # reading them requires explicit opt-in (issue #54 — the sanctioned
+        # 1.4.x legacy-migration path).
+        monkeypatch.setenv("OPENSSL_ENCRYPT_ALLOW_LEGACY_TESTDATA", "1")
 
     pqc_private_key = None
     if "kyber" in algorithm_name.lower() or "ml-kem" in algorithm_name.lower():
@@ -1622,12 +1628,18 @@ def test_file_decryption_wrong_algorithm_v3(filename):
     get_test_files_v4(),
     ids=lambda name: f"existing_decryption_{name.replace('test1_', '').replace('.txt', '')}",
 )
-def test_file_decryption_v4(filename):
+def test_file_decryption_v4(filename, monkeypatch):
     """Test decryption of a specific test file."""
     algorithm_name = filename.replace("test1_", "").replace(".txt", "")
 
     if _is_pqc_algorithm(algorithm_name) and not LIBOQS_AVAILABLE:
         pytest.skip("liboqs not available - skipping PQC algorithm test")
+
+    if _is_pqc_algorithm(algorithm_name):
+        # Legacy v4 PQC fixtures use the insecure TESTDATA simulation format;
+        # reading them requires explicit opt-in (issue #54 — the sanctioned
+        # 1.4.x legacy-migration path).
+        monkeypatch.setenv("OPENSSL_ENCRYPT_ALLOW_LEGACY_TESTDATA", "1")
 
     pqc_private_key = None
     if "kyber" in algorithm_name.lower() or "ml-kem" in algorithm_name.lower():
@@ -1737,12 +1749,18 @@ def get_test_files_v5():
     ids=lambda name: f"existing_decryption_{name.replace('test1_', '').replace('.txt', '')}",
 )
 # Add isolation marker for each test to prevent race conditions
-def test_file_decryption_v5(filename):
+def test_file_decryption_v5(filename, monkeypatch):
     """Test decryption of a specific test file."""
     algorithm_name = filename.replace("test1_", "").replace(".txt", "")
 
     if _is_pqc_algorithm(algorithm_name) and not LIBOQS_AVAILABLE:
         pytest.skip("liboqs not available - skipping PQC algorithm test")
+
+    if _is_pqc_algorithm(algorithm_name):
+        # Legacy v5 PQC fixtures use the insecure TESTDATA simulation format;
+        # reading them requires explicit opt-in (issue #54 — the sanctioned
+        # 1.4.x legacy-migration path).
+        monkeypatch.setenv("OPENSSL_ENCRYPT_ALLOW_LEGACY_TESTDATA", "1")
 
     pqc_private_key = None
     if "kyber" in algorithm_name.lower() or "ml-kem" in algorithm_name.lower():

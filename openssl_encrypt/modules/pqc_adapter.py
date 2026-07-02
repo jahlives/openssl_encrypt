@@ -162,6 +162,7 @@ class ExtendedPQCipher(PQCipher):
         encryption_data: str = "aes-gcm",
         verbose: bool = False,
         debug: bool = False,
+        allow_legacy_testdata: bool = False,
     ):
         """
         Initialize an extended post-quantum cipher instance
@@ -204,7 +205,9 @@ class ExtendedPQCipher(PQCipher):
 
         if self.is_kem and algorithm_str in native_kem_algorithms:
             # Use the parent class for native KEM algorithms
-            super().__init__(algorithm_str, quiet, encryption_data, verbose, debug)
+            super().__init__(
+                algorithm_str, quiet, encryption_data, verbose, debug, allow_legacy_testdata
+            )
             self.use_liboqs = False
             self.encryption_data = encryption_data
         else:
@@ -220,6 +223,9 @@ class ExtendedPQCipher(PQCipher):
             self.quiet = quiet
             self.encryption_data = encryption_data
             self.algorithm_name = algorithm_str
+            # SECURITY: gate the legacy TESTDATA passthrough (issue #54); the
+            # liboqs branch does not call super().__init__, so set it here too.
+            self.allow_legacy_testdata = bool(allow_legacy_testdata)
 
             # Import required symmetric encryption algorithms for hybrid mode
             try:

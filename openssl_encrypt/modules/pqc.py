@@ -62,6 +62,21 @@ oqs = None
 # Check for quiet mode environment variable
 PQC_QUIET = os.environ.get("PQC_QUIET", "").lower() in ("1", "true", "yes", "on")
 
+
+def _env_allow_legacy_testdata() -> bool:
+    """Whether reading the insecure legacy TESTDATA formats is opted in via env.
+
+    Resolved at decrypt time so the environment can enable legacy migration
+    without any code change; defaults to disabled (secure). See issue #54.
+    """
+    return os.environ.get("OPENSSL_ENCRYPT_ALLOW_LEGACY_TESTDATA", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+
 try:
     import oqs
 
@@ -326,6 +341,7 @@ class PQCipher:
         encryption_data: str = "aes-gcm",
         verbose: bool = False,
         debug: bool = False,
+        allow_legacy_testdata: bool = False,
     ):
         """
         Initialize a post-quantum cipher instance
@@ -410,6 +426,14 @@ class PQCipher:
         # Store quiet mode and debug mode for use in other methods
         self.quiet = should_be_quiet
         self.debug = debug
+
+        # SECURITY: the legacy TESTDATA / PQC_TEST_DATA "simulation" formats
+        # bypass real encryption and are only readable when explicitly opted in
+        # (this argument or OPENSSL_ENCRYPT_ALLOW_LEGACY_TESTDATA env var). Normal
+        # decryption must never take that passthrough path, otherwise a crafted
+        # file forges arbitrary plaintext with no key (issue #54). The env var is
+        # resolved at decrypt time via _env_allow_legacy_testdata().
+        self.allow_legacy_testdata = bool(allow_legacy_testdata)
 
         # Map the requested algorithm to an available one
         if isinstance(algorithm, str):
@@ -780,13 +804,20 @@ class PQCipher:
                         f"DECRYPT:PQC_KEM encrypted_data starts with: {encrypted_data[:50]}"
                     )
 
-                # SECURITY (CRIT-1): Legacy TESTDATA format detection for
-                # backward-compatible decryption only. New encryptions never
-                # produce this format.
+                # SECURITY (CRIT-1 / issue #54): the legacy TESTDATA and
+                # PQC_TEST_DATA formats bypass real encryption and authentication.
+                # They are only honoured when the caller has explicitly opted in
+                # via allow_legacy_testdata (constructor arg or env var); otherwise
+                # a crafted file starting with these magic bytes would "decrypt"
+                # to attacker-chosen plaintext with no key. When not opted in, the
+                # data falls through to real KEM decapsulation, which authenticates.
                 _legacy_testdata_header = b"PQC_TEST_DATA:"
                 _legacy_testdata_marker = b"TESTDATA"
+                _allow_legacy = (
+                    getattr(self, "allow_legacy_testdata", False) or _env_allow_legacy_testdata()
+                )
 
-                if encrypted_data.startswith(_legacy_testdata_header):
+                if _allow_legacy and encrypted_data.startswith(_legacy_testdata_header):
                     logger.warning(
                         "DEPRECATION WARNING: Decrypting legacy PQC_TEST_DATA format. "
                         "This format bypasses real encryption and will be removed in a future version. "
@@ -795,7 +826,7 @@ class PQCipher:
                     plaintext = encrypted_data[len(_legacy_testdata_header) :]
                     return plaintext
 
-                elif encrypted_data.startswith(_legacy_testdata_marker):
+                elif _allow_legacy and encrypted_data.startswith(_legacy_testdata_marker):
                     logger.warning(
                         "DEPRECATION WARNING: Decrypting legacy TESTDATA format. "
                         "This format bypasses real encryption and will be removed in a future version. "
@@ -817,8 +848,8 @@ class PQCipher:
                         f"DECRYPT:PQC_KEM Encapsulated key starts with: {encapsulated_key[:20]}"
                     )
 
-                # Legacy TESTDATA embedded in encapsulated_key slot
-                if encapsulated_key.startswith(_legacy_testdata_marker):
+                # Legacy TESTDATA embedded in encapsulated_key slot (opt-in only)
+                if _allow_legacy and encapsulated_key.startswith(_legacy_testdata_marker):
                     logger.warning(
                         "DEPRECATION WARNING: Decrypting legacy TESTDATA format "
                         "(embedded in KEM ciphertext slot). "
