@@ -1119,6 +1119,11 @@ class PQCKeystore:
         derived_key = None
 
         try:
+            # base64 salt used by every branch's header (#108: previously only
+            # defined in the Argon2 branch, so the Scrypt/PBKDF2 fallbacks raised
+            # NameError when Argon2 was unavailable).
+            salt_b64 = base64.b64encode(salt).decode("utf-8")
+
             # Choose protection parameters based on the method
             if protection_method == KeystoreProtectionMethod.ARGON2ID_AES_GCM:
                 if not ARGON2_AVAILABLE:
@@ -1138,8 +1143,6 @@ class PQCKeystore:
                 derived_key = bytearray(
                     _argon2_derive_key(password, salt, argon2_params, kdf_version=2)
                 )
-
-                salt_b64 = base64.b64encode(salt).decode("utf-8")
 
                 # Encrypt with AES-GCM
                 cipher = AESGCM(bytes(derived_key))
@@ -1261,13 +1264,16 @@ class PQCKeystore:
             method = encrypted_data["method"]
             params = encrypted_data["params"]
             ciphertext = base64.b64decode(encrypted_data["ciphertext"])
+            # Stored base64 salt, used by every branch's header (#108: previously
+            # only bound in the Argon2 branch, so the Scrypt/PBKDF2 branches raised
+            # NameError).
+            salt_b64 = params.get("salt")
 
             if method == KeystoreProtectionMethod.ARGON2ID_AES_GCM.value:
                 if not ARGON2_AVAILABLE:
                     raise ValidationError("Argon2 is required but not available")
 
                 # Extract parameters
-                salt_b64 = params["salt"]
                 salt = base64.b64decode(salt_b64)
                 nonce = base64.b64decode(params["nonce"])
                 argon2_params = params["argon2_params"]
