@@ -22,19 +22,43 @@ from .crypt_utils import eprint
 logger = logging.getLogger(__name__)
 
 
-def _get_subprocess_env():
-    """Build environment for subprocess import tests.
+# Environment variables the import-probe children actually need (#88):
+# interpreter/loader configuration only. Everything else — in particular
+# password env vars like OPENSSL_ENCRYPT_PASSWORD and arbitrary
+# credentials — must not be inherited.
+_SUBPROCESS_ENV_ALLOWLIST = (
+    "PATH",
+    "HOME",
+    "LANG",
+    "LC_ALL",
+    "TMPDIR",
+    "TEMP",
+    "TMP",
+    "LD_LIBRARY_PATH",  # native RandomX/pyrx shared libraries
+    "DYLD_LIBRARY_PATH",
+    "PYTHONHOME",
+    "SYSTEMROOT",  # required for CreateProcess on Windows
+    "SystemRoot",
+)
 
-    Propagates the parent process's sys.path as PYTHONPATH so that
+
+def _get_subprocess_env():
+    """Build a scrubbed, minimal environment for subprocess import tests.
+
+    Only allowlisted interpreter/loader variables are propagated (#88):
+    the full parent environment used to be inherited, leaking password
+    env vars into child processes. sys.path is exported as PYTHONPATH so
     packages installed in non-default locations (e.g. Flatpak's
-    /app/lib/python3.x/site-packages) are discoverable by the child.
-    Also propagates VIRTUAL_ENV if running inside a virtualenv.
+    /app/lib/python3.x/site-packages) stay discoverable, but only
+    absolute entries — a relative entry would let the child import
+    attacker-controlled modules from the current directory. VIRTUAL_ENV
+    is propagated if running inside a virtualenv.
     """
     import os
     import sys
 
-    env = os.environ.copy()
-    env["PYTHONPATH"] = os.pathsep.join(p for p in sys.path if p)
+    env = {k: v for k, v in os.environ.items() if k in _SUBPROCESS_ENV_ALLOWLIST}
+    env["PYTHONPATH"] = os.pathsep.join(p for p in sys.path if p and os.path.isabs(p))
     # Propagate virtualenv prefix so the subprocess activates the same venv
     if hasattr(sys, "prefix") and sys.prefix != sys.base_prefix:
         env["VIRTUAL_ENV"] = sys.prefix
@@ -42,19 +66,26 @@ def _get_subprocess_env():
 
 
 def _get_python_executable():
-    """Return a working Python interpreter path.
+    """Return an absolute path to a working Python interpreter, or None.
 
     In sandboxed environments like Flatpak, sys.executable can be empty
-    or point to a non-existent path.  Fall back to 'python3' which the
-    shell will resolve via PATH.
+    or point to a non-existent path. Fall back to resolving 'python3'
+    through shutil.which — but always return an absolute path (#88):
+    handing a bare 'python3' to subprocess would repeat the PATH lookup
+    at exec time. Returns None if no interpreter can be resolved; the
+    import probes then fail closed.
     """
     import os
+    import shutil
     import sys
 
     exe = sys.executable
-    if exe and os.path.isfile(exe):
+    if exe and os.path.isfile(exe) and os.path.isabs(exe):
         return exe
-    return "python3"
+    resolved = shutil.which("python3")
+    if resolved and os.path.isabs(resolved):
+        return resolved
+    return None
 
 
 # Safely test RandomX import to avoid illegal instruction crashes
@@ -62,10 +93,14 @@ def _test_randomx_import():
     """Test if RandomX can be imported without causing illegal instruction errors."""
     import subprocess
 
+    python_exe = _get_python_executable()
+    if python_exe is None:
+        return False
+
     try:
         # Test RandomX import in a subprocess to catch fatal errors
         result = subprocess.run(
-            [_get_python_executable(), "-c", 'import randomx; print("SUCCESS")'],
+            [python_exe, "-c", 'import randomx; print("SUCCESS")'],
             capture_output=True,
             text=True,
             timeout=10,
@@ -81,10 +116,14 @@ def _test_pyrx_import():
     """Test if pyrx can be imported without causing illegal instruction errors."""
     import subprocess
 
+    python_exe = _get_python_executable()
+    if python_exe is None:
+        return False
+
     try:
         # Test pyrx import in a subprocess to catch fatal errors
         result = subprocess.run(
-            [_get_python_executable(), "-c", 'import pyrx; print("SUCCESS")'],
+            [python_exe, "-c", 'import pyrx; print("SUCCESS")'],
             capture_output=True,
             text=True,
             timeout=10,
