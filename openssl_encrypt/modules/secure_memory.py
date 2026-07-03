@@ -1347,16 +1347,13 @@ def secure_erase_system_memory(trigger_gc=True, full_sweep=False):
         # Platform-specific memory cleanup
         system_name = platform.system().lower()
 
-        # For Linux platforms, try to clean swap space
+        # Note (#106): this used to write '3' to /proc/sys/vm/drop_caches,
+        # claiming to 'flush memory to disk'. That write only evicts clean
+        # page/dentry/inode caches (it wipes nothing and does not touch
+        # swap), requires root, and silently failed for normal users — so
+        # it was removed rather than corrected.
         if system_name == "linux":
             try:
-                # Request the kernel flush memory to disk
-                try:
-                    with open("/proc/sys/vm/drop_caches", "w") as f:
-                        f.write("3")
-                except:
-                    pass
-
                 # Try to disable core dumps
                 try:
                     import resource
