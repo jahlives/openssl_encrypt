@@ -111,12 +111,14 @@ class PluginManager:
         self.builtin_plugin_root: Optional[str] = None  # Built-in plugins skip AST analysis
         self._validated_source_hashes: Dict[str, str] = {}  # TOCTOU: hash at validation time
 
-        # Signature-gated loading (#66). Default OFF preserves legacy behavior;
-        # the CLI/config selects WARN or ENFORCE. trusted_keys_dir defaults to
-        # the per-user store resolved lazily on first use.
+        # Signature-gated loading (#66). Default WARN (D1): unsigned/
+        # unverifiable non-built-in plugins still load, but a warning +
+        # security-log event is emitted; enforce refuses them, off disables
+        # the check. trusted_keys_dir defaults to the per-user store resolved
+        # lazily on first use.
         from .plugin_signature import PluginSignaturePolicy
 
-        self.signature_policy = signature_policy or PluginSignaturePolicy.OFF
+        self.signature_policy = signature_policy or PluginSignaturePolicy.WARN
         self.trusted_keys_dir = trusted_keys_dir
         # D2: the bundled project source-integrity key is a default anchor so
         # officially distributed plugins verify without manual enrollment.

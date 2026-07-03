@@ -13,9 +13,11 @@ Operator docs added to `plugins/PLUGIN_DEVELOPMENT.md`. Default policy is OFF
 (zero behavior change). Decisions D1–D3 taken "as proposed" (warn→enforce,
 project key enabled by default, `.asc` sidecars).
 
-Remaining: (a) flip the default policy to WARN when the maintainer approves
-the D1 timeline (currently OFF = zero behavior change); (b) 1.4.x backport
-after soak.
+Remaining: 1.4.x backport after soak.
+
+**D1 done:** the default policy is now WARN — unsigned plugins keep loading but
+emit a warning + security-log event, nudging operators toward signing without
+breaking anything. `enforce` and `off` remain selectable via env/arg.
 
 **D2 done:** the bundled project source-integrity key (`D269D6A5…`) is a
 default trust anchor (`include_project_anchor`, default True), so officially

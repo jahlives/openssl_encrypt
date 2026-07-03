@@ -475,12 +475,23 @@ class TestFactoryPolicyResolution(unittest.TestCase):
         else:
             os.environ["OPENSSL_ENCRYPT_PLUGIN_SIGNATURE_POLICY"] = self._saved
 
-    def test_default_is_off(self) -> None:
+    def test_default_is_warn(self) -> None:
+        # D1: the default policy is WARN (unsigned plugins load but warn).
         from openssl_encrypt.modules.plugin_system import create_default_plugin_manager
         from openssl_encrypt.modules.plugin_system.plugin_signature import (
             PluginSignaturePolicy,
         )
 
+        mgr = create_default_plugin_manager()
+        self.assertEqual(mgr.signature_policy, PluginSignaturePolicy.WARN)
+
+    def test_env_can_select_off(self) -> None:
+        from openssl_encrypt.modules.plugin_system import create_default_plugin_manager
+        from openssl_encrypt.modules.plugin_system.plugin_signature import (
+            PluginSignaturePolicy,
+        )
+
+        os.environ["OPENSSL_ENCRYPT_PLUGIN_SIGNATURE_POLICY"] = "off"
         mgr = create_default_plugin_manager()
         self.assertEqual(mgr.signature_policy, PluginSignaturePolicy.OFF)
 
@@ -504,7 +515,10 @@ class TestFactoryPolicyResolution(unittest.TestCase):
         mgr = create_default_plugin_manager(signature_policy=PluginSignaturePolicy.WARN)
         self.assertEqual(mgr.signature_policy, PluginSignaturePolicy.WARN)
 
-    def test_invalid_env_falls_back_to_off(self) -> None:
+    def test_invalid_env_falls_back_to_default(self) -> None:
+        # An invalid value is a misconfiguration: fall back to the default
+        # (WARN), which loads plugins but warns — never silently stricter or
+        # laxer than the shipped default.
         from openssl_encrypt.modules.plugin_system import create_default_plugin_manager
         from openssl_encrypt.modules.plugin_system.plugin_signature import (
             PluginSignaturePolicy,
@@ -512,7 +526,7 @@ class TestFactoryPolicyResolution(unittest.TestCase):
 
         os.environ["OPENSSL_ENCRYPT_PLUGIN_SIGNATURE_POLICY"] = "bogus"
         mgr = create_default_plugin_manager()
-        self.assertEqual(mgr.signature_policy, PluginSignaturePolicy.OFF)
+        self.assertEqual(mgr.signature_policy, PluginSignaturePolicy.WARN)
 
 
 class TestProjectKeyAnchor(_SigningFixture):

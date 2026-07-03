@@ -189,8 +189,8 @@ def _resolve_signature_policy(explicit=None):
     """Resolve the plugin signature policy (#66).
 
     Precedence: explicit argument > OPENSSL_ENCRYPT_PLUGIN_SIGNATURE_POLICY
-    env var > OFF (legacy default). An unrecognized env value falls back to
-    OFF with a warning rather than failing the whole plugin subsystem.
+    env var > WARN (D1 default). An unrecognized env value falls back to the
+    default with a warning rather than failing the whole plugin subsystem.
     """
     import os
 
@@ -200,7 +200,7 @@ def _resolve_signature_policy(explicit=None):
         return explicit
     raw = os.environ.get("OPENSSL_ENCRYPT_PLUGIN_SIGNATURE_POLICY")
     if not raw:
-        return PluginSignaturePolicy.OFF
+        return PluginSignaturePolicy.WARN
     try:
         return PluginSignaturePolicy(raw.strip().lower())
     except ValueError:
@@ -208,10 +208,10 @@ def _resolve_signature_policy(explicit=None):
 
         logging.getLogger(__name__).warning(
             "Ignoring invalid OPENSSL_ENCRYPT_PLUGIN_SIGNATURE_POLICY=%r "
-            "(expected off/warn/enforce); using off",
+            "(expected off/warn/enforce); using warn",
             raw,
         )
-        return PluginSignaturePolicy.OFF
+        return PluginSignaturePolicy.WARN
 
 
 def create_default_plugin_manager(
