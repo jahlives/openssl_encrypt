@@ -6178,7 +6178,7 @@ def main_with_args(args=None):
         generated_password = None
 
         try:
-            from .secure_memory import secure_string
+            from .secure_memory import secure_memzero, secure_string
 
             # Resolve password from --password-file, --password-fd, or
             # OPENSSL_ENCRYPT_PASSWORD before entering the secure block.
@@ -6444,8 +6444,12 @@ def main_with_args(args=None):
                     if args.action == "encrypt" and not args.quiet:
                         match = False
                         while not match:
-                            pwd1 = getpass.getpass("Enter password: ").encode()
-                            pwd2 = getpass.getpass("Confirm password: ").encode()
+                            # Mutable buffers so they can be wiped in place after
+                            # use. The transient str returned by getpass (and its
+                            # encoding) is immutable and cannot be wiped — an
+                            # inherent Python limitation (#81/#89).
+                            pwd1 = bytearray(getpass.getpass("Enter password: ").encode())
+                            pwd2 = bytearray(getpass.getpass("Confirm password: ").encode())
 
                             if pwd1 == pwd2:
                                 # Validate password if policy is enabled, not forced, and not in test mode
@@ -6506,13 +6510,13 @@ def main_with_args(args=None):
                                     password_secure.extend(pwd1)
                                     match = True
 
-                                # Securely clear the temporary buffers
-                                pwd1 = "\x00" * len(pwd1)
-                                pwd2 = "\x00" * len(pwd2)
+                                # Wipe the mutable prompt buffers in place
+                                secure_memzero(pwd1)
+                                secure_memzero(pwd2)
                             else:
-                                # Securely clear the temporary buffers
-                                pwd1 = "\x00" * len(pwd1)
-                                pwd2 = "\x00" * len(pwd2)
+                                # Wipe the mutable prompt buffers in place
+                                secure_memzero(pwd1)
+                                secure_memzero(pwd2)
                                 eprint("Passwords do not match. Please try again.")
                     # For decryption or quiet mode, just ask once
                     else:
@@ -6526,8 +6530,10 @@ def main_with_args(args=None):
                             tty_clear_line()
 
                         password_secure.extend(pwd.encode("utf-8"))
-                        # Securely clear the temporary buffer
-                        pwd = "\x00" * len(pwd)
+                        # 'pwd' is an immutable str from getpass and cannot be
+                        # overwritten in place (#81/#89); rebinding it to zeros
+                        # would only pretend to wipe. Drop the reference instead.
+                        del pwd
 
                 # Convert to bytes for the rest of the code
                 password = bytes(password_secure)
@@ -6588,18 +6594,22 @@ def main_with_args(args=None):
                     # Interactive double-prompt for new password
                     match = False
                     while not match:
-                        pwd1 = getpass.getpass("Enter new password: ").encode()
-                        pwd2 = getpass.getpass("Confirm new password: ").encode()
+                        # Mutable buffers so they can be wiped in place (#89);
+                        # the transient getpass str itself cannot be (#81).
+                        pwd1 = bytearray(getpass.getpass("Enter new password: ").encode())
+                        pwd2 = bytearray(getpass.getpass("Confirm new password: ").encode())
 
                         if pwd1 == pwd2:
-                            rekey_password = pwd1
+                            # Copy before wiping — rekey_password must outlive
+                            # the wiped prompt buffers
+                            rekey_password = bytes(pwd1)
                             match = True
-                            pwd1 = b"\x00" * len(pwd1)
-                            pwd2 = b"\x00" * len(pwd2)
                         else:
-                            pwd1 = b"\x00" * len(pwd1)
-                            pwd2 = b"\x00" * len(pwd2)
                             eprint("Passwords do not match. Please try again.")
+
+                        # Wipe the mutable prompt buffers in place
+                        secure_memzero(pwd1)
+                        secure_memzero(pwd2)
 
         except ImportError:
             # Fall back to standard method if secure_memory is not
