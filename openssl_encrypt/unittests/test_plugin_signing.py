@@ -459,3 +459,56 @@ class TestSigningCliHelpers(_SigningFixture):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestFactoryPolicyResolution(unittest.TestCase):
+    """create_default_plugin_manager resolves the signature policy."""
+
+    def setUp(self) -> None:
+        self._saved = os.environ.get("OPENSSL_ENCRYPT_PLUGIN_SIGNATURE_POLICY")
+        os.environ.pop("OPENSSL_ENCRYPT_PLUGIN_SIGNATURE_POLICY", None)
+
+    def tearDown(self) -> None:
+        if self._saved is None:
+            os.environ.pop("OPENSSL_ENCRYPT_PLUGIN_SIGNATURE_POLICY", None)
+        else:
+            os.environ["OPENSSL_ENCRYPT_PLUGIN_SIGNATURE_POLICY"] = self._saved
+
+    def test_default_is_off(self) -> None:
+        from openssl_encrypt.modules.plugin_system import create_default_plugin_manager
+        from openssl_encrypt.modules.plugin_system.plugin_signature import (
+            PluginSignaturePolicy,
+        )
+
+        mgr = create_default_plugin_manager()
+        self.assertEqual(mgr.signature_policy, PluginSignaturePolicy.OFF)
+
+    def test_env_var_selects_enforce(self) -> None:
+        from openssl_encrypt.modules.plugin_system import create_default_plugin_manager
+        from openssl_encrypt.modules.plugin_system.plugin_signature import (
+            PluginSignaturePolicy,
+        )
+
+        os.environ["OPENSSL_ENCRYPT_PLUGIN_SIGNATURE_POLICY"] = "enforce"
+        mgr = create_default_plugin_manager()
+        self.assertEqual(mgr.signature_policy, PluginSignaturePolicy.ENFORCE)
+
+    def test_explicit_arg_overrides_env(self) -> None:
+        from openssl_encrypt.modules.plugin_system import create_default_plugin_manager
+        from openssl_encrypt.modules.plugin_system.plugin_signature import (
+            PluginSignaturePolicy,
+        )
+
+        os.environ["OPENSSL_ENCRYPT_PLUGIN_SIGNATURE_POLICY"] = "off"
+        mgr = create_default_plugin_manager(signature_policy=PluginSignaturePolicy.WARN)
+        self.assertEqual(mgr.signature_policy, PluginSignaturePolicy.WARN)
+
+    def test_invalid_env_falls_back_to_off(self) -> None:
+        from openssl_encrypt.modules.plugin_system import create_default_plugin_manager
+        from openssl_encrypt.modules.plugin_system.plugin_signature import (
+            PluginSignaturePolicy,
+        )
+
+        os.environ["OPENSSL_ENCRYPT_PLUGIN_SIGNATURE_POLICY"] = "bogus"
+        mgr = create_default_plugin_manager()
+        self.assertEqual(mgr.signature_policy, PluginSignaturePolicy.OFF)

@@ -186,18 +186,58 @@ SECURITY_DEFAULTS = {
 }
 
 
-def create_default_plugin_manager(config_dir: str = None) -> PluginManager:
+def _resolve_signature_policy(explicit=None):
+    """Resolve the plugin signature policy (#66).
+
+    Precedence: explicit argument > OPENSSL_ENCRYPT_PLUGIN_SIGNATURE_POLICY
+    env var > OFF (legacy default). An unrecognized env value falls back to
+    OFF with a warning rather than failing the whole plugin subsystem.
+    """
+    import os
+
+    from .plugin_signature import PluginSignaturePolicy
+
+    if explicit is not None:
+        return explicit
+    raw = os.environ.get("OPENSSL_ENCRYPT_PLUGIN_SIGNATURE_POLICY")
+    if not raw:
+        return PluginSignaturePolicy.OFF
+    try:
+        return PluginSignaturePolicy(raw.strip().lower())
+    except ValueError:
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "Ignoring invalid OPENSSL_ENCRYPT_PLUGIN_SIGNATURE_POLICY=%r "
+            "(expected off/warn/enforce); using off",
+            raw,
+        )
+        return PluginSignaturePolicy.OFF
+
+
+def create_default_plugin_manager(
+    config_dir: str = None,
+    signature_policy=None,
+    trusted_keys_dir: str = None,
+) -> PluginManager:
     """
     Create plugin manager with default configuration.
 
     Args:
         config_dir: Optional custom configuration directory
+        signature_policy: Plugin signature policy (off/warn/enforce). If None,
+            resolved from OPENSSL_ENCRYPT_PLUGIN_SIGNATURE_POLICY, else OFF.
+        trusted_keys_dir: Optional trust-anchor store override.
 
     Returns:
         Configured PluginManager instance
     """
     config_manager = PluginConfigManager(config_dir)
-    plugin_manager = PluginManager(config_manager)
+    plugin_manager = PluginManager(
+        config_manager,
+        signature_policy=_resolve_signature_policy(signature_policy),
+        trusted_keys_dir=trusted_keys_dir,
+    )
 
     # Add default plugin directories (if they exist)
     import os
