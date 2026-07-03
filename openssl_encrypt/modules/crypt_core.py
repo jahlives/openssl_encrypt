@@ -264,9 +264,11 @@ class XChaCha20Poly1305:
             raise ValidationError("Key cannot be None")
 
         # nonce_format selects the construction:
-        #   1 (legacy/default): store 24 bytes, use the first 12 directly as a
-        #     ChaCha20-Poly1305 nonce (96-bit effective). Every pre-1.5 file
-        #     relies on this; it MUST stay byte-for-byte unchanged.
+        #   1 (legacy/default): store 24 bytes, HKDF-funnel them down to a
+        #     12-byte ChaCha20-Poly1305 nonce (96-bit effective — the
+        #     '192-bit XChaCha' naming is illusory for this format). Every
+        #     pre-1.5 file relies on this; it MUST stay byte-for-byte
+        #     unchanged.
         #   2 (1.5+): real XChaCha20-Poly1305 with HChaCha20 subkey derivation
         #     per draft-irtf-cfrg-xchacha-03 — the full 192-bit nonce is used.
         self.nonce_format = nonce_format
@@ -287,18 +289,21 @@ class XChaCha20Poly1305:
 
     def _process_nonce(self, nonce):
         """
-        Process and validate nonce to ensure proper length and format.
-        The cryptography library's ChaCha20Poly1305 expects 12-byte nonces,
-        while XChaCha20Poly1305 is designed for 24-byte nonces.
+        Funnel the stored nonce down to a 12-byte ChaCha20-Poly1305 nonce
+        (legacy nonce_format=1 only).
 
-        We use the HChaCha20 construction to derive a ChaCha20 key and nonce
-        from the XChaCha20 nonce, following the XChaCha20 specification.
+        This is NOT the HChaCha20 construction from the XChaCha20 spec and
+        provides no extended-nonce security: a 24-byte input is reduced via
+        HKDF-SHA256 to 12 bytes, so the effective nonce is 96-bit regardless
+        of the stored length. The real 192-bit construction is
+        nonce_format=2 (modules/xchacha.py). This funnel is kept only for
+        byte-for-byte compatibility with pre-1.5 files.
 
         Args:
-            nonce (bytes): Input nonce
+            nonce (bytes): Input nonce as stored in the file
 
         Returns:
-            bytes: Properly formatted 12-byte nonce for use with the ChaCha20Poly1305 library
+            bytes: Derived 12-byte nonce for the ChaCha20Poly1305 library
 
         Raises:
             ValidationError: If nonce validation fails
@@ -321,14 +326,9 @@ class XChaCha20Poly1305:
 
         # Process based on length
         if len(nonce) == 24:
-            # For XChaCha20Poly1305, use a proper derivation algorithm
-            # The 24-byte nonce is split into a 16-byte nonce and an 8-byte block counter
-            # First, use the HChaCha20 function to mix the key with the first 16 bytes
-            # Since we don't have direct access to HChaCha20, we'll use HKDF with BLAKE2b
-            # to derive a secure 12-byte nonce from the original 24-byte nonce
-
-            # Use the first 16 bytes of the nonce as the HKDF salt (mimicking HChaCha20 input)
-            # and the remaining 8 bytes as the info parameter to ensure uniqueness
+            # Legacy funnel: HKDF-SHA256(key, salt=nonce[:16], info=nonce[16:])
+            # -> 12 bytes. Deterministic per (key, nonce) so existing files
+            # keep decrypting; effective nonce space is 96-bit.
             hkdf = HKDF(
                 algorithm=hashes.SHA256(),  # Use SHA256 which is universally available
                 length=12,  # We need 12 bytes for ChaCha20Poly1305

@@ -4,9 +4,10 @@ End-to-end tests for the real 192-bit XChaCha20-Poly1305 file format.
 
 New-format files carry ``encryption.xchacha_nonce_format: 2`` in their
 metadata and use the full 24-byte nonce via HChaCha20 subkey derivation.
-Legacy files (no flag) keep decrypting through the historical
-first-12-bytes code path; the committed corpus in testfiles/v12 is the
-backward-compatibility regression suite.
+Legacy files (no flag) keep decrypting through the historical HKDF
+nonce funnel (24 bytes reduced to a 96-bit effective nonce); the
+committed corpus in testfiles/v12 is the backward-compatibility
+regression suite.
 """
 
 import base64
@@ -463,3 +464,33 @@ class TestEnvelopeCascadeXChaCha(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestFormat1DocsAccuracy(unittest.TestCase):
+    """Regression tests for GitLab #93 [CORE-9]: format-1 nonce docs must be honest.
+
+    Legacy ``nonce_format=1`` HKDF-funnels the 24-byte nonce down to a
+    12-byte ChaCha20-Poly1305 nonce — 96-bit effective, not 192-bit, and
+    not the HChaCha20 construction from the XChaCha20 spec (that is what
+    ``nonce_format=2`` provides). The comments must say so instead of
+    claiming spec compliance.
+    """
+
+    def test_process_nonce_docs_are_honest(self) -> None:
+        import inspect
+
+        from openssl_encrypt.modules.crypt_core import XChaCha20Poly1305
+
+        src = inspect.getsource(XChaCha20Poly1305._process_nonce)
+        self.assertNotIn("following the XChaCha20 specification", src)
+        self.assertNotIn("mimicking HChaCha20", src)
+        self.assertIn("96-bit", src)
+
+    def test_init_comment_describes_hkdf_funnel(self) -> None:
+        import inspect
+
+        from openssl_encrypt.modules.crypt_core import XChaCha20Poly1305
+
+        src = inspect.getsource(XChaCha20Poly1305.__init__)
+        self.assertNotIn("use the first 12 directly", src)
+        self.assertIn("96-bit", src)
