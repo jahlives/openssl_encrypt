@@ -96,7 +96,8 @@ def constant_time_pkcs7_unpad(padded_data: bytes, block_size: int = 16) -> tuple
     # Add a small random delay to further mask timing differences
     add_timing_jitter(1, 5)  # 1-5ms
 
-    # Handle None or empty input data
+    # Handle None or empty input data (public information — the length of
+    # the ciphertext is not secret, so branching on it is fine)
     if padded_data is None or len(padded_data) == 0:
         return b"", False
 
@@ -104,61 +105,44 @@ def constant_time_pkcs7_unpad(padded_data: bytes, block_size: int = 16) -> tuple
     if not isinstance(padded_data, bytes):
         padded_data = bytes(padded_data)
 
-    # Initial assumption - padding is invalid until proven otherwise
-    is_valid = False
-    padding_len = 0
     data_len = len(padded_data)
+    last_byte = padded_data[-1]
 
-    # Check for basic validity conditions in constant time
-    if data_len > 0:
-        # Get padding length from last byte
-        last_byte = padded_data[-1]
+    # Branchless validity (#90): every secret-derived condition is folded
+    # into 0/1 integers and applied as arithmetic masks — no Python if/else
+    # keyed on padding bytes. (CPython can never be strictly constant-time;
+    # this removes the data-dependent control flow the old code had.)
+    #
+    # in_range also requires last_byte <= data_len: the old code skipped
+    # padding verification entirely when the claimed padding length
+    # exceeded the data length, accepting invalid padding as valid.
+    in_range = int(last_byte >= 1) & int(last_byte <= block_size) & int(last_byte <= data_len)
+    padding_len = last_byte * in_range
 
-        # Check padding byte range using constant-time operations
-        # This uses bitwise operations to avoid branch conditions
-        in_range = (last_byte >= 1) & (last_byte <= block_size)
+    # Verify the trailing padding bytes over a FIXED number of iterations
+    # (block_size), masking out positions that are not padding.
+    mismatch = 0
+    for i in range(block_size):
+        idx = data_len - 1 - i
+        idx_valid = int(idx >= 0)
+        # Clamp the index so every iteration performs a lookup; masked-out
+        # iterations read byte 0 and contribute nothing.
+        safe_idx = idx * idx_valid
+        byte = padded_data[safe_idx]
+        is_padding_pos = int(i < padding_len) & idx_valid
+        # -is_padding_pos is 0 or -1 (all ones): a full mask for the XOR
+        mismatch |= (byte ^ last_byte) & -is_padding_pos
 
-        # Conditionally set padding length based on range check
-        padding_len = last_byte if in_range else 0
+    is_valid_int = in_range & int(mismatch == 0)
 
-        # Initial valid state depends on in_range
-        is_valid = in_range
-
-        # Only proceed with validation if we potentially have valid padding
-        # And have enough bytes for the padding
-        if padding_len <= data_len:
-            # Verify all padding bytes are the same in constant time
-            # Store mismatch in a single variable that is updated for each byte
-            mismatch = 0
-
-            # Process all potential padding bytes
-            for i in range(block_size):
-                # For each position, check if it should be a padding byte
-                idx = data_len - i - 1
-
-                is_padding_pos = (i < padding_len) & (idx >= 0)
-
-                # Only check bytes within valid range
-                if idx >= 0 and idx < data_len:
-                    # XOR will be non-zero if bytes don't match
-                    # Use logical OR to accumulate any mismatches
-                    byte_mismatch = padded_data[idx] ^ last_byte if is_padding_pos else 0
-                    mismatch |= byte_mismatch
-
-            # Update valid state - only valid if no mismatches found
-            is_valid = is_valid & (mismatch == 0)
-
-    # Use constant-time conditional operation for unpadded length
-    # If padding is invalid, use full length; otherwise subtract padding_len
-    unpadded_len = data_len - (padding_len if is_valid else 0)
-
-    # Create unpadded data
+    # Arithmetic mask instead of a conditional for the unpadded length
+    unpadded_len = data_len - padding_len * is_valid_int
     unpadded_data = padded_data[:unpadded_len]
 
     # Add another small delay to mask the processing time
     add_timing_jitter(1, 5)  # 1-5ms
 
-    return unpadded_data, is_valid
+    return unpadded_data, bool(is_valid_int)
 
 
 def secure_memzero(data: bytearray) -> None:
