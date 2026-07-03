@@ -479,25 +479,29 @@ class SecureMemoryAllocator:
 
     def _anti_debug_check(self):
         """
-        Check for debuggers or memory scanners and perform anti-debugging measures.
+        Check whether the process is being traced (ADVISORY ONLY).
 
-        This helps protect against memory analysis tools and debuggers that
-        could be used to extract sensitive information from memory.
+        This is informational, not a protection: TracerPid is non-zero under
+        any ptrace-based tool (debuggers, strace, some container runtimes and
+        profilers), and no defensive action is possible against a tracer that
+        is already attached. The result is only ever used to emit a warning
+        in debug mode; it never changes allocation behavior.
 
         Returns:
-            bool: True if no debuggers were detected, False otherwise
+            bool: True if no tracer was detected, False otherwise
         """
         try:
-            # Various anti-debugging techniques
             if self.system == "linux":
                 # Check for tracers via status file
                 try:
                     with open("/proc/self/status", "r") as f:
                         status = f.read()
                         if "TracerPid:\t0" not in status:
-                            # Tracer detected - could be a debugger
                             if self.debug_mode:
-                                eprint("Warning: Possible debugger detected")
+                                eprint(
+                                    "Notice (advisory only): process appears to be "
+                                    "traced/debugged"
+                                )
                             return False
                 except Exception:
                     pass
@@ -509,24 +513,13 @@ class SecureMemoryAllocator:
                     if hasattr(kernel32, "IsDebuggerPresent"):
                         if kernel32.IsDebuggerPresent():
                             if self.debug_mode:
-                                eprint("Warning: Debugger detected")
+                                eprint(
+                                    "Notice (advisory only): process appears to be "
+                                    "traced/debugged"
+                                )
                             return False
                 except Exception:
                     pass
-
-            # Memory scanning countermeasures
-            # Introduce some randomness in memory patterns
-            # This makes it harder for scanners to identify patterns
-            try:
-                # Random memory access pattern to prevent predictable analysis
-                dummy_size = secrets.randbelow(193) + 64  # 64-256 range
-                dummy = bytearray(dummy_size)
-                for i in range(0, dummy_size, 8):
-                    dummy[i] = secrets.randbelow(256)
-                # Immediately clear to avoid leaving traces
-                dummy[:] = bytearray(dummy_size)
-            except Exception:
-                pass
 
             return True
         except Exception:
