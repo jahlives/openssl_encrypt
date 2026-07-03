@@ -204,6 +204,72 @@ class TestTarExtraction(unittest.TestCase):
         with self.assertRaises(ValidationError):
             secure_tar_extract(data, self.output_dir)
 
+    def _create_tar_with_link(self, link_name, link_target, linktype, extra=None):
+        """Helper to build tar bytes containing a symlink or hardlink member.
+
+        Args:
+            link_name: Archive name of the link member.
+            link_target: linkname the link points at (the escape vector).
+            linktype: tarfile.SYMTYPE or tarfile.LNKTYPE.
+            extra: optional list of (name, content_bytes) regular members added
+                after the link (used to write *through* a hardlink).
+        """
+        import io
+
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode="w") as t:
+            info = tarfile.TarInfo(name=link_name)
+            info.type = linktype
+            info.linkname = link_target
+            info.size = 0
+            t.addfile(info)
+            for name, content in extra or []:
+                reg = tarfile.TarInfo(name=name)
+                reg.size = len(content)
+                t.addfile(reg, io.BytesIO(content))
+        return buf.getvalue()
+
+    def test_hardlink_escape_rejected(self):
+        """Hardlink whose target escapes the output dir is rejected."""
+        data = self._create_tar_with_link(
+            "foo", "../../etc/passwd", tarfile.LNKTYPE
+        )
+        with self.assertRaises(ValidationError):
+            secure_tar_extract(data, self.output_dir)
+
+    def test_hardlink_absolute_target_rejected(self):
+        """Hardlink with an absolute target is rejected."""
+        data = self._create_tar_with_link(
+            "foo", "/etc/passwd", tarfile.LNKTYPE
+        )
+        with self.assertRaises(ValidationError):
+            secure_tar_extract(data, self.output_dir)
+
+    def test_hardlink_write_through_does_not_escape(self):
+        """A hardlink+regular-file pair cannot overwrite a file outside output_dir."""
+        # Sentinel outside the extraction directory that must NOT be modified.
+        outside = os.path.join(self.temp_dir, "victim.txt")
+        with open(outside, "wb") as f:
+            f.write(b"ORIGINAL")
+        data = self._create_tar_with_link(
+            "foo",
+            "../victim.txt",
+            tarfile.LNKTYPE,
+            extra=[("foo", b"PWNED")],
+        )
+        with self.assertRaises(ValidationError):
+            secure_tar_extract(data, self.output_dir)
+        with open(outside, "rb") as f:
+            self.assertEqual(f.read(), b"ORIGINAL")
+
+    def test_symlink_escape_via_addfile_rejected(self):
+        """Symlink escaping the output dir is rejected (parity with hardlink)."""
+        data = self._create_tar_with_link(
+            "foo", "../../etc/passwd", tarfile.SYMTYPE
+        )
+        with self.assertRaises(ValidationError):
+            secure_tar_extract(data, self.output_dir)
+
     def test_roundtrip(self):
         """Archive → extract roundtrip preserves content."""
         # Create test dir

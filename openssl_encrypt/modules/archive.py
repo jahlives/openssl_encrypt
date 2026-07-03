@@ -201,7 +201,7 @@ def secure_tar_extract(tar_data_or_path, output_dir: str) -> None:
     Validates all members before extraction to prevent:
     - Path traversal (.. components)
     - Absolute paths
-    - Symlinks pointing outside output_dir
+    - Symlinks and hardlinks pointing outside output_dir
 
     Args:
         tar_data_or_path: Either bytes (tar data) or str (path to tar file).
@@ -246,14 +246,18 @@ def secure_tar_extract(tar_data_or_path, output_dir: str) -> None:
                     f"Path escapes output directory: {member.name}"
                 )
 
-            # Reject symlinks pointing outside output_dir
-            if member.issym():
+            # Reject symlinks and hardlinks pointing outside output_dir.
+            # Both link types carry a linkname that is not covered by the
+            # member.name checks above; an unchecked hardlink target allows
+            # writing through the link to overwrite files outside output_dir.
+            if member.issym() or member.islnk():
                 link_target = os.path.normpath(
                     os.path.join(os.path.dirname(member.name), member.linkname)
                 )
                 if link_target.startswith("..") or os.path.isabs(member.linkname):
+                    link_kind = "Symlink" if member.issym() else "Hardlink"
                     raise ValidationError(
-                        f"Symlink escapes output directory: {member.name} -> {member.linkname}"
+                        f"{link_kind} escapes output directory: {member.name} -> {member.linkname}"
                     )
 
         # All checks passed — extract
