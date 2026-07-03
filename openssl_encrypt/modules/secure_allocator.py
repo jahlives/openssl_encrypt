@@ -366,17 +366,18 @@ class SecureHeap:
         self._setup_core_dump_prevention()
 
     def _setup_core_dump_prevention(self):
-        """Set up protections against core dumps if supported by platform."""
-        try:
-            # Try to disable core dumps on Unix platforms
-            if self.system in ("linux", "darwin", "freebsd"):
-                try:
-                    import resource
+        """Set up protections against core dumps if supported by platform.
 
-                    resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
-                except ImportError:
-                    pass
-        except:
+        Delegates to secure_memory.disable_core_dumps, which zeroes only the
+        RLIMIT_CORE *soft* limit and runs once per process (#104).
+        """
+        try:
+            if self.system in ("linux", "darwin", "freebsd"):
+                from .secure_memory import disable_core_dumps
+
+                if not disable_core_dumps() and self.debug_mode:
+                    eprint("Failed to set up core dump prevention")
+        except Exception:
             if self.debug_mode:
                 eprint("Failed to set up core dump prevention")
 

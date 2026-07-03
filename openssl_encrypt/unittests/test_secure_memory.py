@@ -543,3 +543,60 @@ class TestMadvDontdumpProbe(unittest.TestCase):
 
         source = inspect.getsource(SecureMemoryAllocator._apply_cold_boot_protections)
         self.assertNotIn("MADV_DONTFORK = 10", source)
+
+
+class TestCoreDumpSoftLimit(unittest.TestCase):
+    """Regression tests for GitLab #104 [MEM-12]: RLIMIT_CORE hard-limit drop.
+
+    The old code ran ``setrlimit(RLIMIT_CORE, (0, 0))`` on every secure
+    allocation — an irreversible (hard limit 0), process-global side effect
+    that prevented an embedding application from ever re-enabling core
+    dumps deliberately. Core-dump prevention must zero only the *soft*
+    limit, and only once per process.
+    """
+
+    def setUp(self) -> None:
+        from openssl_encrypt.modules import secure_memory
+
+        self._module = secure_memory
+        self._saved_flag = secure_memory._core_dumps_disabled
+
+    def tearDown(self) -> None:
+        self._module._core_dumps_disabled = self._saved_flag
+
+    def test_soft_limit_only(self) -> None:
+        """disable_core_dumps must preserve the hard limit."""
+        import resource
+
+        self._module._core_dumps_disabled = False
+        sentinel_hard = 12345
+        with patch.object(
+            resource, "getrlimit", return_value=(resource.RLIM_INFINITY, sentinel_hard)
+        ):
+            with patch.object(resource, "setrlimit") as set_mock:
+                self.assertTrue(self._module.disable_core_dumps())
+
+        set_mock.assert_called_once_with(resource.RLIMIT_CORE, (0, sentinel_hard))
+
+    def test_runs_once_per_process(self) -> None:
+        """A second call must be a no-op."""
+        import resource
+
+        self._module._core_dumps_disabled = False
+        with patch.object(resource, "setrlimit") as set_mock:
+            self.assertTrue(self._module.disable_core_dumps())
+            self.assertTrue(self._module.disable_core_dumps())
+
+        self.assertEqual(set_mock.call_count, 1)
+
+    def test_no_hard_limit_drop_left_in_sources(self) -> None:
+        """No call site may still drop the RLIMIT_CORE hard limit."""
+        from pathlib import Path
+
+        modules_dir = Path(self._module.__file__).parent
+        offenders = []
+        for name in ("secure_memory.py", "secure_allocator.py"):
+            source = (modules_dir / name).read_text(encoding="utf-8")
+            if "resource.RLIMIT_CORE, (0, 0)" in source:
+                offenders.append(name)
+        self.assertEqual(offenders, [])
