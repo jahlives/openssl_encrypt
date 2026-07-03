@@ -51,7 +51,7 @@ from .identity_protection import (
     ProtectionLevel,
 )
 from .pqc import PQCipher
-from .pqc_signing import PQCSigner, calculate_fingerprint
+from .pqc_signing import PQCSigner, calculate_fingerprint, calculate_fingerprint_v2
 from .secure_memory import secure_memzero
 
 # Set up module-level logger
@@ -236,9 +236,12 @@ class Identity:
             signer = PQCSigner(sig_algorithm, quiet=True)
             sig_public_key, sig_private_key = signer.generate_keypair()
 
-            # Calculate fingerprint
-            combined_keys = enc_public_key + sig_public_key
-            fingerprint = calculate_fingerprint(combined_keys)
+            # Calculate fingerprint (v2: domain-separated, length-prefixed,
+            # algorithm-bound — #98). Legacy v1 fingerprints on existing
+            # identities keep verifying via check_fingerprint_consistency.
+            fingerprint = calculate_fingerprint_v2(
+                kem_algorithm, enc_public_key, sig_algorithm, sig_public_key
+            )
 
             # Wrap private keys in CryptoKey for secure memory
             enc_priv_crypto = CryptoKey(key_data=enc_private_key)
@@ -528,10 +531,23 @@ class Identity:
 
     def calculate_fingerprint(self) -> str:
         """
-        (Re)calculate fingerprint from public keys.
+        (Re)calculate the current-format (v2) fingerprint from public keys.
 
         Returns:
             SHA256 fingerprint with colons
+        """
+        return calculate_fingerprint_v2(
+            self.encryption_algorithm,
+            self.encryption_public_key,
+            self.signing_algorithm,
+            self.signing_public_key,
+        )
+
+    def _calculate_fingerprint_legacy(self) -> str:
+        """(Re)calculate the legacy v1 fingerprint (bare key concatenation).
+
+        Kept only so identities minted before the v2 scheme (#98) keep
+        verifying; new fingerprints are always v2.
         """
         combined_keys = self.encryption_public_key + self.signing_public_key
         return calculate_fingerprint(combined_keys)
@@ -552,8 +568,12 @@ class Identity:
         Returns:
             True if the stored and recomputed fingerprints match.
         """
-        calculated = self.calculate_fingerprint()
-        return calculated == self.fingerprint
+        # Dual-accept (#98): new identities carry v2 fingerprints; bundles
+        # exported before the v2 scheme carry v1. Either matching its own
+        # recomputation proves internal consistency.
+        if self.fingerprint == self.calculate_fingerprint():
+            return True
+        return self.fingerprint == self._calculate_fingerprint_legacy()
 
     def verify_fingerprint(self) -> bool:
         """Deprecated alias for check_fingerprint_consistency() (M8).
