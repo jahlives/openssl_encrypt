@@ -468,3 +468,28 @@ class TestThreadedErrorHandling(unittest.TestCase):
 
         # Check if any errors were reported
         self.assertEqual(errors, [], f"Errors occurred during parallel allocation: {errors}")
+
+
+class TestSecureEraseSystemMemory(unittest.TestCase):
+    """Regression tests for GitLab #106 [MEM-14]: misleading drop_caches write."""
+
+    def test_no_drop_caches_write(self) -> None:
+        """secure_erase_system_memory must not write /proc/sys/vm/drop_caches.
+
+        Writing '3' to drop_caches only evicts *clean* page/dentry/inode
+        caches (it wipes nothing and does not touch swap), requires root,
+        and silently failed for every normal user. The comment claimed it
+        'flushes memory to disk' — misleading on all counts.
+        """
+        import inspect
+
+        from openssl_encrypt.modules import secure_memory
+
+        source = inspect.getsource(secure_memory.secure_erase_system_memory)
+        self.assertNotIn('open("/proc/sys/vm/drop_caches"', source)
+
+    def test_erase_still_succeeds(self) -> None:
+        """The cleanup helper must keep working without the removed block."""
+        from openssl_encrypt.modules.secure_memory import secure_erase_system_memory
+
+        self.assertTrue(secure_erase_system_memory(trigger_gc=True, full_sweep=False))
