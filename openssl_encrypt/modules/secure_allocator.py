@@ -86,7 +86,18 @@ def _lock_and_protect_buffer(buffer) -> bool:
         libc.madvise.argtypes = [ctypes.c_void_p, ctypes.c_size_t, ctypes.c_int]
         libc.madvise.restype = ctypes.c_int
         try:
-            libc.madvise(addr, size, _MADV_DONTDUMP)
+            # madvise(2) requires a page-aligned address (#103: unaligned
+            # calls fail with EINVAL). Round outward to whole pages —
+            # MADV_DONTDUMP only affects core-dump contents, so covering
+            # neighbouring heap data is safe.
+            page_size = get_memory_page_size()
+            page_addr = (addr // page_size) * page_size
+            page_len = ((size + (addr - page_addr) + page_size - 1) // page_size) * page_size
+            if libc.madvise(page_addr, page_len, _MADV_DONTDUMP) != 0:
+                logger.debug(
+                    "madvise(MADV_DONTDUMP) failed (errno %d)",
+                    ctypes.get_errno(),
+                )
         except Exception:
             pass
     return locked

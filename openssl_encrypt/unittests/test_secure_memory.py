@@ -493,3 +493,78 @@ class TestSecureEraseSystemMemory(unittest.TestCase):
         from openssl_encrypt.modules.secure_memory import secure_erase_system_memory
 
         self.assertTrue(secure_erase_system_memory(trigger_gc=True, full_sweep=False))
+
+
+class TestMadvDontdumpProbe(unittest.TestCase):
+    """Regression tests for GitLab #103 [MEM-11]: madvise support must be probed.
+
+    ``supports_madv_dontdump`` used to be hardcoded ``True`` inside a
+    try-block that could not fail, and every madvise()/msync() return value
+    was ignored. Worse, madvise(2) requires a page-aligned address but was
+    called on raw bytearray addresses — so it always failed with EINVAL
+    while the code reported success.
+    """
+
+    def test_probe_reflects_madvise_failure(self) -> None:
+        """A failing madvise probe must yield supports_madv_dontdump=False."""
+        import ctypes as real_ctypes
+
+        from openssl_encrypt.modules import secure_memory
+
+        if sys.platform != "linux":
+            self.skipTest("Linux-only probe")
+
+        libc = MagicMock()
+        libc.madvise.return_value = -1
+        with patch.object(secure_memory.ctypes, "CDLL", return_value=libc):
+            allocator = secure_memory.SecureMemoryAllocator()
+
+        self.assertFalse(allocator.supports_madv_dontdump)
+
+    def test_probe_true_on_real_linux(self) -> None:
+        """On a real Linux kernel (>=3.4) the probe must succeed."""
+        if sys.platform != "linux":
+            self.skipTest("Linux-only probe")
+
+        from openssl_encrypt.modules.secure_memory import SecureMemoryAllocator
+
+        self.assertTrue(SecureMemoryAllocator().supports_madv_dontdump)
+
+    def test_cold_boot_protection_reports_madvise_failure(self) -> None:
+        """_apply_cold_boot_protections must not report success when madvise fails."""
+        if sys.platform != "linux":
+            self.skipTest("Linux-only path")
+
+        from openssl_encrypt.modules import secure_memory
+
+        allocator = secure_memory.SecureMemoryAllocator()
+        libc = MagicMock()
+        libc.madvise.return_value = -1
+        with patch.object(secure_memory.ctypes, "CDLL", return_value=libc):
+            applied = allocator._apply_cold_boot_protections(bytearray(64))
+
+        self.assertFalse(applied)
+
+    def test_cold_boot_protection_succeeds_with_aligned_range(self) -> None:
+        """With page-rounding in place the advice must genuinely apply."""
+        if sys.platform != "linux":
+            self.skipTest("Linux-only path")
+
+        from openssl_encrypt.modules.secure_memory import SecureMemoryAllocator
+
+        allocator = SecureMemoryAllocator()
+        self.assertTrue(allocator._apply_cold_boot_protections(bytearray(64)))
+
+    def test_no_dontfork_on_heap_buffers(self) -> None:
+        """MADV_DONTFORK must not be applied to page-rounded heap ranges.
+
+        The old unaligned call always failed with EINVAL; page-aligning it
+        would unmap whole heap pages — including unrelated objects — from
+        forked children, crashing them. It must stay removed.
+        """
+        import inspect
+
+        from openssl_encrypt.modules.secure_memory import SecureMemoryAllocator
+
+        source = inspect.getsource(SecureMemoryAllocator._apply_cold_boot_protections)
+        self.assertNotIn("MADV_DONTFORK = 10", source)
