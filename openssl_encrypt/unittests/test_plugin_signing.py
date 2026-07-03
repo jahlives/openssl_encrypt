@@ -248,5 +248,103 @@ class TestSignaturePolicy(unittest.TestCase):
         self.assertEqual(PluginSignaturePolicy("enforce"), PluginSignaturePolicy.ENFORCE)
 
 
+# A benign, AST-clean plugin usable end-to-end through the loader.
+_LOADER_PLUGIN = """
+from openssl_encrypt.modules.plugin_system import (
+    PluginCapability,
+    PluginResult,
+    PluginType,
+    PreProcessorPlugin,
+)
+
+
+class SignedTestPlugin(PreProcessorPlugin):
+    def __init__(self):
+        super().__init__("signed_test", "Signed Test Plugin", "1.0.0")
+
+    def get_plugin_type(self):
+        return PluginType.PRE_PROCESSOR
+
+    def get_required_capabilities(self):
+        return {PluginCapability.READ_FILES}
+
+    def get_description(self):
+        return "Signed test plugin"
+
+    def process_file(self, file_path, context):
+        return PluginResult.success_result("ok")
+"""
+
+
+class TestLoaderSignaturePolicy(_SigningFixture):
+    """End-to-end: the loader honors the signature policy."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        from openssl_encrypt.modules.plugin_system import PluginManager
+        from openssl_encrypt.modules.plugin_system.plugin_config import (
+            PluginConfigManager,
+        )
+
+        self.PluginManager = PluginManager
+        self.PluginConfigManager = PluginConfigManager
+
+        # Owner-only plugin dir (so the H8 location check passes) and key store.
+        self.plugin_dir = self.tmp / "plugins"
+        self.plugin_dir.mkdir(mode=0o700)
+        self.plugin_path = self.plugin_dir / "signed_plugin.py"
+        self.plugin_path.write_text(_LOADER_PLUGIN)
+
+        self.keys_dir = self.tmp / "trusted_plugin_keys"
+        self.keys_dir.mkdir(mode=0o700)
+        (self.keys_dir / "author.asc").write_bytes(self.author_pub)
+
+    def _manager(self, policy_str: str):
+        from openssl_encrypt.modules.plugin_system.plugin_signature import (
+            PluginSignaturePolicy,
+        )
+
+        return self.PluginManager(
+            config_manager=self.PluginConfigManager(),
+            strict_security_mode=True,
+            signature_policy=PluginSignaturePolicy(policy_str),
+            trusted_keys_dir=str(self.keys_dir),
+        )
+
+    def _write_signature(self, fpr: str, home_name: str, over: bytes = None) -> None:
+        data = self.plugin_path.read_bytes() if over is None else over
+        sig = self._sign(data, fpr, home_name)
+        (self.plugin_dir / "signed_plugin.py.asc").write_bytes(sig)
+
+    def test_enforce_refuses_unsigned(self) -> None:
+        result = self._manager("enforce").load_plugin(str(self.plugin_path))
+        self.assertFalse(result.success)
+
+    def test_enforce_accepts_valid_signature(self) -> None:
+        self._write_signature(self.author_fpr, "author_home")
+        result = self._manager("enforce").load_plugin(str(self.plugin_path))
+        self.assertTrue(result.success, result.message)
+
+    def test_enforce_refuses_impostor_signature(self) -> None:
+        # Impostor signs; only the author key is enrolled.
+        self._write_signature(self.impostor_fpr, "impostor_home")
+        result = self._manager("enforce").load_plugin(str(self.plugin_path))
+        self.assertFalse(result.success)
+
+    def test_enforce_refuses_signature_over_other_bytes(self) -> None:
+        # Valid author signature, but over different bytes than the plugin file.
+        self._write_signature(self.author_fpr, "author_home", over=b"different content")
+        result = self._manager("enforce").load_plugin(str(self.plugin_path))
+        self.assertFalse(result.success)
+
+    def test_warn_loads_unsigned(self) -> None:
+        result = self._manager("warn").load_plugin(str(self.plugin_path))
+        self.assertTrue(result.success, result.message)
+
+    def test_off_loads_unsigned(self) -> None:
+        result = self._manager("off").load_plugin(str(self.plugin_path))
+        self.assertTrue(result.success, result.message)
+
+
 if __name__ == "__main__":
     unittest.main()

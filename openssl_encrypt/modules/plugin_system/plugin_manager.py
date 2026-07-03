@@ -89,6 +89,8 @@ class PluginManager:
         self,
         config_manager: Optional["PluginConfigManager"] = None,
         strict_security_mode: bool = True,
+        signature_policy: "PluginSignaturePolicy" = None,
+        trusted_keys_dir: Optional[str] = None,
     ):
         self.plugins: Dict[str, PluginRegistration] = {}
         self.plugin_directories: Set[str] = set()
@@ -107,6 +109,15 @@ class PluginManager:
         self.allowed_unsafe_plugins: Set[str] = set()  # Whitelist for trusted plugins
         self.builtin_plugin_root: Optional[str] = None  # Built-in plugins skip AST analysis
         self._validated_source_hashes: Dict[str, str] = {}  # TOCTOU: hash at validation time
+
+        # Signature-gated loading (#66). Default OFF preserves legacy behavior;
+        # the CLI/config selects WARN or ENFORCE. trusted_keys_dir defaults to
+        # the per-user store resolved lazily on first use.
+        from .plugin_signature import PluginSignaturePolicy
+
+        self.signature_policy = signature_policy or PluginSignaturePolicy.OFF
+        self.trusted_keys_dir = trusted_keys_dir
+        self._trust_anchors_cache = None
 
     def add_plugin_directory(self, directory: str) -> None:
         """Add directory to scan for plugins."""
@@ -779,9 +790,7 @@ class PluginManager:
         ):
             try:
                 trusted.add(
-                    win32security.ConvertSidToStringSid(
-                        win32security.CreateWellKnownSid(sid_type)
-                    )
+                    win32security.ConvertSidToStringSid(win32security.CreateWellKnownSid(sid_type))
                 )
             except Exception:  # pragma: no cover - defensive
                 pass
@@ -805,9 +814,7 @@ class PluginManager:
                 return f"plugin {kind} has a NULL DACL (everyone-writable)"
 
             allowed = set(trusted)
-            allowed.add(
-                win32security.ConvertSidToStringSid(sd.GetSecurityDescriptorOwner())
-            )
+            allowed.add(win32security.ConvertSidToStringSid(sd.GetSecurityDescriptorOwner()))
 
             for i in range(dacl.GetAceCount()):
                 ace = dacl.GetAce(i)
@@ -832,6 +839,118 @@ class PluginManager:
                     f"({sid_str}), not just its owner"
                 )
         return None
+
+    def _default_trusted_keys_dir(self) -> str:
+        """Resolve the per-user trust-anchor store directory."""
+        base = os.environ.get("OPENSSL_ENCRYPT_HOME") or os.path.join(
+            os.path.expanduser("~"), ".openssl_encrypt"
+        )
+        return os.path.join(base, "trusted_plugin_keys")
+
+    def _load_trust_anchors(self):
+        """Load (and cache) the enrolled plugin-signing trust anchors.
+
+        Returns a list of TrustAnchor; empty if the store is absent. On a store
+        that is unsafe (writable by others) the error is propagated by the
+        caller's policy handling.
+        """
+        if self._trust_anchors_cache is not None:
+            return self._trust_anchors_cache
+        from .plugin_signature import TrustAnchorStore
+
+        directory = self.trusted_keys_dir or self._default_trusted_keys_dir()
+        self._trust_anchors_cache = TrustAnchorStore(directory).load_anchors()
+        return self._trust_anchors_cache
+
+    def _check_signature_policy(self, file_path: str) -> bool:
+        """Apply the plugin-signature policy to a (non-built-in) plugin file.
+
+        Returns True if the plugin may proceed to load, False if it must be
+        refused. WARN never refuses (only logs); ENFORCE refuses unsigned or
+        unverifiable plugins; OFF is a no-op. Verification runs over the raw
+        on-disk bytes so it matches what exec_module will run (guarded by the
+        TOCTOU re-hash).
+        """
+        from .plugin_signature import (
+            PluginSignaturePolicy,
+            TrustAnchorError,
+            signature_path_for,
+            verify_plugin_signature,
+        )
+
+        if self.signature_policy == PluginSignaturePolicy.OFF:
+            return True
+
+        try:
+            anchors = self._load_trust_anchors()
+        except TrustAnchorError as e:
+            # An unsafe anchor store means we cannot establish trust. Fail
+            # closed under ENFORCE; warn otherwise.
+            logger.error(f"Plugin trust-anchor store is unsafe: {e}")
+            if self.signature_policy == PluginSignaturePolicy.ENFORCE:
+                return False
+            return True
+
+        try:
+            with open(file_path, "rb") as f:
+                plugin_bytes = f.read()
+        except OSError as e:
+            logger.error(f"Could not read plugin for signature check: {file_path}: {e}")
+            return self.signature_policy != PluginSignaturePolicy.ENFORCE
+
+        verdict = verify_plugin_signature(plugin_bytes, signature_path_for(file_path), anchors)
+
+        if verdict.verified:
+            logger.info(
+                f"Plugin signature verified for {file_path} "
+                f"(anchor: {verdict.anchor_label}, key: {verdict.fingerprint})"
+            )
+            if security_logger:
+                security_logger.log_event(
+                    "plugin_signature_verified",
+                    "info",
+                    {
+                        "file_path": file_path,
+                        "fingerprint": verdict.fingerprint,
+                        "anchor": verdict.anchor_label,
+                    },
+                )
+            return True
+
+        # Not verified.
+        if self.signature_policy == PluginSignaturePolicy.ENFORCE:
+            logger.error(
+                f"SECURITY BLOCKED: unsigned/unverifiable plugin refused in enforce "
+                f"mode: {file_path} ({verdict.reason})"
+            )
+            if security_logger:
+                security_logger.log_event(
+                    "plugin_blocked",
+                    "critical",
+                    {
+                        "file_path": file_path,
+                        "reason": "signature_unverified",
+                        "detail": verdict.reason,
+                    },
+                )
+            return False
+
+        # WARN mode: allow but make it loud.
+        logger.warning(
+            f"Plugin {file_path} has no valid signature ({verdict.reason}). "
+            f"Loading anyway (signature policy: warn). Use enforce mode to refuse."
+        )
+        if security_logger:
+            security_logger.log_event(
+                "plugin_signature_missing",
+                "warning",
+                {
+                    "file_path": file_path,
+                    "reason": verdict.reason,
+                    "action": "allowed_warn_mode",
+                },
+            )
+        return True
 
     def _validate_plugin_file(self, file_path: str) -> bool:
         """
@@ -886,6 +1005,14 @@ class PluginManager:
             file_size = os.path.getsize(file_path)
             if file_size > 1024 * 1024:  # 1MB limit
                 logger.warning(f"Plugin file too large: {file_path} ({file_size} bytes)")
+                return False
+
+            # Signature gate (#66). Verified over the raw on-disk bytes; the
+            # TOCTOU re-hash below then guarantees those same bytes execute.
+            # ENFORCE refuses unsigned/unverifiable non-built-in plugins; WARN
+            # only logs; OFF is a no-op. AST analysis still runs afterward as
+            # defense in depth.
+            if not self._check_signature_policy(file_path):
                 return False
 
             # AST-based content validation
