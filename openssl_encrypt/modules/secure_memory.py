@@ -37,6 +37,38 @@ def get_memory_page_size():
         return 4096
 
 
+# Process-wide flag: core-dump prevention has been applied (see
+# disable_core_dumps). Tests may reset it.
+_core_dumps_disabled = False
+
+
+def disable_core_dumps() -> bool:
+    """Disable core dumps for this process by zeroing the RLIMIT_CORE soft limit.
+
+    Runs once per process; later calls are no-ops. Only the *soft* limit is
+    changed (#104): the previous code dropped the hard limit to 0 on every
+    secure allocation — an irreversible, process-global side effect that
+    prevented an embedding application from ever re-enabling core dumps
+    deliberately (e.g. for crash diagnosis after key material is wiped).
+
+    Returns:
+        bool: True if core dumps are disabled (now or already), False if
+        the limit could not be changed on this platform.
+    """
+    global _core_dumps_disabled
+    if _core_dumps_disabled:
+        return True
+    try:
+        import resource
+
+        _soft, hard = resource.getrlimit(resource.RLIMIT_CORE)
+        resource.setrlimit(resource.RLIMIT_CORE, (0, hard))
+        _core_dumps_disabled = True
+        return True
+    except Exception:
+        return False
+
+
 def verify_memory_zeroed(data, full_check=True, sample_size=16):
     """
     Verify that a memory buffer has been properly zeroed using constant-time approach.
@@ -797,11 +829,8 @@ class SecureMemoryAllocator:
             if self.system in ("linux", "darwin", "freebsd"):
                 # Try to import the appropriate modules
                 try:
-                    import fcntl
-                    import resource
-
-                    # Attempt to disable core dumps
-                    resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+                    # Disable core dumps (soft limit only, once per process, #104)
+                    disable_core_dumps()
 
                     # Determine the correct library name based on platform
                     if self.system == "linux":
@@ -1445,13 +1474,8 @@ def secure_erase_system_memory(trigger_gc=True, full_sweep=False):
         # it was removed rather than corrected.
         if system_name == "linux":
             try:
-                # Try to disable core dumps
-                try:
-                    import resource
-
-                    resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
-                except Exception:
-                    pass
+                # Disable core dumps (soft limit only, once per process, #104)
+                disable_core_dumps()
 
                 # Request garbage collection again after memory operations
                 gc.collect()
