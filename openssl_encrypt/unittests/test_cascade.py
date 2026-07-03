@@ -1072,3 +1072,67 @@ class TestCascadeAllLayerAAD(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestTypeBasedAuthClassification(unittest.TestCase):
+    """Regression tests for GitLab #91 [CORE-7]: auth-failure classification.
+
+    Cascade decrypt used to classify authentication failures by substring-
+    matching the underlying error text ('authentication'/'tag') and raised
+    errors disclosing which layer failed. Classification must be based on
+    concrete exception types, and the resulting error must be layer-agnostic.
+    """
+
+    def setUp(self):
+        self.config = CascadeConfig(
+            cipher_names=["aes-256-gcm", "chacha20-poly1305"], hkdf_hash="sha256"
+        )
+        self.cascade = CascadeEncryption(self.config)
+        self.master_key = secrets.token_bytes(32)
+        self.salt = secrets.token_bytes(16)
+        self.plaintext = b"layer-agnostic error test"
+
+    def test_auth_error_is_layer_agnostic(self):
+        """Tampering must yield an AuthenticationError naming no layer/cipher."""
+        ciphertext = self.cascade.encrypt(self.plaintext, self.master_key, self.salt)
+        tampered = bytearray(ciphertext)
+        tampered[-1] ^= 0x01
+        with self.assertRaises(AuthenticationError) as cm:
+            self.cascade.decrypt(bytes(tampered), self.master_key, self.salt)
+
+        message = str(cm.exception).lower()
+        self.assertNotIn("layer", message)
+        for cipher_name in self.config.cipher_names:
+            self.assertNotIn(cipher_name, message)
+
+    def test_non_auth_error_with_taglike_text_not_misclassified(self):
+        """A non-auth exception mentioning 'tag' must not become an auth failure."""
+        from unittest import mock
+
+        ciphertext = self.cascade.encrypt(self.plaintext, self.master_key, self.salt)
+        with mock.patch.object(
+            self.cascade.ciphers[-1],
+            "decrypt",
+            side_effect=ValueError("corrupt tag metadata in header"),
+        ):
+            with self.assertRaises(CascadeError) as cm:
+                self.cascade.decrypt(ciphertext, self.master_key, self.salt)
+
+        self.assertNotIsInstance(cm.exception, AuthenticationError)
+
+    def test_cipher_auth_error_maps_to_cascade_auth_error(self):
+        """crypt_errors.AuthenticationError must classify as auth regardless of text."""
+        from unittest import mock
+
+        from openssl_encrypt.modules.crypt_errors import (
+            AuthenticationError as CipherAuthError,
+        )
+
+        ciphertext = self.cascade.encrypt(self.plaintext, self.master_key, self.salt)
+        with mock.patch.object(
+            self.cascade.ciphers[-1],
+            "decrypt",
+            side_effect=CipherAuthError("xyzzy"),
+        ):
+            with self.assertRaises(AuthenticationError):
+                self.cascade.decrypt(ciphertext, self.master_key, self.salt)
