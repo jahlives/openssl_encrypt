@@ -371,8 +371,14 @@ class CommonPasswordChecker:
         """
         Initialize the common password checker.
 
+        A custom list AUGMENTS the embedded baseline list rather than
+        replacing it: a small custom list must never weaken the baseline
+        protection. Without a custom path, the default system/package
+        paths are tried, with the embedded list as fallback.
+
         Args:
-            custom_path: Path to a custom common password list
+            custom_path: Path to a custom common password list (checked in
+                addition to the embedded baseline list)
         """
         self.password_hashes = set()
         self.loaded_at_least_one = False
@@ -380,6 +386,12 @@ class CommonPasswordChecker:
         # Try to load passwords from custom path if provided
         if custom_path and os.path.exists(custom_path):
             self._load_password_list(custom_path)
+            # #97: custom + embedded is intentional. The old code reached
+            # the embedded list only through a forgotten loaded_at_least_one
+            # flag; load it explicitly so the semantics are by design, not
+            # by accident.
+            self._load_embedded_passwords()
+            self.loaded_at_least_one = True
         else:
             # Try all default paths
             for path in self.DEFAULT_PATHS:
@@ -387,10 +399,10 @@ class CommonPasswordChecker:
                     self._load_password_list(path)
                     self.loaded_at_least_one = True
 
-        # If no external files were loaded, use the embedded list
-        if not self.loaded_at_least_one:
-            self._load_embedded_passwords()
-            self.loaded_at_least_one = True
+            # If no external files were loaded, use the embedded list
+            if not self.loaded_at_least_one:
+                self._load_embedded_passwords()
+                self.loaded_at_least_one = True
 
     def _load_password_list(self, path: str) -> None:
         """

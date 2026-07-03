@@ -148,3 +148,51 @@ class TestCheckPasswordCli(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestCommonPasswordCheckerCustomList(unittest.TestCase):
+    """Regression tests for GitLab #97 [KDF-10]: custom-list load semantics.
+
+    The custom-path branch of CommonPasswordChecker.__init__ forgot to set
+    ``loaded_at_least_one``, so the embedded baseline list was loaded as an
+    accidental fallback. Decision: custom + embedded IS the intended
+    behavior — a small custom list must augment, not replace, the baseline —
+    so the code must do it explicitly and document it.
+    """
+
+    def _make_checker(self, entries):
+        import tempfile
+
+        from openssl_encrypt.modules.password_policy import CommonPasswordChecker
+
+        fd, path = tempfile.mkstemp(suffix=".txt")
+        with os.fdopen(fd, "w") as f:
+            f.write("\n".join(entries))
+        self.addCleanup(os.unlink, path)
+        return CommonPasswordChecker(custom_path=path)
+
+    def test_custom_entries_flagged(self) -> None:
+        checker = self._make_checker(["hyper-specific-corp-password"])
+        self.assertTrue(checker.is_common_password("hyper-specific-corp-password"))
+
+    def test_embedded_baseline_still_active_with_custom_list(self) -> None:
+        """The embedded baseline must augment a custom list, by design."""
+        checker = self._make_checker(["hyper-specific-corp-password"])
+        self.assertTrue(
+            checker.is_common_password("welcome123"),
+            "embedded baseline entry not flagged when a custom list is used",
+        )
+
+    def test_loaded_flag_set_in_custom_branch(self) -> None:
+        """The custom branch must set loaded_at_least_one itself (#97)."""
+        import inspect
+
+        from openssl_encrypt.modules.password_policy import CommonPasswordChecker
+
+        checker = self._make_checker(["hyper-specific-corp-password"])
+        self.assertTrue(checker.loaded_at_least_one)
+
+        # The intent must be explicit in the code, not an accidental
+        # fallback: the custom branch itself loads the embedded baseline.
+        source = inspect.getsource(CommonPasswordChecker.__init__)
+        self.assertIn("#97", source, "custom+embedded decision not documented in __init__")
