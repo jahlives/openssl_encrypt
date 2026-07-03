@@ -24,6 +24,7 @@ import logging
 import os
 import secrets
 import struct
+import tempfile
 from typing import Callable, List, Optional, Tuple, Union
 
 from cryptography.hazmat.primitives import hashes
@@ -790,9 +791,23 @@ class StreamingDecryptor:
             # For in-memory return when output_file is None
             decrypted_chunks: Optional[List[bytes]] = [] if output_file is None else None
             fout = None
+            tmp_path = None
             try:
                 if output_file is not None:
-                    fout = open(output_file, "wb")
+                    # Stage plaintext to a temp file in the destination
+                    # directory and only rename it into place after the
+                    # trailer HMAC verifies (#96). Writing directly to the
+                    # destination let concurrent readers observe partial
+                    # plaintext, left partial output behind on mid-stream
+                    # failures, and destroyed any pre-existing file at the
+                    # destination even when verification failed.
+                    out_dir = os.path.dirname(os.path.abspath(output_file))
+                    tmp_fd, tmp_path = tempfile.mkstemp(
+                        prefix=os.path.basename(output_file) + ".",
+                        suffix=".part",
+                        dir=out_dir,
+                    )
+                    fout = os.fdopen(tmp_fd, "wb")
 
                 while fin.tell() < chunks_end:
                     # Read chunk header (8 bytes)
@@ -867,11 +882,28 @@ class StreamingDecryptor:
 
                     chunk_index += 1
 
+            except BaseException:
+                # Mid-stream failure: discard the staged output so no
+                # partial plaintext is left behind (#96)
+                if fout is not None:
+                    fout.close()
+                    fout = None
+                if tmp_path is not None and os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+                raise
             finally:
                 if fout is not None:
                     fout.close()
 
+        def _discard_staged_output() -> None:
+            if tmp_path is not None and os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+
         if chunk_index != expected_chunk_count:
+            _discard_staged_output()
             raise AuthenticationError(
                 f"Decrypted {chunk_index} chunks, expected {expected_chunk_count}"
             )
@@ -885,9 +917,8 @@ class StreamingDecryptor:
             secure_memzero(hmac_key)
 
         if not hmac_module.compare_digest(computed_hmac, trailer_hmac):
-            # If we wrote to a file, remove the unverified output
-            if output_file is not None and os.path.exists(output_file):
-                os.remove(output_file)
+            # Discard the staged, unverified output (#96)
+            _discard_staged_output()
             raise AuthenticationError(
                 "Trailer HMAC verification failed: file integrity compromised"
             )
@@ -900,14 +931,16 @@ class StreamingDecryptor:
                 full_plaintext = b"".join(decrypted_chunks) if decrypted_chunks else b""
                 computed_hash = hashlib.sha256(full_plaintext).hexdigest()
             if computed_hash != original_hash:
-                if output_file is not None and os.path.exists(output_file):
-                    os.remove(output_file)
+                _discard_staged_output()
                 raise AuthenticationError("Original content hash mismatch after decryption")
 
         # Return result
         if output_file is None:
             return b"".join(decrypted_chunks) if decrypted_chunks else b""
 
+        # All verifications passed: move the staged output into place
+        # atomically (same directory, so same filesystem)
+        os.replace(tmp_path, output_file)
         return True
 
 
