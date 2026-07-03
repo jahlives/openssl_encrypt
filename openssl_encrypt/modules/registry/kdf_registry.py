@@ -808,9 +808,15 @@ class RandomX(KDFBase):
             # Pass PYTHONPATH and use reliable executable for sandboxed environments (Flatpak)
             from ..randomx import _get_python_executable, _get_subprocess_env
 
+            python_exe = _get_python_executable()
+            if python_exe is None:
+                # No resolvable interpreter (#88): fail closed
+                cls._available = False
+                return cls._available
+
             try:
                 result = subprocess.run(
-                    [_get_python_executable(), "-c", "import randomx"],
+                    [python_exe, "-c", "import randomx"],
                     capture_output=True,
                     timeout=2,
                     check=False,
