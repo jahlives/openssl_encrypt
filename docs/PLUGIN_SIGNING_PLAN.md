@@ -4,13 +4,18 @@ Target: **1.5.x first** (branch off `feature/v1.5.x-development`), then 1.4.x
 backport. Resolves GitLab #66, the last actionable finding above LOW from
 `sec-review::1.4.7`.
 
-**Status: in progress on `feature/plugin-signing`.** Verifier + trust-anchor
-store, loader policy wiring, and operator sign/enroll/list helpers are
-implemented and tested (`test_plugin_signing.py`). Remaining: argparse
-subcommand wiring for `plugin sign` / `plugin trust-key` / `plugin list-keys`
-and the `--plugin-signature-policy` flag; operator-guide docs; 1.4.x backport.
-Decisions D1–D3 taken "as proposed" (warn→enforce, project key enabled by
-default, `.asc` sidecars).
+**Status: feature-complete on `feature/plugin-signing` (pending review + backport).**
+Implemented and tested (`test_plugin_signing.py`, `test_plugin_cli.py`):
+verifier + trust-anchor store, loader policy gate, operator helpers, the
+`plugin sign|trust-key|list-keys` CLI command, and policy resolution via
+`OPENSSL_ENCRYPT_PLUGIN_SIGNATURE_POLICY` in `create_default_plugin_manager`.
+Operator docs added to `plugins/PLUGIN_DEVELOPMENT.md`. Default policy is OFF
+(zero behavior change). Decisions D1–D3 taken "as proposed" (warn→enforce,
+project key enabled by default, `.asc` sidecars).
+
+Remaining: (a) enable the project-key anchor by default (D2) — currently only
+enrolled/operator keys are anchors; (b) flip the default policy to WARN when
+the maintainer approves the D1 timeline; (c) 1.4.x backport after soak.
 
 ## 1. Problem Statement
 
