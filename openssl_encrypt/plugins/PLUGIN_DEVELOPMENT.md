@@ -487,3 +487,61 @@ plugin_configs = {
 5. **Resource Limits**: Respect sandbox resource limits
 
 This completes the plugin development guide. For more examples, see the plugins in the `examples/` directory.
+
+## Signature-Gated Plugin Loading (#66)
+
+Third-party (non-built-in) plugins can be required to carry a detached PGP
+signature over their exact source bytes, verified before the plugin's
+top-level code runs. This shifts the load-time trust decision from a denylist
+("does this code look dangerous?") to an allowlist ("did someone I trust vouch
+for these exact bytes?").
+
+### Policy
+
+Set the policy via the `OPENSSL_ENCRYPT_PLUGIN_SIGNATURE_POLICY` environment
+variable (or the `signature_policy` argument to `create_default_plugin_manager`):
+
+| Value     | Behavior                                                        |
+|-----------|-----------------------------------------------------------------|
+| `off`     | signatures not checked (default; AST denylist only)             |
+| `warn`    | unsigned/unverifiable plugins load, with a loud warning + log    |
+| `enforce` | unsigned/unverifiable non-built-in plugins are refused           |
+
+Built-in plugins shipped with the package are unaffected (they are covered by
+the source-integrity manifest, not per-file signatures).
+
+### Trust anchors
+
+Enrolled signing keys live as ASCII-armored `*.asc` files in an owner-only
+store (`~/.openssl_encrypt/trusted_plugin_keys/`). A store writable by anyone
+but its owner is refused; an individually writable key file is skipped.
+
+### Operator commands
+
+```sh
+# Enroll an author's public key (confirm the fingerprint OUT OF BAND first!)
+openssl-encrypt plugin trust-key \
+    --trust-key-file author.pub \
+    --trust-fingerprint <FPR-verified-out-of-band>
+
+# Sign your own plugin (uses your default keyring, so a YubiKey/OnlyKey or
+# gpg-agent handles the private key and any touch/PIN)
+openssl-encrypt plugin sign --plugin-file myplugin.py --signing-key <FPR>
+
+# List enrolled anchors
+openssl-encrypt plugin list-keys
+```
+
+### What signing does and does NOT defend against
+
+* **Stops** an attacker who can only *place or modify files* (they cannot
+  produce a valid signature).
+* **Does not sandbox** a trusted plugin — a signed-but-buggy plugin still runs
+  with full import-time privileges. Signing changes *who can get code loaded*,
+  not *what loaded code can do*.
+* **An on-disk signing key gives no protection** against an attacker who
+  already executes code as you (they can sign anything, and can also patch the
+  package directly). Use a **hardware-backed key** (YubiKey/OnlyKey) so the
+  signing capability itself requires physical confirmation.
+
+The AST scanner is retained as defense-in-depth, not as the trust decision.
