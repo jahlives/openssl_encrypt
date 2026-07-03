@@ -2260,6 +2260,7 @@ def main():
         "enable-plugin",
         "disable-plugin",
         "reload-plugin",
+        "plugin",
         "telemetry",
         "keyserver",
         "hsm",
@@ -2754,6 +2755,7 @@ def main_with_args(args=None):
             "enable-plugin",
             "disable-plugin",
             "reload-plugin",
+            "plugin",
             "verify",
             "split-secret",
             "combine-secrets",
@@ -3970,6 +3972,11 @@ def main_with_args(args=None):
         from .identity_cli import main as identity_main
 
         sys.exit(identity_main(args))
+
+    elif args.action == "plugin":
+        from .plugin_system.plugin_cli import main as plugin_main
+
+        sys.exit(plugin_main(args))
 
     elif args.action == "telemetry":
         handle_telemetry_command(args)
