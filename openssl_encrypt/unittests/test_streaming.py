@@ -18,6 +18,7 @@ import hashlib
 import json
 import os
 import secrets
+import shutil
 import struct
 import tempfile
 import unittest
@@ -1678,3 +1679,142 @@ class TestFullPipelineStreamingRoundtrip(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ============================================================
+# Test: GitLab #96 [IO-7] — atomic decrypt output (temp + rename)
+# ============================================================
+
+
+class TestAtomicDecryptOutput(unittest.TestCase):
+    """Regression tests for GitLab #96: plaintext staged until trailer HMAC verifies.
+
+    The decryptor used to write per-chunk-authenticated plaintext directly
+    to the destination path and only delete it after trailer verification
+    failed. A concurrent reader could observe the partial file; a
+    mid-stream failure left partial plaintext behind; and a tampered file
+    destroyed whatever previously existed at the destination path.
+    """
+
+    def _make_encrypted(self, data: bytes, chunk_size: int = 1024):
+        key = secrets.token_bytes(32)
+        input_path = _create_temp_file(data)
+        output_enc = _create_temp_file(b"")
+        try:
+            enc = StreamingEncryptor(key=key, algorithm="aes-gcm", chunk_size=chunk_size)
+            original_hash = enc.hash_file(input_path)
+            chunk_count = enc.get_chunk_count(len(data))
+            metadata = {
+                "format_version": 12,
+                "mode": "symmetric",
+                "aead_binding": True,
+                "streaming": {
+                    "enabled": True,
+                    "chunk_size": chunk_size,
+                    "chunk_count": chunk_count,
+                    "nonce_prefix": base64.b64encode(enc.nonce_prefix).decode("ascii"),
+                },
+                "hashes": {"original_hash": original_hash},
+                "encryption": {"cascade": False, "algorithm": "aes-gcm"},
+            }
+            metadata_b64 = base64.b64encode(json.dumps(metadata).encode("utf-8"))
+            enc.encrypt_file(
+                input_file=input_path,
+                output_file=output_enc,
+                metadata_b64=metadata_b64,
+                chunk_count=chunk_count,
+                quiet=True,
+            )
+        finally:
+            os.unlink(input_path)
+        decryptor = StreamingDecryptor(
+            key=key, algorithm="aes-gcm", nonce_prefix=enc.nonce_prefix, chunk_size=chunk_size
+        )
+        return output_enc, decryptor, metadata_b64, chunk_count, original_hash
+
+    def _flip_byte(self, path: str, offset_from_end: int) -> None:
+        with open(path, "r+b") as f:
+            f.seek(0, 2)
+            size = f.tell()
+            f.seek(size - offset_from_end)
+            byte = f.read(1)
+            f.seek(size - offset_from_end)
+            f.write(bytes([byte[0] ^ 0xFF]))
+
+    def test_tampered_trailer_preserves_existing_destination(self) -> None:
+        """A failed decrypt must not destroy a pre-existing destination file."""
+        enc_path, dec, metadata_b64, chunk_count, original_hash = self._make_encrypted(
+            secrets.token_bytes(5000)
+        )
+        sentinel = b"precious pre-existing content"
+        dest = _create_temp_file(sentinel)
+        try:
+            self._flip_byte(enc_path, 1)  # corrupt trailer HMAC
+            with self.assertRaises(AuthenticationError):
+                dec.decrypt_file(
+                    input_file=enc_path,
+                    output_file=dest,
+                    metadata_b64=metadata_b64,
+                    expected_chunk_count=chunk_count,
+                    original_hash=original_hash,
+                    quiet=True,
+                )
+            self.assertTrue(os.path.exists(dest), "destination was deleted")
+            with open(dest, "rb") as f:
+                self.assertEqual(f.read(), sentinel, "destination was overwritten")
+        finally:
+            for p in (enc_path, dest):
+                if os.path.exists(p):
+                    os.unlink(p)
+
+    def test_midstream_tamper_leaves_no_partial_output(self) -> None:
+        """A mid-stream chunk failure must not leave partial plaintext behind."""
+        enc_path, dec, metadata_b64, chunk_count, original_hash = self._make_encrypted(
+            secrets.token_bytes(5000)
+        )
+        dest_dir = tempfile.mkdtemp()
+        dest = os.path.join(dest_dir, "decrypted.bin")
+        try:
+            # Corrupt a middle chunk (well before the trailer)
+            self._flip_byte(enc_path, 2500)
+            with self.assertRaises((AuthenticationError, DecryptionError, Exception)):
+                dec.decrypt_file(
+                    input_file=enc_path,
+                    output_file=dest,
+                    metadata_b64=metadata_b64,
+                    expected_chunk_count=chunk_count,
+                    original_hash=original_hash,
+                    quiet=True,
+                )
+            self.assertFalse(os.path.exists(dest), "partial plaintext left at destination path")
+            leftovers = [n for n in os.listdir(dest_dir)]
+            self.assertEqual(leftovers, [], f"temp staging files left behind: {leftovers}")
+        finally:
+            shutil.rmtree(dest_dir, ignore_errors=True)
+            if os.path.exists(enc_path):
+                os.unlink(enc_path)
+
+    def test_successful_decrypt_lands_at_destination(self) -> None:
+        """The staged file must be renamed into place on success."""
+        data = secrets.token_bytes(5000)
+        enc_path, dec, metadata_b64, chunk_count, original_hash = self._make_encrypted(data)
+        dest_dir = tempfile.mkdtemp()
+        dest = os.path.join(dest_dir, "decrypted.bin")
+        try:
+            result = dec.decrypt_file(
+                input_file=enc_path,
+                output_file=dest,
+                metadata_b64=metadata_b64,
+                expected_chunk_count=chunk_count,
+                original_hash=original_hash,
+                quiet=True,
+            )
+            self.assertTrue(result)
+            with open(dest, "rb") as f:
+                self.assertEqual(f.read(), data)
+            leftovers = [n for n in os.listdir(dest_dir) if n != "decrypted.bin"]
+            self.assertEqual(leftovers, [], f"temp staging files left behind: {leftovers}")
+        finally:
+            shutil.rmtree(dest_dir, ignore_errors=True)
+            if os.path.exists(enc_path):
+                os.unlink(enc_path)
