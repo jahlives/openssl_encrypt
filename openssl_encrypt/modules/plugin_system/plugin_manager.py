@@ -106,6 +106,7 @@ class PluginManager:
         self.strict_security_mode = strict_security_mode  # Default: block dangerous patterns
         self.allowed_unsafe_plugins: Set[str] = set()  # Whitelist for trusted plugins
         self.builtin_plugin_root: Optional[str] = None  # Built-in plugins skip AST analysis
+        self._validated_source_hashes: Dict[str, str] = {}  # TOCTOU: hash at validation time
 
     def add_plugin_directory(self, directory: str) -> None:
         """Add directory to scan for plugins."""
@@ -213,6 +214,20 @@ class PluginManager:
                             except ImportError:
                                 # Parent package might not exist as importable module, that's OK
                                 logger.debug(f"Could not import parent package: {parent_name}")
+
+                # TOCTOU mitigation: re-read source and verify hash matches
+                # what was validated by _validate_plugin_file
+                real_path = os.path.realpath(file_path)
+                expected_hash = self._validated_source_hashes.get(real_path)
+                if expected_hash:
+                    import hashlib as _hashlib
+
+                    with open(real_path, "r", encoding="utf-8") as _f:
+                        current_hash = _hashlib.sha256(_f.read().encode("utf-8")).hexdigest()
+                    if current_hash != expected_hash:
+                        return PluginResult.error_result(
+                            f"Plugin file modified after validation (TOCTOU): {file_path}"
+                        )
 
                 sys.modules[module_name] = module
                 spec.loader.exec_module(module)
@@ -876,6 +891,13 @@ class PluginManager:
             # AST-based content validation
             with open(file_path, "r", encoding="utf-8") as f:
                 content = f.read()
+
+                # Store source hash for TOCTOU verification before exec_module:
+                # exec re-reads the file from disk, so the bytes scanned here
+                # must be proven identical to the bytes that will execute
+                self._validated_source_hashes[os.path.realpath(file_path)] = _hashlib.sha256(
+                    content.encode("utf-8")
+                ).hexdigest()
 
                 # Use AST-based analysis to detect dangerous patterns
                 is_safe, violations = analyze_plugin_code(
