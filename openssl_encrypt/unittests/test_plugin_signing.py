@@ -346,5 +346,116 @@ class TestLoaderSignaturePolicy(_SigningFixture):
         self.assertTrue(result.success, result.message)
 
 
+class TestSigningCliHelpers(_SigningFixture):
+    """Operator-facing sign / enroll / list helpers."""
+
+    def test_sign_plugin_produces_loadable_signature(self) -> None:
+        from openssl_encrypt.modules.plugin_system.plugin_signature import (
+            TrustAnchor,
+            verify_plugin_signature,
+        )
+        from openssl_encrypt.modules.plugin_system.plugin_signing_cli import sign_plugin
+
+        plugin = self.tmp / "p.py"
+        plugin.write_text("VALUE = 1\n")
+        sig_path = sign_plugin(str(plugin), self.author_fpr, home=self.tmp / "author_home")
+        self.assertTrue(os.path.isfile(sig_path))
+        self.assertEqual(sig_path, str(plugin) + ".asc")
+
+        verdict = verify_plugin_signature(
+            plugin.read_bytes(),
+            sig_path,
+            [TrustAnchor(self.author_fpr, self.author_pub, "author")],
+        )
+        self.assertTrue(verdict.verified)
+
+    def test_enroll_requires_fingerprint_confirmation(self) -> None:
+        from openssl_encrypt.modules.plugin_system.plugin_signing_cli import (
+            enroll_trust_key,
+        )
+
+        keyfile = self.tmp / "author.pub"
+        keyfile.write_bytes(self.author_pub)
+        store = self.tmp / "store"
+        with self.assertRaises(ValueError):
+            enroll_trust_key(str(keyfile), trusted_keys_dir=str(store))
+
+    def test_enroll_rejects_fingerprint_mismatch(self) -> None:
+        from openssl_encrypt.modules.plugin_system.plugin_signing_cli import (
+            enroll_trust_key,
+        )
+
+        keyfile = self.tmp / "author.pub"
+        keyfile.write_bytes(self.author_pub)
+        store = self.tmp / "store"
+        with self.assertRaises(ValueError):
+            enroll_trust_key(
+                str(keyfile),
+                trusted_keys_dir=str(store),
+                confirm_fingerprint="DEADBEEF" * 5,
+            )
+
+    def test_enroll_then_list(self) -> None:
+        from openssl_encrypt.modules.plugin_system.plugin_signing_cli import (
+            enroll_trust_key,
+            list_trust_keys,
+        )
+
+        keyfile = self.tmp / "author.pub"
+        keyfile.write_bytes(self.author_pub)
+        store = self.tmp / "store"
+        anchor = enroll_trust_key(
+            str(keyfile),
+            trusted_keys_dir=str(store),
+            confirm_fingerprint=self.author_fpr,
+        )
+        self.assertTrue(self.author_fpr.endswith(anchor.fingerprint))
+        # Enrolled file is owner-only.
+        dest = store / anchor.label
+        self.assertTrue(dest.is_file())
+        if os.name != "nt":
+            self.assertEqual(stat.S_IMODE(os.stat(dest).st_mode), 0o600)
+
+        listed = list_trust_keys(trusted_keys_dir=str(store))
+        self.assertEqual(len(listed), 1)
+
+    def test_enrolled_key_makes_plugin_loadable(self) -> None:
+        """Full loop: enroll author key, sign a plugin, load under enforce."""
+        from openssl_encrypt.modules.plugin_system import PluginManager
+        from openssl_encrypt.modules.plugin_system.plugin_config import (
+            PluginConfigManager,
+        )
+        from openssl_encrypt.modules.plugin_system.plugin_signature import (
+            PluginSignaturePolicy,
+        )
+        from openssl_encrypt.modules.plugin_system.plugin_signing_cli import (
+            enroll_trust_key,
+            sign_plugin,
+        )
+
+        plugin_dir = self.tmp / "plugins2"
+        plugin_dir.mkdir(mode=0o700)
+        plugin_path = plugin_dir / "signed_plugin.py"
+        plugin_path.write_text(_LOADER_PLUGIN)
+
+        keyfile = self.tmp / "author.pub"
+        keyfile.write_bytes(self.author_pub)
+        store = self.tmp / "store2"
+        enroll_trust_key(
+            str(keyfile),
+            trusted_keys_dir=str(store),
+            confirm_fingerprint=self.author_fpr,
+        )
+        sign_plugin(str(plugin_path), self.author_fpr, home=self.tmp / "author_home")
+
+        manager = PluginManager(
+            config_manager=PluginConfigManager(),
+            signature_policy=PluginSignaturePolicy.ENFORCE,
+            trusted_keys_dir=str(store),
+        )
+        result = manager.load_plugin(str(plugin_path))
+        self.assertTrue(result.success, result.message)
+
+
 if __name__ == "__main__":
     unittest.main()
