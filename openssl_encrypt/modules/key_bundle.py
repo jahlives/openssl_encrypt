@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Dict, Optional
 
 from .crypt_utils import eprint
-from .pqc_signing import PQCSigner, calculate_fingerprint
+from .pqc_signing import PQCSigner, calculate_fingerprint, calculate_fingerprint_v2
 
 if TYPE_CHECKING:
     from .identity import Identity
@@ -273,14 +273,18 @@ class PublicKeyBundle:
             if not signature_valid:
                 raise InvalidSignatureError("Self-signature verification failed")
 
-            # Step 2: Verify fingerprint
+            # Step 2: Verify fingerprint. Dual-accept (#98): identities
+            # minted with the v2 scheme carry domain-separated fingerprints,
+            # bundles exported before it carry legacy v1.
             calculated_fingerprint = self._calculate_fingerprint()
 
             if calculated_fingerprint != self.fingerprint:
-                raise InvalidFingerprintError(
-                    f"Fingerprint mismatch: stored={self.fingerprint}, "
-                    f"calculated={calculated_fingerprint}"
-                )
+                legacy_fingerprint = self._calculate_fingerprint_legacy()
+                if legacy_fingerprint != self.fingerprint:
+                    raise InvalidFingerprintError(
+                        f"Fingerprint mismatch: stored={self.fingerprint}, "
+                        f"calculated={calculated_fingerprint}"
+                    )
 
             logger.debug(f"Successfully verified bundle for '{self.name}'")
             return True
@@ -297,12 +301,24 @@ class PublicKeyBundle:
 
     def _calculate_fingerprint(self) -> str:
         """
-        Calculate fingerprint from public keys.
+        Calculate the current-format (v2) fingerprint from public keys.
 
         SECURITY: Always recalculate, never trust stored fingerprint.
 
         Returns:
             SHA-256 fingerprint with colons
+        """
+        return calculate_fingerprint_v2(
+            self.encryption_algorithm,
+            self.encryption_public_key,
+            self.signing_algorithm,
+            self.signing_public_key,
+        )
+
+    def _calculate_fingerprint_legacy(self) -> str:
+        """Calculate the legacy v1 fingerprint (bare key concatenation, #98).
+
+        Kept only so bundles exported before the v2 scheme keep verifying.
         """
         combined_keys = self.encryption_public_key + self.signing_public_key
         return calculate_fingerprint(combined_keys)

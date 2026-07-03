@@ -325,6 +325,52 @@ def calculate_fingerprint(public_key: bytes, algorithm: str = "SHA256") -> str:
     return ":".join(hex_str[i : i + 2] for i in range(0, len(hex_str), 2))
 
 
+# Domain-separation tag for v2 identity fingerprints (#98)
+_FINGERPRINT_V2_DOMAIN = b"openssl_encrypt-identity-fingerprint-v2\x00"
+
+
+def calculate_fingerprint_v2(
+    encryption_algorithm: str,
+    encryption_public_key: bytes,
+    signing_algorithm: str,
+    signing_public_key: bytes,
+    algorithm: str = "SHA256",
+) -> str:
+    """
+    Calculate a v2 identity fingerprint over both public keys.
+
+    Unlike the legacy v1 fingerprint — SHA-256 over the bare concatenation
+    of the two keys — the v2 encoding is unambiguous and algorithm-bound
+    (#98): a domain-separation tag, then each field as a 4-byte big-endian
+    length prefix followed by its bytes, in the fixed order
+    (enc_algorithm, enc_key, sig_algorithm, sig_key). Moving bytes across
+    the enc/sig boundary or substituting the algorithm id therefore changes
+    the fingerprint.
+
+    Args:
+        encryption_algorithm: KEM algorithm identifier (e.g. "ML-KEM-768")
+        encryption_public_key: Encryption public key bytes
+        signing_algorithm: Signature algorithm identifier (e.g. "ML-DSA-65")
+        signing_public_key: Signing public key bytes
+        algorithm: Hash algorithm (SHA256, SHA512, BLAKE2b)
+
+    Returns:
+        Fingerprint as hex string with colons (like SSH fingerprints)
+    """
+
+    def _field(data: bytes) -> bytes:
+        return len(data).to_bytes(4, "big") + data
+
+    encoded = (
+        _FINGERPRINT_V2_DOMAIN
+        + _field(encryption_algorithm.encode("utf-8"))
+        + _field(bytes(encryption_public_key))
+        + _field(signing_algorithm.encode("utf-8"))
+        + _field(bytes(signing_public_key))
+    )
+    return calculate_fingerprint(encoded, algorithm=algorithm)
+
+
 def verify_signature_with_timing(
     message: bytes, signature: bytes, public_key: bytes, algorithm: str = "ML-DSA-65"
 ) -> Tuple[bool, float]:
