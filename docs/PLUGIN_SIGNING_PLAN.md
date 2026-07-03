@@ -4,7 +4,13 @@ Target: **1.5.x first** (branch off `feature/v1.5.x-development`), then 1.4.x
 backport. Resolves GitLab #66, the last actionable finding above LOW from
 `sec-review::1.4.7`.
 
-**Status: design draft — pending maintainer approval.**
+**Status: in progress on `feature/plugin-signing`.** Verifier + trust-anchor
+store, loader policy wiring, and operator sign/enroll/list helpers are
+implemented and tested (`test_plugin_signing.py`). Remaining: argparse
+subcommand wiring for `plugin sign` / `plugin trust-key` / `plugin list-keys`
+and the `--plugin-signature-policy` flag; operator-guide docs; 1.4.x backport.
+Decisions D1–D3 taken "as proposed" (warn→enforce, project key enabled by
+default, `.asc` sidecars).
 
 ## 1. Problem Statement
 
