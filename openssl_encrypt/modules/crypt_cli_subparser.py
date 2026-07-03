@@ -2043,6 +2043,64 @@ def setup_simple_parser(subparser):
     pass
 
 
+def setup_plugin_parser(subparser):
+    """Set up arguments for the 'plugin' management command (#66)."""
+
+    def _add_store_arg(p):
+        p.add_argument(
+            "--trusted-keys-dir",
+            dest="trusted_keys_dir",
+            metavar="PATH",
+            help="Trust-anchor store directory "
+            "(default: ~/.openssl_encrypt/trusted_plugin_keys/)",
+        )
+
+    plugin_subparsers = subparser.add_subparsers(
+        dest="plugin_action",
+        help="Plugin management operations",
+        metavar="operation",
+    )
+
+    sign_p = plugin_subparsers.add_parser(
+        "sign", help="Sign a plugin file, writing a detached <plugin>.py.asc"
+    )
+    sign_p.add_argument(
+        "--plugin-file", dest="plugin_file", required=True, help="Plugin .py file to sign"
+    )
+    sign_p.add_argument(
+        "--signing-key",
+        dest="signing_key",
+        required=True,
+        help="Signing key fingerprint/id (uses your default keyring; a "
+        "hardware token or gpg-agent handles the private key)",
+    )
+    sign_p.add_argument(
+        "--gpg-home",
+        dest="gpg_home",
+        help="Override GNUPGHOME for signing (advanced/testing)",
+    )
+
+    trust_p = plugin_subparsers.add_parser(
+        "trust-key", help="Enroll an author's public key as a trusted signing anchor"
+    )
+    trust_p.add_argument(
+        "--trust-key-file",
+        dest="trust_key_file",
+        required=True,
+        help="Path to an ASCII-armored public key file",
+    )
+    trust_p.add_argument(
+        "--trust-fingerprint",
+        dest="trust_fingerprint",
+        required=True,
+        help="Fingerprint confirmed OUT OF BAND; enrollment fails on mismatch",
+    )
+    _add_store_arg(trust_p)
+
+    list_keys_p = plugin_subparsers.add_parser("list-keys", help="List enrolled trust anchors")
+    _add_store_arg(list_keys_p)
+
+
 def setup_identity_parser(subparser):
     """Set up arguments for the identity command."""
     # Global identity store option
@@ -2663,6 +2721,14 @@ def create_subparser_main():
         formatter_class=argparse.RawTextHelpFormatter,
     )
     setup_remove_recovery_parser(remove_recovery_parser)
+
+    # Plugin management (signing / trust-key enrollment) — #66
+    plugin_parser = subparsers.add_parser(
+        "plugin",
+        help="Manage plugin signatures and trusted signing keys",
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
+    setup_plugin_parser(plugin_parser)
 
     verify_integrity_parser = subparsers.add_parser(
         "verify-integrity",

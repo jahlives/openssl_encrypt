@@ -185,18 +185,62 @@ SECURITY_DEFAULTS = {
 }
 
 
-def create_default_plugin_manager(config_dir: str = None) -> PluginManager:
+def _resolve_signature_policy(explicit=None):
+    """Resolve the plugin signature policy (#66).
+
+    Precedence: explicit argument > OPENSSL_ENCRYPT_PLUGIN_SIGNATURE_POLICY
+    env var > WARN (D1 default). An unrecognized env value falls back to the
+    default with a warning rather than failing the whole plugin subsystem.
+    """
+    import os
+
+    from .plugin_signature import PluginSignaturePolicy
+
+    if explicit is not None:
+        return explicit
+    raw = os.environ.get("OPENSSL_ENCRYPT_PLUGIN_SIGNATURE_POLICY")
+    if not raw:
+        return PluginSignaturePolicy.WARN
+    try:
+        return PluginSignaturePolicy(raw.strip().lower())
+    except ValueError:
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "Ignoring invalid OPENSSL_ENCRYPT_PLUGIN_SIGNATURE_POLICY=%r "
+            "(expected off/warn/enforce); using warn",
+            raw,
+        )
+        return PluginSignaturePolicy.WARN
+
+
+def create_default_plugin_manager(
+    config_dir: str = None,
+    signature_policy=None,
+    trusted_keys_dir: str = None,
+    include_project_anchor: bool = True,
+) -> PluginManager:
     """
     Create plugin manager with default configuration.
 
     Args:
         config_dir: Optional custom configuration directory
+        signature_policy: Plugin signature policy (off/warn/enforce). If None,
+            resolved from OPENSSL_ENCRYPT_PLUGIN_SIGNATURE_POLICY, else OFF.
+        trusted_keys_dir: Optional trust-anchor store override.
+        include_project_anchor: Trust the bundled project source-integrity key
+            as a default plugin-signing anchor (D2; default True).
 
     Returns:
         Configured PluginManager instance
     """
     config_manager = PluginConfigManager(config_dir)
-    plugin_manager = PluginManager(config_manager)
+    plugin_manager = PluginManager(
+        config_manager,
+        signature_policy=_resolve_signature_policy(signature_policy),
+        trusted_keys_dir=trusted_keys_dir,
+        include_project_anchor=include_project_anchor,
+    )
 
     # Add default plugin directories (if they exist)
     import os

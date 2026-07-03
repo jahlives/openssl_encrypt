@@ -4,7 +4,25 @@ Target: **1.5.x first** (branch off `feature/v1.5.x-development`), then 1.4.x
 backport. Resolves GitLab #66, the last actionable finding above LOW from
 `sec-review::1.4.7`.
 
-**Status: design draft — pending maintainer approval.**
+**Status: feature-complete on `feature/plugin-signing` (pending review + backport).**
+Implemented and tested (`test_plugin_signing.py`, `test_plugin_cli.py`):
+verifier + trust-anchor store, loader policy gate, operator helpers, the
+`plugin sign|trust-key|list-keys` CLI command, and policy resolution via
+`OPENSSL_ENCRYPT_PLUGIN_SIGNATURE_POLICY` in `create_default_plugin_manager`.
+Operator docs added to `plugins/PLUGIN_DEVELOPMENT.md`. Default policy is OFF
+(zero behavior change). Decisions D1–D3 taken "as proposed" (warn→enforce,
+project key enabled by default, `.asc` sidecars).
+
+Remaining: 1.4.x backport after soak.
+
+**D1 done:** the default policy is now WARN — unsigned plugins keep loading but
+emit a warning + security-log event, nudging operators toward signing without
+breaking anything. `enforce` and `off` remain selectable via env/arg.
+
+**D2 done:** the bundled project source-integrity key (`D269D6A5…`) is a
+default trust anchor (`include_project_anchor`, default True), so officially
+distributed non-built-in plugins verify without manual enrollment. It is shown
+by `plugin list-keys` and can be disabled per-manager.
 
 ## 1. Problem Statement
 
