@@ -36,11 +36,14 @@ import secrets
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
+from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
+from .crypt_errors import AuthenticationError as CipherAuthenticationError
 from .registry import get_cipher
+from .registry.base import AuthenticationError as RegistryAuthenticationError
 from .secure_memory import secure_memzero
 
 # Domain separation prefixes for HKDF
@@ -383,15 +386,15 @@ class CascadeEncryption:
                     # Don't pass nonce - let cipher extract it from ciphertext
                     # (The nonce was prepended during encryption)
                     data = cipher.decrypt(bytes(key), data, nonce=None, associated_data=aad)
+                except (CipherAuthenticationError, RegistryAuthenticationError, InvalidTag):
+                    # Type-based classification (#91): substring-matching the
+                    # error text misclassified exceptions, and naming the
+                    # failing layer/cipher disclosed cascade internals to an
+                    # attacker probing tampered ciphertexts. Uniform,
+                    # layer-agnostic error instead.
+                    raise AuthenticationError("Cascade authentication failed")
                 except Exception as e:
-                    # Check if it's an authentication error
-                    if "authentication" in str(e).lower() or "tag" in str(e).lower():
-                        raise AuthenticationError(
-                            f"Authentication failed at layer {i + 1} ({self.config.cipher_names[i]})"
-                        )
-                    raise CascadeError(
-                        f"Decryption failed at layer {i + 1} ({self.config.cipher_names[i]}): {e}"
-                    )
+                    raise CascadeError(f"Cascade decryption failed: {e}")
         finally:
             for key, _ in layer_keys:
                 secure_memzero(key)
