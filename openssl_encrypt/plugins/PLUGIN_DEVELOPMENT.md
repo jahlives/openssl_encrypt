@@ -503,9 +503,13 @@ variable (or the `signature_policy` argument to `create_default_plugin_manager`)
 
 | Value     | Behavior                                                        |
 |-----------|-----------------------------------------------------------------|
-| `off`     | signatures not checked (default; AST denylist only)             |
-| `warn`    | unsigned/unverifiable plugins load, with a loud warning + log    |
+| `off`     | signatures not checked (AST denylist only)                      |
+| `warn`    | unsigned/unverifiable plugins load, with a loud warning + log (default) |
 | `enforce` | unsigned/unverifiable non-built-in plugins are refused           |
+
+The default is `warn`: existing unsigned plugins keep working but emit a
+warning, so operators are nudged toward signing without anything breaking. Set
+`enforce` once your plugins are signed, or `off` to silence the check.
 
 Built-in plugins shipped with the package are unaffected (they are covered by
 the source-integrity manifest, not per-file signatures).
