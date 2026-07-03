@@ -42,7 +42,6 @@ class TestHKDFOnlyConfigRejected(unittest.TestCase):
                 self.password,
                 self.salt,
                 _hkdf_only_config(),
-                pbkdf2_iterations=0,
                 quiet=True,
             )
 
@@ -52,7 +51,6 @@ class TestHKDFOnlyConfigRejected(unittest.TestCase):
             self.password,
             self.salt,
             _hkdf_only_config(from_decryption=True),
-            pbkdf2_iterations=0,
             quiet=True,
         )
         self.assertTrue(key)
@@ -60,12 +58,13 @@ class TestHKDFOnlyConfigRejected(unittest.TestCase):
     def test_hkdf_plus_memory_hard_component_accepted(self) -> None:
         """HKDF combined with a stretching KDF stays valid (XOR combiner)."""
         config = _hkdf_only_config()
-        config["pbkdf2_iterations"] = 1000
+        # 1.5.x dropped PBKDF2 for new encryption; scrypt is the stretching
+        # component here (small parameters — this only tests the guard)
+        config["scrypt"] = {"enabled": True, "n": 1024, "r": 8, "p": 1, "rounds": 1}
         key, _salt, _config = generate_key(
             self.password,
             self.salt,
             config,
-            pbkdf2_iterations=1000,
             quiet=True,
         )
         self.assertTrue(key)
@@ -78,7 +77,6 @@ class TestHKDFOnlyConfigRejected(unittest.TestCase):
             self.password,
             self.salt,
             config,
-            pbkdf2_iterations=0,
             quiet=True,
         )
         self.assertTrue(key)
