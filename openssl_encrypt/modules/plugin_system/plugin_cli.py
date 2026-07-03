@@ -75,18 +75,27 @@ def cmd_trust_key(args) -> int:
 
 
 def cmd_list_keys(args) -> int:
+    from .plugin_signature import project_trust_anchor
+
     store = _resolve_store(args)
     try:
-        anchors = list_trust_keys(trusted_keys_dir=store)
+        enrolled = list_trust_keys(trusted_keys_dir=store)
     except Exception as e:
         eprint(f"❌ Could not list trust anchors: {e}")
         return 1
-    if not anchors:
-        eprint(f"No plugin-signing trust anchors enrolled in {store}")
-        return 0
-    eprint(f"Plugin-signing trust anchors in {store}:")
-    for a in anchors:
-        eprint(f"  {a.fingerprint}  ({a.label})")
+
+    project = project_trust_anchor()
+    if project is not None:
+        eprint("Built-in trust anchor (project source-integrity key):")
+        eprint(f"  {project.fingerprint}  ({project.label})")
+    if enrolled:
+        eprint(f"Enrolled trust anchors in {store}:")
+        for a in enrolled:
+            eprint(f"  {a.fingerprint}  ({a.label})")
+    elif project is None:
+        eprint(f"No plugin-signing trust anchors (none enrolled in {store})")
+    else:
+        eprint(f"No additional anchors enrolled in {store}")
     return 0
 
 

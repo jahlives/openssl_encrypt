@@ -13,6 +13,7 @@ import stat
 import subprocess
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 
@@ -512,3 +513,70 @@ class TestFactoryPolicyResolution(unittest.TestCase):
         os.environ["OPENSSL_ENCRYPT_PLUGIN_SIGNATURE_POLICY"] = "bogus"
         mgr = create_default_plugin_manager()
         self.assertEqual(mgr.signature_policy, PluginSignaturePolicy.OFF)
+
+
+class TestProjectKeyAnchor(_SigningFixture):
+    """The bundled project source-integrity key acts as a default anchor (D2)."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        # Point the 'project key' helpers at our ephemeral author key so we can
+        # exercise the default-anchor path without the real private key.
+        self._pub_file = self.tmp / "project.asc"
+        self._pub_file.write_bytes(self.author_pub)
+        import openssl_encrypt.integrity.verify_cli as vc
+
+        self._patches = [
+            unittest.mock.patch.object(vc, "default_pubkey_path", return_value=self._pub_file),
+            unittest.mock.patch.object(vc, "default_fingerprint", return_value=self.author_fpr),
+        ]
+        for p in self._patches:
+            p.start()
+
+    def tearDown(self) -> None:
+        for p in self._patches:
+            p.stop()
+        super().tearDown()
+
+    def test_project_trust_anchor_resolves(self) -> None:
+        from openssl_encrypt.modules.plugin_system.plugin_signature import (
+            project_trust_anchor,
+        )
+
+        anchor = project_trust_anchor()
+        self.assertIsNotNone(anchor)
+        self.assertTrue(self.author_fpr.endswith(anchor.fingerprint))
+
+    def _plugin_dir_with_signed_plugin(self):
+        pdir = self.tmp / "plugins"
+        pdir.mkdir(mode=0o700)
+        plugin = pdir / "signed_plugin.py"
+        plugin.write_text(_LOADER_PLUGIN)
+        sig = self._sign(plugin.read_bytes(), self.author_fpr, "author_home")
+        (pdir / "signed_plugin.py.asc").write_bytes(sig)
+        return plugin
+
+    def _manager(self, *, include_project_anchor=True):
+        from openssl_encrypt.modules.plugin_system import PluginManager
+        from openssl_encrypt.modules.plugin_system.plugin_config import PluginConfigManager
+        from openssl_encrypt.modules.plugin_system.plugin_signature import (
+            PluginSignaturePolicy,
+        )
+
+        empty_store = self.tmp / "empty_store"
+        return PluginManager(
+            config_manager=PluginConfigManager(),
+            signature_policy=PluginSignaturePolicy.ENFORCE,
+            trusted_keys_dir=str(empty_store),
+            include_project_anchor=include_project_anchor,
+        )
+
+    def test_project_signed_plugin_loads_without_enrollment(self) -> None:
+        plugin = self._plugin_dir_with_signed_plugin()
+        result = self._manager(include_project_anchor=True).load_plugin(str(plugin))
+        self.assertTrue(result.success, result.message)
+
+    def test_disabling_project_anchor_refuses(self) -> None:
+        plugin = self._plugin_dir_with_signed_plugin()
+        result = self._manager(include_project_anchor=False).load_plugin(str(plugin))
+        self.assertFalse(result.success)

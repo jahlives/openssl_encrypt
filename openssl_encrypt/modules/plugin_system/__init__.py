@@ -219,6 +219,7 @@ def create_default_plugin_manager(
     config_dir: str = None,
     signature_policy=None,
     trusted_keys_dir: str = None,
+    include_project_anchor: bool = True,
 ) -> PluginManager:
     """
     Create plugin manager with default configuration.
@@ -228,6 +229,8 @@ def create_default_plugin_manager(
         signature_policy: Plugin signature policy (off/warn/enforce). If None,
             resolved from OPENSSL_ENCRYPT_PLUGIN_SIGNATURE_POLICY, else OFF.
         trusted_keys_dir: Optional trust-anchor store override.
+        include_project_anchor: Trust the bundled project source-integrity key
+            as a default plugin-signing anchor (D2; default True).
 
     Returns:
         Configured PluginManager instance
@@ -237,6 +240,7 @@ def create_default_plugin_manager(
         config_manager,
         signature_policy=_resolve_signature_policy(signature_policy),
         trusted_keys_dir=trusted_keys_dir,
+        include_project_anchor=include_project_anchor,
     )
 
     # Add default plugin directories (if they exist)
