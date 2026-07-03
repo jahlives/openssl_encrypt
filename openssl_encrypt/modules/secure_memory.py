@@ -307,9 +307,15 @@ def secure_memzero(data, full_verification=True, strict=False):
                 if platform.system() in ("Linux", "Darwin", "FreeBSD"):
                     try:
                         # Try to ensure memory writes are synchronized to physical memory
-                        libc = ctypes.CDLL(None)
+                        libc = ctypes.CDLL(None, use_errno=True)
                         if hasattr(libc, "msync"):
                             try:
+                                libc.msync.argtypes = [
+                                    ctypes.c_void_p,
+                                    ctypes.c_size_t,
+                                    ctypes.c_int,
+                                ]
+                                libc.msync.restype = ctypes.c_int
                                 addr = ctypes.addressof(ctypes.c_char.from_buffer(target_data))
                                 page_size = get_memory_page_size()
                                 # Round address down to page boundary
@@ -321,10 +327,22 @@ def secure_memzero(data, full_verification=True, strict=False):
 
                                 # MS_SYNC: Synchronous flush (2 on most systems)
                                 MS_SYNC = 2
-                                libc.msync(
-                                    ctypes.c_void_p(page_addr), ctypes.c_size_t(page_len), MS_SYNC
+                                # Best-effort (#103): msync only applies to
+                                # file-backed mappings, so ENOMEM/EINVAL on
+                                # anonymous heap memory is expected — but the
+                                # return value is no longer silently dropped.
+                                msync_result = libc.msync(
+                                    ctypes.c_void_p(page_addr),
+                                    ctypes.c_size_t(page_len),
+                                    MS_SYNC,
                                 )
-                            except:
+                                if msync_result != 0 and os.environ.get("DEBUG") == "1":
+                                    eprint(
+                                        "Debug: msync after wipe failed "
+                                        f"(errno {ctypes.get_errno()}) — expected "
+                                        "for anonymous memory"
+                                    )
+                            except Exception:
                                 pass
                     except:
                         pass
@@ -441,15 +459,12 @@ class SecureMemoryAllocator:
                     # Check for minherit support (BSD memory inheritance)
                     self.has_minherit = hasattr(libc, "minherit")
 
-                    # Linux-specific: Check if MADV_DONTDUMP is supported
-                    # This prevents sensitive memory from being included in core dumps
-                    if self.system == "linux":
-                        try:
-                            # Try to get MADV_DONTDUMP constant (value 16 on most systems)
-                            # We'll use the value directly if we can't get it from headers
-                            self.supports_madv_dontdump = True
-                        except:
-                            pass
+                    # Linux-specific: probe whether MADV_DONTDUMP actually
+                    # works (#103 — this used to be hardcoded True). It
+                    # prevents sensitive memory from being included in core
+                    # dumps.
+                    if self.system == "linux" and self.has_madvise:
+                        self.supports_madv_dontdump = self._probe_madv_dontdump()
                 except Exception:
                     pass
 
@@ -468,6 +483,50 @@ class SecureMemoryAllocator:
     def _round_to_page_size(self, size):
         """Round a size up to the nearest multiple of the page size."""
         return ((size + self.page_size - 1) // self.page_size) * self.page_size
+
+    def _probe_madv_dontdump(self) -> bool:
+        """Probe at runtime whether madvise(MADV_DONTDUMP) works (#103).
+
+        Calls madvise on a private, page-aligned scratch mapping and checks
+        the return value. Returns False on any failure (pre-3.4 kernel,
+        missing libc symbol, EINVAL, ...), so callers never assume a
+        protection that is not actually in effect.
+
+        Returns:
+            bool: True if the kernel accepted MADV_DONTDUMP
+        """
+        if self.system != "linux":
+            return False
+        try:
+            import mmap as _mmap
+
+            libc = ctypes.CDLL(None, use_errno=True)
+            if not hasattr(libc, "madvise"):
+                return False
+            libc.madvise.argtypes = [
+                ctypes.c_void_p,
+                ctypes.c_size_t,
+                ctypes.c_int,
+            ]
+            libc.madvise.restype = ctypes.c_int
+
+            scratch = _mmap.mmap(-1, self.page_size)
+            try:
+                exported = ctypes.c_char.from_buffer(scratch)
+                addr = ctypes.addressof(exported)
+                MADV_DONTDUMP = 16
+                result = libc.madvise(
+                    ctypes.c_void_p(addr),
+                    ctypes.c_size_t(self.page_size),
+                    MADV_DONTDUMP,
+                )
+                # Release the buffer export before closing the mapping
+                del exported
+                return result == 0
+            finally:
+                scratch.close()
+        except Exception:
+            return False
 
     def _anti_debug_check(self):
         """
@@ -633,29 +692,51 @@ class SecureMemoryAllocator:
         try:
             # For Linux platforms, apply additional protections
             if self.system == "linux":
+                # Try to prevent memory from being included in core dumps
+                if not (self.has_madvise and self.supports_madv_dontdump):
+                    return False
                 try:
-                    # Try to prevent memory from being included in core dumps
-                    if self.has_madvise and self.supports_madv_dontdump:
-                        try:
-                            libc = ctypes.CDLL(None)
-                            addr = ctypes.addressof(ctypes.c_char.from_buffer(buffer))
-                            size = len(buffer)
+                    libc = ctypes.CDLL(None, use_errno=True)
+                    libc.madvise.argtypes = [
+                        ctypes.c_void_p,
+                        ctypes.c_size_t,
+                        ctypes.c_int,
+                    ]
+                    libc.madvise.restype = ctypes.c_int
 
-                            # MADV_DONTDUMP (16) - exclude from core dumps
-                            MADV_DONTDUMP = 16
-                            libc.madvise(
-                                ctypes.c_void_p(addr), ctypes.c_size_t(size), MADV_DONTDUMP
-                            )
+                    addr = ctypes.addressof(ctypes.c_char.from_buffer(buffer))
+                    size = len(buffer)
 
-                            # MADV_DONTFORK (10) - don't share with child processes
-                            MADV_DONTFORK = 10
-                            libc.madvise(
-                                ctypes.c_void_p(addr), ctypes.c_size_t(size), MADV_DONTFORK
+                    # madvise(2) requires a page-aligned address (#103: the
+                    # old unaligned call always failed with EINVAL and the
+                    # ignored return value hid it). Round the range outward
+                    # to whole pages: MADV_DONTDUMP only affects core-dump
+                    # contents, so covering neighbouring heap data is safe.
+                    page_addr = (addr // self.page_size) * self.page_size
+                    page_len = self._round_to_page_size(size + (addr - page_addr))
+
+                    # MADV_DONTDUMP (16) - exclude from core dumps
+                    MADV_DONTDUMP = 16
+                    result = libc.madvise(
+                        ctypes.c_void_p(page_addr),
+                        ctypes.c_size_t(page_len),
+                        MADV_DONTDUMP,
+                    )
+                    if result != 0:
+                        if self.debug_mode:
+                            eprint(
+                                "Warning: madvise(MADV_DONTDUMP) failed "
+                                f"(errno {ctypes.get_errno()})"
                             )
-                        except:
-                            pass
-                except:
-                    pass
+                        return False
+
+                    # NOTE (#103): the former MADV_DONTFORK call was removed.
+                    # It always failed with EINVAL (unaligned address, return
+                    # ignored), and page-aligning it would be unsafe: forked
+                    # children would lose whole heap pages — including
+                    # unrelated objects — and crash on access.
+                except Exception:
+                    return False
 
             # For BSD platforms (including macOS), use minherit
             elif self.system in ("darwin", "freebsd"):
