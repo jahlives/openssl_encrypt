@@ -91,6 +91,7 @@ class PluginManager:
         strict_security_mode: bool = True,
         signature_policy: "PluginSignaturePolicy" = None,
         trusted_keys_dir: Optional[str] = None,
+        include_project_anchor: bool = True,
     ):
         self.plugins: Dict[str, PluginRegistration] = {}
         self.plugin_directories: Set[str] = set()
@@ -117,6 +118,9 @@ class PluginManager:
 
         self.signature_policy = signature_policy or PluginSignaturePolicy.OFF
         self.trusted_keys_dir = trusted_keys_dir
+        # D2: the bundled project source-integrity key is a default anchor so
+        # officially distributed plugins verify without manual enrollment.
+        self.include_project_anchor = include_project_anchor
         self._trust_anchors_cache = None
 
     def add_plugin_directory(self, directory: str) -> None:
@@ -856,10 +860,19 @@ class PluginManager:
         """
         if self._trust_anchors_cache is not None:
             return self._trust_anchors_cache
-        from .plugin_signature import TrustAnchorStore
+        from .plugin_signature import TrustAnchorStore, project_trust_anchor
+
+        anchors = []
+        # D2: the bundled project key first, so distributed plugins verify
+        # without enrollment. Absent on stripped installs -> simply skipped.
+        if self.include_project_anchor:
+            project = project_trust_anchor()
+            if project is not None:
+                anchors.append(project)
 
         directory = self.trusted_keys_dir or self._default_trusted_keys_dir()
-        self._trust_anchors_cache = TrustAnchorStore(directory).load_anchors()
+        anchors.extend(TrustAnchorStore(directory).load_anchors())
+        self._trust_anchors_cache = anchors
         return self._trust_anchors_cache
 
     def _check_signature_policy(self, file_path: str) -> bool:

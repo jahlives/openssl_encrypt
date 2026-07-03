@@ -13,9 +13,14 @@ Operator docs added to `plugins/PLUGIN_DEVELOPMENT.md`. Default policy is OFF
 (zero behavior change). Decisions D1–D3 taken "as proposed" (warn→enforce,
 project key enabled by default, `.asc` sidecars).
 
-Remaining: (a) enable the project-key anchor by default (D2) — currently only
-enrolled/operator keys are anchors; (b) flip the default policy to WARN when
-the maintainer approves the D1 timeline; (c) 1.4.x backport after soak.
+Remaining: (a) flip the default policy to WARN when the maintainer approves
+the D1 timeline (currently OFF = zero behavior change); (b) 1.4.x backport
+after soak.
+
+**D2 done:** the bundled project source-integrity key (`D269D6A5…`) is a
+default trust anchor (`include_project_anchor`, default True), so officially
+distributed non-built-in plugins verify without manual enrollment. It is shown
+by `plugin list-keys` and can be disabled per-manager.
 
 ## 1. Problem Statement
 

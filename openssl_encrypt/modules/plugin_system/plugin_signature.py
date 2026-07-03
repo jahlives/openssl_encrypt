@@ -200,6 +200,36 @@ def signature_path_for(plugin_path: str) -> str:
     return plugin_path + SIGNATURE_SUFFIX
 
 
+# Label under which the bundled project key appears in logs/anchor lists.
+PROJECT_ANCHOR_LABEL = "project-source-integrity-key"
+
+
+def project_trust_anchor(*, gpg_binary: Optional[str] = None) -> Optional[TrustAnchor]:
+    """Return the bundled project source-integrity key as a trust anchor (D2).
+
+    This is the same key that signs the source-integrity manifest; enabling it
+    as a default plugin-signing anchor lets officially distributed (non-built-in)
+    plugins verify out of the box. Returns None if the bundled key or its
+    fingerprint cannot be resolved (e.g. a stripped install), so the caller
+    simply has no project anchor rather than failing.
+    """
+    try:
+        from ...integrity.verify_cli import default_fingerprint, default_pubkey_path
+
+        pub_path = default_pubkey_path()
+        if not pub_path.is_file():
+            return None
+        pub = pub_path.read_bytes()
+        fingerprint = default_fingerprint() or _fingerprint_of_public_key(
+            pub, gpg_binary=gpg_binary
+        )
+        if not fingerprint:
+            return None
+        return TrustAnchor(fingerprint=fingerprint, public_key=pub, label=PROJECT_ANCHOR_LABEL)
+    except Exception:
+        return None
+
+
 def verify_plugin_signature(
     plugin_bytes: bytes,
     signature_path: str,
