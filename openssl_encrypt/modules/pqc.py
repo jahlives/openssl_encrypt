@@ -248,17 +248,17 @@ def check_pqc_support(quiet: bool = False) -> Tuple[bool, Optional[str], list]:
                     if std_name != alg:
                         supported_algorithms.append(std_name)
             else:
-                # Fallback to all known KEM algorithms if API methods not found
-                # Prioritize ML-KEM (standardized) names
-                supported_algorithms.extend(["ML-KEM-512", "ML-KEM-768", "ML-KEM-1024"])
-                # Add legacy names for backward compatibility
-                supported_algorithms.extend(["Kyber512", "Kyber768", "Kyber1024"])
-        except Exception:
-            # Force add all KEM algorithms as fallback
-            # Prioritize ML-KEM (standardized) names
-            supported_algorithms.extend(["ML-KEM-512", "ML-KEM-768", "ML-KEM-1024"])
-            # Add legacy names for backward compatibility
-            supported_algorithms.extend(["Kyber512", "Kyber768", "Kyber1024"])
+                # No mechanism-listing API (#109): report nothing rather than
+                # fabricate a KEM list that masks a non-functional backend.
+                if not should_be_quiet:
+                    logger.warning(
+                        "liboqs exposes no KEM mechanism-listing API; "
+                        "reporting no KEM algorithms"
+                    )
+        except Exception as e:
+            # Enumeration failed (#109): report nothing rather than fabricate.
+            if not should_be_quiet:
+                logger.warning(f"Could not enumerate liboqs KEM mechanisms: {e}")
 
         # Check signature algorithms (less important for us)
         try:
@@ -281,49 +281,25 @@ def check_pqc_support(quiet: bool = False) -> Tuple[bool, Optional[str], list]:
                     if std_name != alg:
                         supported_algorithms.append(std_name)
             else:
-                # Add standard signature algorithm names
-                supported_algorithms.extend(
-                    [
-                        "ML-DSA-44",
-                        "ML-DSA-65",
-                        "ML-DSA-87",
-                        "FN-DSA-512",
-                        "FN-DSA-1024",
-                        "SLH-DSA-SHA2-128F",
-                        "SLH-DSA-SHA2-256F",
-                    ]
-                )
-                # Add legacy names for backward compatibility
-                supported_algorithms.extend(
-                    [
-                        "Dilithium2",
-                        "Dilithium3",
-                        "Dilithium5",
-                        "Falcon-512",
-                        "Falcon-1024",
-                        "SPHINCS+-SHA2-128f",
-                        "SPHINCS+-SHA2-256f",
-                    ]
-                )
+                # No mechanism-listing API (#109): report nothing rather than
+                # fabricate a signature-algorithm list.
+                if not should_be_quiet:
+                    logger.warning(
+                        "liboqs exposes no signature mechanism-listing API; "
+                        "reporting no signature algorithms"
+                    )
         except Exception as e:
-            # Skip printing warning about signature algorithms
-            pass
+            # Enumeration failed (#109): report nothing rather than fabricate.
+            if not should_be_quiet:
+                logger.warning(f"Could not enumerate liboqs signature mechanisms: {e}")
 
         return True, version, supported_algorithms
     except Exception:
-        # Provide fallback algorithms (prioritize standardized names)
-        return (
-            False,
-            None,
-            [
-                "ML-KEM-512",
-                "ML-KEM-768",
-                "ML-KEM-1024",
-                "Kyber512",
-                "Kyber768",
-                "Kyber1024",
-            ],
-        )
+        # Backend is broken (#109): report the truth — unavailable, no
+        # algorithms. The old code returned a fabricated ML-KEM/Kyber list
+        # here, masking a non-functional backend from every caller that
+        # tested membership before constructing PQC objects.
+        return False, None, []
 
 
 class PQCipher:
