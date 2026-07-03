@@ -165,6 +165,49 @@ def check_liboqs_support(quiet: bool = False) -> Tuple[bool, Optional[str], List
         return False, None, []
 
 
+def _expected_length(details, field: str) -> int:
+    """Return the expected byte length liboqs reports for a field, or 0.
+
+    0 means 'unknown / not enforced' — some algorithms report 0 for some
+    fields (e.g. the HQC length_ciphertext quirk), in which case callers
+    must skip the check rather than reject everything.
+    """
+    try:
+        value = details.get(field, 0)
+        return int(value) if value else 0
+    except (TypeError, ValueError, AttributeError):
+        return 0
+
+
+def _validate_pq_input(name: str, data, expected: int, exact: bool = True) -> None:
+    """Pre-validate a KEM/DSA input before it reaches liboqs (#107).
+
+    liboqs performs its own internal validation, but rejecting obviously
+    malformed inputs here is defense in depth: a clean ValueError instead
+    of whatever the C library does with an unexpected buffer.
+
+    Args:
+        name: Human-readable input name for the error message
+        data: The input to validate (must be bytes-like)
+        expected: Expected length from liboqs details (0 = don't enforce)
+        exact: If True the length must match exactly; if False it must be
+            between 1 and expected (variable-length signatures)
+
+    Raises:
+        ValueError: If the input is not bytes-like or has a bad length
+    """
+    if not isinstance(data, (bytes, bytearray, memoryview)):
+        raise ValueError(f"{name} must be a bytes-like object, got {type(data).__name__}")
+    if expected <= 0:
+        return
+    length = len(data)
+    if exact:
+        if length != expected:
+            raise ValueError(f"{name} has invalid length {length} (expected {expected} bytes)")
+    elif not 0 < length <= expected:
+        raise ValueError(f"{name} has invalid length {length} (expected 1..{expected} bytes)")
+
+
 class PQEncapsulator:
     """
     Wrapper class for post-quantum key encapsulation mechanisms (KEMs)
@@ -241,7 +284,16 @@ class PQEncapsulator:
 
         Returns:
             tuple: (ciphertext, shared_secret)
+
+        Raises:
+            ValueError: If the public key is not bytes-like or has the
+                wrong length for this algorithm (#107)
         """
+        _validate_pq_input(
+            "KEM public key",
+            public_key,
+            _expected_length(self.kem.details, "length_public_key"),
+        )
         ciphertext, shared_secret = self.kem.encap_secret(public_key)
         return ciphertext, shared_secret
 
@@ -255,8 +307,22 @@ class PQEncapsulator:
 
         Returns:
             bytes: The shared secret
+
+        Raises:
+            ValueError: If the ciphertext or secret key is not bytes-like
+                or has the wrong length for this algorithm (#107)
         """
+        _validate_pq_input(
+            "KEM ciphertext",
+            ciphertext,
+            _expected_length(self.kem.details, "length_ciphertext"),
+        )
         if secret_key is not None:
+            _validate_pq_input(
+                "KEM secret key",
+                secret_key,
+                _expected_length(self.kem.details, "length_secret_key"),
+            )
             # Create a new KEM instance with the secret key for decapsulation
             # Use a completely isolated approach to prevent segfaults
             try:
@@ -362,8 +428,17 @@ class PQSigner:
 
         Returns:
             bytes: The signature
+
+        Raises:
+            ValueError: If the secret key is not bytes-like or has the
+                wrong length for this algorithm (#107)
         """
         if secret_key is not None:
+            _validate_pq_input(
+                "DSA secret key",
+                secret_key,
+                _expected_length(self.sig.details, "length_secret_key"),
+            )
             # Set the secret key if provided
             self.sig.import_secret_key(secret_key)
 
@@ -381,7 +456,24 @@ class PQSigner:
 
         Returns:
             bool: True if the signature is valid, False otherwise
+
+        Raises:
+            ValueError: If the signature or public key is not bytes-like
+                or has an impossible length for this algorithm (#107)
         """
+        _validate_pq_input(
+            "DSA public key",
+            public_key,
+            _expected_length(self.sig.details, "length_public_key"),
+        )
+        # Signatures may be variable-length (e.g. Falcon); length_signature
+        # is the maximum, so enforce 1..max rather than an exact match.
+        _validate_pq_input(
+            "DSA signature",
+            signature,
+            _expected_length(self.sig.details, "length_signature"),
+            exact=False,
+        )
         return self.sig.verify(message, signature, public_key)
 
     def __del__(self):
