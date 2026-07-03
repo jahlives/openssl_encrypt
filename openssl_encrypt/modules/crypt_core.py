@@ -1018,9 +1018,9 @@ class CamelliaCipher:
 
             # After decryption, verify HMAC using constant-time MAC verification
             # Try HKDF-derived key first, then fall back to legacy SHA-256 key
-            hmac_valid = verify_mac(expected_tag, received_tag, associated_data)
+            hmac_valid = verify_mac(expected_tag, received_tag)
             if not hmac_valid:
-                hmac_valid = verify_mac(legacy_expected_tag, received_tag, associated_data)
+                hmac_valid = verify_mac(legacy_expected_tag, received_tag)
 
             if not hmac_valid:
                 raise AuthenticationError("Message authentication failed")

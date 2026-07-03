@@ -1186,6 +1186,23 @@ class TestVerifyMAC(unittest.TestCase):
         self.assertFalse(verify_mac(mac1, None))
         self.assertTrue(verify_mac(None, None))
 
+    def test_verify_mac_rejects_associated_data(self):
+        """Regression test for #92: the associated_data parameter was a no-op.
+
+        verify_mac() must not accept an associated_data argument at all —
+        silently accepting-and-ignoring context-binding data is a misleading
+        API that suggests binding which never happens.
+        """
+        from openssl_encrypt.modules.secure_ops import verify_mac
+
+        mac = secrets.token_bytes(32)
+
+        with self.assertRaises(TypeError):
+            verify_mac(mac, mac, associated_data=b"context")
+
+        with self.assertRaises(TypeError):
+            verify_mac(mac, mac, b"context")
+
 
 from openssl_encrypt.modules.crypt_errors import (
     AuthenticationError,

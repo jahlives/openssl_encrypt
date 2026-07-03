@@ -194,7 +194,6 @@ def secure_memzero(data: bytearray) -> None:
 def verify_mac(
     expected_mac: Union[bytes, bytearray, memoryview],
     received_mac: Union[bytes, bytearray, memoryview],
-    associated_data: Optional[bytes] = None,
 ) -> bool:
     """
     Verify a message authentication code (MAC) in constant time.
@@ -203,10 +202,13 @@ def verify_mac(
     against timing attacks. It should be used for all HMAC and authenticated
     encryption tag verifications.
 
+    Any associated data must be bound into the MAC computation by the
+    caller (e.g. included in the HMAC input); this function only compares
+    the two MAC values.
+
     Args:
         expected_mac: The expected MAC value (computed)
         received_mac: The received MAC value (to verify)
-        associated_data: Optional additional data used for context binding
 
     Returns:
         bool: True if the MACs match, False otherwise
