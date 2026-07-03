@@ -371,10 +371,17 @@ class SecureHeap:
 
     def _detect_debugger(self) -> bool:
         """
-        Detect if a debugger is attached to the process.
+        Check whether the process is being traced (ADVISORY ONLY).
+
+        This is informational, not a protection: TracerPid is non-zero under
+        any ptrace-based tool (debuggers, strace, some container runtimes and
+        profilers), the check races with attach/detach, and no defensive
+        action is possible against a tracer that is already attached. The
+        result is only ever used to emit a warning; it never changes
+        allocation behavior.
 
         Returns:
-            bool: True if a debugger is detected, False otherwise
+            bool: True if a tracer appears to be attached, False otherwise
         """
         if self.system == "linux":
             try:
@@ -431,9 +438,12 @@ class SecureHeap:
                 f"({self.current_size + size} > {self.max_size})",
             )
 
-        # Security check: Detect debugger
+        # Advisory-only tracer notice (#105): informational, never blocks
         if self._detect_debugger() and not self.quiet:
-            eprint("Warning: Debugger detected during secure memory allocation")
+            eprint(
+                "Notice (advisory only): process appears to be traced/debugged; "
+                "secure memory contents may be observable by the tracer"
+            )
 
         with self.lock:
             # Create a new secure block
