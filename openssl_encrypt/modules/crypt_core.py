@@ -2872,6 +2872,24 @@ def generate_key(
                     eprint("\nOperation cancelled by user.")
                     sys.exit(1)
 
+    # Reject non-stretching-only KDF configs at encryption time (#99).
+    # HKDF is an extractor/expander, not a password-stretching KDF: with no
+    # memory-hard/iterated component and no hash rounds, the file key is one
+    # cheap pass away from the password. Decryption of existing files
+    # (metadata-driven) stays exempt for backward compatibility.
+    if (
+        use_hkdf
+        and not (use_argon2 or use_scrypt or use_balloon or use_randomx or use_pbkdf2)
+        and not has_hash_iterations
+        and not (hash_config and hash_config.get("_is_from_decryption_metadata", False))
+    ):
+        raise ValidationError(
+            "Refusing key-derivation config with HKDF as the only KDF: HKDF does "
+            "not stretch passwords. Enable at least one memory-hard or iterated "
+            "component (Argon2, scrypt, Balloon, RandomX, PBKDF2 iterations, or "
+            "hash rounds)."
+        )
+
     # If hash_config has argon2 section with enabled explicitly set to False, honor that
     # if hash_config and 'argon2' in hash_config and 'enabled' in hash_config['argon2']:
     #    use_argon2 = hash_config['argon2']['enabled']
