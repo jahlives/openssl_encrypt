@@ -358,6 +358,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **`--debug` warning is now proportional to what it leaks**: the loud
+  "SENSITIVE DATA LOGGING ACTIVE" banner and the "do not use on production data"
+  notice now fire only for `--debug --unsafe-show-secrets` (the path that prints
+  secrets in cleartext). Plain `--debug`, which redacts every secret to length +
+  a keyed SHA-256 fingerprint, now shows a calm, accurate note instead — stating
+  that secrets are redacted, that secret lengths and public values (nonces,
+  salts, ciphertext) are still written to stderr and may persist in logs or
+  shell history, and that `--unsafe-show-secrets` reveals cleartext. The old
+  always-on alarming banner both overstated the risk of the redacted path and
+  desensitised users to the real cleartext warning. Message-only change; no
+  redaction logic was altered.
 - **Declared Python floor raised to `>=3.11`** in `setup.py` and
   `threefish_native/pyproject.toml`, aligning the metadata with the
   documented requirement (README: "Python 3.11+") and with the 1.4.x
