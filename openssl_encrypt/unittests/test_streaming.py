@@ -1051,6 +1051,7 @@ class TestBackwardCompatibility(unittest.TestCase):
                 algorithm=EncryptionAlgorithm.AES_GCM,
                 quiet=True,
                 format_version=10,
+                allow_insecure_legacy_xor=True,
                 no_streaming=True,
             )
             self.assertTrue(result)

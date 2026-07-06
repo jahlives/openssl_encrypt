@@ -419,6 +419,27 @@ inflated KDF metadata parameters, not cosmetic output.
 
 ### Security
 
+- **Debug logs no longer leak a KDF key intermediate** (audit 2026-07-06 #2):
+  the per-round Argon2/Balloon/Scrypt debug lines printed `round_salt` as raw
+  hex, and for `format_version >= 7` rounds ≥ 1 that "salt" is the first 128 bits
+  of the live derived-key chain. Under plain `--debug` this leaked key material
+  outside the `debug_secret()` redaction chokepoint; it is now redacted by
+  default (cleartext only under `--debug --unsafe-show-secrets`).
+- **New files are no longer written in the cost-bypassing v8/v10 format** (audit
+  2026-07-06 #3): the v8/v10 sequential-XOR derivation appended the chain's final
+  value twice, cancelling the last KDF stage so an Argon2-only config collapsed
+  to ~`SHA256(password‖salt)`. `encrypt_file` now defaults to `format_version=9`
+  (the secure chained-salt format) and **refuses to encrypt** new v8/v10 files —
+  the refusal is raised before any directory archiving or temp file is created,
+  so a refused request leaves no cleartext artifact on disk. Decryption of
+  existing v8/v10 files is unaffected; a library-only `allow_insecure_legacy_xor`
+  escape hatch exists for legacy-fixture tests. `rekey` transparently upgrades an
+  inherited v8/v10 file to v9 — including the envelope fast-path, which no longer
+  re-emits a legacy file verbatim — so rekey is a real migration off the weak
+  derivation. The envelope rekey fast-path now accepts every version envelope
+  writes (v9/v11/v12/v13). The unsafe version set lives in a single shared
+  constant so the refusal, the rekey upgrade, and the fast-path exclusion cannot
+  drift apart.
 - **Format version 13 — Independent XOR with per-component domain-separated
   salts** (now the **default** for Independent XOR; non-breaking): the Independent
   XOR key derivation (v11) fed every hash/KDF component the *same* `salt_0`, so two

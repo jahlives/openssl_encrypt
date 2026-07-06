@@ -108,7 +108,8 @@ class TestCrossVersionV8V10(unittest.TestCase):
             original_content = f.read()
 
         # Encrypt with v8 (simulating 1.3 branch)
-        # We can now explicitly set format_version=8
+        # v8 is decrypt-only for new encryption; the explicit legacy hatch lets
+        # this backward-compat test still produce a v8 fixture on purpose.
         encrypt_file(
             self.test_file,
             encrypted_file,
@@ -116,6 +117,7 @@ class TestCrossVersionV8V10(unittest.TestCase):
             hash_config=self.minimal_config,
             quiet=True,
             format_version=8,
+            allow_insecure_legacy_xor=True,
         )
 
         # Verify metadata shows v8

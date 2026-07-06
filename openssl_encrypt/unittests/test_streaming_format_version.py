@@ -50,6 +50,9 @@ def _roundtrip(algorithm: str, fmt_version=None, cascade_names=None) -> dict:
             quiet=True,
             chunk_size=1024,
             streaming_threshold=1024,
+            # This suite deliberately drives every caller version, incl. the
+            # decrypt-only v10; the hatch is a no-op for other versions.
+            allow_insecure_legacy_xor=True,
         )
         if cascade_names:
             kwargs.update(algorithm="cascade", cascade=True, cipher_names=cascade_names)
@@ -135,6 +138,9 @@ class TestOneShotUnaffected(unittest.TestCase):
             password=PASSWORD,
             hash_config=dict(FAST_HASH_CONFIG),
             quiet=True,
+            # Exercises the decrypt-only v10 one-shot path on purpose; no-op
+            # for other versions.
+            allow_insecure_legacy_xor=True,
         )
         if fmt_version is not None:
             kwargs.update(format_version=fmt_version)
@@ -177,6 +183,7 @@ class TestOneShotUnaffected(unittest.TestCase):
                     hash_config=dict(FAST_HASH_CONFIG),
                     quiet=True,
                     format_version=10,
+                    allow_insecure_legacy_xor=True,
                     chunk_size=1024,
                     streaming_threshold=1024,
                     no_streaming=True,

@@ -80,6 +80,7 @@ class TestFormatV10(unittest.TestCase):
             hash_config=self.minimal_config,
             quiet=True,
             format_version=10,
+            allow_insecure_legacy_xor=True,
         )
 
         # Verify metadata has v10
@@ -115,6 +116,7 @@ class TestFormatV10(unittest.TestCase):
             hash_config=config,
             quiet=True,
             format_version=10,
+            allow_insecure_legacy_xor=True,
         )
 
         decrypt_file(encrypted_file, decrypted_file, self.test_password, quiet=True)
@@ -150,6 +152,7 @@ class TestFormatV10(unittest.TestCase):
             hash_config=config,
             quiet=True,
             format_version=10,
+            allow_insecure_legacy_xor=True,
         )
 
         decrypt_file(encrypted_file, decrypted_file, self.test_password, quiet=True)
@@ -189,6 +192,7 @@ class TestFormatV10(unittest.TestCase):
             hash_config=config,
             quiet=True,
             format_version=10,
+            allow_insecure_legacy_xor=True,
         )
 
         decrypt_file(encrypted_file, decrypted_file, self.test_password, quiet=True)
@@ -224,6 +228,7 @@ class TestFormatV10(unittest.TestCase):
             hash_config=config,
             quiet=True,
             format_version=10,
+            allow_insecure_legacy_xor=True,
         )
 
         decrypt_file(encrypted_file, decrypted_file, self.test_password, quiet=True)
@@ -294,6 +299,7 @@ class TestFormatV10(unittest.TestCase):
                     algorithm=algorithm.value,
                     quiet=True,
                     format_version=10,
+                    allow_insecure_legacy_xor=True,
                 )
 
                 decrypt_file(encrypted_file, decrypted_file, self.test_password, quiet=True)
@@ -316,6 +322,7 @@ class TestFormatV10(unittest.TestCase):
             hash_config=self.minimal_config,
             quiet=True,
             format_version=10,
+            allow_insecure_legacy_xor=True,
         )
 
         # Try to decrypt with wrong password - should fail
@@ -334,6 +341,7 @@ class TestFormatV10(unittest.TestCase):
             hash_config=self.minimal_config,
             quiet=True,
             format_version=10,
+            allow_insecure_legacy_xor=True,
         )
 
         metadata = extract_file_metadata(encrypted_file)
@@ -369,6 +377,7 @@ class TestFormatV10(unittest.TestCase):
             hash_config=self.minimal_config,
             quiet=True,
             format_version=10,
+            allow_insecure_legacy_xor=True,
         )
 
         decrypt_file(encrypted_file, decrypted_file, self.test_password, quiet=True)
@@ -397,6 +406,7 @@ class TestFormatV10(unittest.TestCase):
             hash_config=self.minimal_config,
             quiet=True,
             format_version=10,
+            allow_insecure_legacy_xor=True,
         )
 
         decrypt_file(encrypted_file, decrypted_file, self.test_password, quiet=True)
@@ -425,6 +435,7 @@ class TestFormatV10(unittest.TestCase):
             hash_config=self.minimal_config,
             quiet=True,
             format_version=10,
+            allow_insecure_legacy_xor=True,
         )
 
         decrypt_file(encrypted_file, decrypted_file, self.test_password, quiet=True)
@@ -433,6 +444,73 @@ class TestFormatV10(unittest.TestCase):
             decrypted_content = f.read()
 
         self.assertEqual(binary_content, decrypted_content)
+
+
+class TestV8V10EncryptRefused(unittest.TestCase):
+    """Audit 2026-07-06 #3: v8/v10 sequential-XOR cancels the last KDF stage
+    (cost bypass), so encrypt_file must default OFF those versions and refuse to
+    ENCRYPT them (while still decrypting existing v8/v10 files)."""
+
+    def setUp(self):
+        self.test_dir = tempfile.mkdtemp()
+        self.in_file = os.path.join(self.test_dir, "msg.txt")
+        self.out_file = os.path.join(self.test_dir, "msg.enc")
+        with open(self.in_file, "wb") as f:
+            f.write(b"refusal regression payload\n" * 4)
+        self.password = "v8v10-refusal-pw"
+        self.config = {"sha256": 50}
+
+    def tearDown(self):
+        for p in (self.in_file, self.out_file):
+            if os.path.exists(p):
+                os.remove(p)
+        if os.path.exists(self.test_dir):
+            try:
+                os.rmdir(self.test_dir)
+            except OSError:
+                pass
+
+    def _encrypt(self, **kw):
+        return encrypt_file(
+            self.in_file,
+            self.out_file,
+            self.password,
+            hash_config=self.config,
+            algorithm=EncryptionAlgorithm.AES_GCM,
+            quiet=True,
+            **kw,
+        )
+
+    def test_default_format_version_is_9_not_10(self):
+        """A default encryption must NOT produce the cancelling v10 format."""
+        self._encrypt()
+        meta = extract_file_metadata(self.out_file)
+        self.assertEqual(meta["format_version"], 9)
+
+    def test_encrypt_v10_is_refused(self):
+        """Explicit v10 encryption is refused (cost-bypass version)."""
+        with self.assertRaises(Exception) as ctx:
+            self._encrypt(format_version=10)
+        self.assertIn("format_version", str(ctx.exception))
+        self.assertFalse(os.path.exists(self.out_file), "no file may be written on refusal")
+
+    def test_encrypt_v8_is_refused(self):
+        """Explicit v8 encryption is refused too."""
+        with self.assertRaises(Exception):
+            self._encrypt(format_version=8)
+        self.assertFalse(os.path.exists(self.out_file))
+
+    def test_legacy_hatch_still_allows_v10_fixture_roundtrip(self):
+        """The explicit legacy hatch still permits producing a v10 fixture that
+        decrypts, so backward-compat coverage stays possible."""
+        self._encrypt(format_version=10, allow_insecure_legacy_xor=True)
+        meta = extract_file_metadata(self.out_file)
+        self.assertEqual(meta["format_version"], 10)
+        dec = os.path.join(self.test_dir, "msg.dec")
+        decrypt_file(self.out_file, dec, self.password, quiet=True)
+        with open(dec, "rb") as f:
+            self.assertEqual(f.read(), open(self.in_file, "rb").read())
+        os.remove(dec)
 
 
 if __name__ == "__main__":
