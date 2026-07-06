@@ -192,6 +192,41 @@ class GenerateKeyRedactionTests(unittest.TestCase):
         _, logs = self._derive_with_logs()
         self.assertIn(f"sha256:{_fp(self.PASSWORD + self.SALT)}", logs)
 
+    def test_per_round_kdf_salt_is_redacted(self):
+        """Regression (audit 2026-07-06 #2): for rounds >= 2 with
+        format_version >= 7 the per-round Argon2/Balloon/Scrypt 'salt' is
+        bytes(password)[:16] -- the live key-chain intermediate. It was logged
+        as raw .hex(), bypassing the debug_secret() chokepoint and leaking 128
+        bits of KDF state under plain --debug. It must now be redacted."""
+        from openssl_encrypt.modules.crypt_core import generate_key
+
+        cfg = {
+            "argon2": {
+                "enabled": True,
+                "rounds": 2,
+                "time_cost": 1,
+                "memory_cost": 512,
+                "parallelism": 1,
+                "type": "id",
+            }
+        }
+        with self.assertLogs(level="DEBUG") as cm:
+            generate_key(
+                self.PASSWORD,
+                self.SALT,
+                cfg,
+                quiet=True,
+                algorithm="aes-gcm",
+                debug=True,
+                format_version=13,
+            )
+        logs = "\n".join(cm.output)
+        round2 = [ln for ln in logs.splitlines() if "ARGON2:SALT Round 2" in ln]
+        self.assertTrue(round2, "expected an 'ARGON2:SALT Round 2' debug line")
+        for ln in round2:
+            self.assertIn("<redacted:", ln)
+            self.assertNotRegex(ln, r"Round 2/2: [0-9a-f]{32}")
+
 
 class ArgvSanitizerTests(unittest.TestCase):
     """Unit tests for sanitize_argv_for_debug().

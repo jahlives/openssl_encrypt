@@ -3016,7 +3016,9 @@ def generate_key(
                     logger.debug(
                         debug_secret(f"ARGON2:INPUT Round {i+1}/{argon2_rounds}", password_bytes)
                     )
-                    logger.debug(f"ARGON2:SALT Round {i+1}/{argon2_rounds}: {round_salt.hex()}")
+                    logger.debug(
+                        debug_secret(f"ARGON2:SALT Round {i+1}/{argon2_rounds}", round_salt)
+                    )
                     logger.debug(
                         f"ARGON2:PARAMS time_cost={time_cost}, memory_cost={memory_cost}, parallelism={parallelism}"
                     )
@@ -3153,7 +3155,9 @@ def generate_key(
                     logger.debug(
                         debug_secret(f"BALLOON:INPUT Round {i+1}/{total_rounds}", password_bytes)
                     )
-                    logger.debug(f"BALLOON:SALT Round {i+1}/{total_rounds}: {round_salt.hex()}")
+                    logger.debug(
+                        debug_secret(f"BALLOON:SALT Round {i+1}/{total_rounds}", round_salt)
+                    )
                     logger.debug(
                         f"BALLOON:PARAMS time_cost={time_cost}, space_cost={space_cost}, parallelism={parallelism}"
                     )
@@ -3283,7 +3287,9 @@ def generate_key(
                     logger.debug(
                         debug_secret(f"SCRYPT:INPUT Round {i+1}/{total_rounds}", password_bytes)
                     )
-                    logger.debug(f"SCRYPT:SALT Round {i+1}/{total_rounds}: {round_salt.hex()}")
+                    logger.debug(
+                        debug_secret(f"SCRYPT:SALT Round {i+1}/{total_rounds}", round_salt)
+                    )
                     logger.debug(
                         f"SCRYPT:PARAMS n={hash_config['scrypt']['n']}, r={hash_config['scrypt']['r']}, p={hash_config['scrypt']['p']}"
                     )
