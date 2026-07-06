@@ -4,3 +4,13 @@ requires = [
     "wheel"
 ]
 build-backend = "setuptools.build_meta"
+
+# Formatter configuration — keep in sync with the black/isort hook args in
+# .pre-commit-config.yaml so bare `black`/`isort` runs and editor integrations
+# match what the hooks enforce.
+[tool.black]
+line-length = 100
+
+[tool.isort]
+profile = "black"
+line_length = 100
