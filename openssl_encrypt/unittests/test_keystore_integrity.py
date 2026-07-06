@@ -17,6 +17,7 @@ import os
 import shutil
 import tempfile
 import unittest
+from unittest import mock
 
 from openssl_encrypt.modules.crypt_errors import KeystoreError, KeystorePasswordError
 from openssl_encrypt.modules.keystore_cli import KeystoreSecurityLevel, PQCKeystore
@@ -325,6 +326,51 @@ class TestKeystoreIntegrityH4(unittest.TestCase):
         keystore = PQCKeystore(self.keystore_path)
         with self.assertRaises(KeystoreIntegrityError):
             keystore.load_keystore("WrongPassword!")
+
+    def test_downgrade_refused_without_deriving_master_key(self):
+        """An unauthenticated file must be refused before any password-derived
+        work runs - an attacker-supplied file must not cost the victim an
+        Argon2 derivation, and key material derived from the password must
+        never exist for a file we refuse to trust."""
+        from openssl_encrypt.modules.crypt_errors import KeystoreIntegrityError
+
+        self._create_keystore_with_key()
+        self._downgrade_to_v1()
+        keystore = PQCKeystore(self.keystore_path)
+        with mock.patch.object(
+            PQCKeystore,
+            "_derive_master_key",
+            side_effect=AssertionError("KDF must not run for a refused keystore"),
+        ) as kdf:
+            with self.assertRaises(KeystoreIntegrityError):
+                keystore.load_keystore(self.keystore_password)
+        kdf.assert_not_called()
+
+    def test_integrity_present_but_not_an_object_fails_closed(self):
+        """`integrity` set to a non-object (e.g. a string) must not load: the
+        schema validator rejects it, and even without the validator it is
+        treated as unauthenticated and refused."""
+        self._create_keystore_with_key()
+        data = self._read_raw()
+        data["integrity"] = "not-a-mac-object"
+        self._write_raw(data)
+        keystore = PQCKeystore(self.keystore_path)
+        with self.assertRaises(KeystoreError):
+            keystore.load_keystore(self.keystore_password)
+        self.assertIsNone(keystore.keystore_data)
+
+    def test_integrity_empty_object_fails_closed(self):
+        """`integrity` present but empty ({}) must not load: the schema
+        requires alg+mac, and the MAC check itself treats a missing/unknown
+        alg or mac as invalid."""
+        self._create_keystore_with_key()
+        data = self._read_raw()
+        data["integrity"] = {}
+        self._write_raw(data)
+        keystore = PQCKeystore(self.keystore_path)
+        with self.assertRaises(KeystoreError):
+            keystore.load_keystore(self.keystore_password)
+        self.assertIsNone(keystore.keystore_data)
 
     def test_default_load_does_not_auto_upgrade_v1(self):
         """A plain load must never silently rewrite a v1 file to v2 - that would
