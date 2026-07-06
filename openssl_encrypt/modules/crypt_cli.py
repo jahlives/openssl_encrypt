@@ -4913,27 +4913,35 @@ def main_with_args(args=None):
         except Exception:
             pass
 
-        # Security warning for debug mode
-        eprint("\n" + "=" * 78)
-        eprint("⚠️  WARNING: DEBUG MODE ENABLED - SENSITIVE DATA LOGGING ACTIVE")
-        eprint("=" * 78)
-        eprint("Debug mode logs sensitive information including:")
+        # Debug notice. The loud "SENSITIVE DATA" banner is reserved for the
+        # path that actually leaks secrets (--unsafe-show-secrets). Plain
+        # --debug redacts every secret via the debug_secret() chokepoint, so it
+        # only gets a calm, accurate note — an alarming banner there would both
+        # overstate the risk and desensitise users to the real warning.
         if unsafe_show_secrets:
+            eprint("\n" + "=" * 78)
+            eprint("⚠️  WARNING: DEBUG MODE ENABLED - SENSITIVE DATA LOGGING ACTIVE")
+            eprint("=" * 78)
+            eprint("Debug mode logs sensitive information including:")
             eprint("  ❗ SECRETS IN CLEARTEXT (--unsafe-show-secrets is active):")
             eprint("     passwords, key material, KDF intermediates and hardware")
             eprint("     peppers ARE BEING SHOWN in this output")
+            eprint("  • Detailed cryptographic operation traces")
+            eprint("  • Internal state information")
+            eprint()
+            eprint("SECURITY NOTICE:")
+            eprint("  ❌ DO NOT use --unsafe-show-secrets with production data or real passwords")
+            eprint("  ✅ Only use for testing with dummy/test data")
+            eprint("  ⚠️  Debug logs may be stored in log files or terminal history")
+            eprint("=" * 78 + "\n")
         else:
-            eprint("  • Secret values (passwords, key material, KDF intermediates,")
-            eprint("    hardware peppers) are REDACTED to length + SHA-256")
-            eprint("    fingerprint; add --unsafe-show-secrets to show them")
-        eprint("  • Detailed cryptographic operation traces")
-        eprint("  • Internal state information")
-        eprint()
-        eprint("SECURITY NOTICE:")
-        eprint("  ❌ DO NOT use --debug with production data or real passwords")
-        eprint("  ✅ Only use for testing with dummy/test data")
-        eprint("  ⚠️  Debug logs may be stored in log files or terminal history")
-        eprint("=" * 78 + "\n")
+            eprint("DEBUG: Debug logging enabled. Secret values (passwords, key material,")
+            eprint("       KDF intermediates, hardware peppers) are REDACTED to length + a")
+            eprint("       keyed SHA-256 fingerprint; secret lengths and public values")
+            eprint("       (nonces, salts, ciphertext) are shown. Add --unsafe-show-secrets")
+            eprint("       to reveal secrets in cleartext.")
+            eprint("       Note: secret LENGTHS and public values are written to stderr and")
+            eprint("       may persist in log files or shell history.\n")
 
         # The argv dump must not leak any secret passed as a CLI option value.
         eprint(f"DEBUG: sys.argv = {sanitize_argv_for_debug(sys.argv)}")

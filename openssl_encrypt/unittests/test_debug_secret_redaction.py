@@ -383,6 +383,33 @@ class UnsafeShowSecretsCLITests(unittest.TestCase):
         # The prominent warning explicitly says secrets are being shown.
         self.assertIn("CLEARTEXT", stderr_text)
 
+    def test_plain_debug_omits_loud_leak_banner(self):
+        """Plain --debug no longer leaks secrets, so the loud SENSITIVE-DATA
+        banner and the 'do not use on production' notice must NOT fire. Only a
+        calm note stating redaction is active (and how to opt into cleartext)
+        is shown."""
+        code, stderr_text, _ = self._run_encrypt_with_logs(["--debug"])
+        self.assertEqual(code, 0)
+        # Loud, now-inaccurate framing is gone on the redacted path.
+        self.assertNotIn("SENSITIVE DATA LOGGING ACTIVE", stderr_text)
+        self.assertNotIn("DO NOT use", stderr_text)
+        # A calm note still tells the user redaction is active and how to
+        # reveal secrets if they really need to.
+        self.assertIn("REDACTED", stderr_text)
+        self.assertIn("--unsafe-show-secrets", stderr_text)
+        # The one caution that still materially applies in redacted mode is
+        # retained: lengths + public values reach stderr and may persist.
+        self.assertIn("persist", stderr_text)
+
+    def test_unsafe_debug_keeps_loud_banner(self):
+        """--debug --unsafe-show-secrets is the path that actually leaks, so it
+        must keep the loud SENSITIVE-DATA banner and the production warning."""
+        code, stderr_text, _ = self._run_encrypt_with_logs(["--debug", "--unsafe-show-secrets"])
+        self.assertEqual(code, 0)
+        self.assertIn("SENSITIVE DATA LOGGING ACTIVE", stderr_text)
+        self.assertIn("DO NOT use", stderr_text)
+        self.assertIn("CLEARTEXT", stderr_text)
+
     def test_argv_dump_redacts_cli_password(self):
         """--debug dumps sys.argv; a password passed as an option value must
         be redacted there (regression: only -p/--password were covered, and
