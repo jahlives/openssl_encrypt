@@ -264,9 +264,6 @@ class PQCKeystore:
         # Determine security level
         security_level = KeystoreSecurityLevel(self.keystore_data.get("security_level", "standard"))
 
-        # Derive master key
-        self.master_key = self._derive_master_key(password, salt, security_level)
-
         # KEYSTORE-DOWNGRADE: the decision to authenticate must NOT be derived
         # from the attacker-controlled `version` field. Authenticate whenever an
         # integrity MAC is present, regardless of the declared version, so a
@@ -274,22 +271,16 @@ class PQCKeystore:
         integrity = self.keystore_data.get("integrity")
         integrity_present = isinstance(integrity, dict)
 
-        if integrity_present:
-            # A wrong password is disambiguated from tampering inside
-            # _verify_integrity (via the test_key).
-            self._verify_integrity()
-        elif not allow_legacy:
+        if not integrity_present and not allow_legacy:
             # No integrity MAC: either a genuine legacy v1 keystore OR a
             # maliciously downgraded v2 file (integrity stripped, version forced
             # to 1). The two are indistinguishable by content, so fail closed -
             # loading either would risk trusting attacker-substituted plaintext
             # fields (e.g. public_key). The operator can opt in to an explicit,
             # loudly-warned upgrade via `keystore migrate` (allow_legacy=True).
-            # Refuse before the password check so an unauthenticated file gives
-            # no password oracle.
-            if self.master_key:
-                secure_memzero(self.master_key)
-                self.master_key = None
+            # Refuse before the master key is even derived: no password oracle,
+            # no KDF cost on an attacker-supplied file, and no password-derived
+            # key material exists for a file we refuse to trust.
             self.keystore_data = None
             # The raised exception's detail is scrubbed in production (secure
             # error handling), so surface the actionable guidance via a warning
@@ -310,6 +301,15 @@ class PQCKeystore:
                 "authenticated v2 format after confirming it has not been "
                 "tampered with."
             )
+
+        # Derive master key - only for a file that is either MAC-protected or
+        # explicitly opted into the legacy migration path.
+        self.master_key = self._derive_master_key(password, salt, security_level)
+
+        if integrity_present:
+            # A wrong password is disambiguated from tampering inside
+            # _verify_integrity (via the test_key).
+            self._verify_integrity()
 
         # Verify password by checking a test key. For an authenticated store
         # this re-confirms after a valid MAC; on the allow_legacy upgrade path
@@ -413,6 +413,7 @@ class PQCKeystore:
 
         # Create a temporary file with secure permissions first
         from .file_permissions import PermissionLevel, create_secure_file
+
         temp_path = self.keystore_path + ".tmp"
         fd = create_secure_file(temp_path, PermissionLevel.OWNER_ONLY)
         with os.fdopen(fd, "w") as f:
