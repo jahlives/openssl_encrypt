@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from openssl_encrypt.modules.crypt_utils import eprint
+from openssl_encrypt.modules.debug_redaction import debug_secret
 from openssl_encrypt.modules.file_permissions import (
     PermissionLevel,
     create_secure_directory,
@@ -523,10 +524,9 @@ class FIDO2HSMPlugin(HSMPlugin):
                     f"Invalid pepper length: expected 32 bytes, got {len(pepper)} bytes"
                 )
 
-            # Debug output
-            import binascii
-
-            logger.debug(f"Derived pepper (hex): {binascii.hexlify(pepper).decode()}")
+            # Debug output (the hardware pepper is secret material - it may only
+            # be emitted through the debug_secret() redaction chokepoint)
+            logger.debug(debug_secret("Derived pepper", pepper))
 
             logger.info(f"Successfully derived FIDO2 pepper ({len(pepper)} bytes)")
 
@@ -690,9 +690,11 @@ class FIDO2HSMPlugin(HSMPlugin):
                         "manufacturer": getattr(device, "manufacturer", "Unknown"),
                         "aaguid": str(info.aaguid) if hasattr(info, "aaguid") else "Unknown",
                         "versions": info.versions if hasattr(info, "versions") else [],
-                        "extensions": list(info.extensions)
-                        if hasattr(info, "extensions") and info.extensions
-                        else [],
+                        "extensions": (
+                            list(info.extensions)
+                            if hasattr(info, "extensions") and info.extensions
+                            else []
+                        ),
                         "hmac_secret_support": self._check_hmac_secret_support(device),
                     }
                 )
