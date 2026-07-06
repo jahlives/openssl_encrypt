@@ -23,6 +23,7 @@ openssl_encrypt/modules/recovery_slots.py
 openssl_encrypt/modules/secret_sharing.py
 openssl_encrypt/modules/crypt_utils.py
 openssl_encrypt/modules/crypt_errors.py
+openssl_encrypt/modules/debug_redaction.py
 openssl_encrypt/modules/crypt_settings.py
 openssl_encrypt/modules/secure_memory.py
 openssl_encrypt/modules/secure_allocator.py
