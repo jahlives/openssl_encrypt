@@ -279,87 +279,175 @@ class TestKeystoreIntegrityH4(unittest.TestCase):
             keystore.load_keystore("WrongPassword!")
 
     # ------------------------------------------------------------------ #
-    # legacy v1 handling
+    # version-downgrade attack (KEYSTORE-DOWNGRADE finding)
     # ------------------------------------------------------------------ #
 
-    def test_legacy_v1_loads_with_warning_and_auto_upgrades(self):
-        """A v1 keystore loads (warned) and is rewritten as v2 on load."""
+    def test_downgrade_to_v1_rejected(self):
+        """Stripping the MAC and forcing version=1 must NOT bypass integrity.
+
+        The core vulnerability: _verify_integrity() was gated on the
+        attacker-controlled `version` field, so version 2 -> 1 + drop
+        `integrity` skipped authentication and let a swapped public_key load.
+        Loading such a file must now fail closed.
+        """
+        key_id = self._create_keystore_with_key()
+        # attacker downgrade: strip integrity, force version, swap the pubkey
+        data = self._read_raw()
+        data["version"] = 1
+        data.pop("integrity", None)
+        data["keys"][key_id]["public_key"] = base64.b64encode(os.urandom(64)).decode("utf-8")
+        self._write_raw(data)
+        self._assert_load_raises_integrity_error()
+
+    def test_downgrade_to_v1_rejected_even_without_other_tampering(self):
+        """A bare downgrade (no field edits) is still refused - a v1 file and a
+        downgraded v2 file are indistinguishable, so both fail closed."""
+        self._create_keystore_with_key()
+        self._downgrade_to_v1()
+        self._assert_load_raises_integrity_error()
+
+    def test_integrity_present_but_version_1_still_verified(self):
+        """De-gate check: keeping `integrity` but claiming version 1 must still
+        verify the MAC (a lazy downgrade that forgets to strip integrity)."""
+        key_id = self._create_keystore_with_key()
+        data = self._read_raw()
+        data["version"] = 1  # lie about the version but leave the MAC in place
+        data["keys"][key_id]["public_key"] = base64.b64encode(os.urandom(64)).decode("utf-8")
+        self._write_raw(data)
+        self._assert_load_raises_integrity_error()
+
+    def test_downgrade_refused_before_password_check(self):
+        """An unauthenticated (v1/downgraded) file is refused regardless of the
+        password - no password oracle on a file we will not trust anyway."""
+        from openssl_encrypt.modules.crypt_errors import KeystoreIntegrityError
+
+        self._create_keystore_with_key()
+        self._downgrade_to_v1()
+        keystore = PQCKeystore(self.keystore_path)
+        with self.assertRaises(KeystoreIntegrityError):
+            keystore.load_keystore("WrongPassword!")
+
+    def test_downgrade_refused_without_deriving_master_key(self):
+        """An unauthenticated file must be refused before any password-derived
+        work runs - an attacker-supplied file must not cost the victim an
+        Argon2 derivation, and key material derived from the password must
+        never exist for a file we refuse to trust."""
+        from openssl_encrypt.modules.crypt_errors import KeystoreIntegrityError
+
+        self._create_keystore_with_key()
+        self._downgrade_to_v1()
+        keystore = PQCKeystore(self.keystore_path)
+        with mock.patch.object(
+            PQCKeystore,
+            "_derive_master_key",
+            side_effect=AssertionError("KDF must not run for a refused keystore"),
+        ) as kdf:
+            with self.assertRaises(KeystoreIntegrityError):
+                keystore.load_keystore(self.keystore_password)
+        kdf.assert_not_called()
+
+    def test_integrity_present_but_not_an_object_fails_closed(self):
+        """`integrity` set to a non-object (e.g. a string) must not load: the
+        schema validator rejects it, and even without the validator it is
+        treated as unauthenticated and refused."""
+        self._create_keystore_with_key()
+        data = self._read_raw()
+        data["integrity"] = "not-a-mac-object"
+        self._write_raw(data)
+        keystore = PQCKeystore(self.keystore_path)
+        with self.assertRaises(KeystoreError):
+            keystore.load_keystore(self.keystore_password)
+        self.assertIsNone(keystore.keystore_data)
+
+    def test_integrity_empty_object_fails_closed(self):
+        """`integrity` present but empty ({}) must not load: the schema
+        requires alg+mac, and the MAC check itself treats a missing/unknown
+        alg or mac as invalid."""
+        self._create_keystore_with_key()
+        data = self._read_raw()
+        data["integrity"] = {}
+        self._write_raw(data)
+        keystore = PQCKeystore(self.keystore_path)
+        with self.assertRaises(KeystoreError):
+            keystore.load_keystore(self.keystore_password)
+        self.assertIsNone(keystore.keystore_data)
+
+    def test_default_load_does_not_auto_upgrade_v1(self):
+        """A plain load must never silently rewrite a v1 file to v2 - that would
+        launder a downgraded/tampered file under a fresh valid MAC."""
+        self._create_keystore_with_key()
+        self._downgrade_to_v1()
+        keystore = PQCKeystore(self.keystore_path)
+        with self.assertRaises(Exception):
+            keystore.load_keystore(self.keystore_password)
+        on_disk = self._read_raw()
+        self.assertEqual(on_disk["version"], 1)
+        self.assertNotIn("integrity", on_disk)
+
+    # ------------------------------------------------------------------ #
+    # explicit legacy migration (opt-in upgrade path)
+    # ------------------------------------------------------------------ #
+
+    def test_migrate_upgrades_legacy_v1_to_v2(self):
+        """The explicit migrate path upgrades a genuine legacy v1 keystore to
+        the authenticated v2 format and warns that authenticity is unverified."""
         key_id = self._create_keystore_with_key()
         self._downgrade_to_v1()
 
         keystore = PQCKeystore(self.keystore_path)
         with self.assertLogs("openssl_encrypt.modules.keystore_cli", level="WARNING"):
-            keystore.load_keystore(self.keystore_password)
+            keystore.migrate_legacy_keystore(self.keystore_password)
+        keystore.close()
+
+        # the file on disk must now be authenticated v2
+        data = self._read_raw()
+        self.assertEqual(data["version"], 2)
+        self.assertIn("integrity", data)
+
+        # and it must load normally afterwards (no allow_legacy needed)
+        reloaded = PQCKeystore(self.keystore_path)
+        reloaded.load_keystore(self.keystore_password)
+        public_key, _ = reloaded.get_key(key_id)
+        self.assertEqual(public_key, self.public_key)
+        reloaded.close()
+
+    def test_migrate_wrong_password_rejected(self):
+        """Migration still requires the correct master password."""
+        self._create_keystore_with_key()
+        self._downgrade_to_v1()
+        keystore = PQCKeystore(self.keystore_path)
+        with self.assertRaises(KeystorePasswordError):
+            keystore.migrate_legacy_keystore("WrongPassword!")
+
+    def test_load_allow_legacy_true_upgrades_v1(self):
+        """load_keystore(allow_legacy=True) is the low-level opt-in that the
+        migrate command uses; it loads and re-seals a v1 store as v2."""
+        key_id = self._create_keystore_with_key()
+        self._downgrade_to_v1()
+
+        keystore = PQCKeystore(self.keystore_path)
+        with self.assertLogs("openssl_encrypt.modules.keystore_cli", level="WARNING"):
+            keystore.load_keystore(self.keystore_password, allow_legacy=True)
         public_key, _ = keystore.get_key(key_id)
         self.assertEqual(public_key, self.public_key)
         keystore.close()
 
-        # the file on disk must now be v2 with a valid MAC
+        self.assertEqual(self._read_raw()["version"], 2)
+
+    def test_migrate_on_v2_is_idempotent(self):
+        """Migrating an already-authenticated v2 store leaves it valid v2."""
+        key_id = self._create_keystore_with_key()
+        keystore = PQCKeystore(self.keystore_path)
+        keystore.migrate_legacy_keystore(self.keystore_password)
+        keystore.close()
+
         data = self._read_raw()
         self.assertEqual(data["version"], 2)
         self.assertIn("integrity", data)
         reloaded = PQCKeystore(self.keystore_path)
         reloaded.load_keystore(self.keystore_password)
+        self.assertEqual(reloaded.get_key(key_id)[0], self.public_key)
         reloaded.close()
-
-    def test_legacy_v1_wrong_password_still_rejected(self):
-        """v1 password verification (test_key) keeps working."""
-        self._create_keystore_with_key()
-        self._downgrade_to_v1()
-        keystore = PQCKeystore(self.keystore_path)
-        with self.assertRaises(KeystorePasswordError):
-            keystore.load_keystore("WrongPassword!")
-
-    def test_legacy_v1_loads_even_if_upgrade_write_fails(self):
-        """If the auto-upgrade save fails (read-only file), load still succeeds."""
-        key_id = self._create_keystore_with_key()
-        self._downgrade_to_v1()
-
-        keystore = PQCKeystore(self.keystore_path)
-        with mock.patch.object(
-            PQCKeystore, "save_keystore", side_effect=OSError("read-only filesystem")
-        ):
-            with self.assertLogs("openssl_encrypt.modules.keystore_cli", level="WARNING"):
-                keystore.load_keystore(self.keystore_password)
-        public_key, _ = keystore.get_key(key_id)
-        self.assertEqual(public_key, self.public_key)
-        keystore.close()
-
-    def test_legacy_v1_without_test_key_skips_auto_upgrade(self):
-        """No test_key means the password is unverifiable - never seal the
-        store under a potentially mistyped password; warn and stay v1."""
-        self._create_keystore_with_key()
-        data = self._read_raw()
-        data["version"] = 1
-        data.pop("integrity", None)
-        data.pop("test_key", None)
-        self._write_raw(data)
-
-        keystore = PQCKeystore(self.keystore_path)
-        with self.assertLogs("openssl_encrypt.modules.keystore_cli", level="WARNING"):
-            keystore.load_keystore(self.keystore_password)
-        keystore.close()
-
-        on_disk = self._read_raw()
-        self.assertEqual(on_disk["version"], 1)
-        self.assertNotIn("integrity", on_disk)
-
-    def test_downgrade_to_v1_is_accepted_by_design(self):
-        """Documented residual risk: stripping MAC + version → v1 still loads.
-
-        Accepted for 1.4.x backward compatibility (see SECURITY_REVIEW_FINDINGS
-        H4 notes); 1.5.x may refuse v1. The load must at least warn loudly.
-        """
-        key_id = self._create_keystore_with_key()
-        # attacker downgrade: strip integrity, rewrite version
-        self._downgrade_to_v1()
-        keystore = PQCKeystore(self.keystore_path)
-        with self.assertLogs("openssl_encrypt.modules.keystore_cli", level="WARNING"):
-            keystore.load_keystore(self.keystore_password)
-        self.assertIsNotNone(keystore.keystore_data)
-        public_key, _ = keystore.get_key(key_id)
-        self.assertEqual(public_key, self.public_key)
-        keystore.close()
 
 
 if __name__ == "__main__":
