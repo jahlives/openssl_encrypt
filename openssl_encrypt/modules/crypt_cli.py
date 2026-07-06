@@ -56,6 +56,7 @@ from .crypt_utils import (
     show_security_recommendations,
     tty_clear_line,
 )
+from .debug_redaction import debug_secret, set_show_secrets
 
 # Try to import the CLI helper module
 try:
@@ -690,6 +691,57 @@ def get_template_config(template: str or SecurityTemplate) -> Dict[str, Any]:
             sys.exit(1)
 
 
+# Value-taking CLI options whose VALUE is a secret. Their values must never
+# appear in the --debug argv dump; they are routed through the debug_secret()
+# redaction chokepoint instead. Keep in sync with the parsers in this module
+# and crypt_cli_subparser.py. File-path/fd options (--password-file,
+# --password-fd, --recovery-share, ...) are not secrets themselves.
+SECRET_VALUE_CLI_OPTIONS = frozenset(
+    {
+        "-p",
+        "--password",
+        "--second-password",
+        "--keystore-password",
+        "--manifest-password",
+        "--rekey-password",
+        "--recovery-code",
+        "--encryption-data",
+    }
+)
+
+
+def sanitize_argv_for_debug(argv: list) -> list:
+    """
+    Return a copy of argv with secret option values redacted for debug output.
+
+    Covers the ``--opt value``, ``--opt=value`` and attached short
+    ``-pVALUE`` forms for every option in :data:`SECRET_VALUE_CLI_OPTIONS`.
+    Values are rendered through the :func:`debug_secret` chokepoint, so they
+    stay redacted by default and appear in cleartext only under
+    ``--debug --unsafe-show-secrets``.
+
+    Args:
+        argv: The raw process argv (``sys.argv``-shaped list of str).
+
+    Returns:
+        A new list safe to include in debug output.
+    """
+    sanitized = list(argv)
+    redact_next = False
+    for i, arg in enumerate(sanitized):
+        if redact_next:
+            sanitized[i] = debug_secret("", arg)
+            redact_next = False
+        elif arg in SECRET_VALUE_CLI_OPTIONS:
+            redact_next = True
+        elif "=" in arg and arg.split("=", 1)[0] in SECRET_VALUE_CLI_OPTIONS:
+            opt, value = arg.split("=", 1)
+            sanitized[i] = f"{opt}={debug_secret('', value)}"
+        elif arg.startswith("-p") and not arg.startswith("--") and len(arg) > 2:
+            sanitized[i] = f"-p{debug_secret('', arg[2:])}"
+    return sanitized
+
+
 def preprocess_global_args(argv):
     """Preprocess sys.argv to move truly global flags to the front for subparser compatibility.
 
@@ -699,6 +751,7 @@ def preprocess_global_args(argv):
     # Flags that are truly global and can appear anywhere
     TRULY_GLOBAL_FLAGS = {
         "--debug",
+        "--unsafe-show-secrets",
         "--verbose",
         "--quiet",
         "-q",
@@ -3375,6 +3428,7 @@ def main():
         "--progress",
         "--verbose",
         "--debug",
+        "--unsafe-show-secrets",
         "--quiet",
         "--yes",
         "-y",
@@ -3784,7 +3838,16 @@ def main_with_args(args=None):
     global_group.add_argument(
         "--debug",
         action="store_true",
-        help="Show detailed debug information (WARNING: logs passwords and sensitive data - test files only!)",
+        help="Show detailed debug information. Secret values (passwords, key material, "
+        "KDF intermediates, hardware peppers) are redacted to length + SHA-256 "
+        "fingerprint by default; combine with --unsafe-show-secrets to log them "
+        "in cleartext (test files only!)",
+    )
+    global_group.add_argument(
+        "--unsafe-show-secrets",
+        action="store_true",
+        help="UNSAFE: show secret values in cleartext in --debug output instead of "
+        "redacting them. Only valid together with --debug.",
     )
     global_group.add_argument(
         "--yes",
@@ -4820,9 +4883,20 @@ def main_with_args(args=None):
             original_algorithm = sys.argv[i + 1]
             break
 
+    # --unsafe-show-secrets is only meaningful (and only safe to accept)
+    # together with --debug. Validate before doing any work.
+    unsafe_show_secrets = getattr(args, "unsafe_show_secrets", False)
+    if unsafe_show_secrets and not args.debug:
+        eprint("Error: --unsafe-show-secrets is only valid in combination with --debug")
+        sys.exit(2)
+
     # Configure logging level based on debug flag
     if args.debug:
         import logging
+
+        # Cleartext secrets in debug output are an explicit opt-in; the
+        # default is redaction via the debug_secret() chokepoint.
+        set_show_secrets(unsafe_show_secrets)
 
         # Configure the root logger to DEBUG level
         root_logger = logging.getLogger()
@@ -4844,7 +4918,14 @@ def main_with_args(args=None):
         eprint("⚠️  WARNING: DEBUG MODE ENABLED - SENSITIVE DATA LOGGING ACTIVE")
         eprint("=" * 78)
         eprint("Debug mode logs sensitive information including:")
-        eprint("  • Password hex dumps during key derivation")
+        if unsafe_show_secrets:
+            eprint("  ❗ SECRETS IN CLEARTEXT (--unsafe-show-secrets is active):")
+            eprint("     passwords, key material, KDF intermediates and hardware")
+            eprint("     peppers ARE BEING SHOWN in this output")
+        else:
+            eprint("  • Secret values (passwords, key material, KDF intermediates,")
+            eprint("    hardware peppers) are REDACTED to length + SHA-256")
+            eprint("    fingerprint; add --unsafe-show-secrets to show them")
         eprint("  • Detailed cryptographic operation traces")
         eprint("  • Internal state information")
         eprint()
@@ -4854,7 +4935,8 @@ def main_with_args(args=None):
         eprint("  ⚠️  Debug logs may be stored in log files or terminal history")
         eprint("=" * 78 + "\n")
 
-        eprint(f"DEBUG: sys.argv = {sys.argv}")
+        # The argv dump must not leak any secret passed as a CLI option value.
+        eprint(f"DEBUG: sys.argv = {sanitize_argv_for_debug(sys.argv)}")
 
         # Enable raw exception passthrough in debug mode
         set_debug_mode(True)

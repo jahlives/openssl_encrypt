@@ -22,6 +22,7 @@ from enum import Enum
 from typing import Dict, Optional, Tuple
 
 from .crypt_utils import eprint
+from .debug_redaction import debug_secret
 
 
 class ProgressType(Enum):
@@ -730,7 +731,7 @@ def generate_key_independent_xor_parallel(
         xor_components.append(initial_normalized)
 
         if debug:
-            eprint(f"DEBUG: Initial component: {bytes(initial_normalized).hex()[:32]}")
+            eprint(debug_secret("DEBUG: Initial component", bytes(initial_normalized)))
 
         # Add parallel results in deterministic order (task submission order)
         for task in tasks:
@@ -739,7 +740,7 @@ def generate_key_independent_xor_parallel(
                 result_bytes = results[worker_id]
                 xor_components.append(SecureBytes(result_bytes))
                 if debug:
-                    eprint(f"DEBUG: {worker_id} component: {result_bytes.hex()[:32]}")
+                    eprint(debug_secret(f"DEBUG: {worker_id} component", result_bytes))
 
         if debug:
             eprint(f"DEBUG: Collected {len(xor_components)} components, performing XOR")
