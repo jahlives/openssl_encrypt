@@ -73,6 +73,11 @@ from .crypt_errors import (  # Error handling imports are at the top of file
 # Import utility functions
 from .crypt_utils import eprint, safe_open_file
 
+# Redaction chokepoint: ALL secret material in debug output must be formatted
+# through debug_secret() (redacted by default, cleartext only with
+# --debug --unsafe-show-secrets).
+from .debug_redaction import debug_secret
+
 # Import integrity plugin for remote metadata verification
 try:
     from ..plugins.integrity import IntegrityPlugin
@@ -1589,20 +1594,26 @@ def multi_hash_password(
                     with secure_buffer(64, zero=False) as hash_buffer:
                         for i in range(params):
                             if debug:
-                                logger.debug(f"SHA-512:INPUT Round {i+1}/{params}: {hashed.hex()}")
+                                logger.debug(
+                                    debug_secret(f"SHA-512:INPUT Round {i+1}/{params}", hashed)
+                                )
 
                             result = hashlib.sha512(hashed).digest()
                             secure_memcpy(hash_buffer, result)
                             secure_memcpy(hashed, hash_buffer)
 
                             if debug:
-                                logger.debug(f"SHA-512:OUTPUT Round {i+1}/{params}: {hashed.hex()}")
+                                logger.debug(
+                                    debug_secret(f"SHA-512:OUTPUT Round {i+1}/{params}", hashed)
+                                )
 
                             show_progress("SHA-512", i + 1, params)
                             KeyStretch.hash_stretch = True
 
                         if debug:
-                            logger.debug(f"SHA-512:FINAL After {params} rounds: {hashed.hex()}")
+                            logger.debug(
+                                debug_secret(f"SHA-512:FINAL After {params} rounds", hashed)
+                            )
 
                         # NEW: Collect intermediate for v10/v8 XOR
                         # CRITICAL: Store as SecureBytes, will be zeroed in generate_key() after XOR
@@ -1610,7 +1621,7 @@ def multi_hash_password(
                             normalized = normalize_to_key_length_secure(hashed, key_length)
                             intermediate_outputs.append(normalized)  # SecureBytes object
                             if debug:
-                                logger.debug(f"SHA-512:XOR-INTERMEDIATE: {normalized.hex()}")
+                                logger.debug(debug_secret("SHA-512:XOR-INTERMEDIATE", normalized))
 
                         if not quiet and not progress:
                             eprint("✅")
@@ -1628,20 +1639,26 @@ def multi_hash_password(
                     with secure_buffer(32, zero=False) as hash_buffer:
                         for i in range(params):
                             if debug:
-                                logger.debug(f"SHA-256:INPUT Round {i+1}/{params}: {hashed.hex()}")
+                                logger.debug(
+                                    debug_secret(f"SHA-256:INPUT Round {i+1}/{params}", hashed)
+                                )
 
                             result = hashlib.sha256(hashed).digest()
                             secure_memcpy(hash_buffer, result)
                             secure_memcpy(hashed, hash_buffer)
 
                             if debug:
-                                logger.debug(f"SHA-256:OUTPUT Round {i+1}/{params}: {hashed.hex()}")
+                                logger.debug(
+                                    debug_secret(f"SHA-256:OUTPUT Round {i+1}/{params}", hashed)
+                                )
 
                             show_progress("SHA-256", i + 1, params)
                             KeyStretch.hash_stretch = True
 
                         if debug:
-                            logger.debug(f"SHA-256:FINAL After {params} rounds: {hashed.hex()}")
+                            logger.debug(
+                                debug_secret(f"SHA-256:FINAL After {params} rounds", hashed)
+                            )
 
                         # NEW: Collect intermediate for v10/v8 XOR
                         # CRITICAL: Store as SecureBytes, will be zeroed in generate_key() after XOR
@@ -1649,7 +1666,7 @@ def multi_hash_password(
                             normalized = normalize_to_key_length_secure(hashed, key_length)
                             intermediate_outputs.append(normalized)  # SecureBytes object
                             if debug:
-                                logger.debug(f"SHA-256:XOR-INTERMEDIATE: {normalized.hex()}")
+                                logger.debug(debug_secret("SHA-256:XOR-INTERMEDIATE", normalized))
 
                         if not quiet and not progress:
                             eprint("✅")
@@ -1667,7 +1684,9 @@ def multi_hash_password(
                     with secure_buffer(32, zero=False) as hash_buffer:
                         for i in range(params):
                             if debug:
-                                logger.debug(f"SHA3-256:INPUT Round {i+1}/{params}: {hashed.hex()}")
+                                logger.debug(
+                                    debug_secret(f"SHA3-256:INPUT Round {i+1}/{params}", hashed)
+                                )
 
                             result = hashlib.sha3_256(hashed).digest()
                             secure_memcpy(hash_buffer, result)
@@ -1675,14 +1694,16 @@ def multi_hash_password(
 
                             if debug:
                                 logger.debug(
-                                    f"SHA3-256:OUTPUT Round {i+1}/{params}: {hashed.hex()}"
+                                    debug_secret(f"SHA3-256:OUTPUT Round {i+1}/{params}", hashed)
                                 )
 
                             show_progress("SHA3-256", i + 1, params)
                             KeyStretch.hash_stretch = True
 
                         if debug:
-                            logger.debug(f"SHA3-256:FINAL After {params} rounds: {hashed.hex()}")
+                            logger.debug(
+                                debug_secret(f"SHA3-256:FINAL After {params} rounds", hashed)
+                            )
 
                         # NEW: Collect intermediate for v10/v8 XOR
                         # CRITICAL: Store as SecureBytes, will be zeroed in generate_key() after XOR
@@ -1690,7 +1711,7 @@ def multi_hash_password(
                             normalized = normalize_to_key_length_secure(hashed, key_length)
                             intermediate_outputs.append(normalized)  # SecureBytes object
                             if debug:
-                                logger.debug(f"SHA3-256:XOR-INTERMEDIATE: {normalized.hex()}")
+                                logger.debug(debug_secret("SHA3-256:XOR-INTERMEDIATE", normalized))
 
                         if not quiet and not progress:
                             eprint("✅")
@@ -1715,7 +1736,7 @@ def multi_hash_password(
                             normalized = normalize_to_key_length_secure(hashed, key_length)
                             intermediate_outputs.append(normalized)  # SecureBytes object
                             if debug:
-                                logger.debug(f"SHA3-512:XOR-INTERMEDIATE: {normalized.hex()}")
+                                logger.debug(debug_secret("SHA3-512:XOR-INTERMEDIATE", normalized))
 
                         if not quiet and not progress:
                             eprint("✅")
@@ -1758,7 +1779,7 @@ def multi_hash_password(
                             normalized = normalize_to_key_length_secure(hashed, key_length)
                             intermediate_outputs.append(normalized)  # SecureBytes object
                             if debug:
-                                logger.debug(f"BLAKE2b:XOR-INTERMEDIATE: {normalized.hex()}")
+                                logger.debug(debug_secret("BLAKE2b:XOR-INTERMEDIATE", normalized))
 
                         if not quiet and not progress:
                             eprint("✅")
@@ -1778,7 +1799,7 @@ def multi_hash_password(
                             for i in range(params):
                                 if debug:
                                     logger.debug(
-                                        f"BLAKE3:INPUT Round {i+1}/{params}: {hashed.hex()}"
+                                        debug_secret(f"BLAKE3:INPUT Round {i+1}/{params}", hashed)
                                     )
                                     logger.debug(
                                         f"BLAKE3:KEY Round {i+1}/{params} format_version={format_version}"
@@ -1804,7 +1825,9 @@ def multi_hash_password(
 
                                 if debug:
                                     logger.debug(
-                                        f"BLAKE3:KEYMATERIAL Round {i+1}/{params}: {key_material.hex()}"
+                                        debug_secret(
+                                            f"BLAKE3:KEYMATERIAL Round {i+1}/{params}", key_material
+                                        )
                                     )
 
                                 # Create a keyed BLAKE3 instance for each iteration
@@ -1818,14 +1841,16 @@ def multi_hash_password(
 
                                 if debug:
                                     logger.debug(
-                                        f"BLAKE3:OUTPUT Round {i+1}/{params}: {hashed.hex()}"
+                                        debug_secret(f"BLAKE3:OUTPUT Round {i+1}/{params}", hashed)
                                     )
 
                                 show_progress("BLAKE3", i + 1, params)
                                 KeyStretch.hash_stretch = True
 
                             if debug:
-                                logger.debug(f"BLAKE3:FINAL After {params} rounds: {hashed.hex()}")
+                                logger.debug(
+                                    debug_secret(f"BLAKE3:FINAL After {params} rounds", hashed)
+                                )
 
                             # NEW: Collect intermediate for v10/v8 XOR
                             # CRITICAL: Store as SecureBytes, will be zeroed in generate_key() after XOR
@@ -1833,7 +1858,9 @@ def multi_hash_password(
                                 normalized = normalize_to_key_length_secure(hashed, key_length)
                                 intermediate_outputs.append(normalized)  # SecureBytes object
                                 if debug:
-                                    logger.debug(f"BLAKE3:XOR-INTERMEDIATE: {normalized.hex()}")
+                                    logger.debug(
+                                        debug_secret("BLAKE3:XOR-INTERMEDIATE", normalized)
+                                    )
 
                             if not quiet and not progress:
                                 eprint("✅")
@@ -1859,7 +1886,7 @@ def multi_hash_password(
                                 intermediate_outputs.append(normalized)  # SecureBytes object
                                 if debug:
                                     logger.debug(
-                                        f"BLAKE3-FALLBACK:XOR-INTERMEDIATE: {normalized.hex()}"
+                                        debug_secret("BLAKE3-FALLBACK:XOR-INTERMEDIATE", normalized)
                                     )
 
                             if not quiet and not progress:
@@ -1909,7 +1936,7 @@ def multi_hash_password(
                             normalized = normalize_to_key_length_secure(hashed, key_length)
                             intermediate_outputs.append(normalized)  # SecureBytes object
                             if debug:
-                                logger.debug(f"SHAKE256:XOR-INTERMEDIATE: {normalized.hex()}")
+                                logger.debug(debug_secret("SHAKE256:XOR-INTERMEDIATE", normalized))
 
                         if not quiet and not progress:
                             eprint("✅")
@@ -1958,7 +1985,9 @@ def multi_hash_password(
                                 normalized = normalize_to_key_length_secure(hashed, key_length)
                                 intermediate_outputs.append(normalized)  # SecureBytes object
                                 if debug:
-                                    logger.debug(f"Whirlpool:XOR-INTERMEDIATE: {normalized.hex()}")
+                                    logger.debug(
+                                        debug_secret("Whirlpool:XOR-INTERMEDIATE", normalized)
+                                    )
 
                             if not quiet and not progress:
                                 eprint("✅")
@@ -1987,7 +2016,9 @@ def multi_hash_password(
                                 intermediate_outputs.append(normalized)  # SecureBytes object
                                 if debug:
                                     logger.debug(
-                                        f"Whirlpool-FALLBACK:XOR-INTERMEDIATE: {normalized.hex()}"
+                                        debug_secret(
+                                            "Whirlpool-FALLBACK:XOR-INTERMEDIATE", normalized
+                                        )
                                     )
 
                             if not quiet and not progress:
@@ -2285,7 +2316,7 @@ def compute_hash_independent(
                     eprint()  # Move to next line
 
         if debug:
-            logger.debug(f"INDEPENDENT-XOR: {algorithm} result (normalized): {result.hex()}")
+            logger.debug(debug_secret(f"INDEPENDENT-XOR: {algorithm} result (normalized)", result))
 
         return result
 
@@ -3259,7 +3290,9 @@ def generate_key(
         initial_normalized = normalize_to_key_length_secure(initial_hash, key_length)
         xor_accumulator.append(initial_normalized)  # SecureBytes object
         if debug:
-            logger.debug(f"V10-XOR: Added initial password+salt hash: {initial_normalized.hex()}")
+            logger.debug(
+                debug_secret("V10-XOR: Added initial password+salt hash", initial_normalized)
+            )
 
         # Zero the temporary hash immediately
         secure_memzero(bytearray(initial_hash))
@@ -3494,7 +3527,7 @@ def generate_key(
 
                 if debug:
                     logger.debug(
-                        f"ARGON2:INPUT Round {i+1}/{argon2_rounds}: {password_bytes.hex()}"
+                        debug_secret(f"ARGON2:INPUT Round {i+1}/{argon2_rounds}", password_bytes)
                     )
                     logger.debug(f"ARGON2:SALT Round {i+1}/{argon2_rounds}: {round_salt.hex()}")
                     logger.debug(
@@ -3513,7 +3546,7 @@ def generate_key(
                 )
 
                 if debug:
-                    logger.debug(f"ARGON2:OUTPUT Round {i+1}/{argon2_rounds}: {result.hex()}")
+                    logger.debug(debug_secret(f"ARGON2:OUTPUT Round {i+1}/{argon2_rounds}", result))
 
                 # Securely overwrite the previous password value
                 secure_memzero(password_bytes)
@@ -3562,7 +3595,7 @@ def generate_key(
             hash_config["argon2"]["type"] = type_int
 
             if debug:
-                logger.debug(f"ARGON2:FINAL After {argon2_rounds} rounds: {password.hex()}")
+                logger.debug(debug_secret(f"ARGON2:FINAL After {argon2_rounds} rounds", password))
 
             # NEW: For v10/v8, save Argon2 final output to XOR accumulator
             # CRITICAL: Store as SecureBytes, will be zeroed after XOR completes
@@ -3570,7 +3603,9 @@ def generate_key(
                 argon2_normalized = normalize_to_key_length_secure(password, key_length)
                 xor_accumulator.append(argon2_normalized)  # SecureBytes object
                 if debug:
-                    logger.debug(f"V10-XOR: Added Argon2 final output: {argon2_normalized.hex()}")
+                    logger.debug(
+                        debug_secret("V10-XOR: Added Argon2 final output", argon2_normalized)
+                    )
 
             if not quiet and not progress:
                 eprint("✅")
@@ -3629,7 +3664,7 @@ def generate_key(
                 if debug:
                     total_rounds = hash_config.get("balloon", {}).get("rounds", 1)
                     logger.debug(
-                        f"BALLOON:INPUT Round {i+1}/{total_rounds}: {password_bytes.hex()}"
+                        debug_secret(f"BALLOON:INPUT Round {i+1}/{total_rounds}", password_bytes)
                     )
                     logger.debug(f"BALLOON:SALT Round {i+1}/{total_rounds}: {round_salt.hex()}")
                     logger.debug(
@@ -3646,7 +3681,7 @@ def generate_key(
                 )
 
                 if debug:
-                    logger.debug(f"BALLOON:OUTPUT Round {i+1}/{total_rounds}: {result.hex()}")
+                    logger.debug(debug_secret(f"BALLOON:OUTPUT Round {i+1}/{total_rounds}", result))
 
                 # Securely overwrite the previous password value
                 secure_memzero(password_bytes)
@@ -3687,7 +3722,7 @@ def generate_key(
 
             if debug:
                 total_rounds = hash_config.get("balloon", {}).get("rounds", 1)
-                logger.debug(f"BALLOON:FINAL After {total_rounds} rounds: {password.hex()}")
+                logger.debug(debug_secret(f"BALLOON:FINAL After {total_rounds} rounds", password))
 
             # NEW: For v10/v8, save Balloon final output to XOR accumulator
             # CRITICAL: Store as SecureBytes, will be zeroed after XOR completes
@@ -3695,7 +3730,9 @@ def generate_key(
                 balloon_normalized = normalize_to_key_length_secure(password, key_length)
                 xor_accumulator.append(balloon_normalized)  # SecureBytes object
                 if debug:
-                    logger.debug(f"V10-XOR: Added Balloon final output: {balloon_normalized.hex()}")
+                    logger.debug(
+                        debug_secret("V10-XOR: Added Balloon final output", balloon_normalized)
+                    )
 
             if not quiet and not progress:
                 eprint("✅")
@@ -3756,7 +3793,9 @@ def generate_key(
 
                 if debug:
                     total_rounds = hash_config.get("scrypt", {}).get("rounds", 1)
-                    logger.debug(f"SCRYPT:INPUT Round {i+1}/{total_rounds}: {password_bytes.hex()}")
+                    logger.debug(
+                        debug_secret(f"SCRYPT:INPUT Round {i+1}/{total_rounds}", password_bytes)
+                    )
                     logger.debug(f"SCRYPT:SALT Round {i+1}/{total_rounds}: {round_salt.hex()}")
                     logger.debug(
                         f"SCRYPT:PARAMS n={hash_config['scrypt']['n']}, r={hash_config['scrypt']['r']}, p={hash_config['scrypt']['p']}"
@@ -3766,7 +3805,7 @@ def generate_key(
                 result = scrypt_kdf.derive(password_bytes)
 
                 if debug:
-                    logger.debug(f"SCRYPT:OUTPUT Round {i+1}/{total_rounds}: {result.hex()}")
+                    logger.debug(debug_secret(f"SCRYPT:OUTPUT Round {i+1}/{total_rounds}", result))
 
                 # Securely overwrite the previous password value
                 secure_memzero(password_bytes)
@@ -3782,7 +3821,7 @@ def generate_key(
 
             if debug:
                 total_rounds = hash_config.get("scrypt", {}).get("rounds", 1)
-                logger.debug(f"SCRYPT:FINAL After {total_rounds} rounds: {password.hex()}")
+                logger.debug(debug_secret(f"SCRYPT:FINAL After {total_rounds} rounds", password))
 
             # NEW: For v10/v8, save Scrypt final output to XOR accumulator
             # CRITICAL: Store as SecureBytes, will be zeroed after XOR completes
@@ -3790,7 +3829,9 @@ def generate_key(
                 scrypt_normalized = normalize_to_key_length_secure(password, key_length)
                 xor_accumulator.append(scrypt_normalized)  # SecureBytes object
                 if debug:
-                    logger.debug(f"V10-XOR: Added Scrypt final output: {scrypt_normalized.hex()}")
+                    logger.debug(
+                        debug_secret("V10-XOR: Added Scrypt final output", scrypt_normalized)
+                    )
 
             if not quiet and not progress:
                 eprint("✅")
@@ -3903,7 +3944,7 @@ def generate_key(
                 hkdf_normalized = normalize_to_key_length_secure(password, key_length)
                 xor_accumulator.append(hkdf_normalized)  # SecureBytes object
                 if debug:
-                    logger.debug(f"V10-XOR: Added HKDF final output: {hkdf_normalized.hex()}")
+                    logger.debug(debug_secret("V10-XOR: Added HKDF final output", hkdf_normalized))
 
         except Exception:
             if not quiet:
@@ -4005,7 +4046,9 @@ def generate_key(
                 randomx_normalized = normalize_to_key_length_secure(password, key_length)
                 xor_accumulator.append(randomx_normalized)  # SecureBytes object
                 if debug:
-                    logger.debug(f"V10-XOR: Added RandomX final output: {randomx_normalized.hex()}")
+                    logger.debug(
+                        debug_secret("V10-XOR: Added RandomX final output", randomx_normalized)
+                    )
 
         except Exception as e:
             if not quiet:
@@ -4081,7 +4124,7 @@ def generate_key(
             pbkdf2_normalized = normalize_to_key_length_secure(password, key_length)
             xor_accumulator.append(pbkdf2_normalized)  # SecureBytes object
             if debug:
-                logger.debug(f"V10-XOR: Added PBKDF2 final output: {pbkdf2_normalized.hex()}")
+                logger.debug(debug_secret("V10-XOR: Added PBKDF2 final output", pbkdf2_normalized))
 
     # Check if any KDF was requested but none were successful
     # This handles cases where KDFs like RandomX fail due to unavailability
@@ -4201,7 +4244,9 @@ def generate_key(
             xor_accumulator.append(pbkdf2_fallback_normalized)  # SecureBytes object
             if debug:
                 logger.debug(
-                    f"V10-XOR: Added PBKDF2 fallback final output: {pbkdf2_fallback_normalized.hex()}"
+                    debug_secret(
+                        "V10-XOR: Added PBKDF2 fallback final output", pbkdf2_fallback_normalized
+                    )
                 )
 
     # V10/v8: XOR all accumulated intermediate values
@@ -4212,7 +4257,7 @@ def generate_key(
             logger.debug(
                 f"V10-XOR: Performing final XOR of {len(xor_accumulator)} intermediate values"
             )
-            logger.debug(f"V10-XOR: Sequential result before XOR: {bytes(password).hex()}")
+            logger.debug(debug_secret("V10-XOR: Sequential result before XOR", bytes(password)))
 
         # CANCELLATION BUG (v8/v10) vs FIX (format_version >= 13): the chain's final
         # value equals the last stage's snapshot already in the accumulator, so
@@ -4227,7 +4272,7 @@ def generate_key(
         if debug:
             logger.debug("V10-XOR: Added sequential chain final result")
             for idx, val in enumerate(xor_accumulator):
-                logger.debug(f"V10-XOR:   [{idx}] {val.hex()}")
+                logger.debug(debug_secret(f"V10-XOR:   [{idx}]", val))
 
         # Perform XOR of all values with guaranteed cleanup
         xor_result = None
@@ -4243,7 +4288,7 @@ def generate_key(
             xor_result = None  # Don't zero twice
 
             if debug:
-                logger.debug(f"V10-XOR: Final XOR result: {bytes(password).hex()}")
+                logger.debug(debug_secret("V10-XOR: Final XOR result", bytes(password)))
 
             if not quiet:
                 eprint(f"✅ Combined {len(xor_accumulator)} intermediate values using XOR")
@@ -7039,11 +7084,9 @@ def encrypt_file(
     # For large files, use progress bar for encryption
     def do_encrypt(aad=None):
         if debug:
-            logger.debug(f"ENCRYPT:KEY Final derived key for {algorithm_value}: {key.hex()}")
+            logger.debug(debug_secret(f"ENCRYPT:KEY Final derived key for {algorithm_value}", key))
             logger.debug(f"ENCRYPT:DATA Input data length: {len(data)} bytes")
-            logger.debug(
-                f"ENCRYPT:DATA Input data (first 64 bytes): {data[:64].hex() if len(data) >= 64 else data.hex()}"
-            )
+            logger.debug(debug_secret("ENCRYPT:DATA Input data (first 64 bytes)", data[:64]))
             logger.debug(
                 f"ENCRYPT:AAD AAD value: {aad if aad is None else f'{len(aad)} bytes: {aad[:100] if len(aad) > 100 else aad}'}"
             )
@@ -7073,9 +7116,11 @@ def encrypt_file(
         if algorithm == EncryptionAlgorithm.FERNET:
             if debug:
                 logger.debug(f"ENCRYPT:FERNET Key length: {len(key)} bytes")
-                logger.debug(f"ENCRYPT:FERNET Key (Fernet base64): {key.decode('ascii')}")
+                logger.debug(
+                    debug_secret("ENCRYPT:FERNET Key (Fernet base64)", key.decode("ascii"))
+                )
                 logger.debug(f"ENCRYPT:FERNET Plaintext length: {len(data)} bytes")
-                logger.debug(f"ENCRYPT:FERNET Plaintext: {data.hex()}")
+                logger.debug(debug_secret("ENCRYPT:FERNET Plaintext", data))
 
             f = Fernet(key)
             encrypted_data = f.encrypt(data)
@@ -7182,7 +7227,7 @@ def encrypt_file(
                         logger.debug(
                             f"ENCRYPT:PQC_SIG Derived AES key length: {len(derived_key)} bytes"
                         )
-                        logger.debug(f"ENCRYPT:PQC_SIG Derived AES key: {derived_key.hex()}")
+                        logger.debug(debug_secret("ENCRYPT:PQC_SIG Derived AES key", derived_key))
 
                     # Encrypt using AES-GCM with derived key
                     nonce = secrets.token_bytes(12)  # 12 bytes for AES-GCM
@@ -7395,7 +7440,9 @@ def encrypt_file(
             elif algorithm == EncryptionAlgorithm.THREEFISH_1024:
                 if debug:
                     logger.debug(f"ENCRYPT:THREEFISH-1024 Key length: {len(key)} bytes")
-                    logger.debug(f"ENCRYPT:THREEFISH-1024 Key (first 32 bytes): {key[:32].hex()}")
+                    logger.debug(
+                        debug_secret("ENCRYPT:THREEFISH-1024 Key (first 32 bytes)", key[:32])
+                    )
                     logger.debug(
                         f"ENCRYPT:THREEFISH-1024 Using {nonce_size}-byte nonce for encryption"
                     )
@@ -10824,7 +10871,7 @@ def decrypt_file(
 
     def do_decrypt():
         if debug:
-            logger.debug(f"DECRYPT:KEY Final derived key for {algorithm}: {key.hex()}")
+            logger.debug(debug_secret(f"DECRYPT:KEY Final derived key for {algorithm}", key))
             logger.debug(f"DECRYPT:DATA Encrypted data length: {len(encrypted_data)} bytes")
             logger.debug(
                 f"DECRYPT:DATA Encrypted data (first 64 bytes): {encrypted_data[:64].hex() if len(encrypted_data) >= 64 else encrypted_data.hex()}"
@@ -10870,7 +10917,9 @@ def decrypt_file(
             if debug:
                 logger.debug(f"DECRYPT:CASCADE Decrypted data length: {len(decrypted_data)} bytes")
                 logger.debug(
-                    f"DECRYPT:CASCADE Decrypted data (first 64 bytes): {decrypted_data[:64].hex() if len(decrypted_data) >= 64 else decrypted_data.hex()}"
+                    debug_secret(
+                        "DECRYPT:CASCADE Decrypted data (first 64 bytes)", decrypted_data[:64]
+                    )
                 )
 
             return decrypted_data
@@ -10878,7 +10927,9 @@ def decrypt_file(
         if algorithm == EncryptionAlgorithm.FERNET.value:
             if debug:
                 logger.debug(f"DECRYPT:FERNET Key length: {len(key)} bytes")
-                logger.debug(f"DECRYPT:FERNET Key (Fernet base64): {key.decode('ascii')}")
+                logger.debug(
+                    debug_secret("DECRYPT:FERNET Key (Fernet base64)", key.decode("ascii"))
+                )
                 logger.debug(f"DECRYPT:FERNET Encrypted token length: {len(encrypted_data)} bytes")
                 logger.debug(
                     f"DECRYPT:FERNET Encrypted token (base64): {encrypted_data.decode('ascii')}"
@@ -10892,7 +10943,7 @@ def decrypt_file(
                 logger.debug(
                     f"DECRYPT:FERNET Decrypted plaintext length: {len(decrypted_data)} bytes"
                 )
-                logger.debug(f"DECRYPT:FERNET Decrypted plaintext: {decrypted_data.hex()}")
+                logger.debug(debug_secret("DECRYPT:FERNET Decrypted plaintext", decrypted_data))
 
             return decrypted_data
         # Handle PQC algorithms first to ensure they're processed properly
@@ -10986,7 +11037,7 @@ def decrypt_file(
                         logger.debug(
                             f"DECRYPT:PQC_SIG Derived AES key length: {len(derived_key)} bytes"
                         )
-                        logger.debug(f"DECRYPT:PQC_SIG Derived AES key: {derived_key.hex()}")
+                        logger.debug(debug_secret("DECRYPT:PQC_SIG Derived AES key", derived_key))
 
                     # Decrypt using AES-GCM with derived key
                     nonce = encrypted_data[:12]  # First 12 bytes are nonce
@@ -11006,7 +11057,7 @@ def decrypt_file(
                         logger.debug(
                             f"DECRYPT:PQC_SIG Decrypted data length: {len(decrypted_data)} bytes"
                         )
-                        logger.debug(f"DECRYPT:PQC_SIG Decrypted data: {decrypted_data.hex()}")
+                        logger.debug(debug_secret("DECRYPT:PQC_SIG Decrypted data", decrypted_data))
                 finally:
                     secure_memzero(derived_key)
 
@@ -11094,7 +11145,9 @@ def decrypt_file(
                                 logger.debug(
                                     f"DECRYPT:AES_SIV Decrypted plaintext length: {len(result)} bytes"
                                 )
-                                logger.debug(f"DECRYPT:AES_SIV Decrypted plaintext: {result.hex()}")
+                                logger.debug(
+                                    debug_secret("DECRYPT:AES_SIV Decrypted plaintext", result)
+                                )
 
                             return result
                         else:
@@ -11117,7 +11170,9 @@ def decrypt_file(
                                 logger.debug(
                                     f"DECRYPT:AES_SIV Decrypted plaintext length: {len(result)} bytes"
                                 )
-                                logger.debug(f"DECRYPT:AES_SIV Decrypted plaintext: {result.hex()}")
+                                logger.debug(
+                                    debug_secret("DECRYPT:AES_SIV Decrypted plaintext", result)
+                                )
 
                             return result
 
@@ -11155,7 +11210,9 @@ def decrypt_file(
                                 logger.debug(
                                     f"DECRYPT:AES_GCM Decrypted plaintext length: {len(result)} bytes"
                                 )
-                                logger.debug(f"DECRYPT:AES_GCM Decrypted plaintext: {result.hex()}")
+                                logger.debug(
+                                    debug_secret("DECRYPT:AES_GCM Decrypted plaintext", result)
+                                )
 
                             return result
                         elif algorithm == EncryptionAlgorithm.AES_GCM_SIV.value:
@@ -11173,7 +11230,7 @@ def decrypt_file(
                                     f"DECRYPT:AES_GCM_SIV Decrypted plaintext length: {len(result)} bytes"
                                 )
                                 logger.debug(
-                                    f"DECRYPT:AES_GCM_SIV Decrypted plaintext: {result.hex()}"
+                                    debug_secret("DECRYPT:AES_GCM_SIV Decrypted plaintext", result)
                                 )
 
                             return result
@@ -11192,7 +11249,7 @@ def decrypt_file(
                                     f"DECRYPT:AES_OCB3 Decrypted plaintext length: {len(result)} bytes"
                                 )
                                 logger.debug(
-                                    f"DECRYPT:AES_OCB3 Decrypted plaintext: {result.hex()}"
+                                    debug_secret("DECRYPT:AES_OCB3 Decrypted plaintext", result)
                                 )
 
                             return result
@@ -11211,7 +11268,7 @@ def decrypt_file(
                                     f"DECRYPT:CHACHA20 Decrypted plaintext length: {len(result)} bytes"
                                 )
                                 logger.debug(
-                                    f"DECRYPT:CHACHA20 Decrypted plaintext: {result.hex()}"
+                                    debug_secret("DECRYPT:CHACHA20 Decrypted plaintext", result)
                                 )
 
                             return result
@@ -11239,7 +11296,7 @@ def decrypt_file(
                                     f"DECRYPT:XCHACHA20 Decrypted plaintext length: {len(result)} bytes"
                                 )
                                 logger.debug(
-                                    f"DECRYPT:XCHACHA20 Decrypted plaintext: {result.hex()}"
+                                    debug_secret("DECRYPT:XCHACHA20 Decrypted plaintext", result)
                                 )
 
                             return result
@@ -11256,7 +11313,7 @@ def decrypt_file(
                                     f"DECRYPT:CAMELLIA Decrypted plaintext length: {len(result)} bytes"
                                 )
                                 logger.debug(
-                                    f"DECRYPT:CAMELLIA Decrypted plaintext: {result.hex()}"
+                                    debug_secret("DECRYPT:CAMELLIA Decrypted plaintext", result)
                                 )
 
                             return result
@@ -11278,7 +11335,9 @@ def decrypt_file(
                                     f"DECRYPT:THREEFISH-512 Decrypted plaintext length: {len(result)} bytes"
                                 )
                                 logger.debug(
-                                    f"DECRYPT:THREEFISH-512 Decrypted plaintext: {result.hex()}"
+                                    debug_secret(
+                                        "DECRYPT:THREEFISH-512 Decrypted plaintext", result
+                                    )
                                 )
 
                             return SecureBytes(result)
@@ -11286,7 +11345,9 @@ def decrypt_file(
                             if debug:
                                 logger.debug(f"DECRYPT:THREEFISH-1024 Key length: {len(key)} bytes")
                                 logger.debug(
-                                    f"DECRYPT:THREEFISH-1024 Key (first 32 bytes): {key[:32].hex()}"
+                                    debug_secret(
+                                        "DECRYPT:THREEFISH-1024 Key (first 32 bytes)", key[:32]
+                                    )
                                 )
                                 logger.debug(
                                     f"DECRYPT:THREEFISH-1024 Nonce (first 32 bytes): {nonce[:min(32, effective_size)].hex()}"
@@ -11313,7 +11374,9 @@ def decrypt_file(
                                     f"DECRYPT:THREEFISH-1024 Decrypted plaintext length: {len(result)} bytes"
                                 )
                                 logger.debug(
-                                    f"DECRYPT:THREEFISH-1024 Decrypted plaintext: {result.hex()}"
+                                    debug_secret(
+                                        "DECRYPT:THREEFISH-1024 Decrypted plaintext", result
+                                    )
                                 )
 
                             return SecureBytes(result)
@@ -11341,7 +11404,7 @@ def decrypt_file(
     if debug:
         logger.debug(f"DECRYPT:OUTPUT Decrypted data length: {len(decrypted_data)} bytes")
         logger.debug(
-            f"DECRYPT:OUTPUT Decrypted data (first 64 bytes): {decrypted_data[:64].hex() if len(decrypted_data) >= 64 else decrypted_data.hex()}"
+            debug_secret("DECRYPT:OUTPUT Decrypted data (first 64 bytes)", decrypted_data[:64])
         )
 
     if not quiet:

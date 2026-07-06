@@ -3047,7 +3047,16 @@ def create_subparser_main():
     parser.add_argument(
         "--debug",
         action="store_true",
-        help="Show detailed debug information (WARNING: logs passwords and sensitive data - test files only!)",
+        help="Show detailed debug information. Secret values (passwords, key material, "
+        "KDF intermediates, hardware peppers) are redacted to length + SHA-256 "
+        "fingerprint by default; combine with --unsafe-show-secrets to log them "
+        "in cleartext (test files only!)",
+    )
+    parser.add_argument(
+        "--unsafe-show-secrets",
+        action="store_true",
+        help="UNSAFE: show secret values in cleartext in --debug output instead of "
+        "redacting them. Only valid together with --debug.",
     )
     parser.add_argument(
         "--quiet",

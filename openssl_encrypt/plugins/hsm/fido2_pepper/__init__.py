@@ -70,6 +70,7 @@ except ImportError:
     CLIUserInteraction = None  # Placeholder when FIDO2 is not available
 
 from ....modules.crypt_utils import eprint
+from ....modules.debug_redaction import debug_secret
 from ....modules.plugin_system.plugin_base import (
     HSMPlugin,
     PluginCapability,
@@ -524,10 +525,9 @@ class FIDO2HSMPlugin(HSMPlugin):
                     f"Invalid pepper length: expected 32 bytes, got {len(pepper)} bytes"
                 )
 
-            # Debug output
-            import binascii
-
-            logger.debug(f"Derived pepper (hex): {binascii.hexlify(pepper).decode()}")
+            # Debug output (the hardware pepper is secret material - it may only
+            # be emitted through the debug_secret() redaction chokepoint)
+            logger.debug(debug_secret("Derived pepper", pepper))
 
             logger.info(f"Successfully derived FIDO2 pepper ({len(pepper)} bytes)")
 

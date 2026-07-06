@@ -17,21 +17,21 @@ import pytest
 # Line numbers are checked with a tolerance of ±5 to handle minor edits
 STDOUT_WHITELIST = [
     # crypt_cli.py — JSON data outputs
-    ("crypt_cli.py", 1083, "JSON error response"),
-    ("crypt_cli.py", 1280, "JSON algorithm result"),
-    ("crypt_cli.py", 1797, "JSON smart-recommendations"),
-    ("crypt_cli.py", 2969, "JSON keyserver bundle"),
-    ("crypt_cli.py", 3200, "JSON telemetry events"),
-    ("crypt_cli.py", 5578, "check-password JSON report"),
+    ("crypt_cli.py", 1137, "JSON error response"),
+    ("crypt_cli.py", 1334, "JSON algorithm result"),
+    ("crypt_cli.py", 1851, "JSON smart-recommendations"),
+    ("crypt_cli.py", 3023, "JSON keyserver bundle"),
+    ("crypt_cli.py", 3254, "JSON telemetry events"),
+    ("crypt_cli.py", 5674, "check-password JSON report"),
     # crypt_cli.py — decrypted plaintext outputs
-    ("crypt_cli.py", 9504, "asymmetric decrypted plaintext"),
-    ("crypt_cli.py", 9507, "asymmetric decrypted plaintext (quiet)"),
-    ("crypt_cli.py", 9698, "asymmetric decrypted plaintext path 2"),
-    ("crypt_cli.py", 9701, "asymmetric decrypted plaintext path 2 (quiet)"),
-    ("crypt_cli.py", 10497, "symmetric decrypted text content"),
+    ("crypt_cli.py", 9617, "asymmetric decrypted plaintext"),
+    ("crypt_cli.py", 9620, "asymmetric decrypted plaintext (quiet)"),
+    ("crypt_cli.py", 9811, "asymmetric decrypted plaintext path 2"),
+    ("crypt_cli.py", 9814, "asymmetric decrypted plaintext path 2 (quiet)"),
+    ("crypt_cli.py", 10610, "symmetric decrypted text content"),
     # crypt_cli.py — derive-password output to stdout
-    ("crypt_cli.py", 5991, "derive-password hex output"),
-    ("crypt_cli.py", 5995, "derive-password base64 output"),
+    ("crypt_cli.py", 6087, "derive-password hex output"),
+    ("crypt_cli.py", 6091, "derive-password base64 output"),
     # file_signature.py — verify-signature --json result (machine-readable, stdout)
     ("modules/file_signature.py", 425, "verify-signature JSON result"),
     # crypt_core.py — JSON data output
