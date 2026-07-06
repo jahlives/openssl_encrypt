@@ -47,6 +47,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   desensitised users to the real cleartext warning. Message-only change; no
   redaction logic was altered.
 
+### Security
+
+- **Debug logs no longer leak a KDF key intermediate** (audit 2026-07-06 #2):
+  the per-round Argon2/Balloon/Scrypt debug lines printed `round_salt` as raw
+  hex, and for `format_version >= 7` rounds ≥ 1 that "salt" is the first 128 bits
+  of the live derived-key chain. Under plain `--debug` this leaked key material
+  outside the `debug_secret()` redaction chokepoint; it is now redacted by
+  default (cleartext only under `--debug --unsafe-show-secrets`).
+- **New files are no longer written in the cost-bypassing v8/v10 format** (audit
+  2026-07-06 #3): the v8/v10 sequential-XOR derivation appended the chain's final
+  value twice, cancelling the last KDF stage so an Argon2-only config collapsed
+  to ~`SHA256(password‖salt)`. `encrypt_file` now defaults to `format_version=9`
+  (the secure chained-salt format, matching the CLI and `generate_key`) and
+  **refuses to encrypt** new v8/v10 files (decryption of existing v8/v10 files is
+  unaffected; a library-only `allow_insecure_legacy_xor` escape hatch exists for
+  legacy-fixture tests). `rekey` transparently upgrades an inherited v8/v10 file
+  to v9 — including the envelope fast-path, which no longer re-emits a legacy
+  file verbatim — so rekey is a real migration off the weak derivation. A
+  pytest-only PBKDF2 injection that had zero production effect but broke default
+  round-trips and v7≡v9 equivalence was removed. The envelope rekey fast-path
+  now accepts every version envelope writes (v9/v11/v12/v13), and the v9 metadata
+  schema now lists the ML-KEM/Kyber hybrid algorithms it legitimately produces.
+
 ### Fixed
 
 - **`string_entropy` Unicode handling**: non-ASCII characters (accented letters,

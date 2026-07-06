@@ -104,6 +104,14 @@ F = TypeVar("F", bound=Callable[..., Any])
 logger = logging.getLogger(__name__)
 
 
+# Sequential-XOR format versions whose KDF derivation cancels the last stage
+# (cost bypass, audit 2026-07-06 #3 / SECURITY advisory 2026-02). These are
+# DECRYPT-ONLY: never encrypt, rekey, or fast-path-rewrap a new file at one of
+# them. Keep this the single source of truth so the encrypt refusal, the rekey
+# upgrade, and the envelope fast-path exclusion can never drift apart.
+_UNSAFE_SEQUENTIAL_XOR_VERSIONS = (8, 10)
+
+
 # Global variable to track telemetry enablement (set by CLI/config)
 _telemetry_enabled = False
 _plugin_manager_instance = None
@@ -3857,17 +3865,16 @@ def generate_key(
     # 2. For backward compatibility, check if pbkdf2_iterations is in hash_config directly
     else:
         pbkdf2_from_hash_config = hash_config.get("pbkdf2_iterations")
-        # Only inject PBKDF2 in pytest during encryption for legacy versions, not v10/v8
-        # During decryption, we must strictly follow the metadata configuration
-        # IMPORTANT: For v10/v8, NEVER inject PBKDF2 - it causes XOR intermediate mismatch
-        if (
-            os.environ.get("PYTEST_CURRENT_TEST") is not None
-            and pbkdf2_from_hash_config is None
-            and not hash_config.get("_is_from_decryption_metadata", False)
-            and not use_xor_composition  # Don't inject for v10/v8
-        ):
-            use_pbkdf2 = 100000
-        elif pbkdf2_from_hash_config is not None and pbkdf2_from_hash_config > 0:
+        # NOTE: a former pytest-only hack injected PBKDF2=100000 on the ENCRYPT
+        # side for legacy non-XOR versions when no PBKDF2 was configured. It was
+        # never written to metadata, so decrypt (which strictly follows the
+        # stored config) could not reproduce it -- once v9 became the default
+        # encrypt version this silently broke every default round-trip under
+        # pytest, and it also made otherwise-equivalent versions (v7 vs v9)
+        # derive different keys. It only ever affected test runs (gated on
+        # PYTEST_CURRENT_TEST) and has been removed: derivation now depends only
+        # on the actual configuration, identically on encrypt and decrypt.
+        if pbkdf2_from_hash_config is not None and pbkdf2_from_hash_config > 0:
             use_pbkdf2 = pbkdf2_from_hash_config
 
     if use_hkdf and HKDF_AVAILABLE:
@@ -4778,7 +4785,7 @@ def create_metadata_v6(
     keystore_id=None,
     pepper_plugin_name=None,
     pepper_name=None,
-    format_version=10,
+    format_version=9,
 ):
     """
     Create metadata in format version 6 with formal HSM validation.
@@ -6151,7 +6158,7 @@ def encrypt_file(
     integrity=False,
     pepper_plugin=None,
     pepper_name=None,
-    format_version=10,
+    format_version=9,
     parallel_kdf=False,
     kdf_workers=None,
     chunk_size=None,
@@ -6162,6 +6169,7 @@ def encrypt_file(
     hidden_header=False,
     second_password=None,
     xor_mode=None,
+    allow_insecure_legacy_xor=False,
 ):
     """
     Encrypt a file (or in-memory bytes) with a password using the specified algorithm.
@@ -6203,6 +6211,21 @@ def encrypt_file(
         KeyDerivationError: If key derivation fails
         AuthenticationError: If integrity verification fails
     """
+    # Refuse to ENCRYPT new files with the cancelling sequential-XOR versions
+    # (v8/v10): their KDF derivation appends the chain's final value a second
+    # time, XORing the last stage with itself so it cancels out -- with a single
+    # memory-hard KDF placed last the key collapses to ~SHA256(password||salt),
+    # bypassing the KDF cost (audit 2026-07-06 #3; SECURITY advisory 2026-02).
+    # These versions remain fully DECRYPTABLE; only new encryption is blocked.
+    # The escape hatch exists solely so the legacy-format regression tests can
+    # still produce v8/v10 fixtures on purpose.
+    if format_version in _UNSAFE_SEQUENTIAL_XOR_VERSIONS and not allow_insecure_legacy_xor:
+        raise ValueError(
+            f"Refusing to encrypt a new file with format_version={format_version}: "
+            "the v8/v10 sequential-XOR derivation cancels the last KDF stage "
+            "(cost bypass) and is decrypt-only. Use format_version=9 (default) or 13."
+        )
+
     # Reset mutable class-level state to prevent leakage between operations
     KeyStretch.key_stretch = False
     KeyStretch.hash_stretch = False
@@ -8937,7 +8960,15 @@ def _rekey_envelope_fast(
     derivation_config = meta.get("derivation_config")
     format_version = meta.get("format_version")
     # Only the formats envelope actually writes; unknown shapes fall back.
-    if not (wrapped_b64 and isinstance(derivation_config, dict) and format_version in (10, 12)):
+    # _derive_envelope_kek is version-generic (sequential vs independent-XOR by
+    # format_version/xor_mode), so every version envelope emits is fast-path
+    # eligible: v9 is the default, v13 the sequential-XOR opt-in, v11/12 the
+    # independent-XOR forms, and v10 a legacy (decrypt-only) file.
+    if not (
+        wrapped_b64
+        and isinstance(derivation_config, dict)
+        and format_version in (9, 10, 11, 12, 13)
+    ):
         return False
 
     is_cascade = bool(encryption.get("cascade", False))
@@ -9346,7 +9377,7 @@ def rekey_file(
             raise RekeyError(f"Cannot read file metadata: {e}", original_exception=e)
 
         original_algorithm = file_metadata.get("algorithm", EncryptionAlgorithm.FERNET.value)
-        original_format_version = file_metadata.get("format_version", 10)
+        original_format_version = file_metadata.get("format_version", 9)
 
         # Determine encryption settings for re-encryption
         algorithm = new_algorithm if new_algorithm is not None else original_algorithm
@@ -9355,6 +9386,11 @@ def rekey_file(
         format_version = (
             new_format_version if new_format_version is not None else original_format_version
         )
+        # Never re-emit the cancelling sequential-XOR versions (v8/v10) on rekey:
+        # transparently upgrade an inherited legacy version to the safe default
+        # so rekey remains the migration path off a weak v10 file (audit #3).
+        if new_format_version is None and format_version in _UNSAFE_SEQUENTIAL_XOR_VERSIONS:
+            format_version = 9
 
         # Save original file permissions for in-place rekey
         if in_place:
@@ -9373,6 +9409,11 @@ def rekey_file(
         _fast_eligible = (
             new_algorithm is None
             and (new_format_version is None or new_format_version == original_format_version)
+            # Legacy cancelling sequential-XOR files (v8/v10) must NOT be
+            # re-emitted verbatim by the fast-path: force them through the full
+            # re-encrypt below, which upgrades them to the safe v9 default so
+            # rekey stays a real migration off the weak KEK derivation (audit #3).
+            and original_format_version not in _UNSAFE_SEQUENTIAL_XOR_VERSIONS
             and not cascade
             and not cipher_names
             and pepper_plugin is None

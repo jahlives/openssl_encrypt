@@ -2663,6 +2663,7 @@ class TestPQCSigHKDFSaltInMetadata(unittest.TestCase):
             self.hash_config,
             algorithm=EncryptionAlgorithm.MAYO_1_HYBRID,
             format_version=10,
+            allow_insecure_legacy_xor=True,
             quiet=True,
         )
 
