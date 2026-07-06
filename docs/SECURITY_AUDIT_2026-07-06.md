@@ -14,6 +14,14 @@
 > Line numbers are as of `aa23f4b0` and will drift as the file changes. Re-anchor
 > by symbol name (e.g. `generate_key`, `encrypt_file`) when acting on a finding.
 
+## Remediation status
+
+- **#2 — FIXED** in `66257a28`: per-round KDF salt now redacted via `debug_secret()`.
+- **#3 — FIXED** in `e1b6731f`: `encrypt_file` defaults to v9 and refuses to encrypt
+  v8/v10; rekey upgrades legacy files; ripple fixes to the envelope fast-path and
+  the v9 metadata schema. Full suite green (3131 passed / 0 failed).
+- All other findings remain **open** (see below).
+
 ---
 
 ## Severity summary
