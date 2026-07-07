@@ -585,6 +585,109 @@ class TestStreamingEncryptorDecryptor(unittest.TestCase):
 
 
 # ============================================================
+# Test: #95 [IO-6] streaming nonce-prefix width
+# ============================================================
+
+
+class TestNoncePrefixWidth(unittest.TestCase):
+    """#95 [IO-6]: per-file streaming nonce prefix widened 8 -> 16 bytes.
+
+    The per-chunk nonce is HKDF-derived from the prefix (derive_chunk_nonce),
+    so the prefix length is free and is stored per-file in the metadata. That
+    makes widening the random prefix from 64 to 128 bits backward compatible:
+    files written with the old 8-byte prefix still decrypt, and no format
+    version change is required.
+    """
+
+    def _roundtrip_with_prefix(self, forced_prefix):
+        """Full streaming roundtrip, optionally forcing a specific nonce prefix
+        (used to simulate a legacy 8-byte-prefix file)."""
+        key = secrets.token_bytes(32)
+        chunk_size = 1024
+        data = secrets.token_bytes(chunk_size * 3 + 7)
+        input_path = _create_temp_file(data)
+        output_enc = _create_temp_file(b"")
+        output_dec = _create_temp_file(b"")
+        try:
+            enc = StreamingEncryptor(key=key, algorithm="aes-gcm", chunk_size=chunk_size)
+            if forced_prefix is not None:
+                enc.nonce_prefix = forced_prefix
+            original_hash = enc.hash_file(input_path)
+            chunk_count = enc.get_chunk_count(len(data))
+            metadata = {
+                "format_version": 12,
+                "mode": "symmetric",
+                "aead_binding": True,
+                "streaming": {
+                    "enabled": True,
+                    "chunk_size": chunk_size,
+                    "chunk_count": chunk_count,
+                    "nonce_prefix": base64.b64encode(enc.nonce_prefix).decode("ascii"),
+                },
+                "hashes": {"original_hash": original_hash},
+                "encryption": {"cascade": False, "algorithm": "aes-gcm"},
+            }
+            metadata_b64 = base64.b64encode(json.dumps(metadata).encode("utf-8"))
+            enc.encrypt_file(
+                input_file=input_path,
+                output_file=output_enc,
+                metadata_b64=metadata_b64,
+                chunk_count=chunk_count,
+                quiet=True,
+            )
+            dec = StreamingDecryptor(
+                key=key,
+                algorithm="aes-gcm",
+                nonce_prefix=enc.nonce_prefix,
+                chunk_size=chunk_size,
+            )
+            self.assertTrue(
+                dec.decrypt_file(
+                    input_file=output_enc,
+                    output_file=output_dec,
+                    metadata_b64=metadata_b64,
+                    expected_chunk_count=chunk_count,
+                    original_hash=original_hash,
+                    quiet=True,
+                )
+            )
+            with open(output_dec, "rb") as f:
+                self.assertEqual(f.read(), data)
+        finally:
+            for p in (input_path, output_enc, output_dec):
+                if os.path.exists(p):
+                    os.unlink(p)
+
+    def test_generated_prefix_is_16_bytes(self):
+        """New encryptors must generate a 128-bit (16-byte) nonce prefix."""
+        enc = StreamingEncryptor(key=secrets.token_bytes(32), algorithm="aes-gcm", chunk_size=1024)
+        self.assertEqual(len(enc.nonce_prefix), 16)
+
+    def test_new_16byte_prefix_roundtrips(self):
+        """A file written with the new 16-byte prefix decrypts correctly."""
+        self._roundtrip_with_prefix(None)
+
+    def test_legacy_8byte_prefix_still_decrypts(self):
+        """Backward compat: a file written with the old 8-byte prefix still
+        round-trips under the widened code (proves widening is non-breaking)."""
+        self._roundtrip_with_prefix(secrets.token_bytes(8))
+
+    def test_prefix_min_length_guard(self):
+        """The >= 8 byte guard is preserved: a 7-byte prefix is rejected,
+        exactly 8 is accepted."""
+        with self.assertRaises(ValidationError):
+            derive_chunk_nonce(secrets.token_bytes(7), 0, 12)
+        self.assertEqual(len(derive_chunk_nonce(secrets.token_bytes(8), 0, 12)), 12)
+
+    def test_8byte_and_16byte_prefixes_give_distinct_nonce_streams(self):
+        """Different-width prefixes derive different nonces (no collapse to a
+        common 8-byte-derived stream)."""
+        p8 = secrets.token_bytes(8)
+        p16 = p8 + secrets.token_bytes(8)  # 16-byte prefix sharing p8's first 8 bytes
+        self.assertNotEqual(derive_chunk_nonce(p8, 0, 12), derive_chunk_nonce(p16, 0, 12))
+
+
+# ============================================================
 # Test: Adversarial / Security tests
 # ============================================================
 
