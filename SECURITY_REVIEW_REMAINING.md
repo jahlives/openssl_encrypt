@@ -7,9 +7,10 @@ _Generated 2026-07-02 from GitLab `sec-review::1.4.7` (project `world/openssl_en
 > original 19 LOW items, **17 are fixed** and **2 remain open** (#95, #100 — both
 > format-breaking, see below). See the **Resolved** section for per-issue commit refs.
 >
-> **Update 2026-07-07 (deferred hardening batch).** #79/#80 (`997a6c00`) and #74
-> (`f18953eb`) fixed; #59 marked superseded by M3 (no code change, by decision).
-> **3 deferred items remain** (#81, #82, #83 — inherent/format-bump, none exploitable).
+> **Update 2026-07-07 (deferred hardening batch).** #79/#80 and #74 fixed on both
+> branches (v1.4.x `997a6c00` / `48a3e207`; v1.5.x `ebb34c44` / `e6c8a54b`); #59
+> marked superseded by M3 (no code change, by decision). **3 deferred items remain**
+> (#81, #82, #83 — inherent/format-bump, none exploitable).
 
 Each issue links to its GitLab entry (which has the full finding + verification notes).
 Fixes land on BOTH `feature/v1.4.x-development` and `feature/v1.5.x-development`, each
@@ -56,16 +57,18 @@ _Downgraded from higher tiers after verification; kept open as future/optional h
 
 ## Resolved (22)
 
-_Commit refs are on `feature/v1.4.x-development`; each fix was also forward-ported to
-`feature/v1.5.x-development` per the project workflow (except where noted)._
+_Single-ref rows show the `feature/v1.4.x-development` commit; each such fix was also
+forward-ported to `feature/v1.5.x-development` per the project workflow. Rows with both
+refs listed name the commit on each branch explicitly. This tracker is maintained on both
+branches._
 
 | # | Code / title | Fix commit (v1.4.x) |
 |---|---|---|
 | [#59](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/59) | [KDF-1] Balloon negligible memory-hardness at default params | **superseded by M3** (`_apply_balloon_security_defaults`, crypt_core.py): encrypt-time unset `space_cost`→65536, persisted; explicit sub-floor warned. Residual 16s are dead convenience fns / GUI presets (M3 warns) — left by decision 2026-07-07 |
 | [#66](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/66) | [CLI-3] Plugin top-level code exec'd in main process, gated only by an AST blocklist | `055036b1` (merge `feature/plugin-signing-14x`: signature-gated plugin loading) |
-| [#74](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/74) | [IO-4] os.umask() process-global race in file/dir creation | `f18953eb` explicit per-component mkdir+chmod / os.open+fchmod, no global umask |
-| [#79](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/79) | [MEM-6] Multi-pass / explicit_bzero wiping is dead code | `997a6c00` remove dead cold-boot copy path from secure_memzero |
-| [#80](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/80) | [MEM-7] secure_memzero reports success while zeroing only a copy | `997a6c00` non-in-place types return False (honest), mirror M10 |
+| [#74](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/74) | [IO-4] os.umask() process-global race in file/dir creation | v1.4.x `48a3e207`, v1.5.x `e6c8a54b` — explicit per-component mkdir+chmod / os.open+fchmod, no global umask |
+| [#79](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/79) | [MEM-6] Multi-pass / explicit_bzero wiping is dead code | v1.4.x `997a6c00`, v1.5.x `ebb34c44` — remove dead cold-boot copy path from secure_memzero |
+| [#80](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/80) | [MEM-7] secure_memzero reports success while zeroing only a copy | v1.4.x `997a6c00`, v1.5.x `ebb34c44` — non-in-place types return False (honest), mirror M10 |
 | [#88](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/88) | [CLI-5] Subprocess children inherit the full environment | `b5070e3a` scrub RandomX probe subprocess env, absolute interpreter |
 | [#90](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/90) | [CORE-10] constant_time_pkcs7_unpad has data-dependent branches | `1d3b57b6` branchless unpad; reject padding > data length |
 | [#91](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/91) | [CORE-7] Cascade auth-failure classification leaks layer info | `9151135a` type-based cascade auth classification, layer-agnostic errors |
