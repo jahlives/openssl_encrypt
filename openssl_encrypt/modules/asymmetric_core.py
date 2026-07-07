@@ -213,12 +213,16 @@ class PasswordWrapper:
                 salt=None,
                 info=b"openssl_encrypt.password_wrap.v2",
             )
-            wrap_key_bytes = hkdf.derive(shared_secret)
+            # M2 [MEM-1]: hold the wrap key in a mutable bytearray so the
+            # secure_memzero in `finally` actually wipes it. hkdf.derive returns
+            # immutable bytes; wiping those (or a bytearray copy) is a no-op that
+            # leaves the AES key resident in the heap.
+            wrap_key_bytes = bytearray(hkdf.derive(shared_secret))
 
             # Generate random nonce (96 bits for GCM)
             nonce = secrets.token_bytes(12)
 
-            # Encrypt password with AES-256-GCM
+            # Encrypt password with AES-256-GCM (AESGCM accepts the bytearray)
             aesgcm = AESGCM(wrap_key_bytes)
             ciphertext_with_tag = aesgcm.encrypt(
                 nonce, password, None  # No additional authenticated data
@@ -294,21 +298,25 @@ class PasswordWrapper:
                 salt=None,
                 info=b"openssl_encrypt.password_wrap.v2",
             )
-            wrap_key_bytes = hkdf.derive(shared_secret)
+            # M2 [MEM-1]: bytearray so the finally secure_memzero wipes the real key.
+            wrap_key_bytes = bytearray(hkdf.derive(shared_secret))
 
             try:
                 aesgcm = AESGCM(wrap_key_bytes)
                 password = aesgcm.decrypt(nonce, ciphertext_with_tag, None)
                 return password
             except Exception:
-                # Legacy SHA-256 derivation fallback
-                secure_memzero(bytearray(wrap_key_bytes))
+                # Legacy SHA-256 derivation fallback. Wipe the v2 key IN PLACE
+                # (it is a bytearray we own) before rebinding; the previous
+                # secure_memzero(bytearray(wrap_key_bytes)) zeroed a throwaway
+                # copy and then orphaned the real v2 key (dead wipe).
+                secure_memzero(wrap_key_bytes)
                 h = hashlib.sha256()
                 h.update(b"openssl_encrypt.password_wrap.v1")
                 h.update(shared_secret)
-                wrap_key_bytes = h.digest()
+                wrap_key_bytes = bytearray(h.digest())
 
-            # Decrypt with AES-256-GCM
+            # Decrypt with AES-256-GCM (AESGCM accepts the bytearray)
             aesgcm = AESGCM(wrap_key_bytes)
             password = aesgcm.decrypt(
                 nonce,
