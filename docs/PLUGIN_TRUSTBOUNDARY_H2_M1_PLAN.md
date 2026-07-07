@@ -1,10 +1,13 @@
 # Pre-staged design — plugin trust-boundary fix (follow-up H2 [PLUGIN-1] + M1 [PLUGIN-2])
 
-**Status: DESIGNED / awaiting approval. Not implemented.** This closes the two
-deferred plugin-signing findings from `docs/SECURITY_REVIEW_FOLLOWUP_2026-07-07.md`.
-Security-critical trust-boundary change — implement only with the TDD sequence below
-and crypto-reviewer sign-off. Line refs verified against `feature/v1.5.x-development`
-(2026-07-07); re-verify before implementing.
+**Status: LARGELY IMPLEMENTED.** M1 (read-once) and H2 (signed per-package manifest §3
+Approach B + CLI package-mode signing §5) are done, crypto-reviewer-approved, and
+tested — see `docs/SECURITY_REVIEW_FOLLOWUP_2026-07-07.md` for commit refs. **Remaining
+follow-on: the runtime import hook (§3.1)** — re-verify sibling modules at import time to
+close the validation→import TOCTOU sibling-swap window (currently bounded by the H8
+owner-only-writable check). Re-signing shipped built-in packages (§5) is unnecessary while
+built-in packages use the trust shortcut. Line refs verified against
+`feature/v1.5.x-development` (2026-07-07); re-verify before further work.
 
 ## The findings
 - **H2 [PLUGIN-1]** — package plugins: only `__init__.py` is signature/AST/hash-verified;
