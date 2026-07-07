@@ -1,17 +1,38 @@
 # Security Review v1.4.7 — Remaining Open Issues
 
-_Generated 2026-07-02 from GitLab `sec-review::1.4.7` (project `world/openssl_encrypt`). 26 issues open; everything Critical/High/Medium is resolved except #66._
+_Generated 2026-07-02 from GitLab `sec-review::1.4.7` (project `world/openssl_encrypt`)._
 
-> **Update 2026-07-07:** #89 [CLI-6] resolved — see the Resolved section below.
+> **Reconciled 2026-07-07 against git history.** Everything Critical/High/Medium is
+> resolved, including **#66** (plugin signature-gating, merged `055036b1`). Of the
+> original 19 LOW items, **17 are fixed** and **2 remain open** (#95, #100 — both
+> format-breaking, see below). The 7 deferred/reclassified-LOW items are unchanged
+> (optional future hardening, none exploitable). See the **Resolved** section for
+> per-issue commit refs.
 
-Each issue links to its GitLab entry (which has the full finding + verification notes). Fixes land on BOTH `feature/v1.4.x-development` and `feature/v1.5.x-development`, each with a regression test and full-suite check, per the project workflow.
+Each issue links to its GitLab entry (which has the full finding + verification notes).
+Fixes land on BOTH `feature/v1.4.x-development` and `feature/v1.5.x-development`, each
+with a regression test and full-suite check, per the project workflow.
 
 
-## Actionable — Medium (1)
+## Open — LOW, format-breaking (2)
 
-### #66 — [CLI-3] Plugin top-level code is exec'd in the main process, gated only by an AST blocklist
-- **severity:** medium · **priority:** soon · [GitLab #66](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/66)
-- **FIX (design task) — the only actionable item above LOW.** Plugin top-level code runs via `spec.loader.exec_module` in the main process (plugin_manager.py:233), gated only by an AST denylist. Existing mitigations: writable-location refusal, TOCTOU re-hash before exec, strict mode, built-in containment — so it's 'user loads untrusted code from their own owner-only dir that also evades the denylist', not remote/drop-in RCE. **Recommended fix:** require non-built-in plugins to carry a detached signature verified against a trusted key before exec, reusing the existing source-integrity signing infra (keep AST as defense-in-depth). Large/architectural — touches plugin loading, distribution, and the built-in-plugin flow; needs design + cross-plugin testing. Alt: run plugin load in a spawned, privilege-dropped subprocess (larger, risks HSM/FIDO2/stego flows).
+_The only non-deferred items still open. Both change an on-disk encoding, so they need a
+format-version gate to keep existing files decryptable — that's why they were left for a
+future format bump rather than churned in place. Neither is exploitable today._
+
+### #95 — [IO-6] 64-bit per-file nonce prefix for streaming AEAD
+- **severity:** low · [GitLab #95](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/95)
+- `streaming.py:425` generates an 8-byte (`secrets.token_bytes(8)`) per-file nonce prefix.
+  Safe in practice (per-file random key), only a thin margin if a caller reuses a fixed DEK
+  across files. Optional: widen to 16 bytes — **format-breaking** for streaming files, needs
+  a streaming-format gate so older files still decrypt.
+
+### #100 — [KDF-8] Missing length separation in seed/hash inputs (canonicalization ambiguity)
+- **severity:** low · [GitLab #100](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/100)
+- Length-separation hygiene: `crypt_core.py:1567-1569` concatenates `password + salt (+ hsm_pepper)`
+  (and `sha256(salt + str(i))`) without delimiters. Canonicalization-ambiguous but impractical
+  (fixed/known salt). Fix: length-prefix fields — **format-breaking** (changes every derived key),
+  needs a format-version gate.
 
 
 ## Deferred / reclassified-LOW (future hardening) (7)
@@ -47,33 +68,30 @@ _Downgraded from higher tiers after verification; kept open as future/optional h
 - Reclassified LOW; deferred to a future format bump. `sha256(shared_secret)` KEM key derivation is sound (ML-KEM output is uniform, IND-CCA2) and the KEM ciphertext is implicitly bound (wrong ct -> wrong key -> AEAD fail). HKDF + explicit ciphertext-AAD is cleaner but FORMAT-BREAKING for no exploitable gain — do it at a future format-version bump.
 
 
-## LOW — cosmetic / inherent / marginal (informational) (18)
+## Resolved (18)
 
-_Assessed as not worth churning: cosmetic, inherent Python limits, already-conditional, behavior-sensitive, or marginal defense-in-depth where liboqs already validates. None exploitable. Listed for completeness; pick any if desired._
+_Commit refs are on `feature/v1.4.x-development`; each fix was also forward-ported to
+`feature/v1.5.x-development` per the project workflow._
 
-| # | Code / title | Disposition |
+| # | Code / title | Fix commit (v1.4.x) |
 |---|---|---|
-| [#88](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/88) | [CLI-5] Subprocess children inherit the full environment (incl. password env vars); python3 via PATH; PYTHONPATH from sys.path | Subprocess (RandomX probe) inherits full env incl. password env vars; `python3` via PATH; PYTHONPATH from sys.path. Low: requires a writable sys.path entry / hostile PATH. Fix: pass a scrubbed minimal env, absolute interpreter, avoid CWD-relative sys.path. |
-| [#90](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/90) | [CORE-10] constant_time_pkcs7_unpad has data-dependent branches | `constant_time_pkcs7_unpad` has data-dependent branches despite its name. Only reachable post-MAC (and the #53 Camellia fix enforces MAC-first). Fix: rewrite branchless over a fixed block size. Low; non-trivial. |
-| [#91](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/91) | [CORE-7] Cascade auth-failure classification by exception-string matching leaks layer info | Cascade auth-failure is classified by substring-matching the underlying error text, and discloses which layer failed. Fix: catch concrete InvalidTag/AuthenticationError types; uniform layer-agnostic error. Low. |
-| [#92](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/92) | [CORE-8] verify_mac `associated_data` parameter is a no-op (misleading API) | Cosmetic/footgun. `verify_mac(associated_data=...)` is a no-op (never incorporated); the Camellia caller already binds AAD in hmac_data. Safe fix: remove the misleading param + update the 2 crypt_core callers (no behavior change). Do NOT make it bind (would double-count -> break files). |
-| [#93](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/93) | [CORE-9] Legacy XChaCha nonce_format=1 advertises 192-bit nonce but funnels to 96 bits | Docs/clarity. Legacy XChaCha nonce_format=1 HKDF-funnels a 24-byte nonce to 96-bit effective; the '192-bit' naming is illusory for format 1 (format 2 is the real construction). Correct comments/docs. |
-| [#94](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/94) | [IO-5] JSON nesting-depth limit enforced only after json.loads; RecursionError uncaught | `validate_json_structure` depth cap (20) runs AFTER `json.loads` parses fully; RecursionError not caught. Guard is cosmetic. Fix: enforce depth during parse + catch RecursionError. Low (CPython recursion fails safe). |
-| [#95](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/95) | [IO-6] 64-bit per-file nonce prefix for streaming AEAD (thin margin if a key is ever reused) | 64-bit per-file nonce prefix for streaming AEAD. Safe in practice (per-file random key), only thin if a caller reuses a fixed DEK across files. Optional: widen to 16 bytes. |
-| [#96](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/96) | [IO-7] Streaming decrypt writes per-chunk-authenticated plaintext before the trailer HMAC verification | Streaming decrypt writes per-chunk-authenticated plaintext before the trailer HMAC verifies (output removed on failure). No unauthenticated plaintext released; a concurrent reader could observe a partial file later deleted. Optional: stage to temp + rename after trailer verifies. |
-| [#97](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/97) | [KDF-10] CommonPasswordChecker custom-path branch does not set loaded flag | INFO/behavior quirk. CommonPasswordChecker custom-path branch doesn't set `loaded_at_least_one`, so the embedded list is also loaded (custom + embedded). One-line fix, but changes custom-only vs custom+embedded behavior — confirm intent first. |
-| [#98](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/98) | [KDF-6] Key fingerprint lacks domain separation / algorithm binding | Key fingerprint concatenates enc+sign pubkeys without length prefix and excludes algorithm ids. Ambiguous; algorithm-substitution not reflected. Low (fixed-length keys). Fix: length-prefix + algorithm-tag the fingerprinted encoding. |
-| [#99](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/99) | [KDF-7] Config can select only non-stretching KDFs (e.g. HKDF-only) | Config can select HKDF-only (non-stretching) + zero hash rounds -> weak file key. XOR combiner is strongest-component so harmless if a strong component is also enabled. Fix: require >=1 memory-hard/iterated component; reject HKDF-only. |
-| [#100](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/100) | [KDF-8] Missing length separation in seed/hash inputs (canonicalization ambiguity) | Length-separation hygiene: `sha256(password + salt)` / balloon hash_func concatenate without delimiters. Canonicalization-ambiguous but impractical (fixed/known salt). Fix: length-prefix fields. |
-| [#103](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/103) | [MEM-11] supports_madv_dontdump set True without a real check; madvise/msync return ignored | `supports_madv_dontdump` — verify the runtime probe (secure_memory.py:458) actually checks support vs hardcoding; madvise/msync return values ignored. Low hygiene. |
-| [#104](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/104) | [MEM-12] Irreversible global RLIMIT_CORE hard-limit drop as a side effect of allocation | `setrlimit(RLIMIT_CORE, (0,0))` sets the HARD limit to 0 (irreversible, process-global) on every allocation, across secure_memory (2) + secure_allocator (1). Fix: set soft limit only, restore, do it once. Behavior-sensitive (core-dump prevention) — care needed. |
-| [#105](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/105) | [MEM-13] Debugger 'detection' is security theater | Security theater. `_detect_debugger`/`_anti_debug_check` only warn (TracerPid trips under any ptrace); no protective action. Remove or clearly mark advisory-only. |
-| [#106](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/106) | [MEM-14] secure_erase_system_memory writes /proc/sys/vm/drop_caches with misleading intent | `secure_erase_system_memory` writes /proc/sys/vm/drop_caches (needs root, silently fails; misleading comment). Cosmetic — remove/correct. |
-| [#107](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/107) | [PQC-10] KEM/DSA public keys and ciphertexts used without length/structure pre-validation | KEM/DSA public keys + ciphertexts passed to liboqs without length/structure pre-validation (relies on liboqs internal checks); HQC path hardcodes+slices ciphertext sizes. Defense-in-depth: validate against `length_public_key`/`length_ciphertext` before use. Low (liboqs already validates). |
-| [#109](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/109) | [PQC-9] check_pqc_support fabricates a 'supported' algorithm list on error | `check_pqc_support` fabricates a 'supported' ML-KEM/Kyber list on exception, masking a non-functional backend. Fix: return the true (possibly empty) enabled-mechanism list. Some downstream risk if callers rely on the fabricated list — verify before changing. |
-
-
-## Resolved (1)
+| [#66](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/66) | [CLI-3] Plugin top-level code exec'd in main process, gated only by an AST blocklist | `055036b1` (merge `feature/plugin-signing-14x`: signature-gated plugin loading) |
+| [#88](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/88) | [CLI-5] Subprocess children inherit the full environment | `b5070e3a` scrub RandomX probe subprocess env, absolute interpreter |
+| [#90](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/90) | [CORE-10] constant_time_pkcs7_unpad has data-dependent branches | `1d3b57b6` branchless unpad; reject padding > data length |
+| [#91](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/91) | [CORE-7] Cascade auth-failure classification leaks layer info | `9151135a` type-based cascade auth classification, layer-agnostic errors |
+| [#92](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/92) | [CORE-8] verify_mac `associated_data` parameter is a no-op | `d695d78f` remove no-op associated_data parameter from verify_mac |
+| [#93](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/93) | [CORE-9] Legacy XChaCha nonce_format=1 advertises 192-bit but funnels to 96 | `4139915d` stop describing nonce_format=1 as 192-bit/spec-compliant |
+| [#94](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/94) | [IO-5] JSON nesting-depth limit enforced only after json.loads | `1751f11c` enforce JSON nesting depth before parse, map RecursionError |
+| [#96](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/96) | [IO-7] Streaming decrypt writes plaintext before trailer HMAC verifies | `07509df1` stage streaming decrypt output, rename after trailer HMAC |
+| [#97](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/97) | [KDF-10] CommonPasswordChecker custom-path branch does not set loaded flag | `dcd81033` make custom+embedded password-list semantics explicit |
+| [#98](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/98) | [KDF-6] Key fingerprint lacks domain separation / algorithm binding | `090f71c2` v2 identity fingerprint with domain separation + algorithm binding |
+| [#99](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/99) | [KDF-7] Config can select only non-stretching KDFs (HKDF-only) | `73be3409` reject HKDF-only key-derivation configs at encryption time |
+| [#103](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/103) | [MEM-11] supports_madv_dontdump set True without a real check | `487e642f` really probe MADV_DONTDUMP, page-align madvise, check returns |
+| [#104](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/104) | [MEM-12] Irreversible global RLIMIT_CORE hard-limit drop on allocation | `5fad6116` stop dropping RLIMIT_CORE hard limit on every allocation |
+| [#105](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/105) | [MEM-13] Debugger 'detection' is security theater | `eb96f093` mark debugger detection advisory-only, drop countermeasure theater |
+| [#106](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/106) | [MEM-14] secure_erase_system_memory writes /proc/sys/vm/drop_caches | `79115dc4` remove misleading drop_caches write |
+| [#107](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/107) | [PQC-10] KEM/DSA keys/ciphertexts used without length pre-validation | `1048ee47` pre-validate KEM/DSA input lengths before liboqs |
+| [#109](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/109) | [PQC-9] check_pqc_support fabricates a 'supported' list on error | `9510b75a` report true mechanism list, no fabrication |
 
 ### #89 — [CLI-6] In-memory 'secure clear' of password strings is a no-op — **RESOLVED 2026-07-07**
 - **severity:** low · [GitLab #89](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/89)
@@ -82,9 +100,14 @@ _Assessed as not worth churning: cosmetic, inherent Python limits, already-condi
 
 ---
 
-## Suggested order for tomorrow
+## Suggested next steps
 
-1. **#66** — draft the signed-manifest plugin-loader design, then implement (largest item).
-2. Optional quick LOW wins if desired: **#92** (remove no-op `verify_mac` param), **#104** (RLIMIT_CORE soft-limit-only, with care), **#99**/**#59** (reject/strengthen weak-KDF configs). (**#89** done — see Resolved.)
-3. Leave the purely cosmetic/inherent items (#81, #90, #91, #93, #94, #105, #106) unless convenient.
-
+1. **#95 / #100** — the only non-deferred items left, both LOW and format-breaking. Do them
+   together at the next format-version bump (alongside deferred **#83**, also a format bump):
+   widen the streaming nonce prefix and length-prefix the KDF seed inputs behind a new
+   format-version gate so existing files still decrypt.
+2. **Deferred hardening** (non-format-breaking, low marginal value), if convenient: **#79/#80**
+   (delete/route the dead secure_memzero branches), **#59** (raise Balloon fallback constants),
+   **#74** (mkdir-then-chmod to drop the umask side effect).
+3. Leave the inherent-limitation items (**#81**, **#82**) unless a C-extension/bytearray-only
+   rework is on the table.
