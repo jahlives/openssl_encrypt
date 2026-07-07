@@ -28,6 +28,7 @@ import struct
 import tempfile
 from typing import Callable, List, Optional, Tuple, Union
 
+from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import (
     AESGCM,
@@ -318,11 +319,22 @@ def decrypt_chunk(
 
     except (ValidationError, AuthenticationError):
         raise
+    except InvalidTag:
+        # M4 [STREAM-1]: classify by exception TYPE, not by substring. The
+        # library AEADs (AES-GCM/OCB3/GCM-SIV/SIV, ChaCha20-Poly1305) raise
+        # cryptography's InvalidTag, whose str() is EMPTY — the old
+        # substring match misfiled these as DecryptionError, making the error
+        # class depend on which cipher the file used. Uniform, layer-agnostic
+        # AuthenticationError with a fixed message (no detail interpolation).
+        raise AuthenticationError("Chunk authentication failed")
     except Exception as e:
-        # Check for authentication errors
-        if "tag" in str(e).lower() or "authentication" in str(e).lower():
-            raise AuthenticationError(f"Chunk authentication failed: {e}")
-        raise DecryptionError(f"Chunk decryption failed: {e}", original_exception=e)
+        # Native backends (e.g. Threefish) surface auth failures as a
+        # RuntimeError with a message rather than InvalidTag; keep a narrow
+        # substring fallback so those still classify as authentication
+        # failures, but do not leak the underlying detail.
+        if "authentication" in str(e).lower() or "tag" in str(e).lower():
+            raise AuthenticationError("Chunk authentication failed")
+        raise DecryptionError("Chunk decryption failed", original_exception=e)
 
 
 def should_use_streaming(
