@@ -836,18 +836,17 @@ def store_pqc_key_in_keystore(metadata, keystore_path, keystore_password, key_id
             eprint(f"Error storing PQC key in keystore: {e}")
         return None
     finally:
-        # Clean up sensitive data
+        # Clean up sensitive data. encrypted_private_key holds the immutable
+        # bytes returned by base64.b64decode, so it cannot be wiped in place
+        # (see #81/#89): secure_memzero best-effort zeroes any throwaway copy
+        # and returns False for the immutable original. All we can additionally
+        # do is drop the reference. Do NOT "wipe" by rebinding to a fresh
+        # zero-filled bytes object - that is a no-op that only looks secure.
         try:
-            # Clear encrypted_private_key if it exists
             if encrypted_private_key is not None:
-                try:
-                    # Use secure_memzero for byte arrays
-                    secure_memzero(encrypted_private_key)
-                except:
-                    # Fallback if secure_memzero fails
-                    encrypted_private_key = b"\x00" * len(encrypted_private_key)
+                secure_memzero(encrypted_private_key)
                 encrypted_private_key = None
-        except:
+        except Exception:
             # Last resort cleanup - just remove the reference
             encrypted_private_key = None
 
