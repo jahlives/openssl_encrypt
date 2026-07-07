@@ -224,8 +224,10 @@ def fido2_test(rp_id: Optional[str]):
     if result.success:
         pepper = result.data.get("hsm_pepper")
         click.echo(f"\n✅ Test successful!")
+        # Do NOT print the pepper itself — it is key material / a KDF
+        # intermediate (H1 [HSM-1]). The length + success confirm the
+        # derivation works; the value must never reach stdout/logs.
         click.echo(f"Pepper length: {len(pepper)} bytes")
-        click.echo(f"Pepper (hex): {pepper.hex()}")
         click.echo("\nYour FIDO2 credential is working correctly.")
     else:
         click.echo(f"\n❌ Test failed: {result.message}", err=True)
