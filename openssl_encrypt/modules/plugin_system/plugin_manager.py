@@ -232,22 +232,49 @@ class PluginManager:
                                 # Parent package might not exist as importable module, that's OK
                                 logger.debug(f"Could not import parent package: {parent_name}")
 
-                # TOCTOU mitigation: re-read source and verify hash matches
-                # what was validated by _validate_plugin_file
-                real_path = os.path.realpath(file_path)
-                expected_hash = self._validated_source_hashes.get(real_path)
-                if expected_hash:
-                    import hashlib as _hashlib
+                # M1 [PLUGIN-2]: re-read the source ONCE as raw bytes, verify it
+                # still matches the hash pinned (over raw bytes) at validation
+                # time, then execute THAT buffer via compile()+exec instead of
+                # spec.loader.exec_module. exec_module does its own disk read and
+                # can run a cached .pyc — so the executed bytes were not
+                # provably the signed/scanned/pinned bytes. Compiling and
+                # exec'ing the verified buffer binds executed == verified and
+                # eliminates the .pyc-shadow vector.
+                import hashlib as _hashlib
 
-                    with open(real_path, "r", encoding="utf-8") as _f:
-                        current_hash = _hashlib.sha256(_f.read().encode("utf-8")).hexdigest()
+                real_path = os.path.realpath(file_path)
+                with open(real_path, "rb") as _f:
+                    raw_now = _f.read()
+
+                expected_hash = self._validated_source_hashes.get(real_path)
+                if expected_hash is not None:
+                    current_hash = _hashlib.sha256(raw_now).hexdigest()
                     if current_hash != expected_hash:
                         return PluginResult.error_result(
                             f"Plugin file modified after validation (TOCTOU): {file_path}"
                         )
+                elif not self._is_builtin_plugin(real_path):
+                    # Fail CLOSED: a non-built-in with no pinned hash was never
+                    # validated for THIS realpath (e.g. a symlink whose target
+                    # was swapped after validation, so the pin was keyed to a
+                    # different path). Refuse rather than exec unverified bytes.
+                    return PluginResult.error_result(
+                        f"Plugin not validated before load (no pinned hash): {file_path}"
+                    )
 
                 sys.modules[module_name] = module
-                spec.loader.exec_module(module)
+                # module was built via module_from_spec, so __name__, __file__,
+                # __loader__, __spec__, __package__ and (for packages) __path__
+                # are already set — relative sibling imports still resolve.
+                try:
+                    code = compile(raw_now, real_path, "exec")
+                    exec(code, module.__dict__)
+                except BaseException:
+                    # compile()+exec does not clean up sys.modules on failure the
+                    # way importlib does; drop the half-initialized module so a
+                    # later import doesn't return a broken cached object.
+                    sys.modules.pop(module_name, None)
+                    raise
             finally:
                 # Restore original sys.path
                 sys.path = original_path
@@ -877,14 +904,17 @@ class PluginManager:
         self._trust_anchors_cache = anchors
         return self._trust_anchors_cache
 
-    def _check_signature_policy(self, file_path: str) -> bool:
+    def _check_signature_policy(self, file_path: str, plugin_bytes: bytes = None) -> bool:
         """Apply the plugin-signature policy to a (non-built-in) plugin file.
 
         Returns True if the plugin may proceed to load, False if it must be
         refused. WARN never refuses (only logs); ENFORCE refuses unsigned or
-        unverifiable plugins; OFF is a no-op. Verification runs over the raw
-        on-disk bytes so it matches what exec_module will run (guarded by the
-        TOCTOU re-hash).
+        unverifiable plugins; OFF is a no-op.
+
+        ``plugin_bytes`` MUST be the exact buffer that is also AST-scanned,
+        hash-pinned, and executed (M1 [PLUGIN-2]) — the caller reads the file
+        once and threads the same bytes here, so the signature vouches for the
+        bytes that run. If None (standalone use), the raw bytes are read here.
         """
         from .plugin_signature import (
             PluginSignaturePolicy,
@@ -906,12 +936,13 @@ class PluginManager:
                 return False
             return True
 
-        try:
-            with open(file_path, "rb") as f:
-                plugin_bytes = f.read()
-        except OSError as e:
-            logger.error(f"Could not read plugin for signature check: {file_path}: {e}")
-            return self.signature_policy != PluginSignaturePolicy.ENFORCE
+        if plugin_bytes is None:
+            try:
+                with open(os.path.realpath(file_path), "rb") as f:
+                    plugin_bytes = f.read()
+            except OSError as e:
+                logger.error(f"Could not read plugin for signature check: {file_path}: {e}")
+                return self.signature_policy != PluginSignaturePolicy.ENFORCE
 
         verdict = verify_plugin_signature(plugin_bytes, signature_path_for(file_path), anchors)
 
@@ -967,6 +998,16 @@ class PluginManager:
             )
         return True
 
+    def _is_builtin_plugin(self, real_path: str) -> bool:
+        """True if ``real_path`` (already realpath-resolved) is under the
+        trusted built-in plugin root. Built-ins skip the AST/signature gate and
+        the TOCTOU hash pin (they are shipped, owner-only, and gated by the H8
+        writable-location check)."""
+        if not self.builtin_plugin_root:
+            return False
+        real_root = os.path.realpath(self.builtin_plugin_root)
+        return real_path == real_root or real_path.startswith(real_root + os.sep)
+
     def _validate_plugin_file(self, file_path: str) -> bool:
         """
         Validate plugin file for security issues.
@@ -1009,12 +1050,9 @@ class PluginManager:
             # Built-in plugins (shipped with the package) are trusted and skip AST analysis.
             # If an attacker could modify these files, they could modify the scanner too.
             # Use realpath to resolve symlinks and prevent symlink-based bypass.
-            if self.builtin_plugin_root:
-                real_file = os.path.realpath(file_path)
-                real_root = os.path.realpath(self.builtin_plugin_root)
-                if real_file.startswith(real_root + os.sep):
-                    logger.debug(f"Built-in plugin trusted, skipping AST analysis: {file_path}")
-                    return True
+            if self._is_builtin_plugin(os.path.realpath(file_path)):
+                logger.debug(f"Built-in plugin trusted, skipping AST analysis: {file_path}")
+                return True
 
             # Check file size (prevent huge files)
             file_size = os.path.getsize(file_path)
@@ -1022,26 +1060,34 @@ class PluginManager:
                 logger.warning(f"Plugin file too large: {file_path} ({file_size} bytes)")
                 return False
 
-            # Signature gate (#66). Verified over the raw on-disk bytes; the
-            # TOCTOU re-hash below then guarantees those same bytes execute.
-            # ENFORCE refuses unsigned/unverifiable non-built-in plugins; WARN
-            # only logs; OFF is a no-op. AST analysis still runs afterward as
-            # defense in depth.
-            if not self._check_signature_policy(file_path):
+            # M1 [PLUGIN-2]: read the plugin bytes ONCE (binary, from the
+            # realpath) and thread the exact same buffer through signature
+            # verification, the AST scan, and the hash pin — so the bytes the
+            # signature vouches for are provably the bytes scanned and (via the
+            # pin + compile/exec in load_plugin) executed. Previously the
+            # signature read raw bytes while the AST/hash read text-mode
+            # (newline-translated, utf-8 re-encoded) and exec_module read again,
+            # so nothing bound signed == scanned == executed.
+            real_path = os.path.realpath(file_path)
+            try:
+                with open(real_path, "rb") as f:
+                    raw = f.read()
+            except OSError as e:
+                logger.error(f"Could not read plugin for validation: {file_path}: {e}")
                 return False
 
-            # AST-based content validation
-            with open(file_path, "r", encoding="utf-8") as f:
-                content = f.read()
+            # Signature gate (#66) over the exact bytes.
+            if not self._check_signature_policy(file_path, raw):
+                return False
 
-            # Store source hash for TOCTOU verification before exec_module
-            self._validated_source_hashes[os.path.realpath(file_path)] = _hashlib.sha256(
-                content.encode("utf-8")
-            ).hexdigest()
+            # Pin sha256 of the RAW bytes for the pre-exec TOCTOU re-check.
+            self._validated_source_hashes[real_path] = _hashlib.sha256(raw).hexdigest()
 
-            # Use AST-based analysis to detect dangerous patterns
+            # AST-based content validation over the SAME raw bytes. ast.parse
+            # handles the encoding cookie/BOM identically to compile(), so the
+            # scanned AST corresponds to the bytes that execute.
             is_safe, violations = analyze_plugin_code(
-                content, file_path, strict_mode=self.strict_security_mode
+                raw, file_path, strict_mode=self.strict_security_mode
             )
 
             # Log and handle any violations found
