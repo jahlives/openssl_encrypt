@@ -1,6 +1,8 @@
 # Security Review v1.4.7 — Remaining Open Issues
 
-_Generated 2026-07-02 from GitLab `sec-review::1.4.7` (project `world/openssl_encrypt`). 27 issues open; everything Critical/High/Medium is resolved except #66._
+_Generated 2026-07-02 from GitLab `sec-review::1.4.7` (project `world/openssl_encrypt`). 26 issues open; everything Critical/High/Medium is resolved except #66._
+
+> **Update 2026-07-07:** #89 [CLI-6] resolved — see the Resolved section below.
 
 Each issue links to its GitLab entry (which has the full finding + verification notes). Fixes land on BOTH `feature/v1.4.x-development` and `feature/v1.5.x-development`, each with a regression test and full-suite check, per the project workflow.
 
@@ -45,14 +47,13 @@ _Downgraded from higher tiers after verification; kept open as future/optional h
 - Reclassified LOW; deferred to a future format bump. `sha256(shared_secret)` KEM key derivation is sound (ML-KEM output is uniform, IND-CCA2) and the KEM ciphertext is implicitly bound (wrong ct -> wrong key -> AEAD fail). HKDF + explicit ciphertext-AAD is cleaner but FORMAT-BREAKING for no exploitable gain — do it at a future format-version bump.
 
 
-## LOW — cosmetic / inherent / marginal (informational) (19)
+## LOW — cosmetic / inherent / marginal (informational) (18)
 
 _Assessed as not worth churning: cosmetic, inherent Python limits, already-conditional, behavior-sensitive, or marginal defense-in-depth where liboqs already validates. None exploitable. Listed for completeness; pick any if desired._
 
 | # | Code / title | Disposition |
 |---|---|---|
 | [#88](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/88) | [CLI-5] Subprocess children inherit the full environment (incl. password env vars); python3 via PATH; PYTHONPATH from sys.path | Subprocess (RandomX probe) inherits full env incl. password env vars; `python3` via PATH; PYTHONPATH from sys.path. Low: requires a writable sys.path entry / hostile PATH. Fix: pass a scrubbed minimal env, absolute interpreter, avoid CWD-relative sys.path. |
-| [#89](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/89) | [CLI-6] In-memory 'secure clear' of password strings is a no-op | Cosmetic. `pwd = "\x00"*len(pwd)` doesn't overwrite the immutable str in place. Same class as #81 (inherent). Document or route through SecureBytes. |
 | [#90](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/90) | [CORE-10] constant_time_pkcs7_unpad has data-dependent branches | `constant_time_pkcs7_unpad` has data-dependent branches despite its name. Only reachable post-MAC (and the #53 Camellia fix enforces MAC-first). Fix: rewrite branchless over a fixed block size. Low; non-trivial. |
 | [#91](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/91) | [CORE-7] Cascade auth-failure classification by exception-string matching leaks layer info | Cascade auth-failure is classified by substring-matching the underlying error text, and discloses which layer failed. Fix: catch concrete InvalidTag/AuthenticationError types; uniform layer-agnostic error. Low. |
 | [#92](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/92) | [CORE-8] verify_mac `associated_data` parameter is a no-op (misleading API) | Cosmetic/footgun. `verify_mac(associated_data=...)` is a no-op (never incorporated); the Camellia caller already binds AAD in hmac_data. Safe fix: remove the misleading param + update the 2 crypt_core callers (no behavior change). Do NOT make it bind (would double-count -> break files). |
@@ -71,11 +72,19 @@ _Assessed as not worth churning: cosmetic, inherent Python limits, already-condi
 | [#107](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/107) | [PQC-10] KEM/DSA public keys and ciphertexts used without length/structure pre-validation | KEM/DSA public keys + ciphertexts passed to liboqs without length/structure pre-validation (relies on liboqs internal checks); HQC path hardcodes+slices ciphertext sizes. Defense-in-depth: validate against `length_public_key`/`length_ciphertext` before use. Low (liboqs already validates). |
 | [#109](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/109) | [PQC-9] check_pqc_support fabricates a 'supported' algorithm list on error | `check_pqc_support` fabricates a 'supported' ML-KEM/Kyber list on exception, masking a non-functional backend. Fix: return the true (possibly empty) enabled-mechanism list. Some downstream risk if callers rely on the fabricated list — verify before changing. |
 
+
+## Resolved (1)
+
+### #89 — [CLI-6] In-memory 'secure clear' of password strings is a no-op — **RESOLVED 2026-07-07**
+- **severity:** low · [GitLab #89](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/89)
+- The CLI pseudo-wipe (`pwd = "\x00"*len(pwd)`) was already removed from `crypt_cli.py` and guarded by `test_cli_password_wipe.py`. On follow-up the **same bug-class was found in `keystore_utils.py`** (`store_pqc_key_in_keystore` cleanup): a fallback `encrypted_private_key = b"\x00" * len(...)` that rebinds a fresh zero-filled bytes object and never overwrites the original immutable buffer (also dead code — `secure_memzero` handles immutable bytes without raising). Removed the misleading rebind; `encrypted_private_key` is always `None`/immutable bytes (base64.b64decode output) so dropping the reference is all that's possible. Broadened the regression test to scan **all** modules (comparison-safe regex so the all-zero pepper `==` checks in `crypt_core.py` are not flagged). crypto-reviewer: approved (no wiping guarantee weakened, no mutable-buffer path missed).
+- **Fixed on both branches:** `feature/v1.4.x-development` `d014fd1f`, `feature/v1.5.x-development` `f1b529ba`. Full suites green (v1.4.x 3131 passed; v1.5.x 5472 passed). Both pushed to origin.
+
 ---
 
 ## Suggested order for tomorrow
 
 1. **#66** — draft the signed-manifest plugin-loader design, then implement (largest item).
-2. Optional quick LOW wins if desired: **#92** (remove no-op `verify_mac` param), **#89** (document/route the no-op password wipe), **#104** (RLIMIT_CORE soft-limit-only, with care), **#99**/**#59** (reject/strengthen weak-KDF configs).
+2. Optional quick LOW wins if desired: **#92** (remove no-op `verify_mac` param), **#104** (RLIMIT_CORE soft-limit-only, with care), **#99**/**#59** (reject/strengthen weak-KDF configs). (**#89** done — see Resolved.)
 3. Leave the purely cosmetic/inherent items (#81, #90, #91, #93, #94, #105, #106) unless convenient.
 
