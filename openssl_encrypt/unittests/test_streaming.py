@@ -245,6 +245,47 @@ class TestEncryptDecryptChunk(unittest.TestCase):
             encrypt_chunk(b"k" * 32, b"n" * 12, b"data", None, "unknown-cipher")
 
 
+class TestChunkAuthErrorClassification(unittest.TestCase):
+    """M4 [STREAM-1]: tampered-chunk failures must classify by exception TYPE.
+
+    The library-direct AEADs raise cryptography's InvalidTag, whose str() is
+    empty, so the old substring match ('tag'/'authentication' in str(e)) fell
+    through to DecryptionError. That made the exception class an attacker sees
+    for a tampered chunk depend on which cipher the file used (an
+    integrity-vs-decryption classification signal). A genuine authentication
+    failure must always surface as AuthenticationError, uniformly.
+    """
+
+    # (algorithm, key_size, nonce_size)
+    _LIBRARY_AEADS = [
+        ("aes-gcm", 32, 12),
+        ("chacha20-poly1305", 32, 12),
+        ("aes-gcm-siv", 32, 12),
+        ("aes-ocb3", 32, 12),
+        ("aes-siv", 64, 16),
+    ]
+
+    def test_tampered_chunk_raises_authentication_error(self):
+        for algorithm, key_size, nonce_size in self._LIBRARY_AEADS:
+            with self.subTest(algorithm=algorithm):
+                key = secrets.token_bytes(key_size)
+                nonce = secrets.token_bytes(nonce_size)
+                aad = b"chunk-aad"
+                ct = bytearray(encrypt_chunk(key, nonce, b"plaintext-payload", aad, algorithm))
+                ct[-1] ^= 0x01  # flip a tag bit
+                with self.assertRaises(AuthenticationError):
+                    decrypt_chunk(key, nonce, bytes(ct), aad, algorithm)
+
+    def test_wrong_aad_raises_authentication_error(self):
+        for algorithm, key_size, nonce_size in self._LIBRARY_AEADS:
+            with self.subTest(algorithm=algorithm):
+                key = secrets.token_bytes(key_size)
+                nonce = secrets.token_bytes(nonce_size)
+                ct = encrypt_chunk(key, nonce, b"plaintext-payload", b"aad1", algorithm)
+                with self.assertRaises(AuthenticationError):
+                    decrypt_chunk(key, nonce, ct, b"aad2", algorithm)
+
+
 # ============================================================
 # Test: Threefish streaming chunks
 # ============================================================
