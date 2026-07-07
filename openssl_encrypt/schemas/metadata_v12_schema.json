@@ -61,7 +61,7 @@
         "nonce_prefix": {
           "type": "string",
           "pattern": "^[A-Za-z0-9+/]+=*$",
-          "description": "Base64-encoded 8-byte random nonce prefix for HKDF-based per-chunk nonce derivation"
+          "description": "Base64-encoded per-file random nonce prefix (>= 8 bytes; new files use 16) for HKDF-based per-chunk nonce derivation"
         },
         "cascade_nonce_scheme": {
           "type": "integer",

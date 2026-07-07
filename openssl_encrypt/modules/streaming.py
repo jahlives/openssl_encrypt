@@ -11,7 +11,8 @@ Each chunk:
     [chunk_index: u32le] [ciphertext_len: u32le] [ciphertext + AEAD tag]
 
 Security properties:
-    - Nonce reuse prevention: HKDF-derived per-chunk from random 8-byte prefix + chunk index
+    - Nonce reuse prevention: HKDF-derived per-chunk from a random per-file prefix
+      (>= 8 bytes; 16 for new files) + chunk index
     - Chunk reordering detection: chunk index bound in per-chunk AAD
     - Chunk truncation detection: chunk count in per-chunk AAD + trailer HMAC
     - Metadata tampering detection: metadata is AAD for every chunk's AEAD
@@ -127,7 +128,9 @@ def derive_chunk_nonce(nonce_prefix: bytes, chunk_index: int, nonce_size: int = 
     files encrypted with the same key.
 
     Args:
-        nonce_prefix: Random 8-byte prefix generated per encryption.
+        nonce_prefix: Random per-file prefix (>= 8 bytes; new files use 16).
+            The prefix length is not fixed by the format - it is stored per
+            file and fed to HKDF, so it may vary between files.
         chunk_index: Zero-based chunk index.
         nonce_size: Required nonce size in bytes.
 
@@ -466,7 +469,12 @@ class StreamingEncryptor:
         self.cascade_salt = cascade_salt
         self.format_version = format_version
         self.cascade_nonce_scheme = cascade_nonce_scheme
-        self.nonce_prefix = secrets.token_bytes(8)
+        # 128-bit per-file random prefix (#95). The per-chunk nonce is HKDF
+        # derived from this prefix (see derive_chunk_nonce), which is stored
+        # per-file in the metadata, so widening 64 -> 128 bits is backward
+        # compatible: older 8-byte-prefix files still decrypt and no format
+        # version change is needed.
+        self.nonce_prefix = secrets.token_bytes(16)
         if algorithm == "xchacha20-poly1305" and xchacha_nonce_format == 2:
             self.nonce_size = 24
         else:
