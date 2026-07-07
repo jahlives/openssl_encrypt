@@ -4,8 +4,12 @@ _Generated 2026-07-02 from GitLab `sec-review::1.4.7` (project `world/openssl_en
 
 > **Reconciled 2026-07-07 against git history.** Everything Critical/High/Medium is
 > resolved, including **#66** (plugin signature-gating, merged `055036b1`). Of the
-> original 19 LOW items, **17 are fixed** and **2 remain open** (#95, #100 — both
-> format-breaking, see below). See the **Resolved** section for per-issue commit refs.
+> original 19 LOW items, **18 are fixed** and **1 remains open** (#100 — format-breaking,
+> see below). See the **Resolved** section for per-issue commit refs.
+>
+> **Update 2026-07-07 (#95).** On feasibility investigation #95 proved **not**
+> format-breaking — the per-chunk nonce is HKDF-derived from a metadata-stored prefix, so
+> widening it 8→16 bytes is backward compatible. Fixed (v1.4.x `a0a5357d`), not a format bump.
 >
 > **Update 2026-07-07 (deferred hardening batch).** #79/#80 and #74 fixed on both
 > branches (v1.4.x `997a6c00` / `48a3e207`; v1.5.x `ebb34c44` / `e6c8a54b`); #59
@@ -17,18 +21,11 @@ Fixes land on BOTH `feature/v1.4.x-development` and `feature/v1.5.x-development`
 with a regression test and full-suite check, per the project workflow.
 
 
-## Open — LOW, format-breaking (2)
+## Open — LOW, format-breaking (1)
 
-_The only non-deferred items still open. Both change an on-disk encoding, so they need a
-format-version gate to keep existing files decryptable — that's why they were left for a
-future format bump rather than churned in place. Neither is exploitable today._
-
-### #95 — [IO-6] 64-bit per-file nonce prefix for streaming AEAD
-- **severity:** low · [GitLab #95](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/95)
-- `streaming.py:425` generates an 8-byte (`secrets.token_bytes(8)`) per-file nonce prefix.
-  Safe in practice (per-file random key), only a thin margin if a caller reuses a fixed DEK
-  across files. Optional: widen to 16 bytes — **format-breaking** for streaming files, needs
-  a streaming-format gate so older files still decrypt.
+_The only non-deferred item still open. It changes an on-disk encoding, so it needs a
+format-version gate to keep existing files decryptable — that's why it was left for a
+future format bump rather than churned in place. Not exploitable today._
 
 ### #100 — [KDF-8] Missing length separation in seed/hash inputs (canonicalization ambiguity)
 - **severity:** low · [GitLab #100](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/100)
@@ -55,7 +52,7 @@ _Downgraded from higher tiers after verification; kept open as future/optional h
 - Reclassified LOW; deferred to a future format bump. `sha256(shared_secret)` KEM key derivation is sound (ML-KEM output is uniform, IND-CCA2) and the KEM ciphertext is implicitly bound (wrong ct -> wrong key -> AEAD fail). HKDF + explicit ciphertext-AAD is cleaner but FORMAT-BREAKING for no exploitable gain — do it at a future format-version bump.
 
 
-## Resolved (22)
+## Resolved (23)
 
 _Single-ref rows show the `feature/v1.4.x-development` commit; each such fix was also
 forward-ported to `feature/v1.5.x-development` per the project workflow. Rows with both
@@ -75,6 +72,7 @@ branches._
 | [#92](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/92) | [CORE-8] verify_mac `associated_data` parameter is a no-op | `d695d78f` remove no-op associated_data parameter from verify_mac |
 | [#93](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/93) | [CORE-9] Legacy XChaCha nonce_format=1 advertises 192-bit but funnels to 96 | `4139915d` stop describing nonce_format=1 as 192-bit/spec-compliant |
 | [#94](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/94) | [IO-5] JSON nesting-depth limit enforced only after json.loads | `1751f11c` enforce JSON nesting depth before parse, map RecursionError |
+| [#95](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/95) | [IO-6] 64-bit per-file streaming nonce prefix | v1.4.x `a0a5357d` — widen 8→16 bytes; **not** format-breaking (HKDF-derived, metadata-stored prefix), older files still decrypt |
 | [#96](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/96) | [IO-7] Streaming decrypt writes plaintext before trailer HMAC verifies | `07509df1` stage streaming decrypt output, rename after trailer HMAC |
 | [#97](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/97) | [KDF-10] CommonPasswordChecker custom-path branch does not set loaded flag | `dcd81033` make custom+embedded password-list semantics explicit |
 | [#98](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/98) | [KDF-6] Key fingerprint lacks domain separation / algorithm binding | `090f71c2` v2 identity fingerprint with domain separation + algorithm binding |
@@ -95,12 +93,12 @@ branches._
 
 ## Suggested next steps
 
-1. **#95 / #100** — the only non-deferred items left, both LOW and format-breaking. Do them
-   together at the next format-version bump (alongside deferred **#83**, also a format bump):
-   widen the streaming nonce prefix and length-prefix the KDF seed inputs behind a new
-   format-version gate so existing files still decrypt.
+1. **#100** — the only non-deferred item left, LOW and genuinely format-breaking. Bundle it
+   with deferred **#83** (also a format bump) at the next format-version release: length-prefix
+   the KDF seed inputs and switch the KEM symmetric-key derivation to HKDF+ciphertext-AAD
+   behind a new format-version gate so existing files still decrypt.
 2. Leave the inherent-limitation items (**#81**, **#82**) unless a C-extension/bytearray-only
    rework is on the table.
 
-_(The non-breaking deferred-hardening batch — #79/#80, #74 — is done; #59 superseded by M3.
-See Resolved.)_
+_(Non-breaking hardening done — #79/#80, #74, and #95 (found not to be format-breaking after
+all); #59 superseded by M3. See Resolved.)_
