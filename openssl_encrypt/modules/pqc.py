@@ -606,8 +606,12 @@ class PQCipher:
                 # Encapsulate a shared secret with the public key
                 encapsulated_key, shared_secret = kem.encap_secret(public_key)
 
-                # Derive symmetric key from shared secret
-                symmetric_key = self._derive_symmetric_key(shared_secret)
+                # Derive symmetric key from shared secret. M2 [MEM-1]: hold it in
+                # SecureBytes (as the decrypt path already does) so secure_memzero
+                # in `finally` wipes the actual AES key rather than a copy — the
+                # bytes returned by _derive_symmetric_key are immutable and cannot
+                # be wiped in place.
+                symmetric_key = SecureBytes(self._derive_symmetric_key(shared_secret))
 
                 # Generate random nonce (12 bytes for most AEAD ciphers)
                 nonce = secrets.token_bytes(12)

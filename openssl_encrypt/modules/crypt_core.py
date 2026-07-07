@@ -1719,14 +1719,19 @@ def normalize_to_key_length_secure(data, target_length: int) -> "SecureBytes":
             derived = hkdf.derive(data_bytes)
             result = SecureBytes(derived)
 
-            # Zero the HKDF output if we created it
-            secure_memzero(bytearray(derived))
+            # M2 [MEM-1]: `derived` is immutable bytes from hkdf.derive; it
+            # cannot be wiped in place (secure_memzero(bytearray(derived)) only
+            # scrubbed a copy). `result` already holds an independent SecureBytes,
+            # so just drop the reference honestly.
+            derived = None
 
         return result
     finally:
-        # Zero the temporary bytes copy if we created one
+        # M2 [MEM-1]: data_bytes is an immutable bytes() copy of a SecureBytes
+        # input (HKDF does not accept SecureBytes); it cannot be wiped in place,
+        # so drop the reference rather than scrubbing a throwaway copy.
         if isinstance(data, SecureBytes) and data_bytes is not data:
-            secure_memzero(bytearray(data_bytes))
+            data_bytes = None
 
 
 def _indep_xor_component_salt(base_salt: bytes, name: str, format_version: int) -> bytes:
@@ -2232,19 +2237,23 @@ def generate_key_independent_xor(
     if isinstance(salt, str):
         salt = salt.encode("utf-8")
 
-    # Apply HSM pepper if provided
+    # Apply HSM pepper if provided. Track the buffer WE allocate so it can be
+    # wiped in `finally` without touching the caller's password object (M2 [MEM-1]).
+    peppered_password = None
     if hsm_pepper:
         if debug:
             logger.debug("INDEPENDENT-XOR: Mixing HSM pepper into password")
         password = SecureBytes(password + hsm_pepper)
+        peppered_password = password
 
     # Collect all algorithm outputs independently
     xor_components = []  # List[SecureBytes]
 
     try:
         # 0. Add initial hash of password+salt to XOR (defense-in-depth, like v10)
-        # This provides input normalization and additional key stretching
-        initial_hash = hashlib.sha256(bytes(password) + salt).digest()
+        # This provides input normalization and additional key stretching.
+        # Hold it in SecureBytes so the finally wipe is real (M2 [MEM-1]).
+        initial_hash = SecureBytes(hashlib.sha256(bytes(password) + salt).digest())
         initial_normalized = normalize_to_key_length_secure(initial_hash, key_length)
         xor_components.append(initial_normalized)  # SecureBytes object
 
@@ -2577,12 +2586,21 @@ def generate_key_independent_xor(
                 pass
         if "initial_hash" in locals():
             try:
-                secure_memzero(bytearray(initial_hash))
+                # initial_hash is SecureBytes now — real in-place wipe (M2 [MEM-1]),
+                # not secure_memzero(bytearray(copy)).
+                secure_memzero(initial_hash)
             except Exception:
                 pass
         if "algorithm_input" in locals():
             try:
                 secure_memzero(algorithm_input)
+            except Exception:
+                pass
+        # Wipe the peppered password buffer WE allocated (never the caller's
+        # password object) — M2 [MEM-1].
+        if peppered_password is not None:
+            try:
+                secure_memzero(peppered_password)
             except Exception:
                 pass
 
