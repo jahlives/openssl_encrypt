@@ -20,6 +20,7 @@
           <div class="toc">
               <h3>&#128203; Table of Contents</h3>
               <ul>
+                  <li><a href="#v1-4-8">1.4.8 - Password Tooling &amp; Security Review Follow-up (Not Released)</a></li>
                   <li><a href="#v1-4-7">1.4.7 - Documentation Update</a></li>
                   <li><a href="#v1-4-6">1.4.6 - PIV, Integrity, Envelope &amp; PQ Signing</a></li>
                   <li><a href="#v1-4-5">1.4.5 - Security Dependency Update</a></li>
@@ -65,6 +66,22 @@
                   <li><a href="#v0-2-0">0.2.0 - Modern Encryption</a></li>
                   <li><a href="#v0-1-0">0.1.0 - Initial Release</a></li>
               </ul>
+          </div>
+
+          <!-- Development Series (1.4.x) -->
+          <h2>&#128679; Development Series (1.4.x)</h2>
+
+          <div class="changelog-item" id="v1-4-8">
+              <div class="version">
+                  1.4.8
+                  <span class="release-type dev">NOT RELEASED</span>
+                  <span class="release-type minor">FEATURE</span>
+                  <span class="release-type security">SECURITY</span>
+              </div>
+              <div class="date">Unreleased (in development)</div>
+              <div class="description">
+                  <strong>NOT YET RELEASED.</strong> New <code>check-password</code> command reports password strength (pattern-aware category, entropy, weakness warnings, and pass/fail against a chosen policy) without encrypting anything, with <code>--json</code> for scripting. <strong>Pattern-aware password strength estimation</strong> now flags predictable structure (dictionary words, l33t substitutions, keyboard walks, sequences, repeats, dates) with an advisory-by-default label and an optional <code>--strict-strength</code> gate; encryption-time validation only, never decryption. The loud <code>--debug</code> data-logging banner now fires only for <code>--debug --unsafe-show-secrets</code> (the cleartext path), while plain <code>--debug</code> (which redacts secrets) shows a calm, accurate note. <strong>Security review follow-up (2026-07-07):</strong> removed an unconditional cleartext print of the derived FIDO2/HSM hardware pepper (H1); the plugin loader now verifies, hash-pins, AST-scans and executes the exact same bytes, closing a verify-one-copy/execute-another gap and a <code>.pyc</code> shadow (M1); package plugins are now covered by a signed per-package <code>PLUGIN.manifest</code> over every importable module, so a signed <code>__init__.py</code> plus a tampered sibling is refused under enforce (H2); no-op <code>secure_memzero</code> call sites that wiped a throwaway copy now wipe the real secret (M2); the parallel and sequential Independent-XOR paths derive identical keys for Argon2 multi-round configs (M3), RandomX fails closed in the parallel path (R1), and streaming per-chunk AEAD authentication failures are classified structurally (M4). <strong>Earlier hardening (audit 2026-07-06):</strong> per-round KDF debug lines no longer leak a derived-key intermediate by default, and new files are no longer written in the cost-bypassing v8/v10 sequential-XOR format (encrypt defaults to format version 9 and refuses new v8/v10; existing files still decrypt and rekey upgrades them). Also fixes <code>string_entropy</code> Unicode handling. Fully backward-compatible decryption.
+              </div>
           </div>
 
           <!-- Stable Release Series (1.4.x) -->
