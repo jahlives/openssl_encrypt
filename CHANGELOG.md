@@ -419,6 +419,57 @@ inflated KDF metadata parameters, not cosmetic output.
 
 ### Security
 
+Follow-up security review (2026-07-07) — findings fixed with regression tests
+and crypto-reviewer sign-off:
+
+- **FIDO2/HSM pepper no longer printed in cleartext** (follow-up review #H1
+  [HSM-1]): the `hsm fido2-test` command printed the full 32-byte derived
+  hardware pepper as hex to stdout unconditionally — outside the
+  `debug_secret()` redaction chokepoint, so it landed in scrollback/`script`/CI
+  logs. The hex dump is removed (the length is still reported); the FIDO2 plugin
+  already routed the pepper through `debug_secret()`, so this only closed a CLI
+  inconsistency.
+- **Plugin signature now covers the exact bytes that execute** (follow-up review
+  #M1 [PLUGIN-2]): the loader verified a plugin's signature over one read while
+  AST-scanning and executing others (verify-A / execute-B), and `exec_module`
+  could run a cached `.pyc` never covered by the signature. `_validate_plugin_file`
+  now reads the plugin once as raw bytes and threads that same buffer through the
+  signature gate, the `sha256(raw)` pin, and `ast.parse(raw)`; `load_plugin`
+  re-reads once, compares to the pin, and executes via `compile(raw)+exec` —
+  killing the CRLF/BOM and `.pyc`-shadow discrepancies. Fail-closed on a missing
+  pin for non-built-ins.
+- **Signed per-package plugin manifest closes the sibling-coverage gap**
+  (follow-up review #H2 [PLUGIN-1]): a package plugin's signed `__init__.py`
+  transitively imported sibling modules that were never signature/AST/hash-checked,
+  so a benign signed `__init__.py` plus a malicious unsigned `helper.py` executed
+  unchecked. A signed `PLUGIN.manifest` now covers **every** importable module
+  under the package (source `.py`, bytecode `.pyc`, native `.so`/`.pyd`,
+  recursively incl. underscore/nested) with one detached `.asc`; under `enforce`
+  a tampered/unlisted/native-swapped/impostor-signed sibling is refused, `warn`
+  warns and loads, built-in packages keep the trust shortcut. `plugin sign`
+  auto-detects a package and writes the manifest. (A runtime import-hook for the
+  validation→import TOCTOU window remains a documented follow-on.)
+- **Key material is now actually wiped at plugin/KDF call sites** (follow-up
+  review #M2 [MEM-1]): several callers wrapped an immutable `bytes` secret in
+  `bytearray(...)` and called `secure_memzero` on the throwaway copy — zeroing a
+  copy while the real secret lingered in unlocked heap (the exact M10 anti-pattern,
+  reintroduced at callers in `parallel_kdf.py`, `asymmetric_core.py`, `pqc.py`,
+  `crypt_core.py`). Each secret is now held in a `bytearray`/`SecureBytes` from
+  creation and that object is wiped.
+- **Parallel and sequential Independent-XOR now derive the same key** (follow-up
+  review #M3 [KDF-1]): for Argon2 with `rounds > 1` the parallel KDF path and the
+  sequential path produced different keys, so a file encrypted under one and
+  decrypted under the other failed to authenticate. The parallel worker now
+  matches the sequential derivation exactly.
+- **RandomX now fails closed in the parallel Independent-XOR path** (follow-up
+  review #R1 [KDF-2b]): a RandomX failure in the parallel path was swallowed and
+  the derivation continued (fail-open), unlike the sequential path which fails
+  closed. Both paths now fail closed.
+- **Streaming per-chunk AEAD auth failures classified structurally** (follow-up
+  review #M4 [STREAM-1]): a per-chunk authentication failure during streaming
+  decryption was detected by substring-matching the exception text, which could
+  misclassify an integrity failure. Classification is now structural.
+
 - **Debug logs no longer leak a KDF key intermediate** (audit 2026-07-06 #2):
   the per-round Argon2/Balloon/Scrypt debug lines printed `round_salt` as raw
   hex, and for `format_version >= 7` rounds ≥ 1 that "salt" is the first 128 bits

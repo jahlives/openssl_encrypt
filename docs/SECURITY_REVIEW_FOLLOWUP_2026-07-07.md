@@ -21,7 +21,7 @@ parallel fail-open) was surfaced by crypto-reviewer during remediation — see *
 > **H1** (`35c4dd5c` / `2d646c4b`), **M4** (`c2ac14be` / `65bcf52e`),
 > **M2** (`cc833442` / `23646ac1`+`4eb40e54`), **M3** & **R1** (`ec2cfbe8` / `4eb40e54`),
 > **M1** (plugin read-once) (`08870363` / `6b45aadf`), **H2** (signed per-package manifest +
-> CLI) (v1.5.x `b26c46de`+`1fc7378d`; v1.4.x port pending). A runtime import-hook
+> CLI) (v1.4.x `84c586f0` / v1.5.x `b26c46de`+`1fc7378d`). A runtime import-hook
 > (sibling-swap TOCTOU defense-in-depth) remains a follow-on per
 > [`PLUGIN_TRUSTBOUNDARY_H2_M1_PLAN.md`](PLUGIN_TRUSTBOUNDARY_H2_M1_PLAN.md). Low/Info items open.
 
@@ -39,7 +39,7 @@ parallel fail-open) was surfaced by crypto-reviewer during remediation — see *
 - **Fix:** remove the hex dump (the length is already printed at :227), or gate the value behind
   `debug_secret("pepper", pepper)`.
 
-### H2 — [PLUGIN-1] Package plugins: only `__init__.py` is signature/AST/hash-verified; sibling modules execute unverified — **RESOLVED** (v1.5.x `b26c46de`+`1fc7378d`; v1.4.x port pending)
+### H2 — [PLUGIN-1] Package plugins: only `__init__.py` is signature/AST/hash-verified; sibling modules execute unverified — **RESOLVED** (v1.4.x `84c586f0` / v1.5.x `b26c46de`+`1fc7378d`)
 - Signed per-package manifest (`plugin_manifest.py`): `PLUGIN.manifest` covers **every importable
   module** (source `.py`, bytecode `.pyc`, native `.so`/`.pyd` — recursively, incl. underscore/
   nested), signed once as `PLUGIN.manifest.asc`. For a package `__init__.py`, `_validate_plugin_file`
