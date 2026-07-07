@@ -5,9 +5,11 @@ _Generated 2026-07-02 from GitLab `sec-review::1.4.7` (project `world/openssl_en
 > **Reconciled 2026-07-07 against git history.** Everything Critical/High/Medium is
 > resolved, including **#66** (plugin signature-gating, merged `055036b1`). Of the
 > original 19 LOW items, **17 are fixed** and **2 remain open** (#95, #100 — both
-> format-breaking, see below). The 7 deferred/reclassified-LOW items are unchanged
-> (optional future hardening, none exploitable). See the **Resolved** section for
-> per-issue commit refs.
+> format-breaking, see below). See the **Resolved** section for per-issue commit refs.
+>
+> **Update 2026-07-07 (deferred hardening batch).** #79/#80 (`997a6c00`) and #74
+> (`f18953eb`) fixed; #59 marked superseded by M3 (no code change, by decision).
+> **3 deferred items remain** (#81, #82, #83 — inherent/format-bump, none exploitable).
 
 Each issue links to its GitLab entry (which has the full finding + verification notes).
 Fixes land on BOTH `feature/v1.4.x-development` and `feature/v1.5.x-development`, each
@@ -35,25 +37,9 @@ future format bump rather than churned in place. Neither is exploitable today._
   needs a format-version gate.
 
 
-## Deferred / reclassified-LOW (future hardening) (7)
+## Deferred / reclassified-LOW (future hardening) (3)
 
 _Downgraded from higher tiers after verification; kept open as future/optional hardening. None exploitable._
-
-### #59 — [KDF-1] Balloon KDF provides negligible memory-hardness at default parameters
-- **severity:** low · [GitLab #59](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/59)
-- Reclassified LOW. Balloon defaults (`space_cost=16`) are function fallbacks; real encryption uses `space_cost=65536` (CLI/templates), and Balloon is stacked behind Argon2id. Optional: raise the fallback constants to the 65536 default as defense-in-depth. Not exploitable.
-
-### #74 — [IO-4] os.umask() process-global race in file/dir creation
-- **severity:** low · [GitLab #74](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/74)
-- Reclassified LOW; mostly moot. `create_secure_file` now `fchmod`s post-open (#58) and `create_secure_directory` post-`chmod`s, and the umask is set MORE restrictive (fails safe). Optional cleanup: mkdir-then-chmod to drop the global-umask side effect. No exploitable weakening.
-
-### #79 — [MEM-6] Multi-pass / explicit_bzero wiping is dead code
-- **severity:** low · [GitLab #79](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/79)
-- Reclassified LOW. An early return in `secure_memzero` makes the multi-pass/explicit_bzero/msync block dead code for bytearray/memoryview; the single slice-assignment still zeroes correctly. Dead defense-in-depth, not a remanence hole. Fix: delete the unreachable code or route through it.
-
-### #80 — [MEM-7] secure_memzero zeroes a copy for non-bytearray buffer types but reports success
-- **severity:** low · [GitLab #80](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/80)
-- Reclassified LOW; unreachable. `secure_memzero` wipes a COPY (returns True) for non-bytearray writable types, but no caller passes array.array/ctypes (all pass bytearray/SecureBytes/bytes/str). Cheap to make honest (return False for non-in-place types).
 
 ### #81 — [MEM-8] Key material leaked into immutable objects that cannot be wiped
 - **severity:** low · [GitLab #81](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/81)
@@ -68,14 +54,18 @@ _Downgraded from higher tiers after verification; kept open as future/optional h
 - Reclassified LOW; deferred to a future format bump. `sha256(shared_secret)` KEM key derivation is sound (ML-KEM output is uniform, IND-CCA2) and the KEM ciphertext is implicitly bound (wrong ct -> wrong key -> AEAD fail). HKDF + explicit ciphertext-AAD is cleaner but FORMAT-BREAKING for no exploitable gain — do it at a future format-version bump.
 
 
-## Resolved (18)
+## Resolved (22)
 
 _Commit refs are on `feature/v1.4.x-development`; each fix was also forward-ported to
-`feature/v1.5.x-development` per the project workflow._
+`feature/v1.5.x-development` per the project workflow (except where noted)._
 
 | # | Code / title | Fix commit (v1.4.x) |
 |---|---|---|
+| [#59](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/59) | [KDF-1] Balloon negligible memory-hardness at default params | **superseded by M3** (`_apply_balloon_security_defaults`, crypt_core.py): encrypt-time unset `space_cost`→65536, persisted; explicit sub-floor warned. Residual 16s are dead convenience fns / GUI presets (M3 warns) — left by decision 2026-07-07 |
 | [#66](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/66) | [CLI-3] Plugin top-level code exec'd in main process, gated only by an AST blocklist | `055036b1` (merge `feature/plugin-signing-14x`: signature-gated plugin loading) |
+| [#74](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/74) | [IO-4] os.umask() process-global race in file/dir creation | `f18953eb` explicit per-component mkdir+chmod / os.open+fchmod, no global umask |
+| [#79](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/79) | [MEM-6] Multi-pass / explicit_bzero wiping is dead code | `997a6c00` remove dead cold-boot copy path from secure_memzero |
+| [#80](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/80) | [MEM-7] secure_memzero reports success while zeroing only a copy | `997a6c00` non-in-place types return False (honest), mirror M10 |
 | [#88](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/88) | [CLI-5] Subprocess children inherit the full environment | `b5070e3a` scrub RandomX probe subprocess env, absolute interpreter |
 | [#90](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/90) | [CORE-10] constant_time_pkcs7_unpad has data-dependent branches | `1d3b57b6` branchless unpad; reject padding > data length |
 | [#91](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/91) | [CORE-7] Cascade auth-failure classification leaks layer info | `9151135a` type-based cascade auth classification, layer-agnostic errors |
@@ -106,8 +96,8 @@ _Commit refs are on `feature/v1.4.x-development`; each fix was also forward-port
    together at the next format-version bump (alongside deferred **#83**, also a format bump):
    widen the streaming nonce prefix and length-prefix the KDF seed inputs behind a new
    format-version gate so existing files still decrypt.
-2. **Deferred hardening** (non-format-breaking, low marginal value), if convenient: **#79/#80**
-   (delete/route the dead secure_memzero branches), **#59** (raise Balloon fallback constants),
-   **#74** (mkdir-then-chmod to drop the umask side effect).
-3. Leave the inherent-limitation items (**#81**, **#82**) unless a C-extension/bytearray-only
+2. Leave the inherent-limitation items (**#81**, **#82**) unless a C-extension/bytearray-only
    rework is on the table.
+
+_(The non-breaking deferred-hardening batch — #79/#80, #74 — is done; #59 superseded by M3.
+See Resolved.)_
