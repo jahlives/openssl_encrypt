@@ -240,26 +240,28 @@ class TestAtomicPermissionSetting:
             assert file_created_with_correct_perms, "File permissions not set atomically!"
 
     @pytest.mark.skipif(sys.platform == "win32", reason="umask not available on Windows")
-    def test_umask_mechanism_used(self):
-        """Should use umask mechanism for atomic permission setting"""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            original_umask = os.umask(0o022)
-            os.umask(original_umask)
+    def test_no_global_umask_used(self):
+        """Secure creation must NOT touch the process-global umask (#74).
 
-            # Track umask calls
+        Previously create_secure_directory set os.umask(0o077) for the duration
+        of the create and restored it, which races any other thread creating
+        files concurrently. The hardened path creates each component with
+        mkdir(mode=...) + chmod instead, so os.umask is never called while the
+        resulting permissions remain correct.
+        """
+        with tempfile.TemporaryDirectory() as tmpdir:
             umask_values = []
             real_umask = os.umask  # Save reference to real umask
 
             def tracked_umask(mask):
                 umask_values.append(mask)
-                # Call real umask to actually set it
                 return real_umask(mask)
 
             with patch('os.umask', side_effect=tracked_umask):
                 with patch('pathlib.Path.home', return_value=Path(tmpdir)):
-                    ensure_plugin_data_dir("test_plugin")
+                    result = ensure_plugin_data_dir("test_plugin")
 
-            # Should have called umask(0o077) and then restored
-            assert 0o077 in umask_values, "Should set umask to 0o077"
-            # Should restore original umask
-            assert original_umask in umask_values, f"Should restore original umask {oct(original_umask)}"
+            assert umask_values == [], f"os.umask must not be called, got {umask_values}"
+            assert result is not None
+            assert check_permissions(result, PermissionLevel.OWNER_FULL), \
+                "Directory permissions must still be correct without umask"
