@@ -37,7 +37,7 @@ parallel fail-open) was surfaced by crypto-reviewer during remediation — see *
 - **Fix:** remove the hex dump (the length is already printed at :227), or gate the value behind
   `debug_secret("pepper", pepper)`.
 
-### H2 — [PLUGIN-1] Package plugins: only `__init__.py` is signature/AST/hash-verified; sibling modules execute unverified — **DEFERRED (design-first)**
+### H2 — [PLUGIN-1] Package plugins: only `__init__.py` is signature/AST/hash-verified; sibling modules execute unverified — **DEFERRED** — design in [`docs/PLUGIN_TRUSTBOUNDARY_H2_M1_PLAN.md`](PLUGIN_TRUSTBOUNDARY_H2_M1_PLAN.md)
 - `plugin_manager.py:150-161` (discovery registers `subdir/__init__.py`), `:970-1042`
   (`_validate_plugin_file` gates only that file), `:880-916` (signature policy).
 - When `exec_module` runs a package plugin's `__init__.py`, it transitively imports sibling
@@ -55,7 +55,7 @@ parallel fail-open) was surfaced by crypto-reviewer during remediation — see *
 
 ## Medium
 
-### M1 — [PLUGIN-2] Signature is verified over bytes read separately from the AST-scanned/executed bytes (verify-A / execute-B) — **DEFERRED (design-first, bundled with H2)**
+### M1 — [PLUGIN-2] Signature is verified over bytes read separately from the AST-scanned/executed bytes (verify-A / execute-B) — **DEFERRED** — design (with H2) in [`docs/PLUGIN_TRUSTBOUNDARY_H2_M1_PLAN.md`](PLUGIN_TRUSTBOUNDARY_H2_M1_PLAN.md)
 - `plugin_manager.py:909-916` (signature reads its own `open().read()`) vs `:1034-1042` (AST scan
   re-reads and pins `sha256` of *that* read) vs `:237-247` (pre-exec re-hash compares only against
   the AST-time hash). Nothing binds the **signed** bytes to the executed bytes; the re-hash guards
