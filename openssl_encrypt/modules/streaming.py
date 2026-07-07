@@ -11,7 +11,8 @@ Each chunk:
     [chunk_index: u32le] [ciphertext_len: u32le] [ciphertext + AEAD tag]
 
 Security properties:
-    - Nonce reuse prevention: HKDF-derived per-chunk from random 8-byte prefix + chunk index
+    - Nonce reuse prevention: HKDF-derived per-chunk from a random per-file prefix
+      (>= 8 bytes; 16 for new files) + chunk index
     - Chunk reordering detection: chunk index bound in per-chunk AAD
     - Chunk truncation detection: chunk count in per-chunk AAD + trailer HMAC
     - Metadata tampering detection: metadata is AAD for every chunk's AEAD

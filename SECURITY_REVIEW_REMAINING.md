@@ -9,7 +9,8 @@ _Generated 2026-07-02 from GitLab `sec-review::1.4.7` (project `world/openssl_en
 >
 > **Update 2026-07-07 (#95).** On feasibility investigation #95 proved **not**
 > format-breaking — the per-chunk nonce is HKDF-derived from a metadata-stored prefix, so
-> widening it 8→16 bytes is backward compatible. Fixed (v1.4.x `a0a5357d`), not a format bump.
+> widening it 8→16 bytes is backward compatible. Fixed on both branches (v1.4.x `a0a5357d`,
+> v1.5.x `5f0a8b02`), not a format bump.
 >
 > **Update 2026-07-07 (deferred hardening batch).** #79/#80 and #74 fixed on both
 > branches (v1.4.x `997a6c00` / `48a3e207`; v1.5.x `ebb34c44` / `e6c8a54b`); #59
@@ -72,7 +73,7 @@ branches._
 | [#92](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/92) | [CORE-8] verify_mac `associated_data` parameter is a no-op | `d695d78f` remove no-op associated_data parameter from verify_mac |
 | [#93](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/93) | [CORE-9] Legacy XChaCha nonce_format=1 advertises 192-bit but funnels to 96 | `4139915d` stop describing nonce_format=1 as 192-bit/spec-compliant |
 | [#94](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/94) | [IO-5] JSON nesting-depth limit enforced only after json.loads | `1751f11c` enforce JSON nesting depth before parse, map RecursionError |
-| [#95](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/95) | [IO-6] 64-bit per-file streaming nonce prefix | v1.4.x `a0a5357d` — widen 8→16 bytes; **not** format-breaking (HKDF-derived, metadata-stored prefix), older files still decrypt |
+| [#95](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/95) | [IO-6] 64-bit per-file streaming nonce prefix | v1.4.x `a0a5357d`, v1.5.x `5f0a8b02` — widen 8→16 bytes; **not** format-breaking (HKDF-derived, metadata-stored prefix), older files still decrypt |
 | [#96](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/96) | [IO-7] Streaming decrypt writes plaintext before trailer HMAC verifies | `07509df1` stage streaming decrypt output, rename after trailer HMAC |
 | [#97](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/97) | [KDF-10] CommonPasswordChecker custom-path branch does not set loaded flag | `dcd81033` make custom+embedded password-list semantics explicit |
 | [#98](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/98) | [KDF-6] Key fingerprint lacks domain separation / algorithm binding | `090f71c2` v2 identity fingerprint with domain separation + algorithm binding |
