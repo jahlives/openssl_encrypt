@@ -13,13 +13,20 @@ worth attention is **no-op `secure_memzero` at call sites** (the M10/#79/#80 hon
 the function honest, but several callers still wrap immutable `bytes` in `bytearray(...)` and
 "wipe" a throwaway copy) and two **plugin-signing coverage gaps**.
 
-Counts: **2 High · 4 Medium · 8 Low · 6 Info** (20 findings).
+Counts: **2 High · 4 Medium · 8 Low · 6 Info** (20 findings). A 21st (RandomX
+parallel fail-open) was surfaced by crypto-reviewer during remediation — see **R1** below.
+
+> **Remediation status (2026-07-07).** Fixed on `feature/v1.5.x-development` (each with a
+> regression test + crypto-reviewer sign-off): **H1** (`2d646c4b`), **M4** (`65bcf52e`),
+> **M2** (`23646ac1` + `4eb40e54`), **M3** (`4eb40e54`), **R1** (`4eb40e54`). **H2 + M1**
+> (plugin trust-boundary) are deferred to a design-first task (architectural). Low/Info items
+> remain open for triage.
 
 ---
 
 ## High
 
-### H1 — [HSM-1] FIDO2/HSM pepper printed in cleartext, bypassing the redaction chokepoint
+### H1 — [HSM-1] FIDO2/HSM pepper printed in cleartext, bypassing the redaction chokepoint — **RESOLVED `2d646c4b`**
 - `hsm_cli.py:228` — `click.echo(f"Pepper (hex): {pepper.hex()}")`.
 - The `hsm fido2-test` command prints the full 32-byte derived hardware pepper (key material /
   KDF intermediate) to stdout **unconditionally** — no `--debug`, no `--unsafe-show-secrets`,
@@ -29,7 +36,7 @@ Counts: **2 High · 4 Medium · 8 Low · 6 Info** (20 findings).
 - **Fix:** remove the hex dump (the length is already printed at :227), or gate the value behind
   `debug_secret("pepper", pepper)`.
 
-### H2 — [PLUGIN-1] Package plugins: only `__init__.py` is signature/AST/hash-verified; sibling modules execute unverified
+### H2 — [PLUGIN-1] Package plugins: only `__init__.py` is signature/AST/hash-verified; sibling modules execute unverified — **DEFERRED (design-first)**
 - `plugin_manager.py:150-161` (discovery registers `subdir/__init__.py`), `:970-1042`
   (`_validate_plugin_file` gates only that file), `:880-916` (signature policy).
 - When `exec_module` runs a package plugin's `__init__.py`, it transitively imports sibling
@@ -47,7 +54,7 @@ Counts: **2 High · 4 Medium · 8 Low · 6 Info** (20 findings).
 
 ## Medium
 
-### M1 — [PLUGIN-2] Signature is verified over bytes read separately from the AST-scanned/executed bytes (verify-A / execute-B)
+### M1 — [PLUGIN-2] Signature is verified over bytes read separately from the AST-scanned/executed bytes (verify-A / execute-B) — **DEFERRED (design-first, bundled with H2)**
 - `plugin_manager.py:909-916` (signature reads its own `open().read()`) vs `:1034-1042` (AST scan
   re-reads and pins `sha256` of *that* read) vs `:237-247` (pre-exec re-hash compares only against
   the AST-time hash). Nothing binds the **signed** bytes to the executed bytes; the re-hash guards
@@ -57,7 +64,7 @@ Counts: **2 High · 4 Medium · 8 Low · 6 Info** (20 findings).
 - **Fix:** read the plugin bytes **once**; pass the same buffer to signature verification, AST
   analysis, hash pinning, and execution.
 
-### M2 — [MEM-1] Key material not actually wiped — no-op `secure_memzero(bytearray(immutable_bytes))` at multiple call sites
+### M2 — [MEM-1] Key material not actually wiped — no-op `secure_memzero(bytearray(immutable_bytes))` at multiple call sites — **RESOLVED `23646ac1` + `4eb40e54`**
 - Same root cause across several files: an HKDF/hash output is immutable `bytes`; wrapping it in
   `bytearray(...)` and calling `secure_memzero` zeros a **copy** and returns success while the
   original secret lingers in unlocked heap (swap/core-dump exposure). This is the exact
@@ -77,7 +84,7 @@ Counts: **2 High · 4 Medium · 8 Low · 6 Info** (20 findings).
   than calling `secure_memzero(bytearray(...))` (which is a no-op and gives false assurance).
   Consider `strict=True` in these finally blocks so a future immutable-input regression fails loud.
 
-### M3 — [KDF-1] Parallel vs sequential Independent-XOR derive different keys for Argon2 `rounds > 1`
+### M3 — [KDF-1] Parallel vs sequential Independent-XOR derive different keys for Argon2 `rounds > 1` — **RESOLVED `4eb40e54`**
 - `parallel_kdf.py:216-242` (`_kdf_worker` Argon2 branch runs `hash_secret_raw` **once**, ignoring
   `rounds`) vs `crypt_core.py:1955-1980` (sequential loops `rounds` with `round_salt = result[:32]`
   chaining). `--parallel-kdf` is a runtime flag **not persisted in metadata** (`crypt_core.py:5977`,
@@ -89,7 +96,7 @@ Counts: **2 High · 4 Medium · 8 Low · 6 Info** (20 findings).
   `rounds != 1` for parallel dispatch. Add a parallel-vs-sequential key-equivalence test for
   Argon2 `rounds>1` (and Balloon — see L1).
 
-### M4 — [STREAM-1] Streaming per-chunk AEAD auth failures misclassified via substring matching
+### M4 — [STREAM-1] Streaming per-chunk AEAD auth failures misclassified via substring matching — **RESOLVED `65bcf52e`**
 - `streaming.py:360-366` (`decrypt_chunk`): tag failures for the library-direct ciphers
   (`aes-gcm`, `chacha20-poly1305`, `aes-ocb3`, `aes-gcm-siv`, `aes-siv`) raise
   `cryptography.exceptions.InvalidTag`, whose `str(e)` is **empty** → matches neither `"tag"` nor
@@ -101,6 +108,13 @@ Counts: **2 High · 4 Medium · 8 Low · 6 Info** (20 findings).
 - **Fix:** classify by exception type (catch `InvalidTag` + `crypt_errors.AuthenticationError`),
   re-raise a uniform layer-agnostic `AuthenticationError` with a fixed message; don't interpolate
   `{e}`.
+
+### R1 — [KDF-2b] RandomX fails OPEN in the parallel Independent-XOR path — **RESOLVED `4eb40e54`**
+- Surfaced by crypto-reviewer during M2/M3 remediation. `parallel_kdf.py` (dispatcher) skipped
+  RandomX with a warning when it was enabled but unavailable, whereas the sequential path fails
+  closed (#71). With RandomX enabled alongside another KDF, the parallel path silently dropped a
+  KDF component — deriving a weaker key that also diverges from the sequential result
+  (undecryptable). Fixed to raise (fail closed), mirroring #71; regression test added.
 
 ---
 
