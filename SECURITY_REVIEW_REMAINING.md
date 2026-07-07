@@ -4,8 +4,9 @@ _Generated 2026-07-02 from GitLab `sec-review::1.4.7` (project `world/openssl_en
 
 > **Reconciled 2026-07-07 against git history.** Everything Critical/High/Medium is
 > resolved, including **#66** (plugin signature-gating, merged `055036b1`). Of the
-> original 19 LOW items, **18 are fixed** and **1 remains open** (#100 — format-breaking,
-> see below). See the **Resolved** section for per-issue commit refs.
+> original 19 LOW items, **18 are fixed**; the last one (#100) is deferred to a possible
+> format-version bump (see below). **Nothing remains that is fixable in place.** See the
+> **Resolved** section for per-issue commit refs.
 >
 > **Update 2026-07-07 (#95).** On feasibility investigation #95 proved **not**
 > format-breaking — the per-chunk nonce is HKDF-derived from a metadata-stored prefix, so
@@ -14,31 +15,27 @@ _Generated 2026-07-02 from GitLab `sec-review::1.4.7` (project `world/openssl_en
 >
 > **Update 2026-07-07 (deferred hardening batch).** #79/#80 and #74 fixed on both
 > branches (v1.4.x `997a6c00` / `48a3e207`; v1.5.x `ebb34c44` / `e6c8a54b`); #59
-> marked superseded by M3 (no code change, by decision). **3 deferred items remain**
-> (#81, #82, #83 — inherent/format-bump, none exploitable).
+> marked superseded by M3 (no code change, by decision).
+>
+> **Update 2026-07-07 (#100/#83 format-bump design).** Design review concluded a new
+> `format_version 14` is **not warranted on its own**: #100 is non-exploitable and was
+> deliberately left by v13's domain-separation work; #83 is already HKDF for
+> `format_version >= 12` (only default-v9 files + a ciphertext-binding nicety remain), with
+> no exploitable gain. Both are kept as accepted LOW residuals with a **ready-to-implement
+> spec pre-staged in [`docs/FORMAT_V14_PLAN.md`](docs/FORMAT_V14_PLAN.md)** — land it
+> opportunistically at the next format bump. **4 deferred items** (#81, #82 inherent; #83,
+> #100 pre-staged v14); **none open in place**.
 
 Each issue links to its GitLab entry (which has the full finding + verification notes).
 Fixes land on BOTH `feature/v1.4.x-development` and `feature/v1.5.x-development`, each
 with a regression test and full-suite check, per the project workflow.
 
 
-## Open — LOW, format-breaking (1)
+## Deferred / reclassified-LOW (future hardening) (4)
 
-_The only non-deferred item still open. It changes an on-disk encoding, so it needs a
-format-version gate to keep existing files decryptable — that's why it was left for a
-future format bump rather than churned in place. Not exploitable today._
-
-### #100 — [KDF-8] Missing length separation in seed/hash inputs (canonicalization ambiguity)
-- **severity:** low · [GitLab #100](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/100)
-- Length-separation hygiene: `crypt_core.py:1567-1569` concatenates `password + salt (+ hsm_pepper)`
-  (and `sha256(salt + str(i))`) without delimiters. Canonicalization-ambiguous but impractical
-  (fixed/known salt). Fix: length-prefix fields — **format-breaking** (changes every derived key),
-  needs a format-version gate.
-
-
-## Deferred / reclassified-LOW (future hardening) (3)
-
-_Downgraded from higher tiers after verification; kept open as future/optional hardening. None exploitable._
+_Nothing here is fixable in place. #81/#82 are inherent-limitation / large-rewrite; #83 and
+#100 are format-breaking and pre-staged for a possible `format_version 14`
+([`docs/FORMAT_V14_PLAN.md`](docs/FORMAT_V14_PLAN.md)). None exploitable._
 
 ### #81 — [MEM-8] Key material leaked into immutable objects that cannot be wiped
 - **severity:** low · [GitLab #81](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/81)
@@ -50,7 +47,24 @@ _Downgraded from higher tiers after verification; kept open as future/optional h
 
 ### #83 — [PQC-3] KEM shared secret keyed through bare SHA-256 (no KDF, no domain separation, no transcript binding)
 - **severity:** low · [GitLab #83](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/83)
-- Reclassified LOW; deferred to a future format bump. `sha256(shared_secret)` KEM key derivation is sound (ML-KEM output is uniform, IND-CCA2) and the KEM ciphertext is implicitly bound (wrong ct -> wrong key -> AEAD fail). HKDF + explicit ciphertext-AAD is cleaner but FORMAT-BREAKING for no exploitable gain — do it at a future format-version bump.
+- **Already partly fixed.** `PQCipher._derive_symmetric_key` (`pqc.py:426-453`) uses
+  **HKDF-SHA256 with algorithm-name domain separation for `format_version >= 12`**; only
+  **default-v9** non-streaming PQC files still use bare `sha256(shared_secret)`, and no
+  version yet binds the KEM ciphertext. The derivation is sound regardless (uniform ML-KEM
+  output; ciphertext implicitly bound via AEAD failure) — no exploitable gain. Remaining
+  hygiene (default-v9 → HKDF, + ciphertext-transcript binding) is format-breaking; pre-staged
+  for `format_version 14` — see [`docs/FORMAT_V14_PLAN.md`](docs/FORMAT_V14_PLAN.md) §3.3.
+
+### #100 — [KDF-8] Missing length separation in seed/hash inputs (canonicalization ambiguity)
+- **severity:** low · [GitLab #100](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/100)
+- The KDF seed is a raw concat `password + salt (+ hsm_pepper)` (`crypt_core.py:1206`/`1208`,
+  sized at `1163-1164`), plus per-round `sha256(salt + str(i))`. Canonicalization-ambiguous
+  but **non-exploitable** (tool-generated fixed-length salt → boundary not attacker-controllable).
+  v13's domain-separation work **deliberately left this input unchanged** (`crypt_core.py:1739-1740`:
+  "cannot duplicate"). Length-prefixing is format-breaking (changes every derived key) and the
+  highest-cost change in the codebase for zero exploitable gain — pre-staged for
+  `format_version 14`, see [`docs/FORMAT_V14_PLAN.md`](docs/FORMAT_V14_PLAN.md) §3.2. Do it
+  opportunistically at the next format bump.
 
 
 ## Resolved (23)
@@ -94,10 +108,14 @@ branches._
 
 ## Suggested next steps
 
-1. **#100** — the only non-deferred item left, LOW and genuinely format-breaking. Bundle it
-   with deferred **#83** (also a format bump) at the next format-version release: length-prefix
-   the KDF seed inputs and switch the KEM symmetric-key derivation to HKDF+ciphertext-AAD
-   behind a new format-version gate so existing files still decrypt.
+**No findings remain that are fixable in place.** The review is effectively closed; what
+remains is optional, non-exploitable, and format-gated.
+
+1. **#100 + #83** — the only remaining actionable findings, both format-breaking with no
+   exploitable gain. Do **not** cut a format bump solely for them. Land the pre-staged
+   [`docs/FORMAT_V14_PLAN.md`](docs/FORMAT_V14_PLAN.md) opportunistically the next time a
+   `format_version` bump is required for a functional reason (fold them in as free hygiene).
+   If a clean bill is ever forced, ship **#83-only** (cheap, self-contained).
 2. Leave the inherent-limitation items (**#81**, **#82**) unless a C-extension/bytearray-only
    rework is on the table.
 
