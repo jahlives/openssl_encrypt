@@ -20,8 +20,9 @@ parallel fail-open) was surfaced by crypto-reviewer during remediation — see *
 > test + crypto-reviewer sign-off), v1.4.x / v1.5.x commits:
 > **H1** (`35c4dd5c` / `2d646c4b`), **M4** (`c2ac14be` / `65bcf52e`),
 > **M2** (`cc833442` / `23646ac1`+`4eb40e54`), **M3** & **R1** (`ec2cfbe8` / `4eb40e54`).
-> **H2 + M1** (plugin trust-boundary) are deferred to a design-first task (architectural).
-> Low/Info items remain open for triage.
+> **M1** (plugin read-once) fixed on v1.5.x (`6b45aadf`; v1.4.x port pending). **H2** (package
+> sibling coverage) remains deferred — design pre-staged in
+> [`PLUGIN_TRUSTBOUNDARY_H2_M1_PLAN.md`](PLUGIN_TRUSTBOUNDARY_H2_M1_PLAN.md). Low/Info items open.
 
 ---
 
@@ -55,7 +56,14 @@ parallel fail-open) was surfaced by crypto-reviewer during remediation — see *
 
 ## Medium
 
-### M1 — [PLUGIN-2] Signature is verified over bytes read separately from the AST-scanned/executed bytes (verify-A / execute-B) — **DEFERRED** — design (with H2) in [`docs/PLUGIN_TRUSTBOUNDARY_H2_M1_PLAN.md`](PLUGIN_TRUSTBOUNDARY_H2_M1_PLAN.md)
+### M1 — [PLUGIN-2] Signature is verified over bytes read separately from the AST-scanned/executed bytes (verify-A / execute-B) — **RESOLVED** (v1.5.x `6b45aadf`; v1.4.x port pending)
+- Read-once binding: `_validate_plugin_file` reads the plugin ONCE as raw bytes and threads that
+  exact buffer through the signature gate, the `sha256(raw)` pin, and `analyze_plugin_code(raw)`
+  (`ast.parse(raw)`); `load_plugin` re-reads once, compares to the pin, and executes via
+  `compile(raw_now)+exec` instead of `spec.loader.exec_module` — killing the CRLF/BOM verify-A/
+  execute-B discrepancy and the `.pyc`-shadow vector. Fail-closed on a missing pin for
+  non-built-ins; sys.modules cleaned on exec failure. crypto-reviewer approved. (H2 — package
+  sibling coverage — remains deferred; see the plan doc.)
 - `plugin_manager.py:909-916` (signature reads its own `open().read()`) vs `:1034-1042` (AST scan
   re-reads and pins `sha256` of *that* read) vs `:237-247` (pre-exec re-hash compares only against
   the AST-time hash). Nothing binds the **signed** bytes to the executed bytes; the re-hash guards
