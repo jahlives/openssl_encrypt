@@ -84,6 +84,58 @@ def sign_plugin(
     return sig_path
 
 
+def sign_plugin_package(
+    package_dir: str,
+    key_id: str,
+    *,
+    passphrase: Optional[str] = None,
+    home: Optional[Path] = None,
+    gpg_binary: Optional[str] = None,
+) -> str:
+    """Build and sign a per-package manifest (H2 [PLUGIN-1]).
+
+    Writes ``PLUGIN.manifest`` (covering every importable module — source,
+    bytecode and native extensions — under the package) and a detached
+    ``PLUGIN.manifest.asc`` into the package directory, so the loader can refuse
+    a tampered/unlisted sibling under the enforce policy. Accepts either the
+    package directory or its ``__init__.py``.
+
+    Returns the path to the written signature. Raises FileNotFoundError /
+    ValueError for a non-package target, ManifestError for an unsafe tree, and
+    GpgError / GpgUnavailableError on signing failure.
+    """
+    from .plugin_manifest import MANIFEST_FILENAME, build_manifest
+
+    if os.path.isfile(package_dir) and os.path.basename(package_dir) == "__init__.py":
+        package_dir = os.path.dirname(package_dir)
+    if not os.path.isdir(package_dir):
+        raise FileNotFoundError(f"Plugin package directory not found: {package_dir}")
+    if not os.path.isfile(os.path.join(package_dir, "__init__.py")):
+        raise ValueError(f"Not a package plugin (no __init__.py): {package_dir}")
+
+    # Build over the module set BEFORE writing PLUGIN.manifest (which is not a
+    # module and is therefore not covered), so verification re-enumerates the
+    # identical set.
+    manifest = build_manifest(package_dir)
+    manifest_path = os.path.join(package_dir, MANIFEST_FILENAME)
+    fd = os.open(manifest_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        os.write(fd, manifest)
+    finally:
+        os.close(fd)
+
+    signature = detached_sign(
+        manifest, key_id, home=home, passphrase=passphrase, gpg_binary=gpg_binary
+    )
+    sig_path = signature_path_for(manifest_path)
+    fd = os.open(sig_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        os.write(fd, signature)
+    finally:
+        os.close(fd)
+    return sig_path
+
+
 def enroll_trust_key(
     public_key_path: str,
     *,

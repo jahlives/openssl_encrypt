@@ -110,6 +110,9 @@ class PluginManager:
         self.allowed_unsafe_plugins: Set[str] = set()  # Whitelist for trusted plugins
         self.builtin_plugin_root: Optional[str] = None  # Built-in plugins skip AST analysis
         self._validated_source_hashes: Dict[str, str] = {}  # TOCTOU: hash at validation time
+        # H2: package_dir realpath -> set of *.py realpaths covered by a verified
+        # manifest (scopes the sibling-import hook).
+        self._verified_package_paths: Dict[str, Set[str]] = {}
 
         # Signature-gated loading (#66). Default WARN (D1): unsigned/
         # unverifiable non-built-in plugins still load, but a warning +
@@ -998,6 +1001,81 @@ class PluginManager:
             )
         return True
 
+    def _check_package_manifest_policy(self, package_dir: str) -> bool:
+        """Apply the signature policy to a (non-built-in) PACKAGE plugin via its
+        signed manifest (H2 [PLUGIN-1]).
+
+        A package's ``__init__.py`` transitively imports sibling modules, so a
+        single-file signature over ``__init__.py`` alone leaves those siblings
+        unverified. Instead, the whole package is covered by one signed
+        ``PLUGIN.manifest`` (every ``*.py`` recursively). Verified iff the
+        manifest signature is good AND the on-disk ``*.py`` tree matches the
+        manifest exactly.
+
+        OFF is a no-op; ENFORCE refuses an unverifiable/mismatched package; WARN
+        loads it with a loud warning. On success the verified ``*.py`` realpaths
+        are recorded so the import hook can scope sibling imports.
+        """
+        from .plugin_manifest import verify_package_manifest
+        from .plugin_signature import PluginSignaturePolicy, TrustAnchorError
+
+        if self.signature_policy == PluginSignaturePolicy.OFF:
+            return True
+
+        try:
+            anchors = self._load_trust_anchors()
+        except TrustAnchorError as e:
+            logger.error(f"Plugin trust-anchor store is unsafe: {e}")
+            return self.signature_policy != PluginSignaturePolicy.ENFORCE
+
+        verdict = verify_package_manifest(package_dir, anchors)
+
+        if verdict.verified:
+            self._verified_package_paths[os.path.realpath(package_dir)] = verdict.verified_paths
+            logger.info(f"Plugin package manifest verified: {package_dir}")
+            if security_logger:
+                security_logger.log_event(
+                    "plugin_manifest_verified",
+                    "info",
+                    {"package_dir": package_dir, "files": len(verdict.verified_paths)},
+                )
+            return True
+
+        if self.signature_policy == PluginSignaturePolicy.ENFORCE:
+            logger.error(
+                f"SECURITY BLOCKED: package plugin with no verifiable manifest refused in "
+                f"enforce mode: {package_dir} ({verdict.reason})"
+            )
+            if security_logger:
+                security_logger.log_event(
+                    "plugin_blocked",
+                    "critical",
+                    {
+                        "package_dir": package_dir,
+                        "reason": "manifest_unverified",
+                        "detail": verdict.reason,
+                    },
+                )
+            return False
+
+        # WARN mode: allow but make it loud.
+        logger.warning(
+            f"Plugin package {package_dir} has no verifiable manifest ({verdict.reason}). "
+            f"Loading anyway (signature policy: warn); sibling modules are UNVERIFIED. "
+            f"Use enforce mode to refuse."
+        )
+        if security_logger:
+            security_logger.log_event(
+                "plugin_manifest_missing",
+                "warning",
+                {
+                    "package_dir": package_dir,
+                    "reason": verdict.reason,
+                    "action": "allowed_warn_mode",
+                },
+            )
+        return True
+
     def _is_builtin_plugin(self, real_path: str) -> bool:
         """True if ``real_path`` (already realpath-resolved) is under the
         trusted built-in plugin root. Built-ins skip the AST/signature gate and
@@ -1076,87 +1154,108 @@ class PluginManager:
                 logger.error(f"Could not read plugin for validation: {file_path}: {e}")
                 return False
 
-            # Signature gate (#66) over the exact bytes.
+            if os.path.basename(real_path) == "__init__.py":
+                # H2 [PLUGIN-1]: a package's __init__.py transitively imports
+                # sibling modules. Verify the signed per-package manifest (covers
+                # every importable module — source, bytecode and native
+                # extensions) instead of only __init__.py's own signature, then
+                # hash-pin every module and AST-scan every SOURCE sibling so no
+                # unverified sibling can execute.
+                package_dir = os.path.dirname(real_path)
+                if not self._check_package_manifest_policy(package_dir):
+                    return False
+                from .plugin_manifest import ManifestError, _iter_module_files, is_source_module
+
+                try:
+                    module_files = _iter_module_files(package_dir)
+                except ManifestError as e:
+                    logger.error(f"SECURITY BLOCKED: unsafe package tree: {e}")
+                    return False
+                for _rel, sib_real in module_files:
+                    try:
+                        with open(sib_real, "rb") as sf:
+                            sib_raw = sf.read()
+                    except OSError as e:
+                        logger.error(f"Could not read package file {sib_real}: {e}")
+                        return False
+                    self._validated_source_hashes[sib_real] = _hashlib.sha256(sib_raw).hexdigest()
+                    # Only Python source can be AST-scanned; native/bytecode
+                    # modules are covered by the signed manifest hash.
+                    if is_source_module(sib_real) and not self._ast_scan_source(sib_raw, sib_real):
+                        return False
+                return True
+
+            # Single-file plugin: verify its own detached signature over the
+            # exact bytes (#66), pin, and AST-scan.
             if not self._check_signature_policy(file_path, raw):
                 return False
-
-            # Pin sha256 of the RAW bytes for the pre-exec TOCTOU re-check.
             self._validated_source_hashes[real_path] = _hashlib.sha256(raw).hexdigest()
-
-            # AST-based content validation over the SAME raw bytes. ast.parse
-            # handles the encoding cookie/BOM identically to compile(), so the
-            # scanned AST corresponds to the bytes that execute.
-            is_safe, violations = analyze_plugin_code(
-                raw, file_path, strict_mode=self.strict_security_mode
-            )
-
-            # Log and handle any violations found
-            if violations:
-                for violation in violations:
-                    violation_msg = (
-                        f"Line {violation.line}:{violation.col} - "
-                        f"{violation.violation_type}: {violation.description}"
-                    )
-
-                    if self.strict_security_mode and violation.severity == "critical":
-                        # In strict mode, block plugins with critical violations
-                        logger.error(
-                            f"SECURITY BLOCKED: Plugin contains security violation: {file_path}"
-                        )
-                        logger.error(f"  {violation_msg}")
-                        logger.error(
-                            "Plugin rejected in strict security mode. Security violations not allowed."
-                        )
-
-                        # Security audit log for blocked plugin
-                        if security_logger:
-                            security_logger.log_event(
-                                "plugin_blocked",
-                                "critical",
-                                {
-                                    "file_path": file_path,
-                                    "violation_type": violation.violation_type,
-                                    "line": violation.line,
-                                    "description": violation.description,
-                                    "reason": "strict_security_mode",
-                                },
-                            )
-                    else:
-                        # In permissive mode or for non-critical violations, only warn
-                        logger.warning(f"Plugin file contains security violation: {file_path}")
-                        logger.warning(f"  {violation_msg}")
-                        logger.warning(
-                            "Security violation allowed (strict_security_mode=False). "
-                            "Use with caution!"
-                        )
-
-                        # Security audit log for violation warning
-                        if security_logger:
-                            security_logger.log_event(
-                                "security_violation_detected",
-                                "warning",
-                                {
-                                    "file_path": file_path,
-                                    "violation_type": violation.violation_type,
-                                    "line": violation.line,
-                                    "description": violation.description,
-                                    "action": "allowed_permissive_mode",
-                                },
-                            )
-
-            # In strict mode, block if not safe
-            if self.strict_security_mode and not is_safe:
-                self._audit_log(f"Plugin with security violations blocked: {file_path}")
-                return False
-            elif violations:
-                # In permissive mode, warn but allow
-                self._audit_log(f"Plugin with security violations allowed: {file_path}")
-
-            return True
+            return self._ast_scan_source(raw, file_path)
 
         except Exception as e:
             logger.error(f"Error validating plugin file {file_path}: {e}")
             return False
+
+    def _ast_scan_source(self, raw: bytes, file_path: str) -> bool:
+        """AST-scan raw plugin bytes for dangerous patterns. Returns True if the
+        source may load (no critical violation in strict mode), False if blocked.
+        ast.parse handles the encoding cookie/BOM identically to compile(), so
+        the scanned AST corresponds to the bytes that execute (M1)."""
+        is_safe, violations = analyze_plugin_code(
+            raw, file_path, strict_mode=self.strict_security_mode
+        )
+
+        if violations:
+            for violation in violations:
+                violation_msg = (
+                    f"Line {violation.line}:{violation.col} - "
+                    f"{violation.violation_type}: {violation.description}"
+                )
+                if self.strict_security_mode and violation.severity == "critical":
+                    logger.error(
+                        f"SECURITY BLOCKED: Plugin contains security violation: {file_path}"
+                    )
+                    logger.error(f"  {violation_msg}")
+                    logger.error(
+                        "Plugin rejected in strict security mode. Security violations not allowed."
+                    )
+                    if security_logger:
+                        security_logger.log_event(
+                            "plugin_blocked",
+                            "critical",
+                            {
+                                "file_path": file_path,
+                                "violation_type": violation.violation_type,
+                                "line": violation.line,
+                                "description": violation.description,
+                                "reason": "strict_security_mode",
+                            },
+                        )
+                else:
+                    logger.warning(f"Plugin file contains security violation: {file_path}")
+                    logger.warning(f"  {violation_msg}")
+                    logger.warning(
+                        "Security violation allowed (strict_security_mode=False). Use with caution!"
+                    )
+                    if security_logger:
+                        security_logger.log_event(
+                            "security_violation_detected",
+                            "warning",
+                            {
+                                "file_path": file_path,
+                                "violation_type": violation.violation_type,
+                                "line": violation.line,
+                                "description": violation.description,
+                                "action": "allowed_permissive_mode",
+                            },
+                        )
+
+        if self.strict_security_mode and not is_safe:
+            self._audit_log(f"Plugin with security violations blocked: {file_path}")
+            return False
+        if violations:
+            self._audit_log(f"Plugin with security violations allowed: {file_path}")
+        return True
 
     def _file_path_to_module_name(self, file_path: str, project_root: str) -> str:
         """Convert file path to proper Python module name.
