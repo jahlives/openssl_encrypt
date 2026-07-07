@@ -172,8 +172,14 @@ def verify_memory_zeroed(data, full_check=True, sample_size=16):
 
 def secure_memzero(data, full_verification=True, strict=False):
     """
-    Securely wipe data with multiple rounds of overwriting followed by zeroing.
-    Ensures the data is completely overwritten in memory and performs verification.
+    Securely wipe a mutable buffer in place by zeroing its backing storage,
+    then verify the wipe.
+
+    Only buffers whose storage we can address directly (bytearray, SecureBytes,
+    writable memoryview) are wiped and verified. Immutable or non-in-place
+    inputs (bytes, str, array.array, ctypes buffers, ...) cannot have the
+    caller's own secret cleared through this API and are reported as failures
+    rather than falsely claiming success (see M10 / #79 / #80).
 
     Args:
         data: The data to be wiped (SecureBytes, bytes, bytearray, or memoryview)
@@ -213,190 +219,39 @@ def secure_memzero(data, full_verification=True, strict=False):
             pass
         return False
 
-    # Simplified zeroing during shutdown
-    try:
-        if isinstance(data, (bytearray, memoryview)):
+    # In-place wipe for the mutable buffer types we support. bytearray, a
+    # writable memoryview, and SecureBytes (a bytearray subclass) all land here
+    # and are zeroed in the caller's own storage, then verified. A readonly
+    # memoryview - or any buffer that rejects slice assignment - raises and is
+    # reported as a FAILED wipe rather than a false success.
+    if isinstance(data, (bytearray, memoryview)):
+        try:
             data[:] = bytearray(len(data))
-            return verify_memory_zeroed(data)
-    except BaseException:
-        return False
-
-    # Handle different input types (mutable only - bytes/str handled above)
-    if isinstance(data, (SecureBytes, bytearray)):
-        target_data = data
-    elif isinstance(data, memoryview):
-        if data.readonly:
-            raise TypeError("Cannot wipe readonly memory view")
-        target_data = bytearray(data)
-    else:
-        try:
-            # Try to convert other types to bytes first
-            target_data = bytearray(bytes(data))
+            return verify_memory_zeroed(data, full_check=full_verification)
         except BaseException:
-            raise TypeError(
-                "Data must be SecureBytes, bytes, bytearray, memoryview, or convertible to bytes"
-            )
+            return False
 
-    length = len(target_data)
-    zeroing_successful = False
-
+    # #79/#80: anything still here is not None, not bytes/str, and not a
+    # bytearray/memoryview, so we have no writable handle on the caller's own
+    # storage - only a bytes() copy. Zeroing that copy would leave the caller's
+    # secret intact, so previously copying it, scrubbing the COPY with a
+    # multi-pass / explicit_bzero / msync routine, and returning True was a
+    # false "verified zeroed" (and, since every real buffer type returns above,
+    # that whole routine was dead code). Be honest instead, mirroring the
+    # bytes/str contract: best-effort zero the throwaway copy so it does not
+    # linger, then report failure - or raise in strict mode. Secrets that must
+    # be wiped have to be held in a bytearray / SecureBytes from creation.
+    if strict:
+        raise TypeError(
+            f"secure_memzero cannot wipe {type(data).__name__} in place; hold "
+            "secrets in bytearray or SecureBytes so they can be zeroed"
+        )
     try:
-        # Apply multi-layered wiping approach to defend against cold boot attacks
-
-        # First pass: Simple zeroing as a baseline
-        target_data[:] = bytearray(length)
-
-        # Only attempt the more complex wiping if we're not shutting down
-        if getattr(sys, "meta_path", None) is not None:
-            try:
-                # Increased number of overwrite rounds with different patterns for better cold boot protection
-                # Each pattern targets different memory retention characteristics
-
-                # 1. Random data (unpredictable)
-                random_data = bytearray(length)
-                try:
-                    random_data = bytearray(generate_secure_random_bytes(length))
-                    target_data[:] = random_data
-                    random_data[:] = bytearray(length)  # Zero the random data too
-                except BaseException:
-                    pass
-
-                # 2. All ones (0xFF) - alternate bit pattern to flip all bits
-                all_ones = bytearray([0xFF] * length)
-                target_data[:] = all_ones
-                all_ones[:] = bytearray(length)
-
-                # 3. Alternating pattern (0xAA) - 10101010 pattern
-                pattern_aa = bytearray([0xAA] * length)
-                target_data[:] = pattern_aa
-                pattern_aa[:] = bytearray(length)
-
-                # 4. Inverse alternating pattern (0x55) - 01010101 pattern
-                pattern_55 = bytearray([0x55] * length)
-                target_data[:] = pattern_55
-                pattern_55[:] = bytearray(length)
-
-                # 5. Random data again - further disrupt any residual state
-                try:
-                    random_data = bytearray(generate_secure_random_bytes(length))
-                    target_data[:] = random_data
-                    random_data[:] = bytearray(length)
-                except BaseException:
-                    pass
-
-                # Add random timing variations to prevent timing-based memory analysis
-                # This is especially important for cold boot attacks
-                time.sleep(secrets.randbelow(5) / 1000.0 + 0.001)
-
-                # Try platform-specific secure zeroing methods
-                try:
-                    # Force memory synchronization before secure zeroing
-                    # This helps ensure previous writes are committed to memory
-                    gc.collect()  # Request garbage collection to help flush caches
-
-                    system_name = platform.system()
-                    if system_name == "Windows":
-                        try:
-                            # Windows has a dedicated secure memory zeroing function
-                            buf = (ctypes.c_byte * length).from_buffer(target_data)
-                            result = ctypes.windll.kernel32.RtlSecureZeroMemory(
-                                ctypes.byref(buf), ctypes.c_size_t(length)
-                            )
-                            if result == 0:  # Success returns 0
-                                zeroing_successful = True
-                        except BaseException:
-                            pass
-                    elif system_name in ("Linux", "Darwin", "FreeBSD"):
-                        try:
-                            # Try to use platform-specific secure zeroing functions
-                            libc = ctypes.CDLL(None)
-
-                            # Modern libc versions provide explicit_bzero (similar to memset_s)
-                            if hasattr(libc, "explicit_bzero"):
-                                buf = (ctypes.c_byte * length).from_buffer(target_data)
-                                libc.explicit_bzero(ctypes.byref(buf), ctypes.c_size_t(length))
-                                zeroing_successful = True
-                            # Try POSIX memset_s if available
-                            elif hasattr(libc, "memset_s"):
-                                buf = (ctypes.c_byte * length).from_buffer(target_data)
-                                libc.memset_s(
-                                    ctypes.byref(buf),
-                                    ctypes.c_size_t(length),
-                                    ctypes.c_int(0),
-                                    ctypes.c_size_t(length),
-                                )
-                                zeroing_successful = True
-                        except BaseException:
-                            pass
-                except BaseException:
-                    pass
-
-                # Final zeroing using standard Python method
-                target_data[:] = bytearray(length)
-
-                # Ensure the data is flushed to actual memory (helpful against optimizations)
-                # Call msync equivalent if on POSIX systems
-                if platform.system() in ("Linux", "Darwin", "FreeBSD"):
-                    try:
-                        # Try to ensure memory writes are synchronized to physical memory
-                        libc = ctypes.CDLL(None, use_errno=True)
-                        if hasattr(libc, "msync"):
-                            try:
-                                libc.msync.argtypes = [
-                                    ctypes.c_void_p,
-                                    ctypes.c_size_t,
-                                    ctypes.c_int,
-                                ]
-                                libc.msync.restype = ctypes.c_int
-                                addr = ctypes.addressof(ctypes.c_char.from_buffer(target_data))
-                                page_size = get_memory_page_size()
-                                # Round address down to page boundary
-                                page_addr = (addr // page_size) * page_size
-                                # Round size up to page boundary
-                                page_len = (
-                                    (length + (addr - page_addr) + page_size - 1) // page_size
-                                ) * page_size
-
-                                # MS_SYNC: Synchronous flush (2 on most systems)
-                                MS_SYNC = 2
-                                # Best-effort (#103): msync only applies to
-                                # file-backed mappings, so ENOMEM/EINVAL on
-                                # anonymous heap memory is expected — but the
-                                # return value is no longer silently dropped.
-                                msync_result = libc.msync(
-                                    ctypes.c_void_p(page_addr),
-                                    ctypes.c_size_t(page_len),
-                                    MS_SYNC,
-                                )
-                                if msync_result != 0 and os.environ.get("DEBUG") == "1":
-                                    eprint(
-                                        "Debug: msync after wipe failed "
-                                        f"(errno {ctypes.get_errno()}) — expected "
-                                        "for anonymous memory"
-                                    )
-                            except Exception:
-                                pass
-                    except:
-                        pass
-
-            except BaseException:
-                pass
-
-            # One more zeroing pass
-            target_data[:] = bytearray(length)
-
-            # Verify that memory has been properly zeroed
-            zeroing_successful = verify_memory_zeroed(target_data, full_check=full_verification)
-
-    except Exception:
-        # Last resort zeroing attempt
-        try:
-            target_data[:] = bytearray(length)
-            zeroing_successful = verify_memory_zeroed(target_data)
-        except BaseException:
-            zeroing_successful = False
-
-    return zeroing_successful
+        scratch = bytearray(bytes(data))
+        scratch[:] = bytearray(len(scratch))
+    except BaseException:
+        pass
+    return False
 
 
 class SecureBytes(bytearray):
