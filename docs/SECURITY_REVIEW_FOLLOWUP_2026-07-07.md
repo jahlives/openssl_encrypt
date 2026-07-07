@@ -16,17 +16,18 @@ the function honest, but several callers still wrap immutable `bytes` in `bytear
 Counts: **2 High · 4 Medium · 8 Low · 6 Info** (20 findings). A 21st (RandomX
 parallel fail-open) was surfaced by crypto-reviewer during remediation — see **R1** below.
 
-> **Remediation status (2026-07-07).** Fixed on `feature/v1.5.x-development` (each with a
-> regression test + crypto-reviewer sign-off): **H1** (`2d646c4b`), **M4** (`65bcf52e`),
-> **M2** (`23646ac1` + `4eb40e54`), **M3** (`4eb40e54`), **R1** (`4eb40e54`). **H2 + M1**
-> (plugin trust-boundary) are deferred to a design-first task (architectural). Low/Info items
-> remain open for triage.
+> **Remediation status (2026-07-07).** Fixed on **both branches** (each with a regression
+> test + crypto-reviewer sign-off), v1.4.x / v1.5.x commits:
+> **H1** (`35c4dd5c` / `2d646c4b`), **M4** (`c2ac14be` / `65bcf52e`),
+> **M2** (`cc833442` / `23646ac1`+`4eb40e54`), **M3** & **R1** (`ec2cfbe8` / `4eb40e54`).
+> **H2 + M1** (plugin trust-boundary) are deferred to a design-first task (architectural).
+> Low/Info items remain open for triage.
 
 ---
 
 ## High
 
-### H1 — [HSM-1] FIDO2/HSM pepper printed in cleartext, bypassing the redaction chokepoint — **RESOLVED `2d646c4b`**
+### H1 — [HSM-1] FIDO2/HSM pepper printed in cleartext, bypassing the redaction chokepoint — **RESOLVED** (v1.4.x `35c4dd5c` / v1.5.x `2d646c4b`)
 - `hsm_cli.py:228` — `click.echo(f"Pepper (hex): {pepper.hex()}")`.
 - The `hsm fido2-test` command prints the full 32-byte derived hardware pepper (key material /
   KDF intermediate) to stdout **unconditionally** — no `--debug`, no `--unsafe-show-secrets`,
@@ -64,7 +65,7 @@ parallel fail-open) was surfaced by crypto-reviewer during remediation — see *
 - **Fix:** read the plugin bytes **once**; pass the same buffer to signature verification, AST
   analysis, hash pinning, and execution.
 
-### M2 — [MEM-1] Key material not actually wiped — no-op `secure_memzero(bytearray(immutable_bytes))` at multiple call sites — **RESOLVED `23646ac1` + `4eb40e54`**
+### M2 — [MEM-1] Key material not actually wiped — no-op `secure_memzero(bytearray(immutable_bytes))` at multiple call sites — **RESOLVED** (v1.4.x `cc833442`+`ec2cfbe8` / v1.5.x `23646ac1`+`4eb40e54`)
 - Same root cause across several files: an HKDF/hash output is immutable `bytes`; wrapping it in
   `bytearray(...)` and calling `secure_memzero` zeros a **copy** and returns success while the
   original secret lingers in unlocked heap (swap/core-dump exposure). This is the exact
@@ -84,7 +85,7 @@ parallel fail-open) was surfaced by crypto-reviewer during remediation — see *
   than calling `secure_memzero(bytearray(...))` (which is a no-op and gives false assurance).
   Consider `strict=True` in these finally blocks so a future immutable-input regression fails loud.
 
-### M3 — [KDF-1] Parallel vs sequential Independent-XOR derive different keys for Argon2 `rounds > 1` — **RESOLVED `4eb40e54`**
+### M3 — [KDF-1] Parallel vs sequential Independent-XOR derive different keys for Argon2 `rounds > 1` — **RESOLVED** (v1.4.x `ec2cfbe8` / v1.5.x `4eb40e54`)
 - `parallel_kdf.py:216-242` (`_kdf_worker` Argon2 branch runs `hash_secret_raw` **once**, ignoring
   `rounds`) vs `crypt_core.py:1955-1980` (sequential loops `rounds` with `round_salt = result[:32]`
   chaining). `--parallel-kdf` is a runtime flag **not persisted in metadata** (`crypt_core.py:5977`,
@@ -96,7 +97,7 @@ parallel fail-open) was surfaced by crypto-reviewer during remediation — see *
   `rounds != 1` for parallel dispatch. Add a parallel-vs-sequential key-equivalence test for
   Argon2 `rounds>1` (and Balloon — see L1).
 
-### M4 — [STREAM-1] Streaming per-chunk AEAD auth failures misclassified via substring matching — **RESOLVED `65bcf52e`**
+### M4 — [STREAM-1] Streaming per-chunk AEAD auth failures misclassified via substring matching — **RESOLVED** (v1.4.x `c2ac14be` / v1.5.x `65bcf52e`)
 - `streaming.py:360-366` (`decrypt_chunk`): tag failures for the library-direct ciphers
   (`aes-gcm`, `chacha20-poly1305`, `aes-ocb3`, `aes-gcm-siv`, `aes-siv`) raise
   `cryptography.exceptions.InvalidTag`, whose `str(e)` is **empty** → matches neither `"tag"` nor
@@ -109,7 +110,7 @@ parallel fail-open) was surfaced by crypto-reviewer during remediation — see *
   re-raise a uniform layer-agnostic `AuthenticationError` with a fixed message; don't interpolate
   `{e}`.
 
-### R1 — [KDF-2b] RandomX fails OPEN in the parallel Independent-XOR path — **RESOLVED `4eb40e54`**
+### R1 — [KDF-2b] RandomX fails OPEN in the parallel Independent-XOR path — **RESOLVED** (v1.4.x `ec2cfbe8` / v1.5.x `4eb40e54`)
 - Surfaced by crypto-reviewer during M2/M3 remediation. `parallel_kdf.py` (dispatcher) skipped
   RandomX with a warning when it was enabled but unavailable, whereas the sequential path fails
   closed (#71). With RandomX enabled alongside another KDF, the parallel path silently dropped a
