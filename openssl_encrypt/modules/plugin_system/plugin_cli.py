@@ -9,6 +9,7 @@ Mirrors identity_cli.main(args): a single main(args) dispatching on
 ``args.plugin_action`` and returning an exit code.
 """
 
+import os
 from pathlib import Path
 
 from ..crypt_utils import eprint
@@ -17,6 +18,7 @@ from .plugin_signing_cli import (
     enroll_trust_key,
     list_trust_keys,
     sign_plugin,
+    sign_plugin_package,
 )
 
 
@@ -34,9 +36,18 @@ def cmd_sign(args) -> int:
         eprint("❌ --signing-key is required for 'plugin sign'")
         return 2
     home = getattr(args, "gpg_home", None)
+    home = Path(home) if home else None
+    # A package plugin (a directory or a package __init__.py) is covered by a
+    # signed per-package manifest (H2); a lone .py file gets a per-file sidecar.
+    is_package = os.path.isdir(plugin_file) or (
+        os.path.isfile(plugin_file) and os.path.basename(plugin_file) == "__init__.py"
+    )
     try:
-        sig_path = sign_plugin(plugin_file, signing_key, home=Path(home) if home else None)
-    except FileNotFoundError as e:
+        if is_package:
+            sig_path = sign_plugin_package(plugin_file, signing_key, home=home)
+        else:
+            sig_path = sign_plugin(plugin_file, signing_key, home=home)
+    except (FileNotFoundError, ValueError) as e:
         eprint(f"❌ {e}")
         return 1
     except Exception as e:  # gpg failures, unavailable, etc.

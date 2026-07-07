@@ -188,6 +188,22 @@ class TestManifestPackageLoad(unittest.TestCase):
     def test_no_manifest_passes_gate_under_warn(self):
         self.assertTrue(self._manager("warn")._validate_plugin_file(self._init()))
 
+    def test_cli_sign_package_round_trips_under_enforce(self):
+        """The operator CLI helper sign_plugin_package must produce a manifest
+        the loader accepts (sign -> verify round-trip)."""
+        from openssl_encrypt.modules.plugin_system.plugin_signing_cli import sign_plugin_package
+
+        sig_path = sign_plugin_package(str(self.pkg), self.fpr, home=self.tmp / "home")
+        self.assertTrue(os.path.isfile(sig_path))
+        self.assertTrue(self._manager("enforce")._validate_plugin_file(self._init()))
+
+    def test_cli_sign_accepts_init_py_path(self):
+        """Signing accepts the package __init__.py path (not just the dir)."""
+        from openssl_encrypt.modules.plugin_system.plugin_signing_cli import sign_plugin_package
+
+        sign_plugin_package(self._init(), self.fpr, home=self.tmp / "home")
+        self.assertTrue(self._manager("enforce")._validate_plugin_file(self._init()))
+
 
 if __name__ == "__main__":
     unittest.main()
