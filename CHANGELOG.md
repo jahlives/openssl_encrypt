@@ -42,6 +42,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Documentation: `docs/FORMAT_V14_PLAN.md` extended with KDF-cascade audit
+  findings** (addendum, 2026-07-09): pre-staged v14 specs for M1 (scrypt
+  sequential stage truncates the intermediate to 256 bits for 512/1024-bit
+  keys) and M2 (default v9 path is a pure sequential cascade with a
+  weakest-link floor; make Independent-XOR the default or add a whole-chain
+  finalization step). Spec/plan only — no code change.
+
 - **`--debug` warning is now proportional to what it leaks**: the loud
   "SENSITIVE DATA LOGGING ACTIVE" banner and the "do not use on production data"
   notice now fire only for `--debug --unsafe-show-secrets` (the path that prints
