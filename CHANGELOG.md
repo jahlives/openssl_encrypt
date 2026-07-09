@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Documentation: KDF-chain security research report**
+  (`docs/KDF_CHAIN_SECURITY_RESEARCH.md`): literature review (verified,
+  cited) on the security of sequential/chained KDF constructions vs.
+  parallel XOR combiners — robust-combiner theory, cascade counterexamples,
+  generic-attack bounds, and the open questions relevant to this project's
+  KDF cascade design.
+
 - **`check-password` command**: a read-only subcommand that reports the strength
   of a password without encrypting anything. Prints the pattern-aware strength
   category, entropy (pattern-aware and raw), detected-weakness warnings, and
