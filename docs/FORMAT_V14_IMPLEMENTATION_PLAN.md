@@ -1,6 +1,6 @@
 # Implementation plan — `format_version 14` on `feature/v1.4.x-development`
 
-**Status update 2026-07-10 (evening): Phases 0-5 COMPLETE on 1.4.x.**
+**Status update 2026-07-10 (final): ALL PHASES COMPLETE — Phases 0-5 on 1.4.x AND Phase 6 (full 1.5.x port, commits 890cc2a1..b2e277b3, port-review verdict SHIP, 5583 tests green, all goldens byte-identical cross-line).**
 Commits: dd207223 (Phase 0 KEM-HKDF backport + legacy decrypt retry),
 5e552693 (Phase 1 scaffolding + embedded-PQC-key gate fix), 8fd0621c
 (Phase 2 TLV seed — landed in `generate_key_independent_xor` per the scope
@@ -12,7 +12,7 @@ for the `v10_xor_normalize` info string — are fixed in the Phase 5 commit).
 Additional pre-existing bugs found and fixed during the campaign:
 embedded-PQC-key salt gate (v11-13), keystore dual-encryption gates
 (v11-14), sequential-XOR+streaming data loss (now refused), RandomX
-wide-key combiner crash. **Phase 6 (full 1.5.x port) is still pending** —
+wide-key combiner crash. **Phase 6 (full 1.5.x port) COMPLETED 2026-07-10** —
 note for the port: 1.5.x also needs the Phase 0 legacy decrypt retry, the
 same gate generalizations, the sequential+streaming refusal, the RandomX
 normalization, and byte-identical golden assertions (all pinned hex values
