@@ -161,7 +161,7 @@ def encrypt_file_with_keystore(
 
                     # Check if private key is in metadata based on format version
                     pqc_private_key_present = False
-                    if format_version in [4, 5, 6, 7, 8, 9, 10]:
+                    if format_version >= 4:  # v4+ hierarchical metadata (see crypt_core gate fix)
                         # Format version 4/5/6/7/8/9/10 - check in encryption section
                         if "encryption" in metadata and "pqc_private_key" in metadata["encryption"]:
                             pqc_private_key_present = True
@@ -427,7 +427,7 @@ def decrypt_file_with_keystore(
         # Check if this file uses dual encryption
         if metadata:
             # Check based on format version
-            if format_version in [4, 5, 6, 7, 8, 9, 10]:
+            if format_version >= 4:  # v4+ hierarchical metadata (see crypt_core gate fix)
                 # Version 4/5/6/7/8/9/10 format - check in derivation_config.kdf_config
                 if (
                     "derivation_config" in metadata
@@ -470,7 +470,7 @@ def decrypt_file_with_keystore(
 
                         # Check for dual encryption flag, handling v3, v4, v5, v6, v7, v8, v9, and v10 formats
                         format_version = metadata.get("format_version", 1)
-                        if format_version in [4, 5, 6, 7, 8, 9, 10]:
+                        if format_version >= 4:  # v4+ hierarchical metadata (see crypt_core gate fix)
                             # Version 4/5/6/7/8/9/10 format - check in derivation_config.kdf_config
                             if (
                                 "derivation_config" in metadata
@@ -548,7 +548,7 @@ def decrypt_file_with_keystore(
             verify_hash = None
             verify_salt = None
 
-            if format_version in [4, 5, 6, 7, 8, 9, 10]:
+            if format_version >= 4:  # v4+ hierarchical metadata (see crypt_core gate fix)
                 # Version 4/5/6/7/8/9/10 format - check in derivation_config.kdf_config
                 if (
                     "derivation_config" in metadata

@@ -64,22 +64,24 @@ class TestSaltDerivationVersions(unittest.TestCase):
             shutil.rmtree(self.test_dir)
 
     def test_encrypt_v9_format(self):
-        """Test that new encryptions use format version 9."""
+        """Test that explicit v9 encryptions still write format version 9."""
         encrypted_file = os.path.join(self.test_dir, "encrypted_v9.enc")
 
-        # Encrypt file (should use v9 by default now)
+        # Encrypt file with an explicit v9 request (the default is now the
+        # latest independent-XOR format, M2 decision 2026-07-10)
         encrypt_file(
             input_file=self.test_file,
             output_file=encrypted_file,
             password=self.test_password,
             hash_config=self.hash_config,
             algorithm=EncryptionAlgorithm.AES_GCM,
+            format_version=9,
             quiet=True,
         )
 
         # Extract and verify metadata
         metadata = extract_file_metadata(encrypted_file)
-        self.assertEqual(metadata["format_version"], 9, "New files should use format version 9")
+        self.assertEqual(metadata["format_version"], 9, "Explicit v9 request must write v9")
 
     def test_decrypt_v9_file(self):
         """Test that v9 encrypted files can be decrypted."""
@@ -129,12 +131,15 @@ class TestSaltDerivationVersions(unittest.TestCase):
             quiet=True,
         )
 
-        # Verify it uses v9
+        # Verify it uses the secure default (not the cancelling v8/v10)
+        from openssl_encrypt.modules.crypt_core import LATEST_STABLE_FORMAT_VERSION
+
         metadata = extract_file_metadata(encrypted_v9)
+        self.assertNotIn(metadata["format_version"], (8, 10))
         self.assertEqual(
             metadata["format_version"],
-            9,
-            "New encryptions should use format version 9",
+            LATEST_STABLE_FORMAT_VERSION,
+            "New encryptions should use the latest stable format version",
         )
 
     def test_multi_round_kdf_v8_v9_security(self):
@@ -259,9 +264,12 @@ class TestSaltDerivationVersions(unittest.TestCase):
             quiet=True,
         )
 
-        # Verify metadata shows v9 (the secure default)
+        # Verify metadata shows the secure default (latest independent-XOR
+        # format since the M2 default flip)
+        from openssl_encrypt.modules.crypt_core import LATEST_STABLE_FORMAT_VERSION
+
         metadata = extract_file_metadata(encrypted_file)
-        self.assertEqual(metadata["format_version"], 9)
+        self.assertEqual(metadata["format_version"], LATEST_STABLE_FORMAT_VERSION)
 
         # Decrypt
         decrypt_file(

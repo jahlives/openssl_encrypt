@@ -303,6 +303,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Keystore dual-encryption metadata gates excluded v11-v14 files**
+  (pre-existing, surfaced by the v14 default flip): `keystore_wrapper` and
+  `keystore_utils` checked `format_version in [4..10]` before looking up
+  embedded PQC keys, key IDs, and the dual-encryption flag in the v4+
+  hierarchical metadata — files at v11-v13 fell into the legacy root-level
+  branch and keystore dual-encryption failed. All gates generalized to
+  `>= 4`, matching the crypt_core fix.
+
+- **RandomX component crashed independent-XOR derivation for wide-key
+  algorithms** (pre-existing): the RandomX KDF natively yields 32 bytes, so
+  with AES-SIV or Threefish-512/1024 (64/128-byte keys) the independent-XOR
+  combiner refused to XOR mismatched lengths and key derivation crashed.
+  The component output is now HKDF-normalized to the target key length
+  (byte-identical pass-through for 32-byte keys; mismatched configs never
+  produced a file, so nothing existing is affected). The KDF-without-
+  prior-hashing interactive warning and the HKDF-only rejection (#99) are
+  also enforced on the independent-XOR path now that it is the default.
+
+- **Sequential XOR + streaming silently produced undecryptable files** (found
+  while wiring the v14 default flip): requesting `--use-xor-composition` on
+  a file above the streaming threshold derived the key sequentially but
+  wrote a v12 streaming file, which the decrypt router always routes down
+  the independent-XOR path — every such file failed chunk authentication
+  (data loss). The combination is now refused with a clear error pointing
+  to `--no-streaming` (which round-trips correctly at v13-sequential)
+  instead of writing a file that cannot be decrypted.
+
 - **Embedded encrypted PQC private keys in v11-v13 files were undecryptable**
   ("Missing PQC key salt"): the decrypt-side `pqc_key_salt` lookup was gated
   on `format_version in [4..10]`, so files that embed a password-encrypted
@@ -445,6 +472,28 @@ Deliberately kept after re-evaluation: the decryption cost estimator
 inflated KDF metadata parameters, not cosmetic output.
 
 ### Security
+
+- **format_version 14 is now the default write format — independent-XOR
+  topology by default** (finding M2 Option A / M1, v14 implementation plan
+  Phase 4, 2026-07-10): new encryptions without an explicit format version
+  (CLI and library) now write `format_version 14` with independent-XOR key
+  derivation — the parallel robust-combiner topology that stays as strong as
+  its strongest component even if another KDF stage is broken — replacing
+  the plain sequential cascade default (weakest-link floor per the KDF-chain
+  research). Explicit sequential XOR (`--use-xor-composition`) stays a
+  supported opt-in pinned at format_version 13; explicit format-version
+  requests are honored unchanged. Streaming now writes v14 too (so streaming
+  PQC files carry the #83 transcript binding); explicit v12 requests keep
+  writing v12 and all v12 files keep decrypting. M1 is closed by
+  construction: the independent scrypt component derives the full key length
+  (64/128-byte keys for AES-SIV/Threefish are no longer funneled through a
+  256-bit sequential intermediate on any v14 write path) — pinned by golden
+  vectors, with a legacy vector guarding that the `< 14` sequential scrypt
+  stage stays byte-identical. Rekey with `--independent-xor` targets v14;
+  a plain rekey inherits the file's format version and normalizes the
+  topology to independent-XOR (the recommended mode — the rekeyed file is
+  self-consistent and gets a fresh key, so nothing breaks). All existing
+  files decrypt unchanged (decrypt is metadata-driven).
 
 - **format_version 14: KEM ciphertext transcript binding** (finding #83,
   v14 implementation plan Phase 3, 2026-07-10): for v12/v13 the PQC KEM

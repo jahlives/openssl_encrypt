@@ -481,11 +481,14 @@ class TestV8V10EncryptRefused(unittest.TestCase):
             **kw,
         )
 
-    def test_default_format_version_is_9_not_10(self):
+    def test_default_format_version_is_not_10(self):
         """A default encryption must NOT produce the cancelling v10 format."""
+        from openssl_encrypt.modules.crypt_core import LATEST_STABLE_FORMAT_VERSION
+
         self._encrypt()
         meta = extract_file_metadata(self.out_file)
-        self.assertEqual(meta["format_version"], 9)
+        self.assertNotEqual(meta["format_version"], 10)
+        self.assertEqual(meta["format_version"], LATEST_STABLE_FORMAT_VERSION)
 
     def test_encrypt_v10_is_refused(self):
         """Explicit v10 encryption is refused (cost-bypass version)."""
