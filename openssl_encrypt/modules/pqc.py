@@ -66,6 +66,15 @@ except Exception:
     LIBOQS_AVAILABLE = False
 
 
+class PQCAuthenticationError(ValueError):
+    """AEAD authentication failure during PQC decryption.
+
+    Subclasses ValueError for backward compatibility with existing callers.
+    Used structurally (no error-string matching) to scope the legacy
+    KEM-key-derivation compatibility retry to authentication failures only.
+    """
+
+
 # Define supported PQC algorithms
 class PQCAlgorithm(Enum):
     # NIST FIPS 203 standardized naming (ML-KEM)
@@ -452,6 +461,35 @@ class PQCipher:
         else:
             return hashlib.sha256(shared_secret).digest()
 
+    def _derive_symmetric_key(self, shared_secret: bytes, key_length: int = 32) -> bytes:
+        """Derive a symmetric key from a KEM shared secret.
+
+        For format_version >= 12: uses HKDF-SHA256 with algorithm name as info,
+        providing proper domain separation and extract-then-expand semantics.
+
+        For legacy formats (< 12 or None): uses bare SHA-256 for backward
+        compatibility with existing encrypted files.
+
+        Args:
+            shared_secret: Raw shared secret from KEM encapsulation/decapsulation.
+            key_length: Desired key length in bytes (default 32 for AES-256).
+
+        Returns:
+            Derived symmetric key bytes.
+        """
+        if self.format_version is not None and self.format_version >= 12:
+            from cryptography.hazmat.primitives import hashes
+            from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+
+            return HKDF(
+                algorithm=hashes.SHA256(),
+                length=key_length,
+                salt=None,
+                info=b"openssl_encrypt-kem-key-" + self.algorithm_name.encode(),
+            ).derive(shared_secret)
+        else:
+            return hashlib.sha256(shared_secret).digest()
+
     def generate_keypair(self) -> Tuple[bytes, bytes]:
         """
         Generate a post-quantum keypair
@@ -694,6 +732,15 @@ class PQCipher:
         """
         Decrypt data that was encrypted with the corresponding public key
 
+        For format_version >= 12 the symmetric key is derived via HKDF (see
+        _derive_symmetric_key). Files written by openssl_encrypt 1.4.x releases
+        <= 1.4.7 carry the same format_version but used the legacy bare-SHA256
+        derivation; to keep those decryptable, a failed v12+ decryption is
+        retried once with the legacy derivation. A wrong key cannot pass the
+        AEAD authentication, so the retry cannot produce silently wrong
+        plaintext, and no attacker-controllable downgrade is introduced (the
+        legacy-keyed file population legitimately exists).
+
         Args:
             encrypted_data (bytes): The encrypted data
             private_key (bytes): The recipient's private key
@@ -706,6 +753,52 @@ class PQCipher:
 
         Raises:
             ValueError: If decryption fails
+        """
+        try:
+            return self._decrypt_impl(encrypted_data, private_key, file_contents, aad)
+        except PQCAuthenticationError:
+            if self.format_version is None or self.format_version < 12:
+                raise
+            # v12+ HKDF-keyed authentication failed: retry once with the
+            # legacy bare-SHA256 KEM key used by 1.4.x releases <= 1.4.7.
+            # Non-authentication failures (metadata mismatch, structural
+            # errors) are re-raised immediately above and never retried.
+            try:
+                plaintext = self._decrypt_impl(
+                    encrypted_data,
+                    private_key,
+                    file_contents,
+                    aad,
+                    legacy_kem_kdf=True,
+                )
+            except Exception:
+                raise ValueError(
+                    "PQC decryption failed with both the HKDF (v12+) and the "
+                    "legacy KEM key derivation. The file may be corrupted or "
+                    "the wrong private key was provided."
+                )
+            if not self.quiet:
+                eprint(
+                    "NOTICE: this file was encrypted with the legacy (pre-1.4.8) "
+                    "KEM key derivation. It remains readable, but re-encrypting "
+                    "it is recommended for cross-version compatibility."
+                )
+            return plaintext
+
+    def _decrypt_impl(
+        self,
+        encrypted_data: bytes,
+        private_key: bytes,
+        file_contents: bytes = None,
+        aad: bytes = None,
+        legacy_kem_kdf: bool = False,
+    ) -> bytes:
+        """Single decryption attempt; see decrypt() for the public contract.
+
+        Args:
+            legacy_kem_kdf: When True, derive the KEM symmetric key with the
+                legacy bare-SHA256 scheme regardless of format_version (used
+                by the compatibility retry in decrypt()).
         """
         logger.debug(
             f"DECRYPT:PQC_KEM decrypt() called with encrypted_data length: {len(encrypted_data)}"
@@ -796,9 +889,14 @@ class PQCipher:
 
                 # Derive the symmetric key using secure memory operations
                 with SecureBytes(shared_secret) as secure_shared_secret:
-                    symmetric_key = SecureBytes(
-                        self._derive_symmetric_key(bytes(secure_shared_secret))
-                    )
+                    if legacy_kem_kdf:
+                        symmetric_key = SecureBytes(
+                            hashlib.sha256(bytes(secure_shared_secret)).digest()
+                        )
+                    else:
+                        symmetric_key = SecureBytes(
+                            self._derive_symmetric_key(bytes(secure_shared_secret))
+                        )
 
                 # Get the encryption_data from the metadata if available
                 metadata_encryption_data = None
@@ -941,7 +1039,7 @@ class PQCipher:
                         "AEAD decryption failed. No fallback to unauthenticated "
                         "ciphers is permitted."
                     )
-                    raise ValueError("Decryption failed: authentication error")
+                    raise PQCAuthenticationError("Decryption failed: authentication error")
         except Exception as e:
             if not self.quiet:
                 eprint(f"Error in post-quantum decryption: {e}")

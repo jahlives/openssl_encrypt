@@ -419,6 +419,21 @@ inflated KDF metadata parameters, not cosmetic output.
 
 ### Security
 
+- **Legacy KEM key-derivation decrypt retry — reads pre-1.4.8 PQC files**
+  (finding #83 backport counterpart, v14 plan Phase 0, 2026-07-10): 1.4.x
+  releases up to 1.4.7 derived every PQC KEM symmetric key as bare
+  `sha256(shared_secret)`, while this line uses HKDF-SHA256 for
+  `format_version >= 12` — so v12 (streaming) and v13 (Independent-XOR) PQC
+  files written by those releases could not be decrypted here (confirmed
+  empirically: InvalidTag). When HKDF-key authentication fails on a v12/v13
+  PQC file, decryption now retries once with the legacy key (safe — the
+  AEAD tag rejects wrong keys, and the legacy file population legitimately
+  exists, so no new downgrade surface) and prints a re-encryption
+  recommendation. Scoped structurally via the new `PQCAuthenticationError`
+  (no error-string matching). Files below v12 and all non-PQC files derive
+  byte-identically to before.
+
+
 Follow-up security review (2026-07-07) — findings fixed with regression tests
 and crypto-reviewer sign-off:
 
