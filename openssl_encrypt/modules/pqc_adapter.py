@@ -283,7 +283,7 @@ class ExtendedPQCipher(PQCipher):
         try:
             # Derive symmetric key using secure memory
             symmetric_key = SecureBytes(
-                self._derive_symmetric_key(bytes(secure_shared_secret))
+                self._derive_symmetric_key(bytes(secure_shared_secret), kem_ciphertext=ciphertext)
             )
 
             # Select the appropriate cipher based on encryption_data
@@ -426,7 +426,9 @@ class ExtendedPQCipher(PQCipher):
                 # wrong plaintext. (Threefish failures are not retried: no
                 # legacy 1.4.x adapter-KEM threefish files exist.)
                 attempts = [False]
-                if self.format_version is not None and self.format_version >= 12:
+                # Legacy retry only for v12/v13 (files written by <= 1.4.7);
+                # no v14+ file can carry a legacy bare-SHA256 key.
+                if self.format_version is not None and 12 <= self.format_version < 14:
                     attempts.append(True)
                 last_auth_error = None
                 for legacy_kem_kdf in attempts:
@@ -436,7 +438,10 @@ class ExtendedPQCipher(PQCipher):
                         )
                     else:
                         symmetric_key = SecureBytes(
-                            self._derive_symmetric_key(bytes(secure_shared_secret))
+                            self._derive_symmetric_key(
+                                bytes(secure_shared_secret),
+                                kem_ciphertext=encapsulated_key,
+                            )
                         )
 
                     # Select the appropriate cipher based on encryption_data

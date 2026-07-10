@@ -446,6 +446,20 @@ inflated KDF metadata parameters, not cosmetic output.
 
 ### Security
 
+- **format_version 14: KEM ciphertext transcript binding** (finding #83,
+  v14 implementation plan Phase 3, 2026-07-10): for v12/v13 the PQC KEM
+  symmetric key is HKDF(shared_secret) with only the algorithm name as
+  domain separation — nothing binds the derived key to the KEM encapsulation
+  ciphertext or the AEAD choice. At `format_version >= 14` the derivation
+  binds the full transcript:
+  `HKDF-SHA256(info = "openssl_encrypt.kem.v14|" + algorithm + "|" +
+  encryption_data + "|ct=" + sha256(kem_ciphertext))` (info layout pinned
+  for cross-line byte-identity). A missing ciphertext at v14 raises — no
+  silent fallback. The legacy bare-SHA256 decrypt retry is scoped to
+  v12/v13 only (no v14 file can carry a legacy key, so v14 fails after a
+  single authenticated attempt). v12/v13 derivations are byte-identical to
+  before.
+
 - **format_version 14: length-prefixed (TLV) KDF seed** (finding #100,
   v14 implementation plan Phase 2, 2026-07-10): below v14 the
   independent-XOR key derivation seeds every component from
