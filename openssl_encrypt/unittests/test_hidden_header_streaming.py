@@ -70,7 +70,7 @@ class _Base(unittest.TestCase):
         with open(self.enc, "rb") as f:
             head = f.read(1 << 16)
         meta = json.loads(base64.b64decode(head.split(b":", 1)[0]))
-        self.assertEqual(meta["format_version"], 12)
+        self.assertIn(meta["format_version"], (12, 14))
         self.assertTrue(meta.get("streaming", {}).get("enabled", False))
 
     def _assert_hidden_streaming_file(self, second_password=None):
@@ -82,7 +82,7 @@ class _Base(unittest.TestCase):
         with open(self.enc, "rb") as f:
             header_bytes, body_offset = read_hidden_header(f, second_password=second_password)
         meta = json.loads(header_bytes)
-        self.assertEqual(meta["format_version"], 12)
+        self.assertIn(meta["format_version"], (12, 14))
         self.assertTrue(meta.get("streaming", {}).get("enabled", False))
         self.assertGreater(body_offset, 44)
 

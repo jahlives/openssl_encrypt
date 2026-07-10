@@ -957,9 +957,12 @@ class TestStreamingIntegration(unittest.TestCase):
             )
             self.assertTrue(result)
 
-            # Verify metadata shows v12 + streaming
+            # Verify metadata shows the streaming format version (latest
+            # since the M2 default flip; explicit v12 requests still write 12)
+            from openssl_encrypt.modules.crypt_core import LATEST_STABLE_FORMAT_VERSION
+
             info = extract_file_metadata(output_enc)
-            self.assertEqual(info["format_version"], 12)
+            self.assertEqual(info["format_version"], LATEST_STABLE_FORMAT_VERSION)
             self.assertTrue(info["metadata"].get("streaming", {}).get("enabled", False))
 
             # Decrypt
@@ -1485,7 +1488,9 @@ class TestStreamingDecryptMemory(unittest.TestCase):
         _, peak = tracemalloc.get_traced_memory()
         tracemalloc.stop()
 
-        self.assertEqual(meta["format_version"], 12)
+        from openssl_encrypt.modules.crypt_core import LATEST_STABLE_FORMAT_VERSION
+
+        self.assertEqual(meta["format_version"], LATEST_STABLE_FORMAT_VERSION)
         self.assertLess(
             peak,
             enc_size,
@@ -1710,11 +1715,14 @@ class TestFullPipelineStreamingRoundtrip(unittest.TestCase):
             kw.update(extra)
             self.assertTrue(encrypt_file(**kw))
 
-            # Confirm it really streamed (format_version 12 metadata).
+            # Confirm it really streamed (streaming metadata + the current
+            # streaming format version).
+            from openssl_encrypt.modules.crypt_core import LATEST_STABLE_FORMAT_VERSION
+
             with open(op, "rb") as f:
                 meta = json.loads(base64.b64decode(f.read().split(b":", 1)[0]))
             self.assertTrue(meta.get("streaming", {}).get("enabled"))
-            self.assertEqual(meta.get("format_version"), 12)
+            self.assertEqual(meta.get("format_version"), LATEST_STABLE_FORMAT_VERSION)
 
             result = decrypt_file(
                 input_file=op,

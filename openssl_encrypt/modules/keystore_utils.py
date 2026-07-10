@@ -348,8 +348,9 @@ def get_pqc_key_for_decryption(args, hash_config=None, metadata=None):
             key_id = metadata["derivation_config"]["keystore_id"]
             if not getattr(args, "quiet", False):
                 eprint(f"Found key ID in metadata derivation_config (v6): {key_id}")
-    elif format_version in [4, 5, 7, 9] and metadata:
-        # Check for key ID in format version 4/5/7/9 structure (all use same kdf_config structure)
+    elif format_version >= 4 and metadata:
+        # Check for key ID in the v4+ structure (all use the same kdf_config
+        # layout; v6 is handled by the dedicated branch above)
         if (
             "derivation_config" in metadata
             and "kdf_config" in metadata["derivation_config"]
@@ -390,7 +391,7 @@ def get_pqc_key_for_decryption(args, hash_config=None, metadata=None):
                     # Get format version from metadata
                     format_version = header_config.get("format_version", 3)
 
-                    if format_version in [4, 5, 6, 7, 9]:
+                    if format_version >= 4:  # v4+ hierarchical metadata (see crypt_core gate fix)
                         # Extract from format version 4/5/6/7/9 structure (all use encryption section)
                         if (
                             "encryption" in header_config

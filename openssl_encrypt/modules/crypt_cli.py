@@ -37,6 +37,7 @@ from .algorithm_warnings import (
 from .crypt_core import (
     ARGON2_AVAILABLE,
     ARGON2_TYPE_INT_MAP,
+    LATEST_STABLE_FORMAT_VERSION,
     WHIRLPOOL_AVAILABLE,
     EncryptionAlgorithm,
     check_argon2_support,
@@ -333,7 +334,7 @@ class StdinMetadataExtractor:
             # Extract algorithm info based on format version
             format_version = metadata.get("format_version", 1)
 
-            if format_version in [4, 5, 6, 7, 9]:
+            if format_version >= 4:  # v4+ hierarchical metadata (see crypt_core gate fix)
                 encryption = metadata.get("encryption", {})
                 algorithm = encryption.get("algorithm", "fernet")
                 encryption_data = encryption.get("encryption_data", "aes-gcm")
@@ -8314,14 +8315,14 @@ def main_with_args(args=None):
                             )
                             sys.exit(1)
 
-                        if use_independent_xor:
-                            format_version = (
-                                13  # Independent XOR + per-component domain-separated salts (v13)
-                            )
-                        elif use_xor:
-                            format_version = 13  # Sequential XOR (v13, cancellation fixed)
+                        if use_xor:
+                            # Sequential XOR stays pinned at v13 (M2 decision 2026-07-10);
+                            # v14+ is independent-XOR only.
+                            format_version = 13
                         else:
-                            format_version = 9  # Default (secure chained salt)
+                            # Default and --independent-xor: latest independent-XOR-only
+                            # format (encrypt_file resolves None to it).
+                            format_version = None
 
                         success = encrypt_file(
                             args.input,
@@ -8597,14 +8598,14 @@ def main_with_args(args=None):
                     )
                     sys.exit(1)
 
-                if use_independent_xor:
-                    format_version = (
-                        13  # Independent XOR + per-component domain-separated salts (v13)
-                    )
-                elif use_xor:
-                    format_version = 13  # Sequential XOR (v13, cancellation fixed)
+                if use_xor:
+                    # Sequential XOR stays pinned at v13 (M2 decision 2026-07-10);
+                    # v14+ is independent-XOR only.
+                    format_version = 13
                 else:
-                    format_version = 9  # Default (secure chained salt)
+                    # Default and --independent-xor: latest independent-XOR-only
+                    # format (encrypt_file resolves None to it).
+                    format_version = None
 
                 success = encrypt_file(
                     args.input,
@@ -9257,14 +9258,14 @@ def main_with_args(args=None):
                         )
                         sys.exit(1)
 
-                    if use_independent_xor:
-                        format_version = (
-                            13  # Independent XOR + per-component domain-separated salts (v13)
-                        )
-                    elif use_xor:
-                        format_version = 13  # Sequential XOR (v13, cancellation fixed)
+                    if use_xor:
+                        # Sequential XOR stays pinned at v13 (M2 decision 2026-07-10);
+                        # v14+ is independent-XOR only.
+                        format_version = 13
                     else:
-                        format_version = 9  # Default (secure chained salt)
+                        # Default and --independent-xor: latest independent-XOR-only
+                        # format (encrypt_file resolves None to it).
+                        format_version = None
 
                     success = encrypt_file(
                         args.input,
@@ -10658,9 +10659,10 @@ def main_with_args(args=None):
                 use_independent_xor = getattr(args, "independent_xor", False)
 
                 if use_independent_xor:
-                    rekey_format_version = 13  # Independent XOR (v13)
+                    # Latest independent-XOR-only format (M2 decision 2026-07-10).
+                    rekey_format_version = LATEST_STABLE_FORMAT_VERSION
                 elif use_xor:
-                    rekey_format_version = 13  # Sequential XOR (v13)
+                    rekey_format_version = 13  # Sequential XOR stays pinned at v13
                 else:
                     rekey_format_version = None  # Inherit from file
 

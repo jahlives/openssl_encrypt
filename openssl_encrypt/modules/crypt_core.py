@@ -2640,10 +2640,115 @@ def compute_kdf_independent(
         if progress and not quiet:
             eprint()
 
-        return SecureBytes(result)
+        result_sb = SecureBytes(result)
+        if len(result_sb) != key_length:
+            # RandomX natively yields 32 bytes regardless of the requested
+            # hash_len; expand to the target key length so wide-key algorithms
+            # (AES-SIV, Threefish-512/1024) can XOR this component. Same
+            # HKDF normalization as the other components; a 32-byte target is
+            # a pass-through, so existing 32-byte-key files are unaffected
+            # (mismatched lengths previously crashed, so no file with a
+            # different derivation exists).
+            normalized = normalize_to_key_length_secure(result_sb, key_length)
+            secure_memzero(result_sb)
+            return normalized
+        return result_sb
 
     else:
         raise ValueError(f"Unsupported KDF type: {kdf_type}")
+
+
+def _kdf_security_preflight_independent(hash_config, quiet):
+    """KDF-without-prior-hashing warning + HKDF-only rejection (#99).
+
+    Mirrors the sequential generate_key() preflight so the independent-XOR
+    path (the default write topology since the M2 flip) enforces the same
+    user-facing contract: KDFs operating directly on a possibly low-entropy
+    password without hash rounds prompt for confirmation (interactive TTY
+    only), and an HKDF-only configuration is refused at encryption time.
+    Decryption (metadata-driven configs) is exempt for backward compat.
+    """
+    if hash_config and "derivation_config" in hash_config:
+        _dc = hash_config["derivation_config"]
+        _hash_cfg = _dc.get("hash_config", {})
+        _kdf_cfg = _dc.get("kdf_config", {})
+    else:
+        _hash_cfg = hash_config or {}
+        _kdf_cfg = hash_config or {}
+
+    has_hash_iterations = any(
+        get_hash_rounds(_hash_cfg, algo) > 0
+        for algo in [
+            "sha256",
+            "sha512",
+            "sha3_256",
+            "sha3_512",
+            "blake2b",
+            "blake3",
+            "shake256",
+            "whirlpool",
+        ]
+    )
+    use_argon2 = _kdf_cfg.get("argon2", {}).get("enabled", False)
+    use_scrypt = _kdf_cfg.get("scrypt", {}).get("enabled", False)
+    use_pbkdf2 = _kdf_cfg.get("pbkdf2_iterations", 0) > 0
+    use_balloon = _kdf_cfg.get("balloon", {}).get("enabled", False)
+    use_hkdf = _kdf_cfg.get("hkdf", {}).get("enabled", False)
+    use_randomx = _kdf_cfg.get("randomx", {}).get("enabled", False)
+
+    is_decryption = bool(hash_config and hash_config.get("_is_from_decryption_metadata", False))
+
+    any_kdf_enabled = use_argon2 or use_randomx or use_balloon or use_hkdf or use_scrypt
+    if any_kdf_enabled and not has_hash_iterations and not quiet and not is_decryption:
+        import sys
+
+        # Only prompt if stdin is a TTY (interactive terminal); in
+        # non-interactive mode (pytest, pipes, ...) skip the prompt.
+        if sys.stdin.isatty():
+            enabled_kdfs = []
+            if use_argon2:
+                enabled_kdfs.append("Argon2")
+            if use_randomx:
+                enabled_kdfs.append("RandomX")
+            if use_balloon:
+                enabled_kdfs.append("Balloon")
+            if use_hkdf:
+                enabled_kdfs.append("HKDF")
+            if use_scrypt:
+                enabled_kdfs.append("Scrypt")
+
+            eprint("\n\u26a0\ufe0f  WARNING: Security Risk Detected")
+            eprint(
+                f"KDFs ({', '.join(enabled_kdfs)}) will operate directly on your password without prior hashing."
+            )
+            eprint("This may be insecure if your password is short or has low entropy.")
+            eprint(
+                "Consider adding hash rounds (--sha256-rounds, --blake2b-rounds, etc.) for better security."
+            )
+            eprint("Continue anyway? [y/N]: ", end="", flush=True)
+            try:
+                response = input().strip().lower()
+                if response not in ["y", "yes"]:
+                    eprint("Operation cancelled by user.")
+                    sys.exit(1)
+                eprint()
+            except (KeyboardInterrupt, EOFError):
+                eprint("\nOperation cancelled by user.")
+                sys.exit(1)
+
+    # Reject non-stretching-only KDF configs at encryption time (#99).
+    if (
+        use_hkdf
+        and not (use_argon2 or use_scrypt or use_balloon or use_randomx or use_pbkdf2)
+        and not has_hash_iterations
+        and not is_decryption
+    ):
+        raise ValidationError(
+            "Refusing key-derivation config with HKDF as the only KDF: HKDF does "
+            "not stretch passwords. Enable at least one memory-hard or iterated "
+            "component (Argon2, scrypt, Balloon, RandomX, PBKDF2 iterations, or "
+            "hash rounds)."
+        )
 
 
 def generate_key_independent_xor(
@@ -2756,6 +2861,10 @@ def generate_key_independent_xor(
         password = password.encode("utf-8")
     if isinstance(salt, str):
         salt = salt.encode("utf-8")
+
+    # Same KDF security preflight as the sequential path (interactive
+    # warning for KDFs without prior hashing; HKDF-only rejection, #99).
+    _kdf_security_preflight_independent(hash_config, quiet)
 
     # Apply HSM pepper if provided. Track the buffer WE allocate so it can be
     # wiped in `finally` without touching the caller's password object (M2 [MEM-1]).
@@ -6225,7 +6334,7 @@ def encrypt_file(
     integrity=False,
     pepper_plugin=None,
     pepper_name=None,
-    format_version=9,
+    format_version=None,
     parallel_kdf=False,
     kdf_workers=None,
     chunk_size=None,
@@ -6283,6 +6392,14 @@ def encrypt_file(
     # time, XORing the last stage with itself so it cancels out -- with a single
     # memory-hard KDF placed last the key collapses to ~SHA256(password||salt),
     # bypassing the KDF cost (audit 2026-07-06 #3; SECURITY advisory 2026-02).
+    # Default version resolution (M2 decision 2026-07-10, Option A): writes
+    # without an explicit format_version use the latest independent-XOR-only
+    # format; explicit sequential XOR stays pinned at v13 (the last version
+    # that carries the sequential topology). Explicit values are honored
+    # unchanged for API backward compatibility.
+    if format_version is None:
+        format_version = 13 if xor_mode == "sequential" else LATEST_STABLE_FORMAT_VERSION
+
     # These versions remain fully DECRYPTABLE; only new encryption is blocked.
     # The escape hatch exists solely so the legacy-format regression tests can
     # still produce v8/v10 fixtures on purpose.
@@ -6290,7 +6407,7 @@ def encrypt_file(
         raise ValueError(
             f"Refusing to encrypt a new file with format_version={format_version}: "
             "the v8/v10 sequential-XOR derivation cancels the last KDF stage "
-            "(cost bypass) and is decrypt-only. Use format_version=9 (default) or 13."
+            "(cost bypass) and is decrypt-only. Use the default, 9, or 13."
         )
 
     # Reset mutable class-level state to prevent leakage between operations
@@ -6751,13 +6868,31 @@ def encrypt_file(
             f"(--use-xor-composition)"
         )
 
-    if _will_stream and format_version != 12:
+    if _will_stream and xor_mode == "sequential":
+        # Streaming has never supported sequential XOR: the decrypt router
+        # sends every v11/v12 streaming file down the independent path, so a
+        # sequentially-derived streaming file fails authentication on decrypt
+        # (verified pre-existing data-loss bug, 2026-07-10). Refuse cleanly
+        # instead of writing an undecryptable file.
+        raise ValueError(
+            "sequential XOR (--use-xor-composition) is not supported with "
+            "streaming: the resulting file could not be decrypted. Disable "
+            "streaming (--no-streaming / no_streaming=True) or use the "
+            "default independent mode."
+        )
+
+    if _will_stream and format_version not in (12, LATEST_STABLE_FORMAT_VERSION):
+        # Streaming pins the format version before key derivation so the
+        # decrypt-side key matches (issue #50). Requests get the latest
+        # version so streaming PQC files carry the v14 transcript binding;
+        # an explicit format_version=12 request keeps writing v12.
         if debug:
             logger.debug(
-                f"STREAMING: forcing format_version {format_version} -> 12 before key "
-                f"derivation so the decrypt-side key matches (issue #50)"
+                f"STREAMING: forcing format_version {format_version} -> "
+                f"{LATEST_STABLE_FORMAT_VERSION} before key derivation so the "
+                f"decrypt-side key matches (issue #50)"
             )
-        format_version = 12
+        format_version = LATEST_STABLE_FORMAT_VERSION
 
     # Resolve the XOR composition mode. `xor_mode` decouples mode from version so
     # that v13 can hold EITHER mode (independent per-component salts, or fixed
@@ -6930,19 +7065,20 @@ def encrypt_file(
             # New cascade streaming files use the real 192-bit XChaCha layer
             # (format 2); the matching metadata flag is set at the choke point.
             _cascade_enc_streaming = CascadeEncryption(
-                cascade_config, format_version=12, xchacha_nonce_format=2
+                cascade_config, format_version=format_version, xchacha_nonce_format=2
             )
             _cascade_salt_streaming = secrets.token_bytes(32)
 
         # Create streaming encryptor
-        # Streaming always uses format_version=12 (metadata is written as v12)
+        # Streaming pins the format version at the force site above (12 for
+        # sequential requests, the latest otherwise); both use v12+ semantics.
         streaming_enc = StreamingEncryptor(
             key=key,
             algorithm=algorithm_value,
             chunk_size=_streaming_chunk_size,
             cascade_encryptor=_cascade_enc_streaming,
             cascade_salt=_cascade_salt_streaming,
-            format_version=12,
+            format_version=format_version,
             # New single-cipher streaming xchacha files use the real 192-bit
             # construction (24-byte per-chunk nonces); the matching metadata
             # flag is set at the choke point below.
@@ -6981,7 +7117,7 @@ def encrypt_file(
             include_encrypted_hash=False,
             encrypted_hash=None,
             aad_mode=True,
-            format_version=12,
+            format_version=format_version,
         )
 
         # Add streaming section to metadata
@@ -9067,12 +9203,13 @@ def _rekey_envelope_fast(
     # Only the formats envelope actually writes; unknown shapes fall back.
     # _derive_envelope_kek is version-generic (sequential vs independent-XOR by
     # format_version/xor_mode), so every version envelope emits is fast-path
-    # eligible: v9 is the default, v13 the sequential-XOR opt-in, v11/12 the
-    # independent-XOR forms, and v10 a legacy (decrypt-only) file.
+    # eligible: v14 the current independent-XOR default, v9 the previous
+    # default, v13 the sequential-XOR opt-in, v11/12 the older independent-XOR
+    # forms, and v10 a legacy (decrypt-only) file.
     if not (
         wrapped_b64
         and isinstance(derivation_config, dict)
-        and format_version in (9, 10, 11, 12, 13)
+        and format_version in (9, 10, 11, 12, 13, 14)
     ):
         return False
 
@@ -9964,7 +10101,7 @@ def decrypt_file(
         # For streaming format v12, the payload is binary (not base64)
         # The streaming decryptor reads the file directly, so we skip base64 decode
         _temp_format_version = metadata.get("format_version", 1)
-        if _temp_format_version == 12 and metadata.get("streaming", {}).get("enabled", False):
+        if _temp_format_version in (12, 14) and metadata.get("streaming", {}).get("enabled", False):
             encrypted_data = b""  # Placeholder; streaming decryptor reads file directly
         else:
             # Non-streaming: load the full encrypted payload
@@ -10913,7 +11050,7 @@ def decrypt_file(
                 eprint(f"Error processing PQC private key: {str(e)}")
             # If there's an error, we'll continue without a private key    # Decrypt the data
     # --- Streaming decryption path for format_version 12 ---
-    if format_version == 12 and metadata.get("streaming", {}).get("enabled", False):
+    if format_version in (12, 14) and metadata.get("streaming", {}).get("enabled", False):
         from .streaming import StreamingDecryptor
 
         streaming_meta = metadata["streaming"]
