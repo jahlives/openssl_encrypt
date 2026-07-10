@@ -57,10 +57,11 @@ class TestKemHkdfDerivation(unittest.TestCase):
         derived = cipher._derive_symmetric_key(FIXED_SECRET)
         self.assertEqual(derived, _ref_hkdf(FIXED_SECRET, cipher.algorithm_name))
 
-    def test_v13_and_v14_use_same_hkdf_as_v12(self):
-        for fv in (13, 14):
-            derived = self._cipher(fv)._derive_symmetric_key(FIXED_SECRET)
-            self.assertEqual(derived.hex(), GOLDEN_HKDF_MLKEM768_HEX, f"fv={fv}")
+    def test_v13_uses_same_hkdf_as_v12(self):
+        # v14 uses the transcript-bound derivation instead (finding #83,
+        # covered by test_format_v14_kem_binding.py).
+        derived = self._cipher(13)._derive_symmetric_key(FIXED_SECRET)
+        self.assertEqual(derived.hex(), GOLDEN_HKDF_MLKEM768_HEX)
 
     def test_legacy_versions_use_bare_sha256(self):
         for fv in (None, 5, 9, 10, 11):

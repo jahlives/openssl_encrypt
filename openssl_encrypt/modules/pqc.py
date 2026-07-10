@@ -526,8 +526,21 @@ class PQCipher:
         # All Kyber/ML-KEM/HQC algorithms are KEM algorithms
         self.is_kem = any(x in self.algorithm_name.lower() for x in ["kyber", "ml-kem", "hqc"])
 
-    def _derive_symmetric_key(self, shared_secret: bytes, key_length: int = 32) -> bytes:
+    def _derive_symmetric_key(
+        self,
+        shared_secret: bytes,
+        key_length: int = 32,
+        kem_ciphertext: bytes = None,
+    ) -> bytes:
         """Derive a symmetric key from a KEM shared secret.
+
+        For format_version >= 14: HKDF-SHA256 binding the full transcript —
+        the algorithm name, the AEAD choice (encryption_data), and a SHA-256
+        digest of the KEM encapsulation ciphertext (finding #83). A missing
+        ciphertext raises; there is no silent fallback. The info layout is
+        pinned for cross-line (1.4.x/1.5.x) byte-identity — DO NOT CHANGE:
+        b"openssl_encrypt.kem.v14|" + algorithm + b"|" + encryption_data
+        + b"|ct=" + sha256(kem_ciphertext).
 
         For format_version >= 12: uses HKDF-SHA256 with algorithm name as info,
         providing proper domain separation and extract-then-expand semantics.
@@ -538,11 +551,37 @@ class PQCipher:
         Args:
             shared_secret: Raw shared secret from KEM encapsulation/decapsulation.
             key_length: Desired key length in bytes (default 32 for AES-256).
+            kem_ciphertext: The KEM encapsulation ciphertext; required for
+                format_version >= 14, ignored below.
 
         Returns:
             Derived symmetric key bytes.
+
+        Raises:
+            ValueError: If format_version >= 14 and kem_ciphertext is missing.
         """
-        if self.format_version is not None and self.format_version >= 12:
+        if self.format_version is not None and self.format_version >= 14:
+            if kem_ciphertext is None:
+                raise ValueError(
+                    "format_version >= 14 requires the KEM ciphertext for "
+                    "transcript-bound key derivation (finding #83); refusing "
+                    "to derive without it"
+                )
+            from cryptography.hazmat.primitives import hashes
+            from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+
+            return HKDF(
+                algorithm=hashes.SHA256(),
+                length=key_length,
+                salt=None,
+                info=b"openssl_encrypt.kem.v14|"
+                + self.algorithm_name.encode()
+                + b"|"
+                + self.encryption_data.encode()
+                + b"|ct="
+                + hashlib.sha256(kem_ciphertext).digest(),
+            ).derive(shared_secret)
+        elif self.format_version is not None and self.format_version >= 12:
             from cryptography.hazmat.primitives import hashes
             from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
@@ -714,7 +753,9 @@ class PQCipher:
                 # in `finally` wipes the actual AES key rather than a copy — the
                 # bytes returned by _derive_symmetric_key are immutable and cannot
                 # be wiped in place.
-                symmetric_key = SecureBytes(self._derive_symmetric_key(shared_secret))
+                symmetric_key = SecureBytes(
+                    self._derive_symmetric_key(shared_secret, kem_ciphertext=encapsulated_key)
+                )
 
                 # Generate random nonce (12 bytes for most AEAD ciphers)
                 nonce = secrets.token_bytes(12)
@@ -800,9 +841,12 @@ class PQCipher:
         try:
             return self._decrypt_impl(encrypted_data, private_key, file_contents, aad)
         except PQCAuthenticationError:
-            if self.format_version is None or self.format_version < 12:
+            if self.format_version is None or not 12 <= self.format_version < 14:
+                # The legacy retry exists for files written by 1.4.x releases
+                # <= 1.4.7, which are only v12/v13. No v14+ file can carry a
+                # legacy bare-SHA256 key, so v14+ never retries.
                 raise
-            # v12+ HKDF-keyed authentication failed: retry once with the
+            # v12/v13 HKDF-keyed authentication failed: retry once with the
             # legacy bare-SHA256 KEM key used by 1.4.x releases <= 1.4.7.
             # Non-authentication failures (metadata mismatch, structural
             # errors) are re-raised immediately above and never retried.
@@ -1045,7 +1089,10 @@ class PQCipher:
                         )
                     else:
                         symmetric_key = SecureBytes(
-                            self._derive_symmetric_key(bytes(secure_shared_secret))
+                            self._derive_symmetric_key(
+                                bytes(secure_shared_secret),
+                                kem_ciphertext=encapsulated_key,
+                            )
                         )
 
                 # Get the encryption_data from the metadata if available
