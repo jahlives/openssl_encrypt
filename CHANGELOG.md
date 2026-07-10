@@ -42,6 +42,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Documentation: `docs/FORMAT_V14_PLAN.md` M2 decided as Option A**
+  (decision record, 2026-07-10): format_version 14 writes will default to the
+  independent-XOR topology; sequential-XOR (`--use-xor-composition`) remains a
+  supported opt-in pinned at format_version 13; the whole-chain HKDF
+  finalization fallback is rejected. Under this topology M1 is closed for v14
+  writes by construction (the independent scrypt component already derives the
+  full key length). Also records the verified code state behind the decision:
+  sequential-XOR is a hybrid (chains and XOR-accumulates, shares the M1 scrypt
+  site), decrypt dispatch is fully metadata-driven (existing v8–v13 files are
+  unaffected by the default flip), and the bare/template invocations already
+  force independent-XOR, so the sequential-cascade default only affects custom
+  KDF configs. Decision record + spec update only — no code change.
+
 - **Documentation: `docs/FORMAT_V14_PLAN.md` extended with KDF-cascade audit
   findings** (addendum, 2026-07-09): pre-staged v14 specs for M1 (scrypt
   sequential stage truncates the intermediate to 256 bits for 512/1024-bit

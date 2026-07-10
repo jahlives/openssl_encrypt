@@ -16,6 +16,14 @@ pure sequential cascade, weakest-link floor). Both ride the same v14 bump; see
 their own (M1's floor is still 2^256; M2 is defense-in-depth, not an active
 break). If v14 proceeds, M1 and M2 are **in scope alongside #100 + #83**.
 
+**Decision 2026-07-10:** M2 is **decided — Option A**: independent-XOR becomes
+the default topology for v14 writes. Sequential-XOR (`--use-xor-composition`)
+remains a supported opt-in but stays **pinned at format_version 13**; the
+whole-chain HKDF-finalization fallback is **rejected**. Under this topology no
+v14 write path uses the sequential scrypt stage, so **M1 is closed for v14
+writes by construction** (the independent scrypt component already derives
+`dklen=key_length`). See sections 6.2/6.3 for the updated specs.
+
 _Line references are against `feature/v1.5.x-development` as of 2026-07-07; v14 would
 land on the development line. Re-verify before implementing — line numbers drift._
 
@@ -194,7 +202,8 @@ Mirror v13 exactly (`test_format_v13_xor_domsep.py:48`, `100-109`):
 Source: crypto-reviewer audit of the KDF cascade against
 `docs/KDF_CHAIN_SECURITY_RESEARCH.md` (sequential-chain robustness literature).
 _Line references in this section are against `feature/v1.4.x-development` as of
-2026-07-09 — re-verify on the line that lands v14; line numbers drift._
+2026-07-09, spot-corrected 2026-07-10 by the follow-up M2 review — re-verify on
+the line that lands v14; line numbers drift._
 
 ### 6.1 Verified current state
 
@@ -222,65 +231,144 @@ floor (Medium).**
   Argon2/scrypt earlier. The provably robust remedy already exists in-tree
   (`generate_key_independent_xor`, `crypt_core.py:2610`, correct per audit) but
   is opt-in only (`--independent-xor` / v13).
+- **Blast-radius correction (verified 2026-07-10):** a bare invocation (no
+  KDF/hash args) loads the STANDARD template, which forces
+  `independent_xor=True` (`crypt_cli.py:7020-7032`); the `--standard` /
+  `--paranoid` templates do the same (`crypt_cli.py:6981-6982`). The v9
+  sequential cascade is therefore the default only for **user-supplied custom
+  KDF/hash configs** (else-branch at `crypt_cli.py:7033`), not for the
+  out-of-box default or the security templates. M2 stands, with a narrower
+  blast radius than "all default writes".
 
-### 6.2 M1 specification (gate `format_version >= 14`)
-- In the sequential scrypt stage (`crypt_core.py:3807` area): under v14 derive
-  `length=key_length` (mirroring argon2/balloon/HKDF/PBKDF2); keep the `< 14`
-  branch at `length=32` byte-identically for legacy decrypt.
-- Check the independent-XOR scrypt component for the same cap and align it under
-  v14 if present (components are normalized to `key_length` via
-  `normalize_to_key_length_secure`, `crypt_core.py:2121` — verify the scrypt
-  branch derives, not pads, to `key_length`).
-- Golden vectors: extend the v14 matrix (section 3.5) with a
-  scrypt-final × {AES-SIV, Threefish-512, Threefish-1024} row; assert the v14
-  key differs from v13 and that `< 14` stays byte-identical.
+**Sequential-XOR mode (`--use-xor-composition`, `xor_mode="sequential"`) —
+verified 2026-07-10.** It is a **hybrid**, not an independent combiner: stages
+still chain (`password = SecureBytes(result)` at
+`crypt_core.py:3579/3716/3842/3956/4057/4135`) while a
+`normalize_to_key_length_secure` snapshot of each stage is appended to an XOR
+accumulator (`crypt_core.py:3313/3628/3757/3858/3972/4074/4152`) and folded at
+the end (`4282-4308`). It flows through the **same** scrypt `length=32` site
+(`3807`) — **M1 applies to sequential-XOR writes too**. Its v13 fix was only
+the last-stage self-cancellation guard (`crypt_core.py:4295`;
+`test_format_v13_sequential_xor.py`); `_indep_xor_component_salt` is called
+only from `generate_key_independent_xor` — zero call sites in the sequential
+path. Security floor: better than the plain chain (a break confined to the
+final stage no longer bounds the key alone, since every stage's snapshot is
+mixed in) but **not** the strongest-link robust-combiner guarantee — stages
+still chain, so an entropy-collapsing stage starves all later snapshots.
+Document it as "opt-in hybrid mode; independent-XOR is the
+recommended/strongest topology". By contrast, the independent-XOR scrypt
+component derives `dklen=key_length` (`crypt_core.py:2458`, via
+`compute_kdf_independent`) — no M1 truncation; argon2/balloon/HKDF components
+are likewise full-length (`2420`, `2505-2512`, `2532`).
 
-### 6.3 M2 specification (gate v14 write-path default)
-Primary option (recommended): **make independent-XOR the default topology for
-v14 writes** — the CLI default-selection blocks (section 3.1) emit 14 with
-`xor_mode="independent"` where they previously defaulted to plain v9. Rekey
-already forces the XOR path (`crypt_cli.py:9261-9263` on 1.5.x), so this
-aligns defaults with the recommended mode; total KDF work is unchanged (same
-components, run independently instead of chained).
+### 6.2 M1 specification (resolved by the M2 topology decision, 2026-07-10)
+Under the decided M2 option (6.3) **no v14 write path uses the sequential
+scrypt stage**: plain defaults become v14 independent-XOR, and sequential /
+sequential-XOR writes stay pinned `< 14`. M1 is therefore closed for v14
+writes by construction:
+- The independent-XOR scrypt component already derives `dklen=key_length`
+  (`crypt_core.py:2458`, verified 2026-07-10) — no code change needed; the
+  other components are likewise full-length (argon2 `hash_len=key_length`
+  `2420`, balloon normalized via HKDF `2505-2512`, HKDF `length=key_length`
+  `2532`).
+- The sequential scrypt `length=32` (`crypt_core.py:3807`) stays byte-identical
+  for all `< 14` writes and legacy decrypt — do **NOT** change it.
+- The previously specified `>= 14` gate in the sequential stage is **dropped**
+  (dead code under the decided topology). If a future version ever reopens
+  sequential writes at `>= 14`, this gate must be re-introduced first.
+- Golden vectors: extend the v14 matrix (section 3.5) with an independent-XOR
+  scrypt-final × {AES-SIV, Threefish-512, Threefish-1024} row asserting
+  full-length derivation; pin one `< 14` sequential scrypt-final legacy vector
+  proving byte-identity (guards against an accidental "fix" of `3807`).
 
-Fallback option (if defaulting to XOR is rejected for compatibility/UX): add a
-**whole-chain finalization** step under v14 — a domain-separated
-`HKDF-SHA256(ikm=chain_output, info=b"openssl_encrypt.kdf.v14.finalize:" +
-algo_name, length=key_length)` applied at the key-formatting sites
-(`crypt_core.py:4351-4402`) so no single raw KDF output is ever used directly
-as the key. This does not restore strongest-component robustness (the chain
-topology is unchanged) but removes the raw-final-stage exposure.
+### 6.3 M2 specification — DECIDED 2026-07-10: Option A
+**Decision: make independent-XOR the default topology for v14 writes**, with
+sequential-XOR retained as a v13-pinned opt-in.
 
-Decrypt side: both options are metadata-driven (`format_version` / `xor_mode`
-already threaded through all derivation functions), so `< 14` files are
-untouched; v14 files decrypt via the existing v13 XOR read path plus the new
-gates.
+- The CLI default-selection blocks (section 3.1) emit 14 with
+  `xor_mode="independent"` where they previously defaulted to plain v9
+  (current mapping: `crypt_cli.py:8317-8324`, clones `8600-8607`/`9260-9267`
+  on 1.4.x). Rekey already forces the XOR path (`crypt_cli.py:9261-9263` on
+  1.5.x), so this aligns defaults with the recommended mode; total KDF work is
+  unchanged (same components, run independently instead of chained). The
+  attacker's per-guess cost is the sum of component costs in both topologies —
+  no work-factor regression.
+- **Sequential-XOR stays a supported write mode, pinned at v13:**
+  `--use-xor-composition` continues to emit `format_version=13` +
+  `xor_mode="sequential"` exactly as today; v14 carries `xor_mode="independent"`
+  only. Consequences: no M1 fix, no section-3.2 seed gates, and no new golden
+  vectors for the sequential path (the sequential path's initial hash at
+  `crypt_core.py:3311` is a *separate* site from the independent one at `2737`
+  and stays untouched); the existing v13 sequential golden
+  (`test_format_v13_sequential_xor.py`) remains the pin and must stay
+  byte-identical cross-line.
+- Any new write-version gate (e.g. a `LATEST_STABLE_FORMAT_VERSION` check)
+  must **not** refuse fv-13 sequential-XOR writes; only the unsafe cancelling
+  versions 8/10 stay refused (`crypt_core.py:5457-5461`).
+- **Rejected fallback (recorded 2026-07-10):** whole-chain HKDF finalization
+  (`HKDF-SHA256(ikm=chain_output, info=b"openssl_encrypt.kdf.v14.finalize:" +
+  algo_name, length=key_length)` at the key-formatting sites
+  `crypt_core.py:4351-4402`). Rejected because it is a deterministic function
+  of the same chain output: it cannot add entropy or robustness, leaves the
+  weakest-link floor and the non-injective-stage failure mode fully intact,
+  and leaves M1 in the live default write path. It would have been raw-output
+  hygiene only.
+- **Decrypt side (verified 2026-07-10):** dispatch is fully metadata-driven —
+  `xor_mode = metadata.get("xor_mode", "sequential")` at
+  `crypt_core.py:10493`, routing at `10505`/`10540-10542`; rekey/streaming at
+  `8914`/`8992`/`9142`; no read path consults an encrypt-side default. All
+  v8–v13 files of all three topologies (plain chain, sequential-XOR,
+  independent-XOR) decrypt byte-identically regardless of the default flip.
+- Changelog/docs framing: describe Option A as a robust combiner for the
+  PRF-type property a KDF needs, explicitly noting the XOR concrete-security
+  caveats (research doc findings #6/#7) — do not overstate the guarantee. The
+  shared-component-seed residual #100 (`sha256(password+salt)`,
+  `crypt_core.py:2737` on 1.4.x) is either folded in via the section-3.2 seed
+  change or explicitly re-accepted in the same bump.
 
 ### 6.4 Additions to the TDD sequence (section 5)
-- Failing tests first: v14 scrypt-final derives `key_length` bytes (M1); v14
-  default writes carry `xor_mode="independent"` (or finalization golden vector,
-  per chosen M2 option); `< 14` regression fixtures byte-identical.
+- Failing tests first: v14 default writes carry `format_version=14` +
+  `xor_mode="independent"`; v14 independent-XOR scrypt-final derives full
+  `key_length` bytes (M1); `--use-xor-composition` still stamps
+  `format_version=13` + `xor_mode="sequential"` after the default flip;
+  `< 14` regression fixtures byte-identical (incl. one sequential
+  scrypt-final legacy vector).
 - Fold into steps 5-8 of section 5 (round-trips, golden pinning, CLI default
   flip, matrix suites). CHANGELOG: M1 and M2 are **Security** entries → all
   four changelog files per changelog discipline.
 
 ### 6.5 Added risks
-- M1 changes derived bytes for scrypt-final configs only — easy to miss in the
-  golden matrix; pin at least one scrypt-only vector.
-- M2 primary option flips the default topology: downstream tools/tests that
-  assert `xor_mode` absence or plain-v9 metadata will break — grep before
-  flipping (same class as the 9→14 default-flip risk in section 4).
-- The two M2 options are mutually exclusive per version; decide **before**
-  golden vectors are pinned.
+- M1: with the sequential stage deliberately left untouched, the risk inverts —
+  an accidental "fix" of `crypt_core.py:3807` would change derived keys for
+  every existing sequential scrypt file; the pinned `< 14` sequential legacy
+  vector (6.2) is the guard.
+- M2 flips the default topology: downstream tools/tests that assert `xor_mode`
+  absence, plain-v9 metadata, or "any XOR opt-in ⇒ v13" will break — grep
+  tests/GUI/`mobile_crypto_core.py`/`check_file_format.py` before flipping
+  (same class as the 9→14 default-flip risk in section 4).
+- A v14 sequential(-XOR) file must never exist: assert no CLI/API path can
+  emit `format_version >= 14` with `xor_mode="sequential"` (or the plain
+  chain) — otherwise the dropped M1/seed gates for the sequential path are
+  silently missing.
+- Sequential-XOR degeneracy residual (Low, recorded 2026-07-10): only the
+  single-stage self-cancellation case (`crypt_core.py:4295`) is test-covered;
+  there is no proof that no adversarial hash_config can make two accumulator
+  snapshots coincide. Acceptable for an opt-in mode; note in docs, not a
+  blocker.
 
 ## Critical files
 - `openssl_encrypt/modules/crypt_core.py` — seed build 1163-1208, per-round salts, shared XOR
   inputs 2787/2245, `_indep_xor_component_salt` 1732-1759, version stamping 6177/6982/7276,
-  PQCipher construction 6524-6542/10378; **M1/M2 (1.4.x refs):** scrypt length 3807,
-  XOR-composition flag 3250, dispatch 6703-6716, key formatting 4351-4402,
-  `generate_key_independent_xor` 2610
+  PQCipher construction 6524-6542/10378; **M1/M2 (1.4.x refs, re-verified 2026-07-10):**
+  scrypt length 3807, independent scrypt component dklen 2458, XOR-composition flag 3250,
+  encrypt dispatch 6699-6767, decrypt dispatch 10493-10542, key formatting 4351-4402,
+  `generate_key_independent_xor` 2610, `_indep_xor_component_salt` 2180-2207,
+  sequential-XOR accumulator 4282-4308 (v13 self-cancel guard 4295)
 - `openssl_encrypt/modules/pqc.py` — `_derive_symmetric_key` 426-453, KEM sites 610/796
 - `openssl_encrypt/modules/pqc_adapter.py` — shared-secret + ciphertext sites 279/286/415/421
 - `openssl_encrypt/modules/crypt_cli.py` — version selection 7064-7071/7298-7304/7939-7945/
-  9261-9263; allow-list 341; **M2 (1.4.x refs):** default fv selection 8324/8607/9267
+  9261-9263; allow-list 341; **M2 (1.4.x refs, re-verified 2026-07-10):** XOR/version
+  mapping 8317-8324 (clones 8600-8607/9260-9267), template forcing 6981-6982/7020-7032
 - `openssl_encrypt/unittests/test_format_v13_xor_domsep.py` — golden-vector / cross-line pattern
+- `openssl_encrypt/unittests/test_format_v13_sequential_xor.py` — sequential-XOR golden +
+  self-cancellation regression (must stay green and byte-identical)
