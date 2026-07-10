@@ -432,35 +432,6 @@ class PQCipher:
         # All Kyber/ML-KEM/HQC algorithms are KEM algorithms
         self.is_kem = any(x in self.algorithm_name.lower() for x in ["ml-kem", "kyber", "hqc"])
 
-    def _derive_symmetric_key(self, shared_secret: bytes, key_length: int = 32) -> bytes:
-        """Derive a symmetric key from a KEM shared secret.
-
-        For format_version >= 12: uses HKDF-SHA256 with algorithm name as info,
-        providing proper domain separation and extract-then-expand semantics.
-
-        For legacy formats (< 12 or None): uses bare SHA-256 for backward
-        compatibility with existing encrypted files.
-
-        Args:
-            shared_secret: Raw shared secret from KEM encapsulation/decapsulation.
-            key_length: Desired key length in bytes (default 32 for AES-256).
-
-        Returns:
-            Derived symmetric key bytes.
-        """
-        if self.format_version is not None and self.format_version >= 12:
-            from cryptography.hazmat.primitives import hashes
-            from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-
-            return HKDF(
-                algorithm=hashes.SHA256(),
-                length=key_length,
-                salt=None,
-                info=b"openssl_encrypt-kem-key-" + self.algorithm_name.encode(),
-            ).derive(shared_secret)
-        else:
-            return hashlib.sha256(shared_secret).digest()
-
     def _derive_symmetric_key(
         self,
         shared_secret: bytes,

@@ -418,6 +418,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Dead shadowed `_derive_symmetric_key` definition removed** (2026-07-10):
+  `PQCipher` in `modules/pqc.py` carried two definitions of
+  `_derive_symmetric_key`; the first (the pre-#83 v12/legacy-only variant)
+  was silently shadowed by the second, live definition in the class body
+  and was never executed. The dead first definition is removed — the live
+  transcript-binding-aware implementation is unchanged, so no derivation
+  path is affected. Removes the risk of someone editing the dead copy and
+  seeing no effect.
+
 - **Documentation: `docs/PBKDF2_CHAIN_ERROR_PLAN.md` added** (2026-07-10):
   plan for replacing the generic authentication error with a pointed
   migration error when decrypting 1.4.x sequential files that used the
