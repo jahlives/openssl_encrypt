@@ -403,6 +403,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **1.5.x adaptations for the v14 rollout**: `verify` accepts format version
+  14 (and validates the streaming structure only for actually-streaming v14
+  files); the v14 metadata schema carries this line's streaming block
+  (including the optional `cascade_nonce_scheme` from the cascade-streaming
+  nonce fix); the fixture corpus pins that 1.4.x sequential files using the
+  removed PBKDF2 chain fail cleanly here (documented 1.5.0 breaking change —
+  decrypt those with 1.4.x) while all independent-XOR, streaming and PQC
+  fixtures decrypt byte-identically; the PQC adapter's Threefish decrypt
+  path now wipes both derived keys deterministically before returning.
+
 - **format_version 14 scaffolding** (v14 implementation plan Phase 1, no
   default/behavior change for existing writes): registered
   `metadata_v14_schema.json` (independent-XOR only — `xor_mode` enum is

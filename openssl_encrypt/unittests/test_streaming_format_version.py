@@ -21,7 +21,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from openssl_encrypt.modules.crypt_core import decrypt_file, encrypt_file
+from openssl_encrypt.modules.crypt_core import (
+    LATEST_STABLE_FORMAT_VERSION,
+    decrypt_file,
+    encrypt_file,
+)
 
 PASSWORD = b"streaming-fv-regression-pw"
 
@@ -76,24 +80,24 @@ class TestStreamingFormatVersionRoundTrip(unittest.TestCase):
     """Streaming files must decrypt regardless of the caller's format_version."""
 
     def test_default_format_version(self):
-        """Library default (10) — the original data-loss repro."""
+        """Library default — streams at the latest stable format version."""
         meta = _roundtrip("aes-gcm")
-        self.assertEqual(meta["format_version"], 12)
+        self.assertEqual(meta["format_version"], LATEST_STABLE_FORMAT_VERSION)
 
     def test_format_version_9(self):
         """CLI default without XOR flags."""
         meta = _roundtrip("aes-gcm", fmt_version=9)
-        self.assertEqual(meta["format_version"], 12)
+        self.assertEqual(meta["format_version"], LATEST_STABLE_FORMAT_VERSION)
 
     def test_format_version_10(self):
         """CLI --use-xor-composition."""
         meta = _roundtrip("chacha20-poly1305", fmt_version=10)
-        self.assertEqual(meta["format_version"], 12)
+        self.assertEqual(meta["format_version"], LATEST_STABLE_FORMAT_VERSION)
 
     def test_format_version_11(self):
         """CLI --independent-xor (worked before only by coincidence)."""
         meta = _roundtrip("aes-gcm", fmt_version=11)
-        self.assertEqual(meta["format_version"], 12)
+        self.assertEqual(meta["format_version"], LATEST_STABLE_FORMAT_VERSION)
 
     def test_format_version_12_explicit(self):
         meta = _roundtrip("aes-gcm", fmt_version=12)
@@ -101,7 +105,7 @@ class TestStreamingFormatVersionRoundTrip(unittest.TestCase):
 
     def test_xchacha_default_format_version(self):
         meta = _roundtrip("xchacha20-poly1305")
-        self.assertEqual(meta["format_version"], 12)
+        self.assertEqual(meta["format_version"], LATEST_STABLE_FORMAT_VERSION)
 
 
 class TestStreamingCascadeFormatVersion(unittest.TestCase):
@@ -112,18 +116,18 @@ class TestStreamingCascadeFormatVersion(unittest.TestCase):
 
     def test_cascade_default_format_version(self):
         meta = _roundtrip(None, cascade_names=self.CHAIN)
-        self.assertEqual(meta["format_version"], 12)
+        self.assertEqual(meta["format_version"], LATEST_STABLE_FORMAT_VERSION)
         self.assertTrue(meta["encryption"]["cascade"])
 
     def test_cascade_format_version_11(self):
         """fv=11 coincides with v12 key derivation but NOT with cascade
         per-layer salts — this was broken even at fv=11."""
         meta = _roundtrip(None, fmt_version=11, cascade_names=self.CHAIN)
-        self.assertEqual(meta["format_version"], 12)
+        self.assertEqual(meta["format_version"], LATEST_STABLE_FORMAT_VERSION)
 
     def test_cascade_format_version_9(self):
         meta = _roundtrip(None, fmt_version=9, cascade_names=self.CHAIN)
-        self.assertEqual(meta["format_version"], 12)
+        self.assertEqual(meta["format_version"], LATEST_STABLE_FORMAT_VERSION)
 
 
 class TestOneShotUnaffected(unittest.TestCase):

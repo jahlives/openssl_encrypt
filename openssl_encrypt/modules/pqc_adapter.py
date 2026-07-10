@@ -17,6 +17,7 @@ from .algorithm_warnings import (
     is_deprecated,
     warn_deprecated_algorithm,
 )
+from .crypt_utils import eprint
 from .pqc import PQCAlgorithm as CorePQCAlgorithm
 from .pqc import PQCipher, normalize_algorithm_name
 from .pqc_liboqs import (
@@ -26,7 +27,6 @@ from .pqc_liboqs import (
     PQSigner,
     check_liboqs_support,
 )
-from .crypt_utils import eprint
 from .secure_memory import SecureBytes, secure_memzero
 
 # Configure logger
@@ -195,7 +195,11 @@ class ExtendedPQCipher(PQCipher):
         if self.is_kem and algorithm_str in native_kem_algorithms:
             # Use the parent class for native KEM algorithms
             super().__init__(
-                algorithm_str, quiet, encryption_data, verbose, debug,
+                algorithm_str,
+                quiet,
+                encryption_data,
+                verbose,
+                debug,
                 format_version=format_version,
             )
             self.use_liboqs = False
@@ -471,20 +475,29 @@ class ExtendedPQCipher(PQCipher):
                         import threefish_native
 
                         key_len = 64 if self.encryption_data == "threefish-512" else 128
-                        expanded_key = HKDF(
-                            algorithm=hkdf_hashes.SHA256(),
-                            length=key_len,
-                            salt=None,
-                            info=self.encryption_data.encode() + b"-pqc-key-expansion",
-                        ).derive(bytes(symmetric_key))
-                        if self.encryption_data == "threefish-512":
-                            plaintext = threefish_native.decrypt_512(
-                                expanded_key, nonce, ciphertext, aad
-                            )
-                        else:
-                            plaintext = threefish_native.decrypt_1024(
-                                expanded_key, nonce, ciphertext, aad
-                            )
+                        # Hold the expanded key in SecureBytes and wipe both
+                        # keys deterministically before returning (the AEAD
+                        # path below does the same on success).
+                        expanded_key = SecureBytes(
+                            HKDF(
+                                algorithm=hkdf_hashes.SHA256(),
+                                length=key_len,
+                                salt=None,
+                                info=self.encryption_data.encode() + b"-pqc-key-expansion",
+                            ).derive(bytes(symmetric_key))
+                        )
+                        try:
+                            if self.encryption_data == "threefish-512":
+                                plaintext = threefish_native.decrypt_512(
+                                    bytes(expanded_key), nonce, ciphertext, aad
+                                )
+                            else:
+                                plaintext = threefish_native.decrypt_1024(
+                                    bytes(expanded_key), nonce, ciphertext, aad
+                                )
+                        finally:
+                            secure_memzero(expanded_key)
+                        secure_memzero(symmetric_key)
                         return plaintext
                     else:
                         # Default to AES-GCM for unknown algorithms

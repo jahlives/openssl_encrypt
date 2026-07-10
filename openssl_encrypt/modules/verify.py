@@ -44,7 +44,10 @@ class FileVerifier:
 
     # Supported format version range
     MIN_FORMAT_VERSION = 3
-    MAX_FORMAT_VERSION = 13
+    # Keep in sync with crypt_core.LATEST_STABLE_FORMAT_VERSION (imported
+    # lazily below would create a cycle; the fixture corpus + verify tests
+    # pin this value).
+    MAX_FORMAT_VERSION = 14
 
     # Streaming constants
     STREAMING_MAGIC = b"OESC"
@@ -321,12 +324,14 @@ class FileVerifier:
             )
 
         version = self._metadata.get("format_version")
-        if version != 12:
-            # Not a streaming file — skip this check
+        is_streaming_meta = bool(self._metadata.get("streaming", {}).get("enabled", False))
+        if version not in (12, 14) or (version == 14 and not is_streaming_meta):
+            # Not a streaming file — skip this check (v12 is always
+            # streaming; v14 streams only when the streaming block is set)
             return self._add_result(
                 "streaming_structure",
                 True,
-                "Not a streaming format (v12) — skipped",
+                "Not a streaming format — skipped",
             )
 
         data = self._encrypted_data

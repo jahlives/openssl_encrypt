@@ -6172,7 +6172,6 @@ def encrypt_file(
     elif remote_pepper:
         combined_pepper = remote_pepper
 
-
     # Resolve the XOR composition mode. `xor_mode` decouples mode from version so
     # that v13 can hold EITHER mode (independent per-component salts, or fixed
     # sequential). When unset, infer from the version for backward compatibility

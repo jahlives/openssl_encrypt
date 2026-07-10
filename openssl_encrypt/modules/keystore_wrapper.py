@@ -470,7 +470,9 @@ def decrypt_file_with_keystore(
 
                         # Check for dual encryption flag, handling v3, v4, v5, v6, v7, v8, v9, and v10 formats
                         format_version = metadata.get("format_version", 1)
-                        if format_version >= 4:  # v4+ hierarchical metadata (see crypt_core gate fix)
+                        if (
+                            format_version >= 4
+                        ):  # v4+ hierarchical metadata (see crypt_core gate fix)
                             # Version 4/5/6/7/8/9/10 format - check in derivation_config.kdf_config
                             if (
                                 "derivation_config" in metadata
