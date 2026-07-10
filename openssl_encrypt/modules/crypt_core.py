@@ -9138,7 +9138,9 @@ def _derive_envelope_kek(
     # from kdf_config.pbkdf2.rounds (see decrypt_file); pass it via keyword so the
     # KEK matches what a later decrypt derives.
     pbkdf2_iterations = hash_config.get("pbkdf2_iterations", 0)
-    if xor_mode == "independent" or format_version in (11, 12):
+    # v14+ is independent-only: route it here even if a hand-crafted blob
+    # omits xor_mode (mirrors the main decrypt router).
+    if xor_mode == "independent" or format_version in (11, 12) or format_version >= 14:
         key, _, _ = generate_key_independent_xor(
             password,
             salt,

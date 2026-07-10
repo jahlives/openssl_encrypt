@@ -198,6 +198,24 @@ class TestM1FullLengthScrypt(unittest.TestCase):
         self.assertEqual(len(key), 128)
         self.assertEqual(key.hex(), GOLDEN_M1_THREEFISH_1024_HEX)
 
+    def test_xor_normalization_info_string_pinned(self):
+        # Both copies of the XOR-component normalization (crypt_core's
+        # normalize_to_key_length_secure and parallel_kdf's _normalize_bytes)
+        # must keep the pinned HKDF info=b"v10_xor_normalize" expansion —
+        # a drift in either silently changes derived keys. DO NOT CHANGE.
+        golden = (
+            "823fc6f8936d4046bdf80fb0a80b957f4faf8f40389688ed1019d2b9391a9841"
+            "92c75b14e7709081994208220712b442ccc983828e3df7623599dfd9f3b3f803"
+        )
+        from openssl_encrypt.modules.crypt_core import normalize_to_key_length_secure
+        from openssl_encrypt.modules.parallel_kdf import _normalize_bytes
+        from openssl_encrypt.modules.secure_memory import SecureBytes
+
+        self.assertEqual(
+            bytes(normalize_to_key_length_secure(SecureBytes(b"\x00" * 32), 64)).hex(), golden
+        )
+        self.assertEqual(bytes(_normalize_bytes(b"\x00" * 32, 64)).hex(), golden)
+
     def test_sequential_scrypt_v13_legacy_vector(self):
         # Guards the sequential scrypt length=32 site: an accidental "fix"
         # of the 256-bit intermediate would change every existing sequential
