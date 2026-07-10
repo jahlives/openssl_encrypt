@@ -2410,7 +2410,9 @@ def generate_key_independent_xor(
         if format_version is not None and format_version >= 14:
             _v14_seed = _v14_seed_encode(password, salt, hsm_pepper)
             try:
-                initial_hash = SecureBytes(hashlib.sha256(bytes(_v14_seed)).digest())
+                # Hash the bytearray via memoryview — no immutable bytes copy
+                # of the cleartext seed is materialized (M2 [MEM-1]).
+                initial_hash = SecureBytes(hashlib.sha256(memoryview(_v14_seed)).digest())
             finally:
                 # The seed holds the cleartext password and pepper (M2 [MEM-1]).
                 secure_memzero(_v14_seed)
