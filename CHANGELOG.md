@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Format-version fixture corpus** (v14 implementation plan Phase 5):
+  pre-encrypted fixtures under `unittests/testfiles/format_versions/` pin
+  the decrypt path of every supported write topology — v9 plain, v11/v13
+  independent-XOR, v13 sequential-XOR, v12/v14 streaming, v13/v14 PQC with
+  HKDF and transcript-bound KEM keys, and a pre-1.4.8 legacy-KDF PQC file
+  that permanently pins the bare-SHA256 decrypt fallback. A failure in this
+  suite means reading existing files broke.
+
+
 - **`check-password` command**: a read-only subcommand that reports the strength
   of a password without encrypting anything. Prints the pattern-aware strength
   category, entropy (pattern-aware and raw), detected-weakness warnings, and

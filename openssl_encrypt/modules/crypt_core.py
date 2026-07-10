@@ -8379,7 +8379,9 @@ def _derive_envelope_kek(
     """
     salt = base64.b64decode(derivation_config["salt"])
     hash_config = _flatten_derivation_config(derivation_config)
-    if xor_mode == "independent" or format_version in (11, 12):
+    # v14+ is independent-only: route it here even if a hand-crafted blob
+    # omits xor_mode (mirrors the main decrypt router).
+    if xor_mode == "independent" or format_version in (11, 12) or format_version >= 14:
         key, _, _ = generate_key_independent_xor(
             password,
             salt,

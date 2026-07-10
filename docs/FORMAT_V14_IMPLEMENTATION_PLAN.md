@@ -1,5 +1,23 @@
 # Implementation plan — `format_version 14` on `feature/v1.4.x-development`
 
+**Status update 2026-07-10 (evening): Phases 0-5 COMPLETE on 1.4.x.**
+Commits: dd207223 (Phase 0 KEM-HKDF backport + legacy decrypt retry),
+5e552693 (Phase 1 scaffolding + embedded-PQC-key gate fix), 8fd0621c
+(Phase 2 TLV seed — landed in `generate_key_independent_xor` per the scope
+correction below), 44c591ad (Phase 3 ciphertext binding, retry rescoped to
+v12/13), 8dbad391 (Phase 4 default flip + M1 goldens), plus the Phase 5
+fixture-corpus commit. Closing whole-campaign crypto-audit verdict: SHIP
+(its two low findings — envelope-KEK router v14 parity and a direct golden
+for the `v10_xor_normalize` info string — are fixed in the Phase 5 commit).
+Additional pre-existing bugs found and fixed during the campaign:
+embedded-PQC-key salt gate (v11-13), keystore dual-encryption gates
+(v11-14), sequential-XOR+streaming data loss (now refused), RandomX
+wide-key combiner crash. **Phase 6 (full 1.5.x port) is still pending** —
+note for the port: 1.5.x also needs the Phase 0 legacy decrypt retry, the
+same gate generalizations, the sequential+streaming refusal, the RandomX
+normalization, and byte-identical golden assertions (all pinned hex values
+live in the v14 test modules).
+
 **Status: SCHEDULED 2026-07-10.** Execution plan for the pre-staged spec in
 `docs/FORMAT_V14_PLAN.md` (referred to below as "the spec"). Scope decisions
 (2026-07-10):
