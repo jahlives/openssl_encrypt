@@ -403,6 +403,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Documentation: `docs/PBKDF2_CHAIN_ERROR_PLAN.md` added** (2026-07-10):
+  plan for replacing the generic authentication error with a pointed
+  migration error when decrypting 1.4.x sequential files that used the
+  PBKDF2 chain stage removed in 1.5.0 — scoped to sequential-routed files
+  only (independent-XOR files carry the same metadata entry but never used
+  PBKDF2 and keep decrypting). Plan only — no code change.
+
 - **1.5.x adaptations for the v14 rollout**: `verify` accepts format version
   14 (and validates the streaming structure only for actually-streaming v14
   files); the v14 metadata schema carries this line's streaming block
