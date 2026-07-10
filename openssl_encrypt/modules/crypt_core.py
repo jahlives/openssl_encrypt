@@ -5057,6 +5057,18 @@ def decrypt_file_asymmetric(
                 if kdf_name in ["scrypt", "argon2", "balloon", "hkdf", "randomx"]:
                     hash_config[kdf_name] = kdf_params
 
+            # Asymmetric decryption bypasses decrypt_file's dispatch, so run
+            # the removed-PBKDF2 refusal here too (1.4.x sequential files;
+            # see _check_removed_pbkdf2_chain).
+            _check_removed_pbkdf2_chain(
+                {
+                    "format_version": format_version,
+                    "xor_mode": metadata.get("xor_mode", "sequential"),
+                    "derivation_config": derivation_config,
+                },
+                quiet=quiet,
+            )
+
             if not quiet:
                 eprint("Running KDF chain (this may take a while)...")
 
@@ -8358,12 +8370,71 @@ def _flatten_derivation_config(derivation_config: dict) -> dict:
     return hash_config
 
 
+def _check_removed_pbkdf2_chain(metadata, quiet: bool = False) -> None:
+    """Refuse 1.4.x sequential files whose chain used the removed PBKDF2 stage.
+
+    1.5.0 removed the deprecated PBKDF2 stage from the sequential
+    key-derivation chain (documented breaking change). A sequential-routed
+    file whose metadata records pbkdf2 rounds > 0 can therefore never derive
+    the correct key here: without this check it fails much later with a
+    generic AEAD authentication error indistinguishable from a wrong
+    password. Refusing up front (the pbkdf2 rounds are public cleartext
+    metadata, so no oracle is introduced) gives the user the actual cause
+    and the migration path, and skips a doomed KDF run.
+
+    Scoping: 1.4.x wrote the ``pbkdf2`` metadata entry for EVERY file when
+    pbkdf2_iterations > 0, including independent-XOR files that never
+    consumed it — those decrypt fine and MUST NOT be refused, so the check
+    applies the same routing predicate as the decrypt dispatch and returns
+    early for independent-routed files.
+    """
+    if not isinstance(metadata, dict):
+        return
+    format_version = metadata.get("format_version", 1)
+    xor_mode = metadata.get("xor_mode", "sequential")
+    routes_independent = xor_mode == "independent" or (
+        isinstance(format_version, int) and (format_version in (11, 12) or format_version >= 14)
+    )
+    if routes_independent:
+        return
+
+    rounds = 0
+    derivation_config = metadata.get("derivation_config")
+    if isinstance(derivation_config, dict):
+        kdf_config = derivation_config.get("kdf_config")
+        pbkdf2_cfg = kdf_config.get("pbkdf2") if isinstance(kdf_config, dict) else None
+        if isinstance(pbkdf2_cfg, dict):
+            rounds = pbkdf2_cfg.get("rounds", pbkdf2_cfg.get("iterations", 0)) or 0
+        elif isinstance(pbkdf2_cfg, int):
+            rounds = pbkdf2_cfg
+    if not rounds:
+        # v3 flat layout stored the iteration count at the top level.
+        flat = metadata.get("pbkdf2_iterations", 0)
+        rounds = flat if isinstance(flat, int) else 0
+    if not isinstance(rounds, int) or rounds <= 0:
+        return
+
+    if not quiet:
+        eprint(
+            f"ERROR: this file's key derivation includes {rounds} rounds of the "
+            f"PBKDF2 chain stage, which was removed in v1.5.0 (breaking change). "
+            f"openssl-encrypt 1.5.x cannot derive its key. Decrypt the file with "
+            f"openssl-encrypt 1.4.x and re-encrypt it there or here (current "
+            f"defaults do not use the PBKDF2 chain)."
+        )
+    raise DecryptionError(
+        f"file uses the PBKDF2 chain stage ({rounds} rounds) removed in v1.5.0; "
+        f"decrypt it with openssl-encrypt 1.4.x and re-encrypt"
+    )
+
+
 def _derive_envelope_kek(
     password: bytes,
     derivation_config: dict,
     algorithm: str,
     format_version: int,
     xor_mode: str,
+    quiet: bool = False,
 ) -> bytes:
     """Derive the password KEK for an envelope file from its metadata, mirroring
     ``decrypt_file`` (sequential vs independent-XOR by format_version/xor_mode).
@@ -8376,6 +8447,17 @@ def _derive_envelope_kek(
 
     Returns the KEK bytes (caller must ``secure_memzero`` it).
     """
+    # The envelope rekey fast-path bypasses decrypt_file's dispatch, so run
+    # the removed-PBKDF2 refusal here too: a 1.4.x sequential+pbkdf2 envelope
+    # file would otherwise fail with a generic DEK-unwrap error.
+    _check_removed_pbkdf2_chain(
+        {
+            "format_version": format_version,
+            "xor_mode": xor_mode,
+            "derivation_config": derivation_config,
+        },
+        quiet=quiet,
+    )
     salt = base64.b64decode(derivation_config["salt"])
     hash_config = _flatten_derivation_config(derivation_config)
     # v14+ is independent-only: route it here even if a hand-crafted blob
@@ -8480,7 +8562,7 @@ def _rekey_envelope_fast(
     # Unwrap with the old KEK. A wrong password makes unwrap raise -- let it
     # propagate (do NOT fall back, or we'd silently full-re-encrypt on bad input).
     old_kek = _derive_envelope_kek(
-        old_password, derivation_config, algorithm, format_version, xor_mode
+        old_password, derivation_config, algorithm, format_version, xor_mode, quiet=quiet
     )
     try:
         if is_cascade:
@@ -8504,7 +8586,12 @@ def _rekey_envelope_fast(
         new_meta["derivation_config"]["salt"] = base64.b64encode(new_salt).decode("ascii")
 
         new_kek = _derive_envelope_kek(
-            new_password, new_meta["derivation_config"], algorithm, format_version, xor_mode
+            new_password,
+            new_meta["derivation_config"],
+            algorithm,
+            format_version,
+            xor_mode,
+            quiet=quiet,
         )
         try:
             if is_cascade:
@@ -9982,6 +10069,11 @@ def decrypt_file(
     # Generate the key from the password and salt (with combined pepper if applicable)
     if not quiet:
         eprint("Generating decryption key ✅")  # Green check symbol)
+
+    # Fail with a pointed migration error for 1.4.x sequential files that
+    # used the PBKDF2 chain stage removed in 1.5.0 — before burning KDF time
+    # on a derivation that cannot succeed.
+    _check_removed_pbkdf2_chain(metadata, quiet=quiet)
 
     # Check XOR mode from metadata to determine which key generation function to use
     xor_mode = metadata.get("xor_mode", "sequential")  # Default to sequential for backward compat

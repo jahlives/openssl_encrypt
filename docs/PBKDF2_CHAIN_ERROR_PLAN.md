@@ -1,6 +1,6 @@
 # Plan — pointed error for 1.4.x PBKDF2-chain files (1.5.x)
 
-**Status: PLANNED 2026-07-10. Not yet implemented.**
+**Status: IMPLEMENTED 2026-07-10** (helper `_check_removed_pbkdf2_chain` + main decrypt dispatch and `_derive_envelope_kek` call sites; `test_pbkdf2_chain_error.py`).
 
 ## Problem
 

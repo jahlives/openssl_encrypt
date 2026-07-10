@@ -312,6 +312,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Pointed migration error for removed-PBKDF2-chain files**: decrypting a
+  1.4.x sequential file whose key-derivation chain used `pbkdf2_iterations`
+  (the PBKDF2 chain stage removed in 1.5.0) previously failed with a generic
+  authentication error indistinguishable from a wrong password. Decrypt now
+  refuses up front — before burning KDF time on a derivation that cannot
+  succeed — with guidance naming the breaking change and the migration path
+  (decrypt with openssl-encrypt 1.4.x, re-encrypt). Scoped to
+  sequential-routed files only: independent-XOR files carry the same
+  (public) `pbkdf2` metadata entry but never consumed it and keep
+  decrypting; wrong-password errors on readable files are unchanged. Also
+  enforced on the envelope rekey fast-path and the asymmetric decryption
+  path (both bypass the main decrypt dispatch); crypto-review confirmed the
+  refusal is based only on public cleartext metadata (no oracle).
+
+
 - **Keystore dual-encryption metadata gates excluded v11-v14 files**
   (pre-existing, surfaced by the v14 default flip): `keystore_wrapper` and
   `keystore_utils` checked `format_version in [4..10]` before looking up
