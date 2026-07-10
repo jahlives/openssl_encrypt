@@ -163,6 +163,7 @@ class ExtendedPQCipher(PQCipher):
         verbose: bool = False,
         debug: bool = False,
         allow_legacy_testdata: bool = False,
+        format_version: Optional[int] = None,
     ):
         """
         Initialize an extended post-quantum cipher instance
@@ -172,6 +173,7 @@ class ExtendedPQCipher(PQCipher):
             quiet: Whether to suppress output messages
             encryption_data: Symmetric encryption algorithm to use
             verbose: Whether to show detailed information
+            format_version: File format version. >= 12 uses HKDF for KEM key derivation.
 
         Raises:
             ValueError: If algorithm not supported
@@ -206,7 +208,13 @@ class ExtendedPQCipher(PQCipher):
         if self.is_kem and algorithm_str in native_kem_algorithms:
             # Use the parent class for native KEM algorithms
             super().__init__(
-                algorithm_str, quiet, encryption_data, verbose, debug, allow_legacy_testdata
+                algorithm_str,
+                quiet,
+                encryption_data,
+                verbose,
+                debug,
+                allow_legacy_testdata,
+                format_version=format_version,
             )
             self.use_liboqs = False
             self.encryption_data = encryption_data
@@ -226,6 +234,9 @@ class ExtendedPQCipher(PQCipher):
             # SECURITY: gate the legacy TESTDATA passthrough (issue #54); the
             # liboqs branch does not call super().__init__, so set it here too.
             self.allow_legacy_testdata = bool(allow_legacy_testdata)
+            # The liboqs branch does not call super().__init__, so set the
+            # format_version used by _derive_symmetric_key here too.
+            self.format_version = format_version
 
             # Import required symmetric encryption algorithms for hybrid mode
             try:
@@ -296,7 +307,7 @@ class ExtendedPQCipher(PQCipher):
         secure_shared_secret = SecureBytes(shared_secret)
         try:
             # Derive symmetric key using secure memory
-            symmetric_key = SecureBytes(hashlib.sha256(secure_shared_secret).digest())
+            symmetric_key = SecureBytes(self._derive_symmetric_key(bytes(secure_shared_secret)))
 
             # Select the appropriate cipher based on encryption_data
             if self.encryption_data == "aes-gcm":
@@ -399,53 +410,86 @@ class ExtendedPQCipher(PQCipher):
             # Decapsulate shared secret
             shared_secret = self.liboqs_kem.decapsulate(encapsulated_key, private_key)
 
+            from cryptography.exceptions import InvalidTag
+
             # Use secure memory for sensitive operations
             with SecureBytes(shared_secret) as secure_shared_secret:
-                # Derive symmetric key using secure memory
-                symmetric_key = SecureBytes(hashlib.sha256(secure_shared_secret).digest())
+                # Mirror PQCipher.decrypt: files written by 1.4.x releases
+                # <= 1.4.7 carry v12/v13 format_version but used the legacy
+                # bare-SHA256 KEM key. When HKDF-key authentication fails for
+                # format_version >= 12, retry once with the legacy key. The
+                # AEAD tag rejects wrong keys, so the retry cannot accept
+                # wrong plaintext.
+                attempts = [False]
+                if self.format_version is not None and self.format_version >= 12:
+                    attempts.append(True)
+                last_auth_error = None
+                for legacy_kem_kdf in attempts:
+                    if legacy_kem_kdf:
+                        symmetric_key = SecureBytes(
+                            hashlib.sha256(bytes(secure_shared_secret)).digest()
+                        )
+                    else:
+                        symmetric_key = SecureBytes(
+                            self._derive_symmetric_key(bytes(secure_shared_secret))
+                        )
 
-                # Select the appropriate cipher based on encryption_data
-                if self.encryption_data == "aes-gcm":
-                    cipher = self.AESGCM(symmetric_key)
-                elif self.encryption_data == "chacha20-poly1305":
-                    cipher = self.ChaCha20Poly1305(symmetric_key)
-                elif self.encryption_data == "xchacha20-poly1305":
-                    try:
-                        from .crypt_core import XChaCha20Poly1305
+                    # Select the appropriate cipher based on encryption_data
+                    if self.encryption_data == "aes-gcm":
+                        cipher = self.AESGCM(symmetric_key)
+                    elif self.encryption_data == "chacha20-poly1305":
+                        cipher = self.ChaCha20Poly1305(symmetric_key)
+                    elif self.encryption_data == "xchacha20-poly1305":
+                        try:
+                            from .crypt_core import XChaCha20Poly1305
 
-                        cipher = XChaCha20Poly1305(symmetric_key)
-                    except ImportError:
+                            cipher = XChaCha20Poly1305(symmetric_key)
+                        except ImportError:
+                            if not self.quiet:
+                                logger.warning(
+                                    "XChaCha20Poly1305 not available, falling back to ChaCha20Poly1305"
+                                )
+                            cipher = self.ChaCha20Poly1305(symmetric_key)
+                    elif self.encryption_data == "aes-gcm-siv":
+                        cipher = self.AESGCMSIV(symmetric_key)
+                    elif self.encryption_data == "aes-siv":
+                        cipher = self.AESSIV(symmetric_key)
+                    elif self.encryption_data == "aes-ocb3":
+                        cipher = self.AESOCB3(symmetric_key)
+                    else:
+                        # Default to AES-GCM for unknown algorithms
                         if not self.quiet:
                             logger.warning(
-                                "XChaCha20Poly1305 not available, falling back to ChaCha20Poly1305"
+                                f"Unknown encryption algorithm {self.encryption_data}, falling back to aes-gcm"
                             )
-                        cipher = self.ChaCha20Poly1305(symmetric_key)
-                elif self.encryption_data == "aes-gcm-siv":
-                    cipher = self.AESGCMSIV(symmetric_key)
-                elif self.encryption_data == "aes-siv":
-                    cipher = self.AESSIV(symmetric_key)
-                elif self.encryption_data == "aes-ocb3":
-                    cipher = self.AESOCB3(symmetric_key)
-                else:
-                    # Default to AES-GCM for unknown algorithms
-                    if not self.quiet:
-                        logger.warning(
-                            f"Unknown encryption algorithm {self.encryption_data}, falling back to aes-gcm"
-                        )
-                    cipher = self.AESGCM(symmetric_key)
+                        cipher = self.AESGCM(symmetric_key)
 
-                # Decrypt data using secure memory
-                with SecureBytes() as secure_plaintext:
-                    # Decrypt directly into secure memory
-                    decrypted = cipher.decrypt(nonce, ciphertext, aad)
-                    secure_plaintext.extend(decrypted)
+                    # Decrypt data using secure memory
+                    with SecureBytes() as secure_plaintext:
+                        try:
+                            # Decrypt directly into secure memory
+                            decrypted = cipher.decrypt(nonce, ciphertext, aad)
+                        except InvalidTag as auth_error:
+                            last_auth_error = auth_error
+                            secure_memzero(symmetric_key)
+                            continue
+                        if legacy_kem_kdf and not self.quiet:
+                            eprint(
+                                "NOTICE: this file was encrypted with the legacy "
+                                "(pre-1.4.8) KEM key derivation. It remains readable, "
+                                "but re-encrypting it is recommended for cross-version "
+                                "compatibility."
+                            )
+                        secure_plaintext.extend(decrypted)
 
-                    # Zero out the original decrypted data
-                    if isinstance(decrypted, bytearray):
-                        secure_memzero(decrypted)
+                        # Zero out the original decrypted data
+                        if isinstance(decrypted, bytearray):
+                            secure_memzero(decrypted)
+                        secure_memzero(symmetric_key)
 
-                    # Return a copy, secure memory will be auto-cleared
-                    return bytes(secure_plaintext)
+                        # Return a copy, secure memory will be auto-cleared
+                        return bytes(secure_plaintext)
+                raise last_auth_error
         except Exception as e:
             if not self.quiet:
                 logger.error(f"Error in post-quantum decryption: {e}")

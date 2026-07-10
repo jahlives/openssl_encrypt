@@ -7308,6 +7308,7 @@ def encrypt_file(
                         quiet=quiet,
                         verbose=verbose,
                         debug=debug,
+                        format_version=format_version,
                     )
                     public_key, private_key = cipher.generate_keypair()
                     # We'll add these to metadata later
@@ -7320,6 +7321,7 @@ def encrypt_file(
                     encryption_data=encryption_data,
                     verbose=verbose,
                     debug=debug,
+                    format_version=format_version,
                 )
                 return cipher.encrypt(data, public_key, aad=aad)
         else:
@@ -7535,7 +7537,11 @@ def encrypt_file(
                     public_key = pqc_keypair[0]
                 else:
                     # If no keypair provided, we need to create a new one and store it in metadata
-                    cipher = PQCipher(pqc_algo_map[algorithm], quiet=quiet)
+                    cipher = PQCipher(
+                        pqc_algo_map[algorithm],
+                        quiet=quiet,
+                        format_version=format_version,
+                    )
                     public_key, private_key = cipher.generate_keypair()
                     # We'll add these to metadata later
 
@@ -7545,6 +7551,7 @@ def encrypt_file(
                     pqc_algo_map[algorithm],
                     quiet=quiet,
                     encryption_data=encryption_data,
+                    format_version=format_version,
                 )
                 return cipher.encrypt(data, public_key, aad=aad)
             else:
@@ -11134,6 +11141,7 @@ def decrypt_file(
                     encryption_data=encryption_data,
                     verbose=verbose,
                     debug=debug,
+                    format_version=format_version,
                 )
                 try:
                     # Pass the full file contents for recovery if needed

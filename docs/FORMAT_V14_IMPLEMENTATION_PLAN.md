@@ -299,6 +299,19 @@ Spec §3.2 semantics; 1.4.x sites:
   policy (try-HKDF-then-legacy is a security anti-pattern — prefer an
   explicit metadata marker) — **STOP and consult before implementing a
   fallback.**
+  - **RESOLVED 2026-07-10:** measurement confirmed the risk is real — v13
+    shipped in released 1.4.6/1.4.7 (Independent-XOR is even the
+    STANDARD/PARANOID default there), so legacy-keyed v12/v13 PQC files exist
+    in the wild. Per the user's explicit constraint ("no breaking changes for
+    existing encryptions"), Phase 0 implements a **decrypt-side one-shot
+    legacy retry**: v12+ KEM decryption tries HKDF first and, on
+    authentication failure, retries once with the legacy bare-SHA256 key,
+    printing a re-encryption notice. This is safe (the AEAD tag rejects wrong
+    keys; the legacy population legitimately exists, so no attacker-usable
+    downgrade is added). A metadata marker was rejected because 1.5.x neither
+    writes nor reads one, so it cannot restore cross-line reading. Port the
+    same retry to 1.5.x in Phase 6 — 1.5.x currently cannot read old 1.4.x
+    v12/v13 PQC files either.
 - **Streaming decrypt gates hardcode `== 12`** (core:9868, 10815) — missing
   them yields v14 streaming files that encrypt fine and fail to decrypt.
   Covered by Phase 4 step 3 tests.

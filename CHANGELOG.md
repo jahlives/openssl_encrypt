@@ -88,6 +88,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Cross-line PQC KEM key-derivation compatibility** (finding #83 backport,
+  v14 implementation plan Phase 0, 2026-07-10): the 1.4.x line derived every
+  PQC KEM symmetric key as bare `sha256(shared_secret)`, while 1.5.x derives
+  it via HKDF-SHA256 with algorithm-name domain separation for
+  `format_version >= 12` — so v12 (streaming) and v13 (Independent-XOR) PQC
+  files could not be decrypted across the two maintenance lines (confirmed
+  empirically: 1.5.x-style decryption of a 1.4.x-written v13 PQC file fails
+  with InvalidTag). `PQCipher` now implements the same `format_version`-gated
+  HKDF derivation (`_derive_symmetric_key`), threaded from
+  `encrypt_file`/`decrypt_file`, making new v12+ PQC files byte-compatible
+  with 1.5.x. Files written by 1.4.x releases <= 1.4.7 with the legacy
+  derivation **remain fully decryptable**: when HKDF-key authentication fails
+  on a v12+ PQC file, decryption retries once with the legacy key (safe — the
+  AEAD tag rejects wrong keys, and the legacy file population legitimately
+  exists, so no new downgrade surface is introduced) and prints a
+  re-encryption recommendation. Files below v12 and all non-PQC files derive
+  byte-identically to before.
+
 Follow-up security review (2026-07-07) — findings fixed with regression tests
 and crypto-reviewer sign-off:
 
