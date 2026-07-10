@@ -2213,6 +2213,39 @@ def _indep_xor_component_salt(base_salt: bytes, name: str, format_version: int) 
     ).derive(base_salt)
 
 
+def _v14_seed_encode(password: bytes, salt: bytes, hsm_pepper: bytes = None) -> bytearray:
+    """Length-prefixed (TLV) KDF seed for ``format_version >= 14`` (finding #100).
+
+    Layout: ``LP(password) || LP(salt) || LP(pepper)`` with
+    ``LP(x) = uint32_be(len(x)) || x``. The pepper field is ALWAYS emitted —
+    an absent pepper encodes as ``LP(b"") = 00 00 00 00`` — so no
+    (password, salt, pepper) split of the same byte string can alias another.
+    Replaces the raw ``password || pepper || salt`` concatenation used below
+    v14, whose field boundaries were ambiguous.
+
+    The encoding is **pinned** for cross-line (1.4.x/1.5.x) byte-identity and
+    covered by golden vectors: do not change the field order, the 4-byte
+    big-endian length prefixes, or the always-present pepper field.
+
+    Args:
+        password: Password bytes (never a str at this layer).
+        salt: Salt bytes.
+        hsm_pepper: Optional hardware pepper bytes; None and b"" encode
+            identically as an empty field.
+
+    Returns:
+        The encoded seed as a bytearray so the caller can secure_memzero it
+        after hashing (it contains the cleartext password and pepper —
+        M2 [MEM-1] wipe standard).
+    """
+    seed = bytearray()
+    for field in (password, salt, hsm_pepper):
+        field = bytes(field) if field else b""
+        seed += len(field).to_bytes(4, "big")
+        seed += field
+    return seed
+
+
 def compute_hash_independent(
     password: bytes,
     salt: bytes,
@@ -2726,8 +2759,10 @@ def generate_key_independent_xor(
 
     # Apply HSM pepper if provided. Track the buffer WE allocate so it can be
     # wiped in `finally` without touching the caller's password object (M2 [MEM-1]).
+    # v14+ does NOT concat the pepper into the password: the pepper enters the
+    # seed as its own length-prefixed TLV field below (finding #100).
     peppered_password = None
-    if hsm_pepper:
+    if hsm_pepper and (format_version is None or format_version < 14):
         if debug:
             logger.debug("INDEPENDENT-XOR: Mixing HSM pepper into password")
         password = SecureBytes(password + hsm_pepper)
@@ -2740,7 +2775,19 @@ def generate_key_independent_xor(
         # 0. Add initial hash of password+salt to XOR (defense-in-depth, like v10)
         # This provides input normalization and additional key stretching.
         # Hold it in SecureBytes so the finally wipe is real (M2 [MEM-1]).
-        initial_hash = SecureBytes(hashlib.sha256(bytes(password) + salt).digest())
+        # v14+: hash the length-prefixed TLV seed (password, salt and pepper as
+        # separate unambiguous fields — finding #100); < 14 keeps the legacy
+        # raw concatenation byte-identically (pepper already folded into
+        # `password` above for < 14).
+        if format_version is not None and format_version >= 14:
+            _v14_seed = _v14_seed_encode(password, salt, hsm_pepper)
+            try:
+                initial_hash = SecureBytes(hashlib.sha256(bytes(_v14_seed)).digest())
+            finally:
+                # The seed holds the cleartext password and pepper (M2 [MEM-1]).
+                secure_memzero(_v14_seed)
+        else:
+            initial_hash = SecureBytes(hashlib.sha256(bytes(password) + salt).digest())
         initial_normalized = normalize_to_key_length_secure(initial_hash, key_length)
         xor_components.append(initial_normalized)  # SecureBytes object
 

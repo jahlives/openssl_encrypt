@@ -115,6 +115,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **format_version 14: length-prefixed (TLV) KDF seed** (finding #100,
+  v14 implementation plan Phase 2, 2026-07-10): below v14 the
+  independent-XOR key derivation seeds every component from
+  `sha256(password || pepper || salt)` with the hardware pepper mixed by raw
+  concatenation — so different (password, pepper, salt) splits of the same
+  byte string derive the same key (boundary ambiguity; rated impractical to
+  exploit since tool-generated salts have fixed length, but structurally
+  unsound). Files at `format_version >= 14` seed from
+  `sha256(LP(password) || LP(salt) || LP(pepper))` with
+  `LP(x) = uint32_be(len(x)) || x` and an always-present pepper field
+  (`_v14_seed_encode`, pinned for cross-line byte-identity). Everything
+  below v14 derives byte-identically to before (v13/v11 golden vectors
+  unchanged); nothing writes v14 by default yet. Verified during
+  implementation: the spec's other #100 sites (the `multi_hash_password`
+  seed concat and the 11 per-round `sha256(salt+i)` sites) are unreachable
+  at v14 — the former is sequential-path only, the latter are `< 7` legacy
+  branches — so the fix lands precisely at the one live site.
+
 - **Cross-line PQC KEM key-derivation compatibility** (finding #83 backport,
   v14 implementation plan Phase 0, 2026-07-10): the 1.4.x line derived every
   PQC KEM symmetric key as bare `sha256(shared_secret)`, while 1.5.x derives
