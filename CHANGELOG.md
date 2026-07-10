@@ -446,6 +446,20 @@ inflated KDF metadata parameters, not cosmetic output.
 
 ### Security
 
+- **format_version 14: length-prefixed (TLV) KDF seed** (finding #100,
+  v14 implementation plan Phase 2, 2026-07-10): below v14 the
+  independent-XOR key derivation seeds every component from
+  `sha256(password || pepper || salt)` with the hardware pepper mixed by raw
+  concatenation — so different (password, pepper, salt) splits of the same
+  byte string derive the same key (boundary ambiguity; rated impractical to
+  exploit since tool-generated salts have fixed length, but structurally
+  unsound). Files at `format_version >= 14` seed from
+  `sha256(LP(password) || LP(salt) || LP(pepper))` with
+  `LP(x) = uint32_be(len(x)) || x` and an always-present pepper field
+  (`_v14_seed_encode`, pinned for cross-line byte-identity). Everything
+  below v14 derives byte-identically to before; nothing writes v14 by
+  default yet.
+
 - **Legacy KEM key-derivation decrypt retry — reads pre-1.4.8 PQC files**
   (finding #83 backport counterpart, v14 plan Phase 0, 2026-07-10): 1.4.x
   releases up to 1.4.7 derived every PQC KEM symmetric key as bare
