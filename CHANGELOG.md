@@ -42,6 +42,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Documentation: `docs/FORMAT_V14_IMPLEMENTATION_PLAN.md` added — v14
+  scheduled for 1.4.x** (2026-07-10): phased execution plan for the full v14
+  scope (#100 TLV KDF seed, #83 KEM HKDF + ciphertext binding, M2
+  independent-XOR default / M1) on `feature/v1.4.x-development`, followed by
+  a full 1.5.x port with byte-identical golden vectors. All implementation
+  sites re-verified on 1.4.x. Documents a critical planning finding: the
+  FORMAT_V14_PLAN §3.6 claim that the #83 v12 HKDF ancestor exists on both
+  lines is wrong — 1.4.x still derives KEM keys as bare
+  `sha256(shared_secret)` with no `format_version` threading, a suspected
+  live cross-line incompatibility for v12/v13 PQC files (to be confirmed and
+  fixed as Phase 0). Plan only — no code change.
+
 - **Documentation: `docs/FORMAT_V14_PLAN.md` M2 decided as Option A**
   (decision record, 2026-07-10): format_version 14 writes will default to the
   independent-XOR topology; sequential-XOR (`--use-xor-composition`) remains a

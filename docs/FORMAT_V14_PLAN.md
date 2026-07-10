@@ -1,5 +1,17 @@
 # Pre-staged spec — `format_version 14` (findings #100 KDF-8 and #83 PQC-3, plus KDF-cascade audit M1/M2)
 
+**Status update 2026-07-10: SCHEDULED.** Full scope (#100 + #83 + M2/M1) will
+land on `feature/v1.4.x-development` first, followed by a full port to
+`feature/v1.5.x-development`. Execution plan with verified 1.4.x line
+references: `docs/FORMAT_V14_IMPLEMENTATION_PLAN.md`. **Correction to §3.6:**
+the claim that the "#83 v12 HKDF ancestor exists on both lines" is wrong —
+1.4.x derives the KEM key as bare `sha256(shared_secret)` unconditionally
+(`pqc.py:674/944`, `pqc_adapter.py:299/405`, no `format_version` threading);
+the 1.5.x consolidation must be backported first (implementation plan
+Phase 0), and this is a suspected live cross-line incompatibility for
+v12/v13 PQC files independent of v14. The original deferred status below is
+kept for the record.
+
 **Status: DEFERRED / pre-staged. Not scheduled.** This is a ready-to-implement
 spec, not committed work. Per the 2026-07-07 design review, a v14 bump is **not
 warranted on its own** — both findings are non-exploitable, #83 is already fixed
