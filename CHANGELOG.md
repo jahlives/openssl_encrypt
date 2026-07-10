@@ -571,6 +571,15 @@ inflated KDF metadata parameters, not cosmetic output.
   materialized (M2 [MEM-1] hygiene; derived keys are byte-identical —
   pinned by the cross-line golden vectors).
 
+- **v14 KEM transcript binding: detection mechanism documented**
+  (crypto-reviewer v14 series pass 2026-07-10, Low): `_derive_symmetric_key`
+  now documents that the #83 transcript binding detects ciphertext/metadata
+  substitution *via AEAD authentication* (wrong key → tag failure), not an
+  explicit compare — so the binding requires the symmetric layer to remain
+  an AEAD (all reachable PQC data ciphers are AEADs, incl. Threefish via
+  CTR+Poly1305), guarding against a future non-authenticated data cipher
+  silently voiding it.
+
 - **Legacy KEM key-derivation decrypt retry — reads pre-1.4.8 PQC files**
   (finding #83 backport counterpart, v14 plan Phase 0, 2026-07-10): 1.4.x
   releases up to 1.4.7 derived every PQC KEM symmetric key as bare
