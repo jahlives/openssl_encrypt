@@ -104,6 +104,12 @@ logger = logging.getLogger(__name__)
 # upgrade, and the envelope fast-path exclusion can never drift apart.
 _UNSAFE_SEQUENTIAL_XOR_VERSIONS = (8, 10)
 
+# Latest stable on-disk format version. v14 writes are independent-XOR only
+# (M2 decision 2026-07-10, docs/FORMAT_V14_PLAN.md section 6.3): sequential
+# XOR remains a supported opt-in pinned at format_version 13. Any new
+# version-selection code must use this constant instead of a literal.
+LATEST_STABLE_FORMAT_VERSION = 14
+
 
 # Global variable to track telemetry enablement (set by CLI/config)
 _telemetry_enabled = False
@@ -5831,6 +5837,16 @@ def encrypt_file(
             input_is_bytes=input_is_bytes,
         )
 
+    # Fail closed BEFORE the streaming force below rewrites format_version:
+    # an explicit v14+ request with sequential XOR must be refused regardless
+    # of file size (M2 decision: no v14 sequential file may ever exist).
+    if format_version >= 14 and xor_mode == "sequential":
+        raise ValueError(
+            f"format_version {format_version} supports only independent-XOR key "
+            f"derivation; use format_version 13 for sequential XOR "
+            f"(--use-xor-composition)"
+        )
+
     if _use_streaming and format_version != 12:
         if debug:
             logger.debug(
@@ -5974,6 +5990,7 @@ def encrypt_file(
     elif remote_pepper:
         combined_pepper = remote_pepper
 
+
     # Resolve the XOR composition mode. `xor_mode` decouples mode from version so
     # that v13 can hold EITHER mode (independent per-component salts, or fixed
     # sequential). When unset, infer from the version for backward compatibility
@@ -5987,6 +6004,16 @@ def encrypt_file(
     else:
         is_independent_xor = format_version >= 11
         meta_xor_mode = None  # let the metadata builder infer from the version
+
+    # Fail closed: v14+ is independent-XOR only (M2 decision 2026-07-10).
+    # A sequential v14 file must never exist — the sequential path keeps its
+    # legacy (< 14) derivation semantics and is written as format_version 13.
+    if format_version >= 14 and not is_independent_xor:
+        raise ValueError(
+            f"format_version {format_version} supports only independent-XOR key "
+            f"derivation; use format_version 13 for sequential XOR "
+            f"(--use-xor-composition)"
+        )
 
     # Generate key (now with combined pepper)
     # Independent XOR (robust XOR-combiner) vs sequential/chained derivation.
@@ -6189,10 +6216,10 @@ def encrypt_file(
             _enc_md = metadata.setdefault("encryption", {})
             _enc_md["dek_slots"] = _envelope_dek_slots
             _enc_md["dek_slots_mac"] = base64.b64encode(_envelope_dek_slots_mac).decode("ascii")
-        # v13 can carry EITHER xor mode and the decrypt path routes purely by the
-        # xor_mode field, so always stamp it explicitly for v13 (some builders, e.g.
-        # the cascade v8 path, do not write it). (v13 is never streaming.)
-        if format_version == 13:
+        # v13 carries EITHER xor mode; decrypt routes purely by the xor_mode field,
+        # so always stamp it explicitly for v13+ (some builders never write it).
+        # v14+ is independent-only (enforced fail-closed at the resolution site).
+        if format_version >= 13:
             metadata["xor_mode"] = "independent" if is_independent_xor else "sequential"
         metadata_json = json.dumps(metadata).encode("utf-8")
         metadata_b64 = base64.b64encode(metadata_json)
@@ -6994,10 +7021,10 @@ def encrypt_file(
             _enc_md = metadata.setdefault("encryption", {})
             _enc_md["dek_slots"] = _envelope_dek_slots
             _enc_md["dek_slots_mac"] = base64.b64encode(_envelope_dek_slots_mac).decode("ascii")
-        # v13 can carry EITHER xor mode and the decrypt path routes purely by the
-        # xor_mode field, so always stamp it explicitly for v13 (some builders, e.g.
-        # the cascade v8 path, do not write it). (v13 is never streaming.)
-        if format_version == 13:
+        # v13 carries EITHER xor mode; decrypt routes purely by the xor_mode field,
+        # so always stamp it explicitly for v13+ (some builders never write it).
+        # v14+ is independent-only (enforced fail-closed at the resolution site).
+        if format_version >= 13:
             metadata["xor_mode"] = "independent" if is_independent_xor else "sequential"
         metadata_json = json.dumps(metadata).encode("utf-8")
         metadata_b64 = base64.b64encode(metadata_json)
@@ -7288,10 +7315,10 @@ def encrypt_file(
             _enc_md = metadata.setdefault("encryption", {})
             _enc_md["dek_slots"] = _envelope_dek_slots
             _enc_md["dek_slots_mac"] = base64.b64encode(_envelope_dek_slots_mac).decode("ascii")
-        # v13 can carry EITHER xor mode and the decrypt path routes purely by the
-        # xor_mode field, so always stamp it explicitly for v13 (some builders, e.g.
-        # the cascade v8 path, do not write it). (v13 is never streaming.)
-        if format_version == 13:
+        # v13 carries EITHER xor mode; decrypt routes purely by the xor_mode field,
+        # so always stamp it explicitly for v13+ (some builders never write it).
+        # v14+ is independent-only (enforced fail-closed at the resolution site).
+        if format_version >= 13:
             metadata["xor_mode"] = "independent" if is_independent_xor else "sequential"
         metadata_json = json.dumps(metadata).encode("utf-8")
         metadata_base64 = base64.b64encode(metadata_json)
@@ -7559,11 +7586,19 @@ def extract_file_metadata(input_file, second_password=None):
                 metadata = json.loads(metadata_json)
             except json.JSONDecodeError as e:
                 raise ValueError(f"Invalid JSON in metadata: {e}")
+            # Fail closed even without the schema validator: the handling
+            # branches below accept any format_version >= 4, so an unknown or
+            # future version must be refused here, not fall into v4+ handling.
+            _fallback_fv = metadata.get("format_version", 1)
+            if not isinstance(_fallback_fv, int) or isinstance(_fallback_fv, bool):
+                raise ValueError(f"Unsupported file format version: {_fallback_fv!r}")
+            if _fallback_fv < 1 or _fallback_fv > LATEST_STABLE_FORMAT_VERSION:
+                raise ValueError(f"Unsupported file format version: {_fallback_fv}")
 
         format_version = metadata.get("format_version", 1)
 
         # Extract algorithm based on format version
-        if format_version in [4, 5, 6, 7, 8, 9, 10, 11, 12, 13]:
+        if format_version >= 4:
             encryption = metadata.get("encryption", {})
             algorithm = encryption.get("algorithm", EncryptionAlgorithm.FERNET.value)
             encryption_data = encryption.get("encryption_data", "aes-gcm")
@@ -9147,6 +9182,14 @@ def decrypt_file(
                 metadata = json.loads(metadata_json)
             except json.JSONDecodeError as e:
                 raise ValueError(f"Invalid JSON in metadata: {e}")
+            # Fail closed even without the schema validator: the handling
+            # branches below accept any format_version >= 4, so an unknown or
+            # future version must be refused here, not fall into v4+ handling.
+            _fallback_fv = metadata.get("format_version", 1)
+            if not isinstance(_fallback_fv, int) or isinstance(_fallback_fv, bool):
+                raise ValueError(f"Unsupported file format version: {_fallback_fv!r}")
+            if _fallback_fv < 1 or _fallback_fv > LATEST_STABLE_FORMAT_VERSION:
+                raise ValueError(f"Unsupported file format version: {_fallback_fv}")
         # For streaming format v12, the payload is binary (not base64)
         # The streaming decryptor reads the file directly, so we skip base64 decode
         _temp_format_version = metadata.get("format_version", 1)
@@ -9246,7 +9289,7 @@ def decrypt_file(
 
     # For format_version 4, 5, 6, 7, 8, 9, 10, or 11, set correct hash_config for printing purposes
     # This doesn't change the actual metadata, just passes the right info to print_hash_config
-    if format_version in [4, 5, 6, 7, 8, 9, 10, 11, 12, 13]:
+    if format_version >= 4:
         # If verbose, pass the full metadata to print_hash_config for proper display
         if verbose:
             print_hash_config_metadata = metadata
@@ -9256,7 +9299,7 @@ def decrypt_file(
         print_hash_config_metadata = metadata.get("hash_config", {})
 
     # Handle format version 4, 5, 6, 7, 8, 9, 10, 11, or 12
-    if format_version in [4, 5, 6, 7, 8, 9, 10, 11, 12, 13]:
+    if format_version >= 4:
         # Extract information from new hierarchical structure
         derivation_config = metadata["derivation_config"]
         salt = base64.b64decode(derivation_config["salt"])
@@ -9305,7 +9348,7 @@ def decrypt_file(
         # Check if this is V8+ cascade format
         is_cascade = encryption.get("cascade", False)
 
-        if format_version in [8, 9, 10, 11, 12, 13] and is_cascade:
+        if format_version >= 8 and is_cascade:
             # Extract cascade information
             cascade_cipher_chain = encryption.get("cipher_chain", [])
             cascade_hkdf_hash = encryption.get("hkdf_hash", "sha256")
@@ -9769,8 +9812,10 @@ def decrypt_file(
         # Recovery path: the DEK is unlocked from a recovery slot at the
         # envelope-unwrap step below, so the password-derived KEK is not needed.
         key = None
-    elif xor_mode == "independent" or format_version in (11, 12):
-        # Independent XOR mode (robust XOR-combiner)
+    elif xor_mode == "independent" or format_version in (11, 12) or format_version >= 14:
+        # Independent XOR mode (robust XOR-combiner). v14+ is independent-only
+        # by design (M2 decision), so route it here even if a hand-crafted
+        # blob omits xor_mode — the v14 schema also requires xor_mode.
         if parallel_kdf:
             # Parallel execution via multiprocessing
             from .parallel_kdf import generate_key_independent_xor_parallel
@@ -9975,7 +10020,7 @@ def decrypt_file(
     if pqc_has_private_key:
         try:
             # Handle different format versions
-            if format_version in [4, 5, 6, 7, 8, 9, 10, 11, 12, 13]:
+            if format_version >= 4:
                 # Get encrypted private key from v4+ structure
                 encrypted_private_key = base64.b64decode(metadata["encryption"]["pqc_private_key"])
             else:  # format_version 3
@@ -9988,7 +10033,7 @@ def decrypt_file(
             if pqc_key_is_encrypted:
                 # We need to decrypt the private key using the separately derived key
                 # Get the salt from metadata based on format version
-                if format_version in [4, 5, 6, 7, 8, 9, 10]:
+                if format_version >= 4:
                     if "pqc_key_salt" not in metadata["encryption"]:
                         if not quiet:
                             eprint("Failed to decrypt post-quantum private key - wrong format")

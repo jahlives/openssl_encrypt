@@ -180,36 +180,51 @@ inside a `# START DO NOT CHANGE` block.
 
 ### Phase 2 — #100: length-prefixed TLV seed (gate `fv >= 14`)
 
-Spec §3.2 semantics; 1.4.x sites:
+**Scope correction (verified in code 2026-07-10, during Phase 1):** the spec
+§3.2 site list does not survive contact with the 1.4.x reachability graph:
+
+- All 11 `sha256(salt + str(i).encode())` per-round-salt sites sit inside
+  `format_version < 7` legacy branches (v7+ derives round salts by chaining
+  the previous output: `hashed[:32]` in hash stages, `bytes(password)[:16]`
+  in KDF stages) — **unreachable at v14**; no HKDF round-salt change needed.
+- `multi_hash_password`'s seed concat (buffer size + `secure_memcpy` sites)
+  belongs to the **sequential** `generate_key` path, which can never carry
+  v14 (Phase 1 fail-closed guard) — **unreachable at v14**; do NOT gate it.
+- The live #100 surface for v14 is `generate_key_independent_xor`: it mixes
+  the pepper by raw concat (`password = SecureBytes(password + hsm_pepper)`)
+  and seeds every component from `sha256(bytes(password) + salt)` — exactly
+  the boundary-ambiguity finding. The v14 fix lands THERE: under `fv >= 14`,
+  `initial_hash = sha256(_v14_seed_encode(password, salt, hsm_pepper))` with
+  pepper as its own TLV field (no pepper-into-password concat), keeping
+  `< 14` byte-identical.
+
+Steps below are updated accordingly; original spec steps that targeted the
+sequential-path sites are dropped (they would be dead code).
 
 1. Failing spec tests first (`test_format_v14_seed_lengthsep.py`, mirroring
    `test_format_v13_xor_domsep.py`): `_v14_seed_encode` TLV layout
    (`LP(x) = uint32_be(len(x)) || x`; field order password, salt, pepper;
-   empty pepper emits `00 00 00 00`); ambiguity pairs (e.g.
-   `pw="ab", salt="c"` vs `pw="a", salt="bc"`) now derive distinct keys;
-   independent `_ref_v14_seed(...)` reimplementation cross-check;
-   `GOLDEN_KEY_HEX` for one minimal deterministic config (one hash stage +
-   Argon2, fixed 16-byte salt); `< 14` byte-identical no-op; round-trip.
+   empty/absent pepper emits `00 00 00 00`); ambiguity pairs (boundary
+   shifts between password/salt/pepper) derive distinct keys under v14 while
+   colliding under `< 14` (demonstrating the fix); independent
+   `_ref_v14_seed(...)` reimplementation cross-check; `GOLDEN_KEY_HEX` for a
+   minimal deterministic independent-XOR config (fixed 16-byte salt); v14
+   key differs from the v13 key for the same inputs; `< 14` byte-identical
+   no-op (the v13 golden in `test_format_v13_xor_domsep.py` must stay
+   green); round-trip incl. an `hsm_pepper` case.
 2. Implement `_v14_seed_encode(password, salt, hsm_pepper) -> bytes` next to
-   `_indep_xor_component_salt` (core:2180); pin the `info`/width constants
-   with do-not-change comments (v13 pattern, core:2193-2194).
-3. Gate the seed sites on `format_version >= 14`: buffer size core:1528
-   (v14: `12 + len(password) + len(salt) + pepper_len`), concat core:1567/1569
-   → `_v14_seed_encode`. Keep BLAKE3 min-size logic (1551-1553) unchanged.
-4. Per-round salts under v14 → `HKDF-SHA256(ikm=salt, salt=None, length=32,
-   info=b"openssl_encrypt.kdf.v14.round:" + algo_name + b":" + uint32_be(i))`
-   at the 7 hash-stage sites (1764, 1774, 1820, 1831, 1881, 1916, 1926) and
-   4 KDF-stage sites (3544, 3679, 3801, 3940). `< 14` branches return the
-   exact current bytes.
-5. Shared XOR input, **independent path only** (core:2737): v14 →
-   `sha256(LP(password) || LP(salt))`. The sequential site (core:3311) is NOT
-   gated — add the guard test that no v14 write can reach the sequential path
-   (spec §6.5).
-6. Full-matrix golden pinning per algorithm × KDF (extend
+   `_indep_xor_component_salt`; pin field order/widths with do-not-change
+   comments (v13 pattern).
+3. Gate `generate_key_independent_xor` on `format_version >= 14`: skip the
+   pepper-into-password concat and compute
+   `initial_hash = sha256(_v14_seed_encode(password, salt, hsm_pepper))`;
+   `< 14` keeps the concat + `sha256(password + salt)` byte-identically.
+4. Check the parallel worker (`parallel_kdf.py`) derives the same v14 seed
+   (M3 regression class: parallel and sequential independent-XOR must match).
+5. Full-matrix golden pinning per algorithm × KDF (extend
    `test_salt_derivation_versions.py` with a v14 row) BEFORE any CLI default
    change. Changelog: **Security** → all four files. crypto-reviewer gate.
-   **Commit** (split "seed encode + sites" / "round salts" into two commits if
-   review size demands; feature boundary = both landed).
+   **Commit.**
 
 ### Phase 3 — #83: v14 KEM ciphertext transcript binding (gate `fv >= 14`)
 

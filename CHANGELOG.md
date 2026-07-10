@@ -303,6 +303,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Embedded encrypted PQC private keys in v11-v13 files were undecryptable**
+  ("Missing PQC key salt"): the decrypt-side `pqc_key_salt` lookup was gated
+  on `format_version in [4..10]`, so files that embed a password-encrypted
+  post-quantum private key (`pqc_store_private_key`) at format versions 11-13
+  always fell into the v3 legacy branch and failed. Every v4+ metadata writer
+  stores the salt under `encryption.pqc_key_salt`; the gate is now `>= 4`,
+  with v13/v14 regression round-trips. Found while wiring format_version 14.
+
+
 - **Asymmetric recipient files written by 1.4.x now decrypt on 1.5.x**: the
   per-recipient password-wrap key derivation was upgraded from bare SHA-256 to
   HKDF-SHA256 (`password_wrap.v2`) on the 1.4.x line, but the change was never
@@ -357,6 +366,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `test_envelope_encryption.py`).
 
 ### Changed
+
+- **format_version 14 scaffolding** (v14 implementation plan Phase 1, no
+  default/behavior change for existing writes): registered
+  `metadata_v14_schema.json` (independent-XOR only — `xor_mode` enum is
+  `["independent"]`; optional v12-style `streaming` block), added
+  `LATEST_STABLE_FORMAT_VERSION = 14`, extended explicit `xor_mode` stamping
+  from `== 13` to `>= 13`, added a fail-closed guard refusing any
+  `format_version >= 14` write with sequential XOR (sequential stays pinned
+  at v13 per the M2 decision), and generalized hardcoded decrypt-side
+  version lists (`[4..13]` → `>= 4`, `[8..13]` → `>= 8`) so future versions
+  cannot silently fall into legacy branches. Per crypto-review of the phase:
+  the sequential-refusal fires before the streaming force rewrites the
+  version (size-independent invariant), the no-validator JSON fallback now
+  fail-closes on unknown/future format versions instead of relying solely on
+  schema validation, the v14 schema requires `xor_mode`, and the decrypt
+  router treats `format_version >= 14` as independent-XOR explicitly. v14
+  files round-trip; nothing writes v14 by default yet.
+
 
 - **`--debug` warning is now proportional to what it leaks**: the loud
   "SENSITIVE DATA LOGGING ACTIVE" banner and the "do not use on production data"
