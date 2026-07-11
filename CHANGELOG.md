@@ -165,6 +165,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **`encrypt_file` now refuses format_version values above the latest
+  stable format** (v14 follow-up review LOW-2, gitlab#114, 2026-07-11):
+  the write path bounded explicit `format_version` requests from below
+  (the v8/v10 sequential-XOR refusal) but not from above — an explicit
+  `format_version=15` passed every `>= 14` gate, derived a real key, and
+  stamped the unknown version into the metadata; the decrypt side then
+  failed closed on it, leaving a permanently unreadable file (data-loss
+  footgun for API callers) carrying an on-disk version whose semantics
+  were never specified. New writes now raise a clear `ValueError` for
+  `format_version > LATEST_STABLE_FORMAT_VERSION`, before any archiving
+  or temp files, mirroring the decrypt-side bound. Not attacker-
+  exploitable; no change for any valid version.
+
 - **Remote and combined KDF pepper are now zeroized after use** (v14
   follow-up review LOW-1, gitlab#113, 2026-07-11): the v14 work wipes the
   TLV KDF seed in a `finally` block, but the pepper material feeding it
