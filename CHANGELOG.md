@@ -165,6 +165,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Remote and combined KDF pepper are now zeroized after use** (v14
+  follow-up review LOW-1, gitlab#113, 2026-07-11): the v14 work wipes the
+  TLV KDF seed in a `finally` block, but the pepper material feeding it
+  outlived that wipe — the remote pepper (AES-GCM decrypt output) and the
+  combined `hsm_pepper + remote_pepper` concatenation were immutable
+  `bytes` that were never zeroized, and the existing `hsm_pepper` wipe was
+  a no-op copy-zero on plugin-supplied `bytes` (M10). All three are now
+  held in wipeable `bytearray` buffers from creation — the combined pepper
+  is built by a new `_combine_peppers` helper in one exact-size allocation
+  (no intermediate concatenation copies, same M2 [MEM-1] standard as the
+  seed encoder) — and zeroized in the `encrypt_file`/`decrypt_file`
+  `finally` blocks on all paths. Unavoidable immutable transients from
+  library/plugin APIs (`AESGCM.decrypt` output, the plugin result dict)
+  remain documented accepted residuals. No derived keys or file formats
+  change; pure memory-hygiene hardening.
+
 - **Recipient password wrap now binds the KEM ciphertext and algorithm
   into the key derivation (wrap_version 3)** (post-v14 review LOW-3,
   gitlab#112, 2026-07-11): `PasswordWrapper` derived the per-recipient
