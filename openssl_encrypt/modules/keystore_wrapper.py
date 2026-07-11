@@ -14,7 +14,11 @@ from typing import Any, Dict, Optional, Tuple, Union
 from .crypt_core import decrypt_file as original_decrypt_file
 from .crypt_core import encrypt_file as original_encrypt_file
 from .crypt_utils import eprint
-from .keystore_utils import extract_key_id_from_metadata, get_pqc_key_for_decryption
+from .keystore_utils import (
+    _coerce_format_version,
+    extract_key_id_from_metadata,
+    get_pqc_key_for_decryption,
+)
 
 
 def encrypt_file_with_keystore(
@@ -144,7 +148,7 @@ def encrypt_file_with_keystore(
                     metadata = json.loads(metadata_json)
 
                     # Get format version
-                    format_version = metadata.get("format_version", 3)
+                    format_version = _coerce_format_version(metadata, 3)
 
                     # Check if private key is in metadata based on format version
                     pqc_private_key_present = False
@@ -516,7 +520,7 @@ def decrypt_file_with_keystore(
             try:
                 metadata_json = base64.b64decode(metadata_b64).decode("utf-8")
                 metadata = json.loads(metadata_json)
-                format_version = metadata.get("format_version", 1)
+                format_version = _coerce_format_version(metadata, 1)
                 if not quiet:
                     eprint(f"Detected format version: {format_version}")
             except Exception:
@@ -565,7 +569,7 @@ def decrypt_file_with_keystore(
                         metadata = json.loads(metadata_json)
 
                         # Check for dual encryption flag, handling v3, v4, v5, v6, v7, v8, v9, and v10 formats
-                        format_version = metadata.get("format_version", 1)
+                        format_version = _coerce_format_version(metadata, 1)
                         if (
                             format_version >= 4
                         ):  # v4+ hierarchical metadata (see crypt_core gate fix)
@@ -636,7 +640,7 @@ def decrypt_file_with_keystore(
                 raise ValueError("File password is too short for dual-encryption")
 
             # Check for password verification fields based on format version
-            format_version = metadata.get("format_version", 1)
+            format_version = _coerce_format_version(metadata, 1)
             verify_hash = None
             verify_salt = None
 

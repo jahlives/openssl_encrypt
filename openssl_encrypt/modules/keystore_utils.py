@@ -10,10 +10,38 @@ import logging
 import os
 from typing import Any, Dict, Optional, Tuple
 
+from .crypt_errors import ValidationError
 from .crypt_utils import eprint
 
 # Set up module-level logger
 logger = logging.getLogger(__name__)
+
+
+def _coerce_format_version(container: Optional[Dict[str, Any]], default: int) -> int:
+    """Read ``format_version`` from parsed metadata, type-safely.
+
+    The keystore paths consume raw ``json.loads`` output; crafted metadata
+    can carry any JSON type in ``format_version``, and a non-int reaching a
+    ``>=`` version gate raises an unhandled TypeError (review LOW-2,
+    gitlab#111). Legitimately written files always store an int.
+
+    Args:
+        container: Parsed metadata (or header-config) dict, or None.
+        default: Version to assume when the field is absent (or the
+            container is None) — mirrors the previous ``.get`` defaults.
+
+    Returns:
+        The format version as an int.
+
+    Raises:
+        ValidationError: If the field is present but not an int
+            (bool is rejected explicitly: ``True >= 4`` is valid Python
+            but nonsense metadata). Fail closed, clean error.
+    """
+    fv = default if container is None else container.get("format_version", default)
+    if not isinstance(fv, int) or isinstance(fv, bool):
+        raise ValidationError(f"Invalid format_version type: {type(fv).__name__}")
+    return fv
 
 
 def extract_key_id_from_metadata(encrypted_file: str, verbose: bool = False) -> Optional[str]:
@@ -339,7 +367,7 @@ def get_pqc_key_for_decryption(args, hash_config=None, metadata=None):
 
     # Determine format version if metadata is provided
     if metadata:
-        format_version = metadata.get("format_version", 3)
+        format_version = _coerce_format_version(metadata, 3)
 
     # Check if we have a key ID in the hash_config or metadata
     if format_version == 6 and metadata:
@@ -389,7 +417,7 @@ def get_pqc_key_for_decryption(args, hash_config=None, metadata=None):
                     header_config = json.loads(metadata_json)
 
                     # Get format version from metadata
-                    format_version = header_config.get("format_version", 3)
+                    format_version = _coerce_format_version(header_config, 3)
 
                     if format_version >= 4:  # v4+ hierarchical metadata (see crypt_core gate fix)
                         # Extract from format version 4/5/6/7/9 structure (all use encryption section)
