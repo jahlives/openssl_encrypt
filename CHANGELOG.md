@@ -523,6 +523,24 @@ inflated KDF metadata parameters, not cosmetic output.
 
 ### Security
 
+- **Recipient password wrap now binds the KEM ciphertext and algorithm
+  into the key derivation (wrap_version 3)** (post-v14 review LOW-3,
+  gitlab#112, 2026-07-11): `PasswordWrapper` derived the per-recipient
+  AES-256-GCM wrap key from the ML-KEM shared secret with a static HKDF
+  info — the finding-#83 transcript binding covered only the main PQC data
+  path. New asymmetric files wrap with
+  `info = "openssl_encrypt.password_wrap.v3|" + kem_algorithm + "|ct=" +
+  SHA256(encapsulated_key)` and record `wrap_version: 3` in the recipient
+  entry (inside the signed metadata). Defense-in-depth: ML-KEM implicit
+  rejection plus the GCM tag already defeat ciphertext substitution in
+  practice. Fail-closed by construction — a marked entry never falls back
+  to weaker derivations, stripping the marker derives the wrong key and
+  fails the tag, and unknown marker values are rejected. **Every existing
+  file keeps decrypting** (entries without the marker take the previous
+  v2→v1 chain byte-for-byte, pinned by a pre-fix fixture file); note that
+  asymmetric files written from this version on cannot be opened by older
+  releases (clean unwrap error — same trade as the v14 default flip).
+
 - **Keystore metadata version gates are now type-safe** (post-v14 review
   LOW-2, gitlab#111, 2026-07-11): the keystore integration read
   `format_version` from raw parsed JSON and compared it with `>=`, so a

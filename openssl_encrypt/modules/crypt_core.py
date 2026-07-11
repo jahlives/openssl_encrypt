@@ -5021,6 +5021,12 @@ def decrypt_file_asymmetric(
     except Exception as e:
         raise ValueError(f"Invalid recipient data encoding: {e}")
 
+    # wrap_version 3 binds the KEM ciphertext + algorithm into the wrap-key
+    # derivation (review LOW-3 / gitlab#112). Marker absent -> legacy v2->v1
+    # chain (every pre-marker file). unwrap_password validates the marker
+    # type and fails closed on anything but 3/None.
+    wrap_version = recipient_entry.get("wrap_version")
+
     wrapper = PasswordWrapper(recipient_entry["kem_algorithm"])
 
     # Unwrap password (store in password_unwrapped temporarily)
@@ -5033,7 +5039,10 @@ def decrypt_file_asymmetric(
             with SecureBytes(password_raw) as password_secure:
                 # Unwrap password
                 password_unwrapped = wrapper.unwrap_password(
-                    encrypted_password, bytes(password_secure)
+                    encrypted_password,
+                    bytes(password_secure),
+                    encapsulated_key=encapsulated_key,
+                    wrap_version=wrap_version,
                 )
 
         finally:
@@ -5268,10 +5277,14 @@ def encrypt_file_asymmetric(
                 )
 
                 try:
-                    # Wrap password with shared secret
+                    # Wrap password with shared secret, binding the KEM
+                    # encapsulation ciphertext into the derivation
+                    # (wrap_version 3, review LOW-3 / gitlab#112).
                     with SecureBytes(shared_secret_raw) as shared_secret:
                         encrypted_password = wrapper.wrap_password(
-                            bytes(secure_password), bytes(shared_secret)
+                            bytes(secure_password),
+                            bytes(shared_secret),
+                            encapsulated_key=encapsulated_key,
                         )
 
                     recipients_data.append(
@@ -5280,6 +5293,7 @@ def encrypt_file_asymmetric(
                             "kem_algorithm": "ML-KEM-768",
                             "encapsulated_key": encapsulated_key,
                             "encrypted_password": encrypted_password,
+                            "wrap_version": 3,
                         }
                     )
 
@@ -5312,6 +5326,7 @@ def encrypt_file_asymmetric(
                             "encrypted_password": base64.b64encode(r["encrypted_password"]).decode(
                                 "utf-8"
                             ),
+                            "wrap_version": r["wrap_version"],
                         }
                         for r in recipients_data
                     ],
