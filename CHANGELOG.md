@@ -208,6 +208,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   at v14 — the former is sequential-path only, the latter are `< 7` legacy
   branches — so the fix lands precisely at the one live site.
 
+- **v14 TLV seed hashed without an immutable copy** (crypto-reviewer v14
+  series pass 2026-07-10, Low): the v14 TLV seed is now hashed through a
+  `memoryview` of the seed `bytearray` instead of an immutable `bytes()`
+  copy, so no unwipeable copy of the cleartext password+salt+pepper is
+  materialized (M2 [MEM-1] hygiene; derived keys are byte-identical —
+  pinned by the cross-line golden vectors).
+
 - **Cross-line PQC KEM key-derivation compatibility** (finding #83 backport,
   v14 implementation plan Phase 0, 2026-07-10): the 1.4.x line derived every
   PQC KEM symmetric key as bare `sha256(shared_secret)`, while 1.5.x derives
