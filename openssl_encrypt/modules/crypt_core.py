@@ -5716,6 +5716,20 @@ def encrypt_file(
             "(cost bypass) and is decrypt-only. Use the default, 9, or 13."
         )
 
+    # fable-review LOW-2 (gitlab#114): fail closed on versions ABOVE the
+    # latest stable format. Every ``>= 14`` gate would treat them as v14, but
+    # the decrypt side fails closed on unknown versions, so the write would
+    # mint a permanently unreadable file stamped with an on-disk version
+    # whose semantics were never specified. Mirrors the decrypt-side bound;
+    # raised before any archiving/temp files, like the refusal above.
+    if _explicit_format_version and format_version > LATEST_STABLE_FORMAT_VERSION:
+        raise ValueError(
+            f"Refusing to encrypt with unknown future format_version="
+            f"{format_version}: the highest supported write format is "
+            f"{LATEST_STABLE_FORMAT_VERSION}. Omit format_version to use "
+            "the current default."
+        )
+
     # Post-v14 review INFO-1: an explicit legacy version is still honored for
     # API backward compatibility, but new files below the latest format lack
     # the v14 protections (#100 TLV KDF seed, #83 KEM transcript binding).
