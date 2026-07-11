@@ -1191,6 +1191,10 @@ class PQCipher:
                     )
 
                 # Decrypt using the selected AEAD cipher
+                from cryptography.exceptions import InvalidTag
+
+                from .crypt_errors import AuthenticationError
+
                 try:
                     with SecureBytes() as secure_plaintext:
                         # AES-SIV has a different API: decrypt(data, [associated_data])
@@ -1209,13 +1213,19 @@ class PQCipher:
                             logger.debug(f"Decryption successful, length: {len(secure_plaintext)}")
                         return bytes(secure_plaintext)
 
-                except Exception as e:
+                except (InvalidTag, AuthenticationError) as e:
                     # SECURITY (CRIT-2): No fallback to unauthenticated ciphers.
+                    # gitlab#116 [LOW-4]: classify ONLY structural auth-failure
+                    # types (InvalidTag from the pyca AEADs, AuthenticationError
+                    # from the custom XChaCha wrapper). Structural errors such
+                    # as "Ciphertext too short" propagate unchanged and never
+                    # trigger the legacy-KDF retry, matching decrypt()'s
+                    # documented contract.
                     logger.warning(
                         "AEAD decryption failed. No fallback to unauthenticated "
                         "ciphers is permitted."
                     )
-                    raise PQCAuthenticationError("Decryption failed: authentication error")
+                    raise PQCAuthenticationError("Decryption failed: authentication error") from e
         except Exception as e:
             if not self.quiet:
                 eprint(f"Error in post-quantum decryption: {e}")

@@ -42,6 +42,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Legacy-KDF retry classification is now structural** (v14 follow-up
+  review LOW-4, gitlab#116, 2026-07-11): two classification gaps in the
+  v12/v13 legacy-KEM-key retry — both fail-closed, none attacker-usable.
+  (1) The adapter retry caught only `cryptography.exceptions.InvalidTag`,
+  but the custom XChaCha20Poly1305 wrapper converts that into the
+  project's `AuthenticationError`, so adapter-path xchacha legacy files
+  skipped the retry — it now catches both. (2) The native classifier was
+  over-broad (`except Exception`), converting structural errors (e.g.
+  "Ciphertext too short") into "authentication failure" and triggering a
+  pointless retry, contradicting the `decrypt()` docstring — it is now
+  narrowed to `(InvalidTag, AuthenticationError)`. (The 1.5.x threefish
+  part of this finding does not apply: Threefish is not a PQC data
+  cipher on this line.) The retry remains scoped to v12/v13 and
+  AEAD-gated; v14+ still never retries.
+
+
 - **Keystore dual-encryption metadata gates excluded v11-v14 files**
   (pre-existing, surfaced by the v14 default flip): `keystore_wrapper` and
   `keystore_utils` checked `format_version in [4..10]` before looking up
