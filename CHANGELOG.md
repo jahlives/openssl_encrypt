@@ -534,6 +534,18 @@ inflated KDF metadata parameters, not cosmetic output.
 
 ### Security
 
+- **The native PQC Threefish paths now zeroize the expanded
+  data-encryption key** (v14 follow-up review LOW-3, gitlab#115,
+  2026-07-11): in `PQCipher.encrypt`/`_decrypt_impl` the Threefish branch
+  derived the actual 64/128-byte Threefish key via HKDF as plain immutable
+  `bytes`, never wiped it, and returned before the AEAD block's
+  SecureBytes handling; the adapter *encrypt* threefish branch had the
+  same gap. All three sites now mirror the adapter decrypt pattern that
+  landed with the v14 series: the expanded key is held in `SecureBytes`
+  and zeroized in a `finally` on success and exception paths (HKDF's
+  immutable output remains the documented M10 accepted residual). No
+  derived keys or ciphertexts change; pure memory-hygiene hardening.
+
 - **`encrypt_file` now refuses format_version values above the latest
   stable format** (v14 follow-up review LOW-2, gitlab#114, 2026-07-11):
   the write path bounded explicit `format_version` requests from below

@@ -317,19 +317,31 @@ class ExtendedPQCipher(PQCipher):
                 import threefish_native
 
                 key_len = 64 if self.encryption_data == "threefish-512" else 128
-                expanded_key = HKDF(
-                    algorithm=hkdf_hashes.SHA256(),
-                    length=key_len,
-                    salt=None,
-                    info=self.encryption_data.encode() + b"-pqc-key-expansion",
-                ).derive(bytes(symmetric_key))
-                # Threefish-512 needs 32-byte nonce, Threefish-1024 needs 64-byte nonce
-                nonce_len = 32 if self.encryption_data == "threefish-512" else 64
-                nonce = secrets.token_bytes(nonce_len)
-                if self.encryption_data == "threefish-512":
-                    encrypted_data = threefish_native.encrypt_512(expanded_key, nonce, data, aad)
-                else:
-                    encrypted_data = threefish_native.encrypt_1024(expanded_key, nonce, data, aad)
+                # gitlab#115 [LOW-3]: hold the expanded data-encryption key in
+                # SecureBytes and wipe it deterministically on success and
+                # exception paths — same pattern as the decrypt branch below.
+                expanded_key = SecureBytes(
+                    HKDF(
+                        algorithm=hkdf_hashes.SHA256(),
+                        length=key_len,
+                        salt=None,
+                        info=self.encryption_data.encode() + b"-pqc-key-expansion",
+                    ).derive(bytes(symmetric_key))
+                )
+                try:
+                    # Threefish-512 needs 32-byte nonce, Threefish-1024 needs 64-byte nonce
+                    nonce_len = 32 if self.encryption_data == "threefish-512" else 64
+                    nonce = secrets.token_bytes(nonce_len)
+                    if self.encryption_data == "threefish-512":
+                        encrypted_data = threefish_native.encrypt_512(
+                            bytes(expanded_key), nonce, data, aad
+                        )
+                    else:
+                        encrypted_data = threefish_native.encrypt_1024(
+                            bytes(expanded_key), nonce, data, aad
+                        )
+                finally:
+                    secure_memzero(expanded_key)
                 result = ciphertext + nonce + encrypted_data
                 return result
             else:

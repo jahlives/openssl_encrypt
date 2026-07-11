@@ -699,21 +699,32 @@ class PQCipher:
                     import threefish_native
 
                     key_len = 64 if self.encryption_data == "threefish-512" else 128
-                    expanded_key = HKDF(
-                        algorithm=hashes.SHA256(),
-                        length=key_len,
-                        salt=None,
-                        info=self.encryption_data.encode() + b"-pqc-key-expansion",
-                    ).derive(symmetric_key)
-                    # Threefish-512 needs 32-byte nonce, Threefish-1024 needs 64-byte nonce
-                    nonce_len = 32 if self.encryption_data == "threefish-512" else 64
-                    tf_nonce = secrets.token_bytes(nonce_len)
-                    if self.encryption_data == "threefish-512":
-                        ciphertext = threefish_native.encrypt_512(expanded_key, tf_nonce, data, aad)
-                    else:
-                        ciphertext = threefish_native.encrypt_1024(
-                            expanded_key, tf_nonce, data, aad
-                        )
+                    # gitlab#115 [LOW-3]: hold the expanded data-encryption key
+                    # in SecureBytes and wipe it deterministically on success
+                    # and exception paths (HKDF's immutable output is the M10
+                    # accepted residual) — same pattern as the adapter decrypt.
+                    expanded_key = SecureBytes(
+                        HKDF(
+                            algorithm=hashes.SHA256(),
+                            length=key_len,
+                            salt=None,
+                            info=self.encryption_data.encode() + b"-pqc-key-expansion",
+                        ).derive(symmetric_key)
+                    )
+                    try:
+                        # Threefish-512 needs 32-byte nonce, Threefish-1024 needs 64-byte nonce
+                        nonce_len = 32 if self.encryption_data == "threefish-512" else 64
+                        tf_nonce = secrets.token_bytes(nonce_len)
+                        if self.encryption_data == "threefish-512":
+                            ciphertext = threefish_native.encrypt_512(
+                                bytes(expanded_key), tf_nonce, data, aad
+                            )
+                        else:
+                            ciphertext = threefish_native.encrypt_1024(
+                                bytes(expanded_key), tf_nonce, data, aad
+                            )
+                    finally:
+                        secure_memzero(expanded_key)
                     result = encapsulated_key + tf_nonce + ciphertext
                     return result
                 else:
@@ -1007,25 +1018,34 @@ class PQCipher:
 
                     # Expand 32-byte shared secret to required key length via HKDF
                     key_len = 64 if self.encryption_data == "threefish-512" else 128
-                    expanded_key = HKDF(
-                        algorithm=hashes.SHA256(),
-                        length=key_len,
-                        salt=None,
-                        info=self.encryption_data.encode() + b"-pqc-key-expansion",
-                    ).derive(symmetric_key)
+                    # gitlab#115 [LOW-3]: hold the expanded data-encryption key
+                    # in SecureBytes and wipe it deterministically on success
+                    # and exception paths (HKDF's immutable output is the M10
+                    # accepted residual) — same pattern as the adapter decrypt.
+                    expanded_key = SecureBytes(
+                        HKDF(
+                            algorithm=hashes.SHA256(),
+                            length=key_len,
+                            salt=None,
+                            info=self.encryption_data.encode() + b"-pqc-key-expansion",
+                        ).derive(symmetric_key)
+                    )
 
                     # Threefish-512 uses 32-byte nonce, Threefish-1024 uses 64-byte nonce
                     nonce_len = 32 if self.encryption_data == "threefish-512" else 64
                     nonce = remaining_data[:nonce_len]
                     ciphertext = remaining_data[nonce_len:]
-                    if self.encryption_data == "threefish-512":
-                        plaintext = threefish_native.decrypt_512(
-                            expanded_key, nonce, ciphertext, aad
-                        )
-                    else:
-                        plaintext = threefish_native.decrypt_1024(
-                            expanded_key, nonce, ciphertext, aad
-                        )
+                    try:
+                        if self.encryption_data == "threefish-512":
+                            plaintext = threefish_native.decrypt_512(
+                                bytes(expanded_key), nonce, ciphertext, aad
+                            )
+                        else:
+                            plaintext = threefish_native.decrypt_1024(
+                                bytes(expanded_key), nonce, ciphertext, aad
+                            )
+                    finally:
+                        secure_memzero(expanded_key)
                     return plaintext
                 else:
                     # Default to AES-GCM for unknown algorithms
