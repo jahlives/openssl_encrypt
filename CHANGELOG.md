@@ -312,6 +312,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Legacy-KDF retry classification is now structural and covers every
+  PQC data cipher** (v14 follow-up review LOW-4, gitlab#116, 2026-07-11):
+  three classification gaps in the v12/v13 legacy-KEM-key retry — all
+  fail-closed, none attacker-usable. (1) Native Threefish authentication
+  failures propagated as the binding's raw `RuntimeError` before the
+  `PQCAuthenticationError` classifier, so legacy (bare-SHA256-keyed)
+  v12/v13 threefish files never got the one-shot retry built for exactly
+  that population — the tag failure is now classified structurally
+  (threefish_native raises `RuntimeError` for tag failures, `ValueError`
+  for structural errors). (2) The adapter retry caught only
+  `cryptography.exceptions.InvalidTag`, but the custom XChaCha20Poly1305
+  wrapper converts that into the project's `AuthenticationError`, so
+  adapter-path xchacha legacy files skipped the retry — it now catches
+  both. (3) The native classifier was over-broad (`except Exception`),
+  converting structural errors (e.g. "Ciphertext too short") into
+  "authentication failure" and triggering a pointless retry,
+  contradicting the `decrypt()` docstring — it is now narrowed to
+  `(InvalidTag, AuthenticationError)`. The retry remains scoped to
+  v12/v13 and AEAD-gated; v14+ still never retries.
+
 - **Pointed migration error for removed-PBKDF2-chain files**: decrypting a
   1.4.x sequential file whose key-derivation chain used `pbkdf2_iterations`
   (the PBKDF2 chain stage removed in 1.5.0) previously failed with a generic

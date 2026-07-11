@@ -433,6 +433,8 @@ class ExtendedPQCipher(PQCipher):
             # Use secure memory for sensitive operations
             from cryptography.exceptions import InvalidTag
 
+            from .crypt_errors import AuthenticationError
+
             with SecureBytes(shared_secret) as secure_shared_secret:
                 # Mirror PQCipher.decrypt: files written by 1.4.x releases
                 # <= 1.4.7 carry v12/v13 format_version but used the legacy
@@ -524,7 +526,11 @@ class ExtendedPQCipher(PQCipher):
                         try:
                             # Decrypt directly into secure memory
                             decrypted = cipher.decrypt(nonce, ciphertext, aad)
-                        except InvalidTag as auth_error:
+                        except (InvalidTag, AuthenticationError) as auth_error:
+                            # gitlab#116 [LOW-4]: the custom XChaCha20Poly1305
+                            # wrapper converts InvalidTag into the project's
+                            # AuthenticationError — catch both so adapter-path
+                            # xchacha legacy files reach the retry too.
                             last_auth_error = auth_error
                             secure_memzero(symmetric_key)
                             continue
