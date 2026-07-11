@@ -25,17 +25,27 @@ _Generated 2026-07-02 from GitLab `sec-review::1.4.7` (project `world/openssl_en
 > spec pre-staged in [`docs/FORMAT_V14_PLAN.md`](docs/FORMAT_V14_PLAN.md)** — land it
 > opportunistically at the next format bump. **4 deferred items** (#81, #82 inherent; #83,
 > #100 pre-staged v14); **none open in place**.
+>
+> **Update 2026-07-11 (#83/#100 CLOSED — v14 landed).** The pre-staged
+> [`docs/FORMAT_V14_PLAN.md`](docs/FORMAT_V14_PLAN.md) was implemented in full as the
+> `format_version 14` series on both branches (2026-07-10; v1.4.x `dd207223..925763b2`,
+> v1.5.x `890cc2a1..b2e277b3`), folded into the format bump made for M2/M1
+> (independent-XOR default) — exactly the "opportunistic landing" the 2026-07-07 decision
+> called for. v14 is now the **default write format on both lines**. The crypto-reviewer
+> v14-series pass (2026-07-10) reported no Critical/High findings; its two Low
+> remediations are fixed on both branches (v1.5.x `824d7b2e`/`06de2b24`, v1.4.x
+> `e1b8950a`/`490014eb`). **2 deferred items remain** (#81, #82 inherent); **none open**.
 
 Each issue links to its GitLab entry (which has the full finding + verification notes).
 Fixes land on BOTH `feature/v1.4.x-development` and `feature/v1.5.x-development`, each
 with a regression test and full-suite check, per the project workflow.
 
 
-## Deferred / reclassified-LOW (future hardening) (4)
+## Deferred / reclassified-LOW (future hardening) (2)
 
-_Nothing here is fixable in place. #81/#82 are inherent-limitation / large-rewrite; #83 and
-#100 are format-breaking and pre-staged for a possible `format_version 14`
-([`docs/FORMAT_V14_PLAN.md`](docs/FORMAT_V14_PLAN.md)). None exploitable._
+_Nothing here is fixable in place. #81/#82 are inherent-limitation / large-rewrite. None
+exploitable. (#83/#100, formerly deferred here, were closed by the `format_version 14`
+series — see Resolved.)_
 
 ### #81 — [MEM-8] Key material leaked into immutable objects that cannot be wiped
 - **severity:** low · [GitLab #81](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/81)
@@ -45,29 +55,7 @@ _Nothing here is fixable in place. #81/#82 are inherent-limitation / large-rewri
 - **severity:** low · [GitLab #82](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/82)
 - Reclassified LOW; partly mitigated by #60/#63. Canaries are software/in-band (no real mprotect guard pages), but the block is now mlock'd + madvise(MADV_DONTDUMP) with key material inside it. Remaining: 'software canaries, not hardware guard pages'. Real guard pages = large rewrite, low marginal benefit.
 
-### #83 — [PQC-3] KEM shared secret keyed through bare SHA-256 (no KDF, no domain separation, no transcript binding)
-- **severity:** low · [GitLab #83](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/83)
-- **Already partly fixed.** `PQCipher._derive_symmetric_key` (`pqc.py:426-453`) uses
-  **HKDF-SHA256 with algorithm-name domain separation for `format_version >= 12`**; only
-  **default-v9** non-streaming PQC files still use bare `sha256(shared_secret)`, and no
-  version yet binds the KEM ciphertext. The derivation is sound regardless (uniform ML-KEM
-  output; ciphertext implicitly bound via AEAD failure) — no exploitable gain. Remaining
-  hygiene (default-v9 → HKDF, + ciphertext-transcript binding) is format-breaking; pre-staged
-  for `format_version 14` — see [`docs/FORMAT_V14_PLAN.md`](docs/FORMAT_V14_PLAN.md) §3.3.
-
-### #100 — [KDF-8] Missing length separation in seed/hash inputs (canonicalization ambiguity)
-- **severity:** low · [GitLab #100](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/100)
-- The KDF seed is a raw concat `password + salt (+ hsm_pepper)` (`crypt_core.py:1206`/`1208`,
-  sized at `1163-1164`), plus per-round `sha256(salt + str(i))`. Canonicalization-ambiguous
-  but **non-exploitable** (tool-generated fixed-length salt → boundary not attacker-controllable).
-  v13's domain-separation work **deliberately left this input unchanged** (`crypt_core.py:1739-1740`:
-  "cannot duplicate"). Length-prefixing is format-breaking (changes every derived key) and the
-  highest-cost change in the codebase for zero exploitable gain — pre-staged for
-  `format_version 14`, see [`docs/FORMAT_V14_PLAN.md`](docs/FORMAT_V14_PLAN.md) §3.2. Do it
-  opportunistically at the next format bump.
-
-
-## Resolved (23)
+## Resolved (25)
 
 _Single-ref rows show the `feature/v1.4.x-development` commit; each such fix was also
 forward-ported to `feature/v1.5.x-development` per the project workflow. Rows with both
@@ -104,20 +92,50 @@ branches._
 - The CLI pseudo-wipe (`pwd = "\x00"*len(pwd)`) was already removed from `crypt_cli.py` and guarded by `test_cli_password_wipe.py`. On follow-up the **same bug-class was found in `keystore_utils.py`** (`store_pqc_key_in_keystore` cleanup): a fallback `encrypted_private_key = b"\x00" * len(...)` that rebinds a fresh zero-filled bytes object and never overwrites the original immutable buffer (also dead code — `secure_memzero` handles immutable bytes without raising). Removed the misleading rebind; `encrypted_private_key` is always `None`/immutable bytes (base64.b64decode output) so dropping the reference is all that's possible. Broadened the regression test to scan **all** modules (comparison-safe regex so the all-zero pepper `==` checks in `crypt_core.py` are not flagged). crypto-reviewer: approved (no wiping guarantee weakened, no mutable-buffer path missed).
 - **Fixed on both branches:** `feature/v1.4.x-development` `d014fd1f`, `feature/v1.5.x-development` `f1b529ba`. Full suites green (v1.4.x 3131 passed; v1.5.x 5472 passed). Both pushed to origin.
 
+### #83 — [PQC-3] KEM shared secret keyed through bare SHA-256 — **RESOLVED 2026-07-10 (format_version 14 series)**
+- **severity:** low · [GitLab #83](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/83)
+- Fixed by the v14 series. **Phase 0** backported the `format_version >= 12` HKDF-SHA256
+  derivation (algorithm-name domain separation) to v1.4.x, closing the cross-line gap;
+  pre-1.4.8 bare-SHA256 files keep decrypting via an authenticated one-shot legacy retry
+  (no downgrade surface — the AEAD tag rejects wrong keys). **Phase 3** added full
+  transcript binding at `format_version >= 14`:
+  `HKDF-SHA256(info = "openssl_encrypt.kem.v14|" + algorithm + "|" + encryption_data +
+  "|ct=" + sha256(kem_ciphertext))` — info layout pinned for cross-line byte-identity; a
+  missing ciphertext raises (no silent fallback); the legacy retry is scoped to v12/v13.
+  Substitution is detected via AEAD authentication (tampered transcript → different HKDF
+  key → tag failure), documented in `_derive_symmetric_key` per review LOW-1; the
+  default-v9 residual is closed because v14 is now the default write format.
+- **Fixed on both branches:** v1.4.x `dd207223` (Phase 0) + `44c591ad` (Phase 3);
+  v1.5.x `890cc2a1` + `4a5b0812`. Golden vectors pin cross-line byte-identity
+  (`test_pqc_kem_hkdf.py`, `test_format_v14_kem_binding.py`).
+
+### #100 — [KDF-8] Missing length separation in seed/hash inputs — **RESOLVED 2026-07-10 (format_version 14 series)**
+- **severity:** low · [GitLab #100](https://gitlab.rm-rf.ch/world/openssl_encrypt/-/work_items/100)
+- Fixed by v14 **Phase 2**: files at `format_version >= 14` seed the independent-XOR
+  derivation from `sha256(LP(password) || LP(salt) || LP(pepper))` with
+  `LP(x) = uint32_be(len(x)) || x` and an always-present pepper field
+  (`_v14_seed_encode`, pinned for cross-line byte-identity;
+  `test_format_v14_seed_lengthsep.py` golden vectors). Since v14 is the default write
+  format (Phase 4), every new encryption gets the unambiguous seed. Verified during
+  implementation that the spec's other #100 sites are unreachable at v14 (the
+  `multi_hash_password` concat is sequential-path-only; the per-round `sha256(salt+i)`
+  sites are `< 7` legacy branches) — the fix lands at the one live site. **Accepted
+  residual:** everything below v14 derives byte-identically by design (backward compat),
+  including the sequential-XOR opt-in pinned at v13 — same non-exploitable rating as the
+  original finding (fixed-length tool-generated salts).
+- **Fixed on both branches:** v1.4.x `8fd0621c`, v1.5.x `fb8bea49` (default-format flip:
+  v1.4.x `8dbad391`, v1.5.x `c1fd5c45`).
+
 ---
 
 ## Suggested next steps
 
-**No findings remain that are fixable in place.** The review is effectively closed; what
-remains is optional, non-exploitable, and format-gated.
+**The review is closed.** Every finding is resolved except the two inherent-limitation
+deferrals.
 
-1. **#100 + #83** — the only remaining actionable findings, both format-breaking with no
-   exploitable gain. Do **not** cut a format bump solely for them. Land the pre-staged
-   [`docs/FORMAT_V14_PLAN.md`](docs/FORMAT_V14_PLAN.md) opportunistically the next time a
-   `format_version` bump is required for a functional reason (fold them in as free hygiene).
-   If a clean bill is ever forced, ship **#83-only** (cheap, self-contained).
-2. Leave the inherent-limitation items (**#81**, **#82**) unless a C-extension/bytearray-only
+1. Leave the inherent-limitation items (**#81**, **#82**) unless a C-extension/bytearray-only
    rework is on the table.
 
 _(Non-breaking hardening done — #79/#80, #74, and #95 (found not to be format-breaking after
-all); #59 superseded by M3. See Resolved.)_
+all); #59 superseded by M3; #83/#100 closed by the `format_version 14` series, 2026-07-10.
+See Resolved.)_
