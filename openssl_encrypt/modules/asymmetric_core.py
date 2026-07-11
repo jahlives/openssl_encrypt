@@ -172,13 +172,43 @@ class PasswordWrapper:
             logger.error(f"KEM decapsulation failed: {e}")
             raise PasswordWrapperError(f"Failed to decapsulate: {e}")
 
-    def wrap_password(self, password: bytes, shared_secret: bytes) -> bytes:
+    def _wrap_info_v3(self, encapsulated_key: bytes) -> bytes:
+        """HKDF info for wrap_version 3 — KEM transcript binding (gitlab#112).
+
+        Binds the KEM encapsulation ciphertext (as a SHA-256 digest) and the
+        KEM algorithm identity into the wrap-key derivation, extending the
+        finding-#83 transcript-binding rationale to the recipient password
+        wrap. PINNED for cross-line (1.4.x/1.5.x) interop: do not change the
+        label, the ``|`` separators, the field order, or the digest.
+
+        Args:
+            encapsulated_key: The KEM encapsulation ciphertext.
+
+        Returns:
+            The HKDF info bytes for the v3 derivation.
+        """
+        return (
+            b"openssl_encrypt.password_wrap.v3|"
+            + self.kem_algorithm.encode("ascii")
+            + b"|ct="
+            + hashlib.sha256(encapsulated_key).digest()
+        )
+
+    def wrap_password(
+        self, password: bytes, shared_secret: bytes, *, encapsulated_key: bytes = None
+    ) -> bytes:
         """
         Wrap password using shared secret with AES-256-GCM.
 
         Args:
             password: Password to wrap (typically 32 bytes random)
             shared_secret: Shared secret from KEM (32+ bytes)
+            encapsulated_key: The KEM encapsulation ciphertext. When provided,
+                the wrap key is derived with the wrap_version-3 transcript
+                binding (ciphertext + KEM algorithm bound into the HKDF info);
+                the caller MUST record ``wrap_version: 3`` next to the blob.
+                When None (default), the legacy v2 static-info derivation is
+                used byte-for-byte — existing callers are unaffected.
 
         Returns:
             Encrypted password in format: [nonce:12][ciphertext][tag:16]
@@ -196,6 +226,8 @@ class PasswordWrapper:
             raise TypeError("Password must be bytes")
         if not isinstance(shared_secret, bytes):
             raise TypeError("Shared secret must be bytes")
+        if encapsulated_key is not None and not isinstance(encapsulated_key, bytes):
+            raise TypeError("Encapsulated key must be bytes")
 
         # Derive AES-256 key from shared secret
         # Use HKDF-style derivation with domain separation
@@ -207,11 +239,15 @@ class PasswordWrapper:
             from cryptography.hazmat.primitives import hashes as crypto_hashes
             from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
+            if encapsulated_key is not None:
+                info = self._wrap_info_v3(encapsulated_key)
+            else:
+                info = b"openssl_encrypt.password_wrap.v2"
             hkdf = HKDF(
                 algorithm=crypto_hashes.SHA256(),
                 length=32,
                 salt=None,
-                info=b"openssl_encrypt.password_wrap.v2",
+                info=info,
             )
             # M2 [MEM-1]: hold the wrap key in a mutable bytearray so the
             # secure_memzero in `finally` actually wipes it. hkdf.derive returns
@@ -250,29 +286,62 @@ class PasswordWrapper:
                 secure_memzero(wrap_key_bytes)
             # nonce is public, no need to zero
 
-    def unwrap_password(self, encrypted_password: bytes, shared_secret: bytes) -> bytes:
+    def unwrap_password(
+        self,
+        encrypted_password: bytes,
+        shared_secret: bytes,
+        *,
+        encapsulated_key: bytes = None,
+        wrap_version: int = None,
+    ) -> bytes:
         """
         Unwrap password using shared secret.
 
         Args:
             encrypted_password: Encrypted password from metadata [nonce:12][ciphertext][tag:16]
             shared_secret: Shared secret from KEM decapsulation
+            encapsulated_key: The KEM encapsulation ciphertext; REQUIRED when
+                ``wrap_version`` is 3 (transcript-bound derivation).
+            wrap_version: The recipient entry's ``wrap_version`` marker.
+                3 selects the transcript-bound v3 derivation ONLY — no
+                fallback (fail closed). None (marker absent — every file
+                written before wrap_version existed) selects the legacy
+                v2→v1 fallback chain, byte-for-byte the previous behavior.
+                Any other value fails closed.
 
         Returns:
             Original password (caller must wrap in SecureBytes!)
 
         Raises:
-            PasswordWrapperError: If unwrapping fails or authentication fails
+            PasswordWrapperError: If unwrapping fails, authentication fails,
+                or the wrap_version marker is unsupported/inconsistent
 
         Security:
             - Verifies authentication tag (constant-time)
             - Raises exception on any tampering
             - Result MUST be wrapped in SecureBytes by caller
+            - A v3 blob pushed through the no-marker path derives a different
+              key and fails the tag: stripping the marker cannot downgrade
         """
         if not isinstance(encrypted_password, bytes):
             raise TypeError("Encrypted password must be bytes")
         if not isinstance(shared_secret, bytes):
             raise TypeError("Shared secret must be bytes")
+
+        # Validate the wrap_version marker BEFORE touching key material.
+        # The marker comes from parsed file metadata, so treat it as
+        # attacker-controlled: only int 3 (bool excluded) or None pass.
+        if wrap_version is not None:
+            if (
+                not isinstance(wrap_version, int)
+                or isinstance(wrap_version, bool)
+                or wrap_version != 3
+            ):
+                raise PasswordWrapperError(f"Unsupported wrap_version: {wrap_version!r}")
+            if encapsulated_key is None:
+                raise PasswordWrapperError("wrap_version 3 requires the KEM encapsulated key")
+            if not isinstance(encapsulated_key, bytes):
+                raise TypeError("Encapsulated key must be bytes")
 
         # Validate minimum size: nonce(12) + tag(16) = 28 bytes
         if len(encrypted_password) < 28:
@@ -288,10 +357,35 @@ class PasswordWrapper:
             nonce = encrypted_password[:12]
             ciphertext_with_tag = encrypted_password[12:]
 
-            # Try HKDF-based derivation first (v2), fall back to SHA-256 (v1 legacy)
             from cryptography.hazmat.primitives import hashes as crypto_hashes
             from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
+            if wrap_version is not None:
+                # wrap_version 3: transcript-bound derivation ONLY. No
+                # fallback to v2/v1 — a marked entry that fails the bound
+                # derivation is tampered or corrupted, and silently retrying
+                # weaker derivations would reopen the downgrade surface.
+                hkdf = HKDF(
+                    algorithm=crypto_hashes.SHA256(),
+                    length=32,
+                    salt=None,
+                    info=self._wrap_info_v3(encapsulated_key),
+                )
+                # M2 [MEM-1]: bytearray so the finally secure_memzero wipes it.
+                wrap_key_bytes = bytearray(hkdf.derive(shared_secret))
+                aesgcm = AESGCM(wrap_key_bytes)
+                password = aesgcm.decrypt(nonce, ciphertext_with_tag, None)
+
+                if not self.quiet:
+                    logger.debug(
+                        f"Password unwrapped (wrap_version 3): "
+                        f"{len(encrypted_password)} bytes → {len(password)} bytes"
+                    )
+                return password
+
+            # Marker absent: try HKDF-based derivation first (v2), fall back
+            # to SHA-256 (v1 legacy) — byte-for-byte the pre-wrap_version
+            # behavior, covering every existing file.
             hkdf = HKDF(
                 algorithm=crypto_hashes.SHA256(),
                 length=32,

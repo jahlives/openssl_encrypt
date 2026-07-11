@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "name": "FixtureRecipient",
+  "email": "rcpt@fixture.test",
+  "fingerprint": "bc:19:5a:c3:98:bc:55:1a:e9:2d:ba:2c:e7:c9:a1:18:54:38:5c:03:a2:7c:3f:bc:5d:39:a4:42:eb:1b:c5:fc",
+  "created_at": "2026-07-11T10:49:07.300402Z",
+  "encryption_algorithm": "ML-KEM-768",
+  "signing_algorithm": "ML-DSA-65",
+  "key_encryption_kdf": "argon2id",
+  "is_own_identity": true
+}
