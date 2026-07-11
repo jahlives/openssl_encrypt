@@ -6423,6 +6423,7 @@ def encrypt_file(
     # format; explicit sequential XOR stays pinned at v13 (the last version
     # that carries the sequential topology). Explicit values are honored
     # unchanged for API backward compatibility.
+    _explicit_format_version = format_version is not None
     if format_version is None:
         format_version = 13 if xor_mode == "sequential" else LATEST_STABLE_FORMAT_VERSION
 
@@ -6435,6 +6436,23 @@ def encrypt_file(
             "the v8/v10 sequential-XOR derivation cancels the last KDF stage "
             "(cost bypass) and is decrypt-only. Use the default, 9, or 13."
         )
+
+    # Post-v14 review INFO-1: an explicit legacy version is still honored for
+    # API backward compatibility, but new files below the latest format lack
+    # the v14 protections (#100 TLV KDF seed, #83 KEM transcript binding).
+    # Warn-only, NEVER raise.
+    if _explicit_format_version and format_version < LATEST_STABLE_FORMAT_VERSION:
+        logger.warning(
+            f"Writing a NEW file with legacy format_version {format_version} "
+            f"(< {LATEST_STABLE_FORMAT_VERSION}): it will not carry the v14 "
+            "KDF-seed and PQC transcript-binding protections"
+        )
+        if not quiet:
+            eprint(
+                f"WARNING: writing a NEW file with legacy format_version "
+                f"{format_version}; it lacks the v14 hardening (omit "
+                "format_version to use the current default)"
+            )
 
     # Reset mutable class-level state to prevent leakage between operations
     KeyStretch.key_stretch = False
@@ -6909,14 +6927,25 @@ def encrypt_file(
 
     if _will_stream and format_version not in (12, LATEST_STABLE_FORMAT_VERSION):
         # Streaming pins the format version before key derivation so the
-        # decrypt-side key matches (issue #50). Requests get the latest
-        # version so streaming PQC files carry the v14 transcript binding;
-        # an explicit format_version=12 request keeps writing v12.
-        if debug:
-            logger.debug(
-                f"STREAMING: forcing format_version {format_version} -> "
-                f"{LATEST_STABLE_FORMAT_VERSION} before key derivation so the "
-                f"decrypt-side key matches (issue #50)"
+        # decrypt-side key matches (issue #50). Other requests are upgraded
+        # to the latest version (never downgraded); an explicit
+        # format_version=12 request keeps writing v12. NOTE: no PQC hybrid
+        # algorithm can stream (STREAMING_UNSUPPORTED_ALGORITHMS), so the
+        # v14 KEM transcript binding is one-shot-only by construction --
+        # this force is purely about the streaming key-derivation format.
+        # Post-v14 review INFO-2: visible (non-debug) notice, since an API
+        # caller pinning a version for interop gets a different on-disk
+        # format than requested.
+        logger.info(
+            f"STREAMING: forcing format_version {format_version} -> "
+            f"{LATEST_STABLE_FORMAT_VERSION} before key derivation so the "
+            f"decrypt-side key matches (issue #50)"
+        )
+        if not quiet:
+            eprint(
+                f"NOTE: streaming upgrades format_version {format_version} -> "
+                f"{LATEST_STABLE_FORMAT_VERSION} (only v12 and "
+                f"v{LATEST_STABLE_FORMAT_VERSION} can stream)"
             )
         format_version = LATEST_STABLE_FORMAT_VERSION
 
