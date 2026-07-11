@@ -215,6 +215,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   materialized (M2 [MEM-1] hygiene; derived keys are byte-identical —
   pinned by the cross-line golden vectors).
 
+- **v14 KEM transcript binding: detection mechanism documented**
+  (crypto-reviewer v14 series pass 2026-07-10, Low): `_derive_symmetric_key`
+  now documents that the #83 transcript binding detects ciphertext/metadata
+  substitution *via AEAD authentication* (wrong key → tag failure), not an
+  explicit compare — so the binding requires the symmetric layer to remain
+  an AEAD (all reachable PQC data ciphers are AEADs: AES-GCM/-GCM-SIV/-SIV/
+  -OCB3 and ChaCha20/XChaCha20-Poly1305), guarding against a future
+  non-authenticated data cipher silently voiding it.
+
 - **Cross-line PQC KEM key-derivation compatibility** (finding #83 backport,
   v14 implementation plan Phase 0, 2026-07-10): the 1.4.x line derived every
   PQC KEM symmetric key as bare `sha256(shared_secret)`, while 1.5.x derives

@@ -542,6 +542,15 @@ class PQCipher:
         b"openssl_encrypt.kem.v14|" + algorithm + b"|" + encryption_data
         + b"|ct=" + sha256(kem_ciphertext).
 
+        SECURITY NOTE (detection mechanism): ciphertext/metadata substitution
+        is detected *via AEAD authentication*, not by an explicit compare —
+        a tampered transcript yields a different HKDF key, which fails the
+        data cipher's authentication tag. This argument therefore REQUIRES
+        the symmetric layer to be an AEAD (all supported PQC data ciphers
+        are: AES-GCM/-GCM-SIV/-SIV/-OCB3 and ChaCha20/XChaCha20-Poly1305).
+        Wiring a non-authenticated data cipher into the PQC path would
+        silently void the transcript binding.
+
         For format_version >= 12: uses HKDF-SHA256 with algorithm name as info,
         providing proper domain separation and extract-then-expand semantics.
 
