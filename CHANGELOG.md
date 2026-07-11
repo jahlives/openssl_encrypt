@@ -418,6 +418,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Visible notices for legacy-format writes** (post-v14 review
+  INFO-1/INFO-2, 2026-07-11, warn-only — never an error): requesting an
+  explicit `format_version` below the current default for a NEW encryption
+  now prints a warning (the file lacks the v14 `#100`/`#83` protections;
+  explicit versions remain honored for API compatibility), and the
+  streaming path's silent version upgrade is now announced with a visible
+  note instead of a debug-only log line (streaming can only write v12 or
+  v14; the upgrade itself is unchanged). Also corrected a misleading
+  comment that claimed streaming PQC files exist (no PQC hybrid algorithm
+  can stream), so future binding-coverage audits aren't misled (INFO-3).
+
 - **Dead shadowed `_derive_symmetric_key` definition removed** (2026-07-10):
   `PQCipher` in `modules/pqc.py` carried two definitions of
   `_derive_symmetric_key`; the first (the pre-#83 v12/legacy-only variant)
