@@ -92,6 +92,65 @@ class TestV14SeedEncode(unittest.TestCase):
         )
 
 
+class TestV14SeedEncodeSingleAllocation(unittest.TestCase):
+    """Identity pins for the single-allocation encoder (review LOW-1, gitlab#110).
+
+    The LOW-1 fix replaces incremental ``bytearray +=`` growth (whose
+    reallocations leak unwiped partial secret copies into freed heap) with one
+    exact-size allocation filled in place. The encoding itself is PINNED —
+    these tests assert byte-identity against the reference implementation for
+    every input type and size class the encoder accepts, so the hygiene fix
+    cannot drift the on-disk format.
+    """
+
+    # (password, salt, pepper) matrix: empty/None fields, 1-byte fields,
+    # length-prefix byte patterns, multi-KiB fields.
+    MATRIX = [
+        (b"", b"", None),
+        (b"", b"", b""),
+        (b"p", b"s", b"x"),
+        (b"pw", b"salt", None),
+        (b"pw", b"salt", b"pep"),
+        (b"\x00" * 4, b"\x00" * 4, b"\x00" * 4),
+        (b"A" * 255, b"B" * 256, b"C" * 257),
+        (b"P" * 4096, b"S" * 8192, b"X" * 3000),
+        (PASSWORD_BYTES, SALT, PEPPER),
+    ]
+
+    def test_byte_identity_matrix(self):
+        for pw, salt, pep in self.MATRIX:
+            with self.subTest(pw_len=len(pw), salt_len=len(salt), pep=pep is not None):
+                self.assertEqual(
+                    bytes(_v14_seed_encode(pw, salt, pep)),
+                    _ref_v14_seed(pw, salt, pep),
+                )
+
+    def test_mutable_inputs_identical_to_bytes(self):
+        # Callers holding secrets in wipeable buffers (bytearray/memoryview)
+        # must get the same encoding WITHOUT the encoder materializing
+        # immutable copies (the old ``bytes(field)`` defeated such callers).
+        pw, salt, pep = b"secret-pw", SALT, PEPPER
+        expected = _ref_v14_seed(pw, salt, pep)
+        for wrap in (bytearray, memoryview, lambda x: memoryview(bytearray(x))):
+            with self.subTest(wrap=wrap):
+                self.assertEqual(
+                    bytes(_v14_seed_encode(wrap(pw), wrap(salt), wrap(pep))),
+                    expected,
+                )
+
+    def test_mutable_empty_fields_alias_none(self):
+        self.assertEqual(
+            bytes(_v14_seed_encode(bytearray(b"pw"), bytearray(b"salt"), bytearray())),
+            _ref_v14_seed(b"pw", b"salt", None),
+        )
+
+    def test_exact_size_no_spare_capacity(self):
+        for pw, salt, pep in self.MATRIX:
+            with self.subTest(pw_len=len(pw), salt_len=len(salt), pep=pep is not None):
+                seed = _v14_seed_encode(pw, salt, pep)
+                self.assertEqual(len(seed), 12 + len(pw) + len(salt) + len(pep or b""))
+
+
 class TestV14DerivationSeparation(unittest.TestCase):
     def _derive(self, fv, password=PASSWORD_BYTES, salt=SALT, pepper=None):
         key, _, _ = generate_key_independent_xor(

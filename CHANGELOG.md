@@ -523,6 +523,19 @@ inflated KDF metadata parameters, not cosmetic output.
 
 ### Security
 
+- **v14 TLV KDF seed is built in a single allocation** (post-v14 review
+  LOW-1, gitlab#110, 2026-07-11): `_v14_seed_encode` previously grew its
+  buffer with incremental `bytearray +=`, so CPython reallocations could
+  leave partial copies of the length-prefixed cleartext password in freed,
+  unwiped heap memory — the caller's `secure_memzero` wipes only the final
+  allocation — and its `bytes()` field conversion would materialize an
+  unwipeable immutable copy of a mutable (bytearray/SecureBytes) secret.
+  The seed is now written into one exact-size preallocated bytearray
+  through memoryviews: no reallocation, no immutable copies (M2 [MEM-1]
+  hygiene). Not exploitable on its own — hardening only; derived keys and
+  the on-disk format are byte-identical, pinned by the cross-line golden
+  vectors plus a new byte-identity test matrix covering mutable inputs.
+
 - **format_version 14 is now the default write format — independent-XOR
   topology by default** (finding M2 Option A / M1, v14 implementation plan
   Phase 4, 2026-07-10): new encryptions without an explicit format version

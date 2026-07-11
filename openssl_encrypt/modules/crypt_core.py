@@ -1795,11 +1795,20 @@ def _v14_seed_encode(password: bytes, salt: bytes, hsm_pepper: bytes = None) -> 
         after hashing (it contains the cleartext password and pepper —
         M2 [MEM-1] wipe standard).
     """
-    seed = bytearray()
-    for field in (password, salt, hsm_pepper):
-        field = bytes(field) if field else b""
-        seed += len(field).to_bytes(4, "big")
-        seed += field
+    # M2 [MEM-1]: single exact-size allocation, filled in place (gitlab#110).
+    # Incremental ``seed += ...`` growth is FORBIDDEN here: bytearray
+    # reallocations free earlier buffers — already holding LP(password) —
+    # without zeroization, so the caller's secure_memzero would wipe only the
+    # final allocation. Likewise no bytes() conversion of the fields: it would
+    # materialize an unwipeable immutable copy of a caller's mutable secret.
+    fields = [memoryview(f) if f else memoryview(b"") for f in (password, salt, hsm_pepper)]
+    seed = bytearray(sum(4 + len(f) for f in fields))
+    pos = 0
+    for f in fields:
+        seed[pos : pos + 4] = len(f).to_bytes(4, "big")
+        pos += 4
+        seed[pos : pos + len(f)] = f
+        pos += len(f)
     return seed
 
 
