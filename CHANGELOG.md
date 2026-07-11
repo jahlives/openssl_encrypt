@@ -523,6 +523,18 @@ inflated KDF metadata parameters, not cosmetic output.
 
 ### Security
 
+- **Keystore metadata version gates are now type-safe** (post-v14 review
+  LOW-2, gitlab#111, 2026-07-11): the keystore integration read
+  `format_version` from raw parsed JSON and compared it with `>=`, so a
+  crafted file carrying a non-int value (`"4"`, `true`, `[]`) crashed the
+  operation with an unhandled TypeError. Fail-closed either way (no
+  bypass, key material never touched), but a crash is a one-operation DoS
+  and an ugly failure mode. All six affected ingestion points in
+  `keystore_wrapper.py`/`keystore_utils.py` now validate the type once via
+  a shared helper and reject malformed metadata with the project's clean
+  `ValidationError`. Legitimately written files always store an int —
+  behavior for every valid file is unchanged.
+
 - **v14 TLV KDF seed is built in a single allocation** (post-v14 review
   LOW-1, gitlab#110, 2026-07-11): `_v14_seed_encode` previously grew its
   buffer with incremental `bytearray +=`, so CPython reallocations could
