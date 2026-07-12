@@ -696,8 +696,12 @@ if __name__ == "__main__":
             eprint("✅ Password wrapping roundtrip successful!")
         else:
             eprint("❌ Password wrapping failed!")
-            eprint(f"  Original:  {password.hex()[:64]}...")
-            eprint(f"  Recovered: {bytes(recovered).hex()[:64]}...")
+            # Never print the values themselves — even random self-test data
+            # must not normalize hex-dumping secret-shaped material
+            # (never-print-keys policy, gitlab#121). Lengths suffice to see
+            # truncation/corruption; a full mismatch needs a debugger anyway.
+            eprint(f"  Original:  {len(password)} bytes")
+            eprint(f"  Recovered: {len(recovered)} bytes (mismatch)")
 
     # Clean up original password
     secure_memzero(password)

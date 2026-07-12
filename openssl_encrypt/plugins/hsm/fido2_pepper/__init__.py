@@ -481,9 +481,11 @@ class FIDO2HSMPlugin(HSMPlugin):
                     "The credential may not have prf/hmac-secret enabled. Try re-registering."
                 )
 
-            # Debug: Show the actual structure
+            # Debug: Show the actual structure. Never log the raw value —
+            # prf_data carries the PRF/hmac-secret output the pepper is
+            # derived from (gitlab#121); type/keys/lengths below are enough
+            # to debug the extension-result shape.
             logger.debug(f"prf_data type: {type(prf_data)}")
-            logger.debug(f"prf_data value: {prf_data}")
             if isinstance(prf_data, dict):
                 logger.debug(f"prf_data keys: {list(prf_data.keys())}")
                 for key, val in prf_data.items():
@@ -507,8 +509,11 @@ class FIDO2HSMPlugin(HSMPlugin):
                 elif "output1" in prf_data:
                     pepper = prf_data["output1"]
                 else:
+                    # Never embed prf_data itself — it is the material the
+                    # pepper is derived from, and error messages reach the
+                    # user via eprint(result.message) (gitlab#121).
                     return PluginResult.error_result(
-                        f"Unexpected prf/hmac-secret data format: {prf_data}"
+                        "Unexpected prf/hmac-secret data format: " f"keys={list(prf_data.keys())}"
                     )
             elif isinstance(prf_data, bytes):
                 # Raw bytes output from hmac-secret extension

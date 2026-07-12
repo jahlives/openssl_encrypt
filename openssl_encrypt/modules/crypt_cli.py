@@ -2670,8 +2670,10 @@ def handle_hsm_command(args):
         if result.success:
             pepper = result.data.get("hsm_pepper")
             eprint("\n✅ Test successful!")
+            # Do NOT print the pepper itself — it is key material / a KDF
+            # intermediate (H1 [HSM-1], gitlab#121). The length + success
+            # confirm the derivation works; the value must never reach output.
             eprint(f"Pepper length: {len(pepper)} bytes")
-            eprint(f"Pepper (hex): {pepper.hex()}")
             eprint("\nYour FIDO2 credential is working correctly.")
         else:
             eprint(f"\n❌ Test failed: {result.message}")
@@ -2828,8 +2830,10 @@ def handle_hsm_command(args):
             slot = result.data.get("slot")
             eprint("\n✅ Test successful!")
             eprint(f"Slot: {slot}")
+            # Do NOT print the pepper itself — it is key material / a KDF
+            # intermediate (H1 [HSM-1], gitlab#121). The length + success
+            # confirm the derivation works; the value must never reach output.
             eprint(f"Pepper length: {len(pepper)} bytes")
-            eprint(f"Pepper (hex): {pepper.hex()}")
             eprint("\nYour OnlyKey Challenge-Response is working correctly.")
         else:
             eprint(f"\n❌ Test failed: {result.message}")
