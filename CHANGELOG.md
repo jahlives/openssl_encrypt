@@ -181,6 +181,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **The live `hsm fido2-test`/`onlykey-test` handlers no longer print the
+  derived hardware pepper** (H1 [HSM-1] residual, gitlab#121, 2026-07-12):
+  the 2026-07-07 H1 fix removed the pepper hex dump from
+  `modules/hsm_cli.py`, but that click-based frontend is not wired into the
+  `openssl-encrypt` entry point — the `hsm` subcommand dispatches to
+  `handle_hsm_command` in `crypt_cli.py`, whose `fido2-test` and
+  `onlykey-test` handlers still hex-dumped the full pepper. Both now report
+  only the pepper length. Mitigating: the printed pepper was derived from a
+  random per-invocation test salt, so it unlocks no real file — but it is
+  hardware-derived key material and must never reach output. Fixed in the
+  same sweep: the FIDO2 pepper plugin interpolated the raw prf/hmac-secret
+  output (the pepper's source material) into a `logger.debug` line and into
+  a `PluginResult` error message that reaches the user via
+  `eprint(result.message)` — both now render structure only (type/keys);
+  and the `asymmetric_core` `__main__` self-test printed 32 bytes of its
+  (random, throwaway) roundtrip password as hex on failure — now lengths
+  only. The H1 regression test now scans the live `crypt_cli.py`, the
+  OnlyKey/YubiKey challenge-response plugins, and every `prf_data` sink
+  (logs, prints, plugin error messages), not just `hsm_cli.py`.
+
 - **`encrypt_file` now refuses format_version values above the latest
   stable format** (v14 follow-up review LOW-2, gitlab#114, 2026-07-11):
   the write path bounded explicit `format_version` requests from below
@@ -350,7 +370,10 @@ and crypto-reviewer sign-off:
   `debug_secret()` redaction chokepoint, so it landed in scrollback/`script`/CI
   logs. The hex dump is removed (the length is still reported); the FIDO2 plugin
   already routed the pepper through `debug_secret()`, so this only closed a CLI
-  inconsistency.
+  inconsistency. *Note: this fix landed in `modules/hsm_cli.py`, which turned
+  out not to be the frontend the `hsm` subcommand actually dispatches to — the
+  reachable handlers were fixed under gitlab#121 (see the Security section
+  above), so both frontends are clean as of this release.*
 - **Plugin signature now covers the exact bytes that execute** (follow-up review
   #M1 [PLUGIN-2]): the loader verified a plugin's signature over one read while
   AST-scanning and executing others (verify-A / execute-B), and `exec_module`
