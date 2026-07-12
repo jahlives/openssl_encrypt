@@ -175,12 +175,21 @@ class TestKemHkdfRoundTrip(unittest.TestCase):
     def test_fallback_notice_respects_quiet(self):
         import contextlib
         import io
+        from unittest import mock
+
+        from openssl_encrypt.modules import pqc as pqc_module
 
         legacy_writer = PQCipher("ML-KEM-768", quiet=True)
         public_key, private_key = legacy_writer.generate_keypair()
         encrypted = legacy_writer.encrypt(b"notice probe", public_key)
 
-        loud_reader = PQCipher("ML-KEM-768", quiet=False, format_version=13)
+        # PQCipher.__init__ computes self.quiet = quiet or PQC_QUIET (the
+        # module constant snapshots the env var at import). CI exports
+        # PQC_QUIET=true, which would force the "loud" reader quiet and
+        # suppress the notice this test asserts (gitlab#122) — neutralize
+        # the environment so the test exercises the quiet PARAMETER.
+        with mock.patch.object(pqc_module, "PQC_QUIET", False):
+            loud_reader = PQCipher("ML-KEM-768", quiet=False, format_version=13)
         stderr = io.StringIO()
         with contextlib.redirect_stderr(stderr):
             self.assertEqual(loud_reader.decrypt(encrypted, private_key), b"notice probe")
