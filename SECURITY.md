@@ -226,6 +226,101 @@ relevant.
 
 ## Security Advisories
 
+### ADVISORY 2026-04: Cleartext Secret Material in Diagnostic and Debug Output — Resolved
+
+**Severity:** Medium · **CWE-532** (Insertion of Sensitive Information into Log File)
+**Affected versions:** all releases up to and including **1.4.7** (per component,
+as far back as the component exists). **Fixed in 1.4.8.**
+**Advisory:** [GHSA-p9g8-wvh4-2jmx](https://github.com/jahlives/openssl_encrypt/security/advisories/GHSA-p9g8-wvh4-2jmx)
+(HSM test-command component).
+
+**Summary:** several diagnostic and debug paths wrote secret or secret-derived
+material to the terminal or logs in cleartext, outside the `debug_secret()`
+redaction chokepoint:
+
+- the `hsm fido2-test` and `hsm onlykey-test` commands printed the full derived
+  **hardware pepper** as hex, unconditionally. An initial fix (2026-07-07)
+  landed in a CLI frontend that is not actually dispatched by the
+  `openssl-encrypt` entry point; the reachable handlers kept printing the
+  pepper until 1.4.8 (gitlab#121);
+- under `--debug`, per-round Argon2/Balloon/Scrypt lines printed `round_salt`
+  as raw hex — for `format_version ≥ 7`, rounds ≥ 1, that value is the first
+  128 bits of the **live derived-key chain**, a key intermediate;
+- the FIDO2 pepper plugin logged the raw **prf/hmac-secret output** (the value
+  the pepper is derived from) at debug level and embedded it in an error
+  message that reaches normal user output;
+- a module self-test printed its (random, throwaway) roundtrip password on
+  failure.
+
+**Impact:** secret material could land in terminal scrollback, `script`/session
+recordings, or CI logs. Mitigating factors: the test-command pepper is derived
+from a **random per-invocation test salt**, so the printed value cannot unlock
+any real file (peppers are salt-bound); the KDF intermediate leak required
+running `--debug` *and* an attacker obtaining the captured output.
+
+**Fixed in 1.4.8:** the test commands report only the pepper length; per-round
+KDF debug values are redacted by default (cleartext requires the explicit
+`--debug --unsafe-show-secrets` opt-in); the plugin renders only structure
+(type/keys) in logs and error messages; regression tests scan the **live** CLI
+paths, the challenge-response plugins, and every prf/hmac-secret sink.
+
+**Mitigation:** upgrade to 1.4.8. If you ran `hsm fido2-test`/`onlykey-test` or
+`--debug` on an earlier version, treat captured terminal output/CI logs as
+sensitive; no re-encryption is required (the leaked pepper values are bound to
+throwaway test salts, and leaked KDF intermediates require the specific debug
+capture).
+
+**Disclosure:** found during internal review (2026-07-06/07 review series and
+the 2026-07-12 gitlab#121 follow-up); fixed before any third-party disclosure.
+**Credit:** internal security review.
+
+### ADVISORY 2026-03: Plugin Signature Verification Gaps (Unverified Package Siblings; Verify/Execute Byte Mismatch) — Resolved
+
+**Severity:** High · **CWE-345** (Insufficient Verification of Data Authenticity) /
+**CWE-347** (Improper Verification of Cryptographic Signature)
+**Affected versions:** 1.4.x releases up to and including **1.4.7** (the plugin
+signature stack evolved across earlier lines; treat any pre-1.4.8 release as
+unfixed). **Fixed in 1.4.8.**
+
+**Summary:** two gaps in plugin signature verification, found in the 2026-07-07
+follow-up review:
+
+1. **Package siblings unverified (H2 [PLUGIN-1]):** for a package plugin, only
+   `__init__.py` was signature/AST/hash-verified — sibling modules it imports
+   (`helper.py`, nested modules, native extensions) executed unchecked. A signed
+   `__init__.py` plus a malicious unsigned sibling passed enforce mode.
+2. **Verify-A / execute-B (M1 [PLUGIN-2]):** the loader verified the signature
+   over one file read while AST-scanning and executing *other* reads, and
+   `exec_module` could run a cached `.pyc` never covered by the signature —
+   CRLF/BOM tricks or a shadowing `.pyc` could diverge verified from executed
+   bytes.
+
+**Impact:** an attacker able to write into a plugin directory could execute
+unverified code despite signature enforcement. (A privileged local attacker is
+outside the general threat model, but the plugin signature feature exists
+precisely to constrain plugin-directory tampering — so gaps in it are treated
+as vulnerabilities in that control.)
+
+**Fixed in 1.4.8:** package plugins are covered by a signed per-package
+`PLUGIN.manifest` (one detached `PLUGIN.manifest.asc`) enumerating **every
+importable module** — source, bytecode, native, recursively — verified against
+the trust anchors plus an exact on-disk tree match, with every module
+hash-pinned and every source sibling AST-scanned; under enforce, a
+tampered/unlisted/native-swapped/impostor-signed sibling is refused. The loader
+now reads a plugin **once** as raw bytes and threads that same buffer through
+the signature gate, the hash pin, and `ast.parse`, executing via
+`compile(raw) + exec` — verified bytes are executed bytes. `plugin sign`
+auto-detects packages and writes the manifest. *Documented residual:* the
+validation-to-import TOCTOU window (a runtime import hook) remains a planned
+follow-on.
+
+**Mitigation:** upgrade to 1.4.8 and re-sign package plugins (`plugin sign`
+writes the per-package manifest). Until then, keep plugin directories
+non-writable to untrusted users (this is required hygiene in any version).
+
+**Disclosure:** found during the internal 2026-07-07 follow-up security review;
+fixed before any third-party disclosure. **Credit:** internal security review.
+
 ### ADVISORY 2026-02: Sequential-XOR Last-Stage Cancellation (KDF Cost Bypass) — Resolved
 
 **Severity:** High · **CWE-916** (Use of Password Hash With Insufficient Computational Effort)
@@ -268,6 +363,10 @@ v13.
   append-only), but remain weak until re-encrypted. Check with
   `openssl-encrypt info -i file.enc` (look for `xor_mode: sequential` and
   `format_version` 8/10).
+- **As of 1.4.8**, writing *new* v8/v10 files is refused outright (a
+  library-only escape hatch remains for legacy test fixtures), and `rekey`
+  transparently upgrades an inherited v8/v10 file to a safe format — so simply
+  rekeying such a file also retires the weak derivation.
 
 **Disclosure:** found during internal review of the XOR composition modes; fixed
 before any third-party disclosure. **Credit:** internal security review.
