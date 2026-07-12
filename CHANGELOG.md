@@ -312,6 +312,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Test: `test_fallback_notice_respects_quiet` is now deterministic
+  against the environment** (gitlab#122, 2026-07-12, ported from
+  1.4.x): the CI test job exports `PQC_QUIET=true`, and
+  `PQCipher.__init__` computes `self.quiet = quiet or PQC_QUIET` — so
+  the test's `quiet=False` reader was forcibly quiet in CI, the
+  legacy-KEM-derivation notice never appeared, and the assertion failed
+  on release-branch/tag pipelines (the only pipelines that run the test
+  job). The test now patches the module-level `PQC_QUIET` constant to
+  `False` so it exercises the `quiet` parameter itself. Product
+  behavior is unchanged.
+
 - **Legacy-KDF retry classification is now structural and covers every
   PQC data cipher** (v14 follow-up review LOW-4, gitlab#116, 2026-07-11):
   three classification gaps in the v12/v13 legacy-KEM-key retry — all
