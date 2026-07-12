@@ -575,6 +575,16 @@ inflated KDF metadata parameters, not cosmetic output.
   every `prf_data` sink (logs, prints, plugin error messages), not just
   `hsm_cli.py`.
 
+- **SECURITY.md advisories recorded for this release's security batch**:
+  new ADVISORY 2026-03 (plugin signature verification gaps — unverified
+  package siblings H2 [PLUGIN-1], verify/execute byte mismatch M1
+  [PLUGIN-2]) and ADVISORY 2026-04 (cleartext secret material in
+  diagnostic/debug output — HSM test-command pepper prints incl. the
+  gitlab#121 live-path residual / GHSA-p9g8-wvh4-2jmx, per-round KDF
+  debug intermediate, plugin prf_data sinks, self-test print); the
+  ADVISORY 2026-02 mitigation now notes the v8/v10 write refusal, the
+  rekey upgrade path, and this line's PBKDF2-chain migration caveat.
+
 - **The native PQC Threefish paths now zeroize the expanded
   data-encryption key** (v14 follow-up review LOW-3, gitlab#115,
   2026-07-11): in `PQCipher.encrypt`/`_decrypt_impl` the Threefish branch
