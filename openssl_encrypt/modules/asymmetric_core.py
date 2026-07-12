@@ -665,7 +665,9 @@ if __name__ == "__main__":
     cipher = PQCipher("ML-KEM-768")
     recipient_pubkey, recipient_privkey = cipher.generate_keypair()
 
-    eprint(f"Recipient keys: pub={len(recipient_pubkey)} bytes, priv={len(recipient_privkey)} bytes")
+    eprint(
+        f"Recipient keys: pub={len(recipient_pubkey)} bytes, priv={len(recipient_privkey)} bytes"
+    )
 
     # Generate random password
     password = secrets.token_bytes(32)
@@ -694,8 +696,12 @@ if __name__ == "__main__":
             eprint("✅ Password wrapping roundtrip successful!")
         else:
             eprint("❌ Password wrapping failed!")
-            eprint(f"  Original:  {password.hex()[:64]}...")
-            eprint(f"  Recovered: {bytes(recovered).hex()[:64]}...")
+            # Never print the values themselves — even random self-test data
+            # must not normalize hex-dumping secret-shaped material
+            # (never-print-keys policy, gitlab#121). Lengths suffice to see
+            # truncation/corruption; a full mismatch needs a debugger anyway.
+            eprint(f"  Original:  {len(password)} bytes")
+            eprint(f"  Recovered: {len(recovered)} bytes (mismatch)")
 
     # Clean up original password
     secure_memzero(password)
