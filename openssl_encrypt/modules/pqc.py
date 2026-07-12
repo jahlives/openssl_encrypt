@@ -62,6 +62,21 @@ oqs = None
 # Check for quiet mode environment variable
 PQC_QUIET = os.environ.get("PQC_QUIET", "").lower() in ("1", "true", "yes", "on")
 
+
+def _env_allow_legacy_testdata() -> bool:
+    """Whether reading the insecure legacy TESTDATA formats is opted in via env.
+
+    Resolved at decrypt time so the environment can enable legacy migration
+    without any code change; defaults to disabled (secure). See issue #54.
+    """
+    return os.environ.get("OPENSSL_ENCRYPT_ALLOW_LEGACY_TESTDATA", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+
 try:
     import oqs
 
@@ -87,6 +102,15 @@ except ImportError:
     LIBOQS_AVAILABLE = False
 except Exception:
     LIBOQS_AVAILABLE = False
+
+
+class PQCAuthenticationError(ValueError):
+    """AEAD authentication failure during PQC decryption.
+
+    Subclasses ValueError for backward compatibility with existing callers.
+    Used structurally (no error-string matching) to scope the legacy
+    KEM-key-derivation compatibility retry to authentication failures only.
+    """
 
 
 # Define supported PQC algorithms
@@ -233,17 +257,17 @@ def check_pqc_support(quiet: bool = False) -> Tuple[bool, Optional[str], list]:
                     if std_name != alg:
                         supported_algorithms.append(std_name)
             else:
-                # Fallback to all known KEM algorithms if API methods not found
-                # Prioritize ML-KEM (standardized) names
-                supported_algorithms.extend(["ML-KEM-512", "ML-KEM-768", "ML-KEM-1024"])
-                # Add legacy names for backward compatibility
-                supported_algorithms.extend(["Kyber512", "Kyber768", "Kyber1024"])
-        except Exception:
-            # Force add all KEM algorithms as fallback
-            # Prioritize ML-KEM (standardized) names
-            supported_algorithms.extend(["ML-KEM-512", "ML-KEM-768", "ML-KEM-1024"])
-            # Add legacy names for backward compatibility
-            supported_algorithms.extend(["Kyber512", "Kyber768", "Kyber1024"])
+                # No mechanism-listing API (#109): report nothing rather than
+                # fabricate a KEM list that masks a non-functional backend.
+                if not should_be_quiet:
+                    logger.warning(
+                        "liboqs exposes no KEM mechanism-listing API; "
+                        "reporting no KEM algorithms"
+                    )
+        except Exception as e:
+            # Enumeration failed (#109): report nothing rather than fabricate.
+            if not should_be_quiet:
+                logger.warning(f"Could not enumerate liboqs KEM mechanisms: {e}")
 
         # Check signature algorithms (less important for us)
         try:
@@ -266,49 +290,25 @@ def check_pqc_support(quiet: bool = False) -> Tuple[bool, Optional[str], list]:
                     if std_name != alg:
                         supported_algorithms.append(std_name)
             else:
-                # Add standard signature algorithm names
-                supported_algorithms.extend(
-                    [
-                        "ML-DSA-44",
-                        "ML-DSA-65",
-                        "ML-DSA-87",
-                        "FN-DSA-512",
-                        "FN-DSA-1024",
-                        "SLH-DSA-SHA2-128F",
-                        "SLH-DSA-SHA2-256F",
-                    ]
-                )
-                # Add legacy names for backward compatibility
-                supported_algorithms.extend(
-                    [
-                        "Dilithium2",
-                        "Dilithium3",
-                        "Dilithium5",
-                        "Falcon-512",
-                        "Falcon-1024",
-                        "SPHINCS+-SHA2-128f",
-                        "SPHINCS+-SHA2-256f",
-                    ]
-                )
+                # No mechanism-listing API (#109): report nothing rather than
+                # fabricate a signature-algorithm list.
+                if not should_be_quiet:
+                    logger.warning(
+                        "liboqs exposes no signature mechanism-listing API; "
+                        "reporting no signature algorithms"
+                    )
         except Exception as e:
-            # Skip printing warning about signature algorithms
-            pass
+            # Enumeration failed (#109): report nothing rather than fabricate.
+            if not should_be_quiet:
+                logger.warning(f"Could not enumerate liboqs signature mechanisms: {e}")
 
         return True, version, supported_algorithms
     except Exception:
-        # Provide fallback algorithms (prioritize standardized names)
-        return (
-            False,
-            None,
-            [
-                "ML-KEM-512",
-                "ML-KEM-768",
-                "ML-KEM-1024",
-                "Kyber512",
-                "Kyber768",
-                "Kyber1024",
-            ],
-        )
+        # Backend is broken (#109): report the truth — unavailable, no
+        # algorithms. The old code returned a fabricated ML-KEM/Kyber list
+        # here, masking a non-functional backend from every caller that
+        # tested membership before constructing PQC objects.
+        return False, None, []
 
 
 class PQCipher:
@@ -326,6 +326,8 @@ class PQCipher:
         encryption_data: str = "aes-gcm",
         verbose: bool = False,
         debug: bool = False,
+        allow_legacy_testdata: bool = False,
+        format_version: Optional[int] = None,
     ):
         """
         Initialize a post-quantum cipher instance
@@ -336,11 +338,14 @@ class PQCipher:
             encryption_data (str): Symmetric encryption algorithm to use ('aes-gcm', 'chacha20-poly1305', etc.)
             verbose (bool): Whether to show detailed information
             debug (bool): Whether to show debug level information
+            format_version (int, optional): File format version. >= 12 uses HKDF
+                for KEM key derivation; older versions use legacy SHA-256.
 
         Raises:
             ValueError: If liboqs is not available or algorithm not supported
             ImportError: If required dependencies are missing
         """
+        self.format_version = format_version
         # Respect both parameter and environment variable
         should_be_quiet = quiet or PQC_QUIET
 
@@ -410,6 +415,14 @@ class PQCipher:
         # Store quiet mode and debug mode for use in other methods
         self.quiet = should_be_quiet
         self.debug = debug
+
+        # SECURITY: the legacy TESTDATA / PQC_TEST_DATA "simulation" formats
+        # bypass real encryption and are only readable when explicitly opted in
+        # (this argument or OPENSSL_ENCRYPT_ALLOW_LEGACY_TESTDATA env var). Normal
+        # decryption must never take that passthrough path, otherwise a crafted
+        # file forges arbitrary plaintext with no key (issue #54). The env var is
+        # resolved at decrypt time via _env_allow_legacy_testdata().
+        self.allow_legacy_testdata = bool(allow_legacy_testdata)
 
         # Map the requested algorithm to an available one
         if isinstance(algorithm, str):
@@ -512,6 +525,83 @@ class PQCipher:
 
         # All Kyber/ML-KEM/HQC algorithms are KEM algorithms
         self.is_kem = any(x in self.algorithm_name.lower() for x in ["kyber", "ml-kem", "hqc"])
+
+    def _derive_symmetric_key(
+        self,
+        shared_secret: bytes,
+        key_length: int = 32,
+        kem_ciphertext: bytes = None,
+    ) -> bytes:
+        """Derive a symmetric key from a KEM shared secret.
+
+        For format_version >= 14: HKDF-SHA256 binding the full transcript —
+        the algorithm name, the AEAD choice (encryption_data), and a SHA-256
+        digest of the KEM encapsulation ciphertext (finding #83). A missing
+        ciphertext raises; there is no silent fallback. The info layout is
+        pinned for cross-line (1.4.x/1.5.x) byte-identity — DO NOT CHANGE:
+        b"openssl_encrypt.kem.v14|" + algorithm + b"|" + encryption_data
+        + b"|ct=" + sha256(kem_ciphertext).
+
+        SECURITY NOTE (detection mechanism): ciphertext/metadata substitution
+        is detected *via AEAD authentication*, not by an explicit compare —
+        a tampered transcript yields a different HKDF key, which fails the
+        data cipher's authentication tag. This argument therefore REQUIRES
+        the symmetric layer to be an AEAD (all supported PQC data ciphers
+        are: AES-GCM/-GCM-SIV/-SIV/-OCB3 and ChaCha20/XChaCha20-Poly1305).
+        Wiring a non-authenticated data cipher into the PQC path would
+        silently void the transcript binding.
+
+        For format_version >= 12: uses HKDF-SHA256 with algorithm name as info,
+        providing proper domain separation and extract-then-expand semantics.
+
+        For legacy formats (< 12 or None): uses bare SHA-256 for backward
+        compatibility with existing encrypted files.
+
+        Args:
+            shared_secret: Raw shared secret from KEM encapsulation/decapsulation.
+            key_length: Desired key length in bytes (default 32 for AES-256).
+            kem_ciphertext: The KEM encapsulation ciphertext; required for
+                format_version >= 14, ignored below.
+
+        Returns:
+            Derived symmetric key bytes.
+
+        Raises:
+            ValueError: If format_version >= 14 and kem_ciphertext is missing.
+        """
+        if self.format_version is not None and self.format_version >= 14:
+            if kem_ciphertext is None:
+                raise ValueError(
+                    "format_version >= 14 requires the KEM ciphertext for "
+                    "transcript-bound key derivation (finding #83); refusing "
+                    "to derive without it"
+                )
+            from cryptography.hazmat.primitives import hashes
+            from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+
+            return HKDF(
+                algorithm=hashes.SHA256(),
+                length=key_length,
+                salt=None,
+                info=b"openssl_encrypt.kem.v14|"
+                + self.algorithm_name.encode()
+                + b"|"
+                + self.encryption_data.encode()
+                + b"|ct="
+                + hashlib.sha256(kem_ciphertext).digest(),
+            ).derive(shared_secret)
+        elif self.format_version is not None and self.format_version >= 12:
+            from cryptography.hazmat.primitives import hashes
+            from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+
+            return HKDF(
+                algorithm=hashes.SHA256(),
+                length=key_length,
+                salt=None,
+                info=b"openssl_encrypt-kem-key-" + self.algorithm_name.encode(),
+            ).derive(shared_secret)
+        else:
+            return hashlib.sha256(shared_secret).digest()
 
     def generate_keypair(self) -> Tuple[bytes, bytes]:
         """
@@ -667,8 +757,14 @@ class PQCipher:
                 # Encapsulate a shared secret with the public key
                 encapsulated_key, shared_secret = kem.encap_secret(public_key)
 
-                # Derive symmetric key from shared secret
-                symmetric_key = hashlib.sha256(shared_secret).digest()
+                # Derive symmetric key from shared secret. M2 [MEM-1]: hold it in
+                # SecureBytes (as the decrypt path already does) so secure_memzero
+                # in `finally` wipes the actual AES key rather than a copy — the
+                # bytes returned by _derive_symmetric_key are immutable and cannot
+                # be wiped in place.
+                symmetric_key = SecureBytes(
+                    self._derive_symmetric_key(shared_secret, kem_ciphertext=encapsulated_key)
+                )
 
                 # Generate random nonce (12 bytes for most AEAD ciphers)
                 nonce = secrets.token_bytes(12)
@@ -729,6 +825,15 @@ class PQCipher:
         """
         Decrypt data that was encrypted with the corresponding public key
 
+        For format_version >= 12 the symmetric key is derived via HKDF (see
+        _derive_symmetric_key). Files written by openssl_encrypt 1.4.x releases
+        <= 1.4.7 carry the same format_version but used the legacy bare-SHA256
+        derivation; to keep those decryptable, a failed v12+ decryption is
+        retried once with the legacy derivation. A wrong key cannot pass the
+        AEAD authentication, so the retry cannot produce silently wrong
+        plaintext, and no attacker-controllable downgrade is introduced (the
+        legacy-keyed file population legitimately exists).
+
         Args:
             encrypted_data (bytes): The encrypted data
             private_key (bytes): The recipient's private key
@@ -741,6 +846,55 @@ class PQCipher:
 
         Raises:
             ValueError: If decryption fails
+        """
+        try:
+            return self._decrypt_impl(encrypted_data, private_key, file_contents, aad)
+        except PQCAuthenticationError:
+            if self.format_version is None or not 12 <= self.format_version < 14:
+                # The legacy retry exists for files written by 1.4.x releases
+                # <= 1.4.7, which are only v12/v13. No v14+ file can carry a
+                # legacy bare-SHA256 key, so v14+ never retries.
+                raise
+            # v12/v13 HKDF-keyed authentication failed: retry once with the
+            # legacy bare-SHA256 KEM key used by 1.4.x releases <= 1.4.7.
+            # Non-authentication failures (metadata mismatch, structural
+            # errors) are re-raised immediately above and never retried.
+            try:
+                plaintext = self._decrypt_impl(
+                    encrypted_data,
+                    private_key,
+                    file_contents,
+                    aad,
+                    legacy_kem_kdf=True,
+                )
+            except Exception:
+                raise ValueError(
+                    "PQC decryption failed with both the HKDF (v12+) and the "
+                    "legacy KEM key derivation. The file may be corrupted or "
+                    "the wrong private key was provided."
+                )
+            if not self.quiet:
+                eprint(
+                    "NOTICE: this file was encrypted with the legacy (pre-1.4.8) "
+                    "KEM key derivation. It remains readable, but re-encrypting "
+                    "it is recommended for cross-version compatibility."
+                )
+            return plaintext
+
+    def _decrypt_impl(
+        self,
+        encrypted_data: bytes,
+        private_key: bytes,
+        file_contents: bytes = None,
+        aad: bytes = None,
+        legacy_kem_kdf: bool = False,
+    ) -> bytes:
+        """Single decryption attempt; see decrypt() for the public contract.
+
+        Args:
+            legacy_kem_kdf: When True, derive the KEM symmetric key with the
+                legacy bare-SHA256 scheme regardless of format_version (used
+                by the compatibility retry in decrypt()).
         """
         logger.debug(
             f"DECRYPT:PQC_KEM decrypt() called with encrypted_data length: {len(encrypted_data)}"
@@ -780,13 +934,20 @@ class PQCipher:
                         f"DECRYPT:PQC_KEM encrypted_data starts with: {encrypted_data[:50]}"
                     )
 
-                # SECURITY (CRIT-1): Legacy TESTDATA format detection for
-                # backward-compatible decryption only. New encryptions never
-                # produce this format.
+                # SECURITY (CRIT-1 / issue #54): the legacy TESTDATA and
+                # PQC_TEST_DATA formats bypass real encryption and authentication.
+                # They are only honoured when the caller has explicitly opted in
+                # via allow_legacy_testdata (constructor arg or env var); otherwise
+                # a crafted file starting with these magic bytes would "decrypt"
+                # to attacker-chosen plaintext with no key. When not opted in, the
+                # data falls through to real KEM decapsulation, which authenticates.
                 _legacy_testdata_header = b"PQC_TEST_DATA:"
                 _legacy_testdata_marker = b"TESTDATA"
+                _allow_legacy = (
+                    getattr(self, "allow_legacy_testdata", False) or _env_allow_legacy_testdata()
+                )
 
-                if encrypted_data.startswith(_legacy_testdata_header):
+                if _allow_legacy and encrypted_data.startswith(_legacy_testdata_header):
                     logger.warning(
                         "DEPRECATION WARNING: Decrypting legacy PQC_TEST_DATA format. "
                         "This format bypasses real encryption and will be removed in a future version. "
@@ -795,7 +956,7 @@ class PQCipher:
                     plaintext = encrypted_data[len(_legacy_testdata_header) :]
                     return plaintext
 
-                elif encrypted_data.startswith(_legacy_testdata_marker):
+                elif _allow_legacy and encrypted_data.startswith(_legacy_testdata_marker):
                     logger.warning(
                         "DEPRECATION WARNING: Decrypting legacy TESTDATA format. "
                         "This format bypasses real encryption and will be removed in a future version. "
@@ -817,8 +978,8 @@ class PQCipher:
                         f"DECRYPT:PQC_KEM Encapsulated key starts with: {encapsulated_key[:20]}"
                     )
 
-                # Legacy TESTDATA embedded in encapsulated_key slot
-                if encapsulated_key.startswith(_legacy_testdata_marker):
+                # Legacy TESTDATA embedded in encapsulated_key slot (opt-in only)
+                if _allow_legacy and encapsulated_key.startswith(_legacy_testdata_marker):
                     logger.warning(
                         "DEPRECATION WARNING: Decrypting legacy TESTDATA format "
                         "(embedded in KEM ciphertext slot). "
@@ -850,12 +1011,20 @@ class PQCipher:
 
                 # No need for debug output on nonce
 
-                # Check if this is a simulated ciphertext (legacy format)
+                # Check if this is a simulated ciphertext (legacy format).
+                # SECURITY (CRIT-3 / issue #65): simulation mode derives a weak
+                # deterministic shared secret from largely public data. Like the
+                # TESTDATA formats it is only honoured under the explicit
+                # allow_legacy_testdata opt-in; otherwise a crafted SIMULATED_PQC
+                # prefix would force an attacker-selectable downgrade on the normal
+                # decrypt path. When not opted in, the header is treated as an
+                # ordinary (bogus) KEM ciphertext and fails authentication.
                 sim_header = b"SIMULATED_PQC_v1"
                 simulation_detected = False
 
                 if (
-                    len(encapsulated_key) >= len(sim_header)
+                    _allow_legacy
+                    and len(encapsulated_key) >= len(sim_header)
                     and encapsulated_key[: len(sim_header)] == sim_header
                 ):
                     simulation_detected = True
@@ -923,7 +1092,17 @@ class PQCipher:
 
                 # Derive the symmetric key using secure memory operations
                 with SecureBytes(shared_secret) as secure_shared_secret:
-                    symmetric_key = SecureBytes(hashlib.sha256(secure_shared_secret).digest())
+                    if legacy_kem_kdf:
+                        symmetric_key = SecureBytes(
+                            hashlib.sha256(bytes(secure_shared_secret)).digest()
+                        )
+                    else:
+                        symmetric_key = SecureBytes(
+                            self._derive_symmetric_key(
+                                bytes(secure_shared_secret),
+                                kem_ciphertext=encapsulated_key,
+                            )
+                        )
 
                 # Get the encryption_data from the metadata if available
                 metadata_encryption_data = None
@@ -1012,6 +1191,10 @@ class PQCipher:
                     )
 
                 # Decrypt using the selected AEAD cipher
+                from cryptography.exceptions import InvalidTag
+
+                from .crypt_errors import AuthenticationError
+
                 try:
                     with SecureBytes() as secure_plaintext:
                         # AES-SIV has a different API: decrypt(data, [associated_data])
@@ -1030,13 +1213,19 @@ class PQCipher:
                             logger.debug(f"Decryption successful, length: {len(secure_plaintext)}")
                         return bytes(secure_plaintext)
 
-                except Exception as e:
+                except (InvalidTag, AuthenticationError) as e:
                     # SECURITY (CRIT-2): No fallback to unauthenticated ciphers.
+                    # gitlab#116 [LOW-4]: classify ONLY structural auth-failure
+                    # types (InvalidTag from the pyca AEADs, AuthenticationError
+                    # from the custom XChaCha wrapper). Structural errors such
+                    # as "Ciphertext too short" propagate unchanged and never
+                    # trigger the legacy-KDF retry, matching decrypt()'s
+                    # documented contract.
                     logger.warning(
                         "AEAD decryption failed. No fallback to unauthenticated "
                         "ciphers is permitted."
                     )
-                    raise ValueError("Decryption failed: authentication error")
+                    raise PQCAuthenticationError("Decryption failed: authentication error") from e
         except Exception as e:
             if not self.quiet:
                 eprint(f"Error in post-quantum decryption: {e}")

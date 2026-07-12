@@ -172,13 +172,43 @@ class PasswordWrapper:
             logger.error(f"KEM decapsulation failed: {e}")
             raise PasswordWrapperError(f"Failed to decapsulate: {e}")
 
-    def wrap_password(self, password: bytes, shared_secret: bytes) -> bytes:
+    def _wrap_info_v3(self, encapsulated_key: bytes) -> bytes:
+        """HKDF info for wrap_version 3 — KEM transcript binding (gitlab#112).
+
+        Binds the KEM encapsulation ciphertext (as a SHA-256 digest) and the
+        KEM algorithm identity into the wrap-key derivation, extending the
+        finding-#83 transcript-binding rationale to the recipient password
+        wrap. PINNED for cross-line (1.4.x/1.5.x) interop: do not change the
+        label, the ``|`` separators, the field order, or the digest.
+
+        Args:
+            encapsulated_key: The KEM encapsulation ciphertext.
+
+        Returns:
+            The HKDF info bytes for the v3 derivation.
+        """
+        return (
+            b"openssl_encrypt.password_wrap.v3|"
+            + self.kem_algorithm.encode("ascii")
+            + b"|ct="
+            + hashlib.sha256(encapsulated_key).digest()
+        )
+
+    def wrap_password(
+        self, password: bytes, shared_secret: bytes, *, encapsulated_key: bytes = None
+    ) -> bytes:
         """
         Wrap password using shared secret with AES-256-GCM.
 
         Args:
             password: Password to wrap (typically 32 bytes random)
             shared_secret: Shared secret from KEM (32+ bytes)
+            encapsulated_key: The KEM encapsulation ciphertext. When provided,
+                the wrap key is derived with the wrap_version-3 transcript
+                binding (ciphertext + KEM algorithm bound into the HKDF info);
+                the caller MUST record ``wrap_version: 3`` next to the blob.
+                When None (default), the legacy v2 static-info derivation is
+                used byte-for-byte — existing callers are unaffected.
 
         Returns:
             Encrypted password in format: [nonce:12][ciphertext][tag:16]
@@ -196,6 +226,8 @@ class PasswordWrapper:
             raise TypeError("Password must be bytes")
         if not isinstance(shared_secret, bytes):
             raise TypeError("Shared secret must be bytes")
+        if encapsulated_key is not None and not isinstance(encapsulated_key, bytes):
+            raise TypeError("Encapsulated key must be bytes")
 
         # Derive AES-256 key from shared secret
         # Use HKDF-style derivation with domain separation
@@ -207,18 +239,26 @@ class PasswordWrapper:
             from cryptography.hazmat.primitives import hashes as crypto_hashes
             from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
+            if encapsulated_key is not None:
+                info = self._wrap_info_v3(encapsulated_key)
+            else:
+                info = b"openssl_encrypt.password_wrap.v2"
             hkdf = HKDF(
                 algorithm=crypto_hashes.SHA256(),
                 length=32,
                 salt=None,
-                info=b"openssl_encrypt.password_wrap.v2",
+                info=info,
             )
-            wrap_key_bytes = hkdf.derive(shared_secret)
+            # M2 [MEM-1]: hold the wrap key in a mutable bytearray so the
+            # secure_memzero in `finally` actually wipes it. hkdf.derive returns
+            # immutable bytes; wiping those (or a bytearray copy) is a no-op that
+            # leaves the AES key resident in the heap.
+            wrap_key_bytes = bytearray(hkdf.derive(shared_secret))
 
             # Generate random nonce (96 bits for GCM)
             nonce = secrets.token_bytes(12)
 
-            # Encrypt password with AES-256-GCM
+            # Encrypt password with AES-256-GCM (AESGCM accepts the bytearray)
             aesgcm = AESGCM(wrap_key_bytes)
             ciphertext_with_tag = aesgcm.encrypt(
                 nonce, password, None  # No additional authenticated data
@@ -246,29 +286,62 @@ class PasswordWrapper:
                 secure_memzero(wrap_key_bytes)
             # nonce is public, no need to zero
 
-    def unwrap_password(self, encrypted_password: bytes, shared_secret: bytes) -> bytes:
+    def unwrap_password(
+        self,
+        encrypted_password: bytes,
+        shared_secret: bytes,
+        *,
+        encapsulated_key: bytes = None,
+        wrap_version: int = None,
+    ) -> bytes:
         """
         Unwrap password using shared secret.
 
         Args:
             encrypted_password: Encrypted password from metadata [nonce:12][ciphertext][tag:16]
             shared_secret: Shared secret from KEM decapsulation
+            encapsulated_key: The KEM encapsulation ciphertext; REQUIRED when
+                ``wrap_version`` is 3 (transcript-bound derivation).
+            wrap_version: The recipient entry's ``wrap_version`` marker.
+                3 selects the transcript-bound v3 derivation ONLY — no
+                fallback (fail closed). None (marker absent — every file
+                written before wrap_version existed) selects the legacy
+                v2→v1 fallback chain, byte-for-byte the previous behavior.
+                Any other value fails closed.
 
         Returns:
             Original password (caller must wrap in SecureBytes!)
 
         Raises:
-            PasswordWrapperError: If unwrapping fails or authentication fails
+            PasswordWrapperError: If unwrapping fails, authentication fails,
+                or the wrap_version marker is unsupported/inconsistent
 
         Security:
             - Verifies authentication tag (constant-time)
             - Raises exception on any tampering
             - Result MUST be wrapped in SecureBytes by caller
+            - A v3 blob pushed through the no-marker path derives a different
+              key and fails the tag: stripping the marker cannot downgrade
         """
         if not isinstance(encrypted_password, bytes):
             raise TypeError("Encrypted password must be bytes")
         if not isinstance(shared_secret, bytes):
             raise TypeError("Shared secret must be bytes")
+
+        # Validate the wrap_version marker BEFORE touching key material.
+        # The marker comes from parsed file metadata, so treat it as
+        # attacker-controlled: only int 3 (bool excluded) or None pass.
+        if wrap_version is not None:
+            if (
+                not isinstance(wrap_version, int)
+                or isinstance(wrap_version, bool)
+                or wrap_version != 3
+            ):
+                raise PasswordWrapperError(f"Unsupported wrap_version: {wrap_version!r}")
+            if encapsulated_key is None:
+                raise PasswordWrapperError("wrap_version 3 requires the KEM encapsulated key")
+            if not isinstance(encapsulated_key, bytes):
+                raise TypeError("Encapsulated key must be bytes")
 
         # Validate minimum size: nonce(12) + tag(16) = 28 bytes
         if len(encrypted_password) < 28:
@@ -284,31 +357,60 @@ class PasswordWrapper:
             nonce = encrypted_password[:12]
             ciphertext_with_tag = encrypted_password[12:]
 
-            # Try HKDF-based derivation first (v2), fall back to SHA-256 (v1 legacy)
             from cryptography.hazmat.primitives import hashes as crypto_hashes
             from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
+            if wrap_version is not None:
+                # wrap_version 3: transcript-bound derivation ONLY. No
+                # fallback to v2/v1 — a marked entry that fails the bound
+                # derivation is tampered or corrupted, and silently retrying
+                # weaker derivations would reopen the downgrade surface.
+                hkdf = HKDF(
+                    algorithm=crypto_hashes.SHA256(),
+                    length=32,
+                    salt=None,
+                    info=self._wrap_info_v3(encapsulated_key),
+                )
+                # M2 [MEM-1]: bytearray so the finally secure_memzero wipes it.
+                wrap_key_bytes = bytearray(hkdf.derive(shared_secret))
+                aesgcm = AESGCM(wrap_key_bytes)
+                password = aesgcm.decrypt(nonce, ciphertext_with_tag, None)
+
+                if not self.quiet:
+                    logger.debug(
+                        f"Password unwrapped (wrap_version 3): "
+                        f"{len(encrypted_password)} bytes → {len(password)} bytes"
+                    )
+                return password
+
+            # Marker absent: try HKDF-based derivation first (v2), fall back
+            # to SHA-256 (v1 legacy) — byte-for-byte the pre-wrap_version
+            # behavior, covering every existing file.
             hkdf = HKDF(
                 algorithm=crypto_hashes.SHA256(),
                 length=32,
                 salt=None,
                 info=b"openssl_encrypt.password_wrap.v2",
             )
-            wrap_key_bytes = hkdf.derive(shared_secret)
+            # M2 [MEM-1]: bytearray so the finally secure_memzero wipes the real key.
+            wrap_key_bytes = bytearray(hkdf.derive(shared_secret))
 
             try:
                 aesgcm = AESGCM(wrap_key_bytes)
                 password = aesgcm.decrypt(nonce, ciphertext_with_tag, None)
                 return password
             except Exception:
-                # Legacy SHA-256 derivation fallback
-                secure_memzero(bytearray(wrap_key_bytes))
+                # Legacy SHA-256 derivation fallback. Wipe the v2 key IN PLACE
+                # (it is a bytearray we own) before rebinding; the previous
+                # secure_memzero(bytearray(wrap_key_bytes)) zeroed a throwaway
+                # copy and then orphaned the real v2 key (dead wipe).
+                secure_memzero(wrap_key_bytes)
                 h = hashlib.sha256()
                 h.update(b"openssl_encrypt.password_wrap.v1")
                 h.update(shared_secret)
-                wrap_key_bytes = h.digest()
+                wrap_key_bytes = bytearray(h.digest())
 
-            # Decrypt with AES-256-GCM
+            # Decrypt with AES-256-GCM (AESGCM accepts the bytearray)
             aesgcm = AESGCM(wrap_key_bytes)
             password = aesgcm.decrypt(
                 nonce,
@@ -379,8 +481,9 @@ class MetadataCanonicalizer:
         if not isinstance(metadata, dict):
             raise ValueError("Metadata must be a dictionary")
 
-        # Create a deep copy to avoid modifying original
-        metadata_copy = MetadataCanonicalizer._deep_copy_without_signature(metadata)
+        # Create a deep copy to avoid modifying original, removing ONLY the
+        # top-level 'signature' key (the envelope signature cannot sign itself).
+        metadata_copy = MetadataCanonicalizer._strip_top_level_signature(metadata)
 
         try:
             # Serialize with sorted keys, no whitespace, UTF-8
@@ -403,29 +506,37 @@ class MetadataCanonicalizer:
             raise TypeError(f"Cannot canonicalize metadata: {e}")
 
     @staticmethod
-    def _deep_copy_without_signature(obj):
-        """
-        Recursively copy object structure, removing 'signature' keys.
-
-        Args:
-            obj: Object to copy (dict, list, or primitive)
-
-        Returns:
-            Deep copy without any 'signature' keys
-        """
+    def _deep_copy(obj):
+        """Recursively deep-copy a JSON-compatible structure (no key removal)."""
         if isinstance(obj, dict):
-            # Copy dict, excluding 'signature' key
-            return {
-                key: MetadataCanonicalizer._deep_copy_without_signature(value)
-                for key, value in obj.items()
-                if key != "signature"
-            }
+            return {key: MetadataCanonicalizer._deep_copy(value) for key, value in obj.items()}
         elif isinstance(obj, list):
-            # Recursively copy list elements
-            return [MetadataCanonicalizer._deep_copy_without_signature(item) for item in obj]
+            return [MetadataCanonicalizer._deep_copy(item) for item in obj]
         else:
             # Primitives (str, int, float, bool, None) are copied by value
             return obj
+
+    @staticmethod
+    def _strip_top_level_signature(metadata):
+        """Copy the metadata dict, removing ONLY the top-level 'signature' key.
+
+        SECURITY (#86): a previous version removed every key named 'signature' at
+        any depth, so a nested 'signature' field (e.g. per-recipient/per-key) would
+        fall outside the signed transcript and be alterable without invalidating the
+        outer signature. Only the top-level envelope signature is excluded; nested
+        'signature' fields stay in the canonical bytes and are therefore signed.
+
+        Args:
+            metadata: The metadata dict to canonicalize.
+
+        Returns:
+            A deep copy of ``metadata`` without its top-level ``signature`` key.
+        """
+        return {
+            key: MetadataCanonicalizer._deep_copy(value)
+            for key, value in metadata.items()
+            if key != "signature"
+        }
 
     @staticmethod
     def verify_determinism(metadata: Dict) -> bool:
@@ -585,8 +696,12 @@ if __name__ == "__main__":
             eprint("✅ Password wrapping roundtrip successful!")
         else:
             eprint("❌ Password wrapping failed!")
-            eprint(f"  Original:  {password.hex()[:64]}...")
-            eprint(f"  Recovered: {bytes(recovered).hex()[:64]}...")
+            # Never print the values themselves — even random self-test data
+            # must not normalize hex-dumping secret-shaped material
+            # (never-print-keys policy, gitlab#121). Lengths suffice to see
+            # truncation/corruption; a full mismatch needs a debugger anyway.
+            eprint(f"  Original:  {len(password)} bytes")
+            eprint(f"  Recovered: {len(recovered)} bytes (mismatch)")
 
     # Clean up original password
     secure_memzero(password)

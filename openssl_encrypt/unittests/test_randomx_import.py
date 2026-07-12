@@ -48,18 +48,20 @@ class TestRandomXImportSubprocess(unittest.TestCase):
                 if p:
                     self.assertIn(p, env["PYTHONPATH"])
 
-    def test_subprocess_inherits_parent_environment(self):
-        """Verify subprocess gets parent env vars plus PYTHONPATH."""
+    def test_subprocess_env_is_scrubbed(self):
+        """Verify subprocess gets a scrubbed env, not the full parent env (#88)."""
         from openssl_encrypt.modules.randomx import _test_randomx_import
 
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0, stdout="SUCCESS\n")
-            with patch.dict(os.environ, {"FLATPAK_ID": "com.test.App"}):
+            with patch.dict(os.environ, {"OPENSSL_ENCRYPT_PASSWORD": "hunter2"}):
                 _test_randomx_import()
 
             env = mock_run.call_args.kwargs["env"]
-            # Parent env vars should be inherited
-            self.assertEqual(env.get("FLATPAK_ID"), "com.test.App")
+            # Non-allowlisted parent env vars must NOT be inherited
+            self.assertNotIn("OPENSSL_ENCRYPT_PASSWORD", env)
+            # Loader configuration must still be present
+            self.assertIn("PYTHONPATH", env)
 
     def test_kdf_registry_randomx_passes_pythonpath(self):
         """Verify KDF registry RandomX.is_available passes PYTHONPATH."""
@@ -92,21 +94,29 @@ class TestGetPythonExecutable(unittest.TestCase):
         # In our test environment sys.executable is valid
         self.assertEqual(exe, sys.executable)
 
-    def test_falls_back_to_python3_when_empty(self):
-        """When sys.executable is empty (e.g. Flatpak), fall back to python3."""
+    def test_falls_back_to_resolved_python3_when_empty(self):
+        """When sys.executable is empty (e.g. Flatpak), resolve python3 to an
+        absolute path (#88: never hand a bare name to subprocess)."""
+        import shutil
+
         from openssl_encrypt.modules.randomx import _get_python_executable
 
         with patch.object(sys, "executable", ""):
             exe = _get_python_executable()
-            self.assertEqual(exe, "python3")
+            self.assertEqual(exe, shutil.which("python3"))
+            self.assertTrue(exe is None or os.path.isabs(exe))
 
-    def test_falls_back_to_python3_when_missing(self):
-        """When sys.executable points to non-existent file, fall back to python3."""
+    def test_falls_back_to_resolved_python3_when_missing(self):
+        """When sys.executable points to a non-existent file, resolve python3
+        to an absolute path (#88)."""
+        import shutil
+
         from openssl_encrypt.modules.randomx import _get_python_executable
 
         with patch.object(sys, "executable", "/nonexistent/python3.99"):
             exe = _get_python_executable()
-            self.assertEqual(exe, "python3")
+            self.assertEqual(exe, shutil.which("python3"))
+            self.assertTrue(exe is None or os.path.isabs(exe))
 
 
 class TestGetSubprocessEnv(unittest.TestCase):

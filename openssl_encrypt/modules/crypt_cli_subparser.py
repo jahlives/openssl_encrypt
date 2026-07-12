@@ -1673,6 +1673,11 @@ def setup_rekey_parser(subparser):
         help="Minimum password entropy override",
     )
     policy_group.add_argument(
+        "--strict-strength",
+        action="store_true",
+        help="Gate on the pattern-aware strength estimate instead of raw entropy",
+    )
+    policy_group.add_argument(
         "--disable-common-password-check",
         action="store_true",
         help="Disable common password list check",
@@ -1706,6 +1711,37 @@ def setup_shred_parser(subparser):
         "-r",
         action="store_true",
         help="Process directories recursively when shredding",
+    )
+
+
+def setup_check_password_parser(subparser):
+    """Set up arguments specific to the check-password command.
+
+    Read-only strength/policy report for a password supplied via ``-p``, the
+    CRYPT_PASSWORD environment variable, piped on stdin, or an interactive
+    prompt. Never writes, encrypts, or echoes the password.
+    """
+    subparser.add_argument(
+        "--password",
+        "-p",
+        help="Password to check (DEPRECATED: visible in the process list and "
+        "shell history. Prefer stdin, an interactive prompt, or CRYPT_PASSWORD)",
+    )
+    subparser.add_argument(
+        "--password-policy",
+        default="standard",
+        choices=["none", "minimal", "basic", "standard", "paranoid"],
+        help="Policy level to evaluate against (default: standard; 'none' reports strength only)",
+    )
+    subparser.add_argument(
+        "--strict-strength",
+        action="store_true",
+        help="Gate the policy on the pattern-aware estimate instead of raw entropy",
+    )
+    subparser.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit the report as JSON on stdout (human report otherwise goes to stderr)",
     )
 
 
@@ -1907,6 +1943,11 @@ def setup_derive_password_parser(subparser):
         "--min-password-entropy",
         type=float,
         default=None,
+        help=argparse.SUPPRESS,
+    )
+    subparser.add_argument(
+        "--strict-strength",
+        action="store_true",
         help=argparse.SUPPRESS,
     )
     subparser.add_argument(
@@ -2410,6 +2451,64 @@ def setup_smart_recommendations_parser(subparser):
         default="intermediate",
         help="Experience level (default: intermediate)",
     )
+
+
+def setup_plugin_parser(subparser):
+    """Set up arguments for the 'plugin' management command (#66)."""
+
+    def _add_store_arg(p):
+        p.add_argument(
+            "--trusted-keys-dir",
+            dest="trusted_keys_dir",
+            metavar="PATH",
+            help="Trust-anchor store directory "
+            "(default: ~/.openssl_encrypt/trusted_plugin_keys/)",
+        )
+
+    plugin_subparsers = subparser.add_subparsers(
+        dest="plugin_action",
+        help="Plugin management operations",
+        metavar="operation",
+    )
+
+    sign_p = plugin_subparsers.add_parser(
+        "sign", help="Sign a plugin file, writing a detached <plugin>.py.asc"
+    )
+    sign_p.add_argument(
+        "--plugin-file", dest="plugin_file", required=True, help="Plugin .py file to sign"
+    )
+    sign_p.add_argument(
+        "--signing-key",
+        dest="signing_key",
+        required=True,
+        help="Signing key fingerprint/id (uses your default keyring; a "
+        "hardware token or gpg-agent handles the private key)",
+    )
+    sign_p.add_argument(
+        "--gpg-home",
+        dest="gpg_home",
+        help="Override GNUPGHOME for signing (advanced/testing)",
+    )
+
+    trust_p = plugin_subparsers.add_parser(
+        "trust-key", help="Enroll an author's public key as a trusted signing anchor"
+    )
+    trust_p.add_argument(
+        "--trust-key-file",
+        dest="trust_key_file",
+        required=True,
+        help="Path to an ASCII-armored public key file",
+    )
+    trust_p.add_argument(
+        "--trust-fingerprint",
+        dest="trust_fingerprint",
+        required=True,
+        help="Fingerprint confirmed OUT OF BAND; enrollment fails on mismatch",
+    )
+    _add_store_arg(trust_p)
+
+    list_keys_p = plugin_subparsers.add_parser("list-keys", help="List enrolled trust anchors")
+    _add_store_arg(list_keys_p)
 
 
 def setup_identity_parser(subparser):
@@ -2948,7 +3047,16 @@ def create_subparser_main():
     parser.add_argument(
         "--debug",
         action="store_true",
-        help="Show detailed debug information (WARNING: logs passwords and sensitive data - test files only!)",
+        help="Show detailed debug information. Secret values (passwords, key material, "
+        "KDF intermediates, hardware peppers) are redacted to length + SHA-256 "
+        "fingerprint by default; combine with --unsafe-show-secrets to log them "
+        "in cleartext (test files only!)",
+    )
+    parser.add_argument(
+        "--unsafe-show-secrets",
+        action="store_true",
+        help="UNSAFE: show secret values in cleartext in --debug output instead of "
+        "redacting them. Only valid together with --debug.",
     )
     parser.add_argument(
         "--quiet",
@@ -3109,6 +3217,13 @@ def create_subparser_main():
     )
     setup_simple_parser(check_pqc_parser)
 
+    check_password_parser = subparsers.add_parser(
+        "check-password",
+        help="Report the strength of a password (read-only; no encryption)",
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
+    setup_check_password_parser(check_password_parser)
+
     version_parser = subparsers.add_parser(
         "version",
         help="Show version information",
@@ -3199,6 +3314,14 @@ def create_subparser_main():
         formatter_class=argparse.RawTextHelpFormatter,
     )
     setup_remove_recovery_parser(remove_recovery_parser)
+
+    # Plugin management (signing / trust-key enrollment) — #66
+    plugin_parser = subparsers.add_parser(
+        "plugin",
+        help="Manage plugin signatures and trusted signing keys",
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
+    setup_plugin_parser(plugin_parser)
 
     verify_integrity_parser = subparsers.add_parser(
         "verify-integrity",

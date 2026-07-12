@@ -14,7 +14,11 @@ from typing import Any, Dict, Optional, Tuple, Union
 from .crypt_core import decrypt_file as original_decrypt_file
 from .crypt_core import encrypt_file as original_encrypt_file
 from .crypt_utils import eprint
-from .keystore_utils import extract_key_id_from_metadata, get_pqc_key_for_decryption
+from .keystore_utils import (
+    _coerce_format_version,
+    extract_key_id_from_metadata,
+    get_pqc_key_for_decryption,
+)
 
 
 def encrypt_file_with_keystore(
@@ -144,11 +148,11 @@ def encrypt_file_with_keystore(
                     metadata = json.loads(metadata_json)
 
                     # Get format version
-                    format_version = metadata.get("format_version", 3)
+                    format_version = _coerce_format_version(metadata, 3)
 
                     # Check if private key is in metadata based on format version
                     pqc_private_key_present = False
-                    if format_version in [4, 5, 6, 7, 8, 9, 10]:
+                    if format_version >= 4:  # v4+ hierarchical metadata (see crypt_core gate fix)
                         # Format version 4/5/6/7/8/9/10 - check in encryption section
                         if "encryption" in metadata and "pqc_private_key" in metadata["encryption"]:
                             pqc_private_key_present = True
@@ -175,7 +179,9 @@ def encrypt_file_with_keystore(
 
                         clean_metadata = copy.deepcopy(metadata)
 
-                        if format_version in [4, 5, 6, 7, 8, 9, 10]:
+                        if (
+                            format_version >= 4
+                        ):  # v4+ hierarchical metadata (see crypt_core gate fix)
                             # Format version 4/5/6/7/8/9/10 structure
                             # Remove private key fields from encryption section
                             if "encryption" in clean_metadata:
@@ -270,13 +276,24 @@ def encrypt_file_with_keystore(
                                         "hash_config"
                                     ]["pqc_public_key"]
 
-                        # Write the updated metadata back to the file
+                        # Write the updated metadata back atomically (temp file +
+                        # os.replace) so a crash mid-write cannot corrupt or
+                        # truncate the output file (#78).
                         new_metadata_json = json.dumps(clean_metadata)
                         new_metadata_b64 = base64.b64encode(new_metadata_json.encode("utf-8"))
 
-                        with open(output_file, "wb") as f:
-                            f.write(new_metadata_b64)
-                            f.write(encrypted_data)
+                        tmp_output = f"{output_file}.tmp"
+                        try:
+                            with open(tmp_output, "wb") as f:
+                                f.write(new_metadata_b64)
+                                f.write(encrypted_data)
+                            os.replace(tmp_output, output_file)
+                        finally:
+                            if os.path.exists(tmp_output):
+                                try:
+                                    os.remove(tmp_output)
+                                except OSError:
+                                    pass
 
                         # Verify removal was successful
                         with open(output_file, "rb") as f:
@@ -503,7 +520,7 @@ def decrypt_file_with_keystore(
             try:
                 metadata_json = base64.b64decode(metadata_b64).decode("utf-8")
                 metadata = json.loads(metadata_json)
-                format_version = metadata.get("format_version", 1)
+                format_version = _coerce_format_version(metadata, 1)
                 if not quiet:
                     eprint(f"Detected format version: {format_version}")
             except Exception:
@@ -516,7 +533,7 @@ def decrypt_file_with_keystore(
         # Check if this file uses dual encryption
         if metadata:
             # Check based on format version
-            if format_version in [4, 5, 6, 7, 8, 9, 10]:
+            if format_version >= 4:  # v4+ hierarchical metadata (see crypt_core gate fix)
                 # Version 4/5/6/7/8/9/10 format - check in derivation_config.kdf_config
                 if (
                     "derivation_config" in metadata
@@ -552,8 +569,10 @@ def decrypt_file_with_keystore(
                         metadata = json.loads(metadata_json)
 
                         # Check for dual encryption flag, handling v3, v4, v5, v6, v7, v8, v9, and v10 formats
-                        format_version = metadata.get("format_version", 1)
-                        if format_version in [4, 5, 6, 7, 8, 9, 10]:
+                        format_version = _coerce_format_version(metadata, 1)
+                        if (
+                            format_version >= 4
+                        ):  # v4+ hierarchical metadata (see crypt_core gate fix)
                             # Version 4/5/6/7/8/9/10 format - check in derivation_config.kdf_config
                             if (
                                 "derivation_config" in metadata
@@ -621,11 +640,11 @@ def decrypt_file_with_keystore(
                 raise ValueError("File password is too short for dual-encryption")
 
             # Check for password verification fields based on format version
-            format_version = metadata.get("format_version", 1)
+            format_version = _coerce_format_version(metadata, 1)
             verify_hash = None
             verify_salt = None
 
-            if format_version in [4, 5, 6, 7, 8, 9, 10]:
+            if format_version >= 4:  # v4+ hierarchical metadata (see crypt_core gate fix)
                 # Version 4/5/6/7/8/9/10 format - check in derivation_config.kdf_config
                 if (
                     "derivation_config" in metadata

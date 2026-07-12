@@ -196,16 +196,23 @@ class PQCKeystore:
         # Save the keystore
         self.save_keystore()
 
-    def load_keystore(self, password: str) -> None:
+    def load_keystore(self, password: str, allow_legacy: bool = False) -> None:
         """
         Load an existing keystore
 
         Args:
             password: Master password for the keystore
+            allow_legacy: If True, permit loading an unauthenticated (legacy v1
+                or downgraded) keystore and upgrade it to the authenticated v2
+                format. Off by default so a plain load fails closed on any file
+                without a valid integrity MAC. Intended for the explicit
+                ``keystore migrate`` opt-in (see :meth:`migrate_legacy_keystore`).
 
         Raises:
             FileNotFoundError: If the keystore file doesn't exist
             KeystoreError: If the keystore format is invalid
+            KeystoreIntegrityError: If the keystore is unauthenticated and
+                ``allow_legacy`` is False, or if a v2 keystore fails its MAC
             KeystorePasswordError: If the password is incorrect
         """
         if not os.path.exists(self.keystore_path):
@@ -259,16 +266,56 @@ class PQCKeystore:
         # Determine security level
         security_level = KeystoreSecurityLevel(self.keystore_data.get("security_level", "standard"))
 
-        # Derive master key
+        # KEYSTORE-DOWNGRADE: the decision to authenticate must NOT be derived
+        # from the attacker-controlled `version` field. Authenticate whenever an
+        # integrity MAC is present, regardless of the declared version, so a
+        # downgrade that keeps `integrity` but claims v1 cannot skip the check.
+        integrity = self.keystore_data.get("integrity")
+        integrity_present = isinstance(integrity, dict)
+
+        if not integrity_present and not allow_legacy:
+            # No integrity MAC: either a genuine legacy v1 keystore OR a
+            # maliciously downgraded v2 file (integrity stripped, version forced
+            # to 1). The two are indistinguishable by content, so fail closed -
+            # loading either would risk trusting attacker-substituted plaintext
+            # fields (e.g. public_key). The operator can opt in to an explicit,
+            # loudly-warned upgrade via `keystore migrate` (allow_legacy=True).
+            # Refuse before the master key is even derived: no password oracle,
+            # no KDF cost on an attacker-supplied file, and no password-derived
+            # key material exists for a file we refuse to trust.
+            self.keystore_data = None
+            # The raised exception's detail is scrubbed in production (secure
+            # error handling), so surface the actionable guidance via a warning
+            # too - Python routes WARNING to stderr by default.
+            logger.warning(
+                "Keystore %s has no integrity protection (legacy v1 format or a "
+                "downgraded v2 file) and cannot be authenticated - refusing to "
+                "load. If you trust the file's origin, run 'keystore migrate' to "
+                "upgrade it to the authenticated v2 format after confirming it "
+                "has not been tampered with.",
+                self.keystore_path,
+            )
+            raise KeystoreIntegrityError(
+                f"Keystore '{self.keystore_path}' has no integrity protection "
+                "(legacy v1 format or a downgraded v2 file) and cannot be "
+                "authenticated - refusing to load. If you trust the file's "
+                "origin, run 'keystore migrate' to upgrade it to the "
+                "authenticated v2 format after confirming it has not been "
+                "tampered with."
+            )
+
+        # Derive master key - only for a file that is either MAC-protected or
+        # explicitly opted into the legacy migration path.
         self.master_key = self._derive_master_key(password, salt, security_level)
 
-        # H4: verify the integrity MAC before trusting any field of a v2
-        # keystore (a wrong password also fails here and is disambiguated
-        # via the test_key inside _verify_integrity)
-        if version >= 2:
+        if integrity_present:
+            # A wrong password is disambiguated from tampering inside
+            # _verify_integrity (via the test_key).
             self._verify_integrity()
 
-        # Verify password by checking a test key
+        # Verify password by checking a test key. For an authenticated store
+        # this re-confirms after a valid MAC; on the allow_legacy upgrade path
+        # it is the password verification before the store is re-sealed.
         if "test_key" in self.keystore_data:
             test_encrypted = base64.b64decode(self.keystore_data["test_key"])
             try:
@@ -278,39 +325,57 @@ class PQCKeystore:
                 if self.master_key:
                     secure_memzero(self.master_key)
                     self.master_key = None
+                self.keystore_data = None
                 raise KeystorePasswordError("Incorrect keystore password")
 
-        # H4: legacy v1 keystores carry no integrity protection - warn and
-        # auto-upgrade to the authenticated v2 format now that the password
-        # has been verified. Without a test_key the password cannot be
-        # verified, so upgrading could seal the store under a mistyped
-        # password - warn only in that case.
-        if version < 2:
+        if not integrity_present:
+            # Reached only with allow_legacy=True (explicit `keystore migrate`).
+            # Upgrade to the authenticated v2 format, warning that the
+            # pre-upgrade file's authenticity could not be verified.
             logger.warning(
-                "Keystore %s uses the legacy v1 format without integrity "
-                "protection - upgrading to the authenticated v2 format",
+                "Upgrading unauthenticated keystore %s to the authenticated v2 "
+                "format. The authenticity of the pre-upgrade file could NOT be "
+                "verified - only proceed if you trust its origin.",
                 self.keystore_path,
             )
-            if "test_key" in self.keystore_data:
-                try:
-                    self.save_keystore()
-                except Exception as e:
-                    logger.warning(
-                        "Could not auto-upgrade keystore %s to v2 - the file "
-                        "remains unauthenticated: %s",
-                        self.keystore_path,
-                        e,
-                    )
-            else:
+            if "test_key" not in self.keystore_data:
                 logger.warning(
-                    "Keystore %s has no test_key to verify the password - "
-                    "skipping the v2 auto-upgrade; save it explicitly after "
-                    "confirming the keys decrypt correctly",
+                    "Keystore %s has no test_key to verify the password - the "
+                    "upgraded store is sealed under the supplied password; "
+                    "verify the keys decrypt correctly afterwards.",
                     self.keystore_path,
                 )
+            self.save_keystore()
 
         # Reset key cache
         self._key_cache = {}
+
+    def migrate_legacy_keystore(self, password: str) -> bool:
+        """Explicitly upgrade a legacy/unauthenticated keystore to v2.
+
+        A plain :meth:`load_keystore` refuses an unauthenticated (v1 or
+        downgraded) keystore because it cannot be cryptographically
+        distinguished from a tampered file. This method performs the opt-in
+        upgrade: the caller asserts the file's provenance out-of-band. An
+        already-authenticated v2 keystore is loaded and left valid (idempotent).
+
+        Args:
+            password: The master password.
+
+        Returns:
+            True once the keystore is loaded and stored in the authenticated
+            v2 format.
+
+        Raises:
+            KeystorePasswordError: If the password is incorrect.
+            KeystoreError: If the keystore cannot be loaded or saved.
+        """
+        self.load_keystore(password, allow_legacy=True)
+        # load_keystore already re-seals an unauthenticated file as v2; ensure
+        # an already-v2 store is written back in the current format too.
+        if self.keystore_data.get("version") != self.KEYSTORE_VERSION:
+            self.save_keystore()
+        return True
 
     def save_keystore(self) -> None:
         """
@@ -1671,6 +1736,12 @@ def main():
     # Keystore info
     info_parser = subparsers.add_parser("info", help="Show keystore information")
 
+    # Migrate legacy keystore
+    migrate_parser = subparsers.add_parser(
+        "migrate",
+        help="Upgrade a legacy/unauthenticated (v1) keystore to the authenticated v2 format",
+    )
+
     # Import key
     import_parser = subparsers.add_parser("import-key", help="Import a key from a file")
     import_parser.add_argument("key_file", help="Path to the key file")
@@ -2004,6 +2075,21 @@ def main():
                 eprint("Default keys:")
                 for algo, key_id in defaults.items():
                     eprint(f"  {algo}: {key_id}")
+
+        elif args.command == "migrate":
+            # Explicit opt-in upgrade of a legacy/unauthenticated keystore.
+            if not keystore_password:
+                keystore_password = getpass.getpass("Enter keystore password: ")
+
+            eprint(
+                "WARNING: a legacy v1 keystore cannot be cryptographically "
+                "authenticated. Only migrate a file whose origin you trust and "
+                "which you have confirmed is untampered."
+            )
+            keystore = PQCKeystore(args.keystore)
+            keystore.migrate_legacy_keystore(keystore_password)
+            keystore.close()
+            eprint(f"Keystore '{args.keystore}' is now in the authenticated v2 format.")
 
         elif args.command == "import-key":
             # Not implemented in CLI

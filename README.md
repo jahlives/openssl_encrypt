@@ -4,7 +4,7 @@ A Python-based file encryption tool with modern ciphers, post-quantum algorithms
 
 Built to encrypt anything from grandma's pie recipe to the nuclear launch codes — with parameters to satisfy every paranoia level in between. Sensible, secure defaults out of the box; fully tunable KDF chains and cipher choices when you want to crank the cost to match the threat.
 
-> **Looking for the stable release?** The latest stable version is [v1.4.7](https://github.com/jahlives/openssl_encrypt/releases/tag/v1.4.7) on the releases/1.4.x branch.
+> **Looking for the stable release?** The latest stable version is [v1.4.8](https://github.com/jahlives/openssl_encrypt/releases/tag/v1.4.8) on the releases/1.4.x branch.
 
 ## History
 
@@ -58,12 +58,17 @@ For deep-dives into the cryptographic design and security policies of this proje
 * **Threefish-512/1024**: Native AEAD ciphers with 256/512-bit post-quantum security margins.
 * **Streaming Chunked Encryption**: Constant-memory authenticated encryption for multi-gigabyte files (format v12).
 ---
-## 🚀 What's New in v1.4.7
+## 🚀 What's New in v1.4.8
 
-**Current Release:** v1.4.7 | **Status:** Stable | **Tests:** 2900+ passing
+**Current Release:** v1.4.8 | **Status:** Stable | **Tests:** 3100+ passing
 
 Everything that landed since v1.4.1:
 
+- **Format version 14 is the default write format (1.4.8)**: new encryptions derive keys with the independent-XOR robust combiner — as strong as the *strongest* configured KDF component instead of a sequential cascade's weakest link — from a length-prefixed TLV seed (unambiguous password/salt/pepper boundaries), and PQC files bind the KEM key to the full transcript (algorithm, AEAD, encapsulation ciphertext). Sequential XOR stays available as an opt-in pinned at format v13; every existing file decrypts unchanged.
+- **Cross-line PQC compatibility (1.4.8)**: PQC KEM keys for format v12+ files now derive identically to the 1.5.x line (HKDF-SHA256), so PQC files finally interoperate across both maintenance lines; files from releases up to 1.4.7 remain fully decryptable via an authenticated legacy retry.
+- **`check-password` & pattern-aware strength (1.4.8)**: a read-only subcommand reports password strength (pattern-aware category, entropy, weakness warnings, policy pass/fail) with `--json` for scripting; strength feedback now detects dictionary words, keyboard walks, sequences and dates instead of trusting raw character-space entropy (optional `zxcvbn`, built-in fallback), with an opt-in `--strict-strength` gate.
+- **Security review follow-ups (1.4.8)**: package plugins are covered by a signed per-package manifest over every importable module; the plugin loader verifies, pins and executes the exact same bytes; HSM test commands no longer print the derived hardware pepper; per-round KDF debug lines no longer leak a derived-key intermediate; the cost-bypassing v8/v10 sequential-XOR format is refused for new files; secure-memory wipe fixes across the KDF/PQC paths.
+- **Reliability fixes (1.4.8)**: embedded password-encrypted PQC private keys at format v11–v13 decrypt again; keystore dual-encryption works for v11+ files; RandomX combined with wide-key ciphers (AES-SIV, Threefish) no longer crashes; streaming + sequential XOR (a combination that silently wrote undecryptable files) is refused with a clear error.
 - **Documentation & packaging (1.4.7)**: README and PyPI project-page updates reflecting the 1.4.6 feature set; no functional or on-disk changes.
 - **PIV / PKCS#11 hardware tokens (1.4.6)**: signature-based HSM backend (`--hsm piv`) that derives the KDF pepper from a PIV private key on a PKCS#11 token (YubiKey Bio MPE, Token2 PIN+, or any compliant PIV smart card); deterministic across devices, across Ed25519 and RSA-2048/3072/4096.
 - **Source-code integrity verification (1.4.6)**: `verify-integrity` checks the core cryptographic/security modules against a PGP-signed SHA-512 manifest; the authoritative check is a manual `gpg` against the out-of-band fingerprint published in SECURITY.md.
@@ -79,7 +84,8 @@ Everything that landed since v1.4.1:
 - **Platform support**: Python 3.11+ required; Python 3.14 fully supported including the Threefish native extension (PyO3 0.26)
 
 **Release History:**
-- **v1.4.7** (Current) - Documentation/packaging release: README and PyPI project page updated for the 1.4.6 feature set (no functional changes)
+- **v1.4.8** (Current) - Format v14 default (independent-XOR TLV seed, KEM transcript binding), cross-line PQC compatibility, `check-password` + pattern-aware strength, signed per-package plugin manifests, security-review fix batch
+- **v1.4.7** - Documentation/packaging release: README and PyPI project page updated for the 1.4.6 feature set (no functional changes)
 - **v1.4.6** - PIV/PKCS#11 HSM backend, source-code integrity manifest, envelope encryption with O(header) rekey, detached ML-DSA-65 signing, ASCII armor, Independent XOR v13 default, sequential-XOR KDF-cost fix (ADVISORY 2026-02), streaming decrypt fix
 - **v1.4.5** - Security dependency update (CVE fixes) and flatpak pin CI guard
 - **v1.4.4** - Security hardening batch, OnlyKey HSM plugin with cross-device fleet decryption, `info` CLI reconstruction, Diceware passphrases, Python 3.14 support
@@ -295,6 +301,31 @@ The bundled wordlist is the [EFF Large Wordlist for Passphrases](https://www.eff
 with attribution in
 [`openssl_encrypt/data/EFF_WORDLIST_LICENSE.txt`](openssl_encrypt/data/EFF_WORDLIST_LICENSE.txt).
 
+### Password Strength Checking
+
+`check-password` reports the strength of a password without encrypting anything.
+It detects predictable structure (dictionary words, l33t substitutions, keyboard
+walks, sequences, repeats, dates) rather than relying on raw character-space
+entropy alone. The password is read from `-p`, `CRYPT_PASSWORD`, a piped stdin,
+or an interactive prompt (in that order of precedence).
+
+```bash
+# Interactive prompt; human-readable report on stderr
+openssl_encrypt check-password
+
+# From an environment variable, JSON report on stdout
+CRYPT_PASSWORD='correct horse battery staple' openssl_encrypt check-password --json
+
+# Use as a scriptable gate: non-zero exit if it fails the policy
+echo -n "$pw" | openssl_encrypt check-password --password-policy paranoid --strict-strength
+
+# Quick check via -p (discouraged: visible in shell history and process list)
+openssl_encrypt check-password -p 'candidate-password'
+```
+
+Pattern-aware detection uses the optional `zxcvbn` package when installed and a
+built-in heuristic fallback otherwise.
+
 ### Security Enhancements
 
 - SecureBytes implementation across all cryptographic registries (KDF, Cipher, Signature, KEM)
@@ -460,14 +491,16 @@ Password + Salt₀ → KDF₁ → Result₁ → Salt₁ = f(Result₁) → KDF�
 When several hash/KDF algorithms are combined, the tool supports two composition
 modes with **different security guarantees**. Pick deliberately:
 
-- **Independent XOR** (format v13, the STANDARD/PARANOID default; v11 still readable) — every algorithm
+- **Independent XOR** (format v14, the default for new encryptions since 1.4.8;
+  v11/v13 files remain fully readable) — every algorithm
   derives from the **same** `(password + salt)` input and the outputs are XOR'd:
   `K = H₁(x) ⊕ H₂(x) ⊕ … ⊕ Hₙ(x)`. This is a **robust XOR-combiner** for PRFs
   (Herzberg; Harnik–Kilian–Naor–Reingold–Rosen): for **output / PRF
   indistinguishability**, the result is **as strong as the strongest component** —
   it stays secure as long as **at least one** component is unbroken. Use this mode
   when you want the strongest-link guarantee.
-- **Sequential XOR** (format v10, or v13 with `xor_mode: sequential`) — each round
+- **Sequential XOR** (opt-in `--xor`, written as format v13 with
+  `xor_mode: sequential`; new v8/v10 files are refused since 1.4.8) — each round
   feeds the previous round's output forward. The robust-combiner guarantee does
   **not** hold here: a broken or entropy-collapsing **early** round propagates into
   every later round (XOR can't rescue what already collapsed), so security is bounded
@@ -488,11 +521,16 @@ only while no two components are the **same function with identical parameters**
 XOR of two identical outputs is zero. The robust fix is per-component domain
 separation, and **format version 13 (1.4.6) implements exactly this**: every
 component gets a distinct `HKDF-SHA256(salt₀, info="…indep-xor.v13.salt:" + name)`
-salt, retiring the footgun, and v13 is now the Independent XOR default. The same
+salt, retiring the footgun. The same
 release also fixed a **sequential-XOR** defect in which the chain's last KDF stage
 cancelled out of the key (single-KDF/no-prior-hash configs bypassed the KDF cost) —
-see ADVISORY 2026-02 in [SECURITY.md](SECURITY.md). Files written by older versions
-remain decryptable; re-encrypt to adopt v13.
+see ADVISORY 2026-02 in [SECURITY.md](SECURITY.md). **Format version 14 (1.4.8,
+now the default)** builds on this: the independent-XOR derivation is seeded from
+**length-prefixed TLV fields** (password, salt, hardware pepper enter the KDF as
+unambiguous fields instead of raw concatenation), and PQC files additionally bind
+the KEM symmetric key to the full transcript (algorithm, AEAD choice, and a digest
+of the KEM encapsulation ciphertext). Files written by older versions remain
+decryptable; re-encrypt to adopt v14.
 
 ### Attack Resistance
 
@@ -692,6 +730,8 @@ blake3>=1.0.0
 liboqs-python          # Extended PQC support (HQC, ML-DSA, etc.)
                        # Requires liboqs (https://github.com/open-quantum-safe/liboqs)
 tkinter                # GUI (usually included with Python)
+zxcvbn                 # Pattern-aware password strength estimation
+                       # (falls back to a built-in heuristic when absent)
 ```
 
 **Install:**

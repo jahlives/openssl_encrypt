@@ -606,7 +606,11 @@ class PQCKeystore:
             cached_key, cache_time = self.unlocked_keys[key_id]
             # Check if the cache is still valid
             if time.time() - cache_time < self.cache_timeout:
-                return cached_key
+                cached_public, cached_private = cached_key
+                # Return an immutable copy; the cached bytearray stays wipeable.
+                return (cached_public, bytes(cached_private))
+            # Expired: evict (and zeroize) the stale entry before re-deriving.
+            self._evict_cached_key(key_id)
 
         # Find the key in the keystore
         key_entry = None
@@ -644,8 +648,9 @@ class PQCKeystore:
         # Update last used timestamp
         key_entry["last_used"] = datetime.datetime.now().isoformat()
 
-        # Cache the keys for future use
-        self.unlocked_keys[key_id] = ((public_key, bytes(private_key)), time.time())
+        # Cache the private key in a wipeable bytearray so it can be zeroized on
+        # eviction rather than lingering as immutable bytes (#87).
+        self.unlocked_keys[key_id] = ((public_key, bytearray(private_key)), time.time())
 
         return (public_key, private_key)
 
@@ -675,9 +680,8 @@ class PQCKeystore:
         if key_index is None:
             raise ValidationError(f"Key not found: {key_id}")
 
-        # Remove from cache if present
-        if key_id in self.unlocked_keys:
-            del self.unlocked_keys[key_id]
+        # Remove from cache if present (zeroizing the cached private key)
+        self._evict_cached_key(key_id)
 
         # Remove the key
         self.keystore_data["keys"].pop(key_index)
@@ -884,9 +888,8 @@ class PQCKeystore:
         # Update the key entry
         key_entry["private_key"] = new_encrypted_data
 
-        # Remove from cache if present
-        if key_id in self.unlocked_keys:
-            del self.unlocked_keys[key_id]
+        # Remove from cache if present (zeroizing the cached private key)
+        self._evict_cached_key(key_id)
 
         return True
 
@@ -1019,9 +1022,8 @@ class PQCKeystore:
         key_entry["private_key"] = new_encrypted_data
         key_entry["use_master_password"] = True
 
-        # Remove from cache if present
-        if key_id in self.unlocked_keys:
-            del self.unlocked_keys[key_id]
+        # Remove from cache if present (zeroizing the cached private key)
+        self._evict_cached_key(key_id)
 
         return True
 
@@ -1076,9 +1078,8 @@ class PQCKeystore:
         key_entry["private_key"] = new_encrypted_data
         key_entry["use_master_password"] = False
 
-        # Remove from cache if present
-        if key_id in self.unlocked_keys:
-            del self.unlocked_keys[key_id]
+        # Remove from cache if present (zeroizing the cached private key)
+        self._evict_cached_key(key_id)
 
         return True
 
@@ -1086,9 +1087,23 @@ class PQCKeystore:
         """Clear all cached keys and master key"""
         self._clear_cached_keys()
 
+    def _evict_cached_key(self, key_id: str) -> None:
+        """Remove a cached key, securely zeroing its cached private-key bytes (#87)."""
+        entry = self.unlocked_keys.pop(key_id, None)
+        if entry is None:
+            return
+        try:
+            (_public, private), _ts = entry
+            if isinstance(private, bytearray):
+                secure_memzero(private)
+        except Exception:
+            pass
+
     def _clear_cached_keys(self) -> None:
         """Clear all cached keys"""
-        # Clear unlocked keys
+        # Zeroize each cached private key, then clear the cache.
+        for key_id in list(self.unlocked_keys.keys()):
+            self._evict_cached_key(key_id)
         self.unlocked_keys = {}
 
         # Clear master key
@@ -1121,6 +1136,11 @@ class PQCKeystore:
         derived_key = None
 
         try:
+            # base64 salt used by every branch's header (#108: previously only
+            # defined in the Argon2 branch, so the Scrypt/PBKDF2 fallbacks raised
+            # NameError when Argon2 was unavailable).
+            salt_b64 = base64.b64encode(salt).decode("utf-8")
+
             # Choose protection parameters based on the method
             if protection_method == KeystoreProtectionMethod.ARGON2ID_AES_GCM:
                 if not ARGON2_AVAILABLE:
@@ -1140,8 +1160,6 @@ class PQCKeystore:
                 derived_key = bytearray(
                     _argon2_derive_key(password, salt, argon2_params, kdf_version=2)
                 )
-
-                salt_b64 = base64.b64encode(salt).decode("utf-8")
 
                 # Encrypt with AES-GCM
                 cipher = AESGCM(bytes(derived_key))
@@ -1278,13 +1296,16 @@ class PQCKeystore:
             method = encrypted_data["method"]
             params = encrypted_data["params"]
             ciphertext = base64.b64decode(encrypted_data["ciphertext"])
+            # Stored base64 salt, used by every branch's header (#108: previously
+            # only bound in the Argon2 branch, so the Scrypt/PBKDF2 branches raised
+            # NameError).
+            salt_b64 = params.get("salt")
 
             if method == KeystoreProtectionMethod.ARGON2ID_AES_GCM.value:
                 if not ARGON2_AVAILABLE:
                     raise ValidationError("Argon2 is required but not available")
 
                 # Extract parameters
-                salt_b64 = params["salt"]
                 salt = base64.b64decode(salt_b64)
                 nonce = base64.b64decode(params["nonce"])
                 argon2_params = params["argon2_params"]
@@ -1515,20 +1536,24 @@ class PQCKeystore:
             ]:
                 # Decrypt with AES-GCM
                 cipher = AESGCM(derived_key)
-                # BUGFIX: Try methods in consistent order for compatibility
+                # Try the header AAD FIRST (what the encryptor uses), so the
+                # method/params binding is preferred; empty/None remain only as
+                # legacy fallbacks for old records. This matches _encrypt_with_
+                # derived_key and the ChaCha20 branch (#85). Not exploitable for
+                # current records (AES-GCM binds the AAD, so an empty-AAD decrypt
+                # cannot succeed on a header-AAD ciphertext), but consistency here
+                # prevents preferring an unbound interpretation.
                 try:
-                    plaintext = cipher.decrypt(nonce, ciphertext, associated_data=b"")
+                    plaintext = cipher.decrypt(
+                        nonce,
+                        ciphertext,
+                        associated_data=json.dumps(header).encode("utf-8"),
+                    )
                 except Exception:
                     try:
-                        # Then try with None
-                        plaintext = cipher.decrypt(nonce, ciphertext, associated_data=None)
+                        plaintext = cipher.decrypt(nonce, ciphertext, associated_data=b"")
                     except Exception:
-                        # Finally try with header
-                        plaintext = cipher.decrypt(
-                            nonce,
-                            ciphertext,
-                            associated_data=json.dumps(header).encode("utf-8"),
-                        )
+                        plaintext = cipher.decrypt(nonce, ciphertext, associated_data=None)
 
             else:
                 raise ValidationError(f"Unsupported protection method: {method}")

@@ -468,3 +468,160 @@ class TestThreadedErrorHandling(unittest.TestCase):
 
         # Check if any errors were reported
         self.assertEqual(errors, [], f"Errors occurred during parallel allocation: {errors}")
+
+
+class TestSecureEraseSystemMemory(unittest.TestCase):
+    """Regression tests for GitLab #106 [MEM-14]: misleading drop_caches write."""
+
+    def test_no_drop_caches_write(self) -> None:
+        """secure_erase_system_memory must not write /proc/sys/vm/drop_caches.
+
+        Writing '3' to drop_caches only evicts *clean* page/dentry/inode
+        caches (it wipes nothing and does not touch swap), requires root,
+        and silently failed for every normal user. The comment claimed it
+        'flushes memory to disk' — misleading on all counts.
+        """
+        import inspect
+
+        from openssl_encrypt.modules import secure_memory
+
+        source = inspect.getsource(secure_memory.secure_erase_system_memory)
+        self.assertNotIn('open("/proc/sys/vm/drop_caches"', source)
+
+    def test_erase_still_succeeds(self) -> None:
+        """The cleanup helper must keep working without the removed block."""
+        from openssl_encrypt.modules.secure_memory import secure_erase_system_memory
+
+        self.assertTrue(secure_erase_system_memory(trigger_gc=True, full_sweep=False))
+
+
+class TestMadvDontdumpProbe(unittest.TestCase):
+    """Regression tests for GitLab #103 [MEM-11]: madvise support must be probed.
+
+    ``supports_madv_dontdump`` used to be hardcoded ``True`` inside a
+    try-block that could not fail, and every madvise()/msync() return value
+    was ignored. Worse, madvise(2) requires a page-aligned address but was
+    called on raw bytearray addresses — so it always failed with EINVAL
+    while the code reported success.
+    """
+
+    def test_probe_reflects_madvise_failure(self) -> None:
+        """A failing madvise probe must yield supports_madv_dontdump=False."""
+        import ctypes as real_ctypes
+
+        from openssl_encrypt.modules import secure_memory
+
+        if sys.platform != "linux":
+            self.skipTest("Linux-only probe")
+
+        libc = MagicMock()
+        libc.madvise.return_value = -1
+        with patch.object(secure_memory.ctypes, "CDLL", return_value=libc):
+            allocator = secure_memory.SecureMemoryAllocator()
+
+        self.assertFalse(allocator.supports_madv_dontdump)
+
+    def test_probe_true_on_real_linux(self) -> None:
+        """On a real Linux kernel (>=3.4) the probe must succeed."""
+        if sys.platform != "linux":
+            self.skipTest("Linux-only probe")
+
+        from openssl_encrypt.modules.secure_memory import SecureMemoryAllocator
+
+        self.assertTrue(SecureMemoryAllocator().supports_madv_dontdump)
+
+    def test_cold_boot_protection_reports_madvise_failure(self) -> None:
+        """_apply_cold_boot_protections must not report success when madvise fails."""
+        if sys.platform != "linux":
+            self.skipTest("Linux-only path")
+
+        from openssl_encrypt.modules import secure_memory
+
+        allocator = secure_memory.SecureMemoryAllocator()
+        libc = MagicMock()
+        libc.madvise.return_value = -1
+        with patch.object(secure_memory.ctypes, "CDLL", return_value=libc):
+            applied = allocator._apply_cold_boot_protections(bytearray(64))
+
+        self.assertFalse(applied)
+
+    def test_cold_boot_protection_succeeds_with_aligned_range(self) -> None:
+        """With page-rounding in place the advice must genuinely apply."""
+        if sys.platform != "linux":
+            self.skipTest("Linux-only path")
+
+        from openssl_encrypt.modules.secure_memory import SecureMemoryAllocator
+
+        allocator = SecureMemoryAllocator()
+        self.assertTrue(allocator._apply_cold_boot_protections(bytearray(64)))
+
+    def test_no_dontfork_on_heap_buffers(self) -> None:
+        """MADV_DONTFORK must not be applied to page-rounded heap ranges.
+
+        The old unaligned call always failed with EINVAL; page-aligning it
+        would unmap whole heap pages — including unrelated objects — from
+        forked children, crashing them. It must stay removed.
+        """
+        import inspect
+
+        from openssl_encrypt.modules.secure_memory import SecureMemoryAllocator
+
+        source = inspect.getsource(SecureMemoryAllocator._apply_cold_boot_protections)
+        self.assertNotIn("MADV_DONTFORK = 10", source)
+
+
+class TestCoreDumpSoftLimit(unittest.TestCase):
+    """Regression tests for GitLab #104 [MEM-12]: RLIMIT_CORE hard-limit drop.
+
+    The old code ran ``setrlimit(RLIMIT_CORE, (0, 0))`` on every secure
+    allocation — an irreversible (hard limit 0), process-global side effect
+    that prevented an embedding application from ever re-enabling core
+    dumps deliberately. Core-dump prevention must zero only the *soft*
+    limit, and only once per process.
+    """
+
+    def setUp(self) -> None:
+        from openssl_encrypt.modules import secure_memory
+
+        self._module = secure_memory
+        self._saved_flag = secure_memory._core_dumps_disabled
+
+    def tearDown(self) -> None:
+        self._module._core_dumps_disabled = self._saved_flag
+
+    def test_soft_limit_only(self) -> None:
+        """disable_core_dumps must preserve the hard limit."""
+        import resource
+
+        self._module._core_dumps_disabled = False
+        sentinel_hard = 12345
+        with patch.object(
+            resource, "getrlimit", return_value=(resource.RLIM_INFINITY, sentinel_hard)
+        ):
+            with patch.object(resource, "setrlimit") as set_mock:
+                self.assertTrue(self._module.disable_core_dumps())
+
+        set_mock.assert_called_once_with(resource.RLIMIT_CORE, (0, sentinel_hard))
+
+    def test_runs_once_per_process(self) -> None:
+        """A second call must be a no-op."""
+        import resource
+
+        self._module._core_dumps_disabled = False
+        with patch.object(resource, "setrlimit") as set_mock:
+            self.assertTrue(self._module.disable_core_dumps())
+            self.assertTrue(self._module.disable_core_dumps())
+
+        self.assertEqual(set_mock.call_count, 1)
+
+    def test_no_hard_limit_drop_left_in_sources(self) -> None:
+        """No call site may still drop the RLIMIT_CORE hard limit."""
+        from pathlib import Path
+
+        modules_dir = Path(self._module.__file__).parent
+        offenders = []
+        for name in ("secure_memory.py", "secure_allocator.py"):
+            source = (modules_dir / name).read_text(encoding="utf-8")
+            if "resource.RLIMIT_CORE, (0, 0)" in source:
+                offenders.append(name)
+        self.assertEqual(offenders, [])

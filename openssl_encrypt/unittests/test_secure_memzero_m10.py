@@ -71,6 +71,26 @@ class TestSecureMemzeroHonesty(unittest.TestCase):
         self.assertTrue(ro.readonly)
         self.assertFalse(secure_memzero(ro))
 
+    def test_nonbytearray_buffer_not_reported_success(self):
+        """#80: a non-bytearray writable buffer (array.array) must NOT claim success.
+
+        Previously secure_memzero copied such inputs into a bytearray, scrubbed
+        the COPY with the multi-pass routine, and returned True - while the
+        caller's own storage stayed intact. That is the same false-success class
+        as bytes/str (M10) and must report False instead.
+        """
+        import array
+
+        a = array.array("b", [0x7F] * 16)
+        self.assertFalse(secure_memzero(a))
+
+    def test_strict_mode_raises_on_nonbytearray_buffer(self):
+        """#80: strict mode must refuse a type we cannot wipe in place."""
+        import array
+
+        with self.assertRaises(TypeError):
+            secure_memzero(array.array("b", [0x01] * 8), strict=True)
+
 
 if __name__ == "__main__":
     unittest.main()

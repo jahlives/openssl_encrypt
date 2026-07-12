@@ -73,6 +73,11 @@ from .crypt_errors import (  # Error handling imports are at the top of file
 # Import utility functions
 from .crypt_utils import eprint, safe_open_file
 
+# Redaction chokepoint: ALL secret material in debug output must be formatted
+# through debug_secret() (redacted by default, cleartext only with
+# --debug --unsafe-show-secrets).
+from .debug_redaction import debug_secret
+
 # Import integrity plugin for remote metadata verification
 try:
     from ..plugins.integrity import IntegrityPlugin
@@ -97,6 +102,20 @@ F = TypeVar("F", bound=Callable[..., Any])
 
 # Set up a module-level logger
 logger = logging.getLogger(__name__)
+
+
+# Sequential-XOR format versions whose KDF derivation cancels the last stage
+# (cost bypass, audit 2026-07-06 #3 / SECURITY advisory 2026-02). These are
+# DECRYPT-ONLY: never encrypt, rekey, or fast-path-rewrap a new file at one of
+# them. Keep this the single source of truth so the encrypt refusal, the rekey
+# upgrade, and the envelope fast-path exclusion can never drift apart.
+_UNSAFE_SEQUENTIAL_XOR_VERSIONS = (8, 10)
+
+# Latest stable on-disk format version. v14 writes are independent-XOR only
+# (M2 decision 2026-07-10, docs/FORMAT_V14_PLAN.md section 6.3): sequential
+# XOR remains a supported opt-in pinned at format_version 13. Any new
+# version-selection code must use this constant instead of a literal.
+LATEST_STABLE_FORMAT_VERSION = 14
 
 
 # Global variable to track telemetry enablement (set by CLI/config)
@@ -264,9 +283,11 @@ class XChaCha20Poly1305:
             raise ValidationError("Key cannot be None")
 
         # nonce_format selects the construction:
-        #   1 (legacy/default): store 24 bytes, use the first 12 directly as a
-        #     ChaCha20-Poly1305 nonce (96-bit effective). Every pre-1.5 file
-        #     relies on this; it MUST stay byte-for-byte unchanged.
+        #   1 (legacy/default): store 24 bytes, HKDF-funnel them down to a
+        #     12-byte ChaCha20-Poly1305 nonce (96-bit effective — the
+        #     '192-bit XChaCha' naming is illusory for this format). Every
+        #     pre-1.5 file relies on this; it MUST stay byte-for-byte
+        #     unchanged.
         #   2 (1.5+): real XChaCha20-Poly1305 with HChaCha20 subkey derivation
         #     per draft-irtf-cfrg-xchacha-03 — the full 192-bit nonce is used.
         self.nonce_format = nonce_format
@@ -287,18 +308,21 @@ class XChaCha20Poly1305:
 
     def _process_nonce(self, nonce):
         """
-        Process and validate nonce to ensure proper length and format.
-        The cryptography library's ChaCha20Poly1305 expects 12-byte nonces,
-        while XChaCha20Poly1305 is designed for 24-byte nonces.
+        Funnel the stored nonce down to a 12-byte ChaCha20-Poly1305 nonce
+        (legacy nonce_format=1 only).
 
-        We use the HChaCha20 construction to derive a ChaCha20 key and nonce
-        from the XChaCha20 nonce, following the XChaCha20 specification.
+        This is NOT the HChaCha20 construction from the XChaCha20 spec and
+        provides no extended-nonce security: a 24-byte input is reduced via
+        HKDF-SHA256 to 12 bytes, so the effective nonce is 96-bit regardless
+        of the stored length. The real 192-bit construction is
+        nonce_format=2 (modules/xchacha.py). This funnel is kept only for
+        byte-for-byte compatibility with pre-1.5 files.
 
         Args:
-            nonce (bytes): Input nonce
+            nonce (bytes): Input nonce as stored in the file
 
         Returns:
-            bytes: Properly formatted 12-byte nonce for use with the ChaCha20Poly1305 library
+            bytes: Derived 12-byte nonce for the ChaCha20Poly1305 library
 
         Raises:
             ValidationError: If nonce validation fails
@@ -321,14 +345,9 @@ class XChaCha20Poly1305:
 
         # Process based on length
         if len(nonce) == 24:
-            # For XChaCha20Poly1305, use a proper derivation algorithm
-            # The 24-byte nonce is split into a 16-byte nonce and an 8-byte block counter
-            # First, use the HChaCha20 function to mix the key with the first 16 bytes
-            # Since we don't have direct access to HChaCha20, we'll use HKDF with BLAKE2b
-            # to derive a secure 12-byte nonce from the original 24-byte nonce
-
-            # Use the first 16 bytes of the nonce as the HKDF salt (mimicking HChaCha20 input)
-            # and the remaining 8 bytes as the info parameter to ensure uniqueness
+            # Legacy funnel: HKDF-SHA256(key, salt=nonce[:16], info=nonce[16:])
+            # -> 12 bytes. Deterministic per (key, nonce) so existing files
+            # keep decrypting; effective nonce space is 96-bit.
             hkdf = HKDF(
                 algorithm=hashes.SHA256(),  # Use SHA256 which is universally available
                 length=12,  # We need 12 bytes for ChaCha20Poly1305
@@ -974,21 +993,19 @@ class CamelliaCipher:
 
             # Split ciphertext and authentication tag
             tag_size = 32  # SHA-256 HMAC produces 32 bytes
-            if len(data) < tag_size:
-                # Try without HMAC, might be legacy data
-                cipher = Cipher(algorithms.Camellia(bytes(self.key)), modes.CBC(nonce))
-                decryptor = cipher.decryptor()
-                padded_data = decryptor.update(data) + decryptor.finalize()
+            block_size = algorithms.Camellia.block_size // 8  # 16 bytes
 
-                # Use constant-time unpadding
-                unpadded_data, padding_valid = constant_time_pkcs7_unpad(
-                    padded_data, algorithms.Camellia.block_size
-                )
-
-                if not padding_valid:
-                    raise DecryptionError("Invalid padding in decrypted data")
-
-                return unpadded_data
+            # SECURITY (issue #53): reject anything that cannot be an authentic
+            # Camellia message *before* any CBC decryption. Authentic output is a
+            # ciphertext (a positive whole number of blocks) followed by a 32-byte
+            # HMAC. A short input previously triggered an unauthenticated CBC
+            # decrypt whose distinct "Invalid padding" error formed a padding
+            # oracle and whose success bypassed authentication entirely. Fail with
+            # the same generic error as a MAC mismatch so the two are
+            # indistinguishable and no plaintext is ever released unauthenticated.
+            ciphertext_len = len(data) - tag_size
+            if ciphertext_len < block_size or (ciphertext_len % block_size) != 0:
+                raise AuthenticationError("Message authentication failed")
 
             # Normal case with HMAC
             ciphertext = data[:-tag_size]
@@ -1020,9 +1037,9 @@ class CamelliaCipher:
 
             # After decryption, verify HMAC using constant-time MAC verification
             # Try HKDF-derived key first, then fall back to legacy SHA-256 key
-            hmac_valid = verify_mac(expected_tag, received_tag, associated_data)
+            hmac_valid = verify_mac(expected_tag, received_tag)
             if not hmac_valid:
-                hmac_valid = verify_mac(legacy_expected_tag, received_tag, associated_data)
+                hmac_valid = verify_mac(legacy_expected_tag, received_tag)
 
             if not hmac_valid:
                 raise AuthenticationError("Message authentication failed")
@@ -1047,46 +1064,54 @@ class CamelliaCipher:
 
 def string_entropy(password: str) -> float:
     """
-    Calculate password entropy in bits using a timing-resistant approach.
-    Higher entropy = more random = stronger password.
+    Estimate password entropy in bits using a character-pool (search-space) model.
 
-    This function uses a constant-time approach to prevent timing attacks
-    that could leak information about password composition.
+    The estimate is ``log2(pool_size) * unique_characters`` where ``pool_size`` is
+    the combined size of every character class present in the password. Counting
+    unique characters rather than length neutralises trivial repetition (e.g.
+    "aaaa" scores the same as "a").
+
+    Security note: this is a coarse heuristic that measures character diversity
+    only. It does NOT detect dictionary words, keyboard walks, l33t substitutions
+    or other predictable patterns, so structured passwords such as "Password1!"
+    are over-rated. It is intended as lightweight user guidance, not as a
+    guarantee of resistance to guessing. It is not constant-time and must not be
+    relied upon where timing side channels on the password matter.
+
+    Args:
+        password: The password to evaluate.
+
+    Returns:
+        Estimated entropy in bits (0.0 for an empty password).
     """
     # Convert to string if not already
     password = str(password)
 
-    # Always check all character sets regardless of content
-    # This makes the function run in constant time relative to character types
-    char_sets = [0, 0, 0, 0]  # Use integers instead of booleans for constant-time ops
-    char_nums = [26, 26, 10, 32]  # lowercase, uppercase, digits, symbols
-
-    # Constant-time character type detection
+    # Character-class flags. A dedicated non-ASCII class ensures Unicode
+    # passwords (accented letters, other scripts, emoji) contribute entropy
+    # instead of being scored at zero.
+    has_lower = has_upper = has_digit = has_symbol = has_other = 0
     for char in password:
-        # Update each set with a constant-time operation
-        # The | operator ensures we don't short-circuit evaluation
-        char_sets[0] |= int(char.islower())
-        char_sets[1] |= int(char.isupper())
-        char_sets[2] |= int(char.isdigit())
-        char_sets[3] |= int(not char.isalnum() and char.isascii())
+        if char.isascii():
+            has_lower |= int(char.islower())
+            has_upper |= int(char.isupper())
+            has_digit |= int(char.isdigit())
+            has_symbol |= int(not char.isalnum())
+        else:
+            has_other = 1
 
-    # Calculate character set size in a constant-time way
-    char_amount = 0
-    for i in range(4):
-        # Multiply by 0 or 1 instead of conditional addition
-        char_amount += char_nums[i] * char_sets[i]
+    # Combined search-space size. 26/26/10/32 mirror the ASCII lowercase,
+    # uppercase, digit and printable-symbol alphabets; 100 is a deliberately
+    # conservative lower bound for "some non-ASCII character was used".
+    char_amount = (
+        26 * has_lower + 26 * has_upper + 10 * has_digit + 32 * has_symbol + 100 * has_other
+    )
 
     # Ensure we have at least one character type
     char_amount = max(char_amount, 1)
 
-    # Calculate unique characters in constant time
-    # by creating a fixed-size array of character counts
-    char_counts = [0] * 128  # ASCII range
-    for char in password:
-        if ord(char) < 128:  # Handle only ASCII for simplicity
-            char_counts[ord(char)] = 1
-
-    unique_chars = sum(char_counts)
+    # Count unique characters across the full Unicode range (not just ASCII).
+    unique_chars = len(set(password))
 
     # Calculate and return entropy
     return math.log2(char_amount) * unique_chars
@@ -1583,20 +1608,26 @@ def multi_hash_password(
                     with secure_buffer(64, zero=False) as hash_buffer:
                         for i in range(params):
                             if debug:
-                                logger.debug(f"SHA-512:INPUT Round {i+1}/{params}: {hashed.hex()}")
+                                logger.debug(
+                                    debug_secret(f"SHA-512:INPUT Round {i+1}/{params}", hashed)
+                                )
 
                             result = hashlib.sha512(hashed).digest()
                             secure_memcpy(hash_buffer, result)
                             secure_memcpy(hashed, hash_buffer)
 
                             if debug:
-                                logger.debug(f"SHA-512:OUTPUT Round {i+1}/{params}: {hashed.hex()}")
+                                logger.debug(
+                                    debug_secret(f"SHA-512:OUTPUT Round {i+1}/{params}", hashed)
+                                )
 
                             show_progress("SHA-512", i + 1, params)
                             KeyStretch.hash_stretch = True
 
                         if debug:
-                            logger.debug(f"SHA-512:FINAL After {params} rounds: {hashed.hex()}")
+                            logger.debug(
+                                debug_secret(f"SHA-512:FINAL After {params} rounds", hashed)
+                            )
 
                         # NEW: Collect intermediate for v10/v8 XOR
                         # CRITICAL: Store as SecureBytes, will be zeroed in generate_key() after XOR
@@ -1604,7 +1635,7 @@ def multi_hash_password(
                             normalized = normalize_to_key_length_secure(hashed, key_length)
                             intermediate_outputs.append(normalized)  # SecureBytes object
                             if debug:
-                                logger.debug(f"SHA-512:XOR-INTERMEDIATE: {normalized.hex()}")
+                                logger.debug(debug_secret("SHA-512:XOR-INTERMEDIATE", normalized))
 
                         if not quiet and not progress:
                             eprint("✅")
@@ -1622,20 +1653,26 @@ def multi_hash_password(
                     with secure_buffer(32, zero=False) as hash_buffer:
                         for i in range(params):
                             if debug:
-                                logger.debug(f"SHA-256:INPUT Round {i+1}/{params}: {hashed.hex()}")
+                                logger.debug(
+                                    debug_secret(f"SHA-256:INPUT Round {i+1}/{params}", hashed)
+                                )
 
                             result = hashlib.sha256(hashed).digest()
                             secure_memcpy(hash_buffer, result)
                             secure_memcpy(hashed, hash_buffer)
 
                             if debug:
-                                logger.debug(f"SHA-256:OUTPUT Round {i+1}/{params}: {hashed.hex()}")
+                                logger.debug(
+                                    debug_secret(f"SHA-256:OUTPUT Round {i+1}/{params}", hashed)
+                                )
 
                             show_progress("SHA-256", i + 1, params)
                             KeyStretch.hash_stretch = True
 
                         if debug:
-                            logger.debug(f"SHA-256:FINAL After {params} rounds: {hashed.hex()}")
+                            logger.debug(
+                                debug_secret(f"SHA-256:FINAL After {params} rounds", hashed)
+                            )
 
                         # NEW: Collect intermediate for v10/v8 XOR
                         # CRITICAL: Store as SecureBytes, will be zeroed in generate_key() after XOR
@@ -1643,7 +1680,7 @@ def multi_hash_password(
                             normalized = normalize_to_key_length_secure(hashed, key_length)
                             intermediate_outputs.append(normalized)  # SecureBytes object
                             if debug:
-                                logger.debug(f"SHA-256:XOR-INTERMEDIATE: {normalized.hex()}")
+                                logger.debug(debug_secret("SHA-256:XOR-INTERMEDIATE", normalized))
 
                         if not quiet and not progress:
                             eprint("✅")
@@ -1661,7 +1698,9 @@ def multi_hash_password(
                     with secure_buffer(32, zero=False) as hash_buffer:
                         for i in range(params):
                             if debug:
-                                logger.debug(f"SHA3-256:INPUT Round {i+1}/{params}: {hashed.hex()}")
+                                logger.debug(
+                                    debug_secret(f"SHA3-256:INPUT Round {i+1}/{params}", hashed)
+                                )
 
                             result = hashlib.sha3_256(hashed).digest()
                             secure_memcpy(hash_buffer, result)
@@ -1669,14 +1708,16 @@ def multi_hash_password(
 
                             if debug:
                                 logger.debug(
-                                    f"SHA3-256:OUTPUT Round {i+1}/{params}: {hashed.hex()}"
+                                    debug_secret(f"SHA3-256:OUTPUT Round {i+1}/{params}", hashed)
                                 )
 
                             show_progress("SHA3-256", i + 1, params)
                             KeyStretch.hash_stretch = True
 
                         if debug:
-                            logger.debug(f"SHA3-256:FINAL After {params} rounds: {hashed.hex()}")
+                            logger.debug(
+                                debug_secret(f"SHA3-256:FINAL After {params} rounds", hashed)
+                            )
 
                         # NEW: Collect intermediate for v10/v8 XOR
                         # CRITICAL: Store as SecureBytes, will be zeroed in generate_key() after XOR
@@ -1684,7 +1725,7 @@ def multi_hash_password(
                             normalized = normalize_to_key_length_secure(hashed, key_length)
                             intermediate_outputs.append(normalized)  # SecureBytes object
                             if debug:
-                                logger.debug(f"SHA3-256:XOR-INTERMEDIATE: {normalized.hex()}")
+                                logger.debug(debug_secret("SHA3-256:XOR-INTERMEDIATE", normalized))
 
                         if not quiet and not progress:
                             eprint("✅")
@@ -1709,7 +1750,7 @@ def multi_hash_password(
                             normalized = normalize_to_key_length_secure(hashed, key_length)
                             intermediate_outputs.append(normalized)  # SecureBytes object
                             if debug:
-                                logger.debug(f"SHA3-512:XOR-INTERMEDIATE: {normalized.hex()}")
+                                logger.debug(debug_secret("SHA3-512:XOR-INTERMEDIATE", normalized))
 
                         if not quiet and not progress:
                             eprint("✅")
@@ -1752,7 +1793,7 @@ def multi_hash_password(
                             normalized = normalize_to_key_length_secure(hashed, key_length)
                             intermediate_outputs.append(normalized)  # SecureBytes object
                             if debug:
-                                logger.debug(f"BLAKE2b:XOR-INTERMEDIATE: {normalized.hex()}")
+                                logger.debug(debug_secret("BLAKE2b:XOR-INTERMEDIATE", normalized))
 
                         if not quiet and not progress:
                             eprint("✅")
@@ -1772,7 +1813,7 @@ def multi_hash_password(
                             for i in range(params):
                                 if debug:
                                     logger.debug(
-                                        f"BLAKE3:INPUT Round {i+1}/{params}: {hashed.hex()}"
+                                        debug_secret(f"BLAKE3:INPUT Round {i+1}/{params}", hashed)
                                     )
                                     logger.debug(
                                         f"BLAKE3:KEY Round {i+1}/{params} format_version={format_version}"
@@ -1798,7 +1839,9 @@ def multi_hash_password(
 
                                 if debug:
                                     logger.debug(
-                                        f"BLAKE3:KEYMATERIAL Round {i+1}/{params}: {key_material.hex()}"
+                                        debug_secret(
+                                            f"BLAKE3:KEYMATERIAL Round {i+1}/{params}", key_material
+                                        )
                                     )
 
                                 # Create a keyed BLAKE3 instance for each iteration
@@ -1812,14 +1855,16 @@ def multi_hash_password(
 
                                 if debug:
                                     logger.debug(
-                                        f"BLAKE3:OUTPUT Round {i+1}/{params}: {hashed.hex()}"
+                                        debug_secret(f"BLAKE3:OUTPUT Round {i+1}/{params}", hashed)
                                     )
 
                                 show_progress("BLAKE3", i + 1, params)
                                 KeyStretch.hash_stretch = True
 
                             if debug:
-                                logger.debug(f"BLAKE3:FINAL After {params} rounds: {hashed.hex()}")
+                                logger.debug(
+                                    debug_secret(f"BLAKE3:FINAL After {params} rounds", hashed)
+                                )
 
                             # NEW: Collect intermediate for v10/v8 XOR
                             # CRITICAL: Store as SecureBytes, will be zeroed in generate_key() after XOR
@@ -1827,7 +1872,9 @@ def multi_hash_password(
                                 normalized = normalize_to_key_length_secure(hashed, key_length)
                                 intermediate_outputs.append(normalized)  # SecureBytes object
                                 if debug:
-                                    logger.debug(f"BLAKE3:XOR-INTERMEDIATE: {normalized.hex()}")
+                                    logger.debug(
+                                        debug_secret("BLAKE3:XOR-INTERMEDIATE", normalized)
+                                    )
 
                             if not quiet and not progress:
                                 eprint("✅")
@@ -1853,7 +1900,7 @@ def multi_hash_password(
                                 intermediate_outputs.append(normalized)  # SecureBytes object
                                 if debug:
                                     logger.debug(
-                                        f"BLAKE3-FALLBACK:XOR-INTERMEDIATE: {normalized.hex()}"
+                                        debug_secret("BLAKE3-FALLBACK:XOR-INTERMEDIATE", normalized)
                                     )
 
                             if not quiet and not progress:
@@ -1903,7 +1950,7 @@ def multi_hash_password(
                             normalized = normalize_to_key_length_secure(hashed, key_length)
                             intermediate_outputs.append(normalized)  # SecureBytes object
                             if debug:
-                                logger.debug(f"SHAKE256:XOR-INTERMEDIATE: {normalized.hex()}")
+                                logger.debug(debug_secret("SHAKE256:XOR-INTERMEDIATE", normalized))
 
                         if not quiet and not progress:
                             eprint("✅")
@@ -1952,7 +1999,9 @@ def multi_hash_password(
                                 normalized = normalize_to_key_length_secure(hashed, key_length)
                                 intermediate_outputs.append(normalized)  # SecureBytes object
                                 if debug:
-                                    logger.debug(f"Whirlpool:XOR-INTERMEDIATE: {normalized.hex()}")
+                                    logger.debug(
+                                        debug_secret("Whirlpool:XOR-INTERMEDIATE", normalized)
+                                    )
 
                             if not quiet and not progress:
                                 eprint("✅")
@@ -1981,7 +2030,9 @@ def multi_hash_password(
                                 intermediate_outputs.append(normalized)  # SecureBytes object
                                 if debug:
                                     logger.debug(
-                                        f"Whirlpool-FALLBACK:XOR-INTERMEDIATE: {normalized.hex()}"
+                                        debug_secret(
+                                            "Whirlpool-FALLBACK:XOR-INTERMEDIATE", normalized
+                                        )
                                     )
 
                             if not quiet and not progress:
@@ -2122,12 +2173,14 @@ def normalize_to_key_length_secure(data, target_length: int) -> "SecureBytes":
 
         return result
     finally:
-        # Zero the temporary bytes copy if we created one
+        # M2 [MEM-1]: a bytearray copy is wiped in place; an immutable bytes
+        # copy cannot be wiped, so drop the reference rather than scrubbing a
+        # throwaway bytearray(copy).
         if isinstance(data, SecureBytes) and data_bytes is not data:
             if isinstance(data_bytes, bytearray):
                 secure_memzero(data_bytes)
             else:
-                secure_memzero(bytearray(data_bytes))
+                data_bytes = None
 
 
 def _indep_xor_component_salt(base_salt: bytes, name: str, format_version: int) -> bytes:
@@ -2158,6 +2211,76 @@ def _indep_xor_component_salt(base_salt: bytes, name: str, format_version: int) 
         salt=None,
         info=b"openssl_encrypt.indep-xor.v13.salt:" + name.encode("ascii"),
     ).derive(base_salt)
+
+
+def _v14_seed_encode(password: bytes, salt: bytes, hsm_pepper: bytes = None) -> bytearray:
+    """Length-prefixed (TLV) KDF seed for ``format_version >= 14`` (finding #100).
+
+    Layout: ``LP(password) || LP(salt) || LP(pepper)`` with
+    ``LP(x) = uint32_be(len(x)) || x``. The pepper field is ALWAYS emitted —
+    an absent pepper encodes as ``LP(b"") = 00 00 00 00`` — so no
+    (password, salt, pepper) split of the same byte string can alias another.
+    Replaces the raw ``password || pepper || salt`` concatenation used below
+    v14, whose field boundaries were ambiguous.
+
+    The encoding is **pinned** for cross-line (1.4.x/1.5.x) byte-identity and
+    covered by golden vectors: do not change the field order, the 4-byte
+    big-endian length prefixes, or the always-present pepper field.
+
+    Args:
+        password: Password bytes (never a str at this layer).
+        salt: Salt bytes.
+        hsm_pepper: Optional hardware pepper bytes; None and b"" encode
+            identically as an empty field.
+
+    Returns:
+        The encoded seed as a bytearray so the caller can secure_memzero it
+        after hashing (it contains the cleartext password and pepper —
+        M2 [MEM-1] wipe standard).
+    """
+    # M2 [MEM-1]: single exact-size allocation, filled in place (gitlab#110).
+    # Incremental ``seed += ...`` growth is FORBIDDEN here: bytearray
+    # reallocations free earlier buffers — already holding LP(password) —
+    # without zeroization, so the caller's secure_memzero would wipe only the
+    # final allocation. Likewise no bytes() conversion of the fields: it would
+    # materialize an unwipeable immutable copy of a caller's mutable secret.
+    fields = [memoryview(f) if f else memoryview(b"") for f in (password, salt, hsm_pepper)]
+    seed = bytearray(sum(4 + len(f) for f in fields))
+    pos = 0
+    for f in fields:
+        seed[pos : pos + 4] = len(f).to_bytes(4, "big")
+        pos += 4
+        seed[pos : pos + len(f)] = f
+        pos += len(f)
+    return seed
+
+
+def _combine_peppers(hsm_pepper: bytes = None, remote_pepper: bytes = None) -> bytearray:
+    """Combine HSM and remote pepper into one wipeable KDF-pepper buffer.
+
+    Always returns a freshly allocated ``bytearray`` — never an alias of an
+    input — preallocated to its exact final size, so no intermediate
+    concatenation copy of pepper material is left on the heap and the caller
+    can ``secure_memzero`` the result without touching the inputs
+    (gitlab#113 / fable-review LOW-1, same M2 [MEM-1] standard as
+    ``_v14_seed_encode``).
+
+    Args:
+        hsm_pepper: Optional hardware-derived pepper bytes.
+        remote_pepper: Optional remote (server-stored) pepper bytes.
+
+    Returns:
+        ``hsm_pepper || remote_pepper`` as a bytearray, or ``None`` when
+        neither pepper is present (empty values count as absent).
+    """
+    hsm = hsm_pepper or b""
+    remote = remote_pepper or b""
+    if not hsm and not remote:
+        return None
+    combined = bytearray(len(hsm) + len(remote))
+    combined[: len(hsm)] = hsm
+    combined[len(hsm) :] = remote
+    return combined
 
 
 def compute_hash_independent(
@@ -2279,7 +2402,7 @@ def compute_hash_independent(
                     eprint()  # Move to next line
 
         if debug:
-            logger.debug(f"INDEPENDENT-XOR: {algorithm} result (normalized): {result.hex()}")
+            logger.debug(debug_secret(f"INDEPENDENT-XOR: {algorithm} result (normalized)", result))
 
         return result
 
@@ -2554,10 +2677,115 @@ def compute_kdf_independent(
         if progress and not quiet:
             eprint()
 
-        return SecureBytes(result)
+        result_sb = SecureBytes(result)
+        if len(result_sb) != key_length:
+            # RandomX natively yields 32 bytes regardless of the requested
+            # hash_len; expand to the target key length so wide-key algorithms
+            # (AES-SIV, Threefish-512/1024) can XOR this component. Same
+            # HKDF normalization as the other components; a 32-byte target is
+            # a pass-through, so existing 32-byte-key files are unaffected
+            # (mismatched lengths previously crashed, so no file with a
+            # different derivation exists).
+            normalized = normalize_to_key_length_secure(result_sb, key_length)
+            secure_memzero(result_sb)
+            return normalized
+        return result_sb
 
     else:
         raise ValueError(f"Unsupported KDF type: {kdf_type}")
+
+
+def _kdf_security_preflight_independent(hash_config, quiet):
+    """KDF-without-prior-hashing warning + HKDF-only rejection (#99).
+
+    Mirrors the sequential generate_key() preflight so the independent-XOR
+    path (the default write topology since the M2 flip) enforces the same
+    user-facing contract: KDFs operating directly on a possibly low-entropy
+    password without hash rounds prompt for confirmation (interactive TTY
+    only), and an HKDF-only configuration is refused at encryption time.
+    Decryption (metadata-driven configs) is exempt for backward compat.
+    """
+    if hash_config and "derivation_config" in hash_config:
+        _dc = hash_config["derivation_config"]
+        _hash_cfg = _dc.get("hash_config", {})
+        _kdf_cfg = _dc.get("kdf_config", {})
+    else:
+        _hash_cfg = hash_config or {}
+        _kdf_cfg = hash_config or {}
+
+    has_hash_iterations = any(
+        get_hash_rounds(_hash_cfg, algo) > 0
+        for algo in [
+            "sha256",
+            "sha512",
+            "sha3_256",
+            "sha3_512",
+            "blake2b",
+            "blake3",
+            "shake256",
+            "whirlpool",
+        ]
+    )
+    use_argon2 = _kdf_cfg.get("argon2", {}).get("enabled", False)
+    use_scrypt = _kdf_cfg.get("scrypt", {}).get("enabled", False)
+    use_pbkdf2 = _kdf_cfg.get("pbkdf2_iterations", 0) > 0
+    use_balloon = _kdf_cfg.get("balloon", {}).get("enabled", False)
+    use_hkdf = _kdf_cfg.get("hkdf", {}).get("enabled", False)
+    use_randomx = _kdf_cfg.get("randomx", {}).get("enabled", False)
+
+    is_decryption = bool(hash_config and hash_config.get("_is_from_decryption_metadata", False))
+
+    any_kdf_enabled = use_argon2 or use_randomx or use_balloon or use_hkdf or use_scrypt
+    if any_kdf_enabled and not has_hash_iterations and not quiet and not is_decryption:
+        import sys
+
+        # Only prompt if stdin is a TTY (interactive terminal); in
+        # non-interactive mode (pytest, pipes, ...) skip the prompt.
+        if sys.stdin.isatty():
+            enabled_kdfs = []
+            if use_argon2:
+                enabled_kdfs.append("Argon2")
+            if use_randomx:
+                enabled_kdfs.append("RandomX")
+            if use_balloon:
+                enabled_kdfs.append("Balloon")
+            if use_hkdf:
+                enabled_kdfs.append("HKDF")
+            if use_scrypt:
+                enabled_kdfs.append("Scrypt")
+
+            eprint("\n\u26a0\ufe0f  WARNING: Security Risk Detected")
+            eprint(
+                f"KDFs ({', '.join(enabled_kdfs)}) will operate directly on your password without prior hashing."
+            )
+            eprint("This may be insecure if your password is short or has low entropy.")
+            eprint(
+                "Consider adding hash rounds (--sha256-rounds, --blake2b-rounds, etc.) for better security."
+            )
+            eprint("Continue anyway? [y/N]: ", end="", flush=True)
+            try:
+                response = input().strip().lower()
+                if response not in ["y", "yes"]:
+                    eprint("Operation cancelled by user.")
+                    sys.exit(1)
+                eprint()
+            except (KeyboardInterrupt, EOFError):
+                eprint("\nOperation cancelled by user.")
+                sys.exit(1)
+
+    # Reject non-stretching-only KDF configs at encryption time (#99).
+    if (
+        use_hkdf
+        and not (use_argon2 or use_scrypt or use_balloon or use_randomx or use_pbkdf2)
+        and not has_hash_iterations
+        and not is_decryption
+    ):
+        raise ValidationError(
+            "Refusing key-derivation config with HKDF as the only KDF: HKDF does "
+            "not stretch passwords. Enable at least one memory-hard or iterated "
+            "component (Argon2, scrypt, Balloon, RandomX, PBKDF2 iterations, or "
+            "hash rounds)."
+        )
 
 
 def generate_key_independent_xor(
@@ -2671,19 +2899,43 @@ def generate_key_independent_xor(
     if isinstance(salt, str):
         salt = salt.encode("utf-8")
 
-    # Apply HSM pepper if provided
-    if hsm_pepper:
+    # Same KDF security preflight as the sequential path (interactive
+    # warning for KDFs without prior hashing; HKDF-only rejection, #99).
+    _kdf_security_preflight_independent(hash_config, quiet)
+
+    # Apply HSM pepper if provided. Track the buffer WE allocate so it can be
+    # wiped in `finally` without touching the caller's password object (M2 [MEM-1]).
+    # v14+ does NOT concat the pepper into the password: the pepper enters the
+    # seed as its own length-prefixed TLV field below (finding #100).
+    peppered_password = None
+    if hsm_pepper and (format_version is None or format_version < 14):
         if debug:
             logger.debug("INDEPENDENT-XOR: Mixing HSM pepper into password")
         password = SecureBytes(password + hsm_pepper)
+        peppered_password = password
 
     # Collect all algorithm outputs independently
     xor_components = []  # List[SecureBytes]
 
     try:
         # 0. Add initial hash of password+salt to XOR (defense-in-depth, like v10)
-        # This provides input normalization and additional key stretching
-        initial_hash = hashlib.sha256(bytes(password) + salt).digest()
+        # This provides input normalization and additional key stretching.
+        # Hold it in SecureBytes so the finally wipe is real (M2 [MEM-1]).
+        # v14+: hash the length-prefixed TLV seed (password, salt and pepper as
+        # separate unambiguous fields — finding #100); < 14 keeps the legacy
+        # raw concatenation byte-identically (pepper already folded into
+        # `password` above for < 14).
+        if format_version is not None and format_version >= 14:
+            _v14_seed = _v14_seed_encode(password, salt, hsm_pepper)
+            try:
+                # Hash the bytearray via memoryview — no immutable bytes copy
+                # of the cleartext seed is materialized (M2 [MEM-1]).
+                initial_hash = SecureBytes(hashlib.sha256(memoryview(_v14_seed)).digest())
+            finally:
+                # The seed holds the cleartext password and pepper (M2 [MEM-1]).
+                secure_memzero(_v14_seed)
+        else:
+            initial_hash = SecureBytes(hashlib.sha256(bytes(password) + salt).digest())
         initial_normalized = normalize_to_key_length_secure(initial_hash, key_length)
         xor_components.append(initial_normalized)  # SecureBytes object
 
@@ -2891,9 +3143,16 @@ def generate_key_independent_xor(
                 if debug:
                     logger.debug(f"INDEPENDENT-XOR: Added RandomX component #{len(xor_components)}")
             except (ImportError, OSError) as e:
-                if not quiet:
-                    eprint(f"⚠️ RandomX not available, skipping ({e})")
-                logger.warning(f"RandomX KDF skipped in independent XOR: {e}")
+                # SECURITY (#71): RandomX is explicitly enabled, so a failure must
+                # NOT be silently skipped -- dropping it can collapse the derived
+                # key to a single un-stretched sha256(password+salt). Fail closed,
+                # like every other KDF in this path (which let errors propagate).
+                logger.warning(f"RandomX KDF enabled but unavailable: {e}")
+                raise ValidationError(
+                    "RandomX KDF is enabled but unavailable; refusing to derive a "
+                    "weaker key. Install RandomX support or disable RandomX in the "
+                    f"KDF configuration. ({e})"
+                ) from e
 
         # NOTE: PBKDF2 is deprecated and NOT used for v11 encryption
         # It's only supported for decryption of legacy files (v1-v9)
@@ -3021,12 +3280,20 @@ def generate_key_independent_xor(
                 pass
         if "initial_hash" in locals():
             try:
-                secure_memzero(bytearray(initial_hash))
+                # initial_hash is SecureBytes now — real in-place wipe (M2 [MEM-1]).
+                secure_memzero(initial_hash)
             except Exception:
                 pass
         if "algorithm_input" in locals():
             try:
                 secure_memzero(algorithm_input)
+            except Exception:
+                pass
+        # Wipe the peppered password buffer WE allocated (never the caller's
+        # password object) — M2 [MEM-1].
+        if peppered_password is not None:
+            try:
+                secure_memzero(peppered_password)
             except Exception:
                 pass
 
@@ -3246,7 +3513,9 @@ def generate_key(
         initial_normalized = normalize_to_key_length_secure(initial_hash, key_length)
         xor_accumulator.append(initial_normalized)  # SecureBytes object
         if debug:
-            logger.debug(f"V10-XOR: Added initial password+salt hash: {initial_normalized.hex()}")
+            logger.debug(
+                debug_secret("V10-XOR: Added initial password+salt hash", initial_normalized)
+            )
 
         # Zero the temporary hash immediately
         secure_memzero(bytearray(initial_hash))
@@ -3367,6 +3636,24 @@ def generate_key(
                     eprint("\nOperation cancelled by user.")
                     sys.exit(1)
 
+    # Reject non-stretching-only KDF configs at encryption time (#99).
+    # HKDF is an extractor/expander, not a password-stretching KDF: with no
+    # memory-hard/iterated component and no hash rounds, the file key is one
+    # cheap pass away from the password. Decryption of existing files
+    # (metadata-driven) stays exempt for backward compatibility.
+    if (
+        use_hkdf
+        and not (use_argon2 or use_scrypt or use_balloon or use_randomx or use_pbkdf2)
+        and not has_hash_iterations
+        and not (hash_config and hash_config.get("_is_from_decryption_metadata", False))
+    ):
+        raise ValidationError(
+            "Refusing key-derivation config with HKDF as the only KDF: HKDF does "
+            "not stretch passwords. Enable at least one memory-hard or iterated "
+            "component (Argon2, scrypt, Balloon, RandomX, PBKDF2 iterations, or "
+            "hash rounds)."
+        )
+
     # If hash_config has argon2 section with enabled explicitly set to False, honor that
     # if hash_config and 'argon2' in hash_config and 'enabled' in hash_config['argon2']:
     #    use_argon2 = hash_config['argon2']['enabled']
@@ -3463,9 +3750,11 @@ def generate_key(
 
                 if debug:
                     logger.debug(
-                        f"ARGON2:INPUT Round {i+1}/{argon2_rounds}: {password_bytes.hex()}"
+                        debug_secret(f"ARGON2:INPUT Round {i+1}/{argon2_rounds}", password_bytes)
                     )
-                    logger.debug(f"ARGON2:SALT Round {i+1}/{argon2_rounds}: {round_salt.hex()}")
+                    logger.debug(
+                        debug_secret(f"ARGON2:SALT Round {i+1}/{argon2_rounds}", round_salt)
+                    )
                     logger.debug(
                         f"ARGON2:PARAMS time_cost={time_cost}, memory_cost={memory_cost}, parallelism={parallelism}"
                     )
@@ -3482,7 +3771,7 @@ def generate_key(
                 )
 
                 if debug:
-                    logger.debug(f"ARGON2:OUTPUT Round {i+1}/{argon2_rounds}: {result.hex()}")
+                    logger.debug(debug_secret(f"ARGON2:OUTPUT Round {i+1}/{argon2_rounds}", result))
 
                 # Securely overwrite the previous password value
                 secure_memzero(password_bytes)
@@ -3531,7 +3820,7 @@ def generate_key(
             hash_config["argon2"]["type"] = type_int
 
             if debug:
-                logger.debug(f"ARGON2:FINAL After {argon2_rounds} rounds: {password.hex()}")
+                logger.debug(debug_secret(f"ARGON2:FINAL After {argon2_rounds} rounds", password))
 
             # NEW: For v10/v8, save Argon2 final output to XOR accumulator
             # CRITICAL: Store as SecureBytes, will be zeroed after XOR completes
@@ -3539,7 +3828,9 @@ def generate_key(
                 argon2_normalized = normalize_to_key_length_secure(password, key_length)
                 xor_accumulator.append(argon2_normalized)  # SecureBytes object
                 if debug:
-                    logger.debug(f"V10-XOR: Added Argon2 final output: {argon2_normalized.hex()}")
+                    logger.debug(
+                        debug_secret("V10-XOR: Added Argon2 final output", argon2_normalized)
+                    )
 
             if not quiet and not progress:
                 eprint("✅")
@@ -3598,9 +3889,11 @@ def generate_key(
                 if debug:
                     total_rounds = hash_config.get("balloon", {}).get("rounds", 1)
                     logger.debug(
-                        f"BALLOON:INPUT Round {i+1}/{total_rounds}: {password_bytes.hex()}"
+                        debug_secret(f"BALLOON:INPUT Round {i+1}/{total_rounds}", password_bytes)
                     )
-                    logger.debug(f"BALLOON:SALT Round {i+1}/{total_rounds}: {round_salt.hex()}")
+                    logger.debug(
+                        debug_secret(f"BALLOON:SALT Round {i+1}/{total_rounds}", round_salt)
+                    )
                     logger.debug(
                         f"BALLOON:PARAMS time_cost={time_cost}, space_cost={space_cost}, parallelism={parallelism}"
                     )
@@ -3615,7 +3908,7 @@ def generate_key(
                 )
 
                 if debug:
-                    logger.debug(f"BALLOON:OUTPUT Round {i+1}/{total_rounds}: {result.hex()}")
+                    logger.debug(debug_secret(f"BALLOON:OUTPUT Round {i+1}/{total_rounds}", result))
 
                 # Securely overwrite the previous password value
                 secure_memzero(password_bytes)
@@ -3656,7 +3949,7 @@ def generate_key(
 
             if debug:
                 total_rounds = hash_config.get("balloon", {}).get("rounds", 1)
-                logger.debug(f"BALLOON:FINAL After {total_rounds} rounds: {password.hex()}")
+                logger.debug(debug_secret(f"BALLOON:FINAL After {total_rounds} rounds", password))
 
             # NEW: For v10/v8, save Balloon final output to XOR accumulator
             # CRITICAL: Store as SecureBytes, will be zeroed after XOR completes
@@ -3664,7 +3957,9 @@ def generate_key(
                 balloon_normalized = normalize_to_key_length_secure(password, key_length)
                 xor_accumulator.append(balloon_normalized)  # SecureBytes object
                 if debug:
-                    logger.debug(f"V10-XOR: Added Balloon final output: {balloon_normalized.hex()}")
+                    logger.debug(
+                        debug_secret("V10-XOR: Added Balloon final output", balloon_normalized)
+                    )
 
             if not quiet and not progress:
                 eprint("✅")
@@ -3725,8 +4020,12 @@ def generate_key(
 
                 if debug:
                     total_rounds = hash_config.get("scrypt", {}).get("rounds", 1)
-                    logger.debug(f"SCRYPT:INPUT Round {i+1}/{total_rounds}: {password_bytes.hex()}")
-                    logger.debug(f"SCRYPT:SALT Round {i+1}/{total_rounds}: {round_salt.hex()}")
+                    logger.debug(
+                        debug_secret(f"SCRYPT:INPUT Round {i+1}/{total_rounds}", password_bytes)
+                    )
+                    logger.debug(
+                        debug_secret(f"SCRYPT:SALT Round {i+1}/{total_rounds}", round_salt)
+                    )
                     logger.debug(
                         f"SCRYPT:PARAMS n={hash_config['scrypt']['n']}, r={hash_config['scrypt']['r']}, p={hash_config['scrypt']['p']}"
                     )
@@ -3735,7 +4034,7 @@ def generate_key(
                 result = scrypt_kdf.derive(password_bytes)
 
                 if debug:
-                    logger.debug(f"SCRYPT:OUTPUT Round {i+1}/{total_rounds}: {result.hex()}")
+                    logger.debug(debug_secret(f"SCRYPT:OUTPUT Round {i+1}/{total_rounds}", result))
 
                 # Securely overwrite the previous password value
                 secure_memzero(password_bytes)
@@ -3751,7 +4050,7 @@ def generate_key(
 
             if debug:
                 total_rounds = hash_config.get("scrypt", {}).get("rounds", 1)
-                logger.debug(f"SCRYPT:FINAL After {total_rounds} rounds: {password.hex()}")
+                logger.debug(debug_secret(f"SCRYPT:FINAL After {total_rounds} rounds", password))
 
             # NEW: For v10/v8, save Scrypt final output to XOR accumulator
             # CRITICAL: Store as SecureBytes, will be zeroed after XOR completes
@@ -3759,7 +4058,9 @@ def generate_key(
                 scrypt_normalized = normalize_to_key_length_secure(password, key_length)
                 xor_accumulator.append(scrypt_normalized)  # SecureBytes object
                 if debug:
-                    logger.debug(f"V10-XOR: Added Scrypt final output: {scrypt_normalized.hex()}")
+                    logger.debug(
+                        debug_secret("V10-XOR: Added Scrypt final output", scrypt_normalized)
+                    )
 
             if not quiet and not progress:
                 eprint("✅")
@@ -3779,17 +4080,16 @@ def generate_key(
     # 2. For backward compatibility, check if pbkdf2_iterations is in hash_config directly
     else:
         pbkdf2_from_hash_config = hash_config.get("pbkdf2_iterations")
-        # Only inject PBKDF2 in pytest during encryption for legacy versions, not v10/v8
-        # During decryption, we must strictly follow the metadata configuration
-        # IMPORTANT: For v10/v8, NEVER inject PBKDF2 - it causes XOR intermediate mismatch
-        if (
-            os.environ.get("PYTEST_CURRENT_TEST") is not None
-            and pbkdf2_from_hash_config is None
-            and not hash_config.get("_is_from_decryption_metadata", False)
-            and not use_xor_composition  # Don't inject for v10/v8
-        ):
-            use_pbkdf2 = 100000
-        elif pbkdf2_from_hash_config is not None and pbkdf2_from_hash_config > 0:
+        # NOTE: a former pytest-only hack injected PBKDF2=100000 on the ENCRYPT
+        # side for legacy non-XOR versions when no PBKDF2 was configured. It was
+        # never written to metadata, so decrypt (which strictly follows the
+        # stored config) could not reproduce it -- once v9 became the default
+        # encrypt version this silently broke every default round-trip under
+        # pytest, and it also made otherwise-equivalent versions (v7 vs v9)
+        # derive different keys. It only ever affected test runs (gated on
+        # PYTEST_CURRENT_TEST) and has been removed: derivation now depends only
+        # on the actual configuration, identically on encrypt and decrypt.
+        if pbkdf2_from_hash_config is not None and pbkdf2_from_hash_config > 0:
             use_pbkdf2 = pbkdf2_from_hash_config
 
     if use_hkdf and HKDF_AVAILABLE:
@@ -3872,7 +4172,7 @@ def generate_key(
                 hkdf_normalized = normalize_to_key_length_secure(password, key_length)
                 xor_accumulator.append(hkdf_normalized)  # SecureBytes object
                 if debug:
-                    logger.debug(f"V10-XOR: Added HKDF final output: {hkdf_normalized.hex()}")
+                    logger.debug(debug_secret("V10-XOR: Added HKDF final output", hkdf_normalized))
 
         except Exception:
             if not quiet:
@@ -3974,7 +4274,9 @@ def generate_key(
                 randomx_normalized = normalize_to_key_length_secure(password, key_length)
                 xor_accumulator.append(randomx_normalized)  # SecureBytes object
                 if debug:
-                    logger.debug(f"V10-XOR: Added RandomX final output: {randomx_normalized.hex()}")
+                    logger.debug(
+                        debug_secret("V10-XOR: Added RandomX final output", randomx_normalized)
+                    )
 
         except Exception as e:
             if not quiet:
@@ -4050,7 +4352,7 @@ def generate_key(
             pbkdf2_normalized = normalize_to_key_length_secure(password, key_length)
             xor_accumulator.append(pbkdf2_normalized)  # SecureBytes object
             if debug:
-                logger.debug(f"V10-XOR: Added PBKDF2 final output: {pbkdf2_normalized.hex()}")
+                logger.debug(debug_secret("V10-XOR: Added PBKDF2 final output", pbkdf2_normalized))
 
     # Check if any KDF was requested but none were successful
     # This handles cases where KDFs like RandomX fail due to unavailability
@@ -4170,7 +4472,9 @@ def generate_key(
             xor_accumulator.append(pbkdf2_fallback_normalized)  # SecureBytes object
             if debug:
                 logger.debug(
-                    f"V10-XOR: Added PBKDF2 fallback final output: {pbkdf2_fallback_normalized.hex()}"
+                    debug_secret(
+                        "V10-XOR: Added PBKDF2 fallback final output", pbkdf2_fallback_normalized
+                    )
                 )
 
     # V10/v8: XOR all accumulated intermediate values
@@ -4181,7 +4485,7 @@ def generate_key(
             logger.debug(
                 f"V10-XOR: Performing final XOR of {len(xor_accumulator)} intermediate values"
             )
-            logger.debug(f"V10-XOR: Sequential result before XOR: {bytes(password).hex()}")
+            logger.debug(debug_secret("V10-XOR: Sequential result before XOR", bytes(password)))
 
         # CANCELLATION BUG (v8/v10) vs FIX (format_version >= 13): the chain's final
         # value equals the last stage's snapshot already in the accumulator, so
@@ -4196,7 +4500,7 @@ def generate_key(
         if debug:
             logger.debug("V10-XOR: Added sequential chain final result")
             for idx, val in enumerate(xor_accumulator):
-                logger.debug(f"V10-XOR:   [{idx}] {val.hex()}")
+                logger.debug(debug_secret(f"V10-XOR:   [{idx}]", val))
 
         # Perform XOR of all values with guaranteed cleanup
         xor_result = None
@@ -4212,7 +4516,7 @@ def generate_key(
             xor_result = None  # Don't zero twice
 
             if debug:
-                logger.debug(f"V10-XOR: Final XOR result: {bytes(password).hex()}")
+                logger.debug(debug_secret("V10-XOR: Final XOR result", bytes(password)))
 
             if not quiet:
                 eprint(f"✅ Combined {len(xor_accumulator)} intermediate values using XOR")
@@ -4696,7 +5000,7 @@ def create_metadata_v6(
     keystore_id=None,
     pepper_plugin_name=None,
     pepper_name=None,
-    format_version=10,
+    format_version=9,
 ):
     """
     Create metadata in format version 6 with formal HSM validation.
@@ -5486,6 +5790,12 @@ def decrypt_file_asymmetric(
     except Exception as e:
         raise ValueError(f"Invalid recipient data encoding: {e}")
 
+    # wrap_version 3 binds the KEM ciphertext + algorithm into the wrap-key
+    # derivation (review LOW-3 / gitlab#112). Marker absent -> legacy v2->v1
+    # chain (every pre-marker file). unwrap_password validates the marker
+    # type and fails closed on anything but 3/None.
+    wrap_version = recipient_entry.get("wrap_version")
+
     wrapper = PasswordWrapper(recipient_entry["kem_algorithm"])
 
     # Unwrap password (store in password_unwrapped temporarily)
@@ -5498,7 +5808,10 @@ def decrypt_file_asymmetric(
             with SecureBytes(password_raw) as password_secure:
                 # Unwrap password
                 password_unwrapped = wrapper.unwrap_password(
-                    encrypted_password, bytes(password_secure)
+                    encrypted_password,
+                    bytes(password_secure),
+                    encapsulated_key=encapsulated_key,
+                    wrap_version=wrap_version,
                 )
 
         finally:
@@ -5724,10 +6037,14 @@ def encrypt_file_asymmetric(
                 )
 
                 try:
-                    # Wrap password with shared secret
+                    # Wrap password with shared secret, binding the KEM
+                    # encapsulation ciphertext into the derivation
+                    # (wrap_version 3, review LOW-3 / gitlab#112).
                     with SecureBytes(shared_secret_raw) as shared_secret:
                         encrypted_password = wrapper.wrap_password(
-                            bytes(secure_password), bytes(shared_secret)
+                            bytes(secure_password),
+                            bytes(shared_secret),
+                            encapsulated_key=encapsulated_key,
                         )
 
                     recipients_data.append(
@@ -5736,6 +6053,7 @@ def encrypt_file_asymmetric(
                             "kem_algorithm": "ML-KEM-768",
                             "encapsulated_key": encapsulated_key,
                             "encrypted_password": encrypted_password,
+                            "wrap_version": 3,
                         }
                     )
 
@@ -5768,6 +6086,7 @@ def encrypt_file_asymmetric(
                             "encrypted_password": base64.b64encode(r["encrypted_password"]).decode(
                                 "utf-8"
                             ),
+                            "wrap_version": r["wrap_version"],
                         }
                         for r in recipients_data
                     ],
@@ -6069,7 +6388,7 @@ def encrypt_file(
     integrity=False,
     pepper_plugin=None,
     pepper_name=None,
-    format_version=10,
+    format_version=None,
     parallel_kdf=False,
     kdf_workers=None,
     chunk_size=None,
@@ -6080,6 +6399,7 @@ def encrypt_file(
     hidden_header=False,
     second_password=None,
     xor_mode=None,
+    allow_insecure_legacy_xor=False,
 ):
     """
     Encrypt a file (or in-memory bytes) with a password using the specified algorithm.
@@ -6121,6 +6441,61 @@ def encrypt_file(
         KeyDerivationError: If key derivation fails
         AuthenticationError: If integrity verification fails
     """
+    # Refuse to ENCRYPT new files with the cancelling sequential-XOR versions
+    # (v8/v10): their KDF derivation appends the chain's final value a second
+    # time, XORing the last stage with itself so it cancels out -- with a single
+    # memory-hard KDF placed last the key collapses to ~SHA256(password||salt),
+    # bypassing the KDF cost (audit 2026-07-06 #3; SECURITY advisory 2026-02).
+    # Default version resolution (M2 decision 2026-07-10, Option A): writes
+    # without an explicit format_version use the latest independent-XOR-only
+    # format; explicit sequential XOR stays pinned at v13 (the last version
+    # that carries the sequential topology). Explicit values are honored
+    # unchanged for API backward compatibility.
+    _explicit_format_version = format_version is not None
+    if format_version is None:
+        format_version = 13 if xor_mode == "sequential" else LATEST_STABLE_FORMAT_VERSION
+
+    # These versions remain fully DECRYPTABLE; only new encryption is blocked.
+    # The escape hatch exists solely so the legacy-format regression tests can
+    # still produce v8/v10 fixtures on purpose.
+    if format_version in _UNSAFE_SEQUENTIAL_XOR_VERSIONS and not allow_insecure_legacy_xor:
+        raise ValueError(
+            f"Refusing to encrypt a new file with format_version={format_version}: "
+            "the v8/v10 sequential-XOR derivation cancels the last KDF stage "
+            "(cost bypass) and is decrypt-only. Use the default, 9, or 13."
+        )
+
+    # fable-review LOW-2 (gitlab#114): fail closed on versions ABOVE the
+    # latest stable format. Every ``>= 14`` gate would treat them as v14, but
+    # the decrypt side fails closed on unknown versions, so the write would
+    # mint a permanently unreadable file stamped with an on-disk version
+    # whose semantics were never specified. Mirrors the decrypt-side bound;
+    # raised before any archiving/temp files, like the refusal above.
+    if _explicit_format_version and format_version > LATEST_STABLE_FORMAT_VERSION:
+        raise ValueError(
+            f"Refusing to encrypt with unknown future format_version="
+            f"{format_version}: the highest supported write format is "
+            f"{LATEST_STABLE_FORMAT_VERSION}. Omit format_version to use "
+            "the current default."
+        )
+
+    # Post-v14 review INFO-1: an explicit legacy version is still honored for
+    # API backward compatibility, but new files below the latest format lack
+    # the v14 protections (#100 TLV KDF seed, #83 KEM transcript binding).
+    # Warn-only, NEVER raise.
+    if _explicit_format_version and format_version < LATEST_STABLE_FORMAT_VERSION:
+        logger.warning(
+            f"Writing a NEW file with legacy format_version {format_version} "
+            f"(< {LATEST_STABLE_FORMAT_VERSION}): it will not carry the v14 "
+            "KDF-seed and PQC transcript-binding protections"
+        )
+        if not quiet:
+            eprint(
+                f"WARNING: writing a NEW file with legacy format_version "
+                f"{format_version}; it lacks the v14 hardening (omit "
+                "format_version to use the current default)"
+            )
+
     # Reset mutable class-level state to prevent leakage between operations
     KeyStretch.key_stretch = False
     KeyStretch.hash_stretch = False
@@ -6346,306 +6721,388 @@ def encrypt_file(
         debug=debug,
     )
 
-    # HSM pepper derivation if HSM plugin provided
+    # gitlab#113 [LOW-1]: all pepper material is confined to the following
+    # try block and wiped in its finally — immediately after key generation,
+    # on success and exception paths alike (wipe-as-soon-as-possible).
     hsm_pepper = None
-    hsm_slot_used = None
-    if hsm_plugin:
-        if not quiet:
-            eprint("Deriving hardware-bound pepper from HSM...")
-
-        try:
-            from .plugin_system import PluginCapability, PluginSecurityContext
-
-            # Create security context for HSM plugin
-            hsm_context = PluginSecurityContext(
-                plugin_id=hsm_plugin.plugin_id,
-                capabilities={
-                    PluginCapability.ACCESS_CONFIG,
-                    PluginCapability.WRITE_LOGS,
-                },
-            )
-            hsm_context.metadata["salt"] = salt
-
-            # Execute HSM plugin
-            result = hsm_plugin.get_hsm_pepper(salt, hsm_context)
-
-            if not result.success:
-                raise KeyDerivationError(f"HSM pepper derivation failed: {result.message}")
-
-            hsm_pepper = result.data.get("hsm_pepper")
-            hsm_slot_used = result.data.get("slot")
-
-            # Comprehensive pepper validation
-            if not hsm_pepper:
-                raise KeyDerivationError("HSM plugin returned no pepper value")
-
-            if not isinstance(hsm_pepper, bytes):
-                raise KeyDerivationError(
-                    f"HSM pepper must be bytes, got {type(hsm_pepper).__name__}"
-                )
-
-            if len(hsm_pepper) < 16:
-                raise KeyDerivationError(
-                    f"HSM pepper too short ({len(hsm_pepper)} bytes), minimum 16 bytes required for security"
-                )
-
-            if len(hsm_pepper) > 128:
-                raise KeyDerivationError(
-                    f"HSM pepper too long ({len(hsm_pepper)} bytes), maximum 128 bytes allowed"
-                )
-
-            # Warning for all-zero pepper (suspicious but technically valid)
-            if hsm_pepper == b"\x00" * len(hsm_pepper):
-                logger.warning(
-                    "HSM pepper is all zeros - this is unusual and may indicate a problem"
-                )
-
-            if not quiet:
-                eprint(f"Hardware pepper derived ({len(hsm_pepper)} bytes)")
-
-            if debug:
-                logger.debug(f"HSM pepper length: {len(hsm_pepper)} bytes")
-                logger.debug(
-                    f"HSM slot used: {hsm_slot_used if hsm_slot_used else 'auto-detected'}"
-                )
-
-        except ImportError:
-            raise KeyDerivationError("Plugin system not available for HSM operation")
-        except Exception as e:
-            raise KeyDerivationError(f"HSM operation failed: {str(e)}")
-
-    # Remote pepper generation/retrieval if pepper plugin provided
     remote_pepper = None
-    remote_pepper_name = None
-
-    if pepper_plugin:
-        if not quiet:
-            eprint("Processing remote pepper...")
-
-        try:
-            if pepper_name:
-                # Retrieve existing pepper by name
-                if not quiet:
-                    eprint(f"Retrieving pepper '{pepper_name}' from remote server...")
-
-                try:
-                    encrypted_pepper_data = pepper_plugin.get_pepper(pepper_name)
-                except Exception as e:
-                    raise KeyDerivationError(f"Failed to retrieve pepper '{pepper_name}': {e}")
-
-                # Decrypt pepper with password
-                # Format: nonce (12 bytes) + ciphertext + tag (16 bytes)
-                if len(encrypted_pepper_data) < 28:  # 12 + 16 minimum
-                    raise KeyDerivationError("Invalid encrypted pepper data format")
-
-                nonce = encrypted_pepper_data[:12]
-                ciphertext_with_tag = encrypted_pepper_data[12:]
-
-                # Derive decryption key from password
-                pepper_key = _derive_pepper_key(password, format_version=format_version)
-
-                try:
-                    aesgcm = AESGCM(pepper_key)
-                    remote_pepper = aesgcm.decrypt(nonce, ciphertext_with_tag, None)
-                except Exception:
-                    raise KeyDerivationError(
-                        "Failed to decrypt pepper - wrong password or corrupted data"
-                    )
-                finally:
-                    secure_memzero(pepper_key)
-
-                remote_pepper_name = pepper_name
-
-            else:
-                # Auto-generate mode: create new pepper
-                # Auto-generate requires a file path for generating file_id
-                if input_is_bytes:
-                    raise ValidationError(
-                        "Auto-generated pepper requires a file path. "
-                        "Use --pepper-name with bytes input."
-                    )
-                if not quiet:
-                    eprint("Generating new remote pepper...")
-
-                # Generate 32-byte random pepper
-                remote_pepper = secrets.token_bytes(32)
-
-                # Derive encryption key from password
-                pepper_key = _derive_pepper_key(password, format_version=format_version)
-
-                # Encrypt pepper with AES-GCM
-                try:
-                    nonce = secrets.token_bytes(12)
-                    aesgcm = AESGCM(pepper_key)
-                    ciphertext_with_tag = aesgcm.encrypt(nonce, remote_pepper, None)
-                finally:
-                    secure_memzero(pepper_key)
-
-                # Store encrypted pepper
-                encrypted_pepper_data = nonce + ciphertext_with_tag
-
-                # Generate file_id for pepper name
-                file_id = hashlib.sha256(os.path.abspath(input_file).encode("utf-8")).hexdigest()[
-                    :32
-                ]
-
-                try:
-                    pepper_plugin.store_pepper(
-                        name=file_id,
-                        pepper_encrypted=encrypted_pepper_data,
-                        description=f"Auto-generated pepper for {os.path.basename(input_file)}",
-                    )
-                    remote_pepper_name = file_id
-
-                    if not quiet:
-                        eprint(f"Pepper stored on remote server (id: {file_id[:16]}...)")
-                except Exception as e:
-                    # If pepper already exists, try to update it instead
-                    if "already exists" in str(e):
-                        try:
-                            if not quiet:
-                                eprint(f"Pepper {file_id[:16]}... already exists, updating...")
-                            pepper_plugin.update_pepper(
-                                name=file_id,
-                                pepper_encrypted=encrypted_pepper_data,
-                                description=f"Auto-generated pepper for {os.path.basename(input_file)} (updated)",
-                            )
-                            remote_pepper_name = file_id
-
-                            if not quiet:
-                                eprint(f"Pepper updated on remote server (id: {file_id[:16]}...)")
-                        except Exception as update_e:
-                            raise KeyDerivationError(
-                                f"Failed to update existing pepper on remote server: {update_e}"
-                            )
-                    else:
-                        raise KeyDerivationError(f"Failed to store pepper on remote server: {e}")
-
-            # Validate pepper
-            if not remote_pepper or len(remote_pepper) < 16:
-                raise KeyDerivationError("Invalid pepper: must be at least 16 bytes")
-
-            if len(remote_pepper) > 128:
-                raise KeyDerivationError("Invalid pepper: exceeds maximum 128 bytes")
-
-            if not quiet:
-                eprint(f"Remote pepper active ({len(remote_pepper)} bytes)")
-
-        except ImportError as e:
-            raise KeyDerivationError(f"Pepper plugin dependencies not available: {e}")
-        except KeyDerivationError:
-            raise
-        except Exception as e:
-            raise KeyDerivationError(f"Pepper operation failed: {str(e)}")
-
-    # Combine HSM pepper and remote pepper if both present
     combined_pepper = None
-    if hsm_pepper and remote_pepper:
-        combined_pepper = hsm_pepper + remote_pepper
-        if not quiet and debug:
+    has_remote_pepper = False
+    try:
+        # HSM pepper derivation if HSM plugin provided
+        hsm_pepper = None
+        hsm_slot_used = None
+        if hsm_plugin:
+            if not quiet:
+                eprint("Deriving hardware-bound pepper from HSM...")
+
+            try:
+                from .plugin_system import PluginCapability, PluginSecurityContext
+
+                # Create security context for HSM plugin
+                hsm_context = PluginSecurityContext(
+                    plugin_id=hsm_plugin.plugin_id,
+                    capabilities={
+                        PluginCapability.ACCESS_CONFIG,
+                        PluginCapability.WRITE_LOGS,
+                    },
+                )
+                hsm_context.metadata["salt"] = salt
+
+                # Execute HSM plugin
+                result = hsm_plugin.get_hsm_pepper(salt, hsm_context)
+
+                if not result.success:
+                    raise KeyDerivationError(f"HSM pepper derivation failed: {result.message}")
+
+                hsm_pepper = result.data.get("hsm_pepper")
+                hsm_slot_used = result.data.get("slot")
+
+                # Comprehensive pepper validation
+                if not hsm_pepper:
+                    raise KeyDerivationError("HSM plugin returned no pepper value")
+
+                if not isinstance(hsm_pepper, bytes):
+                    raise KeyDerivationError(
+                        f"HSM pepper must be bytes, got {type(hsm_pepper).__name__}"
+                    )
+
+                if len(hsm_pepper) < 16:
+                    raise KeyDerivationError(
+                        f"HSM pepper too short ({len(hsm_pepper)} bytes), minimum 16 bytes required for security"
+                    )
+
+                if len(hsm_pepper) > 128:
+                    raise KeyDerivationError(
+                        f"HSM pepper too long ({len(hsm_pepper)} bytes), maximum 128 bytes allowed"
+                    )
+
+                # Warning for all-zero pepper (suspicious but technically valid)
+                if hsm_pepper == b"\x00" * len(hsm_pepper):
+                    logger.warning(
+                        "HSM pepper is all zeros - this is unusual and may indicate a problem"
+                    )
+
+                # gitlab#113 [LOW-1]: hold the pepper in a wipeable buffer so the
+                # finally-block secure_memzero zeroes it in place. The plugin-API
+                # bytes original cannot be wiped (M10 accepted residual).
+                hsm_pepper = bytearray(hsm_pepper)
+
+                if not quiet:
+                    eprint(f"Hardware pepper derived ({len(hsm_pepper)} bytes)")
+
+                if debug:
+                    logger.debug(f"HSM pepper length: {len(hsm_pepper)} bytes")
+                    logger.debug(
+                        f"HSM slot used: {hsm_slot_used if hsm_slot_used else 'auto-detected'}"
+                    )
+
+            except ImportError:
+                raise KeyDerivationError("Plugin system not available for HSM operation")
+            except Exception as e:
+                raise KeyDerivationError(f"HSM operation failed: {str(e)}")
+
+        # Remote pepper generation/retrieval if pepper plugin provided
+        remote_pepper = None
+        remote_pepper_name = None
+
+        if pepper_plugin:
+            if not quiet:
+                eprint("Processing remote pepper...")
+
+            try:
+                if pepper_name:
+                    # Retrieve existing pepper by name
+                    if not quiet:
+                        eprint(f"Retrieving pepper '{pepper_name}' from remote server...")
+
+                    try:
+                        encrypted_pepper_data = pepper_plugin.get_pepper(pepper_name)
+                    except Exception as e:
+                        raise KeyDerivationError(f"Failed to retrieve pepper '{pepper_name}': {e}")
+
+                    # Decrypt pepper with password
+                    # Format: nonce (12 bytes) + ciphertext + tag (16 bytes)
+                    if len(encrypted_pepper_data) < 28:  # 12 + 16 minimum
+                        raise KeyDerivationError("Invalid encrypted pepper data format")
+
+                    nonce = encrypted_pepper_data[:12]
+                    ciphertext_with_tag = encrypted_pepper_data[12:]
+
+                    # Derive decryption key from password
+                    pepper_key = _derive_pepper_key(password, format_version=format_version)
+
+                    try:
+                        aesgcm = AESGCM(pepper_key)
+                        # gitlab#113 [LOW-1]: hold the pepper in a wipeable buffer,
+                        # zeroed in the outer finally. AESGCM.decrypt's immutable
+                        # bytes transient cannot be wiped (M10 accepted residual).
+                        remote_pepper = bytearray(aesgcm.decrypt(nonce, ciphertext_with_tag, None))
+                    except Exception:
+                        raise KeyDerivationError(
+                            "Failed to decrypt pepper - wrong password or corrupted data"
+                        )
+                    finally:
+                        secure_memzero(pepper_key)
+
+                    remote_pepper_name = pepper_name
+
+                else:
+                    # Auto-generate mode: create new pepper
+                    # Auto-generate requires a file path for generating file_id
+                    if input_is_bytes:
+                        raise ValidationError(
+                            "Auto-generated pepper requires a file path. "
+                            "Use --pepper-name with bytes input."
+                        )
+                    if not quiet:
+                        eprint("Generating new remote pepper...")
+
+                    # Generate 32-byte random pepper in a wipeable buffer
+                    # (gitlab#113 [LOW-1]; the token_bytes transient is an M10
+                    # accepted residual), zeroed in the outer finally.
+                    remote_pepper = bytearray(secrets.token_bytes(32))
+
+                    # Derive encryption key from password
+                    pepper_key = _derive_pepper_key(password, format_version=format_version)
+
+                    # Encrypt pepper with AES-GCM
+                    try:
+                        nonce = secrets.token_bytes(12)
+                        aesgcm = AESGCM(pepper_key)
+                        ciphertext_with_tag = aesgcm.encrypt(nonce, remote_pepper, None)
+                    finally:
+                        secure_memzero(pepper_key)
+
+                    # Store encrypted pepper
+                    encrypted_pepper_data = nonce + ciphertext_with_tag
+
+                    # Generate file_id for pepper name
+                    file_id = hashlib.sha256(
+                        os.path.abspath(input_file).encode("utf-8")
+                    ).hexdigest()[:32]
+
+                    try:
+                        pepper_plugin.store_pepper(
+                            name=file_id,
+                            pepper_encrypted=encrypted_pepper_data,
+                            description=f"Auto-generated pepper for {os.path.basename(input_file)}",
+                        )
+                        remote_pepper_name = file_id
+
+                        if not quiet:
+                            eprint(f"Pepper stored on remote server (id: {file_id[:16]}...)")
+                    except Exception as e:
+                        # If pepper already exists, try to update it instead
+                        if "already exists" in str(e):
+                            try:
+                                if not quiet:
+                                    eprint(f"Pepper {file_id[:16]}... already exists, updating...")
+                                pepper_plugin.update_pepper(
+                                    name=file_id,
+                                    pepper_encrypted=encrypted_pepper_data,
+                                    description=f"Auto-generated pepper for {os.path.basename(input_file)} (updated)",
+                                )
+                                remote_pepper_name = file_id
+
+                                if not quiet:
+                                    eprint(
+                                        f"Pepper updated on remote server (id: {file_id[:16]}...)"
+                                    )
+                            except Exception as update_e:
+                                raise KeyDerivationError(
+                                    f"Failed to update existing pepper on remote server: {update_e}"
+                                )
+                        else:
+                            raise KeyDerivationError(
+                                f"Failed to store pepper on remote server: {e}"
+                            )
+
+                # Validate pepper
+                if not remote_pepper or len(remote_pepper) < 16:
+                    raise KeyDerivationError("Invalid pepper: must be at least 16 bytes")
+
+                if len(remote_pepper) > 128:
+                    raise KeyDerivationError("Invalid pepper: exceeds maximum 128 bytes")
+
+                if not quiet:
+                    eprint(f"Remote pepper active ({len(remote_pepper)} bytes)")
+
+            except ImportError as e:
+                raise KeyDerivationError(f"Pepper plugin dependencies not available: {e}")
+            except KeyDerivationError:
+                raise
+            except Exception as e:
+                raise KeyDerivationError(f"Pepper operation failed: {str(e)}")
+
+        # Combine HSM pepper and remote pepper if both present — always a fresh
+        # wipeable buffer, zeroed in the enclosing finally (gitlab#113 [LOW-1]).
+        combined_pepper = _combine_peppers(hsm_pepper, remote_pepper)
+        if hsm_pepper and remote_pepper and not quiet and debug:
             logger.debug(f"Combined HSM+remote pepper: {len(combined_pepper)} bytes")
-    elif hsm_pepper:
-        combined_pepper = hsm_pepper
-    elif remote_pepper:
-        combined_pepper = remote_pepper
 
-    # Streaming uses format_version 12 metadata, and decryption re-derives the
-    # password key from that stored version. Decide streaming and bump the
-    # format_version to 12 BEFORE key derivation so the encrypt-side key matches
-    # the decrypt-side key (issue #50). The full streaming setup runs below.
-    _will_stream = False
-    if not input_is_bytes and not no_streaming and output_file is not None:
-        from .streaming import DEFAULT_STREAMING_THRESHOLD, should_use_streaming
+        # Snapshot for the metadata written later — the buffer itself is
+        # wiped in the finally below, before the metadata is built.
+        has_remote_pepper = bool(remote_pepper)
 
-        _pre_threshold = streaming_threshold if streaming_threshold else DEFAULT_STREAMING_THRESHOLD
-        try:
-            _pre_file_size = os.path.getsize(input_file)
-        except OSError:
-            _pre_file_size = 0
-        _will_stream = should_use_streaming(
-            file_size=_pre_file_size,
-            algorithm=algorithm_value,
-            threshold=_pre_threshold,
-            no_streaming=no_streaming,
-            input_is_bytes=input_is_bytes,
-        )
-    if _will_stream and format_version != 12:
-        if debug:
-            logger.debug(
-                f"STREAMING: forcing format_version {format_version} -> 12 before key "
-                f"derivation so the decrypt-side key matches (issue #50)"
+        # Streaming uses format_version 12 metadata, and decryption re-derives the
+        # password key from that stored version. Decide streaming and bump the
+        # format_version to 12 BEFORE key derivation so the encrypt-side key matches
+        # the decrypt-side key (issue #50). The full streaming setup runs below.
+        _will_stream = False
+        if not input_is_bytes and not no_streaming and output_file is not None:
+            from .streaming import DEFAULT_STREAMING_THRESHOLD, should_use_streaming
+
+            _pre_threshold = (
+                streaming_threshold if streaming_threshold else DEFAULT_STREAMING_THRESHOLD
             )
-        format_version = 12
-
-    # Resolve the XOR composition mode. `xor_mode` decouples mode from version so
-    # that v13 can hold EITHER mode (independent per-component salts, or fixed
-    # sequential). When unset, infer from the version for backward compatibility
-    # (v11/12/13 -> independent; v8/9/10 -> sequential).
-    if xor_mode == "independent":
-        is_independent_xor = True
-        meta_xor_mode = "independent"
-    elif xor_mode == "sequential":
-        is_independent_xor = False
-        meta_xor_mode = "sequential"
-    else:
-        is_independent_xor = format_version >= 11
-        meta_xor_mode = None  # let the metadata builder infer from the version
-
-    # Generate key (now with combined pepper)
-    # Independent XOR (robust XOR-combiner) vs sequential/chained derivation.
-    # v12 (streaming) derives like v11 so decrypt (which routes by xor_mode) matches.
-    if is_independent_xor:
-        # Independent XOR mode - each algorithm processes original input
-        if parallel_kdf:
-            # Parallel execution via multiprocessing
-            from .parallel_kdf import generate_key_independent_xor_parallel
-
-            key, salt, _ = generate_key_independent_xor_parallel(
-                password,
-                salt,
-                hash_config,
-                pbkdf2_iterations=pbkdf2_iterations,
-                quiet=quiet,
+            try:
+                _pre_file_size = os.path.getsize(input_file)
+            except OSError:
+                _pre_file_size = 0
+            _will_stream = should_use_streaming(
+                file_size=_pre_file_size,
                 algorithm=algorithm_value,
-                progress=progress,
-                debug=debug,
-                pqc_keypair=pqc_keypair,
-                hsm_pepper=combined_pepper,
-                format_version=format_version,
-                max_workers=kdf_workers,
+                threshold=_pre_threshold,
+                no_streaming=no_streaming,
+                input_is_bytes=input_is_bytes,
             )
+        # Fail closed BEFORE the streaming force below rewrites format_version:
+        # an explicit v14+ request with sequential XOR must be refused regardless
+        # of file size (M2 decision: no v14 sequential file may ever exist).
+        if format_version >= 14 and xor_mode == "sequential":
+            raise ValueError(
+                f"format_version {format_version} supports only independent-XOR key "
+                f"derivation; use format_version 13 for sequential XOR "
+                f"(--use-xor-composition)"
+            )
+
+        if _will_stream and xor_mode == "sequential":
+            # Streaming has never supported sequential XOR: the decrypt router
+            # sends every v11/v12 streaming file down the independent path, so a
+            # sequentially-derived streaming file fails authentication on decrypt
+            # (verified pre-existing data-loss bug, 2026-07-10). Refuse cleanly
+            # instead of writing an undecryptable file.
+            raise ValueError(
+                "sequential XOR (--use-xor-composition) is not supported with "
+                "streaming: the resulting file could not be decrypted. Disable "
+                "streaming (--no-streaming / no_streaming=True) or use the "
+                "default independent mode."
+            )
+
+        if _will_stream and format_version not in (12, LATEST_STABLE_FORMAT_VERSION):
+            # Streaming pins the format version before key derivation so the
+            # decrypt-side key matches (issue #50). Other requests are upgraded
+            # to the latest version (never downgraded); an explicit
+            # format_version=12 request keeps writing v12. NOTE: no PQC hybrid
+            # algorithm can stream (STREAMING_UNSUPPORTED_ALGORITHMS), so the
+            # v14 KEM transcript binding is one-shot-only by construction --
+            # this force is purely about the streaming key-derivation format.
+            # Post-v14 review INFO-2: visible (non-debug) notice, since an API
+            # caller pinning a version for interop gets a different on-disk
+            # format than requested.
+            logger.info(
+                f"STREAMING: forcing format_version {format_version} -> "
+                f"{LATEST_STABLE_FORMAT_VERSION} before key derivation so the "
+                f"decrypt-side key matches (issue #50)"
+            )
+            if not quiet:
+                eprint(
+                    f"NOTE: streaming upgrades format_version {format_version} -> "
+                    f"{LATEST_STABLE_FORMAT_VERSION} (only v12 and "
+                    f"v{LATEST_STABLE_FORMAT_VERSION} can stream)"
+                )
+            format_version = LATEST_STABLE_FORMAT_VERSION
+
+        # Resolve the XOR composition mode. `xor_mode` decouples mode from version so
+        # that v13 can hold EITHER mode (independent per-component salts, or fixed
+        # sequential). When unset, infer from the version for backward compatibility
+        # (v11/12/13 -> independent; v8/9/10 -> sequential).
+        if xor_mode == "independent":
+            is_independent_xor = True
+            meta_xor_mode = "independent"
+        elif xor_mode == "sequential":
+            is_independent_xor = False
+            meta_xor_mode = "sequential"
         else:
-            # Sequential execution (default)
-            key, salt, _ = generate_key_independent_xor(
+            is_independent_xor = format_version >= 11
+            meta_xor_mode = None  # let the metadata builder infer from the version
+
+        # Fail closed: v14+ is independent-XOR only (M2 decision 2026-07-10).
+        # A sequential v14 file must never exist — the sequential path keeps its
+        # legacy (< 14) derivation semantics and is written as format_version 13.
+        if format_version >= 14 and not is_independent_xor:
+            raise ValueError(
+                f"format_version {format_version} supports only independent-XOR key "
+                f"derivation; use format_version 13 for sequential XOR "
+                f"(--use-xor-composition)"
+            )
+
+        # Generate key (now with combined pepper)
+        # Independent XOR (robust XOR-combiner) vs sequential/chained derivation.
+        # v12 (streaming) derives like v11 so decrypt (which routes by xor_mode) matches.
+        if is_independent_xor:
+            # Independent XOR mode - each algorithm processes original input
+            if parallel_kdf:
+                # Parallel execution via multiprocessing
+                from .parallel_kdf import generate_key_independent_xor_parallel
+
+                key, salt, _ = generate_key_independent_xor_parallel(
+                    password,
+                    salt,
+                    hash_config,
+                    pbkdf2_iterations=pbkdf2_iterations,
+                    quiet=quiet,
+                    algorithm=algorithm_value,
+                    progress=progress,
+                    debug=debug,
+                    pqc_keypair=pqc_keypair,
+                    hsm_pepper=combined_pepper,
+                    format_version=format_version,
+                    max_workers=kdf_workers,
+                )
+            else:
+                # Sequential execution (default)
+                key, salt, _ = generate_key_independent_xor(
+                    password,
+                    salt,
+                    hash_config,
+                    pbkdf2_iterations=pbkdf2_iterations,
+                    quiet=quiet,
+                    algorithm=algorithm_value,
+                    progress=progress,
+                    debug=debug,
+                    pqc_keypair=pqc_keypair,
+                    hsm_pepper=combined_pepper,
+                    format_version=format_version,
+                )
+            # Note: hash_config is still available from the function parameter
+            # Independent XOR returns (key, salt, iv) but we discard iv as it's generated later
+        else:
+            # Sequential mode (v1-v10)
+            key, salt, hash_config = generate_key(
                 password,
                 salt,
                 hash_config,
-                pbkdf2_iterations=pbkdf2_iterations,
-                quiet=quiet,
-                algorithm=algorithm_value,
+                pbkdf2_iterations,
+                quiet,
+                algorithm_value,
                 progress=progress,
                 debug=debug,
                 pqc_keypair=pqc_keypair,
                 hsm_pepper=combined_pepper,
-                format_version=format_version,
+                format_version=format_version,  # v10: Sequential XOR, v9: Secure chained salt
             )
-        # Note: hash_config is still available from the function parameter
-        # Independent XOR returns (key, salt, iv) but we discard iv as it's generated later
-    else:
-        # Sequential mode (v1-v10)
-        key, salt, hash_config = generate_key(
-            password,
-            salt,
-            hash_config,
-            pbkdf2_iterations,
-            quiet,
-            algorithm_value,
-            progress=progress,
-            debug=debug,
-            pqc_keypair=pqc_keypair,
-            hsm_pepper=combined_pepper,
-            format_version=format_version,  # v10: Sequential XOR, v9: Secure chained salt
-        )
+    finally:
+        if hsm_pepper is not None:
+            secure_memzero(hsm_pepper)
+            hsm_pepper = None
+        if remote_pepper is not None:
+            secure_memzero(remote_pepper)
+            remote_pepper = None
+        if combined_pepper is not None:
+            secure_memzero(combined_pepper)
+            combined_pepper = None
 
     # --- Envelope (DEK/KEK) wrapping (opt-in) ---
     # When envelope mode is on, bulk data is encrypted under a random DEK, and
@@ -6738,19 +7195,20 @@ def encrypt_file(
             # New cascade streaming files use the real 192-bit XChaCha layer
             # (format 2); the matching metadata flag is set at the choke point.
             _cascade_enc_streaming = CascadeEncryption(
-                cascade_config, format_version=12, xchacha_nonce_format=2
+                cascade_config, format_version=format_version, xchacha_nonce_format=2
             )
             _cascade_salt_streaming = secrets.token_bytes(32)
 
         # Create streaming encryptor
-        # Streaming always uses format_version=12 (metadata is written as v12)
+        # Streaming pins the format version at the force site above (12 for
+        # sequential requests, the latest otherwise); both use v12+ semantics.
         streaming_enc = StreamingEncryptor(
             key=key,
             algorithm=algorithm_value,
             chunk_size=_streaming_chunk_size,
             cascade_encryptor=_cascade_enc_streaming,
             cascade_salt=_cascade_salt_streaming,
-            format_version=12,
+            format_version=format_version,
             # New single-cipher streaming xchacha files use the real 192-bit
             # construction (24-byte per-chunk nonces); the matching metadata
             # flag is set at the choke point below.
@@ -6789,7 +7247,7 @@ def encrypt_file(
             include_encrypted_hash=False,
             encrypted_hash=None,
             aad_mode=True,
-            format_version=12,
+            format_version=format_version,
         )
 
         # Add streaming section to metadata
@@ -6824,8 +7282,9 @@ def encrypt_file(
         ):
             _enc_md["xchacha_nonce_format"] = 2
         # v13 carries EITHER xor mode; decrypt routes purely by the xor_mode field,
-        # so always stamp it explicitly for v13 (some builders never write it).
-        if format_version == 13:
+        # so always stamp it explicitly for v13+ (some builders never write it).
+        # v14+ is independent-only (enforced fail-closed at the resolution site).
+        if format_version >= 13:
             metadata["xor_mode"] = "independent" if is_independent_xor else "sequential"
         metadata_json = json.dumps(metadata).encode("utf-8")
         metadata_b64 = base64.b64encode(metadata_json)
@@ -7008,11 +7467,9 @@ def encrypt_file(
     # For large files, use progress bar for encryption
     def do_encrypt(aad=None):
         if debug:
-            logger.debug(f"ENCRYPT:KEY Final derived key for {algorithm_value}: {key.hex()}")
+            logger.debug(debug_secret(f"ENCRYPT:KEY Final derived key for {algorithm_value}", key))
             logger.debug(f"ENCRYPT:DATA Input data length: {len(data)} bytes")
-            logger.debug(
-                f"ENCRYPT:DATA Input data (first 64 bytes): {data[:64].hex() if len(data) >= 64 else data.hex()}"
-            )
+            logger.debug(debug_secret("ENCRYPT:DATA Input data (first 64 bytes)", data[:64]))
             logger.debug(
                 f"ENCRYPT:AAD AAD value: {aad if aad is None else f'{len(aad)} bytes: {aad[:100] if len(aad) > 100 else aad}'}"
             )
@@ -7042,9 +7499,11 @@ def encrypt_file(
         if algorithm == EncryptionAlgorithm.FERNET:
             if debug:
                 logger.debug(f"ENCRYPT:FERNET Key length: {len(key)} bytes")
-                logger.debug(f"ENCRYPT:FERNET Key (Fernet base64): {key.decode('ascii')}")
+                logger.debug(
+                    debug_secret("ENCRYPT:FERNET Key (Fernet base64)", key.decode("ascii"))
+                )
                 logger.debug(f"ENCRYPT:FERNET Plaintext length: {len(data)} bytes")
-                logger.debug(f"ENCRYPT:FERNET Plaintext: {data.hex()}")
+                logger.debug(debug_secret("ENCRYPT:FERNET Plaintext", data))
 
             f = Fernet(key)
             encrypted_data = f.encrypt(data)
@@ -7151,7 +7610,7 @@ def encrypt_file(
                         logger.debug(
                             f"ENCRYPT:PQC_SIG Derived AES key length: {len(derived_key)} bytes"
                         )
-                        logger.debug(f"ENCRYPT:PQC_SIG Derived AES key: {derived_key.hex()}")
+                        logger.debug(debug_secret("ENCRYPT:PQC_SIG Derived AES key", derived_key))
 
                     # Encrypt using AES-GCM with derived key
                     nonce = secrets.token_bytes(12)  # 12 bytes for AES-GCM
@@ -7189,6 +7648,7 @@ def encrypt_file(
                         quiet=quiet,
                         verbose=verbose,
                         debug=debug,
+                        format_version=format_version,
                     )
                     public_key, private_key = cipher.generate_keypair()
                     # We'll add these to metadata later
@@ -7201,6 +7661,7 @@ def encrypt_file(
                     encryption_data=encryption_data,
                     verbose=verbose,
                     debug=debug,
+                    format_version=format_version,
                 )
                 return cipher.encrypt(data, public_key, aad=aad)
         else:
@@ -7364,7 +7825,9 @@ def encrypt_file(
             elif algorithm == EncryptionAlgorithm.THREEFISH_1024:
                 if debug:
                     logger.debug(f"ENCRYPT:THREEFISH-1024 Key length: {len(key)} bytes")
-                    logger.debug(f"ENCRYPT:THREEFISH-1024 Key (first 32 bytes): {key[:32].hex()}")
+                    logger.debug(
+                        debug_secret("ENCRYPT:THREEFISH-1024 Key (first 32 bytes)", key[:32])
+                    )
                     logger.debug(
                         f"ENCRYPT:THREEFISH-1024 Using {nonce_size}-byte nonce for encryption"
                     )
@@ -7414,7 +7877,11 @@ def encrypt_file(
                     public_key = pqc_keypair[0]
                 else:
                     # If no keypair provided, we need to create a new one and store it in metadata
-                    cipher = PQCipher(pqc_algo_map[algorithm], quiet=quiet)
+                    cipher = PQCipher(
+                        pqc_algo_map[algorithm],
+                        quiet=quiet,
+                        format_version=format_version,
+                    )
                     public_key, private_key = cipher.generate_keypair()
                     # We'll add these to metadata later
 
@@ -7424,6 +7891,7 @@ def encrypt_file(
                     pqc_algo_map[algorithm],
                     quiet=quiet,
                     encryption_data=encryption_data,
+                    format_version=format_version,
                 )
                 return cipher.encrypt(data, public_key, aad=aad)
             else:
@@ -7635,7 +8103,7 @@ def encrypt_file(
                 hsm_plugin_name=hsm_plugin.plugin_id if hsm_plugin else None,
                 hsm_slot_used=hsm_slot_used,
                 keystore_id=keystore_id,
-                pepper_plugin_name="remote" if remote_pepper else None,
+                pepper_plugin_name="remote" if has_remote_pepper else None,
                 pepper_name=remote_pepper_name,
                 format_version=format_version,
             )
@@ -7655,7 +8123,7 @@ def encrypt_file(
                 include_encrypted_hash=False,  # AEAD mode: no encrypted_hash
                 aad_mode=True,  # Mark as AEAD binding
                 keystore_id=keystore_id,  # Pass keystore ID if present
-                pepper_plugin_name="remote" if remote_pepper else None,
+                pepper_plugin_name="remote" if has_remote_pepper else None,
                 pepper_name=remote_pepper_name,
                 format_version=format_version,
             )
@@ -7682,8 +8150,9 @@ def encrypt_file(
         ):
             _enc_md["xchacha_nonce_format"] = 2
         # v13 carries EITHER xor mode; decrypt routes purely by the xor_mode field,
-        # so always stamp it explicitly for v13 (some builders never write it).
-        if format_version == 13:
+        # so always stamp it explicitly for v13+ (some builders never write it).
+        # v14+ is independent-only (enforced fail-closed at the resolution site).
+        if format_version >= 13:
             metadata["xor_mode"] = "independent" if is_independent_xor else "sequential"
         metadata_json = json.dumps(metadata).encode("utf-8")
         metadata_b64 = base64.b64encode(metadata_json)
@@ -7937,7 +8406,7 @@ def encrypt_file(
                 hsm_plugin_name=hsm_plugin.plugin_id if hsm_plugin else None,
                 hsm_slot_used=hsm_slot_used,
                 keystore_id=keystore_id,
-                pepper_plugin_name="remote" if remote_pepper else None,
+                pepper_plugin_name="remote" if has_remote_pepper else None,
                 pepper_name=remote_pepper_name,
                 format_version=format_version,
             )
@@ -7955,7 +8424,7 @@ def encrypt_file(
                 hsm_plugin_name=hsm_plugin.plugin_id if hsm_plugin else None,
                 hsm_slot_used=hsm_slot_used,
                 keystore_id=keystore_id,  # Pass keystore ID if present
-                pepper_plugin_name="remote" if remote_pepper else None,
+                pepper_plugin_name="remote" if has_remote_pepper else None,
                 pepper_name=remote_pepper_name,
                 format_version=format_version,
             )
@@ -7972,8 +8441,9 @@ def encrypt_file(
             _enc_md["dek_slots"] = _envelope_dek_slots
             _enc_md["dek_slots_mac"] = base64.b64encode(_envelope_dek_slots_mac).decode("ascii")
         # v13 carries EITHER xor mode; decrypt routes purely by the xor_mode field,
-        # so always stamp it explicitly for v13 (some builders never write it).
-        if format_version == 13:
+        # so always stamp it explicitly for v13+ (some builders never write it).
+        # v14+ is independent-only (enforced fail-closed at the resolution site).
+        if format_version >= 13:
             metadata["xor_mode"] = "independent" if is_independent_xor else "sequential"
         metadata_json = json.dumps(metadata).encode("utf-8")
         metadata_base64 = base64.b64encode(metadata_json)
@@ -8131,7 +8601,8 @@ def encrypt_file(
             secure_memzero(encrypted_hash)
             encrypted_hash = None
 
-        # Clean up HSM pepper
+        # Pepper material is wiped much earlier, in the finally right after
+        # key generation (gitlab#113 [LOW-1]); this stanza is a backstop.
         if "hsm_pepper" in locals() and hsm_pepper is not None:
             secure_memzero(hsm_pepper)
             hsm_pepper = None
@@ -8233,11 +8704,19 @@ def extract_file_metadata(input_file, second_password=None):
                 metadata = json.loads(metadata_json)
             except json.JSONDecodeError as e:
                 raise ValueError(f"Invalid JSON in metadata: {e}")
+            # Fail closed even without the schema validator: the handling
+            # branches below accept any format_version >= 4, so an unknown or
+            # future version must be refused here, not fall into v4+ handling.
+            _fallback_fv = metadata.get("format_version", 1)
+            if not isinstance(_fallback_fv, int) or isinstance(_fallback_fv, bool):
+                raise ValueError(f"Unsupported file format version: {_fallback_fv!r}")
+            if _fallback_fv < 1 or _fallback_fv > LATEST_STABLE_FORMAT_VERSION:
+                raise ValueError(f"Unsupported file format version: {_fallback_fv}")
 
         format_version = metadata.get("format_version", 1)
 
         # Extract algorithm based on format version
-        if format_version in [4, 5, 6, 7, 8, 9, 10, 11, 12, 13]:
+        if format_version >= 4:
             encryption = metadata.get("encryption", {})
             algorithm = encryption.get("algorithm", EncryptionAlgorithm.FERNET.value)
             encryption_data = encryption.get("encryption_data", "aes-gcm")
@@ -8790,7 +9269,9 @@ def _derive_envelope_kek(
     # from kdf_config.pbkdf2.rounds (see decrypt_file); pass it via keyword so the
     # KEK matches what a later decrypt derives.
     pbkdf2_iterations = hash_config.get("pbkdf2_iterations", 0)
-    if xor_mode == "independent" or format_version in (11, 12):
+    # v14+ is independent-only: route it here even if a hand-crafted blob
+    # omits xor_mode (mirrors the main decrypt router).
+    if xor_mode == "independent" or format_version in (11, 12) or format_version >= 14:
         key, _, _ = generate_key_independent_xor(
             password,
             salt,
@@ -8853,7 +9334,16 @@ def _rekey_envelope_fast(
     derivation_config = meta.get("derivation_config")
     format_version = meta.get("format_version")
     # Only the formats envelope actually writes; unknown shapes fall back.
-    if not (wrapped_b64 and isinstance(derivation_config, dict) and format_version in (10, 12)):
+    # _derive_envelope_kek is version-generic (sequential vs independent-XOR by
+    # format_version/xor_mode), so every version envelope emits is fast-path
+    # eligible: v14 the current independent-XOR default, v9 the previous
+    # default, v13 the sequential-XOR opt-in, v11/12 the older independent-XOR
+    # forms, and v10 a legacy (decrypt-only) file.
+    if not (
+        wrapped_b64
+        and isinstance(derivation_config, dict)
+        and format_version in (9, 10, 11, 12, 13, 14)
+    ):
         return False
 
     is_cascade = bool(encryption.get("cascade", False))
@@ -9262,7 +9752,7 @@ def rekey_file(
             raise RekeyError(f"Cannot read file metadata: {e}", original_exception=e)
 
         original_algorithm = file_metadata.get("algorithm", EncryptionAlgorithm.FERNET.value)
-        original_format_version = file_metadata.get("format_version", 10)
+        original_format_version = file_metadata.get("format_version", 9)
 
         # Determine encryption settings for re-encryption
         algorithm = new_algorithm if new_algorithm is not None else original_algorithm
@@ -9271,6 +9761,11 @@ def rekey_file(
         format_version = (
             new_format_version if new_format_version is not None else original_format_version
         )
+        # Never re-emit the cancelling sequential-XOR versions (v8/v10) on rekey:
+        # transparently upgrade an inherited legacy version to the safe default
+        # so rekey remains the migration path off a weak v10 file (audit #3).
+        if new_format_version is None and format_version in _UNSAFE_SEQUENTIAL_XOR_VERSIONS:
+            format_version = 9
 
         # Save original file permissions for in-place rekey
         if in_place:
@@ -9289,6 +9784,11 @@ def rekey_file(
         _fast_eligible = (
             new_algorithm is None
             and (new_format_version is None or new_format_version == original_format_version)
+            # Legacy cancelling sequential-XOR files (v8/v10) must NOT be
+            # re-emitted verbatim by the fast-path: force them through the full
+            # re-encrypt below, which upgrades them to the safe v9 default so
+            # rekey stays a real migration off the weak KEK derivation (audit #3).
+            and original_format_version not in _UNSAFE_SEQUENTIAL_XOR_VERSIONS
             and not cascade
             and not cipher_names
             and pepper_plugin is None
@@ -9723,10 +10223,18 @@ def decrypt_file(
                 metadata = json.loads(metadata_json)
             except json.JSONDecodeError as e:
                 raise ValueError(f"Invalid JSON in metadata: {e}")
+            # Fail closed even without the schema validator: the handling
+            # branches below accept any format_version >= 4, so an unknown or
+            # future version must be refused here, not fall into v4+ handling.
+            _fallback_fv = metadata.get("format_version", 1)
+            if not isinstance(_fallback_fv, int) or isinstance(_fallback_fv, bool):
+                raise ValueError(f"Unsupported file format version: {_fallback_fv!r}")
+            if _fallback_fv < 1 or _fallback_fv > LATEST_STABLE_FORMAT_VERSION:
+                raise ValueError(f"Unsupported file format version: {_fallback_fv}")
         # For streaming format v12, the payload is binary (not base64)
         # The streaming decryptor reads the file directly, so we skip base64 decode
         _temp_format_version = metadata.get("format_version", 1)
-        if _temp_format_version == 12 and metadata.get("streaming", {}).get("enabled", False):
+        if _temp_format_version in (12, 14) and metadata.get("streaming", {}).get("enabled", False):
             encrypted_data = b""  # Placeholder; streaming decryptor reads file directly
         else:
             # Non-streaming: load the full encrypted payload
@@ -9826,7 +10334,7 @@ def decrypt_file(
 
     # For format_version 4, 5, 6, 7, 8, 9, 10, or 11, set correct hash_config for printing purposes
     # This doesn't change the actual metadata, just passes the right info to print_hash_config
-    if format_version in [4, 5, 6, 7, 8, 9, 10, 11, 12, 13]:
+    if format_version >= 4:
         # If verbose, pass the full metadata to print_hash_config for proper display
         if verbose:
             print_hash_config_metadata = metadata
@@ -9836,7 +10344,7 @@ def decrypt_file(
         print_hash_config_metadata = metadata.get("hash_config", {})
 
     # Handle format version 4, 5, 6, 7, 8, 9, 10, 11, or 12
-    if format_version in [4, 5, 6, 7, 8, 9, 10, 11, 12, 13]:
+    if format_version >= 4:
         # Extract information from new hierarchical structure
         derivation_config = metadata["derivation_config"]
         salt = base64.b64decode(derivation_config["salt"])
@@ -9892,7 +10400,7 @@ def decrypt_file(
         # Check if this is V8+ cascade format
         is_cascade = encryption.get("cascade", False)
 
-        if format_version in [8, 9, 10, 11, 12, 13] and is_cascade:
+        if format_version >= 8 and is_cascade:
             # Extract cascade information
             cascade_cipher_chain = encryption.get("cipher_chain", [])
             cascade_hkdf_hash = encryption.get("hkdf_hash", "sha256")
@@ -10112,307 +10620,333 @@ def decrypt_file(
         elif not quiet:
             eprint("✅")  # Green check symbol
 
-    # HSM pepper derivation if required
+    # gitlab#113 [LOW-1]: all pepper material is confined to the following
+    # try block and wiped in its finally — immediately after key generation,
+    # on success and exception paths alike (wipe-as-soon-as-possible).
     hsm_pepper = None
-    if hsm_plugin_name:
-        # Auto-load HSM plugin if not provided via CLI
-        if not hsm_plugin:
-            if not quiet:
-                eprint(f"File requires HSM plugin '{hsm_plugin_name}', loading automatically...")
-
-            try:
-                # Use plugin manager to dynamically discover and load HSM plugin
-                from .plugin_system import PluginType, create_default_plugin_manager
-
-                plugin_manager = create_default_plugin_manager()
-                discovered = plugin_manager.discover_plugins()
-
-                # Load discovered plugins
-                for plugin_file in discovered:
-                    plugin_manager.load_plugin(plugin_file)
-
-                # Get HSM plugin by name from plugin manager
-                hsm_plugin = plugin_manager.get_hsm_plugin(hsm_plugin_name)
-
-                if not hsm_plugin:
-                    # List available HSM plugins for better error message
-                    available_hsm = [
-                        p.plugin.plugin_id
-                        for p in plugin_manager.get_plugins_by_type(PluginType.HSM)
-                    ]
-                    available_list = ", ".join(available_hsm) if available_hsm else "none"
-
-                    # Debug logging to help diagnose missing dependencies
-                    logger.debug(f"HSM plugin '{hsm_plugin_name}' not found")
-                    logger.debug(f"Available HSM plugins: {available_list}")
-                    logger.debug("Common causes:")
-                    logger.debug("  - Missing HSM dependencies (yubikey-manager, fido2)")
-                    logger.debug("  - Plugin failed to initialize during loading")
-                    logger.debug("")
-                    logger.debug("💡 To install HSM dependencies:")
-                    logger.debug("   pip install openssl-encrypt[hsm]")
-                    logger.debug("   # OR")
-                    logger.debug("   pip install -r requirements-hsm.txt")
-
-                    raise KeyDerivationError(
-                        f"HSM plugin '{hsm_plugin_name}' not found. "
-                        f"Available HSM plugins: {available_list}. "
-                        f"Ensure the plugin is installed and enabled."
+    remote_pepper = None
+    combined_pepper = None
+    try:
+        # HSM pepper derivation if required
+        hsm_pepper = None
+        if hsm_plugin_name:
+            # Auto-load HSM plugin if not provided via CLI
+            if not hsm_plugin:
+                if not quiet:
+                    eprint(
+                        f"File requires HSM plugin '{hsm_plugin_name}', loading automatically..."
                     )
 
-                # Initialize the plugin
-                init_result = hsm_plugin.initialize({})
+                try:
+                    # Use plugin manager to dynamically discover and load HSM plugin
+                    from .plugin_system import PluginType, create_default_plugin_manager
 
-                if not init_result.success:
-                    # In debug mode, show detailed error with installation instructions
-                    logger.debug(f"HSM Plugin Error: {init_result.message}")
-                    # Check if it's a missing dependency error
-                    if (
-                        "not available" in init_result.message.lower()
-                        or "not installed" in init_result.message.lower()
-                    ):
+                    plugin_manager = create_default_plugin_manager()
+                    discovered = plugin_manager.discover_plugins()
+
+                    # Load discovered plugins
+                    for plugin_file in discovered:
+                        plugin_manager.load_plugin(plugin_file)
+
+                    # Get HSM plugin by name from plugin manager
+                    hsm_plugin = plugin_manager.get_hsm_plugin(hsm_plugin_name)
+
+                    if not hsm_plugin:
+                        # List available HSM plugins for better error message
+                        available_hsm = [
+                            p.plugin.plugin_id
+                            for p in plugin_manager.get_plugins_by_type(PluginType.HSM)
+                        ]
+                        available_list = ", ".join(available_hsm) if available_hsm else "none"
+
+                        # Debug logging to help diagnose missing dependencies
+                        logger.debug(f"HSM plugin '{hsm_plugin_name}' not found")
+                        logger.debug(f"Available HSM plugins: {available_list}")
+                        logger.debug("Common causes:")
+                        logger.debug("  - Missing HSM dependencies (yubikey-manager, fido2)")
+                        logger.debug("  - Plugin failed to initialize during loading")
+                        logger.debug("")
                         logger.debug("💡 To install HSM dependencies:")
                         logger.debug("   pip install openssl-encrypt[hsm]")
                         logger.debug("   # OR")
                         logger.debug("   pip install -r requirements-hsm.txt")
 
+                        raise KeyDerivationError(
+                            f"HSM plugin '{hsm_plugin_name}' not found. "
+                            f"Available HSM plugins: {available_list}. "
+                            f"Ensure the plugin is installed and enabled."
+                        )
+
+                    # Initialize the plugin
+                    init_result = hsm_plugin.initialize({})
+
+                    if not init_result.success:
+                        # In debug mode, show detailed error with installation instructions
+                        logger.debug(f"HSM Plugin Error: {init_result.message}")
+                        # Check if it's a missing dependency error
+                        if (
+                            "not available" in init_result.message.lower()
+                            or "not installed" in init_result.message.lower()
+                        ):
+                            logger.debug("💡 To install HSM dependencies:")
+                            logger.debug("   pip install openssl-encrypt[hsm]")
+                            logger.debug("   # OR")
+                            logger.debug("   pip install -r requirements-hsm.txt")
+
+                        raise KeyDerivationError(
+                            f"Failed to initialize HSM plugin '{hsm_plugin_name}': {init_result.message}"
+                        )
+
+                    if not quiet:
+                        eprint(f"✅ Auto-loaded HSM plugin: {hsm_plugin.name}")
+
+                except ImportError as e:
                     raise KeyDerivationError(
-                        f"Failed to initialize HSM plugin '{hsm_plugin_name}': {init_result.message}"
+                        f"Cannot load HSM plugin '{hsm_plugin_name}': {e}. "
+                        f"Install plugin dependencies or check plugin availability."
+                    )
+
+            # Validate plugin matches metadata, allowing protocol-compatible
+            # families (e.g. YubiKey/OnlyKey HMAC-SHA1 challenge-response) so a
+            # fleet device loaded with the same secret can decrypt the file.
+            if not _hsm_plugins_compatible(hsm_plugin.plugin_id, hsm_plugin_name):
+                raise KeyDerivationError(
+                    f"File was encrypted with HSM plugin '{hsm_plugin_name}' but '{hsm_plugin.plugin_id}' provided. "
+                    f"Use --hsm {hsm_plugin_name} to decrypt."
+                )
+
+            if not quiet:
+                eprint("Deriving hardware-bound pepper from HSM for decryption...")
+
+            try:
+                from .plugin_system import PluginCapability, PluginSecurityContext
+
+                # Create security context for HSM plugin
+                hsm_context = PluginSecurityContext(
+                    plugin_id=hsm_plugin.plugin_id,
+                    capabilities={
+                        PluginCapability.ACCESS_CONFIG,
+                        PluginCapability.WRITE_LOGS,
+                    },
+                )
+                hsm_context.metadata["salt"] = salt
+
+                # Resolve slot: explicit --hsm-slot wins over stored metadata so
+                # a compatible device may hold the secret in a different slot
+                resolved_slot = _resolve_hsm_slot(hsm_slot, hsm_config)
+                if resolved_slot:
+                    hsm_context.config["slot"] = resolved_slot
+
+                # Execute HSM plugin
+                result = hsm_plugin.get_hsm_pepper(salt, hsm_context)
+
+                if not result.success:
+                    raise KeyDerivationError(f"HSM pepper derivation failed: {result.message}")
+
+                hsm_pepper = result.data.get("hsm_pepper")
+
+                # Comprehensive pepper validation
+                if not hsm_pepper:
+                    raise KeyDerivationError("HSM plugin returned no pepper value")
+
+                if not isinstance(hsm_pepper, bytes):
+                    raise KeyDerivationError(
+                        f"HSM pepper must be bytes, got {type(hsm_pepper).__name__}"
+                    )
+
+                if len(hsm_pepper) < 16:
+                    raise KeyDerivationError(
+                        f"HSM pepper too short ({len(hsm_pepper)} bytes), minimum 16 bytes required for security"
+                    )
+
+                if len(hsm_pepper) > 128:
+                    raise KeyDerivationError(
+                        f"HSM pepper too long ({len(hsm_pepper)} bytes), maximum 128 bytes allowed"
+                    )
+
+                # Warning for all-zero pepper (suspicious but technically valid)
+                if hsm_pepper == b"\x00" * len(hsm_pepper):
+                    logger.warning(
+                        "HSM pepper is all zeros - this is unusual and may indicate a problem"
+                    )
+
+                # gitlab#113 [LOW-1]: hold the pepper in a wipeable buffer so the
+                # finally-block secure_memzero zeroes it in place. The plugin-API
+                # bytes original cannot be wiped (M10 accepted residual).
+                hsm_pepper = bytearray(hsm_pepper)
+
+                if not quiet:
+                    eprint(f"Hardware pepper derived ({len(hsm_pepper)} bytes)")
+
+                if debug:
+                    logger.debug(f"HSM pepper length: {len(hsm_pepper)} bytes")
+
+            except ImportError:
+                raise KeyDerivationError("Plugin system not available for HSM operation")
+            except Exception as e:
+                raise KeyDerivationError(f"HSM operation failed: {str(e)}")
+
+        # Remote pepper retrieval if required
+        remote_pepper = None
+        if pepper_plugin_name:
+            if not quiet:
+                eprint(f"File requires remote pepper plugin '{pepper_plugin_name}'...")
+
+            try:
+                from ..plugins.pepper import PepperConfig, PepperError, PepperPlugin
+
+                config = PepperConfig.from_file()
+                if not config.enabled:
+                    raise KeyDerivationError(
+                        f"File requires pepper plugin but it's not configured. "
+                        f"Configure at: {PepperConfig.get_default_config_path()}"
+                    )
+
+                pepper_plugin = PepperPlugin(config)
+
+                if not pepper_name:
+                    raise KeyDerivationError(
+                        "File requires remote pepper but pepper_name not found in metadata"
                     )
 
                 if not quiet:
-                    eprint(f"✅ Auto-loaded HSM plugin: {hsm_plugin.name}")
+                    eprint(f"Retrieving pepper '{pepper_name[:16]}...' from remote server...")
+
+                try:
+                    encrypted_pepper_data = pepper_plugin.get_pepper(pepper_name)
+                except Exception as e:
+                    raise KeyDerivationError(
+                        f"Failed to retrieve pepper from server. "
+                        f"Ensure you have network access and proper mTLS configuration. Error: {e}"
+                    )
+
+                # Decrypt pepper with password
+                if len(encrypted_pepper_data) < 28:  # 12 + 16 minimum
+                    raise KeyDerivationError("Invalid encrypted pepper data format from server")
+
+                nonce = encrypted_pepper_data[:12]
+                ciphertext_with_tag = encrypted_pepper_data[12:]
+
+                # Derive decryption key from password
+                pepper_key = _derive_pepper_key(password, format_version=format_version)
+
+                try:
+                    aesgcm = AESGCM(pepper_key)
+                    # gitlab#113 [LOW-1]: hold the pepper in a wipeable buffer,
+                    # zeroed in the outer finally. AESGCM.decrypt's immutable
+                    # bytes transient cannot be wiped (M10 accepted residual).
+                    remote_pepper = bytearray(aesgcm.decrypt(nonce, ciphertext_with_tag, None))
+                except Exception:
+                    # This could be wrong password or corrupted data
+                    raise AuthenticationError(
+                        "Failed to decrypt remote pepper - wrong password or corrupted pepper data"
+                    )
+                finally:
+                    secure_memzero(pepper_key)
+
+                # Validate pepper
+                if not remote_pepper or len(remote_pepper) < 16:
+                    raise KeyDerivationError("Invalid pepper retrieved from server")
+
+                if not quiet:
+                    eprint(f"Remote pepper decrypted ({len(remote_pepper)} bytes)")
 
             except ImportError as e:
                 raise KeyDerivationError(
-                    f"Cannot load HSM plugin '{hsm_plugin_name}': {e}. "
-                    f"Install plugin dependencies or check plugin availability."
+                    f"Pepper plugin not available: {e}. Install pepper plugin dependencies."
                 )
-
-        # Validate plugin matches metadata, allowing protocol-compatible
-        # families (e.g. YubiKey/OnlyKey HMAC-SHA1 challenge-response) so a
-        # fleet device loaded with the same secret can decrypt the file.
-        if not _hsm_plugins_compatible(hsm_plugin.plugin_id, hsm_plugin_name):
-            raise KeyDerivationError(
-                f"File was encrypted with HSM plugin '{hsm_plugin_name}' but '{hsm_plugin.plugin_id}' provided. "
-                f"Use --hsm {hsm_plugin_name} to decrypt."
-            )
-
-        if not quiet:
-            eprint("Deriving hardware-bound pepper from HSM for decryption...")
-
-        try:
-            from .plugin_system import PluginCapability, PluginSecurityContext
-
-            # Create security context for HSM plugin
-            hsm_context = PluginSecurityContext(
-                plugin_id=hsm_plugin.plugin_id,
-                capabilities={
-                    PluginCapability.ACCESS_CONFIG,
-                    PluginCapability.WRITE_LOGS,
-                },
-            )
-            hsm_context.metadata["salt"] = salt
-
-            # Resolve slot: explicit --hsm-slot wins over stored metadata so
-            # a compatible device may hold the secret in a different slot
-            resolved_slot = _resolve_hsm_slot(hsm_slot, hsm_config)
-            if resolved_slot:
-                hsm_context.config["slot"] = resolved_slot
-
-            # Execute HSM plugin
-            result = hsm_plugin.get_hsm_pepper(salt, hsm_context)
-
-            if not result.success:
-                raise KeyDerivationError(f"HSM pepper derivation failed: {result.message}")
-
-            hsm_pepper = result.data.get("hsm_pepper")
-
-            # Comprehensive pepper validation
-            if not hsm_pepper:
-                raise KeyDerivationError("HSM plugin returned no pepper value")
-
-            if not isinstance(hsm_pepper, bytes):
-                raise KeyDerivationError(
-                    f"HSM pepper must be bytes, got {type(hsm_pepper).__name__}"
-                )
-
-            if len(hsm_pepper) < 16:
-                raise KeyDerivationError(
-                    f"HSM pepper too short ({len(hsm_pepper)} bytes), minimum 16 bytes required for security"
-                )
-
-            if len(hsm_pepper) > 128:
-                raise KeyDerivationError(
-                    f"HSM pepper too long ({len(hsm_pepper)} bytes), maximum 128 bytes allowed"
-                )
-
-            # Warning for all-zero pepper (suspicious but technically valid)
-            if hsm_pepper == b"\x00" * len(hsm_pepper):
-                logger.warning(
-                    "HSM pepper is all zeros - this is unusual and may indicate a problem"
-                )
-
-            if not quiet:
-                eprint(f"Hardware pepper derived ({len(hsm_pepper)} bytes)")
-
-            if debug:
-                logger.debug(f"HSM pepper length: {len(hsm_pepper)} bytes")
-
-        except ImportError:
-            raise KeyDerivationError("Plugin system not available for HSM operation")
-        except Exception as e:
-            raise KeyDerivationError(f"HSM operation failed: {str(e)}")
-
-    # Remote pepper retrieval if required
-    remote_pepper = None
-    if pepper_plugin_name:
-        if not quiet:
-            eprint(f"File requires remote pepper plugin '{pepper_plugin_name}'...")
-
-        try:
-            from ..plugins.pepper import PepperConfig, PepperError, PepperPlugin
-
-            config = PepperConfig.from_file()
-            if not config.enabled:
-                raise KeyDerivationError(
-                    f"File requires pepper plugin but it's not configured. "
-                    f"Configure at: {PepperConfig.get_default_config_path()}"
-                )
-
-            pepper_plugin = PepperPlugin(config)
-
-            if not pepper_name:
-                raise KeyDerivationError(
-                    "File requires remote pepper but pepper_name not found in metadata"
-                )
-
-            if not quiet:
-                eprint(f"Retrieving pepper '{pepper_name[:16]}...' from remote server...")
-
-            try:
-                encrypted_pepper_data = pepper_plugin.get_pepper(pepper_name)
+            except (KeyDerivationError, AuthenticationError):
+                raise
             except Exception as e:
-                raise KeyDerivationError(
-                    f"Failed to retrieve pepper from server. "
-                    f"Ensure you have network access and proper mTLS configuration. Error: {e}"
-                )
+                raise KeyDerivationError(f"Pepper retrieval failed: {str(e)}")
 
-            # Decrypt pepper with password
-            if len(encrypted_pepper_data) < 28:  # 12 + 16 minimum
-                raise KeyDerivationError("Invalid encrypted pepper data format from server")
-
-            nonce = encrypted_pepper_data[:12]
-            ciphertext_with_tag = encrypted_pepper_data[12:]
-
-            # Derive decryption key from password
-            pepper_key = _derive_pepper_key(password, format_version=format_version)
-
-            try:
-                aesgcm = AESGCM(pepper_key)
-                remote_pepper = aesgcm.decrypt(nonce, ciphertext_with_tag, None)
-            except Exception:
-                # This could be wrong password or corrupted data
-                raise AuthenticationError(
-                    "Failed to decrypt remote pepper - wrong password or corrupted pepper data"
-                )
-            finally:
-                secure_memzero(pepper_key)
-
-            # Validate pepper
-            if not remote_pepper or len(remote_pepper) < 16:
-                raise KeyDerivationError("Invalid pepper retrieved from server")
-
-            if not quiet:
-                eprint(f"Remote pepper decrypted ({len(remote_pepper)} bytes)")
-
-        except ImportError as e:
-            raise KeyDerivationError(
-                f"Pepper plugin not available: {e}. Install pepper plugin dependencies."
-            )
-        except (KeyDerivationError, AuthenticationError):
-            raise
-        except Exception as e:
-            raise KeyDerivationError(f"Pepper retrieval failed: {str(e)}")
-
-    # Combine HSM pepper and remote pepper
-    combined_pepper = None
-    if hsm_pepper and remote_pepper:
-        combined_pepper = hsm_pepper + remote_pepper
-        if not quiet and debug:
+        # Combine HSM pepper and remote pepper — always a fresh wipeable buffer,
+        # zeroed in the enclosing finally (gitlab#113 [LOW-1]).
+        combined_pepper = _combine_peppers(hsm_pepper, remote_pepper)
+        if hsm_pepper and remote_pepper and not quiet and debug:
             logger.debug(f"Combined HSM+remote pepper: {len(combined_pepper)} bytes")
-    elif hsm_pepper:
-        combined_pepper = hsm_pepper
-    elif remote_pepper:
-        combined_pepper = remote_pepper
 
-    # Generate the key from the password and salt (with combined pepper if applicable)
-    if not quiet:
-        eprint("Generating decryption key ✅")  # Green check symbol)
+        # Generate the key from the password and salt (with combined pepper if applicable)
+        if not quiet:
+            eprint("Generating decryption key ✅")  # Green check symbol)
 
-    # Check XOR mode from metadata to determine which key generation function to use
-    xor_mode = metadata.get("xor_mode", "sequential")  # Default to sequential for backward compat
+        # Check XOR mode from metadata to determine which key generation function to use
+        xor_mode = metadata.get(
+            "xor_mode", "sequential"
+        )  # Default to sequential for backward compat
 
-    # v11+ uses independent XOR, v1-v10 use sequential (including v8/v10 sequential XOR)
-    _recovery_requested = (
-        recovery_code is not None
-        or recovery_passphrase is not None
-        or recovery_private_key is not None
-    )
-    if _recovery_requested:
-        # Recovery path: the DEK is unlocked from a recovery slot at the
-        # envelope-unwrap step below, so the password-derived KEK is not needed.
-        key = None
-    elif xor_mode == "independent" or format_version in (11, 12):
-        # Independent XOR mode (robust XOR-combiner)
-        if parallel_kdf:
-            # Parallel execution via multiprocessing
-            from .parallel_kdf import generate_key_independent_xor_parallel
-
-            key, _, _ = generate_key_independent_xor_parallel(
-                password,
-                salt,
-                hash_config,
-                pbkdf2_iterations=pbkdf2_iterations,
-                quiet=quiet,
-                algorithm=algorithm,
-                progress=progress,
-                debug=debug,
-                pqc_keypair=pqc_info,
-                hsm_pepper=combined_pepper,
-                format_version=format_version,
-                max_workers=kdf_workers,
-            )
-        else:
-            # Sequential execution (default)
-            key, _, _ = generate_key_independent_xor(
-                password,
-                salt,
-                hash_config,
-                pbkdf2_iterations=pbkdf2_iterations,
-                quiet=quiet,
-                algorithm=algorithm,
-                progress=progress,
-                debug=debug,
-                pqc_keypair=pqc_info,
-                hsm_pepper=combined_pepper,
-                format_version=format_version,
-            )
-    else:
-        # Sequential mode (v1-v10, including v8/v10 sequential XOR)
-        key, _, _ = generate_key(
-            password,
-            salt,
-            hash_config,
-            pbkdf2_iterations,
-            quiet,
-            algorithm,
-            progress=progress,
-            debug=debug,
-            pqc_keypair=pqc_info,
-            hsm_pepper=combined_pepper,
-            format_version=format_version,  # Use version from file metadata for backward compatibility
+        # v11+ uses independent XOR, v1-v10 use sequential (including v8/v10 sequential XOR)
+        _recovery_requested = (
+            recovery_code is not None
+            or recovery_passphrase is not None
+            or recovery_private_key is not None
         )
+        if _recovery_requested:
+            # Recovery path: the DEK is unlocked from a recovery slot at the
+            # envelope-unwrap step below, so the password-derived KEK is not needed.
+            key = None
+        elif xor_mode == "independent" or format_version in (11, 12) or format_version >= 14:
+            # Independent XOR mode (robust XOR-combiner). v14+ is independent-only
+            # by design (M2 decision), so route it here even if a hand-crafted
+            # blob omits xor_mode — the v14 schema also requires xor_mode.
+            if parallel_kdf:
+                # Parallel execution via multiprocessing
+                from .parallel_kdf import generate_key_independent_xor_parallel
+
+                key, _, _ = generate_key_independent_xor_parallel(
+                    password,
+                    salt,
+                    hash_config,
+                    pbkdf2_iterations=pbkdf2_iterations,
+                    quiet=quiet,
+                    algorithm=algorithm,
+                    progress=progress,
+                    debug=debug,
+                    pqc_keypair=pqc_info,
+                    hsm_pepper=combined_pepper,
+                    format_version=format_version,
+                    max_workers=kdf_workers,
+                )
+            else:
+                # Sequential execution (default)
+                key, _, _ = generate_key_independent_xor(
+                    password,
+                    salt,
+                    hash_config,
+                    pbkdf2_iterations=pbkdf2_iterations,
+                    quiet=quiet,
+                    algorithm=algorithm,
+                    progress=progress,
+                    debug=debug,
+                    pqc_keypair=pqc_info,
+                    hsm_pepper=combined_pepper,
+                    format_version=format_version,
+                )
+        else:
+            # Sequential mode (v1-v10, including v8/v10 sequential XOR)
+            key, _, _ = generate_key(
+                password,
+                salt,
+                hash_config,
+                pbkdf2_iterations,
+                quiet,
+                algorithm,
+                progress=progress,
+                debug=debug,
+                pqc_keypair=pqc_info,
+                hsm_pepper=combined_pepper,
+                format_version=format_version,  # Use version from file metadata for backward compatibility
+            )
+    finally:
+        if hsm_pepper is not None:
+            secure_memzero(hsm_pepper)
+            hsm_pepper = None
+        if remote_pepper is not None:
+            secure_memzero(remote_pepper)
+            remote_pepper = None
+        if combined_pepper is not None:
+            secure_memzero(combined_pepper)
+            combined_pepper = None
 
     # --- Envelope (DEK/KEK) unwrap (opt-in, auto-detected) ---
     # If the file was written in envelope mode, the password-derived key is the
@@ -10562,7 +11096,7 @@ def decrypt_file(
     if pqc_has_private_key:
         try:
             # Handle different format versions
-            if format_version in [4, 5, 6, 7, 8, 9, 10, 11, 12, 13]:
+            if format_version >= 4:
                 # Get encrypted private key from v4+ structure
                 encrypted_private_key = base64.b64decode(metadata["encryption"]["pqc_private_key"])
             else:  # format_version 3
@@ -10575,7 +11109,7 @@ def decrypt_file(
             if pqc_key_is_encrypted:
                 # We need to decrypt the private key using the separately derived key
                 # Get the salt from metadata based on format version
-                if format_version in [4, 5, 6, 7, 8, 9, 10]:
+                if format_version >= 4:
                     if "pqc_key_salt" not in metadata["encryption"]:
                         if not quiet:
                             eprint("Failed to decrypt post-quantum private key - wrong format")
@@ -10673,7 +11207,7 @@ def decrypt_file(
                 eprint(f"Error processing PQC private key: {str(e)}")
             # If there's an error, we'll continue without a private key    # Decrypt the data
     # --- Streaming decryption path for format_version 12 ---
-    if format_version == 12 and metadata.get("streaming", {}).get("enabled", False):
+    if format_version in (12, 14) and metadata.get("streaming", {}).get("enabled", False):
         from .streaming import StreamingDecryptor
 
         streaming_meta = metadata["streaming"]
@@ -10793,7 +11327,7 @@ def decrypt_file(
 
     def do_decrypt():
         if debug:
-            logger.debug(f"DECRYPT:KEY Final derived key for {algorithm}: {key.hex()}")
+            logger.debug(debug_secret(f"DECRYPT:KEY Final derived key for {algorithm}", key))
             logger.debug(f"DECRYPT:DATA Encrypted data length: {len(encrypted_data)} bytes")
             logger.debug(
                 f"DECRYPT:DATA Encrypted data (first 64 bytes): {encrypted_data[:64].hex() if len(encrypted_data) >= 64 else encrypted_data.hex()}"
@@ -10839,7 +11373,9 @@ def decrypt_file(
             if debug:
                 logger.debug(f"DECRYPT:CASCADE Decrypted data length: {len(decrypted_data)} bytes")
                 logger.debug(
-                    f"DECRYPT:CASCADE Decrypted data (first 64 bytes): {decrypted_data[:64].hex() if len(decrypted_data) >= 64 else decrypted_data.hex()}"
+                    debug_secret(
+                        "DECRYPT:CASCADE Decrypted data (first 64 bytes)", decrypted_data[:64]
+                    )
                 )
 
             return decrypted_data
@@ -10847,7 +11383,9 @@ def decrypt_file(
         if algorithm == EncryptionAlgorithm.FERNET.value:
             if debug:
                 logger.debug(f"DECRYPT:FERNET Key length: {len(key)} bytes")
-                logger.debug(f"DECRYPT:FERNET Key (Fernet base64): {key.decode('ascii')}")
+                logger.debug(
+                    debug_secret("DECRYPT:FERNET Key (Fernet base64)", key.decode("ascii"))
+                )
                 logger.debug(f"DECRYPT:FERNET Encrypted token length: {len(encrypted_data)} bytes")
                 logger.debug(
                     f"DECRYPT:FERNET Encrypted token (base64): {encrypted_data.decode('ascii')}"
@@ -10861,7 +11399,7 @@ def decrypt_file(
                 logger.debug(
                     f"DECRYPT:FERNET Decrypted plaintext length: {len(decrypted_data)} bytes"
                 )
-                logger.debug(f"DECRYPT:FERNET Decrypted plaintext: {decrypted_data.hex()}")
+                logger.debug(debug_secret("DECRYPT:FERNET Decrypted plaintext", decrypted_data))
 
             return decrypted_data
         # Handle PQC algorithms first to ensure they're processed properly
@@ -10955,7 +11493,7 @@ def decrypt_file(
                         logger.debug(
                             f"DECRYPT:PQC_SIG Derived AES key length: {len(derived_key)} bytes"
                         )
-                        logger.debug(f"DECRYPT:PQC_SIG Derived AES key: {derived_key.hex()}")
+                        logger.debug(debug_secret("DECRYPT:PQC_SIG Derived AES key", derived_key))
 
                     # Decrypt using AES-GCM with derived key
                     nonce = encrypted_data[:12]  # First 12 bytes are nonce
@@ -10975,7 +11513,7 @@ def decrypt_file(
                         logger.debug(
                             f"DECRYPT:PQC_SIG Decrypted data length: {len(decrypted_data)} bytes"
                         )
-                        logger.debug(f"DECRYPT:PQC_SIG Decrypted data: {decrypted_data.hex()}")
+                        logger.debug(debug_secret("DECRYPT:PQC_SIG Decrypted data", decrypted_data))
                 finally:
                     secure_memzero(derived_key)
 
@@ -10991,6 +11529,7 @@ def decrypt_file(
                     encryption_data=encryption_data,
                     verbose=verbose,
                     debug=debug,
+                    format_version=format_version,
                 )
                 try:
                     # Pass the full file contents for recovery if needed
@@ -11063,7 +11602,9 @@ def decrypt_file(
                                 logger.debug(
                                     f"DECRYPT:AES_SIV Decrypted plaintext length: {len(result)} bytes"
                                 )
-                                logger.debug(f"DECRYPT:AES_SIV Decrypted plaintext: {result.hex()}")
+                                logger.debug(
+                                    debug_secret("DECRYPT:AES_SIV Decrypted plaintext", result)
+                                )
 
                             return result
                         else:
@@ -11086,7 +11627,9 @@ def decrypt_file(
                                 logger.debug(
                                     f"DECRYPT:AES_SIV Decrypted plaintext length: {len(result)} bytes"
                                 )
-                                logger.debug(f"DECRYPT:AES_SIV Decrypted plaintext: {result.hex()}")
+                                logger.debug(
+                                    debug_secret("DECRYPT:AES_SIV Decrypted plaintext", result)
+                                )
 
                             return result
 
@@ -11124,7 +11667,9 @@ def decrypt_file(
                                 logger.debug(
                                     f"DECRYPT:AES_GCM Decrypted plaintext length: {len(result)} bytes"
                                 )
-                                logger.debug(f"DECRYPT:AES_GCM Decrypted plaintext: {result.hex()}")
+                                logger.debug(
+                                    debug_secret("DECRYPT:AES_GCM Decrypted plaintext", result)
+                                )
 
                             return result
                         elif algorithm == EncryptionAlgorithm.AES_GCM_SIV.value:
@@ -11142,7 +11687,7 @@ def decrypt_file(
                                     f"DECRYPT:AES_GCM_SIV Decrypted plaintext length: {len(result)} bytes"
                                 )
                                 logger.debug(
-                                    f"DECRYPT:AES_GCM_SIV Decrypted plaintext: {result.hex()}"
+                                    debug_secret("DECRYPT:AES_GCM_SIV Decrypted plaintext", result)
                                 )
 
                             return result
@@ -11161,7 +11706,7 @@ def decrypt_file(
                                     f"DECRYPT:AES_OCB3 Decrypted plaintext length: {len(result)} bytes"
                                 )
                                 logger.debug(
-                                    f"DECRYPT:AES_OCB3 Decrypted plaintext: {result.hex()}"
+                                    debug_secret("DECRYPT:AES_OCB3 Decrypted plaintext", result)
                                 )
 
                             return result
@@ -11180,7 +11725,7 @@ def decrypt_file(
                                     f"DECRYPT:CHACHA20 Decrypted plaintext length: {len(result)} bytes"
                                 )
                                 logger.debug(
-                                    f"DECRYPT:CHACHA20 Decrypted plaintext: {result.hex()}"
+                                    debug_secret("DECRYPT:CHACHA20 Decrypted plaintext", result)
                                 )
 
                             return result
@@ -11208,7 +11753,7 @@ def decrypt_file(
                                     f"DECRYPT:XCHACHA20 Decrypted plaintext length: {len(result)} bytes"
                                 )
                                 logger.debug(
-                                    f"DECRYPT:XCHACHA20 Decrypted plaintext: {result.hex()}"
+                                    debug_secret("DECRYPT:XCHACHA20 Decrypted plaintext", result)
                                 )
 
                             return result
@@ -11225,7 +11770,7 @@ def decrypt_file(
                                     f"DECRYPT:CAMELLIA Decrypted plaintext length: {len(result)} bytes"
                                 )
                                 logger.debug(
-                                    f"DECRYPT:CAMELLIA Decrypted plaintext: {result.hex()}"
+                                    debug_secret("DECRYPT:CAMELLIA Decrypted plaintext", result)
                                 )
 
                             return result
@@ -11247,7 +11792,9 @@ def decrypt_file(
                                     f"DECRYPT:THREEFISH-512 Decrypted plaintext length: {len(result)} bytes"
                                 )
                                 logger.debug(
-                                    f"DECRYPT:THREEFISH-512 Decrypted plaintext: {result.hex()}"
+                                    debug_secret(
+                                        "DECRYPT:THREEFISH-512 Decrypted plaintext", result
+                                    )
                                 )
 
                             return SecureBytes(result)
@@ -11255,7 +11802,9 @@ def decrypt_file(
                             if debug:
                                 logger.debug(f"DECRYPT:THREEFISH-1024 Key length: {len(key)} bytes")
                                 logger.debug(
-                                    f"DECRYPT:THREEFISH-1024 Key (first 32 bytes): {key[:32].hex()}"
+                                    debug_secret(
+                                        "DECRYPT:THREEFISH-1024 Key (first 32 bytes)", key[:32]
+                                    )
                                 )
                                 logger.debug(
                                     f"DECRYPT:THREEFISH-1024 Nonce (first 32 bytes): {nonce[:min(32, effective_size)].hex()}"
@@ -11282,7 +11831,9 @@ def decrypt_file(
                                     f"DECRYPT:THREEFISH-1024 Decrypted plaintext length: {len(result)} bytes"
                                 )
                                 logger.debug(
-                                    f"DECRYPT:THREEFISH-1024 Decrypted plaintext: {result.hex()}"
+                                    debug_secret(
+                                        "DECRYPT:THREEFISH-1024 Decrypted plaintext", result
+                                    )
                                 )
 
                             return SecureBytes(result)
@@ -11310,7 +11861,7 @@ def decrypt_file(
     if debug:
         logger.debug(f"DECRYPT:OUTPUT Decrypted data length: {len(decrypted_data)} bytes")
         logger.debug(
-            f"DECRYPT:OUTPUT Decrypted data (first 64 bytes): {decrypted_data[:64].hex() if len(decrypted_data) >= 64 else decrypted_data.hex()}"
+            debug_secret("DECRYPT:OUTPUT Decrypted data (first 64 bytes)", decrypted_data[:64])
         )
 
     if not quiet:
@@ -11447,7 +11998,8 @@ def decrypt_file(
             secure_memzero(file_content)
             file_content = None
 
-        # Clean up HSM pepper
+        # Pepper material is wiped much earlier, in the finally right after
+        # key generation (gitlab#113 [LOW-1]); this stanza is a backstop.
         if "hsm_pepper" in locals() and hsm_pepper is not None:
             secure_memzero(hsm_pepper)
             hsm_pepper = None

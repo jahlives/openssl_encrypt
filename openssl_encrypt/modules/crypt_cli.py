@@ -37,6 +37,7 @@ from .algorithm_warnings import (
 from .crypt_core import (
     ARGON2_AVAILABLE,
     ARGON2_TYPE_INT_MAP,
+    LATEST_STABLE_FORMAT_VERSION,
     WHIRLPOOL_AVAILABLE,
     EncryptionAlgorithm,
     check_argon2_support,
@@ -56,6 +57,7 @@ from .crypt_utils import (
     show_security_recommendations,
     tty_clear_line,
 )
+from .debug_redaction import debug_secret, set_show_secrets
 
 # Try to import the CLI helper module
 try:
@@ -332,7 +334,7 @@ class StdinMetadataExtractor:
             # Extract algorithm info based on format version
             format_version = metadata.get("format_version", 1)
 
-            if format_version in [4, 5, 6, 7, 9]:
+            if format_version >= 4:  # v4+ hierarchical metadata (see crypt_core gate fix)
                 encryption = metadata.get("encryption", {})
                 algorithm = encryption.get("algorithm", "fernet")
                 encryption_data = encryption.get("encryption_data", "aes-gcm")
@@ -690,6 +692,57 @@ def get_template_config(template: str or SecurityTemplate) -> Dict[str, Any]:
             sys.exit(1)
 
 
+# Value-taking CLI options whose VALUE is a secret. Their values must never
+# appear in the --debug argv dump; they are routed through the debug_secret()
+# redaction chokepoint instead. Keep in sync with the parsers in this module
+# and crypt_cli_subparser.py. File-path/fd options (--password-file,
+# --password-fd, --recovery-share, ...) are not secrets themselves.
+SECRET_VALUE_CLI_OPTIONS = frozenset(
+    {
+        "-p",
+        "--password",
+        "--second-password",
+        "--keystore-password",
+        "--manifest-password",
+        "--rekey-password",
+        "--recovery-code",
+        "--encryption-data",
+    }
+)
+
+
+def sanitize_argv_for_debug(argv: list) -> list:
+    """
+    Return a copy of argv with secret option values redacted for debug output.
+
+    Covers the ``--opt value``, ``--opt=value`` and attached short
+    ``-pVALUE`` forms for every option in :data:`SECRET_VALUE_CLI_OPTIONS`.
+    Values are rendered through the :func:`debug_secret` chokepoint, so they
+    stay redacted by default and appear in cleartext only under
+    ``--debug --unsafe-show-secrets``.
+
+    Args:
+        argv: The raw process argv (``sys.argv``-shaped list of str).
+
+    Returns:
+        A new list safe to include in debug output.
+    """
+    sanitized = list(argv)
+    redact_next = False
+    for i, arg in enumerate(sanitized):
+        if redact_next:
+            sanitized[i] = debug_secret("", arg)
+            redact_next = False
+        elif arg in SECRET_VALUE_CLI_OPTIONS:
+            redact_next = True
+        elif "=" in arg and arg.split("=", 1)[0] in SECRET_VALUE_CLI_OPTIONS:
+            opt, value = arg.split("=", 1)
+            sanitized[i] = f"{opt}={debug_secret('', value)}"
+        elif arg.startswith("-p") and not arg.startswith("--") and len(arg) > 2:
+            sanitized[i] = f"-p{debug_secret('', arg[2:])}"
+    return sanitized
+
+
 def preprocess_global_args(argv):
     """Preprocess sys.argv to move truly global flags to the front for subparser compatibility.
 
@@ -699,6 +752,7 @@ def preprocess_global_args(argv):
     # Flags that are truly global and can appear anywhere
     TRULY_GLOBAL_FLAGS = {
         "--debug",
+        "--unsafe-show-secrets",
         "--verbose",
         "--quiet",
         "-q",
@@ -723,6 +777,7 @@ def preprocess_global_args(argv):
         "smart-recommendations",
         "check-argon2",
         "check-pqc",
+        "check-password",
         "version",
         "show-version-file",
         "create-usb",
@@ -2615,8 +2670,10 @@ def handle_hsm_command(args):
         if result.success:
             pepper = result.data.get("hsm_pepper")
             eprint("\n✅ Test successful!")
+            # Do NOT print the pepper itself — it is key material / a KDF
+            # intermediate (H1 [HSM-1], gitlab#121). The length + success
+            # confirm the derivation works; the value must never reach output.
             eprint(f"Pepper length: {len(pepper)} bytes")
-            eprint(f"Pepper (hex): {pepper.hex()}")
             eprint("\nYour FIDO2 credential is working correctly.")
         else:
             eprint(f"\n❌ Test failed: {result.message}")
@@ -2773,8 +2830,10 @@ def handle_hsm_command(args):
             slot = result.data.get("slot")
             eprint("\n✅ Test successful!")
             eprint(f"Slot: {slot}")
+            # Do NOT print the pepper itself — it is key material / a KDF
+            # intermediate (H1 [HSM-1], gitlab#121). The length + success
+            # confirm the derivation works; the value must never reach output.
             eprint(f"Pepper length: {len(pepper)} bytes")
-            eprint(f"Pepper (hex): {pepper.hex()}")
             eprint("\nYour OnlyKey Challenge-Response is working correctly.")
         else:
             eprint(f"\n❌ Test failed: {result.message}")
@@ -3344,6 +3403,7 @@ def main():
         "identity",
         "check-argon2",
         "check-pqc",
+        "check-password",
         "version",
         "show-version-file",
         "create-usb",
@@ -3353,6 +3413,7 @@ def main():
         "enable-plugin",
         "disable-plugin",
         "reload-plugin",
+        "plugin",
         "telemetry",
         "keyserver",
         "hsm",
@@ -3372,6 +3433,7 @@ def main():
         "--progress",
         "--verbose",
         "--debug",
+        "--unsafe-show-secrets",
         "--quiet",
         "--yes",
         "-y",
@@ -3781,7 +3843,16 @@ def main_with_args(args=None):
     global_group.add_argument(
         "--debug",
         action="store_true",
-        help="Show detailed debug information (WARNING: logs passwords and sensitive data - test files only!)",
+        help="Show detailed debug information. Secret values (passwords, key material, "
+        "KDF intermediates, hardware peppers) are redacted to length + SHA-256 "
+        "fingerprint by default; combine with --unsafe-show-secrets to log them "
+        "in cleartext (test files only!)",
+    )
+    global_group.add_argument(
+        "--unsafe-show-secrets",
+        action="store_true",
+        help="UNSAFE: show secret values in cleartext in --debug output instead of "
+        "redacting them. Only valid together with --debug.",
     )
     global_group.add_argument(
         "--yes",
@@ -3855,6 +3926,7 @@ def main_with_args(args=None):
             "config-wizard",
             "check-argon2",
             "check-pqc",
+            "check-password",
             "version",
             "show-version-file",
             "create-usb",
@@ -3864,6 +3936,7 @@ def main_with_args(args=None):
             "enable-plugin",
             "disable-plugin",
             "reload-plugin",
+            "plugin",
         ],
         help="Action to perform: encrypt/decrypt/info files, shred data, generate/derive passwords, "
         "show security recommendations, analyze security configuration, configuration wizard, analyze configuration details, check Argon2 support, check post-quantum cryptography support, "
@@ -4541,6 +4614,15 @@ def main_with_args(args=None):
         help="Minimum password entropy in bits (overrides policy level)",
     )
     policy_group.add_argument(
+        "--strict-strength",
+        action="store_true",
+        help=(
+            "Gate on the pattern-aware strength estimate instead of raw entropy, "
+            "so predictable passwords (dictionary words, sequences, keyboard walks) "
+            "are rejected. Enabled automatically by the paranoid policy."
+        ),
+    )
+    policy_group.add_argument(
         "--disable-common-password-check",
         action="store_true",
         help="Disable checking against common password lists",
@@ -4806,9 +4888,20 @@ def main_with_args(args=None):
             original_algorithm = sys.argv[i + 1]
             break
 
+    # --unsafe-show-secrets is only meaningful (and only safe to accept)
+    # together with --debug. Validate before doing any work.
+    unsafe_show_secrets = getattr(args, "unsafe_show_secrets", False)
+    if unsafe_show_secrets and not args.debug:
+        eprint("Error: --unsafe-show-secrets is only valid in combination with --debug")
+        sys.exit(2)
+
     # Configure logging level based on debug flag
     if args.debug:
         import logging
+
+        # Cleartext secrets in debug output are an explicit opt-in; the
+        # default is redaction via the debug_secret() chokepoint.
+        set_show_secrets(unsafe_show_secrets)
 
         # Configure the root logger to DEBUG level
         root_logger = logging.getLogger()
@@ -4825,22 +4918,38 @@ def main_with_args(args=None):
         except Exception:
             pass
 
-        # Security warning for debug mode
-        eprint("\n" + "=" * 78)
-        eprint("⚠️  WARNING: DEBUG MODE ENABLED - SENSITIVE DATA LOGGING ACTIVE")
-        eprint("=" * 78)
-        eprint("Debug mode logs sensitive information including:")
-        eprint("  • Password hex dumps during key derivation")
-        eprint("  • Detailed cryptographic operation traces")
-        eprint("  • Internal state information")
-        eprint()
-        eprint("SECURITY NOTICE:")
-        eprint("  ❌ DO NOT use --debug with production data or real passwords")
-        eprint("  ✅ Only use for testing with dummy/test data")
-        eprint("  ⚠️  Debug logs may be stored in log files or terminal history")
-        eprint("=" * 78 + "\n")
+        # Debug notice. The loud "SENSITIVE DATA" banner is reserved for the
+        # path that actually leaks secrets (--unsafe-show-secrets). Plain
+        # --debug redacts every secret via the debug_secret() chokepoint, so it
+        # only gets a calm, accurate note — an alarming banner there would both
+        # overstate the risk and desensitise users to the real warning.
+        if unsafe_show_secrets:
+            eprint("\n" + "=" * 78)
+            eprint("⚠️  WARNING: DEBUG MODE ENABLED - SENSITIVE DATA LOGGING ACTIVE")
+            eprint("=" * 78)
+            eprint("Debug mode logs sensitive information including:")
+            eprint("  ❗ SECRETS IN CLEARTEXT (--unsafe-show-secrets is active):")
+            eprint("     passwords, key material, KDF intermediates and hardware")
+            eprint("     peppers ARE BEING SHOWN in this output")
+            eprint("  • Detailed cryptographic operation traces")
+            eprint("  • Internal state information")
+            eprint()
+            eprint("SECURITY NOTICE:")
+            eprint("  ❌ DO NOT use --unsafe-show-secrets with production data or real passwords")
+            eprint("  ✅ Only use for testing with dummy/test data")
+            eprint("  ⚠️  Debug logs may be stored in log files or terminal history")
+            eprint("=" * 78 + "\n")
+        else:
+            eprint("DEBUG: Debug logging enabled. Secret values (passwords, key material,")
+            eprint("       KDF intermediates, hardware peppers) are REDACTED to length + a")
+            eprint("       keyed SHA-256 fingerprint; secret lengths and public values")
+            eprint("       (nonces, salts, ciphertext) are shown. Add --unsafe-show-secrets")
+            eprint("       to reveal secrets in cleartext.")
+            eprint("       Note: secret LENGTHS and public values are written to stderr and")
+            eprint("       may persist in log files or shell history.\n")
 
-        eprint(f"DEBUG: sys.argv = {sys.argv}")
+        # The argv dump must not leak any secret passed as a CLI option value.
+        eprint(f"DEBUG: sys.argv = {sanitize_argv_for_debug(sys.argv)}")
 
         # Enable raw exception passthrough in debug mode
         set_debug_mode(True)
@@ -5143,6 +5252,11 @@ def main_with_args(args=None):
         from .identity_cli import main as identity_main
 
         sys.exit(identity_main(args))
+
+    elif args.action == "plugin":
+        from .plugin_system.plugin_cli import main as plugin_main
+
+        sys.exit(plugin_main(args))
 
     elif args.action == "telemetry":
         handle_telemetry_command(args)
@@ -5540,6 +5654,44 @@ def main_with_args(args=None):
             eprint(f"❌ Error reloading plugin: {e}")
             sys.exit(1)
 
+    elif args.action == "check-password":
+        # Read-only strength/policy report for a supplied password. Source order:
+        # -p/--password (discouraged), then CRYPT_PASSWORD, then a non-tty stdin
+        # pipe, then an interactive prompt. The safer sources avoid leaking the
+        # password via shell history / the process list.
+        # NB: getpass is used module-wide in main_with_args; do not import it
+        # locally here or it becomes a function-local name and unbinds elsewhere.
+        import json
+
+        from .password_policy import build_strength_report, format_strength_report
+
+        if getattr(args, "password", None) is not None:
+            eprint(
+                "Warning: passing the password via -p leaves it in your shell "
+                "history and the process list; prefer stdin or CRYPT_PASSWORD."
+            )
+            _pw = args.password
+        elif "CRYPT_PASSWORD" in os.environ:
+            _pw = os.environ["CRYPT_PASSWORD"]
+        elif not sys.stdin.isatty():
+            _pw = sys.stdin.readline().rstrip("\n")
+        else:
+            _pw = getpass.getpass("Password to check: ")
+
+        _report = build_strength_report(
+            _pw,
+            policy_level=getattr(args, "password_policy", "standard"),
+            strict_strength=getattr(args, "strict_strength", False),
+        )
+        if getattr(args, "json", False):
+            print(json.dumps(_report, indent=2))
+        else:
+            eprint(format_strength_report(_report))
+
+        # Exit non-zero when a policy was applied and the password failed it,
+        # so the command is usable as a scriptable gate.
+        sys.exit(0 if _report["valid"] else 1)
+
     elif args.action == "generate-password":
         # Validate --dice mutual exclusion with character-class flags and
         # reject --dice-* options used without --dice. The handler-level
@@ -5635,6 +5787,7 @@ def main_with_args(args=None):
             policy_params = {}
             if args.min_password_entropy is not None:
                 policy_params["min_entropy"] = args.min_password_entropy
+            policy_params["strict_strength"] = getattr(args, "strict_strength", False)
 
             if args.disable_common_password_check:
                 policy_params["check_common_passwords"] = False
@@ -5976,6 +6129,7 @@ def main_with_args(args=None):
         "smart-recommendations",
         "check-argon2",
         "check-pqc",
+        "check-password",
         "version",
         "show-version-file",
     ]:
@@ -6126,7 +6280,7 @@ def main_with_args(args=None):
         generated_password = None
 
         try:
-            from .secure_memory import secure_string
+            from .secure_memory import secure_memzero, secure_string
 
             # Resolve password from --password-file, --password-fd, or
             # OPENSSL_ENCRYPT_PASSWORD before entering the secure block.
@@ -6181,13 +6335,13 @@ def main_with_args(args=None):
                 and not getattr(args, "password_fd", None)
                 and not getattr(args, "keyring_load", None)
             ):
-                # Warn about --password being visible in process list
-                if not args.quiet:
-                    eprint(
-                        "WARNING: --password is visible in process list. "
-                        "Use --password-file or OPENSSL_ENCRYPT_PASSWORD env var instead.",
-                        file=sys.stderr,
-                    )
+                # Warn about --password being visible in process list. A security
+                # warning must not be silenced by the output-verbosity flag (#67).
+                eprint(
+                    "WARNING: --password is visible in process list. "
+                    "Use --password-file or OPENSSL_ENCRYPT_PASSWORD env var instead.",
+                    file=sys.stderr,
+                )
 
             # Store password in keyring if requested (before secure_string wipes it)
             if args.password and getattr(args, "keyring_store", None):
@@ -6242,6 +6396,7 @@ def main_with_args(args=None):
                         policy_params = {}
                         if args.min_password_entropy is not None:
                             policy_params["min_entropy"] = args.min_password_entropy
+                        policy_params["strict_strength"] = getattr(args, "strict_strength", False)
 
                         if args.disable_common_password_check:
                             policy_params["check_common_passwords"] = False
@@ -6295,6 +6450,9 @@ def main_with_args(args=None):
 
                             if args.min_password_entropy is not None:
                                 policy_params["min_entropy"] = args.min_password_entropy
+                            policy_params["strict_strength"] = getattr(
+                                args, "strict_strength", False
+                            )
 
                             if args.disable_common_password_check:
                                 policy_params["check_common_passwords"] = False
@@ -6347,6 +6505,9 @@ def main_with_args(args=None):
 
                             if args.min_password_entropy is not None:
                                 policy_params["min_entropy"] = args.min_password_entropy
+                            policy_params["strict_strength"] = getattr(
+                                args, "strict_strength", False
+                            )
 
                             if args.disable_common_password_check:
                                 policy_params["check_common_passwords"] = False
@@ -6385,8 +6546,12 @@ def main_with_args(args=None):
                     if args.action == "encrypt" and not args.quiet:
                         match = False
                         while not match:
-                            pwd1 = getpass.getpass("Enter password: ").encode()
-                            pwd2 = getpass.getpass("Confirm password: ").encode()
+                            # Mutable buffers so they can be wiped in place after
+                            # use. The transient str returned by getpass (and its
+                            # encoding) is immutable and cannot be wiped — an
+                            # inherent Python limitation (#81/#89).
+                            pwd1 = bytearray(getpass.getpass("Enter password: ").encode())
+                            pwd2 = bytearray(getpass.getpass("Confirm password: ").encode())
 
                             if pwd1 == pwd2:
                                 # Validate password if policy is enabled, not forced, and not in test mode
@@ -6408,6 +6573,9 @@ def main_with_args(args=None):
 
                                         if args.min_password_entropy is not None:
                                             policy_params["min_entropy"] = args.min_password_entropy
+                                        policy_params["strict_strength"] = getattr(
+                                            args, "strict_strength", False
+                                        )
 
                                         if args.disable_common_password_check:
                                             policy_params["check_common_passwords"] = False
@@ -6444,13 +6612,13 @@ def main_with_args(args=None):
                                     password_secure.extend(pwd1)
                                     match = True
 
-                                # Securely clear the temporary buffers
-                                pwd1 = "\x00" * len(pwd1)
-                                pwd2 = "\x00" * len(pwd2)
+                                # Wipe the mutable prompt buffers in place
+                                secure_memzero(pwd1)
+                                secure_memzero(pwd2)
                             else:
-                                # Securely clear the temporary buffers
-                                pwd1 = "\x00" * len(pwd1)
-                                pwd2 = "\x00" * len(pwd2)
+                                # Wipe the mutable prompt buffers in place
+                                secure_memzero(pwd1)
+                                secure_memzero(pwd2)
                                 eprint("Passwords do not match. Please try again.")
                     # For decryption or quiet mode, just ask once
                     else:
@@ -6464,8 +6632,10 @@ def main_with_args(args=None):
                             tty_clear_line()
 
                         password_secure.extend(pwd.encode("utf-8"))
-                        # Securely clear the temporary buffer
-                        pwd = "\x00" * len(pwd)
+                        # 'pwd' is an immutable str from getpass and cannot be
+                        # overwritten in place (#81/#89); rebinding it to zeros
+                        # would only pretend to wipe. Drop the reference instead.
+                        del pwd
 
                 # Convert to bytes for the rest of the code
                 password = bytes(password_secure)
@@ -6514,7 +6684,8 @@ def main_with_args(args=None):
                                 pass
 
                 if rekey_pw_arg:
-                    if not rekey_pw_file and rekey_pw_fd is None and not args.quiet:
+                    # Security warning: not silenced by --quiet (#67).
+                    if not rekey_pw_file and rekey_pw_fd is None:
                         eprint(
                             "WARNING: --rekey-password is visible in process list. "
                             "Use --rekey-password-file or OPENSSL_ENCRYPT_REKEY_PASSWORD env var instead.",
@@ -6525,18 +6696,22 @@ def main_with_args(args=None):
                     # Interactive double-prompt for new password
                     match = False
                     while not match:
-                        pwd1 = getpass.getpass("Enter new password: ").encode()
-                        pwd2 = getpass.getpass("Confirm new password: ").encode()
+                        # Mutable buffers so they can be wiped in place (#89);
+                        # the transient getpass str itself cannot be (#81).
+                        pwd1 = bytearray(getpass.getpass("Enter new password: ").encode())
+                        pwd2 = bytearray(getpass.getpass("Confirm new password: ").encode())
 
                         if pwd1 == pwd2:
-                            rekey_password = pwd1
+                            # Copy before wiping — rekey_password must outlive
+                            # the wiped prompt buffers
+                            rekey_password = bytes(pwd1)
                             match = True
-                            pwd1 = b"\x00" * len(pwd1)
-                            pwd2 = b"\x00" * len(pwd2)
                         else:
-                            pwd1 = b"\x00" * len(pwd1)
-                            pwd2 = b"\x00" * len(pwd2)
                             eprint("Passwords do not match. Please try again.")
+
+                        # Wipe the mutable prompt buffers in place
+                        secure_memzero(pwd1)
+                        secure_memzero(pwd2)
 
         except ImportError:
             # Fall back to standard method if secure_memory is not
@@ -8144,12 +8319,14 @@ def main_with_args(args=None):
                             )
                             sys.exit(1)
 
-                        if use_independent_xor:
-                            format_version = 13  # Independent XOR + per-component domain-separated salts (v13)
-                        elif use_xor:
-                            format_version = 13  # Sequential XOR (v13, cancellation fixed)
+                        if use_xor:
+                            # Sequential XOR stays pinned at v13 (M2 decision 2026-07-10);
+                            # v14+ is independent-XOR only.
+                            format_version = 13
                         else:
-                            format_version = 9  # Default (secure chained salt)
+                            # Default and --independent-xor: latest independent-XOR-only
+                            # format (encrypt_file resolves None to it).
+                            format_version = None
 
                         success = encrypt_file(
                             args.input,
@@ -8425,12 +8602,14 @@ def main_with_args(args=None):
                     )
                     sys.exit(1)
 
-                if use_independent_xor:
-                    format_version = 13  # Independent XOR + per-component domain-separated salts (v13)
-                elif use_xor:
-                    format_version = 13  # Sequential XOR (v13, cancellation fixed)
+                if use_xor:
+                    # Sequential XOR stays pinned at v13 (M2 decision 2026-07-10);
+                    # v14+ is independent-XOR only.
+                    format_version = 13
                 else:
-                    format_version = 9  # Default (secure chained salt)
+                    # Default and --independent-xor: latest independent-XOR-only
+                    # format (encrypt_file resolves None to it).
+                    format_version = None
 
                 success = encrypt_file(
                     args.input,
@@ -9083,12 +9262,14 @@ def main_with_args(args=None):
                         )
                         sys.exit(1)
 
-                    if use_independent_xor:
-                        format_version = 13  # Independent XOR + per-component domain-separated salts (v13)
-                    elif use_xor:
-                        format_version = 13  # Sequential XOR (v13, cancellation fixed)
+                    if use_xor:
+                        # Sequential XOR stays pinned at v13 (M2 decision 2026-07-10);
+                        # v14+ is independent-XOR only.
+                        format_version = 13
                     else:
-                        format_version = 9  # Default (secure chained salt)
+                        # Default and --independent-xor: latest independent-XOR-only
+                        # format (encrypt_file resolves None to it).
+                        format_version = None
 
                     success = encrypt_file(
                         args.input,
@@ -10482,9 +10663,10 @@ def main_with_args(args=None):
                 use_independent_xor = getattr(args, "independent_xor", False)
 
                 if use_independent_xor:
-                    rekey_format_version = 13  # Independent XOR (v13)
+                    # Latest independent-XOR-only format (M2 decision 2026-07-10).
+                    rekey_format_version = LATEST_STABLE_FORMAT_VERSION
                 elif use_xor:
-                    rekey_format_version = 13  # Sequential XOR (v13)
+                    rekey_format_version = 13  # Sequential XOR stays pinned at v13
                 else:
                     rekey_format_version = None  # Inherit from file
 

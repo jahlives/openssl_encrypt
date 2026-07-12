@@ -18,6 +18,7 @@ import hashlib
 import json
 import os
 import secrets
+import shutil
 import struct
 import tempfile
 import unittest
@@ -242,6 +243,44 @@ class TestEncryptDecryptChunk(unittest.TestCase):
         """Unsupported algorithm raises ValidationError."""
         with self.assertRaises(ValidationError):
             encrypt_chunk(b"k" * 32, b"n" * 12, b"data", None, "unknown-cipher")
+
+
+class TestChunkAuthErrorClassification(unittest.TestCase):
+    """M4 [STREAM-1]: tampered-chunk failures must classify by exception TYPE.
+
+    The library-direct AEADs raise cryptography's InvalidTag, whose str() is
+    empty, so the old substring match ('tag'/'authentication' in str(e)) fell
+    through to DecryptionError. A genuine authentication failure must always
+    surface as AuthenticationError, uniformly, regardless of cipher.
+    """
+
+    _LIBRARY_AEADS = [
+        ("aes-gcm", 32, 12),
+        ("chacha20-poly1305", 32, 12),
+        ("aes-gcm-siv", 32, 12),
+        ("aes-ocb3", 32, 12),
+        ("aes-siv", 64, 16),
+    ]
+
+    def test_tampered_chunk_raises_authentication_error(self):
+        for algorithm, key_size, nonce_size in self._LIBRARY_AEADS:
+            with self.subTest(algorithm=algorithm):
+                key = secrets.token_bytes(key_size)
+                nonce = secrets.token_bytes(nonce_size)
+                aad = b"chunk-aad"
+                ct = bytearray(encrypt_chunk(key, nonce, b"plaintext-payload", aad, algorithm))
+                ct[-1] ^= 0x01  # flip a tag bit
+                with self.assertRaises(AuthenticationError):
+                    decrypt_chunk(key, nonce, bytes(ct), aad, algorithm)
+
+    def test_wrong_aad_raises_authentication_error(self):
+        for algorithm, key_size, nonce_size in self._LIBRARY_AEADS:
+            with self.subTest(algorithm=algorithm):
+                key = secrets.token_bytes(key_size)
+                nonce = secrets.token_bytes(nonce_size)
+                ct = encrypt_chunk(key, nonce, b"plaintext-payload", b"aad1", algorithm)
+                with self.assertRaises(AuthenticationError):
+                    decrypt_chunk(key, nonce, ct, b"aad2", algorithm)
 
 
 # ============================================================
@@ -584,6 +623,109 @@ class TestStreamingEncryptorDecryptor(unittest.TestCase):
 
 
 # ============================================================
+# Test: #95 [IO-6] streaming nonce-prefix width
+# ============================================================
+
+
+class TestNoncePrefixWidth(unittest.TestCase):
+    """#95 [IO-6]: per-file streaming nonce prefix widened 8 -> 16 bytes.
+
+    The per-chunk nonce is HKDF-derived from the prefix (derive_chunk_nonce),
+    so the prefix length is free and is stored per-file in the metadata. That
+    makes widening the random prefix from 64 to 128 bits backward compatible:
+    files written with the old 8-byte prefix still decrypt, and no format
+    version change is required.
+    """
+
+    def _roundtrip_with_prefix(self, forced_prefix):
+        """Full streaming roundtrip, optionally forcing a specific nonce prefix
+        (used to simulate a legacy 8-byte-prefix file)."""
+        key = secrets.token_bytes(32)
+        chunk_size = 1024
+        data = secrets.token_bytes(chunk_size * 3 + 7)
+        input_path = _create_temp_file(data)
+        output_enc = _create_temp_file(b"")
+        output_dec = _create_temp_file(b"")
+        try:
+            enc = StreamingEncryptor(key=key, algorithm="aes-gcm", chunk_size=chunk_size)
+            if forced_prefix is not None:
+                enc.nonce_prefix = forced_prefix
+            original_hash = enc.hash_file(input_path)
+            chunk_count = enc.get_chunk_count(len(data))
+            metadata = {
+                "format_version": 12,
+                "mode": "symmetric",
+                "aead_binding": True,
+                "streaming": {
+                    "enabled": True,
+                    "chunk_size": chunk_size,
+                    "chunk_count": chunk_count,
+                    "nonce_prefix": base64.b64encode(enc.nonce_prefix).decode("ascii"),
+                },
+                "hashes": {"original_hash": original_hash},
+                "encryption": {"cascade": False, "algorithm": "aes-gcm"},
+            }
+            metadata_b64 = base64.b64encode(json.dumps(metadata).encode("utf-8"))
+            enc.encrypt_file(
+                input_file=input_path,
+                output_file=output_enc,
+                metadata_b64=metadata_b64,
+                chunk_count=chunk_count,
+                quiet=True,
+            )
+            dec = StreamingDecryptor(
+                key=key,
+                algorithm="aes-gcm",
+                nonce_prefix=enc.nonce_prefix,
+                chunk_size=chunk_size,
+            )
+            self.assertTrue(
+                dec.decrypt_file(
+                    input_file=output_enc,
+                    output_file=output_dec,
+                    metadata_b64=metadata_b64,
+                    expected_chunk_count=chunk_count,
+                    original_hash=original_hash,
+                    quiet=True,
+                )
+            )
+            with open(output_dec, "rb") as f:
+                self.assertEqual(f.read(), data)
+        finally:
+            for p in (input_path, output_enc, output_dec):
+                if os.path.exists(p):
+                    os.unlink(p)
+
+    def test_generated_prefix_is_16_bytes(self):
+        """New encryptors must generate a 128-bit (16-byte) nonce prefix."""
+        enc = StreamingEncryptor(key=secrets.token_bytes(32), algorithm="aes-gcm", chunk_size=1024)
+        self.assertEqual(len(enc.nonce_prefix), 16)
+
+    def test_new_16byte_prefix_roundtrips(self):
+        """A file written with the new 16-byte prefix decrypts correctly."""
+        self._roundtrip_with_prefix(None)
+
+    def test_legacy_8byte_prefix_still_decrypts(self):
+        """Backward compat: a file written with the old 8-byte prefix still
+        round-trips under the widened code (proves widening is non-breaking)."""
+        self._roundtrip_with_prefix(secrets.token_bytes(8))
+
+    def test_prefix_min_length_guard(self):
+        """The >= 8 byte guard is preserved: a 7-byte prefix is rejected,
+        exactly 8 is accepted."""
+        with self.assertRaises(ValidationError):
+            derive_chunk_nonce(secrets.token_bytes(7), 0, 12)
+        self.assertEqual(len(derive_chunk_nonce(secrets.token_bytes(8), 0, 12)), 12)
+
+    def test_8byte_and_16byte_prefixes_give_distinct_nonce_streams(self):
+        """Different-width prefixes derive different nonces (no collapse to a
+        common 8-byte-derived stream)."""
+        p8 = secrets.token_bytes(8)
+        p16 = p8 + secrets.token_bytes(8)  # 16-byte prefix sharing p8's first 8 bytes
+        self.assertNotEqual(derive_chunk_nonce(p8, 0, 12), derive_chunk_nonce(p16, 0, 12))
+
+
+# ============================================================
 # Test: Adversarial / Security tests
 # ============================================================
 
@@ -815,9 +957,12 @@ class TestStreamingIntegration(unittest.TestCase):
             )
             self.assertTrue(result)
 
-            # Verify metadata shows v12 + streaming
+            # Verify metadata shows the streaming format version (latest
+            # since the M2 default flip; explicit v12 requests still write 12)
+            from openssl_encrypt.modules.crypt_core import LATEST_STABLE_FORMAT_VERSION
+
             info = extract_file_metadata(output_enc)
-            self.assertEqual(info["format_version"], 12)
+            self.assertEqual(info["format_version"], LATEST_STABLE_FORMAT_VERSION)
             self.assertTrue(info["metadata"].get("streaming", {}).get("enabled", False))
 
             # Decrypt
@@ -1050,6 +1195,7 @@ class TestBackwardCompatibility(unittest.TestCase):
                 algorithm=EncryptionAlgorithm.AES_GCM,
                 quiet=True,
                 format_version=10,
+                allow_insecure_legacy_xor=True,
                 no_streaming=True,
             )
             self.assertTrue(result)
@@ -1342,7 +1488,9 @@ class TestStreamingDecryptMemory(unittest.TestCase):
         _, peak = tracemalloc.get_traced_memory()
         tracemalloc.stop()
 
-        self.assertEqual(meta["format_version"], 12)
+        from openssl_encrypt.modules.crypt_core import LATEST_STABLE_FORMAT_VERSION
+
+        self.assertEqual(meta["format_version"], LATEST_STABLE_FORMAT_VERSION)
         self.assertLess(
             peak,
             enc_size,
@@ -1567,11 +1715,14 @@ class TestFullPipelineStreamingRoundtrip(unittest.TestCase):
             kw.update(extra)
             self.assertTrue(encrypt_file(**kw))
 
-            # Confirm it really streamed (format_version 12 metadata).
+            # Confirm it really streamed (streaming metadata + the current
+            # streaming format version).
+            from openssl_encrypt.modules.crypt_core import LATEST_STABLE_FORMAT_VERSION
+
             with open(op, "rb") as f:
                 meta = json.loads(base64.b64decode(f.read().split(b":", 1)[0]))
             self.assertTrue(meta.get("streaming", {}).get("enabled"))
-            self.assertEqual(meta.get("format_version"), 12)
+            self.assertEqual(meta.get("format_version"), LATEST_STABLE_FORMAT_VERSION)
 
             result = decrypt_file(
                 input_file=op,
@@ -1621,3 +1772,142 @@ class TestFullPipelineStreamingRoundtrip(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ============================================================
+# Test: GitLab #96 [IO-7] — atomic decrypt output (temp + rename)
+# ============================================================
+
+
+class TestAtomicDecryptOutput(unittest.TestCase):
+    """Regression tests for GitLab #96: plaintext staged until trailer HMAC verifies.
+
+    The decryptor used to write per-chunk-authenticated plaintext directly
+    to the destination path and only delete it after trailer verification
+    failed. A concurrent reader could observe the partial file; a
+    mid-stream failure left partial plaintext behind; and a tampered file
+    destroyed whatever previously existed at the destination path.
+    """
+
+    def _make_encrypted(self, data: bytes, chunk_size: int = 1024):
+        key = secrets.token_bytes(32)
+        input_path = _create_temp_file(data)
+        output_enc = _create_temp_file(b"")
+        try:
+            enc = StreamingEncryptor(key=key, algorithm="aes-gcm", chunk_size=chunk_size)
+            original_hash = enc.hash_file(input_path)
+            chunk_count = enc.get_chunk_count(len(data))
+            metadata = {
+                "format_version": 12,
+                "mode": "symmetric",
+                "aead_binding": True,
+                "streaming": {
+                    "enabled": True,
+                    "chunk_size": chunk_size,
+                    "chunk_count": chunk_count,
+                    "nonce_prefix": base64.b64encode(enc.nonce_prefix).decode("ascii"),
+                },
+                "hashes": {"original_hash": original_hash},
+                "encryption": {"cascade": False, "algorithm": "aes-gcm"},
+            }
+            metadata_b64 = base64.b64encode(json.dumps(metadata).encode("utf-8"))
+            enc.encrypt_file(
+                input_file=input_path,
+                output_file=output_enc,
+                metadata_b64=metadata_b64,
+                chunk_count=chunk_count,
+                quiet=True,
+            )
+        finally:
+            os.unlink(input_path)
+        decryptor = StreamingDecryptor(
+            key=key, algorithm="aes-gcm", nonce_prefix=enc.nonce_prefix, chunk_size=chunk_size
+        )
+        return output_enc, decryptor, metadata_b64, chunk_count, original_hash
+
+    def _flip_byte(self, path: str, offset_from_end: int) -> None:
+        with open(path, "r+b") as f:
+            f.seek(0, 2)
+            size = f.tell()
+            f.seek(size - offset_from_end)
+            byte = f.read(1)
+            f.seek(size - offset_from_end)
+            f.write(bytes([byte[0] ^ 0xFF]))
+
+    def test_tampered_trailer_preserves_existing_destination(self) -> None:
+        """A failed decrypt must not destroy a pre-existing destination file."""
+        enc_path, dec, metadata_b64, chunk_count, original_hash = self._make_encrypted(
+            secrets.token_bytes(5000)
+        )
+        sentinel = b"precious pre-existing content"
+        dest = _create_temp_file(sentinel)
+        try:
+            self._flip_byte(enc_path, 1)  # corrupt trailer HMAC
+            with self.assertRaises(AuthenticationError):
+                dec.decrypt_file(
+                    input_file=enc_path,
+                    output_file=dest,
+                    metadata_b64=metadata_b64,
+                    expected_chunk_count=chunk_count,
+                    original_hash=original_hash,
+                    quiet=True,
+                )
+            self.assertTrue(os.path.exists(dest), "destination was deleted")
+            with open(dest, "rb") as f:
+                self.assertEqual(f.read(), sentinel, "destination was overwritten")
+        finally:
+            for p in (enc_path, dest):
+                if os.path.exists(p):
+                    os.unlink(p)
+
+    def test_midstream_tamper_leaves_no_partial_output(self) -> None:
+        """A mid-stream chunk failure must not leave partial plaintext behind."""
+        enc_path, dec, metadata_b64, chunk_count, original_hash = self._make_encrypted(
+            secrets.token_bytes(5000)
+        )
+        dest_dir = tempfile.mkdtemp()
+        dest = os.path.join(dest_dir, "decrypted.bin")
+        try:
+            # Corrupt a middle chunk (well before the trailer)
+            self._flip_byte(enc_path, 2500)
+            with self.assertRaises((AuthenticationError, DecryptionError, Exception)):
+                dec.decrypt_file(
+                    input_file=enc_path,
+                    output_file=dest,
+                    metadata_b64=metadata_b64,
+                    expected_chunk_count=chunk_count,
+                    original_hash=original_hash,
+                    quiet=True,
+                )
+            self.assertFalse(os.path.exists(dest), "partial plaintext left at destination path")
+            leftovers = [n for n in os.listdir(dest_dir)]
+            self.assertEqual(leftovers, [], f"temp staging files left behind: {leftovers}")
+        finally:
+            shutil.rmtree(dest_dir, ignore_errors=True)
+            if os.path.exists(enc_path):
+                os.unlink(enc_path)
+
+    def test_successful_decrypt_lands_at_destination(self) -> None:
+        """The staged file must be renamed into place on success."""
+        data = secrets.token_bytes(5000)
+        enc_path, dec, metadata_b64, chunk_count, original_hash = self._make_encrypted(data)
+        dest_dir = tempfile.mkdtemp()
+        dest = os.path.join(dest_dir, "decrypted.bin")
+        try:
+            result = dec.decrypt_file(
+                input_file=enc_path,
+                output_file=dest,
+                metadata_b64=metadata_b64,
+                expected_chunk_count=chunk_count,
+                original_hash=original_hash,
+                quiet=True,
+            )
+            self.assertTrue(result)
+            with open(dest, "rb") as f:
+                self.assertEqual(f.read(), data)
+            leftovers = [n for n in os.listdir(dest_dir) if n != "decrypted.bin"]
+            self.assertEqual(leftovers, [], f"temp staging files left behind: {leftovers}")
+        finally:
+            shutil.rmtree(dest_dir, ignore_errors=True)
+            if os.path.exists(enc_path):
+                os.unlink(enc_path)

@@ -328,7 +328,8 @@ def create_secure_directory(path, level: PermissionLevel = PermissionLevel.OWNER
     """
     Create a directory with secure permissions set atomically.
 
-    On POSIX: uses umask to ensure atomic permission setting during mkdir.
+    On POSIX: creates each missing component with mkdir(mode=...) + chmod,
+    without touching the process-global umask (#74).
     On Windows: creates directory then applies DACL.
 
     Args:
@@ -350,15 +351,30 @@ def create_secure_directory(path, level: PermissionLevel = PermissionLevel.OWNER
             _apply_dacl(str(path), dacl)
     else:
         posix_mode = _POSIX_MODES[level]
-        # Derive umask from mode: umask blocks bits we DON'T want
-        umask_val = 0o777 & ~posix_mode
-        old_umask = os.umask(umask_val)
-        try:
-            path.mkdir(parents=True, exist_ok=True, mode=posix_mode)
-        finally:
-            os.umask(old_umask)
+        # Create each missing path component explicitly at the target mode
+        # instead of setting the process-global os.umask (which is process-wide
+        # and races other threads creating files concurrently, #74). mkdir's
+        # mode argument is still masked by any ambient umask, so chmod each
+        # component we create to pin the exact mode. Pre-existing components are
+        # left untouched (matching mkdir -p / exist_ok=True semantics).
+        missing = []
+        probe = path
+        while not probe.exists():
+            missing.append(probe)
+            parent = probe.parent
+            if parent == probe:  # reached the filesystem root
+                break
+            probe = parent
+        for component in reversed(missing):
+            try:
+                component.mkdir(mode=posix_mode)
+            except FileExistsError:
+                # Created concurrently by another process; leave it as-is.
+                continue
+            os.chmod(component, posix_mode)
 
-        # Defense in depth: verify and fix if needed
+        # Defense in depth: enforce the intended mode on the final directory
+        # even if it already existed.
         current = stat.S_IMODE(os.stat(path).st_mode)
         if current != posix_mode:
             os.chmod(path, posix_mode)
@@ -370,7 +386,8 @@ def create_secure_file(path, level: PermissionLevel = PermissionLevel.OWNER_ONLY
     """
     Open/create a file with secure permissions, returning a file descriptor.
 
-    On POSIX: uses umask + os.open() for atomic permission setting.
+    On POSIX: uses os.open(mode=...) + fchmod, without touching the
+    process-global umask (#74).
     On Windows: creates file then applies DACL.
 
     Args:
@@ -396,12 +413,30 @@ def create_secure_file(path, level: PermissionLevel = PermissionLevel.OWNER_ONLY
                 os.close(fd)
                 raise
     else:
-        umask_val = 0o777 & ~posix_mode
-        old_umask = os.umask(umask_val)
+        # O_NOFOLLOW rejects a symlink at the final path component, so a planted
+        # symlink cannot redirect the truncate+write to an arbitrary file (#58).
+        flags = os.O_CREAT | os.O_WRONLY | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
+        # Do not touch the process-global os.umask (it is process-wide and races
+        # other threads creating files, #74). os.open()'s mode is masked by any
+        # ambient umask, but the file can never be created MORE permissive than
+        # posix_mode (umask only clears bits) and the unconditional fchmod below
+        # pins the exact mode.
+        fd = os.open(path_str, flags, posix_mode)
+
+        # open()'s mode argument is ignored when the file already exists, so an
+        # attacker-pre-created (e.g. world-readable) or foreign-owned target would
+        # otherwise keep its permissions/owner while we write secrets into it.
+        # Reject non-regular / foreign-owned targets and enforce the mode (#58).
         try:
-            fd = os.open(path_str, os.O_CREAT | os.O_WRONLY | os.O_TRUNC, posix_mode)
-        finally:
-            os.umask(old_umask)
+            st = os.fstat(fd)
+            if not stat.S_ISREG(st.st_mode):
+                raise OSError(f"Refusing to open non-regular secure file: {path_str}")
+            if st.st_uid != os.geteuid():
+                raise OSError(f"Refusing to open secure file owned by another user: {path_str}")
+            os.fchmod(fd, posix_mode)
+        except Exception:
+            os.close(fd)
+            raise
 
     return fd
 

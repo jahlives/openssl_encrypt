@@ -143,6 +143,50 @@ class SecureJSONValidator:
                     f"Invalid control character found at position {i}: {repr(char)}"
                 )
 
+        # Depth limit check on the raw document (#94): must run BEFORE
+        # json.loads, which parses recursively and could exhaust the
+        # interpreter stack on a hostile deeply-nested document long before
+        # the post-parse structure check runs.
+        self._check_nesting_depth(json_string)
+
+    def _check_nesting_depth(self, json_string: str) -> None:
+        """
+        Enforce MAX_NESTING_DEPTH on a raw JSON document without parsing it.
+
+        Performs a single linear scan tracking bracket depth; brackets inside
+        string literals (including after escaped quotes) are ignored. Fails
+        closed as soon as the limit is exceeded, so the recursive parser
+        never sees the hostile document.
+
+        Args:
+            json_string (str): Raw JSON document
+
+        Raises:
+            JSONSecurityError: If the bracket nesting exceeds MAX_NESTING_DEPTH
+        """
+        depth = 0
+        in_string = False
+        escaped = False
+        for char in json_string:
+            if in_string:
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == '"':
+                    in_string = False
+            elif char == '"':
+                in_string = True
+            elif char in "{[":
+                depth += 1
+                if depth > self.MAX_NESTING_DEPTH:
+                    raise JSONSecurityError(
+                        f"JSON nesting depth ({depth}) exceeds maximum allowed "
+                        f"depth ({self.MAX_NESTING_DEPTH})"
+                    )
+            elif char in "}]" and depth > 0:
+                depth -= 1
+
     def validate_json_structure(self, data: Any, path: str = "root", depth: int = 0) -> None:
         """
         Recursively validate JSON structure against security limits.
@@ -224,9 +268,21 @@ class SecureJSONValidator:
             data = json.loads(json_string)
         except json.JSONDecodeError as e:
             raise JSONValidationError(f"Invalid JSON syntax: {e}")
+        except RecursionError:
+            # Defense in depth (#94): the pre-parse depth scan should make
+            # this unreachable, but never let a parser stack blowout escape
+            # as a bare RecursionError.
+            raise JSONSecurityError(
+                f"JSON nesting exceeds maximum allowed depth ({self.MAX_NESTING_DEPTH})"
+            )
 
         # Validate structure constraints
-        self.validate_json_structure(data)
+        try:
+            self.validate_json_structure(data)
+        except RecursionError:
+            raise JSONSecurityError(
+                f"JSON nesting exceeds maximum allowed depth ({self.MAX_NESTING_DEPTH})"
+            )
 
         return data
 

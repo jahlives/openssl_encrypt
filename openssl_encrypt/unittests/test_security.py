@@ -1186,6 +1186,23 @@ class TestVerifyMAC(unittest.TestCase):
         self.assertFalse(verify_mac(mac1, None))
         self.assertTrue(verify_mac(None, None))
 
+    def test_verify_mac_rejects_associated_data(self):
+        """Regression test for #92: the associated_data parameter was a no-op.
+
+        verify_mac() must not accept an associated_data argument at all —
+        silently accepting-and-ignoring context-binding data is a misleading
+        API that suggests binding which never happens.
+        """
+        from openssl_encrypt.modules.secure_ops import verify_mac
+
+        mac = secrets.token_bytes(32)
+
+        with self.assertRaises(TypeError):
+            verify_mac(mac, mac, associated_data=b"context")
+
+        with self.assertRaises(TypeError):
+            verify_mac(mac, mac, b"context")
+
 
 from openssl_encrypt.modules.crypt_errors import (
     AuthenticationError,
@@ -1747,3 +1764,60 @@ class TestCascadeFormatVersionWiring(unittest.TestCase):
         # Legacy should fail to decrypt v12 ciphertext
         with self.assertRaises(Exception):
             cascade_legacy.decrypt(ct_v12, master_key, salt)
+
+
+class TestConstantTimePKCS7UnpadBranchless(unittest.TestCase):
+    """Regression tests for GitLab #90 [CORE-10]: data-dependent branches.
+
+    The 'constant-time' unpad used Python conditional expressions keyed on
+    secret-derived values, and skipped padding-byte verification entirely
+    when the claimed padding length exceeded the data length — accepting
+    invalid padding as valid with a negative unpadded length.
+    """
+
+    def test_padding_longer_than_data_is_invalid(self) -> None:
+        from openssl_encrypt.modules.secure_ops import constant_time_pkcs7_unpad
+
+        data, is_valid = constant_time_pkcs7_unpad(b"\x05\x05\x05", 16)
+        self.assertFalse(is_valid)
+        self.assertEqual(data, b"\x05\x05\x05")
+
+        data, is_valid = constant_time_pkcs7_unpad(b"\x10" * 8, 16)
+        self.assertFalse(is_valid)
+        self.assertEqual(data, b"\x10" * 8)
+
+    def test_all_valid_padding_lengths_strip(self) -> None:
+        from openssl_encrypt.modules.secure_ops import constant_time_pkcs7_unpad
+
+        for n in range(1, 17):
+            payload = bytes(range(32 - n))
+            padded = payload + bytes([n]) * n
+            data, is_valid = constant_time_pkcs7_unpad(padded, 16)
+            self.assertTrue(is_valid, f"padding length {n} rejected")
+            self.assertEqual(data, payload, f"padding length {n} misstripped")
+
+    def test_mismatched_padding_bytes_invalid(self) -> None:
+        from openssl_encrypt.modules.secure_ops import constant_time_pkcs7_unpad
+
+        padded = b"payload-payload!" + b"\x03\x02\x03"
+        data, is_valid = constant_time_pkcs7_unpad(padded, 16)
+        self.assertFalse(is_valid)
+        self.assertEqual(data, padded)
+
+    def test_zero_padding_byte_invalid(self) -> None:
+        from openssl_encrypt.modules.secure_ops import constant_time_pkcs7_unpad
+
+        padded = b"0123456789abcde\x00"
+        data, is_valid = constant_time_pkcs7_unpad(padded, 16)
+        self.assertFalse(is_valid)
+        self.assertEqual(data, padded)
+
+    def test_no_data_dependent_conditional_expressions(self) -> None:
+        """The masking must be arithmetic, not Python if/else on secrets."""
+        import inspect
+
+        from openssl_encrypt.modules.secure_ops import constant_time_pkcs7_unpad
+
+        source = inspect.getsource(constant_time_pkcs7_unpad)
+        for pattern in ("if in_range else", "if is_valid else", "if is_padding_pos else"):
+            self.assertNotIn(pattern, source)

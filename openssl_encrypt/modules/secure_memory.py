@@ -37,6 +37,38 @@ def get_memory_page_size():
         return 4096
 
 
+# Process-wide flag: core-dump prevention has been applied (see
+# disable_core_dumps). Tests may reset it.
+_core_dumps_disabled = False
+
+
+def disable_core_dumps() -> bool:
+    """Disable core dumps for this process by zeroing the RLIMIT_CORE soft limit.
+
+    Runs once per process; later calls are no-ops. Only the *soft* limit is
+    changed (#104): the previous code dropped the hard limit to 0 on every
+    secure allocation — an irreversible, process-global side effect that
+    prevented an embedding application from ever re-enabling core dumps
+    deliberately (e.g. for crash diagnosis after key material is wiped).
+
+    Returns:
+        bool: True if core dumps are disabled (now or already), False if
+        the limit could not be changed on this platform.
+    """
+    global _core_dumps_disabled
+    if _core_dumps_disabled:
+        return True
+    try:
+        import resource
+
+        _soft, hard = resource.getrlimit(resource.RLIMIT_CORE)
+        resource.setrlimit(resource.RLIMIT_CORE, (0, hard))
+        _core_dumps_disabled = True
+        return True
+    except Exception:
+        return False
+
+
 def verify_memory_zeroed(data, full_check=True, sample_size=16):
     """
     Verify that a memory buffer has been properly zeroed using constant-time approach.
@@ -146,8 +178,14 @@ def verify_memory_zeroed(data, full_check=True, sample_size=16):
 
 def secure_memzero(data, full_verification=True, strict=False):
     """
-    Securely wipe data with multiple rounds of overwriting followed by zeroing.
-    Ensures the data is completely overwritten in memory and performs verification.
+    Securely wipe a mutable buffer in place by zeroing its backing storage,
+    then verify the wipe.
+
+    Only buffers whose storage we can address directly (bytearray, SecureBytes,
+    writable memoryview) are wiped and verified. Immutable or non-in-place
+    inputs (bytes, str, array.array, ctypes buffers, ...) cannot have the
+    caller's own secret cleared through this API and are reported as failures
+    rather than falsely claiming success (see M10 / #79 / #80).
 
     Args:
         data: The data to be wiped (SecureBytes, bytes, bytearray, or memoryview)
@@ -187,174 +225,39 @@ def secure_memzero(data, full_verification=True, strict=False):
             pass
         return False
 
-    # Simplified zeroing during shutdown
-    try:
-        if isinstance(data, (bytearray, memoryview)):
+    # In-place wipe for the mutable buffer types we support. bytearray, a
+    # writable memoryview, and SecureBytes (a bytearray subclass) all land here
+    # and are zeroed in the caller's own storage, then verified. A readonly
+    # memoryview - or any buffer that rejects slice assignment - raises and is
+    # reported as a FAILED wipe rather than a false success.
+    if isinstance(data, (bytearray, memoryview)):
+        try:
             data[:] = bytearray(len(data))
-            return verify_memory_zeroed(data)
-    except BaseException:
-        return False
-
-    # Handle different input types (mutable only - bytes/str handled above)
-    if isinstance(data, (SecureBytes, bytearray)):
-        target_data = data
-    elif isinstance(data, memoryview):
-        if data.readonly:
-            raise TypeError("Cannot wipe readonly memory view")
-        target_data = bytearray(data)
-    else:
-        try:
-            # Try to convert other types to bytes first
-            target_data = bytearray(bytes(data))
+            return verify_memory_zeroed(data, full_check=full_verification)
         except BaseException:
-            raise TypeError(
-                "Data must be SecureBytes, bytes, bytearray, memoryview, or convertible to bytes"
-            )
+            return False
 
-    length = len(target_data)
-    zeroing_successful = False
-
+    # #79/#80: anything still here is not None, not bytes/str, and not a
+    # bytearray/memoryview, so we have no writable handle on the caller's own
+    # storage - only a bytes() copy. Zeroing that copy would leave the caller's
+    # secret intact, so previously copying it, scrubbing the COPY with a
+    # multi-pass / explicit_bzero / msync routine, and returning True was a
+    # false "verified zeroed" (and, since every real buffer type returns above,
+    # that whole routine was dead code). Be honest instead, mirroring the
+    # bytes/str contract: best-effort zero the throwaway copy so it does not
+    # linger, then report failure - or raise in strict mode. Secrets that must
+    # be wiped have to be held in a bytearray / SecureBytes from creation.
+    if strict:
+        raise TypeError(
+            f"secure_memzero cannot wipe {type(data).__name__} in place; hold "
+            "secrets in bytearray or SecureBytes so they can be zeroed"
+        )
     try:
-        # Apply multi-layered wiping approach to defend against cold boot attacks
-
-        # First pass: Simple zeroing as a baseline
-        target_data[:] = bytearray(length)
-
-        # Only attempt the more complex wiping if we're not shutting down
-        if getattr(sys, "meta_path", None) is not None:
-            try:
-                # Increased number of overwrite rounds with different patterns for better cold boot protection
-                # Each pattern targets different memory retention characteristics
-
-                # 1. Random data (unpredictable)
-                random_data = bytearray(length)
-                try:
-                    random_data = bytearray(generate_secure_random_bytes(length))
-                    target_data[:] = random_data
-                    random_data[:] = bytearray(length)  # Zero the random data too
-                except BaseException:
-                    pass
-
-                # 2. All ones (0xFF) - alternate bit pattern to flip all bits
-                all_ones = bytearray([0xFF] * length)
-                target_data[:] = all_ones
-                all_ones[:] = bytearray(length)
-
-                # 3. Alternating pattern (0xAA) - 10101010 pattern
-                pattern_aa = bytearray([0xAA] * length)
-                target_data[:] = pattern_aa
-                pattern_aa[:] = bytearray(length)
-
-                # 4. Inverse alternating pattern (0x55) - 01010101 pattern
-                pattern_55 = bytearray([0x55] * length)
-                target_data[:] = pattern_55
-                pattern_55[:] = bytearray(length)
-
-                # 5. Random data again - further disrupt any residual state
-                try:
-                    random_data = bytearray(generate_secure_random_bytes(length))
-                    target_data[:] = random_data
-                    random_data[:] = bytearray(length)
-                except BaseException:
-                    pass
-
-                # Add random timing variations to prevent timing-based memory analysis
-                # This is especially important for cold boot attacks
-                time.sleep(secrets.randbelow(5) / 1000.0 + 0.001)
-
-                # Try platform-specific secure zeroing methods
-                try:
-                    # Force memory synchronization before secure zeroing
-                    # This helps ensure previous writes are committed to memory
-                    gc.collect()  # Request garbage collection to help flush caches
-
-                    system_name = platform.system()
-                    if system_name == "Windows":
-                        try:
-                            # Windows has a dedicated secure memory zeroing function
-                            buf = (ctypes.c_byte * length).from_buffer(target_data)
-                            result = ctypes.windll.kernel32.RtlSecureZeroMemory(
-                                ctypes.byref(buf), ctypes.c_size_t(length)
-                            )
-                            if result == 0:  # Success returns 0
-                                zeroing_successful = True
-                        except BaseException:
-                            pass
-                    elif system_name in ("Linux", "Darwin", "FreeBSD"):
-                        try:
-                            # Try to use platform-specific secure zeroing functions
-                            libc = ctypes.CDLL(None)
-
-                            # Modern libc versions provide explicit_bzero (similar to memset_s)
-                            if hasattr(libc, "explicit_bzero"):
-                                buf = (ctypes.c_byte * length).from_buffer(target_data)
-                                libc.explicit_bzero(ctypes.byref(buf), ctypes.c_size_t(length))
-                                zeroing_successful = True
-                            # Try POSIX memset_s if available
-                            elif hasattr(libc, "memset_s"):
-                                buf = (ctypes.c_byte * length).from_buffer(target_data)
-                                libc.memset_s(
-                                    ctypes.byref(buf),
-                                    ctypes.c_size_t(length),
-                                    ctypes.c_int(0),
-                                    ctypes.c_size_t(length),
-                                )
-                                zeroing_successful = True
-                        except BaseException:
-                            pass
-                except BaseException:
-                    pass
-
-                # Final zeroing using standard Python method
-                target_data[:] = bytearray(length)
-
-                # Ensure the data is flushed to actual memory (helpful against optimizations)
-                # Call msync equivalent if on POSIX systems
-                if platform.system() in ("Linux", "Darwin", "FreeBSD"):
-                    try:
-                        # Try to ensure memory writes are synchronized to physical memory
-                        libc = ctypes.CDLL(None)
-                        if hasattr(libc, "msync"):
-                            try:
-                                addr = ctypes.addressof(ctypes.c_char.from_buffer(target_data))
-                                page_size = get_memory_page_size()
-                                # Round address down to page boundary
-                                page_addr = (addr // page_size) * page_size
-                                # Round size up to page boundary
-                                page_len = (
-                                    (length + (addr - page_addr) + page_size - 1) // page_size
-                                ) * page_size
-
-                                # MS_SYNC: Synchronous flush (2 on most systems)
-                                MS_SYNC = 2
-                                libc.msync(
-                                    ctypes.c_void_p(page_addr),
-                                    ctypes.c_size_t(page_len),
-                                    MS_SYNC,
-                                )
-                            except Exception:
-                                pass
-                    except Exception:
-                        pass
-
-            except BaseException:
-                pass
-
-            # One more zeroing pass
-            target_data[:] = bytearray(length)
-
-            # Verify that memory has been properly zeroed
-            zeroing_successful = verify_memory_zeroed(target_data, full_check=full_verification)
-
-    except Exception:
-        # Last resort zeroing attempt
-        try:
-            target_data[:] = bytearray(length)
-            zeroing_successful = verify_memory_zeroed(target_data)
-        except BaseException:
-            zeroing_successful = False
-
-    return zeroing_successful
+        scratch = bytearray(bytes(data))
+        scratch[:] = bytearray(len(scratch))
+    except BaseException:
+        pass
+    return False
 
 
 class SecureBytes(bytearray):
@@ -423,6 +326,12 @@ class SecureMemoryAllocator:
         )
         self.quiet = not self.debug_mode  # Quiet mode is the opposite of debug mode
 
+        # Memory-locking status, surfaced to callers regardless of debug mode
+        # (issue #62). Locking failures mean sensitive data may be swappable.
+        self.last_lock_succeeded = None
+        self.lock_failure_count = 0
+        self._lock_warning_emitted = False
+
         # Attempt to configure advanced memory protections
         self._setup_advanced_protections()
 
@@ -443,15 +352,12 @@ class SecureMemoryAllocator:
                     # Check for minherit support (BSD memory inheritance)
                     self.has_minherit = hasattr(libc, "minherit")
 
-                    # Linux-specific: Check if MADV_DONTDUMP is supported
-                    # This prevents sensitive memory from being included in core dumps
-                    if self.system == "linux":
-                        try:
-                            # Try to get MADV_DONTDUMP constant (value 16 on most systems)
-                            # We'll use the value directly if we can't get it from headers
-                            self.supports_madv_dontdump = True
-                        except Exception:
-                            pass
+                    # Linux-specific: probe whether MADV_DONTDUMP actually
+                    # works (#103 — this used to be hardcoded True). It
+                    # prevents sensitive memory from being included in core
+                    # dumps.
+                    if self.system == "linux" and self.has_madvise:
+                        self.supports_madv_dontdump = self._probe_madv_dontdump()
                 except Exception:
                     pass
 
@@ -471,27 +377,75 @@ class SecureMemoryAllocator:
         """Round a size up to the nearest multiple of the page size."""
         return ((size + self.page_size - 1) // self.page_size) * self.page_size
 
-    def _anti_debug_check(self):
-        """
-        Check for debuggers or memory scanners and perform anti-debugging measures.
+    def _probe_madv_dontdump(self) -> bool:
+        """Probe at runtime whether madvise(MADV_DONTDUMP) works (#103).
 
-        This helps protect against memory analysis tools and debuggers that
-        could be used to extract sensitive information from memory.
+        Calls madvise on a private, page-aligned scratch mapping and checks
+        the return value. Returns False on any failure (pre-3.4 kernel,
+        missing libc symbol, EINVAL, ...), so callers never assume a
+        protection that is not actually in effect.
 
         Returns:
-            bool: True if no debuggers were detected, False otherwise
+            bool: True if the kernel accepted MADV_DONTDUMP
+        """
+        if self.system != "linux":
+            return False
+        try:
+            import mmap as _mmap
+
+            libc = ctypes.CDLL(None, use_errno=True)
+            if not hasattr(libc, "madvise"):
+                return False
+            libc.madvise.argtypes = [
+                ctypes.c_void_p,
+                ctypes.c_size_t,
+                ctypes.c_int,
+            ]
+            libc.madvise.restype = ctypes.c_int
+
+            scratch = _mmap.mmap(-1, self.page_size)
+            try:
+                exported = ctypes.c_char.from_buffer(scratch)
+                addr = ctypes.addressof(exported)
+                MADV_DONTDUMP = 16
+                result = libc.madvise(
+                    ctypes.c_void_p(addr),
+                    ctypes.c_size_t(self.page_size),
+                    MADV_DONTDUMP,
+                )
+                # Release the buffer export before closing the mapping
+                del exported
+                return result == 0
+            finally:
+                scratch.close()
+        except Exception:
+            return False
+
+    def _anti_debug_check(self):
+        """
+        Check whether the process is being traced (ADVISORY ONLY).
+
+        This is informational, not a protection: TracerPid is non-zero under
+        any ptrace-based tool (debuggers, strace, some container runtimes and
+        profilers), and no defensive action is possible against a tracer that
+        is already attached. The result is only ever used to emit a warning
+        in debug mode; it never changes allocation behavior.
+
+        Returns:
+            bool: True if no tracer was detected, False otherwise
         """
         try:
-            # Various anti-debugging techniques
             if self.system == "linux":
                 # Check for tracers via status file
                 try:
                     with open("/proc/self/status", "r") as f:
                         status = f.read()
                         if "TracerPid:\t0" not in status:
-                            # Tracer detected - could be a debugger
                             if self.debug_mode:
-                                eprint("Warning: Possible debugger detected")
+                                eprint(
+                                    "Notice (advisory only): process appears to be "
+                                    "traced/debugged"
+                                )
                             return False
                 except Exception:
                     pass
@@ -503,24 +457,13 @@ class SecureMemoryAllocator:
                     if hasattr(kernel32, "IsDebuggerPresent"):
                         if kernel32.IsDebuggerPresent():
                             if self.debug_mode:
-                                eprint("Warning: Debugger detected")
+                                eprint(
+                                    "Notice (advisory only): process appears to be "
+                                    "traced/debugged"
+                                )
                             return False
                 except Exception:
                     pass
-
-            # Memory scanning countermeasures
-            # Introduce some randomness in memory patterns
-            # This makes it harder for scanners to identify patterns
-            try:
-                # Random memory access pattern to prevent predictable analysis
-                dummy_size = secrets.randbelow(193) + 64  # 64-256 range
-                dummy = bytearray(dummy_size)
-                for i in range(0, dummy_size, 8):
-                    dummy[i] = secrets.randbelow(256)
-                # Immediately clear to avoid leaving traces
-                dummy[:] = bytearray(dummy_size)
-            except Exception:
-                pass
 
             return True
         except Exception:
@@ -566,9 +509,21 @@ class SecureMemoryAllocator:
 
             # Apply platform-specific memory protections
             lock_success = self._try_lock_memory(secure_container)
+            self.last_lock_succeeded = lock_success
 
-            if not lock_success and self.debug_mode:
-                eprint("Warning: Memory locking failed")
+            if not lock_success:
+                # Surface the failure regardless of debug mode: swappable secrets
+                # are a security-relevant condition, not a debug detail (issue #62).
+                # Deduplicated to one warning per allocator instance to avoid
+                # per-allocation spam on systems that cannot lock at all.
+                self.lock_failure_count += 1
+                if not self._lock_warning_emitted:
+                    self._lock_warning_emitted = True
+                    eprint(
+                        "SECURITY WARNING: could not lock memory to prevent swapping "
+                        "(mlock/VirtualLock failed); sensitive data may be written to swap. "
+                        "Check RLIMIT_MEMLOCK / process privileges."
+                    )
 
             # Apply additional cold boot attack countermeasures
             self._apply_cold_boot_protections(secure_container)
@@ -630,33 +585,51 @@ class SecureMemoryAllocator:
         try:
             # For Linux platforms, apply additional protections
             if self.system == "linux":
+                # Try to prevent memory from being included in core dumps
+                if not (self.has_madvise and self.supports_madv_dontdump):
+                    return False
                 try:
-                    # Try to prevent memory from being included in core dumps
-                    if self.has_madvise and self.supports_madv_dontdump:
-                        try:
-                            libc = ctypes.CDLL(None)
-                            addr = ctypes.addressof(ctypes.c_char.from_buffer(buffer))
-                            size = len(buffer)
+                    libc = ctypes.CDLL(None, use_errno=True)
+                    libc.madvise.argtypes = [
+                        ctypes.c_void_p,
+                        ctypes.c_size_t,
+                        ctypes.c_int,
+                    ]
+                    libc.madvise.restype = ctypes.c_int
 
-                            # MADV_DONTDUMP (16) - exclude from core dumps
-                            MADV_DONTDUMP = 16
-                            libc.madvise(
-                                ctypes.c_void_p(addr),
-                                ctypes.c_size_t(size),
-                                MADV_DONTDUMP,
-                            )
+                    addr = ctypes.addressof(ctypes.c_char.from_buffer(buffer))
+                    size = len(buffer)
 
-                            # MADV_DONTFORK (10) - don't share with child processes
-                            MADV_DONTFORK = 10
-                            libc.madvise(
-                                ctypes.c_void_p(addr),
-                                ctypes.c_size_t(size),
-                                MADV_DONTFORK,
+                    # madvise(2) requires a page-aligned address (#103: the
+                    # old unaligned call always failed with EINVAL and the
+                    # ignored return value hid it). Round the range outward
+                    # to whole pages: MADV_DONTDUMP only affects core-dump
+                    # contents, so covering neighbouring heap data is safe.
+                    page_addr = (addr // self.page_size) * self.page_size
+                    page_len = self._round_to_page_size(size + (addr - page_addr))
+
+                    # MADV_DONTDUMP (16) - exclude from core dumps
+                    MADV_DONTDUMP = 16
+                    result = libc.madvise(
+                        ctypes.c_void_p(page_addr),
+                        ctypes.c_size_t(page_len),
+                        MADV_DONTDUMP,
+                    )
+                    if result != 0:
+                        if self.debug_mode:
+                            eprint(
+                                "Warning: madvise(MADV_DONTDUMP) failed "
+                                f"(errno {ctypes.get_errno()})"
                             )
-                        except Exception:
-                            pass
+                        return False
+
+                    # NOTE (#103): the former MADV_DONTFORK call was removed.
+                    # It always failed with EINVAL (unaligned address, return
+                    # ignored), and page-aligning it would be unsafe: forked
+                    # children would lose whole heap pages — including
+                    # unrelated objects — and crash on access.
                 except Exception:
-                    pass
+                    return False
 
             # For BSD platforms (including macOS), use minherit
             elif self.system in ("darwin", "freebsd"):
@@ -711,11 +684,8 @@ class SecureMemoryAllocator:
             if self.system in ("linux", "darwin", "freebsd"):
                 # Try to import the appropriate modules
                 try:
-                    import fcntl
-                    import resource
-
-                    # Attempt to disable core dumps
-                    resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+                    # Disable core dumps (soft limit only, once per process, #104)
+                    disable_core_dumps()
 
                     # Determine the correct library name based on platform
                     if self.system == "linux":
@@ -727,21 +697,26 @@ class SecureMemoryAllocator:
                     else:
                         return False
 
-                    # Load the C library
+                    # Load the C library (use_errno so get_errno() is meaningful)
                     try:
-                        libc = ctypes.CDLL(libc_name)
+                        libc = ctypes.CDLL(libc_name, use_errno=True)
                     except OSError:
                         return False
 
                     # Check if mlock function exists
                     if hasattr(libc, "mlock"):
+                        # Declare prototypes so ctypes marshals the 64-bit address
+                        # as a pointer instead of truncating it to a C int (#61).
+                        libc.mlock.argtypes = [ctypes.c_void_p, ctypes.c_size_t]
+                        libc.mlock.restype = ctypes.c_int
                         # Create a memoryview to safely access buffer
                         try:
                             # Get buffer address with validation
+                            # from_buffer() raises on real failure (caught below);
+                            # do NOT test truthiness -- a zero first byte makes the
+                            # c_char falsy and would silently abort locking of any
+                            # zeroed buffer, which is what allocate() produces (#61).
                             c_buffer = ctypes.c_char.from_buffer(buffer)
-                            if not c_buffer:
-                                return False
-
                             addr = ctypes.addressof(c_buffer)
                             size = buffer_len
 
@@ -781,12 +756,16 @@ class SecureMemoryAllocator:
                         return False
 
                     if hasattr(kernel32, "VirtualLock"):
+                        # Declare prototypes so the 64-bit address is not truncated (#61).
+                        kernel32.VirtualLock.argtypes = [ctypes.c_void_p, ctypes.c_size_t]
+                        kernel32.VirtualLock.restype = ctypes.c_int
                         try:
                             # Get buffer address with validation
+                            # from_buffer() raises on real failure (caught below);
+                            # do NOT test truthiness -- a zero first byte makes the
+                            # c_char falsy and would silently abort locking of any
+                            # zeroed buffer, which is what allocate() produces (#61).
                             c_buffer = ctypes.c_char.from_buffer(buffer)
-                            if not c_buffer:
-                                return False
-
                             addr = ctypes.addressof(c_buffer)
                             size = buffer_len
 
@@ -832,7 +811,15 @@ class SecureMemoryAllocator:
         Returns:
             bool: True if freeing was successful and verified, False otherwise
         """
-        if secure_container in self.allocated_blocks:
+        # Locate the block by IDENTITY. SecureBytes subclasses bytearray, so
+        # `in` / `list.remove` compare by content; once secure_memzero() zeroes
+        # the container it would compare equal to any other all-zero tracked block
+        # and remove() could drop the wrong (still-live) allocation (#64).
+        index = next(
+            (i for i, block in enumerate(self.allocated_blocks) if block is secure_container),
+            None,
+        )
+        if index is not None:
             # Get container size before unlocking for tracking
             container_size = len(secure_container)
 
@@ -842,8 +829,8 @@ class SecureMemoryAllocator:
             # Securely zero memory and verify
             zero_success = secure_memzero(secure_container)
 
-            # Update allocation tracking
-            self.allocated_blocks.remove(secure_container)
+            # Update allocation tracking (remove by index found via identity)
+            del self.allocated_blocks[index]
             self.total_allocated -= container_size
 
             # Perform garbage collection to help prevent memory leaks
@@ -889,20 +876,24 @@ class SecureMemoryAllocator:
                     else:
                         return False
 
-                    # Load the C library
+                    # Load the C library (use_errno so get_errno() is meaningful)
                     try:
-                        libc = ctypes.CDLL(libc_name)
+                        libc = ctypes.CDLL(libc_name, use_errno=True)
                     except OSError:
                         return False
 
                     # Check if munlock function exists
                     if hasattr(libc, "munlock"):
+                        # Declare prototypes so the 64-bit address is not truncated (#61).
+                        libc.munlock.argtypes = [ctypes.c_void_p, ctypes.c_size_t]
+                        libc.munlock.restype = ctypes.c_int
                         try:
                             # Get buffer address with validation
+                            # from_buffer() raises on real failure (caught below);
+                            # do NOT test truthiness -- a zero first byte makes the
+                            # c_char falsy and would silently abort locking of any
+                            # zeroed buffer, which is what allocate() produces (#61).
                             c_buffer = ctypes.c_char.from_buffer(buffer)
-                            if not c_buffer:
-                                return False
-
                             addr = ctypes.addressof(c_buffer)
                             size = buffer_len
 
@@ -935,12 +926,16 @@ class SecureMemoryAllocator:
 
                     # Check if VirtualUnlock function exists
                     if hasattr(kernel32, "VirtualUnlock"):
+                        # Declare prototypes so the 64-bit address is not truncated (#61).
+                        kernel32.VirtualUnlock.argtypes = [ctypes.c_void_p, ctypes.c_size_t]
+                        kernel32.VirtualUnlock.restype = ctypes.c_int
                         try:
                             # Get buffer address with validation
+                            # from_buffer() raises on real failure (caught below);
+                            # do NOT test truthiness -- a zero first byte makes the
+                            # c_char falsy and would silently abort locking of any
+                            # zeroed buffer, which is what allocate() produces (#61).
                             c_buffer = ctypes.c_char.from_buffer(buffer)
-                            if not c_buffer:
-                                return False
-
                             addr = ctypes.addressof(c_buffer)
                             size = buffer_len
 
@@ -1327,23 +1322,15 @@ def secure_erase_system_memory(trigger_gc=True, full_sweep=False):
         # Platform-specific memory cleanup
         system_name = platform.system().lower()
 
-        # For Linux platforms, try to clean swap space
+        # Note (#106): this used to write '3' to /proc/sys/vm/drop_caches,
+        # claiming to 'flush memory to disk'. That write only evicts clean
+        # page/dentry/inode caches (it wipes nothing and does not touch
+        # swap), requires root, and silently failed for normal users — so
+        # it was removed rather than corrected.
         if system_name == "linux":
             try:
-                # Request the kernel flush memory to disk
-                try:
-                    with open("/proc/sys/vm/drop_caches", "w") as f:
-                        f.write("3")
-                except Exception:
-                    pass
-
-                # Try to disable core dumps
-                try:
-                    import resource
-
-                    resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
-                except Exception:
-                    pass
+                # Disable core dumps (soft limit only, once per process, #104)
+                disable_core_dumps()
 
                 # Request garbage collection again after memory operations
                 gc.collect()

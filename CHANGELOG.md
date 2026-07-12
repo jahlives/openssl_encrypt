@@ -5,6 +5,445 @@ All notable changes to the openssl_encrypt project will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.8] - 2026-07-12
+
+### Added
+
+- **Documentation: KDF-chain security research report**
+  (`docs/KDF_CHAIN_SECURITY_RESEARCH.md`): literature review (verified,
+  cited) on the security of sequential/chained KDF constructions vs.
+  parallel XOR combiners — robust-combiner theory, cascade counterexamples,
+  generic-attack bounds, and the open questions relevant to this project's
+  KDF cascade design.
+
+- **`check-password` command**: a read-only subcommand that reports the strength
+  of a password without encrypting anything. Prints the pattern-aware strength
+  category, entropy (pattern-aware and raw), detected-weakness warnings, and
+  pass/fail against a chosen `--password-policy` (with `--strict-strength`
+  supported). The password is read from `CRYPT_PASSWORD`, a piped stdin, an
+  interactive prompt, or (discouraged, with a warning) the `-p`/`--password`
+  flag. Human output goes to stderr; `--json` emits a machine-readable report on
+  stdout. Exits non-zero when a policy is applied and the password fails it, so
+  it can be used as a scriptable gate. (Backported from 1.5.x.)
+- **Pattern-aware password strength estimation**: password strength feedback now
+  detects predictable structure (dictionary words, l33t substitutions, keyboard
+  walks, ascending/descending sequences, repeats, dates) instead of relying on
+  the raw character-space entropy alone, which over-rated structured passwords
+  (e.g. `Password1!`). Uses the optional [`zxcvbn`](https://pypi.org/project/zxcvbn/)
+  package when installed, and a built-in heuristic fallback otherwise — `zxcvbn`
+  is **not** a production dependency. Behaviour is **advisory by default**: the
+  displayed strength label and new "Password weakness" warnings reflect the
+  pattern-aware estimate, but the `--min-password-entropy` gate still uses the
+  raw measure, so passwords accepted before remain accepted. The new
+  `--strict-strength` flag (enabled automatically by the `paranoid` policy) makes
+  the gate reject passwords whose pattern-aware strength is too low. This only
+  affects password validation when encrypting; it never affects decryption.
+  (Backported from 1.5.x.)
+
+### Fixed
+
+- **Legacy-KDF retry classification is now structural** (v14 follow-up
+  review LOW-4, gitlab#116, 2026-07-11): two classification gaps in the
+  v12/v13 legacy-KEM-key retry — both fail-closed, none attacker-usable.
+  (1) The adapter retry caught only `cryptography.exceptions.InvalidTag`,
+  but the custom XChaCha20Poly1305 wrapper converts that into the
+  project's `AuthenticationError`, so adapter-path xchacha legacy files
+  skipped the retry — it now catches both. (2) The native classifier was
+  over-broad (`except Exception`), converting structural errors (e.g.
+  "Ciphertext too short") into "authentication failure" and triggering a
+  pointless retry, contradicting the `decrypt()` docstring — it is now
+  narrowed to `(InvalidTag, AuthenticationError)`. (The 1.5.x threefish
+  part of this finding does not apply: Threefish is not a PQC data
+  cipher on this line.) The retry remains scoped to v12/v13 and
+  AEAD-gated; v14+ still never retries.
+
+
+- **Keystore dual-encryption metadata gates excluded v11-v14 files**
+  (pre-existing, surfaced by the v14 default flip): `keystore_wrapper` and
+  `keystore_utils` checked `format_version in [4..10]` before looking up
+  embedded PQC keys, key IDs, and the dual-encryption flag in the v4+
+  hierarchical metadata — files at v11-v13 (including the v13 template
+  default of released 1.4.6/1.4.7) fell into the legacy root-level branch
+  and keystore dual-encryption failed. All gates generalized to `>= 4`,
+  matching the crypt_core fix.
+
+- **RandomX component crashed independent-XOR derivation for wide-key
+  algorithms** (pre-existing): the RandomX KDF natively yields 32 bytes, so
+  with AES-SIV or Threefish-512/1024 (64/128-byte keys) the independent-XOR
+  combiner refused to XOR mismatched lengths and key derivation crashed.
+  The component output is now HKDF-normalized to the target key length
+  (byte-identical pass-through for 32-byte keys; mismatched configs never
+  produced a file, so nothing existing is affected). The KDF-without-
+  prior-hashing interactive warning and the HKDF-only rejection (#99) are
+  also enforced on the independent-XOR path now that it is the default.
+
+- **Sequential XOR + streaming silently produced undecryptable files** (found
+  while wiring the v14 default flip, verified against the previous release
+  code): requesting `--use-xor-composition` on a file above the streaming
+  threshold derived the key sequentially but wrote a v12 streaming file,
+  which the decrypt router always routes down the independent-XOR path —
+  every such file failed chunk authentication (data loss). The combination
+  is now refused with a clear error pointing to `--no-streaming` (which
+  round-trips correctly at v13-sequential) instead of writing a file that
+  cannot be decrypted.
+
+- **Embedded encrypted PQC private keys in v11-v13 files were undecryptable**
+  ("Missing PQC key salt"): the decrypt-side `pqc_key_salt` lookup was gated
+  on `format_version in [4..10]`, so files that embed a password-encrypted
+  post-quantum private key (`pqc_store_private_key`) at format versions 11-13
+  always fell into the v3 legacy branch and failed. Every v4+ metadata writer
+  stores the salt under `encryption.pqc_key_salt`; the gate is now `>= 4`,
+  with v13/v14 regression round-trips. Found while wiring format_version 14.
+
+### Added
+
+- **Format-version fixture corpus** (v14 implementation plan Phase 5):
+  pre-encrypted fixtures under `unittests/testfiles/format_versions/` pin
+  the decrypt path of every supported write topology — v9 plain, v11/v13
+  independent-XOR, v13 sequential-XOR, v12/v14 streaming, v13/v14 PQC with
+  HKDF and transcript-bound KEM keys, and a pre-1.4.8 legacy-KDF PQC file
+  that permanently pins the bare-SHA256 decrypt fallback. A failure in this
+  suite means reading existing files broke.
+
+### Changed
+
+- **Visible notices for legacy-format writes** (post-v14 review
+  INFO-1/INFO-2, 2026-07-11, warn-only — never an error): requesting an
+  explicit `format_version` below the current default for a NEW encryption
+  now prints a warning (the file lacks the v14 `#100`/`#83` protections;
+  explicit versions remain honored for API compatibility), and the
+  streaming path's silent version upgrade is now announced with a visible
+  note instead of a debug-only log line (streaming can only write v12 or
+  v14; the upgrade itself is unchanged). Also corrected a misleading
+  comment that claimed streaming PQC files exist (no PQC hybrid algorithm
+  can stream), so future binding-coverage audits aren't misled (INFO-3).
+
+- **format_version 14 scaffolding** (v14 implementation plan Phase 1, no
+  default/behavior change for existing writes): registered
+  `metadata_v14_schema.json` (independent-XOR only — `xor_mode` enum is
+  `["independent"]`; optional v12-style `streaming` block), added
+  `LATEST_STABLE_FORMAT_VERSION = 14`, extended explicit `xor_mode` stamping
+  from `== 13` to `>= 13`, added a fail-closed guard refusing any
+  `format_version >= 14` write with sequential XOR (sequential stays pinned
+  at v13 per the M2 decision), and generalized hardcoded decrypt-side
+  version lists (`[4..13]` → `>= 4`, `[8..13]` → `>= 8`) so future versions
+  cannot silently fall into legacy branches. Per crypto-review of the phase:
+  the sequential-refusal fires before the streaming force-to-12 rewrites the
+  version (size-independent invariant), the no-validator JSON fallback now
+  fail-closes on unknown/future format versions instead of relying solely on
+  schema validation, the v14 schema requires `xor_mode`, and the decrypt
+  router treats `format_version >= 14` as independent-XOR explicitly. v14
+  files round-trip; nothing writes v14 by default yet.
+
+- **Documentation: `docs/FORMAT_V14_IMPLEMENTATION_PLAN.md` added — v14
+  scheduled for 1.4.x** (2026-07-10): phased execution plan for the full v14
+  scope (#100 TLV KDF seed, #83 KEM HKDF + ciphertext binding, M2
+  independent-XOR default / M1) on `feature/v1.4.x-development`, followed by
+  a full 1.5.x port with byte-identical golden vectors. All implementation
+  sites re-verified on 1.4.x. Documents a critical planning finding: the
+  FORMAT_V14_PLAN §3.6 claim that the #83 v12 HKDF ancestor exists on both
+  lines is wrong — 1.4.x still derives KEM keys as bare
+  `sha256(shared_secret)` with no `format_version` threading, a suspected
+  live cross-line incompatibility for v12/v13 PQC files (to be confirmed and
+  fixed as Phase 0). Plan only — no code change.
+
+- **Documentation: `docs/FORMAT_V14_PLAN.md` M2 decided as Option A**
+  (decision record, 2026-07-10): format_version 14 writes will default to the
+  independent-XOR topology; sequential-XOR (`--use-xor-composition`) remains a
+  supported opt-in pinned at format_version 13; the whole-chain HKDF
+  finalization fallback is rejected. Under this topology M1 is closed for v14
+  writes by construction (the independent scrypt component already derives the
+  full key length). Also records the verified code state behind the decision:
+  sequential-XOR is a hybrid (chains and XOR-accumulates, shares the M1 scrypt
+  site), decrypt dispatch is fully metadata-driven (existing v8–v13 files are
+  unaffected by the default flip), and the bare/template invocations already
+  force independent-XOR, so the sequential-cascade default only affects custom
+  KDF configs. Decision record + spec update only — no code change.
+
+- **Documentation: `docs/FORMAT_V14_PLAN.md` extended with KDF-cascade audit
+  findings** (addendum, 2026-07-09): pre-staged v14 specs for M1 (scrypt
+  sequential stage truncates the intermediate to 256 bits for 512/1024-bit
+  keys) and M2 (default v9 path is a pure sequential cascade with a
+  weakest-link floor; make Independent-XOR the default or add a whole-chain
+  finalization step). Spec/plan only — no code change.
+
+- **`--debug` warning is now proportional to what it leaks**: the loud
+  "SENSITIVE DATA LOGGING ACTIVE" banner and the "do not use on production data"
+  notice now fire only for `--debug --unsafe-show-secrets` (the path that prints
+  secrets in cleartext). Plain `--debug`, which redacts every secret to length +
+  a keyed SHA-256 fingerprint, now shows a calm, accurate note instead — stating
+  that secrets are redacted, that secret lengths and public values (nonces,
+  salts, ciphertext) are still written to stderr and may persist in logs or
+  shell history, and that `--unsafe-show-secrets` reveals cleartext. The old
+  always-on alarming banner both overstated the risk of the redacted path and
+  desensitised users to the real cleartext warning. Message-only change; no
+  redaction logic was altered.
+
+### Security
+
+- **The live `hsm fido2-test`/`onlykey-test` handlers no longer print the
+  derived hardware pepper** (H1 [HSM-1] residual, gitlab#121, 2026-07-12):
+  the 2026-07-07 H1 fix removed the pepper hex dump from
+  `modules/hsm_cli.py`, but that click-based frontend is not wired into the
+  `openssl-encrypt` entry point — the `hsm` subcommand dispatches to
+  `handle_hsm_command` in `crypt_cli.py`, whose `fido2-test` and
+  `onlykey-test` handlers still hex-dumped the full pepper. Both now report
+  only the pepper length. Mitigating: the printed pepper was derived from a
+  random per-invocation test salt, so it unlocks no real file — but it is
+  hardware-derived key material and must never reach output. Fixed in the
+  same sweep: the FIDO2 pepper plugin interpolated the raw prf/hmac-secret
+  output (the pepper's source material) into a `logger.debug` line and into
+  a `PluginResult` error message that reaches the user via
+  `eprint(result.message)` — both now render structure only (type/keys);
+  and the `asymmetric_core` `__main__` self-test printed 32 bytes of its
+  (random, throwaway) roundtrip password as hex on failure — now lengths
+  only. The H1 regression test now scans the live `crypt_cli.py`, the
+  OnlyKey/YubiKey challenge-response plugins, and every `prf_data` sink
+  (logs, prints, plugin error messages), not just `hsm_cli.py`.
+
+- **`encrypt_file` now refuses format_version values above the latest
+  stable format** (v14 follow-up review LOW-2, gitlab#114, 2026-07-11):
+  the write path bounded explicit `format_version` requests from below
+  (the v8/v10 sequential-XOR refusal) but not from above — an explicit
+  `format_version=15` passed every `>= 14` gate, derived a real key, and
+  stamped the unknown version into the metadata; the decrypt side then
+  failed closed on it, leaving a permanently unreadable file (data-loss
+  footgun for API callers) carrying an on-disk version whose semantics
+  were never specified. New writes now raise a clear `ValueError` for
+  `format_version > LATEST_STABLE_FORMAT_VERSION`, before any archiving
+  or temp files, mirroring the decrypt-side bound. Not attacker-
+  exploitable; no change for any valid version.
+
+- **Remote and combined KDF pepper are now zeroized after use** (v14
+  follow-up review LOW-1, gitlab#113, 2026-07-11): the v14 work wipes the
+  TLV KDF seed in a `finally` block, but the pepper material feeding it
+  outlived that wipe — the remote pepper (AES-GCM decrypt output) and the
+  combined `hsm_pepper + remote_pepper` concatenation were immutable
+  `bytes` that were never zeroized, and the existing `hsm_pepper` wipe was
+  a no-op copy-zero on plugin-supplied `bytes` (M10). All three are now
+  held in wipeable `bytearray` buffers from creation — the combined pepper
+  is built by a new `_combine_peppers` helper in one exact-size allocation
+  (no intermediate concatenation copies, same M2 [MEM-1] standard as the
+  seed encoder) — and zeroized in the `encrypt_file`/`decrypt_file`
+  `finally` blocks on all paths. Unavoidable immutable transients from
+  library/plugin APIs (`AESGCM.decrypt` output, the plugin result dict)
+  remain documented accepted residuals. No derived keys or file formats
+  change; pure memory-hygiene hardening.
+
+- **Recipient password wrap now binds the KEM ciphertext and algorithm
+  into the key derivation (wrap_version 3)** (post-v14 review LOW-3,
+  gitlab#112, 2026-07-11): `PasswordWrapper` derived the per-recipient
+  AES-256-GCM wrap key from the ML-KEM shared secret with a static HKDF
+  info — the finding-#83 transcript binding covered only the main PQC data
+  path. New asymmetric files wrap with
+  `info = "openssl_encrypt.password_wrap.v3|" + kem_algorithm + "|ct=" +
+  SHA256(encapsulated_key)` and record `wrap_version: 3` in the recipient
+  entry (inside the signed metadata). Defense-in-depth: ML-KEM implicit
+  rejection plus the GCM tag already defeat ciphertext substitution in
+  practice. Fail-closed by construction — a marked entry never falls back
+  to weaker derivations, stripping the marker derives the wrong key and
+  fails the tag, and unknown marker values are rejected. **Every existing
+  file keeps decrypting** (entries without the marker take the previous
+  v2→v1 chain byte-for-byte, pinned by a pre-fix fixture file); note that
+  asymmetric files written from this version on cannot be opened by older
+  releases (clean unwrap error — same trade as the v14 default flip).
+
+- **Keystore metadata version gates are now type-safe** (post-v14 review
+  LOW-2, gitlab#111, 2026-07-11): the keystore integration read
+  `format_version` from raw parsed JSON and compared it with `>=`, so a
+  crafted file carrying a non-int value (`"4"`, `true`, `[]`) crashed the
+  operation with an unhandled TypeError. Fail-closed either way (no
+  bypass, key material never touched), but a crash is a one-operation DoS
+  and an ugly failure mode. All six affected ingestion points in
+  `keystore_wrapper.py`/`keystore_utils.py` now validate the type once via
+  a shared helper and reject malformed metadata with the project's clean
+  `ValidationError`. Legitimately written files always store an int —
+  behavior for every valid file is unchanged.
+
+- **v14 TLV KDF seed is built in a single allocation** (post-v14 review
+  LOW-1, gitlab#110, 2026-07-11): `_v14_seed_encode` previously grew its
+  buffer with incremental `bytearray +=`, so CPython reallocations could
+  leave partial copies of the length-prefixed cleartext password in freed,
+  unwiped heap memory — the caller's `secure_memzero` wipes only the final
+  allocation — and its `bytes()` field conversion would materialize an
+  unwipeable immutable copy of a mutable (bytearray/SecureBytes) secret.
+  The seed is now written into one exact-size preallocated bytearray
+  through memoryviews: no reallocation, no immutable copies (M2 [MEM-1]
+  hygiene). Not exploitable on its own — hardening only; derived keys and
+  the on-disk format are byte-identical, pinned by the cross-line golden
+  vectors plus a new byte-identity test matrix covering mutable inputs.
+
+- **format_version 14 is now the default write format — independent-XOR
+  topology by default** (finding M2 Option A / M1, v14 implementation plan
+  Phase 4, 2026-07-10): new encryptions without an explicit format version
+  (CLI and library) now write `format_version 14` with independent-XOR key
+  derivation — the parallel robust-combiner topology that stays as strong as
+  its strongest component even if another KDF stage is broken — replacing
+  the plain sequential cascade default (weakest-link floor per the KDF-chain
+  research). Explicit sequential XOR (`--use-xor-composition`) stays a
+  supported opt-in pinned at format_version 13; explicit format-version
+  requests are honored unchanged. Streaming now writes v14 too (so streaming
+  PQC files carry the #83 transcript binding); explicit v12 requests keep
+  writing v12 and all v12 files keep decrypting. M1 is closed by
+  construction: the independent scrypt component derives the full key length
+  (64/128-byte keys for AES-SIV/Threefish are no longer funneled through a
+  256-bit sequential intermediate on any v14 write path) — pinned by golden
+  vectors, with a legacy vector guarding that the `< 14` sequential scrypt
+  stage stays byte-identical. Rekey with `--independent-xor` targets v14;
+  a plain rekey inherits the file's format version and normalizes the
+  topology to independent-XOR (the recommended mode — the rekeyed file is
+  self-consistent and gets a fresh key, so nothing breaks). All existing
+  files decrypt unchanged (decrypt is metadata-driven).
+
+- **format_version 14: KEM ciphertext transcript binding** (finding #83,
+  v14 implementation plan Phase 3, 2026-07-10): for v12/v13 the PQC KEM
+  symmetric key is HKDF(shared_secret) with only the algorithm name as
+  domain separation — nothing binds the derived key to the KEM encapsulation
+  ciphertext or the AEAD choice. At `format_version >= 14` the derivation
+  binds the full transcript:
+  `HKDF-SHA256(info = "openssl_encrypt.kem.v14|" + algorithm + "|" +
+  encryption_data + "|ct=" + sha256(kem_ciphertext))` (info layout pinned
+  for cross-line byte-identity). A missing ciphertext at v14 raises — no
+  silent fallback. The Phase 0 legacy bare-SHA256 decrypt retry is now
+  scoped to v12/v13 only (no v14 file can carry a legacy key, so v14 fails
+  after a single authenticated attempt). v12/v13 derivations are
+  byte-identical to before (Phase 0 goldens unchanged).
+
+- **format_version 14: length-prefixed (TLV) KDF seed** (finding #100,
+  v14 implementation plan Phase 2, 2026-07-10): below v14 the
+  independent-XOR key derivation seeds every component from
+  `sha256(password || pepper || salt)` with the hardware pepper mixed by raw
+  concatenation — so different (password, pepper, salt) splits of the same
+  byte string derive the same key (boundary ambiguity; rated impractical to
+  exploit since tool-generated salts have fixed length, but structurally
+  unsound). Files at `format_version >= 14` seed from
+  `sha256(LP(password) || LP(salt) || LP(pepper))` with
+  `LP(x) = uint32_be(len(x)) || x` and an always-present pepper field
+  (`_v14_seed_encode`, pinned for cross-line byte-identity). Everything
+  below v14 derives byte-identically to before (v13/v11 golden vectors
+  unchanged); nothing writes v14 by default yet. Verified during
+  implementation: the spec's other #100 sites (the `multi_hash_password`
+  seed concat and the 11 per-round `sha256(salt+i)` sites) are unreachable
+  at v14 — the former is sequential-path only, the latter are `< 7` legacy
+  branches — so the fix lands precisely at the one live site.
+
+- **v14 TLV seed hashed without an immutable copy** (crypto-reviewer v14
+  series pass 2026-07-10, Low): the v14 TLV seed is now hashed through a
+  `memoryview` of the seed `bytearray` instead of an immutable `bytes()`
+  copy, so no unwipeable copy of the cleartext password+salt+pepper is
+  materialized (M2 [MEM-1] hygiene; derived keys are byte-identical —
+  pinned by the cross-line golden vectors).
+
+- **v14 KEM transcript binding: detection mechanism documented**
+  (crypto-reviewer v14 series pass 2026-07-10, Low): `_derive_symmetric_key`
+  now documents that the #83 transcript binding detects ciphertext/metadata
+  substitution *via AEAD authentication* (wrong key → tag failure), not an
+  explicit compare — so the binding requires the symmetric layer to remain
+  an AEAD (all reachable PQC data ciphers are AEADs: AES-GCM/-GCM-SIV/-SIV/
+  -OCB3 and ChaCha20/XChaCha20-Poly1305), guarding against a future
+  non-authenticated data cipher silently voiding it.
+
+- **Cross-line PQC KEM key-derivation compatibility** (finding #83 backport,
+  v14 implementation plan Phase 0, 2026-07-10): the 1.4.x line derived every
+  PQC KEM symmetric key as bare `sha256(shared_secret)`, while 1.5.x derives
+  it via HKDF-SHA256 with algorithm-name domain separation for
+  `format_version >= 12` — so v12 (streaming) and v13 (Independent-XOR) PQC
+  files could not be decrypted across the two maintenance lines (confirmed
+  empirically: 1.5.x-style decryption of a 1.4.x-written v13 PQC file fails
+  with InvalidTag). `PQCipher` now implements the same `format_version`-gated
+  HKDF derivation (`_derive_symmetric_key`), threaded from
+  `encrypt_file`/`decrypt_file`, making new v12+ PQC files byte-compatible
+  with 1.5.x. Files written by 1.4.x releases <= 1.4.7 with the legacy
+  derivation **remain fully decryptable**: when HKDF-key authentication fails
+  on a v12+ PQC file, decryption retries once with the legacy key (safe — the
+  AEAD tag rejects wrong keys, and the legacy file population legitimately
+  exists, so no new downgrade surface is introduced) and prints a
+  re-encryption recommendation. Files below v12 and all non-PQC files derive
+  byte-identically to before.
+
+Follow-up security review (2026-07-07) — findings fixed with regression tests
+and crypto-reviewer sign-off:
+
+- **FIDO2/HSM pepper no longer printed in cleartext** (follow-up review #H1
+  [HSM-1]): the `hsm fido2-test` command printed the full 32-byte derived
+  hardware pepper as hex to stdout unconditionally — outside the
+  `debug_secret()` redaction chokepoint, so it landed in scrollback/`script`/CI
+  logs. The hex dump is removed (the length is still reported); the FIDO2 plugin
+  already routed the pepper through `debug_secret()`, so this only closed a CLI
+  inconsistency. *Note: this fix landed in `modules/hsm_cli.py`, which turned
+  out not to be the frontend the `hsm` subcommand actually dispatches to — the
+  reachable handlers were fixed under gitlab#121 (see the Security section
+  above), so both frontends are clean as of this release.*
+- **Plugin signature now covers the exact bytes that execute** (follow-up review
+  #M1 [PLUGIN-2]): the loader verified a plugin's signature over one read while
+  AST-scanning and executing others (verify-A / execute-B), and `exec_module`
+  could run a cached `.pyc` never covered by the signature. `_validate_plugin_file`
+  now reads the plugin once as raw bytes and threads that same buffer through the
+  signature gate, the `sha256(raw)` pin, and `ast.parse(raw)`; `load_plugin`
+  re-reads once, compares to the pin, and executes via `compile(raw)+exec` —
+  killing the CRLF/BOM and `.pyc`-shadow discrepancies. Fail-closed on a missing
+  pin for non-built-ins.
+- **Signed per-package plugin manifest closes the sibling-coverage gap**
+  (follow-up review #H2 [PLUGIN-1]): a package plugin's signed `__init__.py`
+  transitively imported sibling modules that were never signature/AST/hash-checked,
+  so a benign signed `__init__.py` plus a malicious unsigned `helper.py` executed
+  unchecked. A signed `PLUGIN.manifest` now covers **every** importable module
+  under the package (source `.py`, bytecode `.pyc`, native `.so`/`.pyd`,
+  recursively incl. underscore/nested) with one detached `.asc`; under `enforce`
+  a tampered/unlisted/native-swapped/impostor-signed sibling is refused, `warn`
+  warns and loads, built-in packages keep the trust shortcut. `plugin sign`
+  auto-detects a package and writes the manifest. (A runtime import-hook for the
+  validation→import TOCTOU window remains a documented follow-on.)
+- **Key material is now actually wiped at plugin/KDF call sites** (follow-up
+  review #M2 [MEM-1]): several callers wrapped an immutable `bytes` secret in
+  `bytearray(...)` and called `secure_memzero` on the throwaway copy — zeroing a
+  copy while the real secret lingered in unlocked heap (the exact M10 anti-pattern,
+  reintroduced at callers in `parallel_kdf.py`, `asymmetric_core.py`, `pqc.py`,
+  `crypt_core.py`). Each secret is now held in a `bytearray`/`SecureBytes` from
+  creation and that object is wiped.
+- **Parallel and sequential Independent-XOR now derive the same key** (follow-up
+  review #M3 [KDF-1]): for Argon2 with `rounds > 1` the parallel KDF path and the
+  sequential path produced different keys, so a file encrypted under one and
+  decrypted under the other failed to authenticate. The parallel worker now
+  matches the sequential derivation exactly.
+- **RandomX now fails closed in the parallel Independent-XOR path** (follow-up
+  review #R1 [KDF-2b]): a RandomX failure in the parallel path was swallowed and
+  the derivation continued (fail-open), unlike the sequential path which fails
+  closed. Both paths now fail closed.
+- **Streaming per-chunk AEAD auth failures classified structurally** (follow-up
+  review #M4 [STREAM-1]): a per-chunk authentication failure during streaming
+  decryption was detected by substring-matching the exception text, which could
+  misclassify an integrity failure. Classification is now structural.
+
+- **Debug logs no longer leak a KDF key intermediate** (audit 2026-07-06 #2):
+  the per-round Argon2/Balloon/Scrypt debug lines printed `round_salt` as raw
+  hex, and for `format_version >= 7` rounds ≥ 1 that "salt" is the first 128 bits
+  of the live derived-key chain. Under plain `--debug` this leaked key material
+  outside the `debug_secret()` redaction chokepoint; it is now redacted by
+  default (cleartext only under `--debug --unsafe-show-secrets`).
+- **New files are no longer written in the cost-bypassing v8/v10 format** (audit
+  2026-07-06 #3): the v8/v10 sequential-XOR derivation appended the chain's final
+  value twice, cancelling the last KDF stage so an Argon2-only config collapsed
+  to ~`SHA256(password‖salt)`. `encrypt_file` now defaults to `format_version=9`
+  (the secure chained-salt format, matching the CLI and `generate_key`) and
+  **refuses to encrypt** new v8/v10 files (decryption of existing v8/v10 files is
+  unaffected; a library-only `allow_insecure_legacy_xor` escape hatch exists for
+  legacy-fixture tests). `rekey` transparently upgrades an inherited v8/v10 file
+  to v9 — including the envelope fast-path, which no longer re-emits a legacy
+  file verbatim — so rekey is a real migration off the weak derivation. A
+  pytest-only PBKDF2 injection that had zero production effect but broke default
+  round-trips and v7≡v9 equivalence was removed. The envelope rekey fast-path
+  now accepts every version envelope writes (v9/v11/v12/v13), and the v9 metadata
+  schema now lists the ML-KEM/Kyber hybrid algorithms it legitimately produces.
+
+### Fixed
+
+- **`string_entropy` Unicode handling**: non-ASCII characters (accented letters,
+  other scripts, emoji) were excluded from the unique-character count and could
+  score a password at 0.0 bits. They now contribute to the estimate, and the
+  misleading "constant-time" claim in the docstring was corrected. ASCII scores
+  are unchanged. (Backported from 1.5.x.)
+
 ## [1.4.7] - 2026-06-29
 
 ### Changed

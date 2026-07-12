@@ -300,8 +300,8 @@ class TestPostQuantumCrypto(unittest.TestCase):
             # Check that we have format_version 5, 6, 9, or 10
             self.assertIn(
                 metadata["format_version"],
-                [5, 6, 9, 10],
-                f"Expected format_version 5, 6, 9, or 10, got {metadata.get('format_version')}",
+                [5, 6, 9, 10, 14],
+                f"Expected format_version 5, 6, 9, 10 or 14, got {metadata.get('format_version')}",
             )
 
             # Check that encryption_data is set correctly
@@ -414,7 +414,7 @@ class TestPostQuantumCrypto(unittest.TestCase):
                 metadata = json.loads(metadata_json)
 
                 # Check format version (can be 5, 6, 9, or 10)
-                self.assertIn(metadata.get("format_version"), [5, 6, 9, 10])
+                self.assertIn(metadata.get("format_version"), [5, 6, 9, 10, 14])
 
                 # Check encryption_data field
                 self.assertIn("encryption", metadata)
@@ -679,7 +679,7 @@ class TestPostQuantumCrypto(unittest.TestCase):
         v4_metadata = json.loads(metadata_json)
 
         # Allow v4, v5, v6, v9, or v10, since the implementation may auto-convert
-        self.assertIn(v4_metadata["format_version"], [4, 5, 6, 9, 10])
+        self.assertIn(v4_metadata["format_version"], [4, 5, 6, 9, 10, 14])
 
         # If it was converted to v5 or v6, encryption_data might exist but should be aes-gcm
         if v4_metadata["format_version"] in [
@@ -697,7 +697,7 @@ class TestPostQuantumCrypto(unittest.TestCase):
         metadata_json = base64.b64decode(metadata_b64)
         v5_metadata = json.loads(metadata_json)
 
-        self.assertIn(v5_metadata["format_version"], [5, 6, 9, 10])
+        self.assertIn(v5_metadata["format_version"], [5, 6, 9, 10, 14])
         self.assertIn("encryption_data", v5_metadata["encryption"])
         # Allow either the specified value or aes-gcm if the implementation defaults to it
         self.assertIn(
@@ -1489,12 +1489,18 @@ def _is_pqc_algorithm(algorithm_name: str) -> bool:
     ids=lambda name: f"existing_decryption_{name.replace('test1_', '').replace('.txt', '')}",
 )
 # Add isolation marker for each test to prevent race conditions
-def test_file_decryption_v3(filename):
+def test_file_decryption_v3(filename, monkeypatch):
     """Test decryption of a specific test file."""
     algorithm_name = filename.replace("test1_", "").replace(".txt", "")
 
     if _is_pqc_algorithm(algorithm_name) and not LIBOQS_AVAILABLE:
         pytest.skip("liboqs not available - skipping PQC algorithm test")
+
+    if _is_pqc_algorithm(algorithm_name):
+        # Legacy v3 PQC fixtures use the insecure TESTDATA simulation format;
+        # reading them requires explicit opt-in (issue #54 — the sanctioned
+        # 1.4.x legacy-migration path).
+        monkeypatch.setenv("OPENSSL_ENCRYPT_ALLOW_LEGACY_TESTDATA", "1")
 
     pqc_private_key = None
     if "kyber" in algorithm_name.lower() or "ml-kem" in algorithm_name.lower():
@@ -1622,12 +1628,18 @@ def test_file_decryption_wrong_algorithm_v3(filename):
     get_test_files_v4(),
     ids=lambda name: f"existing_decryption_{name.replace('test1_', '').replace('.txt', '')}",
 )
-def test_file_decryption_v4(filename):
+def test_file_decryption_v4(filename, monkeypatch):
     """Test decryption of a specific test file."""
     algorithm_name = filename.replace("test1_", "").replace(".txt", "")
 
     if _is_pqc_algorithm(algorithm_name) and not LIBOQS_AVAILABLE:
         pytest.skip("liboqs not available - skipping PQC algorithm test")
+
+    if _is_pqc_algorithm(algorithm_name):
+        # Legacy v4 PQC fixtures use the insecure TESTDATA simulation format;
+        # reading them requires explicit opt-in (issue #54 — the sanctioned
+        # 1.4.x legacy-migration path).
+        monkeypatch.setenv("OPENSSL_ENCRYPT_ALLOW_LEGACY_TESTDATA", "1")
 
     pqc_private_key = None
     if "kyber" in algorithm_name.lower() or "ml-kem" in algorithm_name.lower():
@@ -1737,12 +1749,18 @@ def get_test_files_v5():
     ids=lambda name: f"existing_decryption_{name.replace('test1_', '').replace('.txt', '')}",
 )
 # Add isolation marker for each test to prevent race conditions
-def test_file_decryption_v5(filename):
+def test_file_decryption_v5(filename, monkeypatch):
     """Test decryption of a specific test file."""
     algorithm_name = filename.replace("test1_", "").replace(".txt", "")
 
     if _is_pqc_algorithm(algorithm_name) and not LIBOQS_AVAILABLE:
         pytest.skip("liboqs not available - skipping PQC algorithm test")
+
+    if _is_pqc_algorithm(algorithm_name):
+        # Legacy v5 PQC fixtures use the insecure TESTDATA simulation format;
+        # reading them requires explicit opt-in (issue #54 — the sanctioned
+        # 1.4.x legacy-migration path).
+        monkeypatch.setenv("OPENSSL_ENCRYPT_ALLOW_LEGACY_TESTDATA", "1")
 
     pqc_private_key = None
     if "kyber" in algorithm_name.lower() or "ml-kem" in algorithm_name.lower():
@@ -2645,6 +2663,7 @@ class TestPQCSigHKDFSaltInMetadata(unittest.TestCase):
             self.hash_config,
             algorithm=EncryptionAlgorithm.MAYO_1_HYBRID,
             format_version=10,
+            allow_insecure_legacy_xor=True,
             quiet=True,
         )
 

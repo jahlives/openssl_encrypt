@@ -17,28 +17,29 @@ import pytest
 # Line numbers are checked with a tolerance of ±5 to handle minor edits
 STDOUT_WHITELIST = [
     # crypt_cli.py — JSON data outputs
-    ("crypt_cli.py", 1083, "JSON error response"),
-    ("crypt_cli.py", 1280, "JSON algorithm result"),
-    ("crypt_cli.py", 1797, "JSON smart-recommendations"),
-    ("crypt_cli.py", 2969, "JSON keyserver bundle"),
-    ("crypt_cli.py", 3200, "JSON telemetry events"),
+    ("crypt_cli.py", 1137, "JSON error response"),
+    ("crypt_cli.py", 1334, "JSON algorithm result"),
+    ("crypt_cli.py", 1851, "JSON smart-recommendations"),
+    ("crypt_cli.py", 3023, "JSON keyserver bundle"),
+    ("crypt_cli.py", 3254, "JSON telemetry events"),
+    ("crypt_cli.py", 5674, "check-password JSON report"),
     # crypt_cli.py — decrypted plaintext outputs
-    ("crypt_cli.py", 9449, "asymmetric decrypted plaintext"),
-    ("crypt_cli.py", 9452, "asymmetric decrypted plaintext (quiet)"),
-    ("crypt_cli.py", 9643, "asymmetric decrypted plaintext path 2"),
-    ("crypt_cli.py", 9646, "asymmetric decrypted plaintext path 2 (quiet)"),
-    ("crypt_cli.py", 10442, "symmetric decrypted text content"),
+    ("crypt_cli.py", 9617, "asymmetric decrypted plaintext"),
+    ("crypt_cli.py", 9620, "asymmetric decrypted plaintext (quiet)"),
+    ("crypt_cli.py", 9811, "asymmetric decrypted plaintext path 2"),
+    ("crypt_cli.py", 9814, "asymmetric decrypted plaintext path 2 (quiet)"),
+    ("crypt_cli.py", 10610, "symmetric decrypted text content"),
     # crypt_cli.py — derive-password output to stdout
-    ("crypt_cli.py", 5947, "derive-password hex output"),
-    ("crypt_cli.py", 5951, "derive-password base64 output"),
+    ("crypt_cli.py", 6087, "derive-password hex output"),
+    ("crypt_cli.py", 6091, "derive-password base64 output"),
     # file_signature.py — verify-signature --json result (machine-readable, stdout)
     ("modules/file_signature.py", 425, "verify-signature JSON result"),
     # crypt_core.py — JSON data output
-    ("crypt_core.py", 8254, "print_file_info JSON output"),
+    ("crypt_core.py", 8766, "print_file_info JSON output"),
     # crypt_core.py — protected DO NOT CHANGE block
-    ("crypt_core.py", 10604, "PQC key decryption status (protected)"),
-    ("crypt_core.py", 10611, "PQC key decryption failure (protected)"),
-    ("crypt_core.py", 10617, "PQC key decryption error (protected)"),
+    ("crypt_core.py", 11171, "PQC key decryption status (protected)"),
+    ("crypt_core.py", 11178, "PQC key decryption failure (protected)"),
+    ("crypt_core.py", 11184, "PQC key decryption error (protected)"),
     # crypt_utils.py — eprint() helper's own print() call
     ("crypt_utils.py", 25, "eprint() helper implementation"),
     # usb_creator.py — decrypted text content

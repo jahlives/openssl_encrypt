@@ -40,6 +40,91 @@ from .crypt_utils import eprint
 from .secure_memory import SecureBytes as BaseSecureBytes
 from .secure_memory import get_memory_page_size, secure_memzero, verify_memory_zeroed
 
+logger = logging.getLogger(__name__)
+
+# Linux madvise() advice value for excluding a range from core dumps.
+_MADV_DONTDUMP = 16
+
+
+def _buffer_address(buffer) -> Optional[int]:
+    """Return the address of a writable buffer, or None if unavailable."""
+    try:
+        return ctypes.addressof(ctypes.c_char.from_buffer(buffer))
+    except (TypeError, ValueError, BufferError):
+        return None
+
+
+def _lock_and_protect_buffer(buffer) -> bool:
+    """Best-effort mlock() + madvise(MADV_DONTDUMP) of a buffer's memory.
+
+    Returns True if the memory was locked. Prototypes are declared so ctypes does
+    not truncate the 64-bit address to a C int (the same class of bug fixed in
+    secure_memory, #61); failures are non-fatal (best-effort, #63).
+    """
+    if platform.system().lower() not in ("linux", "darwin", "freebsd"):
+        return False
+    size = len(buffer)
+    if size <= 0:
+        return False
+    addr = _buffer_address(buffer)
+    if not addr:
+        return False
+    try:
+        libc_name = {"linux": "libc.so.6", "darwin": "libc.dylib", "freebsd": "libc.so"}[
+            platform.system().lower()
+        ]
+        libc = ctypes.CDLL(libc_name, use_errno=True)
+    except (OSError, KeyError):
+        return False
+    if not hasattr(libc, "mlock"):
+        return False
+    libc.mlock.argtypes = [ctypes.c_void_p, ctypes.c_size_t]
+    libc.mlock.restype = ctypes.c_int
+    locked = libc.mlock(addr, size) == 0
+    # madvise(MADV_DONTDUMP) to keep keys out of core dumps (Linux; best-effort).
+    if platform.system().lower() == "linux" and hasattr(libc, "madvise"):
+        libc.madvise.argtypes = [ctypes.c_void_p, ctypes.c_size_t, ctypes.c_int]
+        libc.madvise.restype = ctypes.c_int
+        try:
+            # madvise(2) requires a page-aligned address (#103: unaligned
+            # calls fail with EINVAL). Round outward to whole pages —
+            # MADV_DONTDUMP only affects core-dump contents, so covering
+            # neighbouring heap data is safe.
+            page_size = get_memory_page_size()
+            page_addr = (addr // page_size) * page_size
+            page_len = ((size + (addr - page_addr) + page_size - 1) // page_size) * page_size
+            if libc.madvise(page_addr, page_len, _MADV_DONTDUMP) != 0:
+                logger.debug(
+                    "madvise(MADV_DONTDUMP) failed (errno %d)",
+                    ctypes.get_errno(),
+                )
+        except Exception:
+            pass
+    return locked
+
+
+def _unlock_buffer(buffer) -> None:
+    """Best-effort munlock() of a buffer's memory."""
+    if platform.system().lower() not in ("linux", "darwin", "freebsd"):
+        return
+    size = len(buffer)
+    if size <= 0:
+        return
+    addr = _buffer_address(buffer)
+    if not addr:
+        return
+    try:
+        libc_name = {"linux": "libc.so.6", "darwin": "libc.dylib", "freebsd": "libc.so"}[
+            platform.system().lower()
+        ]
+        libc = ctypes.CDLL(libc_name, use_errno=True)
+        if hasattr(libc, "munlock"):
+            libc.munlock.argtypes = [ctypes.c_void_p, ctypes.c_size_t]
+            libc.munlock.restype = ctypes.c_int
+            libc.munlock(addr, size)
+    except (OSError, KeyError):
+        pass
+
 
 class SecureHeapBlock:
     """
@@ -88,6 +173,10 @@ class SecureHeapBlock:
 
         # The usable memory area starts after the front canary
         self.data_offset = canary_size + canary_size
+
+        # Lock this block's memory against swapping and exclude it from core
+        # dumps so the key material it holds cannot leak to disk (#63).
+        self.locked = _lock_and_protect_buffer(self.buffer)
 
         # Track when this block was allocated for detection of memory leaks
         self.allocation_time = time.time()
@@ -150,8 +239,12 @@ class SecureHeapBlock:
             eprint(f"WARNING: Canary violation detected in block {self.block_id} before wiping")
             # Still continue with wiping to clean up what we can
 
-        # Securely wipe the entire buffer
-        return secure_memzero(self.buffer, full_verification=(verification_level == 2))
+        # Securely wipe the entire buffer, then release the memory lock.
+        result = secure_memzero(self.buffer, full_verification=(verification_level == 2))
+        if self.locked:
+            _unlock_buffer(self.buffer)
+            self.locked = False
+        return result
 
     def __del__(self):
         """Ensure memory is wiped when the block is garbage collected."""
@@ -273,26 +366,34 @@ class SecureHeap:
         self._setup_core_dump_prevention()
 
     def _setup_core_dump_prevention(self):
-        """Set up protections against core dumps if supported by platform."""
-        try:
-            # Try to disable core dumps on Unix platforms
-            if self.system in ("linux", "darwin", "freebsd"):
-                try:
-                    import resource
+        """Set up protections against core dumps if supported by platform.
 
-                    resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
-                except ImportError:
-                    pass
+        Delegates to secure_memory.disable_core_dumps, which zeroes only the
+        RLIMIT_CORE *soft* limit and runs once per process (#104).
+        """
+        try:
+            if self.system in ("linux", "darwin", "freebsd"):
+                from .secure_memory import disable_core_dumps
+
+                if not disable_core_dumps() and self.debug_mode:
+                    eprint("Failed to set up core dump prevention")
         except Exception:
             if self.debug_mode:
                 eprint("Failed to set up core dump prevention")
 
     def _detect_debugger(self) -> bool:
         """
-        Detect if a debugger is attached to the process.
+        Check whether the process is being traced (ADVISORY ONLY).
+
+        This is informational, not a protection: TracerPid is non-zero under
+        any ptrace-based tool (debuggers, strace, some container runtimes and
+        profilers), the check races with attach/detach, and no defensive
+        action is possible against a tracer that is already attached. The
+        result is only ever used to emit a warning; it never changes
+        allocation behavior.
 
         Returns:
-            bool: True if a debugger is detected, False otherwise
+            bool: True if a tracer appears to be attached, False otherwise
         """
         if self.system == "linux":
             try:
@@ -349,9 +450,12 @@ class SecureHeap:
                 f"({self.current_size + size} > {self.max_size})",
             )
 
-        # Security check: Detect debugger
+        # Advisory-only tracer notice (#105): informational, never blocks
         if self._detect_debugger() and not self.quiet:
-            eprint("Warning: Debugger detected during secure memory allocation")
+            eprint(
+                "Notice (advisory only): process appears to be traced/debugged; "
+                "secure memory contents may be observable by the tracer"
+            )
 
         with self.lock:
             # Create a new secure block
@@ -365,31 +469,28 @@ class SecureHeap:
 
             return block.block_id, block.data
 
-    def allocate_bytes(self, size: int, zero: bool = True) -> Tuple[str, SecureBytes]:
+    def allocate_bytes(self, size: int, zero: bool = True) -> Tuple[str, memoryview]:
         """
-        Allocate a secure bytes object of the specified size.
+        Allocate secure storage of the specified size.
+
+        Returns a writable memoryview into the block's canary-guarded, mlock'd
+        usable region, so data written through it physically resides in the
+        protected memory (#60). The backing bytearray is zero-initialised, so the
+        region is already zeroed regardless of ``zero``.
 
         Args:
             size: Size in bytes to allocate
-            zero: Whether to zero-initialize the memory
+            zero: Retained for API compatibility (the region is always zeroed)
 
         Returns:
-            Tuple of (block_id, SecureBytes) containing the allocated secure bytes object
+            Tuple of (block_id, memoryview) into the protected usable region
 
         Raises:
             SecureMemoryError: If the size is invalid or exceeds limits or if allocation fails
         """
-        block_id, mem_view = self.allocate(size)
-        block = self.blocks[block_id]
-
-        # Create a SecureBytes object that references the block
-        secure_bytes = SecureBytes(block=block)
-
-        # Initialize with zeros if requested
-        if zero:
-            secure_bytes.extend(bytearray(size))
-
-        return block_id, secure_bytes
+        # allocate() already returns block.data, a memoryview into the usable
+        # (canary-guarded) region of the freshly zero-initialised block buffer.
+        return self.allocate(size)
 
     def free(self, block_id: str, verification_level: int = 2) -> bool:
         """
@@ -523,7 +624,7 @@ def allocate_secure_memory(size: int) -> Tuple[str, memoryview]:
 
 
 @secure_memory_error_handler
-def allocate_secure_crypto_buffer(size: int, zero: bool = True) -> Tuple[str, SecureBytes]:
+def allocate_secure_crypto_buffer(size: int, zero: bool = True) -> Tuple[str, memoryview]:
     """
     Allocate a secure buffer specifically for cryptographic operations.
 
@@ -538,6 +639,14 @@ def allocate_secure_crypto_buffer(size: int, zero: bool = True) -> Tuple[str, Se
         Tuple of (block_id, SecureBytes) containing the allocated secure bytes
     """
     return _global_secure_heap.allocate_bytes(size, zero)
+
+
+def crypto_buffer_integrity(block_id: str) -> bool:
+    """Return True if the block's canaries are intact (guarding the real data)."""
+    block = _global_secure_heap.blocks.get(block_id)
+    if block is None:
+        return False
+    return block.check_canaries()
 
 
 @secure_memory_error_handler

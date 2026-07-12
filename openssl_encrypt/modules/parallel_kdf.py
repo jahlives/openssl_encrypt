@@ -22,6 +22,7 @@ from enum import Enum
 from typing import Dict, Optional, Tuple
 
 from .crypt_utils import eprint
+from .debug_redaction import debug_secret
 
 
 class ProgressType(Enum):
@@ -245,16 +246,28 @@ def _kdf_worker(
             else:  # "id" or default
                 argon2_type = argon2.low_level.Type.ID
 
-            # Run Argon2
-            result = argon2.low_level.hash_secret_raw(
-                secret=password_bytes,
-                salt=salt,
-                time_cost=time_cost,
-                memory_cost=memory_cost,
-                parallelism=parallelism,
-                hash_len=key_length,
-                type=argon2_type,
-            )
+            # Run Argon2 for `rounds` iterations with salt-chaining, byte-identical
+            # to the sequential compute_kdf_independent path (crypt_core.py). The
+            # worker previously ran a single pass and ignored `rounds` (M3
+            # [KDF-1]): since --parallel-kdf is a runtime flag not persisted in
+            # metadata, that produced a different key than the sequential path for
+            # rounds>1 -> silent failure to decrypt, and did less KDF work than the
+            # recorded config.
+            rounds = kdf_config.get("rounds", 1)
+            current_input = password_bytes
+            result = password_bytes
+            for i in range(rounds):
+                round_salt = salt if i == 0 else (result[:32] if len(result) >= 32 else result)
+                result = argon2.low_level.hash_secret_raw(
+                    secret=current_input,
+                    salt=round_salt,
+                    time_cost=time_cost,
+                    memory_cost=memory_cost,
+                    parallelism=parallelism,
+                    hash_len=key_length,
+                    type=argon2_type,
+                )
+                current_input = result
 
         elif kdf_type == "scrypt":
             # Extract Scrypt parameters
@@ -627,19 +640,24 @@ def generate_key_independent_xor_parallel(
 
     for kdf_type in ["argon2", "scrypt", "balloon", "hkdf", "randomx"]:
         if kdf_config_section.get(kdf_type, {}).get("enabled", False):
-            # Skip RandomX if not available
+            # SECURITY: RandomX must fail CLOSED here, mirroring the sequential
+            # path (#71). RandomX is explicitly enabled in this config, so if it
+            # is unavailable we must NOT silently skip it: dropping a KDF
+            # component can collapse the derived key to a weaker value AND makes
+            # the parallel result diverge from the sequential one (undecryptable).
             if kdf_type == "randomx":
                 try:
                     from .randomx import check_randomx_support
 
-                    if not check_randomx_support():
-                        if not quiet:
-                            eprint("⚠️ RandomX not available, skipping")
-                        continue
+                    available = check_randomx_support()
                 except ImportError:
-                    if not quiet:
-                        eprint("⚠️ RandomX not available, skipping")
-                    continue
+                    available = False
+                if not available:
+                    raise ValueError(
+                        "RandomX KDF is enabled but unavailable; refusing to derive "
+                        "a weaker key. Install RandomX support or disable RandomX in "
+                        "the KDF configuration."
+                    )
             tasks.append(
                 {
                     "type": "kdf",
@@ -730,7 +748,7 @@ def generate_key_independent_xor_parallel(
         xor_components.append(initial_normalized)
 
         if debug:
-            eprint(f"DEBUG: Initial component: {bytes(initial_normalized).hex()[:32]}")
+            eprint(debug_secret("DEBUG: Initial component", bytes(initial_normalized)))
 
         # Add parallel results in deterministic order (task submission order)
         for task in tasks:
@@ -739,7 +757,7 @@ def generate_key_independent_xor_parallel(
                 result_bytes = results[worker_id]
                 xor_components.append(SecureBytes(result_bytes))
                 if debug:
-                    eprint(f"DEBUG: {worker_id} component: {result_bytes.hex()[:32]}")
+                    eprint(debug_secret(f"DEBUG: {worker_id} component", result_bytes))
 
         if debug:
             eprint(f"DEBUG: Collected {len(xor_components)} components, performing XOR")
@@ -842,14 +860,11 @@ def generate_key_independent_xor_parallel(
                 secure_memzero(final_key)
             except Exception:
                 pass
-        if "initial_hash" in locals():
-            try:
-                secure_memzero(bytearray(initial_hash))
-            except Exception:
-                pass
-        # Zero results dict
-        for result_bytes in results.values():
-            try:
-                secure_memzero(bytearray(result_bytes))
-            except Exception:
-                pass
+        # M2 [MEM-1]: initial_hash (a sha256 digest) and the worker `results`
+        # are immutable `bytes` that were already serialized across the
+        # spawn/pickle boundary, so they cannot be wiped in place. The previous
+        # secure_memzero(bytearray(...)) only zeroed throwaway copies and gave
+        # false assurance. Drop the references so they are collectable promptly
+        # instead of pretending to wipe them.
+        initial_hash = None
+        results.clear()

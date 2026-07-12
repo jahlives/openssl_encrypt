@@ -11,7 +11,8 @@ Each chunk:
     [chunk_index: u32le] [ciphertext_len: u32le] [ciphertext + AEAD tag]
 
 Security properties:
-    - Nonce reuse prevention: HKDF-derived per-chunk from random 8-byte prefix + chunk index
+    - Nonce reuse prevention: HKDF-derived per-chunk from a random per-file prefix
+      (>= 8 bytes; 16 for new files) + chunk index
     - Chunk reordering detection: chunk index bound in per-chunk AAD
     - Chunk truncation detection: chunk count in per-chunk AAD + trailer HMAC
     - Metadata tampering detection: metadata is AAD for every chunk's AEAD
@@ -24,8 +25,10 @@ import logging
 import os
 import secrets
 import struct
+import tempfile
 from typing import Callable, List, Optional, Tuple, Union
 
+from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import (
     AESGCM,
@@ -115,7 +118,9 @@ def derive_chunk_nonce(nonce_prefix: bytes, chunk_index: int, nonce_size: int = 
     files encrypted with the same key.
 
     Args:
-        nonce_prefix: Random 8-byte prefix generated per encryption.
+        nonce_prefix: Random per-file prefix (>= 8 bytes; new files use 16).
+            The prefix length is not fixed by the format - it is stored per
+            file and fed to HKDF, so it may vary between files.
         chunk_index: Zero-based chunk index.
         nonce_size: Required nonce size in bytes.
 
@@ -314,11 +319,22 @@ def decrypt_chunk(
 
     except (ValidationError, AuthenticationError):
         raise
+    except InvalidTag:
+        # M4 [STREAM-1]: classify by exception TYPE, not by substring. The
+        # library AEADs (AES-GCM/OCB3/GCM-SIV/SIV, ChaCha20-Poly1305) raise
+        # cryptography's InvalidTag, whose str() is EMPTY — the old
+        # substring match misfiled these as DecryptionError, making the error
+        # class depend on which cipher the file used. Uniform, layer-agnostic
+        # AuthenticationError with a fixed message (no detail interpolation).
+        raise AuthenticationError("Chunk authentication failed")
     except Exception as e:
-        # Check for authentication errors
-        if "tag" in str(e).lower() or "authentication" in str(e).lower():
-            raise AuthenticationError(f"Chunk authentication failed: {e}")
-        raise DecryptionError(f"Chunk decryption failed: {e}", original_exception=e)
+        # Native backends (e.g. Threefish) surface auth failures as a
+        # RuntimeError with a message rather than InvalidTag; keep a narrow
+        # substring fallback so those still classify as authentication
+        # failures, but do not leak the underlying detail.
+        if "authentication" in str(e).lower() or "tag" in str(e).lower():
+            raise AuthenticationError("Chunk authentication failed")
+        raise DecryptionError("Chunk decryption failed", original_exception=e)
 
 
 def should_use_streaming(
@@ -421,7 +437,12 @@ class StreamingEncryptor:
         self.cascade_salt = cascade_salt
         self.format_version = format_version
         self.xchacha_nonce_format = xchacha_nonce_format
-        self.nonce_prefix = secrets.token_bytes(8)
+        # 128-bit per-file random prefix (#95). The per-chunk nonce is HKDF
+        # derived from this prefix (see derive_chunk_nonce), which is stored
+        # per-file in the metadata, so widening 64 -> 128 bits is backward
+        # compatible: older 8-byte-prefix files still decrypt and no format
+        # version change is needed.
+        self.nonce_prefix = secrets.token_bytes(16)
         # Real 192-bit XChaCha uses a full 24-byte per-chunk nonce; everything
         # else (including legacy xchacha) keeps the historical sizes.
         if algorithm == "xchacha20-poly1305" and xchacha_nonce_format == 2:
@@ -673,6 +694,7 @@ class StreamingDecryptor:
     # Maximum allowed ciphertext per chunk: chunk_size + generous AEAD overhead.
     # Prevents memory exhaustion from a crafted ciphertext_len field.
     _MAX_CHUNK_OVERHEAD = 1024  # AEAD tag + padding headroom
+    _MAX_METADATA_SCAN = 4 * 1024 * 1024  # colon-scan cap when metadata length unknown (#72)
 
     def decrypt_file(
         self,
@@ -723,7 +745,13 @@ class StreamingDecryptor:
                 payload_start = payload_start_override
             else:
                 # --- Locate the colon separator (metadata : payload) ---
-                # Read in small blocks to avoid loading the whole file.
+                # The on-disk format is `metadata_b64 + b":" + payload` and base64
+                # never contains ':', so the separator is at exactly
+                # len(metadata_b64). Bound the scan to that (with slack) so a
+                # crafted file whose first ':' is far in (or absent) is rejected
+                # quickly instead of being read into memory -- a pre-auth OOM DoS
+                # (#72). Falls back to a fixed cap if the caller passed no metadata.
+                scan_limit = (len(metadata_b64) + 1) if metadata_b64 else self._MAX_METADATA_SCAN
                 colon_pos = -1
                 search_buf = b""
                 while True:
@@ -735,6 +763,8 @@ class StreamingDecryptor:
                     if idx != -1:
                         colon_pos = idx
                         break
+                    if len(search_buf) > scan_limit:
+                        break  # separator not where it must be -> invalid/tampered
                 if colon_pos == -1:
                     raise DecryptionError("Invalid streaming file: no metadata separator found")
 
@@ -781,9 +811,23 @@ class StreamingDecryptor:
             # For in-memory return when output_file is None
             decrypted_chunks: Optional[List[bytes]] = [] if output_file is None else None
             fout = None
+            tmp_path = None
             try:
                 if output_file is not None:
-                    fout = open(output_file, "wb")
+                    # Stage plaintext to a temp file in the destination
+                    # directory and only rename it into place after the
+                    # trailer HMAC verifies (#96). Writing directly to the
+                    # destination let concurrent readers observe partial
+                    # plaintext, left partial output behind on mid-stream
+                    # failures, and destroyed any pre-existing file at the
+                    # destination even when verification failed.
+                    out_dir = os.path.dirname(os.path.abspath(output_file))
+                    tmp_fd, tmp_path = tempfile.mkstemp(
+                        prefix=os.path.basename(output_file) + ".",
+                        suffix=".part",
+                        dir=out_dir,
+                    )
+                    fout = os.fdopen(tmp_fd, "wb")
 
                 while fin.tell() < chunks_end:
                     # Read chunk header (8 bytes)
@@ -858,11 +902,28 @@ class StreamingDecryptor:
 
                     chunk_index += 1
 
+            except BaseException:
+                # Mid-stream failure: discard the staged output so no
+                # partial plaintext is left behind (#96)
+                if fout is not None:
+                    fout.close()
+                    fout = None
+                if tmp_path is not None and os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+                raise
             finally:
                 if fout is not None:
                     fout.close()
 
+        def _discard_staged_output() -> None:
+            if tmp_path is not None and os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+
         if chunk_index != expected_chunk_count:
+            _discard_staged_output()
             raise AuthenticationError(
                 f"Decrypted {chunk_index} chunks, expected {expected_chunk_count}"
             )
@@ -876,9 +937,8 @@ class StreamingDecryptor:
             secure_memzero(hmac_key)
 
         if not hmac_module.compare_digest(computed_hmac, trailer_hmac):
-            # If we wrote to a file, remove the unverified output
-            if output_file is not None and os.path.exists(output_file):
-                os.remove(output_file)
+            # Discard the staged, unverified output (#96)
+            _discard_staged_output()
             raise AuthenticationError(
                 "Trailer HMAC verification failed: file integrity compromised"
             )
@@ -891,14 +951,16 @@ class StreamingDecryptor:
                 full_plaintext = b"".join(decrypted_chunks) if decrypted_chunks else b""
                 computed_hash = hashlib.sha256(full_plaintext).hexdigest()
             if computed_hash != original_hash:
-                if output_file is not None and os.path.exists(output_file):
-                    os.remove(output_file)
+                _discard_staged_output()
                 raise AuthenticationError("Original content hash mismatch after decryption")
 
         # Return result
         if output_file is None:
             return b"".join(decrypted_chunks) if decrypted_chunks else b""
 
+        # All verifications passed: move the staged output into place
+        # atomically (same directory, so same filesystem)
+        os.replace(tmp_path, output_file)
         return True
 
 

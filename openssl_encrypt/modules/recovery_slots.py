@@ -238,11 +238,40 @@ _PASSPHRASE_ARGON2_TIME = 3
 _PASSPHRASE_ARGON2_MEMORY = 65536  # KiB (64 MiB)
 _PASSPHRASE_ARGON2_PARALLELISM = 4
 
+# Upper bounds on Argon2 cost parameters read from a slot. These parameters come
+# from the (untrusted) file and are consumed BEFORE the slot-set MAC can be
+# verified (the MAC key is derived from the DEK, which requires this very KDF), so
+# a tampered slot could otherwise set memory_cost to gigabytes and OOM/crash the
+# host. Legitimate slots use the defaults above, far under these caps (#73).
+_PASSPHRASE_ARGON2_MAX_TIME = 64
+_PASSPHRASE_ARGON2_MAX_MEMORY = 2 * 1024 * 1024  # KiB (2 GiB)
+_PASSPHRASE_ARGON2_MAX_PARALLELISM = 16
+
+
+def _validate_argon2_params(time_cost, memory_cost, parallelism) -> None:
+    """Reject out-of-range Argon2 cost params from an untrusted slot (#73)."""
+    from .crypt_errors import ValidationError
+
+    checks = (
+        ("time_cost", time_cost, 1, _PASSPHRASE_ARGON2_MAX_TIME),
+        ("memory_cost", memory_cost, 8, _PASSPHRASE_ARGON2_MAX_MEMORY),
+        ("parallelism", parallelism, 1, _PASSPHRASE_ARGON2_MAX_PARALLELISM),
+    )
+    for name, value, lo, hi in checks:
+        # bool is an int subclass; reject it and any non-int explicitly.
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ValidationError(f"Invalid Argon2 {name} in recovery slot: {value!r}")
+        if not (lo <= value <= hi):
+            raise ValidationError(
+                f"Argon2 {name} in recovery slot out of allowed range " f"[{lo}, {hi}]: {value}"
+            )
+
 
 def _passphrase_kek(passphrase: bytes, salt: bytes, time_cost, memory_cost, parallelism) -> bytes:
     """Derive a 32-byte KEK from a recovery passphrase via Argon2id."""
     import argon2
 
+    _validate_argon2_params(time_cost, memory_cost, parallelism)
     if isinstance(passphrase, str):
         passphrase = passphrase.encode("utf-8")
     return argon2.low_level.hash_secret_raw(

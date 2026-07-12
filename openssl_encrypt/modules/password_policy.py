@@ -13,6 +13,7 @@ import math
 import os
 import re
 import zlib
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -26,6 +27,18 @@ except ImportError:
     # For standalone testing
     from openssl_encrypt.modules.crypt_core import string_entropy
     from openssl_encrypt.modules.crypt_errors import ValidationError
+
+# Optional pattern-aware strength backend. When zxcvbn is installed it provides
+# dictionary/sequence/keyboard/date detection; otherwise a built-in heuristic
+# fallback is used. Keep this probe intact -- do NOT strip the unused import,
+# it is a capability check for an optional dependency.
+try:
+    from zxcvbn import zxcvbn as _zxcvbn
+
+    _HAVE_ZXCVBN = True
+except ImportError:  # pragma: no cover - exercised via the heuristic fallback tests
+    _zxcvbn = None
+    _HAVE_ZXCVBN = False
 
 
 class PasswordPolicy:
@@ -65,6 +78,7 @@ class PasswordPolicy:
         min_entropy: float = ENTROPY_MODERATE,
         check_common_passwords: bool = True,
         common_passwords_path: Optional[str] = None,
+        strict_strength: bool = False,
     ):
         """
         Initialize the password policy with specified requirements.
@@ -79,6 +93,9 @@ class PasswordPolicy:
             min_entropy: Minimum entropy value required (in bits)
             check_common_passwords: Whether to check against common password lists
             common_passwords_path: Path to custom common password list
+            strict_strength: Gate on the pattern-aware strength estimate instead
+                of the raw search-space entropy. Enabled automatically for the
+                ``paranoid`` level; can be forced on for any level.
         """
         # Apply predefined policy level if specified
         if policy_level:
@@ -93,6 +110,10 @@ class PasswordPolicy:
             self.min_entropy = min_entropy
             self.check_common_passwords = check_common_passwords
 
+        # strict_strength may already be set by the policy level (paranoid). An
+        # explicit True from the caller can only tighten, never loosen it.
+        self.strict_strength = getattr(self, "strict_strength", False) or strict_strength
+
         # Initialize common password checking if enabled
         self.common_password_checker = None
         if self.check_common_passwords:
@@ -106,6 +127,9 @@ class PasswordPolicy:
             level: The policy level to apply (minimal, basic, standard, paranoid)
         """
         level = level.lower()
+        # Default: advisory strength only. The paranoid level opts into gating
+        # on the pattern-aware estimate below.
+        self.strict_strength = False
         if level == self.LEVEL_MINIMAL:
             self.min_length = 8
             self.require_lowercase = False
@@ -141,6 +165,7 @@ class PasswordPolicy:
             self.require_special = True
             self.min_entropy = self.ENTROPY_STRONG
             self.check_common_passwords = True
+            self.strict_strength = True
 
         else:
             # Default to standard if unknown level
@@ -184,23 +209,18 @@ class PasswordPolicy:
 
         # Check entropy if a minimum is specified
         if self.min_entropy > 0:
-            entropy = string_entropy(password)
-            # Add message about entropy regardless of validity for informational purposes
-            if entropy < self.ENTROPY_VERY_WEAK:
-                strength = "VERY WEAK"
-            elif entropy < self.ENTROPY_WEAK:
-                strength = "WEAK"
-            elif entropy < self.ENTROPY_MODERATE:
-                strength = "MODERATE"
-            elif entropy < self.ENTROPY_STRONG:
-                strength = "STRONG"
-            else:
-                strength = "VERY STRONG"
+            est = estimate_strength(password)
+            # The displayed strength/label is always pattern-aware. The hard gate
+            # uses the pattern-aware estimate only under strict_strength; otherwise
+            # it stays on the raw search-space measure for backward compatibility.
+            gate_bits = est.bits if self.strict_strength else est.raw_bits
 
             if not quiet:
-                msgs.append(f"Password strength: {strength} (entropy: {entropy:.1f} bits)")
+                msgs.append(f"Password strength: {est.category} (entropy: {est.bits:.1f} bits)")
+                for warning in est.warnings:
+                    msgs.append(f"Password weakness: {warning}")
 
-            if entropy < self.min_entropy:
+            if gate_bits < self.min_entropy:
                 msgs.append(
                     f"Password entropy is too low (minimum {self.min_entropy} bits required)"
                 )
@@ -227,17 +247,19 @@ class PasswordPolicy:
         """
         valid, msgs = self.validate_password(password, quiet)
 
-        # Print information messages even if password is valid
+        # Informational messages (strength label + advisory weakness warnings)
+        # are printed even when the password is accepted, and are never part of
+        # the raised error.
+        informational = ("Password strength:", "Password weakness:")
+
         if not quiet and msgs:
             for msg in msgs:
-                # Only print informational messages like entropy strength
-                if "Password strength:" in msg:
+                if msg.startswith(informational):
                     eprint(msg)
 
         # Raise exception if validation failed
         if not valid:
-            # Only include error messages (not informational ones)
-            error_msgs = [msg for msg in msgs if "Password strength:" not in msg]
+            error_msgs = [msg for msg in msgs if not msg.startswith(informational)]
             raise ValidationError("\n".join(error_msgs))
 
     def generate_feedback(self, password: str) -> str:
@@ -252,13 +274,15 @@ class PasswordPolicy:
         """
         valid, msgs = self.validate_password(password, quiet=False)
 
-        entropy = string_entropy(password)
+        est = estimate_strength(password)
 
         # Create more detailed feedback
         if not valid:
             feedback = "Password does not meet requirements:\n"
-            feedback += "\n".join([f"- {msg}" for msg in msgs if "Password strength:" not in msg])
-            feedback += f"\n\nPassword strength: {entropy:.1f} bits"
+            feedback += "\n".join(
+                f"- {msg}" for msg in msgs if not msg.startswith("Password strength:")
+            )
+            feedback += f"\n\nPassword strength: {est.category} ({est.bits:.1f} bits)"
         else:
             # Password is valid, but provide additional feedback
             feedback = "Password meets basic requirements, but consider:\n"
@@ -269,11 +293,11 @@ class PasswordPolicy:
             if len(set(password)) < len(password) * 0.7:
                 feedback += "- Using more unique characters (avoid repetition)\n"
 
-            if re.search(r"(.)\1\1", password):
-                feedback += "- Avoiding repeated character sequences\n"
+            for warning in est.warnings:
+                feedback += f"- {warning}\n"
 
-            if entropy < self.ENTROPY_STRONG:
-                feedback += f"- Adding more complexity to increase entropy ({entropy:.1f} bits)\n"
+            if est.bits < self.ENTROPY_STRONG:
+                feedback += f"- Adding more complexity to increase entropy ({est.bits:.1f} bits)\n"
             else:
                 feedback += "Your password is strong! ✓\n"
 
@@ -347,8 +371,14 @@ class CommonPasswordChecker:
         """
         Initialize the common password checker.
 
+        A custom list AUGMENTS the embedded baseline list rather than
+        replacing it: a small custom list must never weaken the baseline
+        protection. Without a custom path, the default system/package
+        paths are tried, with the embedded list as fallback.
+
         Args:
-            custom_path: Path to a custom common password list
+            custom_path: Path to a custom common password list (checked in
+                addition to the embedded baseline list)
         """
         self.password_hashes = set()
         self.loaded_at_least_one = False
@@ -356,6 +386,12 @@ class CommonPasswordChecker:
         # Try to load passwords from custom path if provided
         if custom_path and os.path.exists(custom_path):
             self._load_password_list(custom_path)
+            # #97: custom + embedded is intentional. The old code reached
+            # the embedded list only through a forgotten loaded_at_least_one
+            # flag; load it explicitly so the semantics are by design, not
+            # by accident.
+            self._load_embedded_passwords()
+            self.loaded_at_least_one = True
         else:
             # Try all default paths
             for path in self.DEFAULT_PATHS:
@@ -363,10 +399,10 @@ class CommonPasswordChecker:
                     self._load_password_list(path)
                     self.loaded_at_least_one = True
 
-        # If no external files were loaded, use the embedded list
-        if not self.loaded_at_least_one:
-            self._load_embedded_passwords()
-            self.loaded_at_least_one = True
+            # If no external files were loaded, use the embedded list
+            if not self.loaded_at_least_one:
+                self._load_embedded_passwords()
+                self.loaded_at_least_one = True
 
     def _load_password_list(self, path: str) -> None:
         """
@@ -417,6 +453,258 @@ class CommonPasswordChecker:
         return password_hash in self.password_hashes
 
 
+# ---------------------------------------------------------------------------
+# Pattern-aware strength estimation
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class StrengthResult:
+    """Result of a pattern-aware password strength estimate.
+
+    Attributes:
+        bits: Pattern-aware entropy estimate in bits. Never exceeds ``raw_bits``.
+        raw_bits: The raw search-space entropy (``string_entropy``).
+        category: Human-readable bucket for ``bits`` (see ``strength_category``).
+        warnings: Human-readable descriptions of detected weaknesses (may be empty).
+        source: Which backend produced the estimate ("zxcvbn" or "heuristic").
+    """
+
+    bits: float
+    raw_bits: float
+    category: str
+    warnings: List[str] = field(default_factory=list)
+    source: str = "heuristic"
+
+
+def strength_category(bits: float) -> str:
+    """Map an entropy value (in bits) to a strength label.
+
+    Single source of truth for the VERY WEAK / WEAK / MODERATE / STRONG /
+    VERY STRONG buckets used throughout the module.
+    """
+    if bits < PasswordPolicy.ENTROPY_VERY_WEAK:
+        return "VERY WEAK"
+    if bits < PasswordPolicy.ENTROPY_WEAK:
+        return "WEAK"
+    if bits < PasswordPolicy.ENTROPY_MODERATE:
+        return "MODERATE"
+    if bits < PasswordPolicy.ENTROPY_STRONG:
+        return "STRONG"
+    return "VERY STRONG"
+
+
+# Common leet-speak substitutions, applied before the common-password lookup so
+# that "P@ssw0rd" is recognised as "password".
+_LEET_MAP = str.maketrans({"@": "a", "0": "o", "1": "l", "3": "e", "4": "a", "5": "s", "$": "s"})
+
+# Rows used for keyboard-walk detection (lower-cased, US QWERTY).
+_KEYBOARD_ROWS = ("1234567890", "qwertyuiop", "asdfghjkl", "zxcvbnm")
+
+# Named zxcvbn match types that indicate structure (i.e. not raw brute force).
+_ZXCVBN_STRUCTURED = frozenset({"dictionary", "spatial", "repeat", "sequence", "regex", "date"})
+
+# Lazily-instantiated shared checker for the heuristic fallback.
+_common_checker: Optional["CommonPasswordChecker"] = None
+
+
+def _get_common_checker() -> "CommonPasswordChecker":
+    global _common_checker
+    if _common_checker is None:
+        _common_checker = CommonPasswordChecker()
+    return _common_checker
+
+
+def _leet_normalize(password: str) -> str:
+    return password.translate(_LEET_MAP).lower()
+
+
+def _adjacent(a: str, b: str) -> bool:
+    """True if ``a`` and ``b`` are neighbours in a sequence or on the keyboard."""
+    if a.isalnum() and b.isalnum() and abs(ord(a) - ord(b)) == 1:
+        return True
+    for row in _KEYBOARD_ROWS:
+        ia, ib = row.find(a), row.find(b)
+        if ia != -1 and ib != -1 and abs(ia - ib) == 1:
+            return True
+    return False
+
+
+def _longest_pattern_run(password: str) -> int:
+    """Length of the longest ascending/descending sequence or keyboard walk."""
+    lowered = password.lower()
+    best = current = 1
+    for i in range(1, len(lowered)):
+        if _adjacent(lowered[i - 1], lowered[i]):
+            current += 1
+            best = max(best, current)
+        else:
+            current = 1
+    return best
+
+
+def _heuristic_estimate(password: str, raw_bits: float) -> StrengthResult:
+    """Search-space entropy minus penalties for detected patterns."""
+    bits = raw_bits
+    warnings: List[str] = []
+    unique = max(len(set(password)), 1)
+    per_char = raw_bits / unique  # == log2(pool_size)
+
+    # Common password (directly or after undoing leet substitutions).
+    checker = _get_common_checker()
+    normalized = _leet_normalize(password)
+    if checker.is_common_password(password) or checker.is_common_password(normalized):
+        bits = min(bits, PasswordPolicy.ENTROPY_VERY_WEAK - 1.0)
+        warnings.append("resembles a common password")
+
+    # Sequences / keyboard walks: collapse the run to a single effective char.
+    run = _longest_pattern_run(password)
+    if run >= 4:
+        bits = min(bits, max(raw_bits - (run - 1) * per_char, 0.0))
+        warnings.append("contains a sequence or keyboard pattern")
+
+    # Runs of a repeated character (e.g. "aaaa").
+    if re.search(r"(.)\1{2,}", password):
+        bits = min(bits, max(bits - per_char, 0.0))
+        warnings.append("contains repeated characters")
+
+    # Dates / years.
+    if re.search(r"(?:19|20)\d\d", password):
+        bits = min(bits, max(bits - per_char, 0.0))
+        warnings.append("contains a date or year")
+
+    return StrengthResult(
+        bits=max(bits, 0.0),
+        raw_bits=raw_bits,
+        category=strength_category(max(bits, 0.0)),
+        warnings=warnings,
+        source="heuristic",
+    )
+
+
+def _zxcvbn_estimate(password: str, raw_bits: float) -> StrengthResult:
+    """Pattern-aware estimate backed by zxcvbn.
+
+    zxcvbn's guess count is accurate when it identifies structure but saturates
+    well below the true search space for structureless passwords, so it is only
+    allowed to lower the estimate when a *named* (non-bruteforce) pattern is
+    found. Otherwise the raw search-space entropy is trusted.
+    """
+    result = _zxcvbn(password)
+    guess_bits = math.log2(max(result.get("guesses", 1), 1))
+    sequence = result.get("sequence", []) or []
+    structured = sorted(
+        {s.get("pattern") for s in sequence if s.get("pattern") in _ZXCVBN_STRUCTURED}
+    )
+
+    bits = min(raw_bits, guess_bits) if structured else raw_bits
+
+    warnings: List[str] = []
+    feedback = result.get("feedback") or {}
+    if feedback.get("warning"):
+        warnings.append(feedback["warning"])
+    warnings.extend(feedback.get("suggestions") or [])
+    if structured and not warnings:
+        warnings.append("contains predictable pattern(s): " + ", ".join(structured))
+
+    return StrengthResult(
+        bits=bits,
+        raw_bits=raw_bits,
+        category=strength_category(bits),
+        warnings=warnings,
+        source="zxcvbn",
+    )
+
+
+def estimate_strength(password: str) -> StrengthResult:
+    """Estimate password strength accounting for predictable patterns.
+
+    Uses zxcvbn when available, otherwise a built-in heuristic. The returned
+    ``bits`` never exceeds the raw ``string_entropy`` search-space measure and is
+    pulled down when dictionary words, sequences, keyboard walks, repeats or
+    dates are detected.
+    """
+    password = str(password)
+    raw_bits = string_entropy(password)
+    if not password:
+        return StrengthResult(0.0, 0.0, strength_category(0.0), [], "heuristic")
+    if _HAVE_ZXCVBN:
+        return _zxcvbn_estimate(password, raw_bits)
+    return _heuristic_estimate(password, raw_bits)
+
+
+def get_pattern_strength(password: str) -> StrengthResult:
+    """Public wrapper returning the full pattern-aware ``StrengthResult``."""
+    return estimate_strength(password)
+
+
+def build_strength_report(
+    password: str,
+    policy_level: str = "standard",
+    strict_strength: bool = False,
+) -> Dict:
+    """Build a structured strength/policy report for a password.
+
+    Pure function (no I/O, does not print or log the password). Combines the
+    pattern-aware estimate with a policy evaluation so callers (e.g. the
+    ``check-password`` CLI command) can render human or JSON output.
+
+    Args:
+        password: The password to analyse.
+        policy_level: Policy level to evaluate against, or "none" to skip the
+            policy check and only report strength.
+        strict_strength: Gate the policy on the pattern-aware estimate instead of
+            the raw search-space entropy (see :class:`PasswordPolicy`).
+
+    Returns:
+        A JSON-serialisable dict with the estimate, the resolved policy result
+        and any failure messages.
+    """
+    est = estimate_strength(password)
+
+    valid = True
+    failures: List[str] = []
+    if policy_level and policy_level.lower() != "none":
+        policy = PasswordPolicy(policy_level=policy_level, strict_strength=strict_strength)
+        # quiet=True keeps only requirement failures (no informational label).
+        valid, failures = policy.validate_password(password, quiet=True)
+        strict_strength = policy.strict_strength
+
+    return {
+        "length": len(password),
+        "raw_bits": round(est.raw_bits, 1),
+        "bits": round(est.bits, 1),
+        "category": est.category,
+        "warnings": list(est.warnings),
+        "source": est.source,
+        "policy_level": policy_level,
+        "strict_strength": strict_strength,
+        "valid": valid,
+        "failures": failures,
+    }
+
+
+def format_strength_report(report: Dict) -> str:
+    """Render a human-readable (stderr-friendly) view of a strength report."""
+    lines = [
+        f"Password strength: {report['category']} "
+        f"({report['bits']:.1f} bits pattern-aware, {report['raw_bits']:.1f} bits raw)",
+        f"Estimator backend: {report['source']}",
+    ]
+    for warning in report["warnings"]:
+        lines.append(f"Weakness: {warning}")
+
+    level = report.get("policy_level")
+    if level and str(level).lower() != "none":
+        status = "PASS" if report["valid"] else "FAIL"
+        strict = " (strict)" if report.get("strict_strength") else ""
+        lines.append(f"Policy '{level}'{strict}: {status}")
+        for failure in report["failures"]:
+            lines.append(f"  - {failure}")
+
+    return "\n".join(lines)
+
+
 # Direct API functions for easy use
 def validate_password(
     password: str, policy_level: str = "standard", quiet: bool = False
@@ -465,19 +753,7 @@ def get_password_strength(password: str) -> Tuple[float, str]:
         Tuple containing entropy value (float) and strength category (str)
     """
     entropy = string_entropy(password)
-
-    if entropy < PasswordPolicy.ENTROPY_VERY_WEAK:
-        strength = "VERY WEAK"
-    elif entropy < PasswordPolicy.ENTROPY_WEAK:
-        strength = "WEAK"
-    elif entropy < PasswordPolicy.ENTROPY_MODERATE:
-        strength = "MODERATE"
-    elif entropy < PasswordPolicy.ENTROPY_STRONG:
-        strength = "STRONG"
-    else:
-        strength = "VERY STRONG"
-
-    return entropy, strength
+    return entropy, strength_category(entropy)
 
 
 if __name__ == "__main__":

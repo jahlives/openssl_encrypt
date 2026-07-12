@@ -1,0 +1,340 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opensslencrypt.com/schemas/metadata-v14.json",
+  "title": "OpenSSL Encrypt Metadata Schema Version 14",
+  "description": "Schema for validating encrypted file metadata format version 14 (independent-XOR-only key derivation; length-prefixed TLV KDF seed and KEM ciphertext transcript binding per findings #100/#83; sequential XOR stays pinned at format_version 13 per the M2 decision of 2026-07-10)",
+  "type": "object",
+  "required": [
+    "format_version",
+    "mode",
+    "derivation_config",
+    "encryption",
+    "xor_mode"
+  ],
+  "additionalProperties": true,
+  "properties": {
+    "format_version": {
+      "type": "integer",
+      "const": 14,
+      "description": "Metadata format version (must be 14)"
+    },
+    "xor_mode": {
+      "type": "string",
+      "enum": [
+        "independent"
+      ],
+      "description": "XOR composition mode: v14 is independent-XOR only (robust XOR-combiner with per-component domain-separated salts). Sequential XOR files are written as format_version 13."
+    },
+    "mode": {
+      "type": "string",
+      "enum": [
+        "symmetric",
+        "asymmetric"
+      ],
+      "description": "Encryption mode"
+    },
+    "derivation_config": {
+      "type": "object",
+      "required": [
+        "salt"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "salt": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9+/]+=*$",
+          "description": "Base64-encoded salt"
+        },
+        "hash_config": {
+          "type": "object",
+          "additionalProperties": true,
+          "patternProperties": {
+            "^(sha512|sha384|sha256|sha224|sha3_512|sha3_384|sha3_256|sha3_224|blake2b|blake3|shake256|shake128|whirlpool)$": {
+              "type": "object",
+              "required": [
+                "rounds"
+              ],
+              "additionalProperties": true,
+              "properties": {
+                "rounds": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1000000,
+                  "description": "Number of hash rounds (0 = disabled)"
+                }
+              }
+            }
+          }
+        },
+        "kdf_config": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    },
+    "aead_binding": {
+      "type": "boolean",
+      "description": "Indicates metadata is cryptographically bound via AEAD AAD"
+    },
+    "hashes": {
+      "type": "object",
+      "required": [
+        "original_hash"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "original_hash": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-fA-F0-9]*$",
+          "description": "Hexadecimal hash of original file"
+        },
+        "encrypted_hash": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-fA-F0-9]*$",
+          "description": "Hexadecimal hash of encrypted content (optional for AEAD-bound files)"
+        }
+      }
+    },
+    "encryption": {
+      "type": "object",
+      "additionalProperties": true,
+      "oneOf": [
+        {
+          "description": "Cascade encryption mode",
+          "required": [
+            "cascade",
+            "cipher_chain",
+            "hkdf_hash",
+            "cascade_salt",
+            "layer_info"
+          ],
+          "properties": {
+            "cascade": {
+              "type": "boolean",
+              "const": true,
+              "description": "Indicates cascade encryption is used"
+            },
+            "cipher_chain": {
+              "type": "array",
+              "minItems": 2,
+              "items": {
+                "type": "string",
+                "enum": [
+                  "aes-256-gcm",
+                  "aes-256-gcm-siv",
+                  "aes-256-siv",
+                  "aes-gcm",
+                  "aes-gcm-siv",
+                  "aes-siv",
+                  "aes256-gcm",
+                  "aesgcm",
+                  "aesgcmsiv",
+                  "aessiv",
+                  "chacha20",
+                  "chacha20-poly1305",
+                  "chacha20poly1305",
+                  "tf1024",
+                  "tf512",
+                  "threefish-1024",
+                  "threefish-512",
+                  "threefish1024",
+                  "threefish512",
+                  "xchacha20",
+                  "xchacha20-poly1305",
+                  "xchacha20poly1305"
+                ]
+              },
+              "description": "Ordered list of ciphers in the cascade"
+            },
+            "hkdf_hash": {
+              "type": "string",
+              "enum": [
+                "sha256",
+                "sha384",
+                "sha512",
+                "sha3-256",
+                "blake2b"
+              ],
+              "description": "Hash function used for HKDF key derivation"
+            },
+            "cascade_salt": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9+/]+=*$",
+              "description": "Base64-encoded cascade salt (32 bytes)"
+            },
+            "layer_info": {
+              "type": "array",
+              "minItems": 2,
+              "items": {
+                "type": "object",
+                "required": [
+                  "cipher",
+                  "key_size",
+                  "tag_size"
+                ],
+                "properties": {
+                  "cipher": {
+                    "type": "string",
+                    "description": "Cipher name for this layer"
+                  },
+                  "key_size": {
+                    "type": "integer",
+                    "minimum": 16,
+                    "maximum": 128,
+                    "description": "Key size in bytes"
+                  },
+                  "tag_size": {
+                    "type": "integer",
+                    "minimum": 8,
+                    "maximum": 64,
+                    "description": "Authentication tag size in bytes"
+                  }
+                }
+              },
+              "description": "Information about each layer in the cascade"
+            },
+            "xchacha_nonce_format": {
+              "type": "integer",
+              "enum": [
+                2
+              ],
+              "description": "XChaCha20-Poly1305 nonce format: 2 = real 192-bit nonce via HChaCha20 (1.5+); absent on legacy files"
+            },
+            "total_overhead": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Total overhead in bytes from all authentication tags"
+            },
+            "pq_security_bits": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Post-quantum security level in bits"
+            }
+          }
+        },
+        {
+          "description": "Single cipher mode",
+          "required": [
+            "algorithm"
+          ],
+          "properties": {
+            "cascade": {
+              "type": "boolean",
+              "const": false,
+              "description": "Indicates single cipher mode"
+            },
+            "algorithm": {
+              "type": "string",
+              "enum": [
+                "fernet",
+                "aes-gcm",
+                "aes-gcm-siv",
+                "aes-ocb3",
+                "aes-siv",
+                "chacha20-poly1305",
+                "xchacha20-poly1305",
+                "cascade",
+                "ml-kem-512-hybrid",
+                "ml-kem-768-hybrid",
+                "ml-kem-1024-hybrid",
+                "ml-kem-512-chacha20",
+                "ml-kem-768-chacha20",
+                "ml-kem-1024-chacha20",
+                "kyber512-hybrid",
+                "kyber768-hybrid",
+                "kyber1024-hybrid",
+                "kyber-512-hybrid",
+                "kyber-768-hybrid",
+                "kyber-1024-hybrid",
+                "aes-256-gcm",
+                "aes-256-gcm-siv",
+                "aes-256-siv",
+                "aes256-gcm",
+                "aesgcm",
+                "aesgcmsiv",
+                "aessiv",
+                "chacha20",
+                "chacha20poly1305",
+                "tf1024",
+                "tf512",
+                "threefish-1024",
+                "threefish-512",
+                "threefish1024",
+                "threefish512",
+                "xchacha20",
+                "xchacha20poly1305"
+              ],
+              "description": "Encryption algorithm used"
+            },
+            "nonce": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9+/]+=*$",
+              "description": "Base64-encoded nonce/IV"
+            },
+            "key_size": {
+              "type": "integer",
+              "description": "Key size in bytes"
+            },
+            "tag_size": {
+              "type": "integer",
+              "description": "Authentication tag size in bytes"
+            },
+            "xchacha_nonce_format": {
+              "type": "integer",
+              "enum": [
+                2
+              ],
+              "description": "XChaCha20-Poly1305 nonce format: 2 = real 192-bit nonce via HChaCha20 (1.5+); absent on legacy files"
+            },
+            "pq_security_bits": {
+              "type": "integer",
+              "description": "Post-quantum security level in bits"
+            }
+          }
+        }
+      ]
+    },
+    "encrypted_at": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$",
+      "description": "ISO 8601 UTC timestamp when file was encrypted"
+    },
+    "streaming": {
+      "type": "object",
+      "required": [
+        "enabled",
+        "chunk_size",
+        "chunk_count",
+        "nonce_prefix"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "const": true,
+          "description": "Indicates streaming chunked encryption is used"
+        },
+        "chunk_size": {
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 67108864,
+          "description": "Size of each plaintext chunk in bytes"
+        },
+        "chunk_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295,
+          "description": "Total number of chunks"
+        },
+        "nonce_prefix": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9+/]+=*$",
+          "description": "Base64-encoded per-file random nonce prefix (>= 8 bytes; new files use 16) for HKDF-based per-chunk nonce derivation"
+        }
+      }
+    }
+  }
+}

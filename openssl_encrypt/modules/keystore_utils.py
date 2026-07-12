@@ -10,10 +10,38 @@ import logging
 import os
 from typing import Any, Dict, Optional, Tuple
 
+from .crypt_errors import ValidationError
 from .crypt_utils import eprint
 
 # Set up module-level logger
 logger = logging.getLogger(__name__)
+
+
+def _coerce_format_version(container: Optional[Dict[str, Any]], default: int) -> int:
+    """Read ``format_version`` from parsed metadata, type-safely.
+
+    The keystore paths consume raw ``json.loads`` output; crafted metadata
+    can carry any JSON type in ``format_version``, and a non-int reaching a
+    ``>=`` version gate raises an unhandled TypeError (review LOW-2,
+    gitlab#111). Legitimately written files always store an int.
+
+    Args:
+        container: Parsed metadata (or header-config) dict, or None.
+        default: Version to assume when the field is absent (or the
+            container is None) — mirrors the previous ``.get`` defaults.
+
+    Returns:
+        The format version as an int.
+
+    Raises:
+        ValidationError: If the field is present but not an int
+            (bool is rejected explicitly: ``True >= 4`` is valid Python
+            but nonsense metadata). Fail closed, clean error.
+    """
+    fv = default if container is None else container.get("format_version", default)
+    if not isinstance(fv, int) or isinstance(fv, bool):
+        raise ValidationError(f"Invalid format_version type: {type(fv).__name__}")
+    return fv
 
 
 def extract_key_id_from_metadata(encrypted_file: str, verbose: bool = False) -> Optional[str]:
@@ -293,6 +321,19 @@ def get_keystore_password(args) -> str:
     # Check if a password file is provided
     if hasattr(args, "keystore_password_file") and args.keystore_password_file:
         try:
+            # Warn if the password file is readable/writable by group or others
+            # (#101). A warning, not a refusal, to match the tool's other advisory
+            # checks; restrict with chmod 600.
+            try:
+                if os.stat(args.keystore_password_file).st_mode & 0o077:
+                    if not getattr(args, "quiet", False):
+                        eprint(
+                            f"Warning: keystore password file "
+                            f"'{args.keystore_password_file}' is accessible to group/others; "
+                            f"restrict it (chmod 600)."
+                        )
+            except OSError:
+                pass
             with open(args.keystore_password_file, "r") as f:
                 return f.read().strip()
         except Exception as e:
@@ -326,7 +367,7 @@ def get_pqc_key_for_decryption(args, hash_config=None, metadata=None):
 
     # Determine format version if metadata is provided
     if metadata:
-        format_version = metadata.get("format_version", 3)
+        format_version = _coerce_format_version(metadata, 3)
 
     # Check if we have a key ID in the hash_config or metadata
     if format_version == 6 and metadata:
@@ -335,8 +376,9 @@ def get_pqc_key_for_decryption(args, hash_config=None, metadata=None):
             key_id = metadata["derivation_config"]["keystore_id"]
             if not getattr(args, "quiet", False):
                 eprint(f"Found key ID in metadata derivation_config (v6): {key_id}")
-    elif format_version in [4, 5, 7, 9] and metadata:
-        # Check for key ID in format version 4/5/7/9 structure (all use same kdf_config structure)
+    elif format_version >= 4 and metadata:
+        # Check for key ID in the v4+ structure (all use the same kdf_config
+        # layout; v6 is handled by the dedicated branch above)
         if (
             "derivation_config" in metadata
             and "kdf_config" in metadata["derivation_config"]
@@ -375,9 +417,9 @@ def get_pqc_key_for_decryption(args, hash_config=None, metadata=None):
                     header_config = json.loads(metadata_json)
 
                     # Get format version from metadata
-                    format_version = header_config.get("format_version", 3)
+                    format_version = _coerce_format_version(header_config, 3)
 
-                    if format_version in [4, 5, 6, 7, 9]:
+                    if format_version >= 4:  # v4+ hierarchical metadata (see crypt_core gate fix)
                         # Extract from format version 4/5/6/7/9 structure (all use encryption section)
                         if (
                             "encryption" in header_config
@@ -801,16 +843,15 @@ def store_pqc_key_in_keystore(metadata, keystore_path, keystore_password, key_id
             eprint(f"Error storing PQC key in keystore: {e}")
         return None
     finally:
-        # Clean up sensitive data
+        # Clean up sensitive data. encrypted_private_key holds the immutable
+        # bytes returned by base64.b64decode, so it cannot be wiped in place
+        # (see #81/#89): secure_memzero best-effort zeroes any throwaway copy
+        # and returns False for the immutable original. All we can additionally
+        # do is drop the reference. Do NOT "wipe" by rebinding to a fresh
+        # zero-filled bytes object - that is a no-op that only looks secure.
         try:
-            # Clear encrypted_private_key if it exists
             if encrypted_private_key is not None:
-                try:
-                    # Use secure_memzero for byte arrays
-                    secure_memzero(encrypted_private_key)
-                except Exception:
-                    # Fallback if secure_memzero fails
-                    encrypted_private_key = b"\x00" * len(encrypted_private_key)
+                secure_memzero(encrypted_private_key)
                 encrypted_private_key = None
         except Exception:
             # Last resort cleanup - just remove the reference
