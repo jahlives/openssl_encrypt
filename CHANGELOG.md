@@ -977,6 +977,12 @@ the 1.5 branch:
 
 ### Internal
 
+- **Completed plan documents removed from `docs/`** (plan-tracker
+  verification 2026-07-13): `XCHACHA_192BIT_PLAN.md`,
+  `PBKDF2_CHAIN_ERROR_PLAN.md`, `V14_REVIEW_LOW_FIX_PLAN.md` and
+  `SECURITY_REVIEW_RESIDUALS_2026-07-13_PLAN.md` — all steps verified
+  implemented in code before removal; recoverable via git history.
+
 - **Test-collection regression fixed**: `pytest.ini` (added 2025-12-30)
   silently stopped collecting `unittests/unittests.py` — 91 tests across
   12 classes had not run in any suite invocation since. Collection is
