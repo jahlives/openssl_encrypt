@@ -312,6 +312,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **README: broken CLI examples and stale version references**
+  (gitlab#126 / github#52, 2026-07-13): the password-generation example
+  used a non-existent `generate --length` invocation (the subcommand is
+  `generate-password` with a positional length), the shred example used
+  `--passes` instead of `--shred-passes`, and the keystore examples
+  invoked a non-existent `openssl_encrypt.keystore_cli_main` module with
+  flags the CLIs don't have — replaced with the real
+  `openssl_encrypt.modules.keystore_cli` workflow (`create`, encrypt
+  with `--keystore-path` auto-generating the keypair, `list-keys`).
+  Also updated the stale "latest stable is v1.4.0" pointer to v1.4.8
+  and removed the leftover v1.4.0-beta framing ("v1.4.0 Development
+  Series", "currently in beta testing", stale test counts).
+  Documentation only; no code changes.
+
 - **Test: `test_fallback_notice_respects_quiet` is now deterministic
   against the environment** (gitlab#122, 2026-07-12, ported from
   1.4.x): the CI test job exports `PQC_QUIET=true`, and

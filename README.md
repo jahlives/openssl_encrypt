@@ -4,7 +4,7 @@ A Python-based file encryption tool with modern ciphers, post-quantum algorithms
 
 Built to encrypt anything from grandma's pie recipe to the nuclear launch codes — with parameters to satisfy every paranoia level in between. Sensible, secure defaults out of the box; fully tunable KDF chains and cipher choices when you want to crank the cost to match the threat.
 
-> **Looking for the stable release?** The latest stable version is [v1.4.0](https://github.com/jahlives/openssl_encrypt/tree/releases/1.4.x) on the releases/1.4.x branch.
+> **Looking for the stable release?** The latest stable version is [v1.4.8](https://github.com/jahlives/openssl_encrypt/tree/releases/1.4.x) on the releases/1.4.x branch.
 
 ## History
 
@@ -101,25 +101,20 @@ The `numpy` production dependency was dropped along with steganography.
 
 ---
 
-## v1.4.0 Development Series
+## v1.4.x Series
 
-**What's New in v1.4.0b10:**
+The 1.4.x line is stable; the latest release is v1.4.8. See [CHANGELOG.md](CHANGELOG.md) for the complete release history.
+
+**Highlights introduced with v1.4.0:**
 - **Format Version 11: Independent XOR Key Derivation**: New `--independent-xor` flag enables a robust XOR-combiner (Herzberg; Harnik–Kilian–Naor–Reingold–Rosen) composition providing a "strongest component" guarantee for output/PRF indistinguishability — the key stays secure as long as at least one component is unbroken (this concerns output security against a broken component, not per-guess cost; see the *KDF Composition Modes* section)
 - **Parallel KDF Processing**: Optional `--parallel-kdf` flag for ~2.7x performance improvement (8.5s → 3.1s with 8 algorithms on 8-core CPU) using multiprocessing for true CPU parallelism
 - **Worker Control**: `--kdf-workers N` flag to specify parallel worker count (default: auto-detect based on CPU cores)
 - **Enhanced Security Guarantee**: Independent XOR provides maximum cryptographic assurance against future algorithm breaks, distinct from v10 sequential XOR's anti-parallelization approach
 - **Cross-Branch Compatibility**: v11 format compatible with v9 format in the 1.3.x branch for seamless migration
-- **Test Coverage**: 1573 tests passing (up from 1535) including 18 new tests for v11 and parallel processing
 
-**Recent Beta Releases:**
-- **v1.4.0b10** (Current) - Format Version 11: Independent XOR & Parallel Processing
-- **v1.4.0b9** - Test infrastructure improvements, Threefish cipher support, cross-version compatibility fixes
-- **v1.4.0b8** - Critical security fix: Format Version 9 with secure chained salt derivation
-- See [version.py.template](openssl_encrypt/version.py.template) for complete beta history
+### 🚨 CRITICAL SECURITY FIX - Format Version 9
 
-### 🚨 CRITICAL SECURITY FIX - Format Version 9 (Beta)
-
-**SECURITY ADVISORY 2026-01** - The v1.4.0 beta series includes a critical security fix for multi-round KDF configurations (implemented in v1.4.0b8, validated in v1.4.0b9).
+**SECURITY ADVISORY 2026-01** - v1.4.0 includes a critical security fix for multi-round KDF configurations.
 
 **Vulnerability**: Format versions ≤8 used predictable salt derivation that allowed attackers to precompute all round salts from plaintext metadata, enabling optimized rainbow table attacks against multi-round KDF configurations (CVSSv3 Score: 8.1 - High).
 
@@ -163,11 +158,10 @@ round_salt = previous_round_output[:16]
 
 ---
 
-### Beta Testing & Feedback
+### Feedback & Bug Reports
 
-v1.4.0 is currently in beta testing. We welcome feedback and bug reports:
+We welcome feedback and bug reports:
 
-- **Test Suite:** 1535 tests passing, 0 failures
 - **Security Audit:** Format Version 9 validated across all KDF algorithms (PBKDF2, Argon2, Scrypt, Balloon)
 - **Backward Compatibility:** Fully compatible with v1.3.x encrypted files
 - **Forward Compatibility:** v1.3.5 files compatible with v1.4.x
@@ -836,10 +830,10 @@ python -m openssl_encrypt.crypt encrypt -i file.txt --paranoid   # Maximum secur
 python -m openssl_encrypt.crypt decrypt -i file.txt.enc -o file.txt
 
 # Secure file deletion
-python -m openssl_encrypt.crypt shred -i sensitive.txt --passes 3
+python -m openssl_encrypt.crypt shred -i sensitive.txt --shred-passes 3
 
-# Generate random password
-python -m openssl_encrypt.crypt generate --length 20
+# Generate random password (length is positional, default 32)
+python -m openssl_encrypt.crypt generate-password 20
 ```
 
 ### Graphical User Interface
@@ -858,15 +852,15 @@ Cross-platform GUI available for Linux, macOS, and Windows. See the [User Guide]
 
 ```bash
 # Create keystore
-python -m openssl_encrypt.keystore_cli_main create --keystore-path keys.pqc
+python -m openssl_encrypt.modules.keystore_cli --keystore keys.pqc create
 
-# Generate PQC keypair
-python -m openssl_encrypt.keystore_cli_main generate --keystore-path keys.pqc \
-    --algorithm ml-kem-768
-
-# Encrypt with keystore
+# Encrypt with a PQC algorithm using the keystore (a keypair is
+# auto-generated and stored in the keystore on first use)
 python -m openssl_encrypt.crypt encrypt -i file.txt \
-    --keystore keys.pqc --key-id my-key
+    --algorithm ml-kem-768-hybrid --keystore-path keys.pqc
+
+# List keys in the keystore
+python -m openssl_encrypt.modules.keystore_cli --keystore keys.pqc list-keys
 ```
 ---
 ## Configuration Templates
