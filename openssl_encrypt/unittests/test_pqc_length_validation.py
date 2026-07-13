@@ -13,11 +13,7 @@ import unittest
 try:
     import oqs  # noqa: F401
 
-    from openssl_encrypt.modules.pqc_liboqs import (
-        LIBOQS_AVAILABLE,
-        PQEncapsulator,
-        PQSigner,
-    )
+    from openssl_encrypt.modules.pqc_liboqs import LIBOQS_AVAILABLE, PQEncapsulator, PQSigner
 except ImportError:  # pragma: no cover
     LIBOQS_AVAILABLE = False
 

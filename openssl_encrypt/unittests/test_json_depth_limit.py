@@ -10,10 +10,7 @@ to the module's own exception.
 
 import unittest
 
-from openssl_encrypt.modules.json_validator import (
-    JSONSecurityError,
-    SecureJSONValidator,
-)
+from openssl_encrypt.modules.json_validator import JSONSecurityError, SecureJSONValidator
 
 
 def _nested(depth: int, open_ch: str = "[", close_ch: str = "]") -> str:

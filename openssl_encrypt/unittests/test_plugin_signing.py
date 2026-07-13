@@ -167,9 +167,7 @@ class TestVerifyPluginSignature(_SigningFixture):
         return TrustAnchor(fingerprint=fpr, public_key=pub, label="test")
 
     def test_valid_signature_from_enrolled_key(self) -> None:
-        from openssl_encrypt.modules.plugin_system.plugin_signature import (
-            verify_plugin_signature,
-        )
+        from openssl_encrypt.modules.plugin_system.plugin_signature import verify_plugin_signature
 
         sig = self._sign(self.plugin_bytes, self.author_fpr, "author_home")
         sig_path = self.tmp / "plugin.py.asc"
@@ -183,9 +181,7 @@ class TestVerifyPluginSignature(_SigningFixture):
         )
 
     def test_missing_signature_file(self) -> None:
-        from openssl_encrypt.modules.plugin_system.plugin_signature import (
-            verify_plugin_signature,
-        )
+        from openssl_encrypt.modules.plugin_system.plugin_signature import verify_plugin_signature
 
         verdict = verify_plugin_signature(
             self.plugin_bytes,
@@ -196,9 +192,7 @@ class TestVerifyPluginSignature(_SigningFixture):
         self.assertIn("no signature", verdict.reason.lower())
 
     def test_signature_from_unenrolled_key_rejected(self) -> None:
-        from openssl_encrypt.modules.plugin_system.plugin_signature import (
-            verify_plugin_signature,
-        )
+        from openssl_encrypt.modules.plugin_system.plugin_signature import verify_plugin_signature
 
         # Impostor signs, but only the author key is enrolled as an anchor.
         sig = self._sign(self.plugin_bytes, self.impostor_fpr, "impostor_home")
@@ -210,9 +204,7 @@ class TestVerifyPluginSignature(_SigningFixture):
         self.assertFalse(verdict.verified)
 
     def test_tampered_plugin_bytes_rejected(self) -> None:
-        from openssl_encrypt.modules.plugin_system.plugin_signature import (
-            verify_plugin_signature,
-        )
+        from openssl_encrypt.modules.plugin_system.plugin_signature import verify_plugin_signature
 
         sig = self._sign(self.plugin_bytes, self.author_fpr, "author_home")
         sig_path = self.tmp / "plugin.py.asc"
@@ -224,9 +216,7 @@ class TestVerifyPluginSignature(_SigningFixture):
         self.assertFalse(verdict.verified)
 
     def test_no_anchors_rejects(self) -> None:
-        from openssl_encrypt.modules.plugin_system.plugin_signature import (
-            verify_plugin_signature,
-        )
+        from openssl_encrypt.modules.plugin_system.plugin_signature import verify_plugin_signature
 
         sig = self._sign(self.plugin_bytes, self.author_fpr, "author_home")
         sig_path = self.tmp / "plugin.py.asc"
@@ -240,9 +230,7 @@ class TestSignaturePolicy(unittest.TestCase):
     """The policy enum parsing used by the loader/CLI."""
 
     def test_policy_values(self) -> None:
-        from openssl_encrypt.modules.plugin_system.plugin_signature import (
-            PluginSignaturePolicy,
-        )
+        from openssl_encrypt.modules.plugin_system.plugin_signature import PluginSignaturePolicy
 
         self.assertEqual(PluginSignaturePolicy("off"), PluginSignaturePolicy.OFF)
         self.assertEqual(PluginSignaturePolicy("warn"), PluginSignaturePolicy.WARN)
@@ -283,9 +271,7 @@ class TestLoaderSignaturePolicy(_SigningFixture):
     def setUp(self) -> None:
         super().setUp()
         from openssl_encrypt.modules.plugin_system import PluginManager
-        from openssl_encrypt.modules.plugin_system.plugin_config import (
-            PluginConfigManager,
-        )
+        from openssl_encrypt.modules.plugin_system.plugin_config import PluginConfigManager
 
         self.PluginManager = PluginManager
         self.PluginConfigManager = PluginConfigManager
@@ -301,9 +287,7 @@ class TestLoaderSignaturePolicy(_SigningFixture):
         (self.keys_dir / "author.asc").write_bytes(self.author_pub)
 
     def _manager(self, policy_str: str):
-        from openssl_encrypt.modules.plugin_system.plugin_signature import (
-            PluginSignaturePolicy,
-        )
+        from openssl_encrypt.modules.plugin_system.plugin_signature import PluginSignaturePolicy
 
         return self.PluginManager(
             config_manager=self.PluginConfigManager(),
@@ -371,9 +355,7 @@ class TestSigningCliHelpers(_SigningFixture):
         self.assertTrue(verdict.verified)
 
     def test_enroll_requires_fingerprint_confirmation(self) -> None:
-        from openssl_encrypt.modules.plugin_system.plugin_signing_cli import (
-            enroll_trust_key,
-        )
+        from openssl_encrypt.modules.plugin_system.plugin_signing_cli import enroll_trust_key
 
         keyfile = self.tmp / "author.pub"
         keyfile.write_bytes(self.author_pub)
@@ -382,9 +364,7 @@ class TestSigningCliHelpers(_SigningFixture):
             enroll_trust_key(str(keyfile), trusted_keys_dir=str(store))
 
     def test_enroll_rejects_fingerprint_mismatch(self) -> None:
-        from openssl_encrypt.modules.plugin_system.plugin_signing_cli import (
-            enroll_trust_key,
-        )
+        from openssl_encrypt.modules.plugin_system.plugin_signing_cli import enroll_trust_key
 
         keyfile = self.tmp / "author.pub"
         keyfile.write_bytes(self.author_pub)
@@ -423,12 +403,8 @@ class TestSigningCliHelpers(_SigningFixture):
     def test_enrolled_key_makes_plugin_loadable(self) -> None:
         """Full loop: enroll author key, sign a plugin, load under enforce."""
         from openssl_encrypt.modules.plugin_system import PluginManager
-        from openssl_encrypt.modules.plugin_system.plugin_config import (
-            PluginConfigManager,
-        )
-        from openssl_encrypt.modules.plugin_system.plugin_signature import (
-            PluginSignaturePolicy,
-        )
+        from openssl_encrypt.modules.plugin_system.plugin_config import PluginConfigManager
+        from openssl_encrypt.modules.plugin_system.plugin_signature import PluginSignaturePolicy
         from openssl_encrypt.modules.plugin_system.plugin_signing_cli import (
             enroll_trust_key,
             sign_plugin,
@@ -478,18 +454,14 @@ class TestFactoryPolicyResolution(unittest.TestCase):
     def test_default_is_warn(self) -> None:
         # D1: the default policy is WARN (unsigned plugins load but warn).
         from openssl_encrypt.modules.plugin_system import create_default_plugin_manager
-        from openssl_encrypt.modules.plugin_system.plugin_signature import (
-            PluginSignaturePolicy,
-        )
+        from openssl_encrypt.modules.plugin_system.plugin_signature import PluginSignaturePolicy
 
         mgr = create_default_plugin_manager()
         self.assertEqual(mgr.signature_policy, PluginSignaturePolicy.WARN)
 
     def test_env_can_select_off(self) -> None:
         from openssl_encrypt.modules.plugin_system import create_default_plugin_manager
-        from openssl_encrypt.modules.plugin_system.plugin_signature import (
-            PluginSignaturePolicy,
-        )
+        from openssl_encrypt.modules.plugin_system.plugin_signature import PluginSignaturePolicy
 
         os.environ["OPENSSL_ENCRYPT_PLUGIN_SIGNATURE_POLICY"] = "off"
         mgr = create_default_plugin_manager()
@@ -497,9 +469,7 @@ class TestFactoryPolicyResolution(unittest.TestCase):
 
     def test_env_var_selects_enforce(self) -> None:
         from openssl_encrypt.modules.plugin_system import create_default_plugin_manager
-        from openssl_encrypt.modules.plugin_system.plugin_signature import (
-            PluginSignaturePolicy,
-        )
+        from openssl_encrypt.modules.plugin_system.plugin_signature import PluginSignaturePolicy
 
         os.environ["OPENSSL_ENCRYPT_PLUGIN_SIGNATURE_POLICY"] = "enforce"
         mgr = create_default_plugin_manager()
@@ -507,9 +477,7 @@ class TestFactoryPolicyResolution(unittest.TestCase):
 
     def test_explicit_arg_overrides_env(self) -> None:
         from openssl_encrypt.modules.plugin_system import create_default_plugin_manager
-        from openssl_encrypt.modules.plugin_system.plugin_signature import (
-            PluginSignaturePolicy,
-        )
+        from openssl_encrypt.modules.plugin_system.plugin_signature import PluginSignaturePolicy
 
         os.environ["OPENSSL_ENCRYPT_PLUGIN_SIGNATURE_POLICY"] = "off"
         mgr = create_default_plugin_manager(signature_policy=PluginSignaturePolicy.WARN)
@@ -520,9 +488,7 @@ class TestFactoryPolicyResolution(unittest.TestCase):
         # (WARN), which loads plugins but warns — never silently stricter or
         # laxer than the shipped default.
         from openssl_encrypt.modules.plugin_system import create_default_plugin_manager
-        from openssl_encrypt.modules.plugin_system.plugin_signature import (
-            PluginSignaturePolicy,
-        )
+        from openssl_encrypt.modules.plugin_system.plugin_signature import PluginSignaturePolicy
 
         os.environ["OPENSSL_ENCRYPT_PLUGIN_SIGNATURE_POLICY"] = "bogus"
         mgr = create_default_plugin_manager()
@@ -553,9 +519,7 @@ class TestProjectKeyAnchor(_SigningFixture):
         super().tearDown()
 
     def test_project_trust_anchor_resolves(self) -> None:
-        from openssl_encrypt.modules.plugin_system.plugin_signature import (
-            project_trust_anchor,
-        )
+        from openssl_encrypt.modules.plugin_system.plugin_signature import project_trust_anchor
 
         anchor = project_trust_anchor()
         self.assertIsNotNone(anchor)
@@ -573,9 +537,7 @@ class TestProjectKeyAnchor(_SigningFixture):
     def _manager(self, *, include_project_anchor=True):
         from openssl_encrypt.modules.plugin_system import PluginManager
         from openssl_encrypt.modules.plugin_system.plugin_config import PluginConfigManager
-        from openssl_encrypt.modules.plugin_system.plugin_signature import (
-            PluginSignaturePolicy,
-        )
+        from openssl_encrypt.modules.plugin_system.plugin_signature import PluginSignaturePolicy
 
         empty_store = self.tmp / "empty_store"
         return PluginManager(

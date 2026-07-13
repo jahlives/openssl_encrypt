@@ -424,9 +424,7 @@ class TestEnvelopeCascadeXChaCha(unittest.TestCase):
         """A genuine pre-backport 1.4.x envelope+cascade+xchacha file (no flag,
         legacy DEK wrap) must still decrypt byte-for-byte."""
         meta = _parse_metadata(self.V14_VECTOR.read_bytes())
-        self.assertNotIn(
-            "xchacha_nonce_format", meta["encryption"], "fixture is not a legacy file"
-        )
+        self.assertNotIn("xchacha_nonce_format", meta["encryption"], "fixture is not a legacy file")
         expected = self.V14_PLAINTEXT.read_bytes()
         decrypted = decrypt_file(
             input_file=str(self.V14_VECTOR),

@@ -171,9 +171,7 @@ class TestPluginCli(unittest.TestCase):
 
         from openssl_encrypt.modules.plugin_system import PluginManager
         from openssl_encrypt.modules.plugin_system.plugin_config import PluginConfigManager
-        from openssl_encrypt.modules.plugin_system.plugin_signature import (
-            PluginSignaturePolicy,
-        )
+        from openssl_encrypt.modules.plugin_system.plugin_signature import PluginSignaturePolicy
 
         mgr = PluginManager(
             config_manager=PluginConfigManager(),

@@ -130,10 +130,8 @@ class TestManifestLogic(unittest.TestCase):
     def test_escaping_symlink_fails_closed(self):
         """Finding 2: a module symlink escaping the package root must fail
         closed (ManifestError), never be silently skipped."""
-        from openssl_encrypt.modules.plugin_system.plugin_manifest import (
-            ManifestError,
-            build_manifest as _bm,
-        )
+        from openssl_encrypt.modules.plugin_system.plugin_manifest import ManifestError
+        from openssl_encrypt.modules.plugin_system.plugin_manifest import build_manifest as _bm
 
         outside = os.path.join(tempfile.mkdtemp(), "evil.py")
         with open(outside, "wb") as f:
@@ -147,10 +145,8 @@ class TestManifestLogic(unittest.TestCase):
     def test_symlinked_module_rejected(self):
         """A symlinked module file (even in-root) is rejected — a symlink is not
         a vouched-for shipped byte sequence and can be repointed."""
-        from openssl_encrypt.modules.plugin_system.plugin_manifest import (
-            ManifestError,
-            build_manifest as _bm,
-        )
+        from openssl_encrypt.modules.plugin_system.plugin_manifest import ManifestError
+        from openssl_encrypt.modules.plugin_system.plugin_manifest import build_manifest as _bm
 
         self._write("__init__.py", b"x = 1\n")
         self._write("real.py", b"y = 2\n")
