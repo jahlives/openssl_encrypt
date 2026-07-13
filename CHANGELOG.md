@@ -565,6 +565,16 @@ inflated KDF metadata parameters, not cosmetic output.
 
 ### Security
 
+- **The legacy no-hash-iterations KDF seed is now wipeable and wiped**
+  (security review 2026-07-13 INFO-1, gitlab#124): with no hash iterations
+  configured, `generate_key` built its seed as the immutable concatenation
+  `password + salt + hsm_pepper`, which the existing wipe at the return
+  site silently refused (M10 — immutable input). The seed is now written
+  into one exact-size `bytearray` through a memoryview and is effectively
+  zeroized in the `finally`, including when a KDF rebinds the working
+  variable. Legacy sequential formats only; derived keys are byte-identical
+  (pinned by golden-value regression tests).
+
 - **`derive-password` no longer leaves the HSM pepper and derived-key
   copies unwiped** (security review 2026-07-13 LOW-1, gitlab#123): the
   handler held the hardware pepper as immutable bytes that were never
