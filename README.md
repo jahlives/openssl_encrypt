@@ -107,14 +107,14 @@ Sequential encryption using multiple cipher algorithms with chained HKDF key der
 - Attacker must break all ciphers to decrypt data
 - Minimum 2 ciphers required, supports unlimited cascade depth
 - Each layer adds entropy to the next layer's key derivation
-- CLI support: `--cascade "aes-256-gcm,chacha20-poly1305,xcha-poly1305"`
+- CLI support: presets via `--cascade standard` / `--cascade paranoia`, or a custom chain via `--cascade --algorithm "aes-256-gcm,chacha20-poly1305,xchacha20-poly1305"`
 - Automatic cipher diversity validation
 - New metadata format V8
 
 **Example:**
 ```bash
 python -m openssl_encrypt.crypt encrypt -i file.txt \
-    --cascade "aes-256-gcm,chacha20-poly1305,xcha-poly1305"
+    --cascade --algorithm "aes-256-gcm,chacha20-poly1305,xchacha20-poly1305"
 ```
 
 ### Threefish Post-Quantum Ciphers
