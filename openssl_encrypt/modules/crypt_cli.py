@@ -5999,7 +5999,7 @@ def main_with_args(args=None):
         # generate_key the same way the encrypt path uses it, so the
         # derived value is reproducible iff the password, the salt AND the
         # hardware-loaded secret all match.
-        hsm_pepper: bytes = None
+        hsm_pepper: bytearray = None
         if getattr(args, "hsm", None):
             hsm_value = args.hsm.lower()
             try:
@@ -6050,13 +6050,22 @@ def main_with_args(args=None):
             if not hsm_result.success:
                 eprint(f"Error obtaining HSM pepper: {hsm_result.message}")
                 sys.exit(1)
-            hsm_pepper = hsm_result.data.get("hsm_pepper")
-            if not hsm_pepper:
+            hsm_pepper_value = hsm_result.data.get("hsm_pepper")
+            if not hsm_pepper_value:
                 eprint("Error: HSM plugin returned no pepper")
                 sys.exit(1)
+            # gitlab#123: hold the pepper in a wipeable buffer. A mutable
+            # plugin buffer is reused in place so the wipe below also clears
+            # the plugin's copy.
+            hsm_pepper = (
+                hsm_pepper_value
+                if isinstance(hsm_pepper_value, bytearray)
+                else bytearray(hsm_pepper_value)
+            )
 
         # Call generate_key to derive the key
         from .crypt_core import generate_key
+        from .secure_memory import secure_memzero
 
         output_length = getattr(args, "output_length", 32) or 32
 
@@ -6070,50 +6079,51 @@ def main_with_args(args=None):
 
         pbkdf2_iters = getattr(args, "pbkdf2_iterations", 0) or 0
 
+        derived: bytearray = None
         try:
-            key, _, _ = generate_key(
-                password=(
-                    derive_password.encode("utf-8")
-                    if isinstance(derive_password, str)
-                    else derive_password
-                ),
-                salt=salt,
-                hash_config=hash_config,
-                pbkdf2_iterations=pbkdf2_iters,
-                quiet=True,
-                algorithm=synth_algorithm,
-                progress=getattr(args, "progress", False),
-                debug=getattr(args, "debug", False),
-                hsm_pepper=hsm_pepper,
-                format_version=9,
-            )
-        except Exception as e:
-            eprint(f"Error during key derivation: {e}")
-            sys.exit(1)
+            try:
+                key, _, _ = generate_key(
+                    password=(
+                        derive_password.encode("utf-8")
+                        if isinstance(derive_password, str)
+                        else derive_password
+                    ),
+                    salt=salt,
+                    hash_config=hash_config,
+                    pbkdf2_iterations=pbkdf2_iters,
+                    quiet=True,
+                    algorithm=synth_algorithm,
+                    progress=getattr(args, "progress", False),
+                    debug=getattr(args, "debug", False),
+                    hsm_pepper=hsm_pepper,
+                    format_version=9,
+                )
+            except Exception as e:
+                eprint(f"Error during key derivation: {e}")
+                sys.exit(1)
 
-        # Truncate to requested length
-        derived = key[:output_length]
+            # Truncate to requested length in a wipeable buffer; the
+            # memoryview avoids an intermediate immutable slice copy.
+            derived = bytearray(memoryview(key)[:output_length])
 
-        # Output the derived key
-        output_format = getattr(args, "output_format", "hex") or "hex"
-        if output_format == "hex":
-            print(derived.hex())
-        elif output_format == "base64":
-            import base64 as _b64
+            # Output the derived key
+            output_format = getattr(args, "output_format", "hex") or "hex"
+            if output_format == "hex":
+                print(derived.hex())
+            elif output_format == "base64":
+                import base64 as _b64
 
-            print(_b64.b64encode(derived).decode("ascii"))
-        elif output_format == "raw":
-            sys.stdout.buffer.write(derived)
-
-        # Secure cleanup
-        try:
-            from .secure_memory import secure_memzero
-
-            if isinstance(key, (bytes, bytearray)):
-                key_ba = bytearray(key)
-                secure_memzero(key_ba)
-        except (ImportError, TypeError):
-            pass
+                print(_b64.b64encode(derived).decode("ascii"))
+            elif output_format == "raw":
+                sys.stdout.buffer.write(derived)
+        finally:
+            # gitlab#123: wipe the pepper and the output buffer on all exit
+            # paths. The immutable bytes returned by generate_key cannot be
+            # wiped from here (M10 - secure_memzero refuses immutable input).
+            if hsm_pepper is not None:
+                secure_memzero(hsm_pepper)
+            if derived is not None:
+                secure_memzero(derived)
 
         sys.exit(0)
 

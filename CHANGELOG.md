@@ -5,6 +5,23 @@ All notable changes to the openssl_encrypt project will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.9] - TBD
+
+### Security
+
+- **`derive-password` no longer leaves the HSM pepper and derived-key
+  copies unwiped** (security review 2026-07-13 LOW-1, gitlab#123): the
+  handler held the hardware pepper as immutable bytes that were never
+  zeroized, and "cleaned up" the derived key by wiping a throwaway
+  `bytearray(key)` copy while the printed output slice stayed resident.
+  The pepper is now held in a wipeable buffer from acquisition (a mutable
+  plugin buffer is wiped in place), the truncated output is copied into a
+  `bytearray` via a memoryview (no intermediate immutable slice), and both
+  are zeroized in a `finally` on all exit paths. The immutable `bytes`
+  returned by `generate_key` remains a documented accepted residual (M10
+  design, common to all callers). Derived outputs are unchanged.
+
+
 ## [1.4.8] - 2026-07-12
 
 ### Added

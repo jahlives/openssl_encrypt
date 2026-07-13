@@ -20,6 +20,7 @@
           <div class="toc">
               <h3>&#128203; Table of Contents</h3>
               <ul>
+                  <li><a href="#v1-4-9">1.4.9 - Security Hardening (Not Released)</a></li>
                   <li><a href="#v1-4-8">1.4.8 - Format v14 Default &amp; Security Hardening</a></li>
                   <li><a href="#v1-4-7">1.4.7 - Documentation Update</a></li>
                   <li><a href="#v1-4-6">1.4.6 - PIV, Integrity, Envelope &amp; PQ Signing</a></li>
@@ -70,6 +71,18 @@
 
           <!-- Stable Release Series (1.4.x) -->
           <h2>&#128640; Stable Release Series (1.4.x)</h2>
+
+          <div class="changelog-item" id="v1-4-9">
+              <div class="version">
+                  1.4.9
+                  <span class="release-type dev">NOT RELEASED</span>
+                  <span class="release-type security">SECURITY</span>
+              </div>
+              <div class="date">Unreleased (in development)</div>
+              <div class="description">
+                  <strong>NOT YET RELEASED.</strong> Security hardening: <strong>Derive-password memory hygiene (2026-07-13):</strong> the <code>derive-password</code> command now zeroizes the hardware pepper and the derived-key output buffer after use instead of leaving them in process memory (derived outputs unchanged).
+              </div>
+          </div>
 
           <div class="changelog-item" id="v1-4-8">
               <div class="version">
