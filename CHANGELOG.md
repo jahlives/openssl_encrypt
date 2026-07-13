@@ -984,7 +984,8 @@ the 1.5 branch:
   documents `FORMAT_V14_PLAN.md` / `FORMAT_V14_IMPLEMENTATION_PLAN.md`
   (v14 fully rolled out on both lines; the spec and scope-correction
   rationale stay recoverable via git history) — all steps verified
-  implemented in code before removal.
+  implemented in code before removal. Also removed `docs/announcements/`
+  (the published 1.4.7 LinkedIn announcement text).
 
 - **Test-collection regression fixed**: `pytest.ini` (added 2025-12-30)
   silently stopped collecting `unittests/unittests.py` — 91 tests across
