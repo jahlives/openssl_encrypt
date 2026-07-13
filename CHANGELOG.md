@@ -5,6 +5,21 @@ All notable changes to the openssl_encrypt project will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.9] - TBD
+
+### Fixed
+
+- **README: broken CLI examples** (gitlab#126 / github#52, 2026-07-13,
+  same fix as on the 1.5.x line): the password-generation example used
+  a non-existent `generate --length` invocation (the subcommand is
+  `generate-password` with a positional length), the shred example used
+  `--passes` instead of `--shred-passes`, and the keystore examples
+  invoked a non-existent `openssl_encrypt.keystore_cli_main` module with
+  flags the CLIs don't have — replaced with the real
+  `openssl_encrypt.modules.keystore_cli` workflow (`create`, encrypt
+  with `--keystore-path` auto-generating the keypair, `list-keys`).
+  Documentation only; no code changes.
+
 ## [1.4.8] - 2026-07-12
 
 ### Added

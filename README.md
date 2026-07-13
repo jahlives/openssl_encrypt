@@ -774,10 +774,10 @@ python -m openssl_encrypt.crypt encrypt -i file.txt --paranoid   # Maximum secur
 python -m openssl_encrypt.crypt decrypt -i file.txt.enc -o file.txt
 
 # Secure file deletion
-python -m openssl_encrypt.crypt shred -i sensitive.txt --passes 3
+python -m openssl_encrypt.crypt shred -i sensitive.txt --shred-passes 3
 
-# Generate random password
-python -m openssl_encrypt.crypt generate --length 20
+# Generate random password (length is positional, default 32)
+python -m openssl_encrypt.crypt generate-password 20
 ```
 
 ### Graphical User Interface
@@ -796,15 +796,15 @@ Cross-platform GUI available for Linux, macOS, and Windows. See the [User Guide]
 
 ```bash
 # Create keystore
-python -m openssl_encrypt.keystore_cli_main create --keystore-path keys.pqc
+python -m openssl_encrypt.modules.keystore_cli --keystore keys.pqc create
 
-# Generate PQC keypair
-python -m openssl_encrypt.keystore_cli_main generate --keystore-path keys.pqc \
-    --algorithm ml-kem-768
-
-# Encrypt with keystore
+# Encrypt with a PQC algorithm using the keystore (a keypair is
+# auto-generated and stored in the keystore on first use)
 python -m openssl_encrypt.crypt encrypt -i file.txt \
-    --keystore keys.pqc --key-id my-key
+    --algorithm ml-kem-768-hybrid --keystore-path keys.pqc
+
+# List keys in the keystore
+python -m openssl_encrypt.modules.keystore_cli --keystore keys.pqc list-keys
 ```
 ---
 ## Configuration Templates
