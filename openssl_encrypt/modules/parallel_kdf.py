@@ -299,7 +299,12 @@ def _kdf_worker(
             spec.loader.exec_module(balloon_module)
             balloon_hash = balloon_module.balloon_hash
 
-            # Extract Balloon parameters
+            # Extract Balloon parameters.
+            # The weak 16 fallback is load-bearing for pre-M3 v11 files only:
+            # this worker never sees format_version >= 13 configs because
+            # generate_key_independent_xor_parallel delegates those to the
+            # sequential path, which fail-closes on a missing space_cost for
+            # v14+ (gitlab#125, guarded by test_balloon_v14_fail_closed.py).
             space_cost = kdf_config.get("space_cost", 16)
             time_cost = kdf_config.get("time_cost", 20)
             delta = kdf_config.get("delta", 4)

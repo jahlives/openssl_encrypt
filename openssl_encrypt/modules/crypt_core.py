@@ -2424,6 +2424,7 @@ def compute_kdf_independent(
     quiet: bool = False,
     progress: bool = False,
     debug: bool = False,
+    format_version: int = None,
 ) -> "SecureBytes":
     """
     Compute a single KDF independently for v11 Independent XOR.
@@ -2436,6 +2437,9 @@ def compute_kdf_independent(
         salt: Original salt bytes
         kdf_type: KDF type (argon2, scrypt, balloon, hkdf, pbkdf2)
         kdf_config: KDF-specific configuration dict
+        format_version: Metadata format version of the file being processed,
+            when the caller knows it; gates fail-closed parameter validation
+            (gitlab#125). None preserves legacy fallback behavior.
         key_length: Target output length in bytes
         quiet: Suppress output messages
         progress: Show progress indicators
@@ -2544,7 +2548,21 @@ def compute_kdf_independent(
             raise ValueError("Balloon hash not available")
 
         # Extract Balloon parameters
-        space_cost = kdf_config.get("space_cost", 16)
+        space_cost = kdf_config.get("space_cost")
+        if space_cost is None:
+            # gitlab#125: v14 postdates the M3 fix (deb4bc09), so every
+            # released v14+ writer persists space_cost - a missing field can
+            # only be crafted/corrupted metadata and is refused instead of
+            # silently deriving with the weak value.
+            if format_version is not None and format_version >= 14:
+                raise ValueError(
+                    "Balloon KDF configuration is missing space_cost for "
+                    "format_version >= 14; refusing the weak legacy fallback"
+                )
+            # Load-bearing legacy fallback: v11 balloon files written by
+            # released v1.4.0-v1.4.3 (pre-M3) did not persist space_cost and
+            # were really derived with 16 (see test_balloon_defaults_m3.py).
+            space_cost = 16
         time_cost = kdf_config.get("time_cost", 20)
         delta = kdf_config.get("delta", 4)
 
@@ -3082,6 +3100,7 @@ def generate_key_independent_xor(
                 quiet=quiet,
                 progress=False,
                 debug=debug,
+                format_version=format_version,
             )
             xor_components.append(result)
 

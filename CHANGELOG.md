@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Balloon KDF fails closed on v14+ metadata missing `space_cost`**
+  (security review 2026-07-13 INFO-2, gitlab#125): the decrypt-side
+  derivation fell back to the historically weak `space_cost=16` whenever
+  the field was absent from balloon metadata. That fallback is load-bearing
+  for v11 files written by released v1.4.0–v1.4.3 (pre-M3, guarded by
+  `test_balloon_defaults_m3.py`) and is kept for v11–13 — but v14 postdates
+  the M3 fix, so every released v14+ writer persists the field; a missing
+  `space_cost` at v14+ can only be crafted or corrupted metadata and now
+  raises a clear `ValueError` instead of silently deriving with ~512 bytes
+  of memory hardness. The parallel KDF path needs no gate of its own (v13+
+  parallel dispatch delegates to the sequential, gated path — invariant now
+  pinned by a test). No legitimately written file changes behavior.
+
 - **The legacy no-hash-iterations KDF seed is now wipeable and wiped**
   (security review 2026-07-13 INFO-1, gitlab#124): with no hash iterations
   configured, `generate_key` built its seed as the immutable concatenation
