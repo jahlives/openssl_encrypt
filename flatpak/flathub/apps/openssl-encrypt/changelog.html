@@ -80,7 +80,7 @@
               </div>
               <div class="date">Unreleased (in development)</div>
               <div class="description">
-                  <strong>NOT YET RELEASED.</strong> Security hardening: <strong>Derive-password memory hygiene (2026-07-13):</strong> the <code>derive-password</code> command now zeroizes the hardware pepper and the derived-key output buffer after use instead of leaving them in process memory (derived outputs unchanged).
+                  <strong>NOT YET RELEASED.</strong> Security hardening: <strong>Derive-password memory hygiene (2026-07-13):</strong> the <code>derive-password</code> command now zeroizes the hardware pepper and the derived-key output buffer after use instead of leaving them in process memory (derived outputs unchanged). <strong>Legacy seed zeroization (2026-07-13):</strong> key derivation for legacy sequential formats now builds its password+salt+pepper seed in a wipeable buffer that is zeroized after use (derived keys are byte-identical).
               </div>
           </div>
 

@@ -3559,11 +3559,19 @@ def generate_key(
             )
     else:
         # Even when no hash iterations are configured, we need to combine password with salt
-        # for consistency with the original key derivation behavior
-        if hsm_pepper:
-            password = password + salt + hsm_pepper
-        else:
-            password = password + salt
+        # for consistency with the original key derivation behavior.
+        # gitlab#124: build the seed in one exact-size wipeable buffer instead of
+        # an immutable concatenation, so the finally-wipe at the return site (and
+        # the legacy_seed_buffer wipe there for the KDF-rebind case) is effective.
+        pepper_part = hsm_pepper if hsm_pepper else b""
+        legacy_seed_buffer = bytearray(len(password) + len(salt) + len(pepper_part))
+        seed_view = memoryview(legacy_seed_buffer)
+        seed_view[: len(password)] = password
+        seed_view[len(password) : len(password) + len(salt)] = salt
+        if pepper_part:
+            seed_view[len(password) + len(salt) :] = pepper_part
+        seed_view.release()
+        password = legacy_seed_buffer
 
     # Check if Argon2 is available on the system
     argon2_available = ARGON2_AVAILABLE
@@ -4617,6 +4625,10 @@ def generate_key(
                 secure_memzero(iteration_specific_salt)
             if "salt_material" in locals():
                 secure_memzero(salt_material)
+            if "legacy_seed_buffer" in locals():
+                # gitlab#124: wipe the legacy seed even when a KDF rebound
+                # `password` to its output.
+                secure_memzero(legacy_seed_buffer)
         except (NameError, TypeError):
             # Ignore cleanup errors to ensure we don't interrupt the program flow
             pass
