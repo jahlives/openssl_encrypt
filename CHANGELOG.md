@@ -53,6 +53,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   steps verified implemented in this branch's code before removal;
   recoverable via git history.
 
+- **`KDF_CHAIN_SECURITY_RESEARCH.md` moved** from the repo-root `docs/`
+  into the package documentation (`openssl_encrypt/docs/`), joining the
+  other shipped guides.
+
 
 ## [1.4.8] - 2026-07-12
 
