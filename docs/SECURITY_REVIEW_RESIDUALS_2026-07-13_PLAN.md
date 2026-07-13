@@ -1,5 +1,5 @@
 # Plan: Security review residuals 2026-07-13 (LOW-1, INFO-1, INFO-2)
-Status: in progress (only P16 open)
+Status: done
 Created: 2026-07-13
 
 ## Goal
@@ -67,10 +67,12 @@ hardening; none is a user-facing vulnerability.
 - [x] P15: security-reviewer re-run confirms all three findings resolved with
       no new findings introduced.
   target: (review, no code)
-- [ ] P16: feature/v1.4.x-development checked and fixes ported with the same
-      test/commit discipline. Sites verified present on 1.4.x (2026-07-13):
-      crypt_cli.py:6053, crypt_core.py:3564, crypt_core.py:2547,
-      parallel_kdf.py:303.
+- [x] P16: feature/v1.4.x-development checked and fixes ported with the same
+      test/commit discipline. Ported as 4d277f3a/b0e1205c/de3c6a8c
+      (changelog entries in a NEW 1.4.9 section - 1.4.8 is released/tagged;
+      user catch, commits rewritten before push). 1.4.x suite: 3297 passed,
+      0 regressions (3 pre-existing failures in
+      test_password_wrap_ct_binding.py, present in the pre-change baseline).
   target: 1.4.x branch counterparts
 - [x] P17: parallel_kdf needs no gate of its own — resolved by evidence
       (2026-07-13): generate_key_independent_xor_parallel delegates all
