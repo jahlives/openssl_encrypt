@@ -987,6 +987,11 @@ the 1.5 branch:
   implemented in code before removal. Also removed `docs/announcements/`
   (the published 1.4.7 LinkedIn announcement text).
 
+- **`KDF_CHAIN_SECURITY_RESEARCH.md` ported from the 1.4.x line** into the
+  package documentation (`openssl_encrypt/docs/`, byte-identical): the
+  literature review behind the independent-XOR-by-default design decision
+  was previously missing from this branch entirely.
+
 - **Test-collection regression fixed**: `pytest.ini` (added 2025-12-30)
   silently stopped collecting `unittests/unittests.py` — 91 tests across
   12 classes had not run in any suite invocation since. Collection is
