@@ -565,6 +565,18 @@ inflated KDF metadata parameters, not cosmetic output.
 
 ### Security
 
+- **`derive-password` no longer leaves the HSM pepper and derived-key
+  copies unwiped** (security review 2026-07-13 LOW-1, gitlab#123): the
+  handler held the hardware pepper as immutable bytes that were never
+  zeroized, and "cleaned up" the derived key by wiping a throwaway
+  `bytearray(key)` copy while the printed output slice stayed resident.
+  The pepper is now held in a wipeable buffer from acquisition (a mutable
+  plugin buffer is wiped in place), the truncated output is copied into a
+  `bytearray` via a memoryview (no intermediate immutable slice), and both
+  are zeroized in a `finally` on all exit paths. The immutable `bytes`
+  returned by `generate_key` remains a documented accepted residual (M10
+  design, common to all callers). Derived outputs are unchanged.
+
 - **The live `hsm fido2-test`/`onlykey-test` handlers no longer print the
   derived hardware pepper** (H1 [HSM-1] residual, gitlab#121, 2026-07-12,
   ported from 1.4.x): the 2026-07-07 H1 fix removed the pepper hex dump
