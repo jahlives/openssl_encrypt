@@ -44,6 +44,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   returned by `generate_key` remains a documented accepted residual (M10
   design, common to all callers). Derived outputs are unchanged.
 
+### Internal
+
+- **Completed plan documents removed from `docs/`** (plan-tracker
+  verification 2026-07-13, mirroring the 1.5.x cleanup):
+  `FORMAT_V14_PLAN.md`, `FORMAT_V14_IMPLEMENTATION_PLAN.md`,
+  `V14_REVIEW_LOW_FIX_PLAN.md` and `V14_REVIEW_FIXES_2026-07-10.md` — all
+  steps verified implemented in this branch's code before removal;
+  recoverable via git history.
+
 
 ## [1.4.8] - 2026-07-12
 
