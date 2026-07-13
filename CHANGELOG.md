@@ -321,6 +321,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   flags the CLIs don't have — replaced with the real
   `openssl_encrypt.modules.keystore_cli` workflow (`create`, encrypt
   with `--keystore-path` auto-generating the keypair, `list-keys`).
+  The cascade example (follow-up, same day) used both a wrong syntax
+  and a non-existent algorithm name: `--cascade` takes a preset
+  (`standard`/`paranoia`) or combines with `--algorithm` for a custom
+  chain, and the cipher is `xchacha20-poly1305`, not `xcha-poly1305`.
   Also updated the stale "latest stable is v1.4.0" pointer to v1.4.8
   and removed the leftover v1.4.0-beta framing ("v1.4.0 Development
   Series", "currently in beta testing", stale test counts).
