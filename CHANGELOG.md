@@ -312,6 +312,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Stale cryptography pin in requirements-prod.in** (gitlab#127 / github#53,
+  2026-07-20): the GHSA-537c-gmf6-5ccf bump (48.0.1) updated
+  `requirements.txt`, the compiled lockfiles and the Flatpak manifest but
+  missed `requirements-prod.in`, which still allowed only `<47.0.0` — a
+  pip-compile rerun or a combined install against the `.in` file failed with
+  `ResolutionImpossible`. Aligned it to `>=48.0.1,<49.0.0` and relaxed the
+  compiled `cryptography==48.0.1` pins in `requirements-prod.txt` /
+  `requirements-dev.txt` to the same range so `setup.py` `install_requires`
+  (read from `requirements-prod.txt`) no longer over-constrains combined
+  installs, e.g. alongside `openssl_encrypt_server`.
 - **README: broken CLI examples and stale version references**
   (gitlab#126 / github#52, 2026-07-13): the password-generation example
   used a non-existent `generate --length` invocation (the subcommand is
