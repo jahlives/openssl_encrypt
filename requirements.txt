@@ -9,7 +9,7 @@ pywin32>=306,<307; sys_platform == 'win32'
 PyYAML>=6.0.2,<7.0.0
 
 # Steganography dependencies (v1.3.0)
-Pillow>=12.1.1,<13.0.0
+Pillow>=12.3.0,<13.0.0
 numpy>=2.1.0,<3.0.0
 blake3>=1.0.0,<2.0.0
 
