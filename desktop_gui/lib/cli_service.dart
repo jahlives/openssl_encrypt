@@ -34,6 +34,36 @@ class GeneratedPassword {
   }
 }
 
+/// Result of a `check-password --json` strength report.
+class PasswordStrength {
+  final int length;
+  final double bits; // pattern-aware estimate
+  final double rawBits; // raw search-space estimate
+  final String category; // e.g. "very weak" .. "strong"
+  final List<String> warnings;
+
+  PasswordStrength({
+    required this.length,
+    required this.bits,
+    required this.rawBits,
+    required this.category,
+    required this.warnings,
+  });
+
+  factory PasswordStrength.fromJson(Map<String, dynamic> json) {
+    return PasswordStrength(
+      length: (json['length'] as num?)?.toInt() ?? 0,
+      bits: (json['bits'] as num?)?.toDouble() ?? 0,
+      rawBits: (json['raw_bits'] as num?)?.toDouble() ?? 0,
+      category: (json['category'] as String?) ?? 'unknown',
+      warnings: (json['warnings'] as List<dynamic>?)
+              ?.map((w) => w.toString())
+              .toList() ??
+          const [],
+    );
+  }
+}
+
 /// Service layer for integrating with OpenSSL Encrypt CLI
 /// Replaces all pure Dart crypto implementations
 class CLIService {
@@ -993,22 +1023,29 @@ class CLIService {
   }
 
   /// Run CLI command with stdin input (for passphrases, etc.)
-  static Future<ProcessResult> _runCLICommandWithStdin(List<String> args, String stdinInput) async {
+  static Future<ProcessResult> _runCLICommandWithStdin(List<String> args, String stdinInput,
+      {Map<String, String>? environment}) async {
     Process process;
 
     // When running inside Flatpak, use direct CLI path
     if (_isFlaspakVersion && await File(_cliPath).exists()) {
       _outputDebugLog('Using direct Flatpak CLI with stdin: $_cliPath ${args.join(' ')}');
-      process = await Process.start(_cliPath, args);
+      // When an explicit environment is given it is authoritative (used to
+      // remove vars like CRYPT_PASSWORD that would override the stdin value).
+      process = environment != null
+          ? await Process.start(_cliPath, args,
+              environment: environment, includeParentEnvironment: false)
+          : await Process.start(_cliPath, args);
     } else {
       // Development CLI
       final pythonArgs = ['-m', 'openssl_encrypt.cli', ...args];
       _outputDebugLog('Attempting development CLI with stdin: python ${pythonArgs.join(' ')}');
 
-      final env = Map<String, String>.from(Platform.environment);
+      final env = environment ?? Map<String, String>.from(Platform.environment);
       process = await Process.start('python', pythonArgs,
         workingDirectory: '/home/work/private/git/openssl_encrypt',
-        environment: env);
+        environment: env,
+        includeParentEnvironment: environment == null);
     }
 
     // Send stdin input
@@ -2370,6 +2407,34 @@ class CLIService {
       // the (secret-bearing) stdout into the UI error card.
       throw Exception('Could not parse generated password output (invalid JSON)');
     }
+  }
+
+  // ==================== Password Strength ====================
+
+  /// Report the strength of [password] via `check-password --json`.
+  ///
+  /// The password is passed on **stdin** (never as a `-p` argument, which would
+  /// leak it to the process list), and the policy is set to "none" so this is a
+  /// pure strength report that always exits 0. Returns null for an empty
+  /// password. The password is not written to any log (the stdin runner logs
+  /// only the argv; stdout is the report, not the password).
+  static Future<PasswordStrength?> checkPassword(String password) async {
+    if (password.isEmpty) return null;
+    final args = <String>[
+      'check-password',
+      '--json',
+      '--password-policy',
+      'none',
+    ];
+    // Strip CRYPT_PASSWORD so the CLI scores the typed password (it reads that
+    // env var before stdin), making the meter reflect the field, not the env.
+    final env = Map<String, String>.from(Platform.environment)..remove('CRYPT_PASSWORD');
+    final result = await _runCLICommandWithStdin(args, password, environment: env);
+    if (result.exitCode != 0) {
+      throw Exception('Strength check failed: ${(result.stderr as String).trim()}');
+    }
+    final data = jsonDecode((result.stdout as String).trim()) as Map<String, dynamic>;
+    return PasswordStrength.fromJson(data);
   }
 
   // ==================== Secure Shred ====================

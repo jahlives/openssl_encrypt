@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Desktop GUI: live password-strength meter** (gitlab#141 / github#59): the
+  Encrypt tab's password field now shows a live strength indicator (bar,
+  category, entropy in bits, and weakness warnings) driven by the CLI
+  `check-password --json` command. The password is passed on stdin (never as an
+  argument) and the check is debounced to avoid spawning a CLI process per
+  keystroke. Placed on the Encrypt tab only — where a password is being chosen;
+  the Decrypt tab (entering an existing password) and the Password Generator
+  (which already reports entropy/strength) intentionally omit it.
+
 - **Desktop GUI: Secure Shred screen** (gitlab#140 / github#58): a new
   Pro-mode "Secure Shred" screen securely overwrites and deletes files (and
   directories, with a recursive toggle) via the CLI `shred` command, with a
