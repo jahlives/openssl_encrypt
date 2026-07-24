@@ -19,6 +19,7 @@ from unittest import mock
 
 from openssl_encrypt.modules.plugin_system import PluginManager
 from openssl_encrypt.modules.plugin_system.plugin_config import PluginConfigManager
+from openssl_encrypt.modules.plugin_system.plugin_signature import PluginSignaturePolicy
 
 BENIGN_PLUGIN = """
 from openssl_encrypt.modules.plugin_system import (
@@ -58,9 +59,15 @@ class TestPluginLoadTOCTOU(unittest.TestCase):
 
     def setUp(self):
         self.config_manager = PluginConfigManager()
+        # This suite exercises the validation->exec TOCTOU hash-pin on an
+        # unsigned test plugin, so the validation path must RUN and the plugin
+        # must load. Use WARN (the old default) so the check runs and the plugin
+        # loads; ENFORCE (the new default, gitlab#130) would refuse the unsigned
+        # plugin before the hash-pin is ever exercised.
         self.plugin_manager = PluginManager(
             config_manager=self.config_manager,
             strict_security_mode=True,
+            signature_policy=PluginSignaturePolicy.WARN,
         )
         self.temp_dir = tempfile.mkdtemp()
         os.chmod(self.temp_dir, 0o700)  # owner-only, so H8 does not reject

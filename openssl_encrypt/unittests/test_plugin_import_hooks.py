@@ -6,16 +6,21 @@ Tests the PluginImportGuard that blocks dangerous module imports
 during plugin execution.
 """
 
-import pytest
 import os
+import shutil
 import sys
 import tempfile
-import shutil
 
-from openssl_encrypt.modules.plugin_system.plugin_manager import PluginManager
+import pytest
+
+from openssl_encrypt.modules.plugin_system.plugin_base import (
+    PluginCapability,
+    PluginSecurityContext,
+)
 from openssl_encrypt.modules.plugin_system.plugin_config import PluginConfigManager
-from openssl_encrypt.modules.plugin_system.plugin_base import PluginSecurityContext, PluginCapability
+from openssl_encrypt.modules.plugin_system.plugin_manager import PluginManager
 from openssl_encrypt.modules.plugin_system.plugin_sandbox import PluginImportGuard
+from openssl_encrypt.modules.plugin_system.plugin_signature import PluginSignaturePolicy
 
 
 class TestDirectImportBlocking:
@@ -26,7 +31,7 @@ class TestDirectImportBlocking:
         self.config_manager = PluginConfigManager()
         self.plugin_manager = PluginManager(
             config_manager=self.config_manager,
-            strict_security_mode=False  # Allow loading for runtime testing
+            strict_security_mode=False,  # Allow loading for runtime testing
         )
         self.temp_dir = tempfile.mkdtemp()
 
@@ -60,7 +65,7 @@ class TestPlugin(PreProcessorPlugin):
         return PluginResult.success_result("Executed")
 """
         plugin_path = os.path.join(self.temp_dir, f"{plugin_id}.py")
-        with open(plugin_path, 'w', encoding="utf-8") as f:
+        with open(plugin_path, "w", encoding="utf-8") as f:
             f.write(plugin_content)
         return plugin_path
 
@@ -75,7 +80,7 @@ class TestPlugin(PreProcessorPlugin):
             return
 
         # Try runtime execution
-        test_file = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt')
+        test_file = tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".txt")
         test_file.write("test")
         test_file.close()
 
@@ -84,9 +89,7 @@ class TestPlugin(PreProcessorPlugin):
             context.file_paths = [test_file.name]
 
             result = self.plugin_manager.execute_plugin(
-                "test_subprocess",
-                context,
-                use_process_isolation=False
+                "test_subprocess", context, use_process_isolation=False
             )
 
             # Should be blocked
@@ -105,7 +108,7 @@ class TestPlugin(PreProcessorPlugin):
             assert "socket" in load_result.message.lower()
             return
 
-        test_file = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt')
+        test_file = tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".txt")
         test_file.write("test")
         test_file.close()
 
@@ -114,9 +117,7 @@ class TestPlugin(PreProcessorPlugin):
             context.file_paths = [test_file.name]
 
             result = self.plugin_manager.execute_plugin(
-                "test_socket",
-                context,
-                use_process_isolation=False
+                "test_socket", context, use_process_isolation=False
             )
 
             assert not result.success
@@ -133,7 +134,7 @@ class TestPlugin(PreProcessorPlugin):
             assert "os" in load_result.message.lower() or "security" in load_result.message.lower()
             return
 
-        test_file = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt')
+        test_file = tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".txt")
         test_file.write("test")
         test_file.close()
 
@@ -142,9 +143,7 @@ class TestPlugin(PreProcessorPlugin):
             context.file_paths = [test_file.name]
 
             result = self.plugin_manager.execute_plugin(
-                "test_os",
-                context,
-                use_process_isolation=False
+                "test_os", context, use_process_isolation=False
             )
 
             assert not result.success
@@ -157,10 +156,12 @@ class TestPlugin(PreProcessorPlugin):
         load_result = self.plugin_manager.load_plugin(plugin_path)
 
         if not load_result.success:
-            assert "ctypes" in load_result.message.lower() or "security" in load_result.message.lower()
+            assert (
+                "ctypes" in load_result.message.lower() or "security" in load_result.message.lower()
+            )
             return
 
-        test_file = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt')
+        test_file = tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".txt")
         test_file.write("test")
         test_file.close()
 
@@ -169,9 +170,7 @@ class TestPlugin(PreProcessorPlugin):
             context.file_paths = [test_file.name]
 
             result = self.plugin_manager.execute_plugin(
-                "test_ctypes",
-                context,
-                use_process_isolation=False
+                "test_ctypes", context, use_process_isolation=False
             )
 
             assert not result.success
@@ -185,8 +184,7 @@ class TestFromImportBlocking:
     def setup_method(self):
         self.config_manager = PluginConfigManager()
         self.plugin_manager = PluginManager(
-            config_manager=self.config_manager,
-            strict_security_mode=False
+            config_manager=self.config_manager, strict_security_mode=False
         )
         self.temp_dir = tempfile.mkdtemp()
 
@@ -216,7 +214,7 @@ class TestPlugin(PreProcessorPlugin):
         return PluginResult.success_result("Done")
 """
         plugin_path = os.path.join(self.temp_dir, f"{plugin_id}.py")
-        with open(plugin_path, 'w', encoding="utf-8") as f:
+        with open(plugin_path, "w", encoding="utf-8") as f:
             f.write(plugin_content)
         return plugin_path
 
@@ -230,18 +228,18 @@ class TestPlugin(PreProcessorPlugin):
             assert "subprocess" in load_result.message.lower()
         else:
             # Try runtime
-            test_file = tempfile.NamedTemporaryFile(mode='w', delete=False)
+            test_file = tempfile.NamedTemporaryFile(mode="w", delete=False)
             test_file.write("test")
             test_file.close()
 
             try:
-                context = PluginSecurityContext("test_from_subprocess", {PluginCapability.READ_FILES})
+                context = PluginSecurityContext(
+                    "test_from_subprocess", {PluginCapability.READ_FILES}
+                )
                 context.file_paths = [test_file.name]
 
                 result = self.plugin_manager.execute_plugin(
-                    "test_from_subprocess",
-                    context,
-                    use_process_isolation=False
+                    "test_from_subprocess", context, use_process_isolation=False
                 )
 
                 assert not result.success
@@ -263,9 +261,13 @@ class TestSafeImportsAllowed:
 
     def setup_method(self):
         self.config_manager = PluginConfigManager()
+        # Signature OFF: these tests load unsigned test plugins to verify the
+        # import guard, not the signature gate (gitlab#130 ENFORCE default would
+        # otherwise refuse them before their imports run).
         self.plugin_manager = PluginManager(
             config_manager=self.config_manager,
-            strict_security_mode=False
+            strict_security_mode=False,
+            signature_policy=PluginSignaturePolicy.OFF,
         )
         self.temp_dir = tempfile.mkdtemp()
 
@@ -294,24 +296,24 @@ class TestPlugin(PreProcessorPlugin):
         {code}
 """
         plugin_path = os.path.join(self.temp_dir, f"{plugin_id}.py")
-        with open(plugin_path, 'w', encoding="utf-8") as f:
+        with open(plugin_path, "w", encoding="utf-8") as f:
             f.write(plugin_content)
         return plugin_path
 
     def test_json_import_works(self):
         """JSON module should work in plugins"""
-        code = '''
+        code = """
         import json
         data = {"key": "value"}
         result = json.dumps(data)
         return PluginResult.success_result(result)
-'''
+"""
         plugin_path = self._create_plugin("test_json", code)
         load_result = self.plugin_manager.load_plugin(plugin_path)
 
         assert load_result.success
 
-        test_file = tempfile.NamedTemporaryFile(mode='w', delete=False)
+        test_file = tempfile.NamedTemporaryFile(mode="w", delete=False)
         test_file.write("test")
         test_file.close()
 
@@ -320,9 +322,7 @@ class TestPlugin(PreProcessorPlugin):
             context.file_paths = [test_file.name]
 
             result = self.plugin_manager.execute_plugin(
-                "test_json",
-                context,
-                use_process_isolation=False
+                "test_json", context, use_process_isolation=False
             )
 
             assert result.success
@@ -331,17 +331,17 @@ class TestPlugin(PreProcessorPlugin):
 
     def test_datetime_import_works(self):
         """datetime module should work in plugins"""
-        code = '''
+        code = """
         import datetime
         now = datetime.datetime.now()
         return PluginResult.success_result(str(now))
-'''
+"""
         plugin_path = self._create_plugin("test_datetime", code)
         load_result = self.plugin_manager.load_plugin(plugin_path)
 
         assert load_result.success
 
-        test_file = tempfile.NamedTemporaryFile(mode='w', delete=False)
+        test_file = tempfile.NamedTemporaryFile(mode="w", delete=False)
         test_file.write("test")
         test_file.close()
 
@@ -350,9 +350,7 @@ class TestPlugin(PreProcessorPlugin):
             context.file_paths = [test_file.name]
 
             result = self.plugin_manager.execute_plugin(
-                "test_datetime",
-                context,
-                use_process_isolation=False
+                "test_datetime", context, use_process_isolation=False
             )
 
             assert result.success
@@ -414,8 +412,7 @@ class TestErrorMessages:
     def setup_method(self):
         self.config_manager = PluginConfigManager()
         self.plugin_manager = PluginManager(
-            config_manager=self.config_manager,
-            strict_security_mode=False
+            config_manager=self.config_manager, strict_security_mode=False
         )
         self.temp_dir = tempfile.mkdtemp()
 
@@ -445,7 +442,7 @@ class TestPlugin(PreProcessorPlugin):
         return PluginResult.success_result("Done")
 """
         plugin_path = os.path.join(self.temp_dir, f"{plugin_id}.py")
-        with open(plugin_path, 'w', encoding="utf-8") as f:
+        with open(plugin_path, "w", encoding="utf-8") as f:
             f.write(plugin_content)
         return plugin_path
 
@@ -460,18 +457,18 @@ class TestPlugin(PreProcessorPlugin):
             assert "security" in message or "subprocess" in message
         else:
             # Runtime blocking
-            test_file = tempfile.NamedTemporaryFile(mode='w', delete=False)
+            test_file = tempfile.NamedTemporaryFile(mode="w", delete=False)
             test_file.write("test")
             test_file.close()
 
             try:
-                context = PluginSecurityContext("test_subprocess_msg", {PluginCapability.READ_FILES})
+                context = PluginSecurityContext(
+                    "test_subprocess_msg", {PluginCapability.READ_FILES}
+                )
                 context.file_paths = [test_file.name]
 
                 result = self.plugin_manager.execute_plugin(
-                    "test_subprocess_msg",
-                    context,
-                    use_process_isolation=False
+                    "test_subprocess_msg", context, use_process_isolation=False
                 )
 
                 message = result.message.lower()
@@ -493,9 +490,13 @@ class TestEdgeCases:
 
     def setup_method(self):
         self.config_manager = PluginConfigManager()
+        # Signature OFF: these tests load unsigned test plugins to verify the
+        # import guard, not the signature gate (gitlab#130 ENFORCE default would
+        # otherwise refuse them before their imports run).
         self.plugin_manager = PluginManager(
             config_manager=self.config_manager,
-            strict_security_mode=False
+            strict_security_mode=False,
+            signature_policy=PluginSignaturePolicy.OFF,
         )
         self.temp_dir = tempfile.mkdtemp()
 
@@ -524,7 +525,7 @@ class TestPlugin(PreProcessorPlugin):
         {code}
 """
         plugin_path = os.path.join(self.temp_dir, f"{plugin_id}.py")
-        with open(plugin_path, 'w', encoding="utf-8") as f:
+        with open(plugin_path, "w", encoding="utf-8") as f:
             f.write(plugin_content)
         return plugin_path
 
@@ -538,13 +539,13 @@ class TestPlugin(PreProcessorPlugin):
 
     def test_multiple_safe_imports(self):
         """Multiple safe imports in one plugin"""
-        code = '''
+        code = """
         import json
         import datetime
         import hashlib
         data = {"time": str(datetime.datetime.now()), "hash": hashlib.md5(b"test").hexdigest()}
         return PluginResult.success_result(json.dumps(data))
-'''
+"""
         plugin_path = self._create_plugin("test_multi", code)
         load_result = self.plugin_manager.load_plugin(plugin_path)
 
@@ -552,11 +553,11 @@ class TestPlugin(PreProcessorPlugin):
 
     def test_conditional_import_blocked(self):
         """Import inside conditional should be detected by AST analysis"""
-        code = '''
+        code = """
         if True:
             import subprocess
         return PluginResult.success_result("Done")
-'''
+"""
         plugin_path = self._create_plugin("test_conditional", code)
         load_result = self.plugin_manager.load_plugin(plugin_path)
 
@@ -568,9 +569,11 @@ class TestPlugin(PreProcessorPlugin):
 
         # Verify it would be blocked in strict mode by checking with strict manager
         strict_manager = PluginManager(
-            config_manager=self.config_manager,
-            strict_security_mode=True
+            config_manager=self.config_manager, strict_security_mode=True
         )
         strict_result = strict_manager.load_plugin(plugin_path)
         assert not strict_result.success  # Blocked in strict mode
-        assert "subprocess" in strict_result.message.lower() or "security" in strict_result.message.lower()
+        assert (
+            "subprocess" in strict_result.message.lower()
+            or "security" in strict_result.message.lower()
+        )

@@ -338,6 +338,27 @@ class TestLoaderSignaturePolicy(_SigningFixture):
         result = self._manager("enforce").load_plugin(str(self.plugin_path))
         self.assertFalse(result.success)
 
+    def test_default_policy_refuses_unsigned(self) -> None:
+        # gitlab#130 regression: with NO explicit signature_policy the loader
+        # default is ENFORCE, so an unsigned non-built-in plugin is refused
+        # rather than exec'd behind the bypassable AST denylist. Pre-fix the
+        # constructor default was WARN and this same plugin loaded successfully.
+        from openssl_encrypt.modules.plugin_system.plugin_signature import (
+            PluginSignaturePolicy,
+        )
+
+        manager = self.PluginManager(
+            config_manager=self.PluginConfigManager(),
+            strict_security_mode=True,
+            trusted_keys_dir=str(self.keys_dir),
+        )
+        self.assertEqual(manager.signature_policy, PluginSignaturePolicy.ENFORCE)
+        result = manager.load_plugin(str(self.plugin_path))
+        self.assertFalse(
+            result.success,
+            "default-policy loader must refuse an unsigned non-built-in plugin",
+        )
+
     def test_warn_loads_unsigned(self) -> None:
         result = self._manager("warn").load_plugin(str(self.plugin_path))
         self.assertTrue(result.success, result.message)
@@ -475,15 +496,16 @@ class TestFactoryPolicyResolution(unittest.TestCase):
         else:
             os.environ["OPENSSL_ENCRYPT_PLUGIN_SIGNATURE_POLICY"] = self._saved
 
-    def test_default_is_warn(self) -> None:
-        # D1: the default policy is WARN (unsigned plugins load but warn).
+    def test_default_is_enforce(self) -> None:
+        # gitlab#130: the default policy is ENFORCE (unsigned non-built-in
+        # plugins are refused rather than exec'd behind the AST denylist).
         from openssl_encrypt.modules.plugin_system import create_default_plugin_manager
         from openssl_encrypt.modules.plugin_system.plugin_signature import (
             PluginSignaturePolicy,
         )
 
         mgr = create_default_plugin_manager()
-        self.assertEqual(mgr.signature_policy, PluginSignaturePolicy.WARN)
+        self.assertEqual(mgr.signature_policy, PluginSignaturePolicy.ENFORCE)
 
     def test_env_can_select_off(self) -> None:
         from openssl_encrypt.modules.plugin_system import create_default_plugin_manager
@@ -516,9 +538,8 @@ class TestFactoryPolicyResolution(unittest.TestCase):
         self.assertEqual(mgr.signature_policy, PluginSignaturePolicy.WARN)
 
     def test_invalid_env_falls_back_to_default(self) -> None:
-        # An invalid value is a misconfiguration: fall back to the default
-        # (WARN), which loads plugins but warns — never silently stricter or
-        # laxer than the shipped default.
+        # An invalid value is a misconfiguration: fail closed to the default
+        # (ENFORCE, gitlab#130) rather than silently weakening the policy.
         from openssl_encrypt.modules.plugin_system import create_default_plugin_manager
         from openssl_encrypt.modules.plugin_system.plugin_signature import (
             PluginSignaturePolicy,
@@ -526,7 +547,7 @@ class TestFactoryPolicyResolution(unittest.TestCase):
 
         os.environ["OPENSSL_ENCRYPT_PLUGIN_SIGNATURE_POLICY"] = "bogus"
         mgr = create_default_plugin_manager()
-        self.assertEqual(mgr.signature_policy, PluginSignaturePolicy.WARN)
+        self.assertEqual(mgr.signature_policy, PluginSignaturePolicy.ENFORCE)
 
 
 class TestProjectKeyAnchor(_SigningFixture):

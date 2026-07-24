@@ -186,11 +186,16 @@ SECURITY_DEFAULTS = {
 
 
 def _resolve_signature_policy(explicit=None):
-    """Resolve the plugin signature policy (#66).
+    """Resolve the plugin signature policy (#66; gitlab#130).
 
     Precedence: explicit argument > OPENSSL_ENCRYPT_PLUGIN_SIGNATURE_POLICY
-    env var > WARN (D1 default). An unrecognized env value falls back to the
-    default with a warning rather than failing the whole plugin subsystem.
+    env var > ENFORCE (default). ENFORCE is the default so an unsigned/
+    unverifiable non-built-in plugin is refused rather than exec'd in the host
+    process behind the bypassable AST denylist (gitlab#130); built-in bundled
+    plugins keep their trust shortcut and are unaffected. Users who load
+    unsigned third-party plugins can opt into 'warn' (or 'off') explicitly. An
+    unrecognized env value fails closed to ENFORCE with a warning rather than
+    silently weakening the policy.
     """
     import os
 
@@ -200,7 +205,7 @@ def _resolve_signature_policy(explicit=None):
         return explicit
     raw = os.environ.get("OPENSSL_ENCRYPT_PLUGIN_SIGNATURE_POLICY")
     if not raw:
-        return PluginSignaturePolicy.WARN
+        return PluginSignaturePolicy.ENFORCE
     try:
         return PluginSignaturePolicy(raw.strip().lower())
     except ValueError:
@@ -208,10 +213,10 @@ def _resolve_signature_policy(explicit=None):
 
         logging.getLogger(__name__).warning(
             "Ignoring invalid OPENSSL_ENCRYPT_PLUGIN_SIGNATURE_POLICY=%r "
-            "(expected off/warn/enforce); using warn",
+            "(expected off/warn/enforce); using enforce",
             raw,
         )
-        return PluginSignaturePolicy.WARN
+        return PluginSignaturePolicy.ENFORCE
 
 
 def create_default_plugin_manager(
@@ -226,7 +231,8 @@ def create_default_plugin_manager(
     Args:
         config_dir: Optional custom configuration directory
         signature_policy: Plugin signature policy (off/warn/enforce). If None,
-            resolved from OPENSSL_ENCRYPT_PLUGIN_SIGNATURE_POLICY, else OFF.
+            resolved from OPENSSL_ENCRYPT_PLUGIN_SIGNATURE_POLICY, else ENFORCE
+            (gitlab#130 — unsigned non-built-in plugins are refused by default).
         trusted_keys_dir: Optional trust-anchor store override.
         include_project_anchor: Trust the bundled project source-integrity key
             as a default plugin-signing anchor (D2; default True).
