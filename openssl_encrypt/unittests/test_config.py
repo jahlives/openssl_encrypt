@@ -34,6 +34,7 @@ from openssl_encrypt.modules.config_wizard import (
     run_configuration_wizard,
 )
 from openssl_encrypt.modules.keystore_cli import KeystoreSecurityLevel, PQCKeystore
+from openssl_encrypt.modules.plugin_system.plugin_signature import PluginSignaturePolicy
 from openssl_encrypt.modules.security_scorer import SecurityLevel, SecurityScorer
 
 # Import PQC modules if available
@@ -546,7 +547,11 @@ class SimpleTestPlugin(PreProcessorPlugin):
             self.test_create_simple_test_plugin()
 
             config_manager = PluginConfigManager(self.config_dir)
-            plugin_manager = PluginManager(config_manager)
+            # Signature OFF: this test exercises load+execute of an unsigned
+            # test plugin, not the signature gate (gitlab#130 ENFORCE default).
+            plugin_manager = PluginManager(
+                config_manager, signature_policy=PluginSignaturePolicy.OFF
+            )
             plugin_manager.add_plugin_directory(self.plugin_dir)
 
             discovered = plugin_manager.discover_plugins()
@@ -594,7 +599,11 @@ class SimpleTestPlugin(PreProcessorPlugin):
             self.test_create_simple_test_plugin()
 
             config_manager = PluginConfigManager(self.config_dir)
-            plugin_manager = PluginManager(config_manager)
+            # Signature OFF: this test exercises capability validation on an
+            # unsigned test plugin, not the signature gate (gitlab#130).
+            plugin_manager = PluginManager(
+                config_manager, signature_policy=PluginSignaturePolicy.OFF
+            )
             plugin_manager.add_plugin_directory(self.plugin_dir)
 
             discovered = plugin_manager.discover_plugins()
@@ -733,7 +742,11 @@ class SimpleTestPlugin(PreProcessorPlugin):
             self.test_create_simple_test_plugin()
 
             config_manager = PluginConfigManager(self.config_dir)
-            plugin_manager = PluginManager(config_manager)
+            # Signature OFF: this test exercises enable/disable on an unsigned
+            # test plugin, not the signature gate (gitlab#130).
+            plugin_manager = PluginManager(
+                config_manager, signature_policy=PluginSignaturePolicy.OFF
+            )
             plugin_manager.add_plugin_directory(self.plugin_dir)
 
             discovered = plugin_manager.discover_plugins()
@@ -772,7 +785,11 @@ class SimpleTestPlugin(PreProcessorPlugin):
             )
 
             config_manager = PluginConfigManager(self.config_dir)
-            plugin_manager = PluginManager(config_manager)
+            # Signature OFF: this test exercises audit logging around loading an
+            # unsigned test plugin, not the signature gate (gitlab#130).
+            plugin_manager = PluginManager(
+                config_manager, signature_policy=PluginSignaturePolicy.OFF
+            )
 
             # Clear audit log
             plugin_manager.clear_audit_log()
