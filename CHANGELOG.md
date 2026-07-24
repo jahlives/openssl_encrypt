@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Unsigned third-party plugins are refused by default (signature policy now
+  ENFORCE)** (gitlab#130, GHSA-587j-4r3v-cm2c): the plugin loader defaulted to
+  `warn`, so an unsigned/unverifiable non-built-in plugin was exec'd in the host
+  process after only an AST denylist scan — a scan that is bypassable (e.g.
+  `getattr`/`__import__` indirection), giving arbitrary code execution to anyone
+  who could drop a `.py` into a plugin directory. The default signature policy is
+  now `enforce`: a non-built-in plugin must carry a valid detached signature from
+  an enrolled trust anchor or it is refused before its code is imported. Built-in
+  bundled plugins keep their trust shortcut and are unaffected, so no shipped
+  functionality changes. Users who deliberately load unsigned third-party plugins
+  can opt back into the old behavior with
+  `OPENSSL_ENCRYPT_PLUGIN_SIGNATURE_POLICY=warn` (or `off`), or an explicit
+  `signature_policy=` argument; an unrecognized env value now fails closed to
+  `enforce` with a warning rather than silently weakening the policy.
+
 - **Decryption refuses crafted files/keystores whose KDF cost would exhaust
   memory** (gitlab#128, GHSA-7894-5gw8-69hr): Argon2 `memory_cost`, scrypt `N`,
   and balloon `space_cost` read from file metadata (and from a keystore header)
