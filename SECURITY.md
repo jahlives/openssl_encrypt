@@ -291,9 +291,14 @@ anchor (or the bundled project source-integrity anchor) or it is refused *before
 its code is imported. Built-in bundled plugins keep their trust shortcut, so no
 shipped functionality changes. An unrecognized
 `OPENSSL_ENCRYPT_PLUGIN_SIGNATURE_POLICY` value now fails closed to `enforce`
-with a warning instead of silently weakening the policy. This complements
-ADVISORY 2026-03, which closed signature *verification* gaps but left the default
-policy permissive.
+with a warning instead of silently weakening the policy. The built-in trust
+shortcut is additionally scoped to the genuinely shipped plugin subtree: the
+advertised third-party drop directories (`plugins/user`, `plugins/community`,
+`plugins/official`) are no longer treated as built-in, so a plugin placed there
+must pass the full signature + AST gate — otherwise ENFORCE would have been
+bypassable by dropping an unsigned plugin into the directory the tool advertises
+for third-party plugins. This complements ADVISORY 2026-03, which closed
+signature *verification* gaps but left the default policy permissive.
 
 **Mitigation:** upgrade to 1.4.9 or 1.5.0. Users who deliberately load unsigned
 third-party plugins can restore the previous behavior explicitly with
