@@ -621,6 +621,13 @@ inflated KDF metadata parameters, not cosmetic output.
   `OPENSSL_ENCRYPT_PLUGIN_SIGNATURE_POLICY=warn` (or `off`), or an explicit
   `signature_policy=` argument; an unrecognized env value now fails closed to
   `enforce` with a warning rather than silently weakening the policy.
+  Additionally, the built-in trust shortcut is now scoped to the genuinely
+  shipped plugin subtree: the advertised third-party drop directories
+  (`plugins/user`, `plugins/community`, `plugins/official`) are no longer
+  treated as built-in, so a plugin placed there must pass the full signature +
+  AST + TOCTOU gate — otherwise the ENFORCE default would have been bypassable
+  by dropping an unsigned plugin into the directory the tool advertises for
+  third-party plugins.
 
 - **Decryption refuses crafted files/keystores whose KDF cost would exhaust
   memory** (gitlab#128, GHSA-7894-5gw8-69hr): Argon2 `memory_cost`, scrypt `N`,

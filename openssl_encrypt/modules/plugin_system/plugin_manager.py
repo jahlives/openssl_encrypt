@@ -45,6 +45,20 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+# Third-party plugin drop directories (gitlab#130 follow-up). These live UNDER
+# the built-in plugin root but are the locations the tool advertises for
+# user/community/official third-party plugins, so a plugin placed here must NOT
+# inherit the built-in trust shortcut — it has to pass the full signature + AST
+# + TOCTOU gate like any other untrusted plugin. Anything else under the root
+# ships with the package (examples/hsm/keyserver/…) and stays built-in.
+_UNTRUSTED_PLUGIN_SUBDIRS = ("user", "community", "official")
+# Case-folded for comparison: on case-insensitive filesystems (Windows, default
+# macOS) "plugins/User" is the same on-disk directory as "plugins/user", so the
+# exclusion must match case-insensitively or the drop dir would be misclassified
+# as built-in under a variant casing (gitlab#130 — fail-safe, no shipped subdir
+# collides with these names).
+_UNTRUSTED_PLUGIN_SUBDIRS_CF = frozenset(s.casefold() for s in _UNTRUSTED_PLUGIN_SUBDIRS)
+
 
 class PluginRegistration:
     """
@@ -1087,11 +1101,27 @@ class PluginManager:
         """True if ``real_path`` (already realpath-resolved) is under the
         trusted built-in plugin root. Built-ins skip the AST/signature gate and
         the TOCTOU hash pin (they are shipped, owner-only, and gated by the H8
-        writable-location check)."""
+        writable-location check).
+
+        The third-party drop directories (``plugins/user``, ``plugins/community``,
+        ``plugins/official``) live under the root but are NOT treated as built-in
+        (gitlab#130 follow-up): a plugin placed there must pass the full
+        signature + AST + TOCTOU gate, otherwise the ENFORCE-by-default signature
+        policy would be bypassable simply by dropping an unsigned plugin into the
+        directory the tool advertises for third-party plugins.
+        """
         if not self.builtin_plugin_root:
             return False
         real_root = os.path.realpath(self.builtin_plugin_root)
-        return real_path == real_root or real_path.startswith(real_root + os.sep)
+        if real_path != real_root and not real_path.startswith(real_root + os.sep):
+            return False
+        # Under the root, but reject the advertised third-party drop dirs.
+        # Case-insensitive so a variant casing (plugins/User) cannot slip past
+        # on a case-insensitive filesystem (gitlab#130).
+        rel = os.path.relpath(real_path, real_root)
+        if rel != os.curdir and rel.split(os.sep, 1)[0].casefold() in _UNTRUSTED_PLUGIN_SUBDIRS_CF:
+            return False
+        return True
 
     def _validate_plugin_file(self, file_path: str) -> bool:
         """
