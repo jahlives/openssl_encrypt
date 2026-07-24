@@ -93,6 +93,26 @@ class USBDriveCreator:
     SALT_FILE = "salt.bin"  # per-drive KDF salt (plaintext; salts are not secret)
     VERSION = "1.0"
 
+    # v2 integrity is an ALLOWLIST, not an extension denylist (gitlab#132 F13):
+    # every file in the tool tree is recorded at creation and verification flags
+    # ANY file present afterward that is not in that record — so a planted
+    # .dll/.so/.pyd/.exe or any other payload is caught. The genuinely
+    # user-mutable subtrees below (the encrypt/decrypt workspace and logs) are
+    # excluded so ordinary use does not trip verification. v1 manifests (drives
+    # created before this fix) carry no scan_version and verify exactly as before.
+    INTEGRITY_SCAN_VERSION = 2
+    _INTEGRITY_MUTABLE_SUBDIRS = ("data", "logs")  # == DATA_DIR, LOGS_DIR
+    _INTEGRITY_EXCLUDED_NAMES = (".integrity", "hash_manifest.enc", "VERIFY_INTEGRITY.md")
+    # Root-level auto-run files (they live at the USB root, above the portable
+    # directory, and are executed by the OS on insert — must be integrity
+    # protected and any unexpected one flagged).
+    _ROOT_AUTORUN_NAMES = ("autorun.inf", "autorun.sh", ".autorun")
+    # Bounds for the untrusted-drive verify path: cap per-file hashing (stops a
+    # substituted huge file or a FIFO/symlink to an unbounded stream) and the
+    # pre-auth .integrity read (stops a planted multi-GB blob).
+    _MAX_HASH_BYTES = 1 * 1024 * 1024 * 1024  # 1 GiB
+    _MAX_INTEGRITY_BYTES = 128 * 1024 * 1024  # 128 MiB
+
     # Legacy fixed salt used by pre-fix drives. Retained ONLY so that USB drives
     # created before per-drive salts were introduced remain decryptable/verifiable.
     # New drives MUST use a random per-drive salt (see _load_or_create_salt).
@@ -222,8 +242,12 @@ class USBDriveCreator:
             if hash_config:
                 self._store_hash_config_metadata(config_dir, hash_config)
 
-            # Generate integrity file and cryptographic hash manifest
-            integrity_info = self._create_integrity_file(portable_root, encryption_key, hash_config)
+            # Generate integrity file and cryptographic hash manifest. Pass
+            # usb_path so the root-level autorun.* files (above portable_root)
+            # are integrity-protected (gitlab#132 F13).
+            integrity_info = self._create_integrity_file(
+                portable_root, encryption_key, hash_config, usb_root=usb_path
+            )
             manifest_info = self._create_hash_manifest(
                 portable_root,
                 password,
@@ -309,7 +333,9 @@ class USBDriveCreator:
             if not integrity_path.exists():
                 raise USBCreationError("Integrity file missing - USB may be tampered")
 
-            verification_result = self._verify_integrity_file(portable_root, encryption_key)
+            verification_result = self._verify_integrity_file(
+                portable_root, encryption_key, usb_root=usb_path
+            )
 
             # Clean up
             secure_memzero(encryption_key)
@@ -453,9 +479,11 @@ class USBDriveCreator:
             "network_disabled": True,  # Air-gapped mode
             "logging_enabled": include_logs,
             "workspace_path": "data/",
-            "keystore_path": "config/keystore.encrypted"
-            if custom_config and custom_config.get("include_keystore")
-            else None,
+            "keystore_path": (
+                "config/keystore.encrypted"
+                if custom_config and custom_config.get("include_keystore")
+                else None
+            ),
             "created_at": time.time(),
         }
 
@@ -620,39 +648,75 @@ fi
         except Exception as e:
             raise USBCreationError(f"Failed to create autorun files: {e}")
 
+    def _sha256_file(self, path: Path) -> str:
+        """SHA-256 of a file, streamed in fixed-size chunks and hard-bounded so a
+        very large attacker-supplied file (or a FIFO/symlink to an unbounded
+        stream) cannot exhaust memory or loop forever on the untrusted-drive
+        verify path (gitlab#132 hardening)."""
+        h = hashlib.sha256()
+        remaining = self._MAX_HASH_BYTES
+        with open(path, "rb") as f:
+            while remaining > 0:
+                chunk = f.read(min(1024 * 1024, remaining))
+                if not chunk:
+                    break
+                h.update(chunk)
+                remaining -= len(chunk)
+        return h.hexdigest()
+
+    def _integrity_excluded(self, rel: str) -> bool:
+        """True if the ``portable_root``-relative path is excluded from integrity
+        coverage (gitlab#132 F13): the user-mutable workspace/logs subtrees, or an
+        artifact that legitimately is not in the manifest."""
+        if rel in self._INTEGRITY_EXCLUDED_NAMES:
+            return True
+        first = rel.replace("\\", "/").split("/", 1)[0]
+        return first in self._INTEGRITY_MUTABLE_SUBDIRS
+
     def _create_integrity_file(
-        self, portable_root: Path, key: bytes, hash_config: Optional[Dict] = None
+        self,
+        portable_root: Path,
+        key: bytes,
+        hash_config: Optional[Dict] = None,
+        usb_root: Optional[Path] = None,
     ) -> Dict:
-        """Create integrity verification file"""
+        """Create integrity verification file.
+
+        gitlab#132 F13: records a v2 manifest that is an ALLOWLIST of every file
+        in the tool tree (not a fixed set of extensions), so verification can
+        detect ANY file added afterward, plus tampered/added root-level
+        ``autorun.*`` files. The user-mutable workspace (``data/``) and ``logs/``
+        are excluded so ordinary use does not fail verification.
+        """
         try:
-            # Calculate checksums of important files
+            # Allowlist: checksum EVERY file in the tool tree except the
+            # user-mutable workspace/logs and the manifest artifacts.
             checksums = {}
-            important_files = []
+            for file_path in portable_root.rglob("*"):
+                if not file_path.is_file():
+                    continue
+                rel = str(file_path.relative_to(portable_root))
+                if self._integrity_excluded(rel):
+                    continue
+                checksums[rel] = self._sha256_file(file_path)
 
-            # Find important files to checksum
-            for pattern in [
-                "*.conf",
-                "*.exe",
-                "openssl_encrypt",
-                "*.encrypted",
-                "*.py",
-                "*.bat",
-                "*.sh",
-            ]:
-                important_files.extend(portable_root.rglob(pattern))
-
-            for file_path in important_files:
-                if file_path.is_file():
-                    with open(file_path, "rb") as f:
-                        file_hash = hashlib.sha256(f.read()).hexdigest()
-                    checksums[str(file_path.relative_to(portable_root))] = file_hash
+            # F13: hash the root-level autorun files (they live at the USB root,
+            # above portable_root, and the OS auto-executes them on insert).
+            root_checksums = {}
+            if usb_root is not None:
+                for name in self._ROOT_AUTORUN_NAMES:
+                    autorun_path = usb_root / name
+                    if autorun_path.is_file():
+                        root_checksums[name] = self._sha256_file(autorun_path)
 
             # Create integrity data
             integrity_data = {
                 "version": self.VERSION,
+                "scan_version": self.INTEGRITY_SCAN_VERSION,  # F13
                 "created_at": time.time(),
                 "security_profile": self.security_profile.value,
                 "checksums": checksums,
+                "root_checksums": root_checksums,  # F13: root-level autorun.*
                 "file_count": len(checksums),
                 "hash_config": hash_config,  # Store hash configuration for verification
             }
@@ -674,13 +738,26 @@ fi
         except Exception as e:
             raise USBCreationError(f"Failed to create integrity file: {e}")
 
-    def _verify_integrity_file(self, portable_root: Path, key: bytes) -> Dict:
-        """Verify integrity file and check for tampering"""
+    def _verify_integrity_file(
+        self, portable_root: Path, key: bytes, usb_root: Optional[Path] = None
+    ) -> Dict:
+        """Verify integrity file and check for tampering.
+
+        gitlab#132 F13: for v2 manifests, this is an ALLOWLIST check — it flags
+        ANY file present in the tool tree that is not in the recorded manifest
+        (a planted binary/script of any type), plus tampered/added/removed
+        root-level ``autorun.*`` files, while excluding the user-mutable
+        workspace (``data/``) and ``logs/``. v1 manifests (drives created before
+        this fix) carry no scan_version and are verified exactly as before.
+        """
         try:
             integrity_path = portable_root / self.INTEGRITY_FILE
 
             with open(integrity_path, "rb") as f:
-                encrypted_data = f.read()
+                # Bounded read: the .integrity blob is small; cap it so an
+                # attacker cannot plant a huge file here to exhaust memory
+                # before authentication (gitlab#132).
+                encrypted_data = f.read(self._MAX_INTEGRITY_BYTES)
 
             # Extract nonce and decrypt
             nonce = encrypted_data[: self.NONCE_LENGTH]
@@ -692,14 +769,20 @@ fi
             # Parse integrity data
             integrity_data = json.loads(decrypted_data.decode("utf-8"))
             stored_checksums = integrity_data["checksums"]
+            # scan_version 1 (or absent) => legacy manifest; skip added/autorun
+            # detection so pre-fix drives verify exactly as they did before.
+            scan_version = integrity_data.get("scan_version", 1)
+            root_checksums = integrity_data.get("root_checksums", {})
 
             # Verify current checksums
             verification_results = {
                 "verified_files": 0,
                 "failed_files": 0,
                 "missing_files": 0,
+                "added_files": 0,  # F13
                 "tampered_files": [],
                 "missing_file_list": [],
+                "added_file_list": [],  # F13
             }
 
             for file_path, expected_hash in stored_checksums.items():
@@ -710,8 +793,7 @@ fi
                     verification_results["missing_file_list"].append(file_path)
                     continue
 
-                with open(full_path, "rb") as f:
-                    current_hash = hashlib.sha256(f.read()).hexdigest()
+                current_hash = self._sha256_file(full_path)
 
                 if current_hash == expected_hash:
                     verification_results["verified_files"] += 1
@@ -719,10 +801,48 @@ fi
                     verification_results["failed_files"] += 1
                     verification_results["tampered_files"].append(file_path)
 
+            # F13: root-level autorun.* — verify the recorded ones and flag any
+            # autorun file that was tampered, removed, or newly added.
+            if usb_root is not None and scan_version >= 2:
+                for name, expected_hash in root_checksums.items():
+                    autorun_path = usb_root / name
+                    if not autorun_path.is_file():
+                        verification_results["missing_files"] += 1
+                        verification_results["missing_file_list"].append(name)
+                        continue
+                    if self._sha256_file(autorun_path) == expected_hash:
+                        verification_results["verified_files"] += 1
+                    else:
+                        verification_results["failed_files"] += 1
+                        verification_results["tampered_files"].append(name)
+                for name in self._ROOT_AUTORUN_NAMES:
+                    if (usb_root / name).is_file() and name not in root_checksums:
+                        verification_results["added_files"] += 1
+                        verification_results["added_file_list"].append(name)
+
+            # F13: ALLOWLIST — flag any file present in the tool tree that is not
+            # in the recorded manifest (a planted binary/script of ANY type),
+            # excluding the user-mutable workspace/logs and the manifest
+            # artifacts. A planted special file (FIFO/socket/device) is flagged
+            # too.
+            if scan_version >= 2:
+                for file_path in portable_root.rglob("*"):
+                    rel = str(file_path.relative_to(portable_root))
+                    if self._integrity_excluded(rel):
+                        continue
+                    if file_path.is_file():
+                        if rel not in stored_checksums:
+                            verification_results["added_files"] += 1
+                            verification_results["added_file_list"].append(rel)
+                    elif not file_path.is_dir():
+                        verification_results["added_files"] += 1
+                        verification_results["added_file_list"].append(rel)
+
             # Overall verification status
             verification_results["integrity_ok"] = (
                 verification_results["failed_files"] == 0
                 and verification_results["missing_files"] == 0
+                and verification_results["added_files"] == 0  # F13
             )
 
             verification_results["created_at"] = integrity_data["created_at"]
@@ -1142,11 +1262,9 @@ if __name__ == "__main__":
                 "manifest_config": {
                     "password_type": "custom" if manifest_password else "main",
                     "security_profile": manifest_security_profile,
-                    "hash_config_type": "custom"
-                    if manifest_hash_config
-                    else "main"
-                    if hash_config
-                    else "pbkdf2",
+                    "hash_config_type": (
+                        "custom" if manifest_hash_config else "main" if hash_config else "pbkdf2"
+                    ),
                 },
             }
 
@@ -1210,21 +1328,34 @@ if __name__ == "__main__":
             except Exception as e:
                 logger.warning(f"Main CLI encryption failed: {e}, using fallback format")
 
-                # Derive key for manifest encryption
+                # Derive key for manifest encryption. gitlab#132 F19: pass this
+                # drive's unique per-drive salt (salt.bin) instead of letting
+                # _derive_encryption_key fall back to the global fixed salt,
+                # which would otherwise defeat precomputation resistance for the
+                # manifest key on every drive that hits this fallback path.
+                manifest_salt = self._load_or_create_salt(portable_root, create=True)
                 secure_password = SecureBytes(actual_manifest_password.encode("utf-8"))
-                manifest_key = self._derive_encryption_key(
-                    secure_password, actual_manifest_hash_config
-                )
+                manifest_key = None
+                try:
+                    manifest_key = self._derive_encryption_key(
+                        secure_password, actual_manifest_hash_config, manifest_salt
+                    )
+                    # Encrypt manifest
+                    cipher = AESGCM(manifest_key)
+                    nonce = secrets.token_bytes(self.NONCE_LENGTH)
+                    encrypted_manifest = cipher.encrypt(nonce, manifest_json.encode("utf-8"), None)
 
-                # Encrypt manifest
-                cipher = AESGCM(manifest_key)
-                nonce = secrets.token_bytes(self.NONCE_LENGTH)
-                encrypted_manifest = cipher.encrypt(nonce, manifest_json.encode("utf-8"), None)
-
-                # Write encrypted manifest (fallback format)
-                manifest_file = portable_root / "hash_manifest.enc"
-                with open(manifest_file, "wb") as f:
-                    f.write(nonce + encrypted_manifest)
+                    # Write encrypted manifest (fallback format)
+                    manifest_file = portable_root / "hash_manifest.enc"
+                    with open(manifest_file, "wb") as f:
+                        f.write(nonce + encrypted_manifest)
+                finally:
+                    # gitlab#132: the fallback path derives its own key/password
+                    # and must wipe them on all exits — including if key
+                    # derivation itself raises.
+                    if manifest_key is not None:
+                        secure_memzero(manifest_key)
+                    secure_memzero(secure_password)
 
             # Create verification instructions
             instructions_content = f"""# 🔐 Hash Manifest Verification Instructions
