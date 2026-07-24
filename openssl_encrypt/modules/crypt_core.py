@@ -4421,15 +4421,10 @@ def create_metadata_v6(
             "dual_encryption"
         ]
 
-    # Copy password verification hashes for dual encryption if present
-    if "pqc_dual_encrypt_verify" in hash_config:
-        metadata["derivation_config"]["kdf_config"]["pqc_dual_encrypt_verify"] = hash_config[
-            "pqc_dual_encrypt_verify"
-        ]
-    if "pqc_dual_encrypt_verify_salt" in hash_config:
-        metadata["derivation_config"]["kdf_config"]["pqc_dual_encrypt_verify_salt"] = hash_config[
-            "pqc_dual_encrypt_verify_salt"
-        ]
+    # gitlab#131 F18: the weak 10k-PBKDF2 pqc_dual_encrypt_verify hash is no
+    # longer trusted on decrypt and must not be written into new metadata (it is
+    # brute-forceable offline). This formerly copied it from hash_config; that
+    # copy is removed so a fresh/re-encrypted file never carries the verifier.
 
     # Add PQC information if present
     if pqc_info:
@@ -4646,15 +4641,10 @@ def create_metadata_v8(
             "dual_encryption"
         ]
 
-    # Copy password verification hashes for dual encryption
-    if "pqc_dual_encrypt_verify" in hash_config:
-        metadata["derivation_config"]["kdf_config"]["pqc_dual_encrypt_verify"] = hash_config[
-            "pqc_dual_encrypt_verify"
-        ]
-    if "pqc_dual_encrypt_verify_salt" in hash_config:
-        metadata["derivation_config"]["kdf_config"]["pqc_dual_encrypt_verify_salt"] = hash_config[
-            "pqc_dual_encrypt_verify_salt"
-        ]
+    # gitlab#131 F18: the weak 10k-PBKDF2 pqc_dual_encrypt_verify hash is no
+    # longer trusted on decrypt and must not be written into new metadata (it is
+    # brute-forceable offline). This formerly copied it from hash_config; that
+    # copy is removed so a fresh/re-encrypted file never carries the verifier.
 
     # Add PQC information if present
     if pqc_info:
