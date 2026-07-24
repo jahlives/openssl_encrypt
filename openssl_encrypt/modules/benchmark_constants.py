@@ -87,3 +87,12 @@ KDF_BENCHMARK_DATA = {
 
 # Thresholds for warnings
 WARNING_THRESHOLDS = {"time_seconds": 10, "memory_kb": 1048576}  # 1GB
+
+# Hard memory ceiling for decryption (gitlab#128). A crafted file/keystore can
+# declare arbitrarily large memory-hard KDF cost parameters that are consumed
+# BEFORE authentication; attempting decryption then OOM-crashes the host. Above
+# this estimated-peak-memory ceiling a decrypt is refused unless explicitly
+# overridden (--allow-high-kdf-cost / interactive confirmation). Set well above
+# the largest shipped preset (2 GiB, template_manager paranoid) so no legitimate
+# file is ever refused; this is distinct from the 1 GiB soft warning above.
+HARD_MEMORY_CEILING_KB = 8 * 1024 * 1024  # 8 GiB

@@ -9630,6 +9630,9 @@ def main_with_args(args=None):
                                         verbose=args.verbose,
                                         hidden_header=_hidden_for_decrypt(args),
                                         second_password=_hidden_second_password,
+                                        allow_high_kdf_cost=getattr(
+                                            args, "allow_high_kdf_cost", False
+                                        ),
                                     )
 
                                     try:
@@ -9818,6 +9821,7 @@ def main_with_args(args=None):
                                     verbose=args.verbose,
                                     hidden_header=_hidden_for_decrypt(args),
                                     second_password=_hidden_second_password,
+                                    allow_high_kdf_cost=getattr(args, "allow_high_kdf_cost", False),
                                 )
 
                                 # Handle temp file if overwrite mode
@@ -10216,6 +10220,7 @@ def main_with_args(args=None):
                             hsm_plugin=hsm_plugin_instance,
                             hsm_slot=getattr(args, "hsm_slot", None),
                             no_estimate=getattr(args, "no_estimate", False),
+                            allow_high_kdf_cost=getattr(args, "allow_high_kdf_cost", False),
                             verify_integrity=getattr(args, "verify_integrity", False),
                             parallel_kdf=getattr(args, "parallel_kdf", False),
                             kdf_workers=getattr(args, "kdf_workers", None),
@@ -10447,6 +10452,7 @@ def main_with_args(args=None):
                         hsm_plugin=hsm_plugin_instance,
                         hsm_slot=getattr(args, "hsm_slot", None),
                         no_estimate=getattr(args, "no_estimate", False),
+                        allow_high_kdf_cost=getattr(args, "allow_high_kdf_cost", False),
                         verify_integrity=getattr(args, "verify_integrity", False),
                         hidden_header=_hidden_for_decrypt(args),
                         second_password=_hidden_second_password,
@@ -10622,6 +10628,7 @@ def main_with_args(args=None):
                         hsm_plugin=hsm_plugin_instance,
                         hsm_slot=getattr(args, "hsm_slot", None),
                         no_estimate=getattr(args, "no_estimate", False),
+                        allow_high_kdf_cost=getattr(args, "allow_high_kdf_cost", False),
                         verify_integrity=getattr(args, "verify_integrity", False),
                         hidden_header=_hidden_for_decrypt(args),
                         second_password=_hidden_second_password,
@@ -10694,6 +10701,7 @@ def main_with_args(args=None):
                     hsm_plugin=hsm_plugin_instance,
                     hsm_slot=getattr(args, "hsm_slot", None),
                     no_estimate=getattr(args, "no_estimate", False),
+                    allow_high_kdf_cost=getattr(args, "allow_high_kdf_cost", False),
                     verify_integrity=getattr(args, "verify_integrity", False),
                     parallel_kdf=getattr(args, "parallel_kdf", False),
                     kdf_workers=getattr(args, "kdf_workers", None),

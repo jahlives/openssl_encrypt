@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Decryption refuses crafted files/keystores whose KDF cost would exhaust
+  memory** (gitlab#128, GHSA-7894-5gw8-69hr): Argon2 `memory_cost`, scrypt `N`,
+  and balloon `space_cost` read from file metadata (and from a keystore header)
+  were passed to the KDF before authentication with no upper bound — scrypt's
+  own `maxmem` guard was even computed from the attacker-supplied `N`, so it
+  could never trip. A single crafted file could drive a multi-terabyte
+  allocation and OOM-crash the host on decrypt, with no correct password
+  required. Decryption now estimates peak memory before any KDF runs and refuses
+  when it exceeds an 8 GiB safety ceiling — 4× the largest shipped preset, so no
+  legitimately written file is affected — overridable per file with
+  `--allow-high-kdf-cost` or an interactive confirmation (users may still choose
+  expensive parameters for their own files). The same ceiling is enforced on
+  every key-derivation path that consumes untrusted metadata — standard and
+  streaming decrypt, the envelope rekey fast-path, recovery-slot add/remove,
+  asymmetric `--no-verify` decrypt, and the PQC keystore header — and the scrypt
+  memory estimate (previously under-reported as zero, which would have let a
+  high-`N` file slip past the ceiling) is corrected. CPU/time cost stays
+  advisory — only memory, which OOM-kills uninterruptibly, is hard-guarded.
+
 - **Balloon KDF fails closed on v14+ metadata missing `space_cost`**
   (security review 2026-07-13 INFO-2, gitlab#125): the decrypt-side
   derivation fell back to the historically weak `space_cost=16` whenever

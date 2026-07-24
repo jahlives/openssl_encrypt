@@ -6,15 +6,22 @@ of decryption operations based on metadata configuration. This helps detect pote
 DoS attacks where malicious actors inflate metadata values to overwhelm the system.
 """
 
+import sys
 from typing import Dict, List, Tuple
 
 try:
-    from .benchmark_constants import HASH_BENCHMARK_DATA, KDF_BENCHMARK_DATA, WARNING_THRESHOLDS
+    from .benchmark_constants import (
+        HARD_MEMORY_CEILING_KB,
+        HASH_BENCHMARK_DATA,
+        KDF_BENCHMARK_DATA,
+        WARNING_THRESHOLDS,
+    )
 except ImportError:
     # Fallback if benchmark_constants.py doesn't exist yet
     HASH_BENCHMARK_DATA = {}
     KDF_BENCHMARK_DATA = {}
     WARNING_THRESHOLDS = {"time_seconds": 10, "memory_kb": 1048576}
+    HARD_MEMORY_CEILING_KB = 8 * 1024 * 1024  # 8 GiB
 
 
 class DecryptionEstimate:
@@ -24,6 +31,11 @@ class DecryptionEstimate:
         """Initialize empty estimate."""
         self.total_time_seconds = 0.0
         self.peak_memory_kb = 0
+        # Sum of every operation's memory. The sequential derivation frees each
+        # KDF's buffer before the next, so peak_memory_kb (the max) bounds it;
+        # but the parallel-KDF path runs components concurrently, so its real
+        # peak is the sum (gitlab#128 review).
+        self.total_memory_kb = 0
         self.breakdown: List[Tuple[str, float, int]] = []  # (name, time, memory)
         self.warnings: List[str] = []
 
@@ -38,6 +50,7 @@ class DecryptionEstimate:
         """
         self.total_time_seconds += time_sec
         self.peak_memory_kb = max(self.peak_memory_kb, memory_kb)
+        self.total_memory_kb += memory_kb
         self.breakdown.append((name, time_sec, memory_kb))
 
     def exceeds_thresholds(self) -> bool:
@@ -155,23 +168,26 @@ def estimate_scrypt(config: Dict) -> Tuple[float, int]:
 
     rounds = config.get("rounds", 1)
     n = config.get("n", 16384)
+    r = config.get("r", 8)
+    p = config.get("p", 1)
 
     bench = KDF_BENCHMARK_DATA.get("scrypt", {})
     time_n_16384 = bench.get("time_n_16384", 0.03)
     time_multiplier = bench.get("time_multiplier_per_doubling", 2.0)
-    memory_per_n = bench.get("memory_per_n", 128)
 
     # Time scales exponentially with n (doubling n ~doubles time)
     # Calculate how many doublings from base n=16384
-    if n <= 0:
+    if n <= 0 or r <= 0 or p <= 0:
         return (0.0, 0)
 
     doublings = max(0, (n // 16384).bit_length() - 1)
     time_per_round = time_n_16384 * (time_multiplier**doublings)
     time_seconds = rounds * time_per_round
 
-    # Memory scales with n
-    memory_kb = (n * memory_per_n) // 1024
+    # Scrypt's core memory footprint is ~128 * N * r bytes (the benchmark's
+    # memory_per_n was 0, which under-reported this to zero and let a crafted
+    # high-N file bypass the memory ceiling - gitlab#128).
+    memory_kb = (128 * n * r * p) // 1024
 
     return (time_seconds, memory_kb)
 
@@ -195,7 +211,6 @@ def estimate_balloon(config: Dict) -> Tuple[float, int]:
 
     bench = KDF_BENCHMARK_DATA.get("balloon", {})
     base_time = bench.get("time_per_round", 0.045)
-    memory_per_space_cost = bench.get("memory_per_space_cost", 32)
 
     # Balloon time complexity is theoretically O(space_cost * time_cost)
     # However, in practice, large space_cost values exhibit sublinear scaling
@@ -212,7 +227,13 @@ def estimate_balloon(config: Dict) -> Tuple[float, int]:
     time_per_round = base_time * space_scale * time_scale
     time_seconds = rounds * time_per_round
 
-    memory_kb = space_cost * memory_per_space_cost
+    # Balloon holds a list of `space_cost` 32-byte hash digests (balloon.py
+    # `buf`); with per-object + list overhead the real footprint is ~90 B/block.
+    # Use 128 B/block: a conservative over-estimate (safe against a DoS bypass)
+    # that is still ~250x tighter than the old 32-KB/block figure, which would
+    # have refused legitimate high-space_cost files on unattended decrypts
+    # (gitlab#128 review).
+    memory_kb = max(1, (space_cost * 128) // 1024)
 
     return (time_seconds, memory_kb)
 
@@ -333,9 +354,28 @@ def estimate_decryption_cost(metadata: Dict) -> DecryptionEstimate:
 
     for kdf_name, estimator_func in kdf_estimators.items():
         if kdf_name in kdf_config:
-            time_sec, memory_kb = estimator_func(kdf_config[kdf_name])
-            if time_sec > 0:
-                config = kdf_config[kdf_name]
+            config = kdf_config[kdf_name]
+            # Crafted metadata is untrusted: a non-dict entry, or one that makes
+            # an estimator raise, must not silently disable the memory guard.
+            # Treat any such case as over-ceiling so enforcement fires closed
+            # (gitlab#128 review).
+            if not isinstance(config, dict):
+                estimate.add_operation(
+                    f"KDF: {kdf_name.upper()} (unparseable)", 0.0, HARD_MEMORY_CEILING_KB + 1
+                )
+                continue
+            try:
+                time_sec, memory_kb = estimator_func(config)
+            except Exception:
+                estimate.add_operation(
+                    f"KDF: {kdf_name.upper()} (estimate failed)", 0.0, HARD_MEMORY_CEILING_KB + 1
+                )
+                continue
+            # Account for memory even when the estimated time is zero: the
+            # independent-XOR executor runs scrypt/balloon exactly once
+            # regardless of `rounds`, so a `rounds:0` config that estimates to
+            # 0 seconds still allocates its full memory (gitlab#128 review).
+            if time_sec > 0 or memory_kb > 0:
                 rounds = config.get("rounds", 1)
                 estimate.add_operation(
                     f"KDF: {kdf_name.upper()} ({rounds} rounds)", time_sec, memory_kb
@@ -362,6 +402,68 @@ def estimate_decryption_cost(metadata: Dict) -> DecryptionEstimate:
             estimate.warnings.append(f"⚠️  Memory: {mb:.0f} MB (threshold: {threshold_mb:.0f} MB)")
 
     return estimate
+
+
+def enforce_memory_ceiling(
+    peak_memory_kb: int,
+    allow_high_kdf_cost: bool = False,
+    interactive: bool = None,
+) -> None:
+    """Refuse a decrypt whose estimated peak memory exceeds the hard ceiling.
+
+    A crafted file/keystore can declare huge memory-hard KDF cost parameters
+    that are consumed before authentication, OOM-crashing the host (gitlab#128).
+    This guard runs before any KDF executes.
+
+    The refusal is escapable so a user can still choose an expensive config for
+    their own files: ``allow_high_kdf_cost=True`` bypasses it outright, and on an
+    interactive terminal the user is prompted to proceed. Enforcement is
+    deliberately independent of the estimate-display flags (``quiet`` /
+    ``no_estimate``) so unattended decrypts stay protected.
+
+    Args:
+        peak_memory_kb: Estimated peak memory (KB) from estimate_decryption_cost.
+        allow_high_kdf_cost: If True, proceed regardless (explicit override).
+        interactive: Whether to prompt. None resolves to sys.stdin.isatty().
+
+    Raises:
+        ValidationError: If over the ceiling and neither overridden nor confirmed.
+    """
+    from .crypt_errors import ValidationError
+
+    if allow_high_kdf_cost or peak_memory_kb <= HARD_MEMORY_CEILING_KB:
+        return
+
+    detail = (
+        f"This file's key-derivation parameters would require an estimated "
+        f"{format_memory(peak_memory_kb)} of memory, above the "
+        f"{format_memory(HARD_MEMORY_CEILING_KB)} safety ceiling. A crafted file "
+        f"can use this to exhaust memory before the password is even checked."
+    )
+
+    if interactive is None:
+        interactive = sys.stdin.isatty()
+
+    if interactive:
+        print("\n⚠️  WARNING: " + detail, file=sys.stderr)
+        print(
+            "Proceed anyway? This may crash your system. [y/N]: ",
+            end="",
+            file=sys.stderr,
+            flush=True,
+        )
+        try:
+            response = input().strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            response = ""
+        if response in ("y", "yes"):
+            return
+        raise ValidationError(
+            "Decryption cancelled: key-derivation memory cost above the safety "
+            "ceiling. Re-run with --allow-high-kdf-cost to override."
+        )
+
+    raise ValidationError(detail + " If you trust this file, re-run with --allow-high-kdf-cost.")
 
 
 def format_time(seconds: float) -> str:
