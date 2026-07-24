@@ -2483,9 +2483,7 @@ def _handle_template_analyze(template_mgr: TemplateManager, args):
                 priority_icon = (
                     "🚨"
                     if rec["priority"] == "critical"
-                    else "⚠️"
-                    if rec["priority"] == "high"
-                    else "💡"
+                    else "⚠️" if rec["priority"] == "high" else "💡"
                 )
                 eprint(f"   {i}. {priority_icon} {rec['title']}")
                 eprint(f"      {rec['description']}")
@@ -5290,10 +5288,14 @@ def main_with_args(args=None):
                 eprint(f"  Files verified: {result['verified_files']}")
                 eprint(f"  Failed files: {result['failed_files']}")
                 eprint(f"  Missing files: {result['missing_files']}")
+                # gitlab#132 F13: report files added to the drive after creation.
+                eprint(f"  Added files: {result.get('added_files', 0)}")
                 if result["tampered_files"]:
                     eprint(f"  Tampered files: {', '.join(result['tampered_files'])}")
                 if result["missing_file_list"]:
                     eprint(f"  Missing files: {', '.join(result['missing_file_list'])}")
+                if result.get("added_file_list"):
+                    eprint(f"  Added files: {', '.join(result['added_file_list'])}")
                 return 1
 
         except ImportError:
@@ -6681,9 +6683,9 @@ def main_with_args(args=None):
                                             policy_params["check_common_passwords"] = False
 
                                         if args.custom_password_list:
-                                            policy_params[
-                                                "common_passwords_path"
-                                            ] = args.custom_password_list
+                                            policy_params["common_passwords_path"] = (
+                                                args.custom_password_list
+                                            )
 
                                         # Create policy and validate password
                                         policy = PasswordPolicy(
