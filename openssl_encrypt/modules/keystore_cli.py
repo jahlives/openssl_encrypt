@@ -2583,6 +2583,8 @@ def handle_verify_usb_command(args):
         eprint(f"   Files verified: {result['verified_files']}")
         eprint(f"   Files failed: {result['failed_files']}")
         eprint(f"   Files missing: {result['missing_files']}")
+        # gitlab#132 F13: files added to the drive after creation.
+        eprint(f"   Files added: {result.get('added_files', 0)}")
         eprint(f"   Original file count: {result['original_file_count']}")
 
         if result["tampered_files"]:
@@ -2593,6 +2595,11 @@ def handle_verify_usb_command(args):
         if result["missing_file_list"]:
             eprint("\n⚠️  Missing files:")
             for file_path in result["missing_file_list"]:
+                eprint(f"      - {file_path}")
+
+        if result.get("added_file_list"):
+            eprint("\n⚠️  Added files detected (not present at creation):")
+            for file_path in result["added_file_list"]:
                 eprint(f"      - {file_path}")
 
         if result["integrity_ok"]:

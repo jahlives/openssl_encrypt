@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Portable-USB integrity now detects added executables and protects
+  root-level autorun files; the hash-manifest fallback uses the per-drive salt**
+  (gitlab#132 / F13 + F19, GHSA-8jx3-27qf-3p97): the module's threat model
+  treats the removable drive as untrusted (physical write access). Integrity
+  verification previously only re-hashed the files listed in the manifest, so a
+  file **added** to the drive — including a root-level `autorun.*` payload (which
+  lives above the portable directory and is auto-executed by the OS on insert) —
+  was never noticed and verification still passed. New drives now write a v2
+  integrity manifest that is an **allowlist** of every file in the tool tree
+  (plus the root `autorun.inf`/`autorun.sh`/`.autorun` hashes), so verification
+  flags **any** file added afterward — a planted `.dll`/`.so`/`.pyd`/`.exe` or
+  any other payload, not just a fixed set of extensions — and any tampered,
+  added, or removed root autorun file. The user's mutable workspace (`data/`)
+  and `logs/` are excluded, so the normal use case (encrypting files onto the
+  drive) still verifies. Drives created before this fix carry no v2 marker and
+  verify exactly as before (backward compatible); re-create a drive to gain the
+  stronger checks. Separately, the cryptographic hash-manifest
+  fallback path derived its key with the global fixed salt (F19); it now uses the
+  drive's unique per-drive salt (`salt.bin`), matching the main key-derivation
+  path already hardened earlier.
+
 - **The weak 10k-PBKDF2 dual-encryption file-password verifier is no longer
   trusted; the mismatch state fails closed** (gitlab#131 / F18,
   GHSA-fmjx-p826-6fvr): dual-encrypted files carried a `pqc_dual_encrypt_verify`
