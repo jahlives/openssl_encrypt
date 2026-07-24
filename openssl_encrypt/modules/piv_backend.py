@@ -334,7 +334,17 @@ class TokenSession:
                 # (it calls .encode() internally); passing bytes raises
                 # AttributeError. Empty string for the biometric/empty-PIN flow,
                 # the decoded PIN otherwise. Never None (None means "no login").
-                session = token.open(rw=False, user_pin=bytes(working).decode("utf-8"))
+                #
+                # gitlab#135 (F20): decode the mutable bytearray directly rather
+                # than through an intermediate immutable bytes() copy, so only ONE
+                # unwipeable object (the str the binding requires) is ever
+                # materialized. That str is an ACCEPTED RESIDUAL (M10 class): the
+                # binding forces an immutable str for the PIN, which
+                # secure_memzero cannot overwrite; it is built inline (never bound
+                # to a local) so it becomes collectable the moment token.open
+                # returns, minimizing its lifetime. The authoritative PIN buffers
+                # (working/pin bytearrays) are still zeroized in the finally.
+                session = token.open(rw=False, user_pin=working.decode("utf-8"))
             except pkcs11.exceptions.PinLocked:
                 # `from None`: never chain -- keeps any PIN-bearing frame out of the traceback.
                 raise PIVAuthenticationError(
@@ -675,9 +685,9 @@ class PIVBackend:
             try:
                 token = session_ctx.select_token()
             except PIVTokenError as exc:
-                results["slot_present"] = results["slot_index_valid"] = results[
-                    "token_present"
-                ] = str(exc)
+                results["slot_present"] = results["slot_index_valid"] = results["token_present"] = (
+                    str(exc)
+                )
                 return results
             results["slot_present"] = results["slot_index_valid"] = True
             # select_token() validated the slot's TOKEN_PRESENT flag (SlotFlag).

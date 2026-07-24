@@ -887,15 +887,23 @@ class PluginSandbox:
             if not is_write:
                 return False
 
+        # gitlab#133 (F15): authorize a path only if it IS the allowed directory
+        # or lives strictly beneath it. A bare startswith without a separator
+        # would wrongly authorize a sibling whose name shares the prefix
+        # (e.g. .../plugins/foobar matches .../plugins/foo), breaking per-plugin
+        # isolation.
+        def _within(directory: str) -> bool:
+            return abs_path == directory or abs_path.startswith(directory + os.sep)
+
         # Allow access to temp directory
         if self.temp_dir:
             temp_dir_real = os.path.realpath(self.temp_dir)
-            if abs_path.startswith(temp_dir_real):
+            if _within(temp_dir_real):
                 return True
 
         # Allow read-only access to standard library
         stdlib_dir = os.path.realpath(os.path.dirname(os.__file__))
-        if abs_path.startswith(stdlib_dir):
+        if _within(stdlib_dir):
             return True
 
         # Plugin-specific directory access (if context available)
@@ -908,7 +916,7 @@ class PluginSandbox:
             config_dir = os.path.realpath(
                 os.path.expanduser(f"~/.openssl_encrypt/plugins/{plugin_id}")
             )
-            if abs_path.startswith(config_dir):
+            if _within(config_dir):
                 return True
 
             # Plugin code directory: Use actual file location from context
@@ -917,7 +925,7 @@ class PluginSandbox:
             # e.g., plugins/hsm/fido2_pepper.py can read plugins/hsm/*
             if context.plugin_file_directory:
                 plugin_code_dir = os.path.realpath(context.plugin_file_directory)
-                if abs_path.startswith(plugin_code_dir):
+                if _within(plugin_code_dir):
                     if is_write:
                         # Deny write access to plugin code directory
                         logger.warning(

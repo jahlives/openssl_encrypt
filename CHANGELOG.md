@@ -9,6 +9,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Plugin sandbox no longer authorizes sibling directories via a bare path
+  prefix** (gitlab#133 / F15, GHSA-vr4h-5xqv-xxxf): `PluginSandbox._is_safe_path` allowed a
+  path with a plain string-prefix match, so a sandboxed plugin `foo` (without
+  `READ_FILES`) could read/write another plugin's directory `.../plugins/foobar`
+  because it shared the `.../plugins/foo` prefix — a cross-plugin access break
+  within the same user. Each allowed directory is now matched as itself or with a
+  trailing separator (`dir` / `dir + os.sep`), so a prefix-sharing sibling is
+  refused.
+
+- **Keyserver bearer token is redacted in the `--debug` argv dump** (gitlab#134 /
+  F17, GHSA-jqqp-pf9j-889j): the `keyserver set-token <token>` positional bearer token was
+  echoed in cleartext by the `--debug` `sys.argv` dump (even without
+  `--unsafe-show-secrets`), persisting the credential in logs/terminal history.
+  The positional after `set-token` is now routed through the `debug_secret`
+  redaction chokepoint like other secret CLI values.
+
+- **Trust-anchor enrollment requires the full fingerprint (no suffix match)**
+  (gitlab#136 / F21, GHSA-xg52-638v-jc5m): `enroll_trust_key` bound a plugin-signing trust
+  anchor using suffix-tolerant matching, so confirming a short (forgeable) GPG
+  key id could enrol an attacker's colliding key — which then vouches for
+  malicious plugins under the ENFORCE signature policy. Enrollment now requires
+  the confirmed value to equal the full primary-key fingerprint exactly
+  (case-insensitive, whitespace-stripped); short/partial confirmations are
+  rejected.
+
+- **PIV smartcard PIN materializes one fewer unwipeable copy** (gitlab#135 /
+  F20): `TokenSession.login` decoded the PIN through an intermediate immutable
+  `bytes()` before the `str` the PKCS#11 binding requires, leaving an extra
+  non-zeroable plaintext PIN copy on the heap. It now decodes the wiped bytearray
+  directly, so only the binding-required `str` (an accepted, minimized-lifetime
+  residual) is materialized; the PIN bytearrays are still zeroized. Memory
+  hygiene only — no behavior change.
+
 - **Portable-USB integrity now detects added executables and protects
   root-level autorun files; the hash-manifest fallback uses the per-drive salt**
   (gitlab#132 / F13 + F19, GHSA-8jx3-27qf-3p97): the module's threat model
