@@ -226,6 +226,44 @@ relevant.
 
 ## Security Advisories
 
+### ADVISORY 2026-09: Weak 10k-PBKDF2 Dual-Encryption File-Password Verifier in Cleartext Metadata — Resolved
+
+**Severity:** Low · **CWE-916** (Use of Password Hash With Insufficient Computational Effort)
+**Affected versions:** all releases up to and including **1.4.8**. **Fixed in 1.4.9 (1.4.x line) and 1.5.0 (1.5.x line).**
+**Advisory:** [GHSA-fmjx-p826-6fvr](https://github.com/jahlives/openssl_encrypt/security/advisories/GHSA-fmjx-p826-6fvr)
+
+**Summary:** dual-encrypted files (keystore password + file password) carried a
+`pqc_dual_encrypt_verify` field in cleartext metadata — a PBKDF2-HMAC-SHA256
+hash of the file password at only 10,000 iterations, used as a pre-check of the
+second-factor file password on decrypt.
+
+**Impact:** an attacker who obtains a legacy dual-encrypted file can extract
+`pqc_dual_encrypt_verify` and its salt from the base64 header and run an offline
+PBKDF2-SHA256 (10k) dictionary attack to recover the second-factor **file
+password**, undermining the two-factor guarantee — from the file alone, without
+the keystore.
+
+**Fixed in 1.4.9 / 1.5.0:** the weak verifier is no longer recomputed, trusted,
+or propagated into re-processed metadata. The file password is authenticated by
+the dual-encryption **AES-GCM tag** during keystore key retrieval
+(`PQCKeystore.get_key`), which derives the file key with the keystore's own
+Argon2id KDF and is not brute-forceable offline. The single state where that tag
+would not gate the file password — a file that claims dual encryption backed by
+a non-dual keystore key entry (a metadata/keystore mismatch) — now **fails
+closed** in `get_key`, so dropping the pre-check cannot let a wrong file password
+through. The write side already stopped emitting the verifier, so files written
+by 1.4.9 / 1.5.0 contain no such hash.
+
+**Mitigation:** upgrade to 1.4.9 or 1.5.0 and **re-encrypt** legacy
+dual-encrypted files so the weak `pqc_dual_encrypt_verify` hash is dropped from
+their metadata. The two-factor protection itself remained sound (the keystore
+AES-GCM tag is the real gate); the exposure was the offline brute-forceability
+of the stored pre-check hash.
+
+**Disclosure:** found during the internal multi-agent security scan
+(2026-07-24, gitlab#131 finding F18); fixed before any third-party disclosure.
+**Credit:** internal security review.
+
 ### ADVISORY 2026-08: Weak PBKDF2 (100k) Wrapping of the PQC Private Key in `.pqc` Keyfiles — Resolved
 
 **Severity:** Low · **CWE-916** (Use of Password Hash With Insufficient Computational Effort)
