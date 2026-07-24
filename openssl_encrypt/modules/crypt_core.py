@@ -5657,6 +5657,7 @@ def decrypt_file_asymmetric(
     verbose: bool = False,
     second_password=None,
     hidden_header=None,
+    allow_high_kdf_cost: bool = False,
 ):
     """
     Decrypt a file asymmetrically encrypted with Format V7.
@@ -5878,6 +5879,24 @@ def decrypt_file_asymmetric(
                     hash_config[kdf_name] = kdf_params
                 elif kdf_name == "pbkdf2":
                     hash_config["pbkdf2_iterations"] = kdf_params.get("rounds", 0)
+
+            # Enforce the KDF memory ceiling before the expensive derivation
+            # (gitlab#128). The default path verifies the sender signature first
+            # (DoS protection above), but the skip_verification / --no-verify
+            # branch bypasses that, so a crafted recipient file's KDF cost would
+            # otherwise run unchecked. This guard is the independent backstop.
+            from .decryption_estimator import enforce_memory_ceiling, estimate_decryption_cost
+
+            try:
+                _asym_estimate = estimate_decryption_cost(metadata)
+            except Exception:
+                _asym_estimate = None
+            if _asym_estimate is None:
+                enforce_memory_ceiling(float("inf"), allow_high_kdf_cost=allow_high_kdf_cost)
+            else:
+                enforce_memory_ceiling(
+                    _asym_estimate.peak_memory_kb, allow_high_kdf_cost=allow_high_kdf_cost
+                )
 
             if not quiet:
                 eprint("Running KDF chain (this may take a while)...")
@@ -9332,6 +9351,7 @@ def _rekey_envelope_fast(
     new_password: bytes,
     in_place: bool,
     quiet: bool = False,
+    allow_high_kdf_cost: bool = False,
 ) -> bool:
     """Attempt the O(header) envelope rekey: unwrap the DEK with the old KEK and
     rewrap it under a KEK from ``new_password``, rewriting only the metadata.
@@ -9389,6 +9409,21 @@ def _rekey_envelope_fast(
         return False  # malformed; let the full path handle/report it
 
     old_salt_len = len(base64.b64decode(derivation_config["salt"]))
+
+    # Enforce the KDF memory ceiling before deriving the KEK (gitlab#128). This
+    # fast-path derives from the file's own (attacker-controllable) KDF config
+    # without ever reaching decrypt_file, so it must guard the ceiling itself or
+    # a crafted envelope would OOM the host on `rekey`.
+    from .decryption_estimator import enforce_memory_ceiling, estimate_decryption_cost
+
+    try:
+        _rk_estimate = estimate_decryption_cost(meta)
+    except Exception:
+        _rk_estimate = None
+    if _rk_estimate is None:
+        enforce_memory_ceiling(float("inf"), allow_high_kdf_cost=allow_high_kdf_cost)
+    else:
+        enforce_memory_ceiling(_rk_estimate.peak_memory_kb, allow_high_kdf_cost=allow_high_kdf_cost)
 
     # Unwrap with the old KEK. A wrong password makes unwrap raise -- let it
     # propagate (do NOT fall back, or we'd silently full-re-encrypt on bad input).
@@ -9502,6 +9537,7 @@ def _recover_envelope_dek(
     recovery_code=None,
     recovery_passphrase=None,
     recovery_private_key=None,
+    allow_high_kdf_cost=False,
 ) -> bytearray:
     """Recover the envelope DEK via the password or a recovery credential, then
     authenticate the existing slot set with it (fail-closed). Returns a
@@ -9526,6 +9562,22 @@ def _recover_envelope_dek(
             password = password.encode("utf-8")
         is_cascade = bool(enc.get("cascade", False))
         algorithm = "cascade" if is_cascade else enc.get("algorithm")
+        # Enforce the KDF memory ceiling before deriving from the file's own
+        # (attacker-controllable) config (gitlab#128). This runs before the
+        # slot-set MAC is checked below, so a crafted envelope handed to
+        # add-recovery/remove-recovery must be refused here or it OOMs the host.
+        from .decryption_estimator import enforce_memory_ceiling, estimate_decryption_cost
+
+        try:
+            _rec_estimate = estimate_decryption_cost(meta)
+        except Exception:
+            _rec_estimate = None
+        if _rec_estimate is None:
+            enforce_memory_ceiling(float("inf"), allow_high_kdf_cost=allow_high_kdf_cost)
+        else:
+            enforce_memory_ceiling(
+                _rec_estimate.peak_memory_kb, allow_high_kdf_cost=allow_high_kdf_cost
+            )
         kek = _derive_envelope_kek(
             password,
             meta.get("derivation_config"),
@@ -9606,6 +9658,7 @@ def add_recovery_slots(
     recovery_code=None,
     recovery_passphrase=None,
     recovery_private_key=None,
+    allow_high_kdf_cost=False,
 ) -> bool:
     """Add recovery slots to an existing envelope file without re-encrypting the
     bulk. The DEK is recovered via the password or a recovery credential."""
@@ -9620,6 +9673,7 @@ def add_recovery_slots(
         recovery_code=recovery_code,
         recovery_passphrase=recovery_passphrase,
         recovery_private_key=recovery_private_key,
+        allow_high_kdf_cost=allow_high_kdf_cost,
     )
     try:
         enc = meta.setdefault("encryption", {})
@@ -9651,6 +9705,7 @@ def remove_recovery_slot(
     recovery_code=None,
     recovery_passphrase=None,
     recovery_private_key=None,
+    allow_high_kdf_cost=False,
 ) -> bool:
     """Remove a recovery slot (by id) from an existing envelope file without
     re-encrypting the bulk."""
@@ -9671,6 +9726,7 @@ def remove_recovery_slot(
         recovery_code=recovery_code,
         recovery_passphrase=recovery_passphrase,
         recovery_private_key=recovery_private_key,
+        allow_high_kdf_cost=allow_high_kdf_cost,
     )
     try:
         if remaining:
@@ -9707,6 +9763,7 @@ def rekey_file(
     hsm_plugin=None,
     hsm_slot=None,
     no_estimate: bool = False,
+    allow_high_kdf_cost: bool = False,
     verify_integrity: bool = False,
     parallel_kdf: bool = False,
     kdf_workers: int = None,
@@ -9836,6 +9893,7 @@ def rekey_file(
             new_password=new_password,
             in_place=in_place,
             quiet=quiet,
+            allow_high_kdf_cost=allow_high_kdf_cost,
         ):
             if not quiet:
                 eprint("Rekey completed successfully (envelope fast-path).")
@@ -9861,6 +9919,7 @@ def rekey_file(
             hsm_plugin=hsm_plugin,
             hsm_slot=hsm_slot,
             no_estimate=no_estimate,
+            allow_high_kdf_cost=allow_high_kdf_cost,
             verify_integrity=verify_integrity,
             parallel_kdf=parallel_kdf,
             kdf_workers=kdf_workers,
@@ -10081,6 +10140,7 @@ def decrypt_file(
     hsm_plugin=None,
     hsm_slot=None,
     no_estimate=False,
+    allow_high_kdf_cost=False,
     verify_integrity=False,
     parallel_kdf=False,
     kdf_workers=None,
@@ -10581,16 +10641,41 @@ def decrypt_file(
             except (ValueError, TypeError):
                 pass  # Malformed timestamp — skip warning silently
 
+    # Enforce the hard memory ceiling before any KDF runs (gitlab#128).
+    # Unlike the estimate *display* below, this guard is NOT suppressed by
+    # quiet/no_estimate: a crafted file must not be able to OOM the host on an
+    # unattended decrypt. It is still escapable (allow_high_kdf_cost, or an
+    # interactive confirmation) so a user may choose an expensive config for
+    # their own files.
+    from .decryption_estimator import enforce_memory_ceiling, estimate_decryption_cost
+
+    _kdf_estimate = None
+    try:
+        _kdf_estimate = estimate_decryption_cost(metadata)
+    except Exception as e:
+        if verbose or debug:
+            eprint(f"Warning: Could not estimate decryption cost: {e}")
+    if _kdf_estimate is None:
+        # Fail closed: the metadata is attacker-controlled, so an estimator that
+        # cannot even be computed is treated as over-ceiling rather than waved
+        # through (still escapable via allow_high_kdf_cost).
+        enforce_memory_ceiling(float("inf"), allow_high_kdf_cost=allow_high_kdf_cost)
+    else:
+        # The parallel-KDF path runs components concurrently, so its real peak is
+        # the sum of their memory, not the max.
+        _peak_kb = _kdf_estimate.total_memory_kb if parallel_kdf else _kdf_estimate.peak_memory_kb
+        enforce_memory_ceiling(_peak_kb, allow_high_kdf_cost=allow_high_kdf_cost)
+
     # Display time/memory estimates for decryption
     if not quiet and not no_estimate:
         try:
-            from .decryption_estimator import estimate_decryption_cost, format_memory, format_time
+            from .decryption_estimator import format_memory, format_time
 
             eprint("\n" + "=" * 60)
             eprint("DECRYPTION COST ESTIMATE")
             eprint("=" * 60)
 
-            estimate = estimate_decryption_cost(metadata)
+            estimate = _kdf_estimate
 
             # Show breakdown if operations exist
             if estimate.breakdown:

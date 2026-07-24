@@ -620,7 +620,13 @@ def add_recovery_cli(args) -> None:
     else:
         raise ValueError("Specify --add-code or --add-passphrase")
 
-    add_recovery_slots(args.input, args.output, creds, **unlock)
+    add_recovery_slots(
+        args.input,
+        args.output,
+        creds,
+        allow_high_kdf_cost=getattr(args, "allow_high_kdf_cost", False),
+        **unlock,
+    )
     eprint(f"Recovery slot added; wrote: {args.output}")
     if generated_code is not None:
         eprint("\n=== RECOVERY CODE (store this securely; it is shown only once) ===")
@@ -637,5 +643,11 @@ def remove_recovery_cli(args) -> None:
         unlock["recovery_code"] = args.recovery_code
     else:
         unlock["password"] = _read_password(args)
-    remove_recovery_slot(args.input, args.output, args.slot_id, **unlock)
+    remove_recovery_slot(
+        args.input,
+        args.output,
+        args.slot_id,
+        allow_high_kdf_cost=getattr(args, "allow_high_kdf_cost", False),
+        **unlock,
+    )
     eprint(f"Removed recovery slot {args.slot_id!r}; wrote: {args.output}")
