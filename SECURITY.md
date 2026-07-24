@@ -226,6 +226,42 @@ relevant.
 
 ## Security Advisories
 
+### ADVISORY 2026-08: Weak PBKDF2 (100k) Wrapping of the PQC Private Key in `.pqc` Keyfiles — Resolved
+
+**Severity:** Low · **CWE-916** (Use of Password Hash With Insufficient Computational Effort)
+**Affected versions:** all releases up to and including **1.4.8**. **Fixed in 1.4.9 (1.4.x line) and 1.5.0 (1.5.x line).**
+**Advisory:** [GHSA-fmjx-p826-6fvr](https://github.com/jahlives/openssl_encrypt/security/advisories/GHSA-fmjx-p826-6fvr)
+
+**Summary:** a keyfile created with `--pqc-keyfile` stores the long-lived
+post-quantum private key wrapped under an AES-256-GCM key derived from the
+keyfile password with a single PBKDF2-HMAC-SHA256 pass at 100,000 iterations
+(plus a redundant trailing SHA-256). That is below the OWASP 2023 PBKDF2 floor
+(600k) and orders of magnitude weaker than the Argon2id used for file and
+keystore material.
+
+**Impact:** an attacker who obtains a `.pqc` keyfile (a leaked backup, a shared
+directory) can read `key_salt` and the AES-GCM blob from the JSON and run an
+offline GPU/ASIC PBKDF2-SHA256 dictionary attack at only 100k iterations to
+recover the wrapping password and decrypt the long-term PQC private key. No
+online interaction and no other secret is required.
+
+**Fixed in 1.4.9 / 1.5.0:** new keyfiles derive the wrapping key with **Argon2id**
+and record a self-describing `key_kdf` descriptor; the redundant trailing SHA-256
+is dropped. Existing PBKDF2-wrapped keyfiles (no `key_kdf`) still decrypt via the
+legacy path, so the change is backward compatible. The Argon2 cost read from a
+keyfile is bounded (memory ≤ 2 GiB, time ≤ 64, parallelism ≤ 16) so a tampered
+keyfile cannot drive a pre-authentication memory-exhaustion crash (same class as
+ADVISORY 2026-05/2026-06).
+
+**Mitigation:** upgrade to 1.4.9 or 1.5.0 and **re-wrap existing keyfiles**
+(regenerate the keypair, or re-save the keyfile) so the private key moves onto
+Argon2id. Until then, treat any `.pqc` keyfile as only as strong as its password
+against an offline attack, and keep keyfiles out of shared/backup locations.
+
+**Disclosure:** found during the internal multi-agent security scan
+(2026-07-24, gitlab#131 finding F16); fixed before any third-party disclosure.
+**Credit:** internal security review.
+
 ### ADVISORY 2026-07: Unsigned Third-Party Plugins Executed by Default (Signature Policy Defaulted to Warn) — Resolved
 
 **Severity:** Medium · **CWE-347** (Improper Verification of Cryptographic Signature) / **CWE-94** (Code Injection)
