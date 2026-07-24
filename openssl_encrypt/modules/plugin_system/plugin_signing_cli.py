@@ -184,10 +184,19 @@ def enroll_trust_key(
 
     exp = confirm_fingerprint.replace(" ", "").upper()
     got = actual.upper()
-    if not (got == exp or got.endswith(exp) or exp.endswith(got)):
+    # gitlab#136 (F21): require the confirmed value to be the FULL primary-key
+    # fingerprint, matched EXACTLY. Suffix/partial matching (a short key id) is
+    # forgeable — an attacker can craft a key whose full fingerprint ends with a
+    # confirmed short id (a tractable ~32-bit collision) and have it enrolled as
+    # a trusted plugin-signing anchor that then vouches for malicious plugins
+    # under the ENFORCE signature policy. Reject anything but an exact,
+    # full-length match.
+    if got != exp:
         raise ValueError(
-            f"Fingerprint mismatch: key is {got}, you confirmed {exp}. "
-            f"Refusing to enroll — confirm the correct fingerprint out of band."
+            f"Fingerprint mismatch: key is {got}, you confirmed {exp!r}. "
+            f"Confirm the FULL {len(got)}-character key fingerprint out of band — "
+            f"short or partial key ids are not accepted (they are forgeable). "
+            f"Refusing to enroll."
         )
 
     directory = trusted_keys_dir or default_trusted_keys_dir()
