@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.4.9] - TBD
 
+### Added
+
+- **Desktop GUI: asymmetric-decryption controls in the Decrypt tab**
+  (gitlab#137 / github#55): the Flutter desktop GUI can now decrypt files
+  encrypted to an identity. The Decrypt tab's Advanced Options (Pro mode) expose
+  a **decryption-identity** selector (`--with-key`) and, once an identity is
+  chosen, a **verify-signature-from** selector (`--verify-from`) and a
+  **skip-signature-verification** checkbox (`--no-verify`). These map to
+  CLI flags that were already wired into the GUI's CLI service but had no
+  widget setting them, so they were previously unreachable. Skipping signature
+  verification is off by default and requires an explicit opt-in behind a clear
+  warning; identity lists are de-duplicated and empty names skipped so a
+  duplicate/blank identity name can no longer crash the tab.
+
 ### Security
 
 - **Plugin sandbox no longer authorizes sibling directories via a bare path
