@@ -17,21 +17,22 @@ import pytest
 # Line numbers are checked with a tolerance of ±5 to handle minor edits
 STDOUT_WHITELIST = [
     # crypt_cli.py — JSON data outputs
-    ("crypt_cli.py", 1137, "JSON error response"),
-    ("crypt_cli.py", 1334, "JSON algorithm result"),
-    ("crypt_cli.py", 1851, "JSON smart-recommendations"),
-    ("crypt_cli.py", 3023, "JSON keyserver bundle"),
-    ("crypt_cli.py", 3254, "JSON telemetry events"),
-    ("crypt_cli.py", 5674, "check-password JSON report"),
+    # (line numbers shifted by the gitlab#131 F16 keyfile-KDF helper insertion)
+    ("crypt_cli.py", 1228, "JSON error response"),
+    ("crypt_cli.py", 1425, "JSON algorithm result"),
+    ("crypt_cli.py", 1942, "JSON smart-recommendations"),
+    ("crypt_cli.py", 3118, "JSON keyserver bundle"),
+    ("crypt_cli.py", 3349, "JSON telemetry events"),
+    ("crypt_cli.py", 5777, "check-password JSON report"),
     # crypt_cli.py — decrypted plaintext outputs
-    ("crypt_cli.py", 9617, "asymmetric decrypted plaintext"),
-    ("crypt_cli.py", 9620, "asymmetric decrypted plaintext (quiet)"),
-    ("crypt_cli.py", 9811, "asymmetric decrypted plaintext path 2"),
-    ("crypt_cli.py", 9814, "asymmetric decrypted plaintext path 2 (quiet)"),
-    ("crypt_cli.py", 10610, "symmetric decrypted text content"),
+    ("crypt_cli.py", 9743, "asymmetric decrypted plaintext"),
+    ("crypt_cli.py", 9746, "asymmetric decrypted plaintext (quiet)"),
+    ("crypt_cli.py", 9938, "asymmetric decrypted plaintext path 2"),
+    ("crypt_cli.py", 9941, "asymmetric decrypted plaintext path 2 (quiet)"),
+    ("crypt_cli.py", 10758, "symmetric decrypted text content"),
     # crypt_cli.py — derive-password output to stdout
-    ("crypt_cli.py", 6087, "derive-password hex output"),
-    ("crypt_cli.py", 6091, "derive-password base64 output"),
+    ("crypt_cli.py", 6202, "derive-password hex output"),
+    ("crypt_cli.py", 6206, "derive-password base64 output"),
     # file_signature.py — verify-signature --json result (machine-readable, stdout)
     ("modules/file_signature.py", 425, "verify-signature JSON result"),
     # crypt_core.py — JSON data output
