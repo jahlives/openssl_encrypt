@@ -226,6 +226,93 @@ relevant.
 
 ## Security Advisories
 
+### ADVISORY 2026-13: Plugin-Signing Trust-Anchor Enrollment Accepts a Partial/Suffix Fingerprint Match — Resolved
+
+**Severity:** Low · **CWE-297** (Improper Validation of Certificate/Key with Host Mismatch, adapted) / **CWE-347**
+**Affected versions:** all releases up to and including **1.4.8**. **Fixed in 1.4.9 (1.4.x line) and 1.5.0 (1.5.x line).**
+**Advisory:** [GHSA-xg52-638v-jc5m](https://github.com/jahlives/openssl_encrypt/security/advisories/GHSA-xg52-638v-jc5m)
+
+**Summary:** `enroll_trust_key` bound a plugin-signing trust anchor to the
+operator-confirmed fingerprint using suffix-tolerant matching
+(`got.endswith(exp) or exp.endswith(got)`). Confirming a short GPG key id (e.g.
+an 8-hex / 32-bit short id, a known-forgeable identifier) let a key whose full
+fingerprint merely ends with those characters be enrolled as a trusted anchor.
+
+**Impact:** an attacker who can influence which public-key file is enrolled, and
+whose crafted key's fingerprint collides on the short id the operator confirms,
+gets their key enrolled as a plugin-signing trust anchor. That anchor then
+vouches for arbitrary attacker-signed plugins, which pass even the ENFORCE
+signature policy — a path to plugin code execution. Narrow: it requires the
+operator to confirm a short id rather than the full fingerprint.
+
+**Fixed in 1.4.9 / 1.5.0:** enrollment now requires the confirmed value to equal
+the **full primary-key fingerprint exactly** (case-insensitive,
+whitespace-stripped); short or partial confirmations are rejected.
+
+**Mitigation:** upgrade, and re-verify any trust anchors enrolled on an earlier
+version by confirming their full 40-character fingerprint out of band.
+
+**Disclosure:** internal multi-agent security scan (2026-07-24, gitlab#136).
+**Credit:** internal security review.
+
+### ADVISORY 2026-12: Plugin Sandbox Authorizes Sibling Directories via a Bare Path Prefix — Resolved
+
+**Severity:** Low · **CWE-706** (Use of Incorrectly-Resolved Name or Reference) / **CWE-282**
+**Affected versions:** all releases up to and including **1.4.8**. **Fixed in 1.4.9 (1.4.x line) and 1.5.0 (1.5.x line).**
+**Advisory:** [GHSA-vr4h-5xqv-xxxf](https://github.com/jahlives/openssl_encrypt/security/advisories/GHSA-vr4h-5xqv-xxxf)
+
+**Summary:** `PluginSandbox._is_safe_path` authorized a file path with a bare
+string-prefix match against the allowed directories (temp dir, stdlib, the
+plugin's config dir, and the plugin's code dir). A path was wrongly authorized
+whenever it shared the textual prefix of an allowed directory, e.g.
+`.../plugins/foobar` matched the directory allowed for plugin `foo`.
+
+**Impact:** a sandboxed plugin `foo` (without `READ_FILES`) could read and write
+another plugin's private config/data directory under
+`~/.openssl_encrypt/plugins/` and read another plugin's code directory — a
+cross-plugin authorization break (IDOR-style) within the same user, defeating the
+per-plugin isolation the sandbox intends. Bounded: it does not reach arbitrary
+filesystem paths and stays within the user account.
+
+**Fixed in 1.4.9 / 1.5.0:** each allowed directory is matched as itself or with a
+trailing path separator (`dir` or `dir + os.sep`), so a prefix-sharing sibling is
+no longer authorized. The pre-existing realpath/normpath anti-traversal check is
+unchanged.
+
+**Mitigation:** upgrade. No file-format or configuration change is required.
+
+**Disclosure:** internal multi-agent security scan (2026-07-24, gitlab#133).
+**Credit:** internal security review.
+
+### ADVISORY 2026-11: Keyserver Bearer Token Echoed in Cleartext in the `--debug` argv Dump — Resolved
+
+**Severity:** Low · **CWE-532** (Insertion of Sensitive Information into Log File)
+**Affected versions:** all releases up to and including **1.4.8**. **Fixed in 1.4.9 (1.4.x line) and 1.5.0 (1.5.x line).**
+**Advisory:** [GHSA-jqqp-pf9j-889j](https://github.com/jahlives/openssl_encrypt/security/advisories/GHSA-jqqp-pf9j-889j)
+
+**Summary:** the keyserver API bearer token, supplied as the positional argument
+to `keyserver set-token <token>`, was not covered by the `--debug` argv
+redaction (`sanitize_argv_for_debug` only redacts named secret options). Under
+`--debug` — even without `--unsafe-show-secrets` — the token was echoed in
+cleartext in the `DEBUG: sys.argv = ...` dump to stderr.
+
+**Impact:** an operator debugging with `openssl-encrypt --debug keyserver
+set-token <API_TOKEN>` leaks the token in cleartext to stderr, where CI logs or
+shell history capture it for anyone with log access — a persisted credential
+disclosure for a secret the tool otherwise stores securely.
+
+**Fixed in 1.4.9 / 1.5.0:** the positional value after `set-token` is now routed
+through the `debug_secret` redaction chokepoint, so it is redacted by default and
+shown only under `--debug --unsafe-show-secrets`. (Note: the token is still a CLI
+positional, so it remains visible in `ps`/`/proc` and shell history — prefer not
+passing long-lived tokens on the command line.)
+
+**Mitigation:** upgrade, and **rotate** any keyserver token that was previously
+used with `--debug` and may be present in logs or history.
+
+**Disclosure:** internal multi-agent security scan (2026-07-24, gitlab#134).
+**Credit:** internal security review.
+
 ### ADVISORY 2026-10: Portable-USB Integrity Gaps (Added Files / Root Autorun) and Fixed KDF Salt — Resolved
 
 **Severity:** Medium · **CWE-354** (Improper Validation of Integrity Check Value) / **CWE-760** (Use of a Predictable Salt)
