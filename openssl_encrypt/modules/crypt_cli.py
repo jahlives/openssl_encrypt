@@ -824,6 +824,11 @@ def sanitize_argv_for_debug(argv: list) -> list:
             redact_next = False
         elif arg in SECRET_VALUE_CLI_OPTIONS:
             redact_next = True
+        elif arg == "set-token":
+            # gitlab#134 (F17): the keyserver bearer token is a positional
+            # argument to `keyserver set-token <token>`; redact the value that
+            # follows it so it is not echoed cleartext in the --debug argv dump.
+            redact_next = True
         elif "=" in arg and arg.split("=", 1)[0] in SECRET_VALUE_CLI_OPTIONS:
             opt, value = arg.split("=", 1)
             sanitized[i] = f"{opt}={debug_secret('', value)}"

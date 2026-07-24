@@ -417,6 +417,31 @@ class TestSigningCliHelpers(_SigningFixture):
                 confirm_fingerprint="DEADBEEF" * 5,
             )
 
+    def test_enroll_rejects_short_key_id_suffix(self) -> None:
+        # gitlab#136 (F21): a short key id that is merely a SUFFIX of the full
+        # fingerprint used to be accepted (endswith match), letting a crafted
+        # colliding key be enrolled. It must now be rejected — only an exact,
+        # full-length fingerprint match enrolls.
+        from openssl_encrypt.modules.plugin_system.plugin_signing_cli import enroll_trust_key
+
+        keyfile = self.tmp / "author.pub"
+        keyfile.write_bytes(self.author_pub)
+        store = self.tmp / "store"
+        short_id = self.author_fpr[-8:]  # 32-bit short key id (a genuine suffix)
+        with self.assertRaises(ValueError):
+            enroll_trust_key(
+                str(keyfile),
+                trusted_keys_dir=str(store),
+                confirm_fingerprint=short_id,
+            )
+        # And a longer-but-still-partial suffix is rejected too.
+        with self.assertRaises(ValueError):
+            enroll_trust_key(
+                str(keyfile),
+                trusted_keys_dir=str(store),
+                confirm_fingerprint=self.author_fpr[8:],
+            )
+
     def test_enroll_then_list(self) -> None:
         from openssl_encrypt.modules.plugin_system.plugin_signing_cli import (
             enroll_trust_key,

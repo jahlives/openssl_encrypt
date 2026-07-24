@@ -299,6 +299,25 @@ class ArgvSanitizerTests(unittest.TestCase):
         self.assertNotIn(self.SECRET, " ".join(out))
         self.assertTrue(out[1].startswith("-p<redacted:"))
 
+    def test_keyserver_set_token_positional_is_redacted(self):
+        """gitlab#134 (F17): `keyserver set-token <token>` — the positional
+        bearer token must be redacted in the --debug argv dump."""
+        out = self._sanitize(["crypt.py", "keyserver", "set-token", self.SECRET, "--verbose"])
+        joined = " ".join(out)
+        self.assertNotIn(self.SECRET, joined)
+        self.assertIn("<redacted:", joined)
+        # Structure preserved: only the token slot was rewritten.
+        self.assertEqual(out[:3], ["crypt.py", "keyserver", "set-token"])
+        self.assertEqual(out[4], "--verbose")
+
+    def test_keyserver_set_token_shown_in_unsafe_mode(self):
+        set_show_secrets(True)
+        try:
+            out = self._sanitize(["crypt.py", "keyserver", "set-token", self.SECRET])
+            self.assertIn(self.SECRET, " ".join(out))
+        finally:
+            set_show_secrets(False)
+
     def test_consecutive_secret_options(self):
         """`--password x --keystore-password y`: both values redacted."""
         out = self._sanitize(
