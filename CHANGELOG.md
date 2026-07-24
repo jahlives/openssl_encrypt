@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Identity-file unlock bounds its Argon2 cost parameters** (gitlab#129,
+  GHSA-783h-8q2f-f762): an identity file's password-protection block carried an
+  unbounded `memory_cost` read straight from JSON, and `_derive_key` fed it to
+  Argon2 before the AEAD tag authenticated the private key — a tampered or
+  attacker-authored identity with a gigabyte-scale `memory_cost` OOM-crashed the
+  host on unlock, pre-authentication (same class as gitlab#128 on the
+  identity-file surface). The Argon2 cost parameters are now clamped to sane
+  maxima (memory ≤ 2 GiB, time ≤ 64, parallelism ≤ 16) before derivation.
+  Legitimate identities use the 64 MB default, far under the cap, so no file
+  changes behavior.
+
 - **Balloon KDF fails closed on v14+ metadata missing `space_cost`**
   (security review 2026-07-13 INFO-2, gitlab#125): the decrypt-side
   derivation fell back to the historically weak `space_cost=16` whenever
