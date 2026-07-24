@@ -228,6 +228,42 @@ relevant.
 
 ## Security Advisories
 
+### ADVISORY 2026-06: Pre-Authentication Memory-Exhaustion DoS via Unbounded Argon2 Cost in Identity-File Protection — Resolved
+
+**Severity:** Low · **CWE-400** (Uncontrolled Resource Consumption)
+**Affected versions:** all releases up to and including **1.4.8**. **Fixed in 1.4.9 (1.4.x line) and 1.5.0 (1.5.x line).**
+**Advisory:** [GHSA-783h-8q2f-f762](https://github.com/jahlives/openssl_encrypt/security/advisories/GHSA-783h-8q2f-f762)
+
+**Summary:** an identity file's password-protection block carries Argon2 cost
+parameters (`memory_cost`, `time_cost`, `parallelism`) read directly from JSON.
+`IdentityKeyProtectionService._derive_key` fed them to Argon2
+(`hash_secret_raw`) *before* the AEAD tag authenticates the private key, with no
+upper bound on `memory_cost`. This is the same class as ADVISORY 2026-05
+(gitlab#128), on the identity-file surface rather than encrypted-data-file
+metadata or the PQC keystore header.
+
+**Impact:** a tampered or attacker-authored identity file declaring a
+gigabyte-scale `memory_cost` OOM-crashes the host when the identity is unlocked,
+before authentication. Exploitability is lower than the data-file/keystore
+vectors: the protection block lives in the user's own local identity store, so
+triggering it requires an attacker to have write access to that store or to
+convince the victim to load a full attacker-authored identity (the `import`
+subcommand imports *public* identities only).
+
+**Fixed in 1.4.9 / 1.5.0:** the Argon2 cost parameters read from an identity
+file are clamped to sane maxima (`memory_cost` ≤ 2 GiB, `time_cost` ≤ 64,
+`parallelism` ≤ 16) before derivation, mirroring the existing recovery-slot
+validation. Legitimate identities use the 64 MB default, far under the cap, so
+no identity file changes behavior.
+
+**Mitigation:** upgrade to 1.4.9 or 1.5.0. Do not import or unlock identity
+files from untrusted sources on an earlier version.
+
+**Disclosure:** found during the internal review that produced ADVISORY 2026-05
+(multi-agent security scan, 2026-07-24, gitlab#129); fixed before any
+third-party disclosure.
+**Credit:** internal security review.
+
 ### ADVISORY 2026-05: Pre-Authentication Memory-Exhaustion DoS via Unbounded KDF Cost Parameters — Resolved
 
 **Severity:** Medium · **CWE-400** (Uncontrolled Resource Consumption)
@@ -276,8 +312,6 @@ non-interactive/`--quiet` invocation.
 
 **Disclosure:** found during internal review (multi-agent security scan,
 2026-07-24, gitlab#128); fixed before any third-party disclosure.
-**Credit:** internal security review.
-
 ### ADVISORY 2026-04: Cleartext Secret Material in Diagnostic and Debug Output — Resolved
 
 **Severity:** Medium · **CWE-532** (Insertion of Sensitive Information into Log File)

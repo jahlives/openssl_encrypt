@@ -76,6 +76,38 @@ class PasswordProtectionConfig:
         )
 
 
+# Upper bounds on Argon2 cost parameters read from an identity file's password
+# protection block. These come from the (untrusted) identity file and are
+# consumed by IdentityKeyProtectionService._derive_key BEFORE the AEAD tag
+# authenticates the private key, so a tampered/attacker-authored identity with a
+# huge memory_cost would OOM the host pre-authentication (gitlab#129, same class
+# as gitlab#128). Legitimate identities use the 64 MB default, far under these
+# caps. Mirrors recovery_slots._validate_argon2_params.
+_IDENTITY_ARGON2_MAX_TIME = 64
+_IDENTITY_ARGON2_MAX_MEMORY = 2 * 1024 * 1024  # KiB (2 GiB)
+_IDENTITY_ARGON2_MAX_PARALLELISM = 16
+
+
+def _validate_identity_argon2_params(time_cost, memory_cost, parallelism) -> None:
+    """Reject out-of-range Argon2 cost params from an untrusted identity file."""
+    from .crypt_errors import ValidationError
+
+    checks = (
+        ("time_cost", time_cost, 1, _IDENTITY_ARGON2_MAX_TIME),
+        ("memory_cost", memory_cost, 8, _IDENTITY_ARGON2_MAX_MEMORY),
+        ("parallelism", parallelism, 1, _IDENTITY_ARGON2_MAX_PARALLELISM),
+    )
+    for name, value, lo, hi in checks:
+        # bool is an int subclass; reject it and any non-int explicitly.
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ValidationError(f"Invalid Argon2 {name} in identity protection: {value!r}")
+        if not (lo <= value <= hi):
+            raise ValidationError(
+                f"Argon2 {name} in identity protection out of allowed range "
+                f"[{lo}, {hi}]: {value}"
+            )
+
+
 @dataclass
 class HSMProtectionConfig:
     """Configuration for HSM-based key protection."""
@@ -403,6 +435,17 @@ class IdentityKeyProtectionService:
 
         if not key_material:
             raise ValueError("Either password or HSM pepper must be provided")
+
+        # Bound the (untrusted, file-supplied) Argon2 cost before deriving: these
+        # parameters are consumed before the AEAD tag authenticates the private
+        # key, so an oversized memory_cost would OOM the host pre-authentication
+        # (gitlab#129). Legitimate identities use the 64 MB default, far under
+        # the cap.
+        _validate_identity_argon2_params(
+            password_config.time_cost,
+            password_config.memory_cost,
+            password_config.parallelism,
+        )
 
         # Derive key with Argon2id
         derived_key = hash_secret_raw(
