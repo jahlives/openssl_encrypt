@@ -94,6 +94,96 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+# ---------------------------------------------------------------------------
+# .pqc keyfile private-key wrapping KDF (gitlab#131 / F16)
+#
+# A --pqc-keyfile stores a long-lived PQC private key wrapped under a
+# password-derived AES-256-GCM key. New keyfiles derive that key with Argon2id
+# and record a self-describing "key_kdf" descriptor. Keyfiles written before
+# this fix carry no "key_kdf" and used PBKDF2-HMAC-SHA256 100k (below the OWASP
+# floor) plus a redundant trailing SHA-256; they still decrypt via the legacy
+# branch below, so the change is backward compatible.
+# ---------------------------------------------------------------------------
+_PQC_KEYFILE_ARGON2_TIME_COST = 3
+_PQC_KEYFILE_ARGON2_MEMORY_KIB = 65536  # 64 MiB
+_PQC_KEYFILE_ARGON2_PARALLELISM = 4
+# Upper bounds for Argon2 cost read from an (untrusted) keyfile: a tampered
+# keyfile could otherwise declare a huge memory_cost and OOM the host on decrypt
+# before the AES-GCM tag authenticates (same class as gitlab#128/#129). Mirrors
+# identity_protection._validate_identity_argon2_params.
+_PQC_KEYFILE_ARGON2_MAX_TIME = 64
+_PQC_KEYFILE_ARGON2_MAX_MEMORY = 2 * 1024 * 1024  # KiB (2 GiB)
+_PQC_KEYFILE_ARGON2_MAX_PARALLELISM = 16
+
+
+def _new_pqc_keyfile_kdf() -> Dict[str, Any]:
+    """Return the KDF descriptor stored in a freshly written .pqc keyfile."""
+    return {
+        "type": "argon2id",
+        "time_cost": _PQC_KEYFILE_ARGON2_TIME_COST,
+        "memory_cost": _PQC_KEYFILE_ARGON2_MEMORY_KIB,
+        "parallelism": _PQC_KEYFILE_ARGON2_PARALLELISM,
+    }
+
+
+def _derive_pqc_keyfile_key(
+    keyfile_password: bytes, key_salt: bytes, kdf: Optional[Dict[str, Any]]
+) -> bytes:
+    """Derive the 32-byte AES-256-GCM key that wraps a .pqc keyfile private key.
+
+    Args:
+        keyfile_password: The keyfile password.
+        key_salt: The per-keyfile random salt.
+        kdf: The keyfile's ``key_kdf`` descriptor, or ``None`` for a legacy
+            keyfile written before gitlab#131 (PBKDF2-SHA256 100k + a redundant
+            trailing SHA-256).
+
+    Returns:
+        A 32-byte wrapping key.
+
+    Raises:
+        ValueError: On an unsupported or out-of-range KDF descriptor.
+    """
+    if kdf is None:
+        # Legacy keyfiles (pre-gitlab#131 F16): PBKDF2-SHA256 100k, then a
+        # redundant SHA-256 kept only so existing keyfiles still decrypt.
+        return hashlib.sha256(
+            hashlib.pbkdf2_hmac("sha256", keyfile_password, key_salt, 100000)
+        ).digest()
+
+    ktype = kdf.get("type") if isinstance(kdf, dict) else None
+    if ktype != "argon2id":
+        raise ValueError(f"Unsupported .pqc keyfile KDF type: {ktype!r}")
+
+    time_cost = kdf.get("time_cost")
+    memory_cost = kdf.get("memory_cost")
+    parallelism = kdf.get("parallelism")
+    for name, value, lo, hi in (
+        ("time_cost", time_cost, 1, _PQC_KEYFILE_ARGON2_MAX_TIME),
+        ("memory_cost", memory_cost, 8, _PQC_KEYFILE_ARGON2_MAX_MEMORY),
+        ("parallelism", parallelism, 1, _PQC_KEYFILE_ARGON2_MAX_PARALLELISM),
+    ):
+        # bool is an int subclass; reject it and any non-int explicitly.
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ValueError(f"Invalid .pqc keyfile Argon2 {name}: {value!r}")
+        if not (lo <= value <= hi):
+            raise ValueError(
+                f".pqc keyfile Argon2 {name} out of allowed range [{lo}, {hi}]: {value}"
+            )
+
+    from argon2.low_level import Type, hash_secret_raw
+
+    return hash_secret_raw(
+        secret=keyfile_password,
+        salt=key_salt,
+        time_cost=time_cost,
+        memory_cost=memory_cost,
+        parallelism=parallelism,
+        hash_len=32,
+        type=Type.ID,
+    )
+
+
 def resolve_identity_store_path(args):
     """Resolve identity store path from args with proper priority.
 
@@ -7475,13 +7565,17 @@ def main_with_args(args=None):
                             "Enter password to encrypt the private key in keyfile: "
                         ).encode()
 
-                    # Encrypt the private key with the password
-                    # We generate a key derived from the password
+                    # Encrypt the private key with the password.
+                    # gitlab#131 (F16): derive the wrapping key with Argon2id and
+                    # record a self-describing descriptor. Legacy keyfiles used
+                    # PBKDF2-SHA256 100k (below the OWASP floor); they still
+                    # decrypt via the no-"key_kdf" branch of
+                    # _derive_pqc_keyfile_key.
                     key_salt = secrets.token_bytes(16)
-                    key_derivation = hashlib.pbkdf2_hmac(
-                        "sha256", keyfile_password, key_salt, 100000
+                    keyfile_kdf = _new_pqc_keyfile_kdf()
+                    encryption_key = _derive_pqc_keyfile_key(
+                        keyfile_password, key_salt, keyfile_kdf
                     )
-                    encryption_key = hashlib.sha256(key_derivation).digest()
 
                     # Use AES-GCM to encrypt the private key
                     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -7495,6 +7589,7 @@ def main_with_args(args=None):
                         "public_key": base64.b64encode(public_key).decode("utf-8"),
                         "private_key": base64.b64encode(encrypted_private_key).decode("utf-8"),
                         "key_salt": base64.b64encode(key_salt).decode("utf-8"),
+                        "key_kdf": keyfile_kdf,  # F16: Argon2id descriptor
                         "key_encrypted": True,  # Mark that the key is encrypted
                     }
 
@@ -7558,12 +7653,17 @@ def main_with_args(args=None):
 
                             # Key derivation using the same method as when encrypting
                             key_salt = base64.b64decode(key_data["key_salt"])
-                            key_derivation = hashlib.pbkdf2_hmac(
-                                "sha256", keyfile_password, key_salt, 100000
-                            )
-                            encryption_key = hashlib.sha256(key_derivation).digest()
 
                             try:
+                                # New keyfiles carry a "key_kdf" Argon2id descriptor
+                                # (gitlab#131 F16); legacy keyfiles have none and use
+                                # the PBKDF2-SHA256 100k path inside the helper. A
+                                # malformed/tampered descriptor raises ValueError;
+                                # deriving inside the try surfaces it as the graceful
+                                # "Wrong password?" path, not a traceback.
+                                encryption_key = _derive_pqc_keyfile_key(
+                                    keyfile_password, key_salt, key_data.get("key_kdf")
+                                )
                                 # Format: nonce (12 bytes) + encrypted_key
                                 nonce = encrypted_private_key[:12]
                                 encrypted_key_data = encrypted_private_key[12:]
@@ -8768,12 +8868,16 @@ def main_with_args(args=None):
 
                                     # Key derivation using the same method as when encrypting
                                     key_salt = base64.b64decode(key_data["key_salt"])
-                                    key_derivation = hashlib.pbkdf2_hmac(
-                                        "sha256", keyfile_password, key_salt, 100000
-                                    )
-                                    encryption_key = hashlib.sha256(key_derivation).digest()
 
                                     try:
+                                        # New keyfiles carry a "key_kdf" Argon2id
+                                        # descriptor (gitlab#131 F16); legacy keyfiles
+                                        # have none and use the PBKDF2-SHA256 100k path
+                                        # inside the helper. Deriving inside the try
+                                        # surfaces a bad descriptor gracefully.
+                                        encryption_key = _derive_pqc_keyfile_key(
+                                            keyfile_password, key_salt, key_data.get("key_kdf")
+                                        )
                                         # Format: nonce (12 bytes) + encrypted_key
                                         nonce = encrypted_private_key[:12]
                                         encrypted_key_data = encrypted_private_key[12:]
@@ -8959,12 +9063,16 @@ def main_with_args(args=None):
 
                                 # Key derivation using the same method as when encrypting
                                 key_salt = base64.b64decode(key_data["key_salt"])
-                                key_derivation = hashlib.pbkdf2_hmac(
-                                    "sha256", keyfile_password, key_salt, 100000
-                                )
-                                encryption_key = hashlib.sha256(key_derivation).digest()
 
                                 try:
+                                    # New keyfiles carry a "key_kdf" Argon2id
+                                    # descriptor (gitlab#131 F16); legacy keyfiles
+                                    # have none and use the PBKDF2-SHA256 100k path
+                                    # inside the helper. Deriving inside the try
+                                    # surfaces a bad descriptor gracefully.
+                                    encryption_key = _derive_pqc_keyfile_key(
+                                        keyfile_password, key_salt, key_data.get("key_kdf")
+                                    )
                                     # Format: nonce (12 bytes) + encrypted_key
                                     nonce = encrypted_private_key[:12]
                                     encrypted_key_data = encrypted_private_key[12:]
@@ -9134,12 +9242,16 @@ def main_with_args(args=None):
 
                                 # Key derivation using the same method as when encrypting
                                 key_salt = base64.b64decode(key_data["key_salt"])
-                                key_derivation = hashlib.pbkdf2_hmac(
-                                    "sha256", keyfile_password, key_salt, 100000
-                                )
-                                encryption_key = hashlib.sha256(key_derivation).digest()
 
                                 try:
+                                    # New keyfiles carry a "key_kdf" Argon2id
+                                    # descriptor (gitlab#131 F16); legacy keyfiles
+                                    # have none and use the PBKDF2-SHA256 100k path
+                                    # inside the helper. Deriving inside the try
+                                    # surfaces a bad descriptor gracefully.
+                                    encryption_key = _derive_pqc_keyfile_key(
+                                        keyfile_password, key_salt, key_data.get("key_kdf")
+                                    )
                                     # Format: nonce (12 bytes) + encrypted_key
                                     nonce = encrypted_private_key[:12]
                                     encrypted_key_data = encrypted_private_key[12:]

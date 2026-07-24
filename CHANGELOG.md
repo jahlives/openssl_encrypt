@@ -593,6 +593,20 @@ inflated KDF metadata parameters, not cosmetic output.
 
 ### Security
 
+- **`.pqc` keyfiles wrap the private key with Argon2id instead of PBKDF2-SHA256
+  100k** (gitlab#131 / F16, GHSA-fmjx-p826-6fvr): a keyfile created with
+  `--pqc-keyfile` wrapped the long-lived PQC private key under a key derived
+  from a single PBKDF2-HMAC-SHA256 pass at 100,000 iterations — below the OWASP
+  floor and far weaker than the Argon2id used for file and keystore material, so
+  an attacker who obtained the keyfile could brute-force the wrapping password
+  cheaply offline. New keyfiles now derive the wrapping key with Argon2id and
+  record a self-describing `key_kdf` descriptor; the redundant trailing SHA-256
+  is dropped. Existing PBKDF2-wrapped keyfiles still decrypt unchanged (no
+  `key_kdf` → legacy path). The Argon2 cost read from a keyfile is bounded
+  (memory ≤ 2 GiB, time ≤ 64, parallelism ≤ 16) so a tampered keyfile cannot
+  OOM the host on decrypt before the AES-GCM tag authenticates. Re-wrap existing
+  keyfiles (regenerate or re-save) to move them onto Argon2id.
+
 - **Unsigned third-party plugins are refused by default (signature policy now
   ENFORCE)** (gitlab#130, GHSA-587j-4r3v-cm2c): the plugin loader defaulted to
   `warn`, so an unsigned/unverifiable non-built-in plugin was exec'd in the host
