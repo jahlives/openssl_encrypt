@@ -3,6 +3,22 @@
 Status: draft
 Created: 2026-07-24
 
+## Progress (autonomous run, 2026-07-24)
+
+Branches: `feature/gui-decrypt-asym-fields` (P1), `feature/generate-password-json`
+(CLI enabler for P2), `feature/gui-cli-sync` (P4+ GUI features, stacked one
+commit per feature off the P1 branch). All Dart is committed but **not compiled
+or tested here** (no Flutter toolchain) — run `flutter analyze && flutter test`.
+
+- **P1 — DONE** (`feature/gui-decrypt-asym-fields`): decrypt asymmetric fields wired; security review MEDIUM+2 LOW fixed. gitlab#137/gh#55.
+- **P2 — DONE, scope grew to a CLI change**: `generate-password` had no machine-readable output (password only on stderr behind a 10s timeout), so added `generate-password --json` on `feature/generate-password-json` (gitlab#138/gh#59… gh#56), then `CLIService.generatePassword()` consumes it. Full pytest run: no regressions.
+- **P3 — DONE**: diceware supported in `CLIService.generatePassword()` and the generator screen (per explicit user request).
+- **P4 — DONE** (gitlab#139/gh#57): Password Generator screen. **Remark:** added to **Pro mode only**; not added to Simple mode (kept deliberately minimal). Security review MEDIUM (password leaked to debug log via `_runCLICommand` dev-path stdout dump) + LOW fixed.
+- **P5 — PARTIAL**: generated password gets **copy-to-clipboard**. **Remark/deferred:** direct insertion into the Encrypt/Decrypt password fields (cross-tab) not done — needs shared-state plumbing across independent tab widgets; clipboard covers the immediate need. Optional future: clipboard auto-clear timer.
+- **P6/P7 — DONE** (gitlab#140/gh#58): Secure Shred screen + `CLIService.shred()`, mandatory confirmation. Security review MEDIUM fixed: CLI globs `-i`, so GUI now escapes glob metacharacters (glob.escape equivalent) so confirmed target == deleted target. **Remark:** a durable CLI-side `shred --no-glob`/literal mode is recommended future hardening for all callers.
+- **P8/P9 — DONE** (gitlab#141/gh#59): `CLIService.checkPassword()` (password via stdin) + live strength meter widget. **Remark/deviation from plan:** meter placed on the **Encrypt tab only**. Decrypt tab omitted (entering an existing password — strength is not meaningful); Password Generator omitted (already displays entropy/strength). Security review pending at time of writing.
+- **P10–P34 — NOT YET STARTED** (rekey, recovery slots, encrypt-tab flag gaps, batch parity, sign/verify, identity flags, analysis/telemetry). Most are pure GUI shelling to existing CLI commands.
+
 ## Goal
 
 Bring the Flutter desktop GUI (`desktop_gui/`) into feature parity with the live
