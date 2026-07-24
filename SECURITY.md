@@ -228,6 +228,54 @@ relevant.
 
 ## Security Advisories
 
+### ADVISORY 2026-10: Portable-USB Integrity Gaps (Added Files / Root Autorun) and Fixed KDF Salt — Resolved
+
+**Severity:** Medium · **CWE-354** (Improper Validation of Integrity Check Value) / **CWE-760** (Use of a Predictable Salt)
+**Affected versions:** all releases up to and including **1.4.8**. **Fixed in 1.4.9 (1.4.x line) and 1.5.0 (1.5.x line).**
+**Advisory:** [GHSA-8jx3-27qf-3p97](https://github.com/jahlives/openssl_encrypt/security/advisories/GHSA-8jx3-27qf-3p97)
+
+**Summary:** the portable-USB feature (`create-portable-usb` / `verify-usb`)
+treats the removable drive as untrusted (an attacker with physical write
+access). Two weaknesses were found:
+
+- **F13 — integrity check missed additions and root autorun.** Integrity
+  verification only re-hashed the files recorded in the manifest, so a file
+  **added** to the drive was never noticed, and the root-level `autorun.*` files
+  (which live above the portable directory and are auto-executed by the OS on
+  insert) were not covered at all. An attacker could add a malicious script or
+  an autorun payload and the integrity check still reported the drive intact.
+- **F14 / F19 — predictable fixed KDF salt.** The drive encryption key (and the
+  cryptographic hash-manifest fallback) were derived with a globally-constant,
+  source-embedded salt for any drive lacking a per-drive salt file, defeating
+  precomputation resistance — an attacker with such a drive could run an offline
+  rainbow-table attack against the known constant salt.
+
+**Impact:** on an affected drive, malicious files or an autorun payload added by
+an attacker were not detected by `verify-usb`, and the drive password was more
+cheaply attackable offline due to the shared fixed salt.
+
+**Fixed in 1.4.9 / 1.5.0:** new drives use a unique random per-drive salt
+(`salt.bin`), including the hash-manifest fallback path (F19); the main
+key-derivation path was hardened first. Integrity verification now writes a v2
+manifest that is an **allowlist** of every file in the tool tree (plus the root
+`autorun.*` hashes), so it flags **any** file added afterward — a planted
+library/binary or any other payload, not just a fixed set of extensions — as
+well as any tampered, added, or removed root autorun file. The user's mutable
+workspace (`data/`) and `logs/` are excluded, so normal use still verifies.
+Drives created before the fix carry no v2 marker and verify exactly as before
+(backward compatible).
+
+**Mitigation:** upgrade to 1.4.9 or 1.5.0 and **re-create** portable USB drives
+so they gain the per-drive salt and the v2 integrity manifest. Until then, do
+not rely on `verify-usb` to detect added/autorun files on a drive an attacker
+may have written to, and treat a pre-fix drive's password as only as strong as
+its offline-attack cost against the fixed salt.
+
+**Disclosure:** found during the internal multi-agent security scan
+(2026-07-24, gitlab#132 findings F13/F14/F19); fixed before any third-party
+disclosure.
+**Credit:** internal security review.
+
 ### ADVISORY 2026-09: Weak 10k-PBKDF2 Dual-Encryption File-Password Verifier in Cleartext Metadata — Resolved
 
 **Severity:** Low · **CWE-916** (Use of Password Hash With Insufficient Computational Effort)

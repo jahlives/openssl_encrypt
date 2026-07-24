@@ -4129,10 +4129,14 @@ def main_with_args(args=None):
                 eprint(f"  Files verified: {result['verified_files']}")
                 eprint(f"  Failed files: {result['failed_files']}")
                 eprint(f"  Missing files: {result['missing_files']}")
+                # gitlab#132 F13: report files added to the drive after creation.
+                eprint(f"  Added files: {result.get('added_files', 0)}")
                 if result["tampered_files"]:
                     eprint(f"  Tampered files: {', '.join(result['tampered_files'])}")
                 if result["missing_file_list"]:
                     eprint(f"  Missing files: {', '.join(result['missing_file_list'])}")
+                if result.get("added_file_list"):
+                    eprint(f"  Added files: {', '.join(result['added_file_list'])}")
                 return 1
 
         except ImportError:
