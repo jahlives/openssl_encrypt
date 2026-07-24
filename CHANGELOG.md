@@ -593,6 +593,23 @@ inflated KDF metadata parameters, not cosmetic output.
 
 ### Security
 
+- **The weak 10k-PBKDF2 dual-encryption file-password verifier is no longer
+  trusted; the mismatch state fails closed** (gitlab#131 / F18,
+  GHSA-fmjx-p826-6fvr): dual-encrypted files carried a `pqc_dual_encrypt_verify`
+  hash — a 10,000-iteration PBKDF2 pre-check over the file password stored in
+  cleartext metadata — that an attacker with the file could brute-force offline
+  to recover the second-factor file password. That pre-check is no longer
+  recomputed or trusted (and is no longer propagated into re-processed
+  metadata): the file password is authenticated by the dual-encryption AES-GCM
+  tag during keystore key retrieval, which derives the file key with the
+  keystore's own Argon2id KDF and is not brute-forceable offline. The one state
+  where the AES-GCM tag would not gate the file password — a file that claims
+  dual encryption backed by a non-dual keystore key entry (a metadata/keystore
+  mismatch) — now fails closed in `get_key`, so removing the weak pre-check
+  cannot let a wrong file password through. Legacy dual-encrypted files still
+  decrypt unchanged; re-encrypt them to drop the weak verifier from their
+  metadata.
+
 - **`.pqc` keyfiles wrap the private key with Argon2id instead of PBKDF2-SHA256
   100k** (gitlab#131 / F16, GHSA-fmjx-p826-6fvr): a keyfile created with
   `--pqc-keyfile` wrapped the long-lived PQC private key under a key derived

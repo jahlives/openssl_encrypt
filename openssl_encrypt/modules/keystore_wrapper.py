@@ -549,72 +549,27 @@ def decrypt_file_with_keystore(
                     )
                 raise ValueError("File password is too short for dual-encryption")
 
-            # Check for password verification fields based on format version
-            format_version = _coerce_format_version(metadata, 1)
-            verify_hash = None
-            verify_salt = None
-
-            if format_version >= 4:  # v4+ hierarchical metadata (see crypt_core gate fix)
-                # Version 4/5/6/7/8/9/10 format - check in derivation_config.kdf_config
-                if (
-                    "derivation_config" in metadata
-                    and "kdf_config" in metadata["derivation_config"]
-                    and "pqc_dual_encrypt_verify" in metadata["derivation_config"]["kdf_config"]
-                    and "pqc_dual_encrypt_verify_salt"
-                    in metadata["derivation_config"]["kdf_config"]
-                ):
-                    # Get stored values
-                    verify_hash = base64.b64decode(
-                        metadata["derivation_config"]["kdf_config"]["pqc_dual_encrypt_verify"]
-                    )
-                    verify_salt = base64.b64decode(
-                        metadata["derivation_config"]["kdf_config"]["pqc_dual_encrypt_verify_salt"]
-                    )
-            else:
-                # Version 3 format - check in hash_config
-                if (
-                    "hash_config" in metadata
-                    and "pqc_dual_encrypt_verify" in metadata["hash_config"]
-                    and "pqc_dual_encrypt_verify_salt" in metadata["hash_config"]
-                ):
-                    # Get stored values
-                    verify_hash = base64.b64decode(
-                        metadata["hash_config"]["pqc_dual_encrypt_verify"]
-                    )
-                    verify_salt = base64.b64decode(
-                        metadata["hash_config"]["pqc_dual_encrypt_verify_salt"]
-                    )
-
-            # Legacy files (pre-M7) carry a PBKDF2 verification hash. If present
-            # we still honour it (backward compatibility); its absence is the
-            # normal case for files written after M7 - the file password is
-            # then authenticated by the dual-encryption AES-GCM tag downstream.
-            if verify_hash and verify_salt:
-                # Calculate hash with current password
-                import hashlib
-
-                current_pw_hash = hashlib.pbkdf2_hmac("sha256", pw_verify_bytes, verify_salt, 10000)
-
-                # Verify hash matches - use specialized MAC verification to prevent timing attacks
-                from .secure_ops import verify_mac
-
-                if not verify_mac(verify_hash, current_pw_hash):
-                    if not quiet:
-                        eprint("Password verification failed - incorrect file password")
-                    raise ValueError(
-                        "Invalid password for dual-encrypted file - password verification failed"
-                    )
-                elif not quiet:
-                    eprint("File password verification successful")
-            else:
-                # No verifier in metadata: normal for post-M7 files. The file
-                # password is verified by the AES-GCM tag during key retrieval,
-                # so no pre-check is needed here.
-                if kwargs.get("verbose"):
-                    eprint(
-                        "No password pre-check hash in metadata - file password will be "
-                        "verified by the dual-encryption AES-GCM tag"
-                    )
+            # gitlab#131 F18: legacy files (pre-M7) carry a weak 10k-PBKDF2
+            # pqc_dual_encrypt_verify hash in cleartext metadata as a
+            # file-password pre-check. That hash is brute-forceable offline from
+            # the file alone, and recomputing/trusting it here added no real
+            # security: the file password is authenticated downstream by the
+            # dual-encryption AES-GCM tag during key retrieval
+            # (keystore_cli.PQCKeystore.get_key), which derives the file key with
+            # the keystore's own Argon2id KDF and is not brute-forceable offline.
+            # So the weak verifier is no longer recomputed or trusted here. The
+            # only state where the AES-GCM tag would NOT gate the file password —
+            # a file that claims dual encryption backed by a non-dual keystore
+            # entry (a metadata/keystore mismatch) — is now failed closed inside
+            # get_key, so removing this pre-check cannot let a wrong file password
+            # through. Post-M7 files carry no verifier at all. Legacy files still
+            # decrypt unchanged; re-encrypt them to drop the weak hash from
+            # metadata (SECURITY.md ADVISORY 2026-09).
+            if kwargs.get("verbose"):
+                eprint(
+                    "File password will be authenticated by the dual-encryption "
+                    "AES-GCM tag during key retrieval"
+                )
 
         except ValueError as ve:
             # Re-raise these as they're expected for validation failures

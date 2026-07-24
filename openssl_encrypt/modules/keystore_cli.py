@@ -646,6 +646,21 @@ class PQCKeystore:
         if dual_encryption and file_password is None:
             raise KeystoreError("File password required for dual-encrypted key")
 
+        # gitlab#131 F18: a file_password is only ever supplied when the caller
+        # believes the file is dual-encrypted (every call site gates it on the
+        # file's dual_encryption metadata flag). If the keystore ENTRY is not
+        # actually dual-encrypted, that is a file/keystore mismatch: the dual
+        # AES-GCM block below would be skipped and the file password silently
+        # ignored — accepting ANY file password. This used to be caught only by
+        # the weak 10k-PBKDF2 pre-check in keystore_wrapper (now removed); fail
+        # closed here so the file password can never slip through unauthenticated.
+        if file_password is not None and not dual_encryption:
+            raise KeystoreError(
+                "Dual-encryption mismatch: a file password was supplied but the "
+                "keystore key entry is not dual-encrypted; refusing to decrypt "
+                "(the file password cannot be authenticated)."
+            )
+
         if use_master_password:
             if not self.master_key:
                 raise KeystoreError("Master key not available")
