@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Desktop GUI: Password Generator screen** (gitlab#139 / github#57): a new
+  Pro-mode "Password Gen" screen generates passwords via the CLI
+  `generate-password --json` command in both **character** mode (length +
+  lowercase/uppercase/digits/special toggles) and **diceware** passphrase mode
+  (word count, separator, optional custom wordlist, force-small-wordlist). The
+  generated password is shown with its entropy/strength and can be copied to
+  the clipboard. Requires the CLI `generate-password --json` support
+  (gitlab#138).
+
 - **Desktop GUI: asymmetric-decryption controls in the Decrypt tab**
   (gitlab#137 / github#55): the Flutter desktop GUI can now decrypt files
   encrypted to an identity. The Decrypt tab's Advanced Options (Pro mode) expose

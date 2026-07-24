@@ -4,6 +4,36 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
 
+/// Result of a `generate-password --json` invocation.
+class GeneratedPassword {
+  final String password;
+  final double entropyBits;
+  final String mode; // "character" | "diceware"
+  final String? strength; // character mode only
+  final int? length; // character mode only
+  final int? wordCount; // diceware mode only
+
+  GeneratedPassword({
+    required this.password,
+    required this.entropyBits,
+    required this.mode,
+    this.strength,
+    this.length,
+    this.wordCount,
+  });
+
+  factory GeneratedPassword.fromJson(Map<String, dynamic> json) {
+    return GeneratedPassword(
+      password: json['password'] as String,
+      entropyBits: (json['entropy_bits'] as num).toDouble(),
+      mode: json['mode'] as String,
+      strength: json['strength'] as String?,
+      length: (json['length'] as num?)?.toInt(),
+      wordCount: (json['word_count'] as num?)?.toInt(),
+    );
+  }
+}
+
 /// Service layer for integrating with OpenSSL Encrypt CLI
 /// Replaces all pure Dart crypto implementations
 class CLIService {
@@ -901,7 +931,14 @@ class CLIService {
 
 
   /// Run CLI command with appropriate executable path
-  static Future<ProcessResult> _runCLICommand(List<String> args) async {
+  /// Run a CLI command and return its result.
+  ///
+  /// [logStdout] must be false for commands whose stdout contains secret
+  /// material (e.g. `generate-password --json`, whose stdout is the generated
+  /// password). When false, the debug log records only the stdout length, so a
+  /// secret cannot land in the persistent debug log under --debug.
+  static Future<ProcessResult> _runCLICommand(List<String> args,
+      {bool logStdout = true}) async {
     // When running inside Flatpak, use direct CLI path for better performance and reliability
     if (_isFlaspakVersion && await File(_cliPath).exists()) {
       _outputDebugLog('Using direct Flatpak CLI: $_cliPath ${args.join(' ')}');
@@ -939,7 +976,13 @@ class CLIService {
         environment: env);
 
       _outputDebugLog('Development CLI exit code: ${result.exitCode}');
-      _outputDebugLog('Development CLI stdout: ${result.stdout}');
+      if (logStdout) {
+        _outputDebugLog('Development CLI stdout: ${result.stdout}');
+      } else {
+        // Secret-bearing stdout (e.g. a generated password): log only length.
+        _outputDebugLog(
+            'Development CLI stdout: <redacted, ${(result.stdout as String).length} chars>');
+      }
       _outputDebugLog('Development CLI stderr: ${result.stderr}');
 
       return result;
@@ -2260,6 +2303,72 @@ class CLIService {
       );
     } catch (e) {
       throw Exception('Failed to delete credential: $e');
+    }
+  }
+
+  // ==================== Password Generation ====================
+
+  /// Generate a password via the CLI `generate-password --json` command.
+  ///
+  /// Character mode (default) uses [length] and the four charset toggles; if
+  /// no charset is selected the CLI defaults to all four. Diceware mode
+  /// ([dice] = true) draws [diceCount] words joined by [diceSep], optionally
+  /// from a custom [diceList] wordlist. Requires the CLI's `--json` support
+  /// (gitlab#138). Throws on non-zero exit.
+  static Future<GeneratedPassword> generatePassword({
+    int length = 32,
+    bool useLowercase = true,
+    bool useUppercase = true,
+    bool useDigits = true,
+    bool useSpecial = true,
+    bool dice = false,
+    int diceCount = 10,
+    String diceSep = '',
+    String? diceList,
+    bool forceWordlist = false,
+  }) async {
+    final args = <String>['generate-password'];
+
+    if (dice) {
+      args.add('--dice');
+      args.addAll(['--dice-count', diceCount.toString()]);
+      // Only pass a non-default separator; the empty default is valid but
+      // passing "--dice-sep ''" is harmless. Skip when empty for a cleaner argv.
+      if (diceSep.isNotEmpty) {
+        args.addAll(['--dice-sep', diceSep]);
+      }
+      if (diceList != null && diceList.isNotEmpty) {
+        args.addAll(['--dice-list', diceList]);
+      }
+      if (forceWordlist) {
+        args.add('--force-wordlist');
+      }
+    } else {
+      // Length is a positional argument in character mode.
+      args.add(length.toString());
+      if (useLowercase) args.add('--use-lowercase');
+      if (useUppercase) args.add('--use-uppercase');
+      if (useDigits) args.add('--use-digits');
+      if (useSpecial) args.add('--use-special');
+    }
+
+    args.add('--json');
+
+    // logStdout: false — stdout is the generated password; keep it out of logs.
+    final result = await _runCLICommand(args, logStdout: false);
+    if (result.exitCode != 0) {
+      throw Exception('Password generation failed: ${result.stderr}');
+    }
+
+    try {
+      // stdout is a single JSON object; the password never touches stderr
+      // under --json (see gitlab#138).
+      final data = jsonDecode((result.stdout as String).trim()) as Map<String, dynamic>;
+      return GeneratedPassword.fromJson(data);
+    } catch (_) {
+      // Do not interpolate the decode error: its message can echo a snippet of
+      // the (secret-bearing) stdout into the UI error card.
+      throw Exception('Could not parse generated password output (invalid JSON)');
     }
   }
 

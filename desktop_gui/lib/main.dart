@@ -12,6 +12,7 @@ import 'settings_screen.dart';
 import 'configuration_profiles_screen.dart';
 import 'identity_management_screen.dart';
 import 'fido2_management_screen.dart';
+import 'password_generator_screen.dart';
 import 'input_validation.dart';
 import 'tabs/encrypt_tab.dart';
 import 'tabs/decrypt_tab.dart';
@@ -461,6 +462,8 @@ class _MainScreenState extends State<MainScreen> {
           return const IdentityManagementScreen();
         case 6:
           return const Fido2ManagementScreen();
+        case 7:
+          return const PasswordGeneratorScreen();
         default:
           return EncryptTab(fileManager: _fileManager, isProMode: true);
       }
@@ -635,6 +638,11 @@ class _MainScreenState extends State<MainScreen> {
                     icon: Icon(Icons.fingerprint),
                     selectedIcon: Icon(Icons.fingerprint),
                     label: Text('FIDO2 Keys'),
+                  ),
+                  NavigationRailDestination(
+                    icon: Icon(Icons.password_outlined),
+                    selectedIcon: Icon(Icons.password),
+                    label: Text('Password Gen'),
                   ),
                 ]
               : const [
