@@ -13,6 +13,7 @@ import 'configuration_profiles_screen.dart';
 import 'identity_management_screen.dart';
 import 'fido2_management_screen.dart';
 import 'password_generator_screen.dart';
+import 'shred_screen.dart';
 import 'input_validation.dart';
 import 'tabs/encrypt_tab.dart';
 import 'tabs/decrypt_tab.dart';
@@ -464,6 +465,8 @@ class _MainScreenState extends State<MainScreen> {
           return const Fido2ManagementScreen();
         case 7:
           return const PasswordGeneratorScreen();
+        case 8:
+          return ShredScreen(fileManager: _fileManager);
         default:
           return EncryptTab(fileManager: _fileManager, isProMode: true);
       }
@@ -643,6 +646,11 @@ class _MainScreenState extends State<MainScreen> {
                     icon: Icon(Icons.password_outlined),
                     selectedIcon: Icon(Icons.password),
                     label: Text('Password Gen'),
+                  ),
+                  NavigationRailDestination(
+                    icon: Icon(Icons.delete_forever_outlined),
+                    selectedIcon: Icon(Icons.delete_forever),
+                    label: Text('Secure Shred'),
                   ),
                 ]
               : const [

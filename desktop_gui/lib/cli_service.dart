@@ -2372,6 +2372,54 @@ class CLIService {
     }
   }
 
+  // ==================== Secure Shred ====================
+
+  /// Securely delete a file (or directory with [recursive]) via the CLI
+  /// `shred` command. [inputPath] may be a glob pattern. Overwrites with
+  /// [passes] passes. Returns the CLI's human-readable output (stderr).
+  /// Throws on non-zero exit.
+  ///
+  /// The caller MUST confirm this irreversible action first, and MUST set
+  /// [recursive] when [inputPath] is (or matches) a directory — the CLI would
+  /// otherwise fall into an interactive confirmation prompt that has no stdin
+  /// under Process.run.
+  static Future<String> shred(
+    String inputPath, {
+    int passes = 3,
+    bool recursive = false,
+  }) async {
+    // The CLI shred handler runs -i through glob expansion (glob.glob), so a
+    // real, picker-supplied path whose name contains glob metacharacters (e.g.
+    // "data*.bin") would expand to and irreversibly delete siblings that were
+    // never in the confirmation dialog. GUI paths are always literal, so escape
+    // the metacharacters (mirrors Python's glob.escape) to force literal match.
+    final args = <String>[
+      'shred',
+      '-i',
+      _escapeGlob(inputPath),
+      '--shred-passes',
+      passes.toString(),
+    ];
+    if (recursive) {
+      args.add('--recursive');
+    }
+
+    final result = await _runCLICommand(args);
+    if (result.exitCode != 0) {
+      final err = (result.stderr as String).trim();
+      throw Exception(err.isEmpty ? 'Shred failed (exit ${result.exitCode})' : err);
+    }
+    // shred writes its progress/summary to stderr; stdout is empty.
+    return (result.stderr as String).trim();
+  }
+
+  /// Escape glob metacharacters (`*`, `?`, `[`) so the CLI treats the argument
+  /// as a literal path, mirroring Python's `glob.escape`. Each special char is
+  /// wrapped in a single-character class; `]` needs no escaping.
+  static String _escapeGlob(String path) {
+    return path.replaceAllMapped(RegExp(r'([*?\[])'), (m) => '[${m[1]}]');
+  }
+
   // ==================== Identity Management Methods ====================
 
   /// List all identities (own + contacts)

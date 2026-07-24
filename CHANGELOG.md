@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Desktop GUI: Secure Shred screen** (gitlab#140 / github#58): a new
+  Pro-mode "Secure Shred" screen securely overwrites and deletes files (and
+  directories, with a recursive toggle) via the CLI `shred` command, with a
+  selectable pass count. Every run is gated behind a mandatory
+  irreversible-action confirmation dialog listing the exact targets, and the
+  UI blocks shredding a directory unless "recursive" is enabled (avoiding the
+  CLI's stdin-less interactive prompt).
+
 - **Desktop GUI: Password Generator screen** (gitlab#139 / github#57): a new
   Pro-mode "Password Gen" screen generates passwords via the CLI
   `generate-password --json` command in both **character** mode (length +
