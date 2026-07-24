@@ -2437,6 +2437,46 @@ class CLIService {
     return PasswordStrength.fromJson(data);
   }
 
+  // ==================== Rekey ====================
+
+  /// Re-encrypt [inputPath] to [outputPath] with a new password (and optionally
+  /// a new [algorithm]) via the CLI `rekey` command.
+  ///
+  /// The OLD password is passed via `CRYPT_PASSWORD` and the NEW password via
+  /// `OPENSSL_ENCRYPT_REKEY_PASSWORD` — both environment variables, which the
+  /// CLI reads and then deletes; neither reaches the process list or a temp
+  /// file. Throws on non-zero exit (e.g. wrong old password, weak new password
+  /// without [forcePassword]).
+  static Future<String> rekey({
+    required String inputPath,
+    required String outputPath,
+    required String oldPassword,
+    required String newPassword,
+    String? algorithm,
+    bool forcePassword = false,
+  }) async {
+    final args = <String>['rekey', '-i', inputPath, '-o', outputPath];
+    if (algorithm != null && algorithm.isNotEmpty) {
+      args.addAll(['--algorithm', algorithm]);
+    }
+    if (forcePassword) {
+      args.add('--force-password');
+    }
+
+    final result = await _runCLICommandWithProgress(
+      args,
+      environment: {
+        'CRYPT_PASSWORD': oldPassword,
+        'OPENSSL_ENCRYPT_REKEY_PASSWORD': newPassword,
+      },
+    );
+    if (result.exitCode != 0) {
+      final err = (result.stderr as String).trim();
+      throw Exception(err.isEmpty ? 'Rekey failed (exit ${result.exitCode})' : err);
+    }
+    return (result.stdout as String).trim();
+  }
+
   // ==================== Secure Shred ====================
 
   /// Securely delete a file (or directory with [recursive]) via the CLI

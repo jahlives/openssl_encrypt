@@ -14,6 +14,7 @@ import 'identity_management_screen.dart';
 import 'fido2_management_screen.dart';
 import 'password_generator_screen.dart';
 import 'shred_screen.dart';
+import 'rekey_screen.dart';
 import 'input_validation.dart';
 import 'tabs/encrypt_tab.dart';
 import 'tabs/decrypt_tab.dart';
@@ -467,6 +468,8 @@ class _MainScreenState extends State<MainScreen> {
           return const PasswordGeneratorScreen();
         case 8:
           return ShredScreen(fileManager: _fileManager);
+        case 9:
+          return RekeyScreen(fileManager: _fileManager);
         default:
           return EncryptTab(fileManager: _fileManager, isProMode: true);
       }
@@ -651,6 +654,11 @@ class _MainScreenState extends State<MainScreen> {
                     icon: Icon(Icons.delete_forever_outlined),
                     selectedIcon: Icon(Icons.delete_forever),
                     label: Text('Secure Shred'),
+                  ),
+                  NavigationRailDestination(
+                    icon: Icon(Icons.autorenew_outlined),
+                    selectedIcon: Icon(Icons.autorenew),
+                    label: Text('Rekey'),
                   ),
                 ]
               : const [

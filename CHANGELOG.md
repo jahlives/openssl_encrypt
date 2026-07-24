@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Desktop GUI: Rekey screen** (gitlab#142 / github#60): a new Pro-mode
+  "Rekey" screen re-encrypts an existing file with a new password (and
+  optionally a new algorithm) via the CLI `rekey` command, writing a new output
+  file and leaving the original untouched. The old password is passed via
+  `CRYPT_PASSWORD` and the new via `OPENSSL_ENCRYPT_REKEY_PASSWORD` (both
+  environment variables the CLI deletes after reading — never on the process
+  list or a temp file). This iteration changes password/algorithm only; full
+  KDF/hash reconfiguration during rekey is not yet exposed.
+
 - **Desktop GUI: live password-strength meter** (gitlab#141 / github#59): the
   Encrypt tab's password field now shows a live strength indicator (bar,
   category, entropy in bits, and weakness warnings) driven by the CLI
