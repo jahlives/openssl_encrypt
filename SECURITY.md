@@ -228,6 +228,48 @@ relevant.
 
 ## Security Advisories
 
+### ADVISORY 2026-07: Unsigned Third-Party Plugins Executed by Default (Signature Policy Defaulted to Warn) — Resolved
+
+**Severity:** Medium · **CWE-347** (Improper Verification of Cryptographic Signature) / **CWE-94** (Code Injection)
+**Affected versions:** all releases up to and including **1.4.8**. **Fixed in 1.4.9 (1.4.x line) and 1.5.0 (1.5.x line).**
+**Advisory:** [GHSA-587j-4r3v-cm2c](https://github.com/jahlives/openssl_encrypt/security/advisories/GHSA-587j-4r3v-cm2c)
+
+**Summary:** the plugin loader's default signature policy was `warn`. A
+non-built-in plugin without a valid detached signature was imported and executed
+in the host process after passing only an AST-based denylist scan. That scan is a
+best-effort static filter, not a sandbox: it is bypassable through ordinary
+Python indirection (e.g. `getattr`, `__import__`, attribute chains built at
+runtime), so a plugin that avoided the literal denied names ran arbitrary code
+with the user's privileges.
+
+**Impact:** anyone able to place a `.py` file in a plugin directory the tool
+loads from — a shared/misconfigured plugin path, a malicious "plugin" shared with
+a victim, or any write access to the plugin search path — achieved arbitrary code
+execution in the context of the user running openssl-encrypt. No signature, and
+no correct password, was required. Built-in bundled plugins were never at issue
+(they ship with the package and carry a trust shortcut).
+
+**Fixed in 1.4.9 / 1.5.0:** the default signature policy is now `enforce`. A
+non-built-in plugin must carry a valid detached signature from an enrolled trust
+anchor (or the bundled project source-integrity anchor) or it is refused *before*
+its code is imported. Built-in bundled plugins keep their trust shortcut, so no
+shipped functionality changes. An unrecognized
+`OPENSSL_ENCRYPT_PLUGIN_SIGNATURE_POLICY` value now fails closed to `enforce`
+with a warning instead of silently weakening the policy. This complements
+ADVISORY 2026-03, which closed signature *verification* gaps but left the default
+policy permissive.
+
+**Mitigation:** upgrade to 1.4.9 or 1.5.0. Users who deliberately load unsigned
+third-party plugins can restore the previous behavior explicitly with
+`OPENSSL_ENCRYPT_PLUGIN_SIGNATURE_POLICY=warn` (or `off`), but should prefer
+signing their plugins and enrolling the signing key. On earlier versions, set the
+policy to `enforce` explicitly and do not load plugins from untrusted or
+writable directories.
+
+**Disclosure:** found during the internal multi-agent security scan
+(2026-07-24, gitlab#130); fixed before any third-party disclosure.
+**Credit:** internal security review.
+
 ### ADVISORY 2026-06: Pre-Authentication Memory-Exhaustion DoS via Unbounded Argon2 Cost in Identity-File Protection — Resolved
 
 **Severity:** Low · **CWE-400** (Uncontrolled Resource Consumption)

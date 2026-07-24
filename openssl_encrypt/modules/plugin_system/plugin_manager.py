@@ -114,14 +114,21 @@ class PluginManager:
         # manifest (scopes the sibling-import hook).
         self._verified_package_paths: Dict[str, Set[str]] = {}
 
-        # Signature-gated loading (#66). Default WARN (D1): unsigned/
-        # unverifiable non-built-in plugins still load, but a warning +
-        # security-log event is emitted; enforce refuses them, off disables
-        # the check. trusted_keys_dir defaults to the per-user store resolved
-        # lazily on first use.
+        # Signature-gated loading (#66; gitlab#130). Default ENFORCE: an
+        # unsigned/unverifiable non-built-in plugin is refused rather than
+        # exec'd in the host process behind the bypassable AST denylist; warn
+        # loads it with a warning + security-log event, off disables the check.
+        # Built-in bundled plugins keep their trust shortcut and are unaffected.
+        # trusted_keys_dir defaults to the per-user store resolved lazily on
+        # first use.
         from .plugin_signature import PluginSignaturePolicy
 
-        self.signature_policy = signature_policy or PluginSignaturePolicy.WARN
+        # Explicit None check (not truthiness): an explicit caller choice must
+        # never be silently overridden, and this stays correct even if a future
+        # PluginSignaturePolicy member were to have a falsy value (gitlab#130).
+        self.signature_policy = (
+            signature_policy if signature_policy is not None else PluginSignaturePolicy.ENFORCE
+        )
         self.trusted_keys_dir = trusted_keys_dir
         # D2: the bundled project source-integrity key is a default anchor so
         # officially distributed plugins verify without manual enrollment.

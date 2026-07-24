@@ -40,6 +40,7 @@ from openssl_encrypt.modules.plugin_system.plugin_sandbox import (
     PluginSandbox,
     SandboxViolationError,
 )
+from openssl_encrypt.modules.plugin_system.plugin_signature import PluginSignaturePolicy
 
 
 class TestSensitiveDataProtection(unittest.TestCase):
@@ -418,8 +419,13 @@ class TestResourceLimits(unittest.TestCase):
 
     def setUp(self):
         self.config_manager = PluginConfigManager()
+        # This suite exercises the execution-timeout limit on an unsigned test
+        # plugin; skip the signature gate (gitlab#130 ENFORCE default would
+        # otherwise refuse it before it ever runs).
         self.plugin_manager = PluginManager(
-            config_manager=self.config_manager, strict_security_mode=False
+            config_manager=self.config_manager,
+            strict_security_mode=False,
+            signature_policy=PluginSignaturePolicy.OFF,
         )
         self.plugin_manager.max_execution_time = 2.0  # 2 second timeout for testing
         self.temp_dir = tempfile.mkdtemp()
@@ -605,9 +611,7 @@ class TestResultValidation(unittest.TestCase):
 
     def test_sensitive_data_filtered_in_success_result(self):
         """success_result class method must also filter sensitive keys (M10)."""
-        result = PluginResult.success_result(
-            "test", data={"api_key": "abc123", "status": "ok"}
-        )
+        result = PluginResult.success_result("test", data={"api_key": "abc123", "status": "ok"})
         self.assertNotIn("api_key", result.data)
         self.assertEqual(result.data["status"], "ok")
 
@@ -675,8 +679,13 @@ class EvalPlugin(PreProcessorPlugin):
 
     def test_permissive_mode_allows_with_warning(self):
         """Verify permissive mode allows dangerous patterns with warning"""
+        # Signature policy OFF: this test isolates the permissive AST mode, not
+        # the signature gate (gitlab#130 ENFORCE default would otherwise refuse
+        # the unsigned eval plugin regardless of security mode).
         plugin_manager = PluginManager(
-            config_manager=self.config_manager, strict_security_mode=False  # PERMISSIVE
+            config_manager=self.config_manager,
+            strict_security_mode=False,  # PERMISSIVE
+            signature_policy=PluginSignaturePolicy.OFF,
         )
 
         plugin_path = self._create_eval_plugin()
@@ -716,7 +725,7 @@ class TestConfigDirectoryPermissions(unittest.TestCase):
         # Check permissions
         self.assertTrue(
             check_permissions(test_dir, PermissionLevel.OWNER_FULL),
-            "Expected OWNER_FULL permissions"
+            "Expected OWNER_FULL permissions",
         )
 
     def test_ensure_plugin_data_dir_with_subdir(self):
@@ -731,18 +740,22 @@ class TestConfigDirectoryPermissions(unittest.TestCase):
         # Check subdirectory permissions
         self.assertTrue(
             check_permissions(test_dir, PermissionLevel.OWNER_FULL),
-            "Expected OWNER_FULL permissions on subdir"
+            "Expected OWNER_FULL permissions on subdir",
         )
 
         # Check parent directory permissions too
         self.assertTrue(
             check_permissions(test_dir.parent, PermissionLevel.OWNER_FULL),
-            "Expected OWNER_FULL permissions on parent"
+            "Expected OWNER_FULL permissions on parent",
         )
 
     def test_ensure_plugin_data_dir_fixes_existing_permissions(self):
         """Verify existing directories have permissions corrected."""
-        from openssl_encrypt.modules.file_permissions import PermissionLevel, check_permissions, set_permissions
+        from openssl_encrypt.modules.file_permissions import (
+            PermissionLevel,
+            check_permissions,
+            set_permissions,
+        )
         from openssl_encrypt.modules.plugin_system.plugin_config import ensure_plugin_data_dir
 
         # First create with correct permissions
@@ -761,7 +774,7 @@ class TestConfigDirectoryPermissions(unittest.TestCase):
         # Check permissions were fixed
         self.assertTrue(
             check_permissions(test_dir, PermissionLevel.OWNER_FULL),
-            "Permissions should be corrected to OWNER_FULL"
+            "Permissions should be corrected to OWNER_FULL",
         )
 
     def test_plugin_load_fails_on_insecure_config_dir(self):
@@ -793,7 +806,12 @@ class TestPlugin(PreProcessorPlugin):
 
                 # Use temp config directory to avoid loading existing configs
                 config_manager = PluginConfigManager(config_dir)
-                plugin_manager = PluginManager(config_manager)
+                # Signature OFF: this test isolates the insecure-config-dir
+                # failure path, not the signature gate (gitlab#130 ENFORCE
+                # default would otherwise refuse the unsigned plugin first).
+                plugin_manager = PluginManager(
+                    config_manager, signature_policy=PluginSignaturePolicy.OFF
+                )
                 plugin_manager.add_plugin_directory(temp_dir)
 
                 # Mock ensure_plugin_data_dir to return None (permission failure)
@@ -819,7 +837,12 @@ class TestPackagePluginDiscovery(unittest.TestCase):
         self.test_dir = Path(tempfile.mkdtemp())
         self.config_dir = Path(tempfile.mkdtemp())
         self.config_manager = PluginConfigManager(str(self.config_dir))
-        self.plugin_manager = PluginManager(self.config_manager)
+        # Signature OFF: these tests isolate package-plugin discovery/loading,
+        # not the signature gate (gitlab#130 ENFORCE default would otherwise
+        # refuse the unsigned package plugins for lacking a manifest).
+        self.plugin_manager = PluginManager(
+            self.config_manager, signature_policy=PluginSignaturePolicy.OFF
+        )
         self.plugin_manager.add_plugin_directory(str(self.test_dir))
 
     def tearDown(self):

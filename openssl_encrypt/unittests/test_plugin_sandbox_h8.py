@@ -263,9 +263,17 @@ class TestWritablePluginLocationRejected(unittest.TestCase):
     def setUp(self):
         from openssl_encrypt.modules.plugin_system.plugin_config import PluginConfigManager
         from openssl_encrypt.modules.plugin_system.plugin_manager import PluginManager
+        from openssl_encrypt.modules.plugin_system.plugin_signature import (
+            PluginSignaturePolicy,
+        )
 
+        # This suite exercises the H8 writable-location check on unsigned test
+        # plugins, so skip the signature gate (gitlab#130 ENFORCE default would
+        # otherwise refuse them before the location check runs).
         self.manager = PluginManager(
-            config_manager=PluginConfigManager(), strict_security_mode=True
+            config_manager=PluginConfigManager(),
+            strict_security_mode=True,
+            signature_policy=PluginSignaturePolicy.OFF,
         )
         self.temp_dir = tempfile.mkdtemp()
         self.addCleanup(self._cleanup)
@@ -349,13 +357,9 @@ class TestWindowsPluginLocationAcl(unittest.TestCase):
         dacl = win32security.ACL()
         for sid, mask in entries:
             dacl.AddAccessAllowedAce(win32security.ACL_REVISION, mask, sid)
-        sd = win32security.GetFileSecurity(
-            self.path, win32security.DACL_SECURITY_INFORMATION
-        )
+        sd = win32security.GetFileSecurity(self.path, win32security.DACL_SECURITY_INFORMATION)
         sd.SetSecurityDescriptorDacl(1, dacl, 0)
-        win32security.SetFileSecurity(
-            self.path, win32security.DACL_SECURITY_INFORMATION, sd
-        )
+        win32security.SetFileSecurity(self.path, win32security.DACL_SECURITY_INFORMATION, sd)
 
     def _reason(self):
         # Check the file alone (the directory carries unrelated inherited ACEs).
@@ -383,9 +387,7 @@ class TestWindowsPluginLocationAcl(unittest.TestCase):
         import ntsecuritycon
         import win32security
 
-        auth_users = win32security.CreateWellKnownSid(
-            win32security.WinAuthenticatedUserSid
-        )
+        auth_users = win32security.CreateWellKnownSid(win32security.WinAuthenticatedUserSid)
         self._set_dacl(
             [
                 (self._current_user_sid(), self._all_access()),
@@ -398,9 +400,7 @@ class TestWindowsPluginLocationAcl(unittest.TestCase):
         import ntsecuritycon
         import win32security
 
-        admins = win32security.CreateWellKnownSid(
-            win32security.WinBuiltinAdministratorsSid
-        )
+        admins = win32security.CreateWellKnownSid(win32security.WinBuiltinAdministratorsSid)
         self._set_dacl(
             [
                 (self._current_user_sid(), self._all_access()),

@@ -22,6 +22,7 @@ import unittest
 
 from openssl_encrypt.modules.plugin_system import PluginManager
 from openssl_encrypt.modules.plugin_system.plugin_config import PluginConfigManager
+from openssl_encrypt.modules.plugin_system.plugin_signature import PluginSignaturePolicy
 
 BENIGN_PLUGIN = """
 from openssl_encrypt.modules.plugin_system import (
@@ -53,9 +54,15 @@ class ReadOnceTestPlugin(PreProcessorPlugin):
 class TestM1ReadOnceBinding(unittest.TestCase):
     def setUp(self):
         self.config_manager = PluginConfigManager()
+        # This suite exercises the read-once/hash-pin binding that the signature
+        # check performs, so the check must RUN — but on unsigned test plugins.
+        # Use WARN (the old default) so the check runs and the plugin still
+        # loads; ENFORCE (the new default, gitlab#130) would refuse the unsigned
+        # plugin before the binding is exercised.
         self.plugin_manager = PluginManager(
             config_manager=self.config_manager,
             strict_security_mode=True,
+            signature_policy=PluginSignaturePolicy.WARN,
         )
         self.temp_dir = tempfile.mkdtemp()
         os.chmod(self.temp_dir, 0o700)  # owner-only, so H8 does not reject

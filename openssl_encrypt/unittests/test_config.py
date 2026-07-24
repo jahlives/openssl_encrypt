@@ -27,6 +27,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from openssl_encrypt.modules.keystore_cli import KeystoreSecurityLevel, PQCKeystore
+from openssl_encrypt.modules.plugin_system.plugin_signature import PluginSignaturePolicy
 
 # Import PQC modules if available
 try:
@@ -109,7 +110,9 @@ class TestDefaultConfiguration(unittest.TestCase):
 
         # Check that default KDF configurations are applied
         kdf_config = inner_metadata["derivation_config"]["kdf_config"]
-        self.assertFalse(kdf_config.get("scrypt", {}).get("enabled", False), "Default should disable Scrypt")
+        self.assertFalse(
+            kdf_config.get("scrypt", {}).get("enabled", False), "Default should disable Scrypt"
+        )
         self.assertTrue(kdf_config["argon2"]["enabled"], "Default should enable Argon2")
         self.assertEqual(
             kdf_config["argon2"]["rounds"], 10, "Default should include 10 Argon2 rounds"
@@ -527,7 +530,11 @@ class SimpleTestPlugin(PreProcessorPlugin):
             self.test_create_simple_test_plugin()
 
             config_manager = PluginConfigManager(self.config_dir)
-            plugin_manager = PluginManager(config_manager)
+            # Signature OFF: this test exercises load+execute of an unsigned
+            # test plugin, not the signature gate (gitlab#130 ENFORCE default).
+            plugin_manager = PluginManager(
+                config_manager, signature_policy=PluginSignaturePolicy.OFF
+            )
             plugin_manager.add_plugin_directory(self.plugin_dir)
 
             discovered = plugin_manager.discover_plugins()
@@ -575,7 +582,11 @@ class SimpleTestPlugin(PreProcessorPlugin):
             self.test_create_simple_test_plugin()
 
             config_manager = PluginConfigManager(self.config_dir)
-            plugin_manager = PluginManager(config_manager)
+            # Signature OFF: this test exercises capability validation on an
+            # unsigned test plugin, not the signature gate (gitlab#130).
+            plugin_manager = PluginManager(
+                config_manager, signature_policy=PluginSignaturePolicy.OFF
+            )
             plugin_manager.add_plugin_directory(self.plugin_dir)
 
             discovered = plugin_manager.discover_plugins()
@@ -630,16 +641,16 @@ class SimpleTestPlugin(PreProcessorPlugin):
     def test_plugin_sandbox_execution_timeout(self):
         """Test plugin sandbox timeout functionality."""
         try:
+            # Create a standalone slow plugin module in a temp file so the AST
+            # analyzer only sees clean code (no blocked imports from test_config.py).
+            import importlib.util
+            import tempfile
+
             from ..modules.plugin_system import (
                 PluginCapability,
                 PluginSandbox,
                 PluginSecurityContext,
             )
-
-            # Create a standalone slow plugin module in a temp file so the AST
-            # analyzer only sees clean code (no blocked imports from test_config.py).
-            import importlib.util
-            import tempfile
 
             slow_plugin_source = textwrap.dedent("""\
                 import time
@@ -692,8 +703,7 @@ class SimpleTestPlugin(PreProcessorPlugin):
                 # Should fail due to timeout or process crash
                 self.assertFalse(result.success)
                 self.assertTrue(
-                    "timed out" in result.message.lower()
-                    or "process" in result.message.lower(),
+                    "timed out" in result.message.lower() or "process" in result.message.lower(),
                     f"Expected timeout or process failure, got: {result.message}",
                 )
             finally:
@@ -712,7 +722,11 @@ class SimpleTestPlugin(PreProcessorPlugin):
             self.test_create_simple_test_plugin()
 
             config_manager = PluginConfigManager(self.config_dir)
-            plugin_manager = PluginManager(config_manager)
+            # Signature OFF: this test exercises enable/disable on an unsigned
+            # test plugin, not the signature gate (gitlab#130).
+            plugin_manager = PluginManager(
+                config_manager, signature_policy=PluginSignaturePolicy.OFF
+            )
             plugin_manager.add_plugin_directory(self.plugin_dir)
 
             discovered = plugin_manager.discover_plugins()
@@ -751,7 +765,11 @@ class SimpleTestPlugin(PreProcessorPlugin):
             )
 
             config_manager = PluginConfigManager(self.config_dir)
-            plugin_manager = PluginManager(config_manager)
+            # Signature OFF: this test exercises audit logging around loading an
+            # unsigned test plugin, not the signature gate (gitlab#130).
+            plugin_manager = PluginManager(
+                config_manager, signature_policy=PluginSignaturePolicy.OFF
+            )
 
             # Clear audit log
             plugin_manager.clear_audit_log()
@@ -1055,7 +1073,9 @@ class TestPluginIntegration(unittest.TestCase):
             self.assertTrue(os.path.exists(backup_path))
 
             # Verify backup content matches original
-            with open(self.text_file, "r", encoding="utf-8") as original, open(backup_path, "r", encoding="utf-8") as backup:
+            with open(self.text_file, "r", encoding="utf-8") as original, open(
+                backup_path, "r", encoding="utf-8"
+            ) as backup:
                 self.assertEqual(original.read(), backup.read())
 
             # Test backup verification
