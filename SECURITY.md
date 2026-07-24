@@ -228,6 +228,56 @@ relevant.
 
 ## Security Advisories
 
+### ADVISORY 2026-05: Pre-Authentication Memory-Exhaustion DoS via Unbounded KDF Cost Parameters — Resolved
+
+**Severity:** Medium · **CWE-400** (Uncontrolled Resource Consumption)
+**Affected versions:** all releases up to and including **1.4.8**. **Fixed in 1.4.9 (1.4.x line) and 1.5.0 (1.5.x line).**
+**Advisory:** [GHSA-7894-5gw8-69hr](https://github.com/jahlives/openssl_encrypt/security/advisories/GHSA-7894-5gw8-69hr)
+
+**Summary:** the memory-hard KDF cost parameters read from an encrypted file's
+metadata — Argon2 `memory_cost`, scrypt `N`, and balloon `space_cost` — and the
+equivalent parameters in a keystore's plaintext header were passed to the
+key-derivation function with no upper bound, and *before* the file's
+authentication tag was verified. For scrypt the library's own `maxmem` guard was
+computed from the attacker-supplied `N` (`maxmem = 2 * 128 * N * r * p`), so it
+could never reject a hostile cost. The pre-existing decryption cost *estimate*
+was advisory only (it printed a warning and paused two seconds, then proceeded),
+was skipped under `--quiet`/`--no-estimate`, did not cover the keystore path, and
+under-reported scrypt memory as zero.
+
+**Impact:** an attacker who could get a victim to run any key-derivation
+operation on a crafted file — decrypting it, rekeying it, adding/removing a
+recovery slot, asymmetrically decrypting it with `--no-verify`, or loading a
+tampered/delivered keystore — could force a multi-gigabyte to multi-terabyte
+memory allocation, OOM-crashing the process or host. No correct password was
+required — key derivation runs before authentication — so the denial of service
+is triggered by the mere act of processing the file. Especially relevant to any
+automated/unattended context that handles untrusted files.
+
+**Fixed in 1.4.9 / 1.5.0:** decryption now estimates peak memory from the
+metadata *before* any KDF runs and refuses when it exceeds a hard **8 GiB**
+safety ceiling (four times the largest built-in preset of 2 GiB, so no
+legitimately written file is affected). The refusal is escapable per file — a
+user may still choose an expensive configuration for their own files — via the
+new `--allow-high-kdf-cost` flag or an interactive confirmation, but the guard is
+**not** suppressed by `--quiet`/`--no-estimate`, so unattended operations stay
+protected. The same ceiling is enforced on every key-derivation entry point that
+consumes untrusted metadata — the standard and streaming decrypt path, the
+envelope rekey fast-path, recovery-slot add/remove, asymmetric (`--no-verify`)
+decrypt, and the PQC keystore header — and the scrypt memory estimate (previously
+reported as zero) is corrected so a high-`N` file cannot slip past the ceiling.
+CPU/time cost stays advisory — only memory, which OOM-kills uninterruptibly, is
+hard-guarded.
+
+**Mitigation:** upgrade to 1.4.9 or 1.5.0. Before upgrading, do not decrypt files
+or load keystores from untrusted sources unattended; the printed cost estimate
+gives an interactive operator a chance to cancel, but offers no protection to a
+non-interactive/`--quiet` invocation.
+
+**Disclosure:** found during internal review (multi-agent security scan,
+2026-07-24, gitlab#128); fixed before any third-party disclosure.
+**Credit:** internal security review.
+
 ### ADVISORY 2026-04: Cleartext Secret Material in Diagnostic and Debug Output — Resolved
 
 **Severity:** Medium · **CWE-532** (Insertion of Sensitive Information into Log File)

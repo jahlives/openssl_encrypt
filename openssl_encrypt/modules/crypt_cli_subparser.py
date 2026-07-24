@@ -916,6 +916,13 @@ def setup_decrypt_parser(subparser):
         action="store_true",
         help="Suppress decryption time/memory estimation display (useful when you trust the file)",
     )
+    subparser.add_argument(
+        "--allow-high-kdf-cost",
+        action="store_true",
+        help="Permit decryption even when the file's key-derivation parameters "
+        "would exceed the memory safety ceiling (a crafted file can otherwise "
+        "OOM the host). Only use for files you trust.",
+    )
 
     # PQC options for decryption
     pqc_group = subparser.add_argument_group("Post-Quantum Cryptography options")
@@ -1414,6 +1421,13 @@ def setup_rekey_parser(subparser):
         "--no-estimate",
         action="store_true",
         help="Suppress decryption time/memory estimation display",
+    )
+    subparser.add_argument(
+        "--allow-high-kdf-cost",
+        action="store_true",
+        help="Permit decryption even when the file's key-derivation parameters "
+        "would exceed the memory safety ceiling (a crafted file can otherwise "
+        "OOM the host). Only use for files you trust.",
     )
 
     # HSM plugin arguments
@@ -2022,6 +2036,12 @@ def setup_add_recovery_parser(subparser):
     subparser.add_argument(
         "--shares-dir", default=".", help="Directory for generated Shamir share files"
     )
+    subparser.add_argument(
+        "--allow-high-kdf-cost",
+        action="store_true",
+        help="Permit unlocking even when the file's key-derivation parameters "
+        "would exceed the memory safety ceiling (only for files you trust).",
+    )
     subparser.add_argument("-q", "--quiet", action="store_true", help="Suppress output")
 
 
@@ -2033,6 +2053,12 @@ def setup_remove_recovery_parser(subparser):
     subparser.add_argument("-p", "--password", help="Password to unlock the file")
     subparser.add_argument(
         "--recovery-code", help="Recovery code to unlock the file (instead of --password)"
+    )
+    subparser.add_argument(
+        "--allow-high-kdf-cost",
+        action="store_true",
+        help="Permit unlocking even when the file's key-derivation parameters "
+        "would exceed the memory safety ceiling (only for files you trust).",
     )
     subparser.add_argument("-q", "--quiet", action="store_true", help="Suppress output")
 
