@@ -245,6 +245,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Internal
 
+- **Desktop GUI widget tests: corrected button finders**: the Rekey and Secure
+  Shred screen tests looked their action button up with
+  `find.widgetWithText(ElevatedButton, ...)`, but both buttons are built with
+  `ElevatedButton.icon`, whose runtime type is the private
+  `_ElevatedButtonWithIcon` subclass. `find.byType` compares `runtimeType`
+  exactly and does no subtype test, so those finders matched nothing and the
+  tests could never pass. They now match on `find.bySubtype<ElevatedButton>()`.
+  The Rekey tap test additionally calls `ensureVisible()` first — the button
+  sits below the fold of the 800x600 test viewport, so the tap previously
+  missed silently.
+
 - **Completed plan documents removed from `docs/`** (plan-tracker
   verification 2026-07-13, mirroring the 1.5.x cleanup):
   `FORMAT_V14_PLAN.md`, `FORMAT_V14_IMPLEMENTATION_PLAN.md`,

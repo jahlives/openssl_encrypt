@@ -18,10 +18,18 @@ void main() {
     expect(find.text('Add files'), findsOneWidget);
     expect(find.text('Overwrite passes:'), findsOneWidget);
 
-    // The SHRED button exists but is disabled until at least one path is added.
-    final shredButton = tester.widget<ElevatedButton>(
-      find.widgetWithText(ElevatedButton, 'SHRED'),
+    // The button is built with ElevatedButton.icon, whose runtime type is the
+    // private _ElevatedButtonWithIcon subclass. find.byType (and therefore
+    // find.widgetWithText) compares runtimeType exactly and would never match
+    // it, so match on the subtype instead.
+    final shredFinder = find.ancestor(
+      of: find.text('SHRED'),
+      matching: find.bySubtype<ElevatedButton>(),
     );
+    expect(shredFinder, findsOneWidget);
+
+    // The SHRED button exists but is disabled until at least one path is added.
+    final shredButton = tester.widget<ElevatedButton>(shredFinder);
     expect(shredButton.onPressed, isNull);
   });
 }
