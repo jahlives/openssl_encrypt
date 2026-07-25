@@ -296,9 +296,19 @@ an absent one.
 
 Every remaining plan item is blocked on a CLI change, all filed:
 gitlab#152 (P15), #154 (P18), #159 (P25), #162 (P30/P33/P34-state),
-#163/#164 (P27-P29), #166 (P31/P34-opt-out). Genuinely buildable without any of
-them: **P24** (steganography into the batch tab) and **P32 read-only**
-(`template list`/`compare` both have `--format json`).
+#163/#164 (P27-P29), #166 (P31/P34-opt-out). **Nothing is buildable without a CLI change.** P24 and P32 were the last two
+candidates and both turned out to be blocked (gitlab#167):
+
+- **P32** — `template list`/`compare` accept `--format json` and never read it
+  (0 references to `args.format` in either handler); they emit human text
+  unconditionally. `template` is also dispatched with an unconditional
+  `sys.exit(0)`, so failures are invisible. Third accepted-then-discarded flag
+  in this plan, after `--hsm-piv-slot` and the analyse/telemetry defects.
+- **P24** — the GUI already emits `--no-video-temporal-spread`, which does not
+  exist (the CLI has `--video-temporal-spread`), so steganography with that
+  option off fails outright today. Separately, steganography hides a payload
+  inside a *carrier image*, so a batch of N files needs a carrier-to-file
+  mapping that the batch tab has no concept of — a design decision, not wiring.
 
 Eleven security reviews ran across this session and every one found something
 that would otherwise have shipped, including three cases where the defect was
