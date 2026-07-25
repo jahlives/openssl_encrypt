@@ -174,7 +174,9 @@ class _MainScreenState extends State<MainScreen> {
 
   @override
   void dispose() {
-    _hideDebugWindow(); // Clean up debug overlay if shown
+    // Only release the overlay entry here. Going through _hideDebugWindow()
+    // would call setState() on an already-defunct element (gitlab#143).
+    _removeDebugOverlay();
     super.dispose();
   }
 
@@ -406,9 +408,16 @@ class _MainScreenState extends State<MainScreen> {
     });
   }
 
-  void _hideDebugWindow() {
+  /// Detach the debug overlay without touching widget state.
+  ///
+  /// Safe to call from dispose(), unlike [_hideDebugWindow].
+  void _removeDebugOverlay() {
     _debugOverlayEntry?.remove();
     _debugOverlayEntry = null;
+  }
+
+  void _hideDebugWindow() {
+    _removeDebugOverlay();
     setState(() {
       _debugWindowVisible = false;
     });

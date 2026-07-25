@@ -56,6 +56,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   warning; identity lists are de-duplicated and empty names skipped so a
   duplicate/blank identity name can no longer crash the tab.
 
+### Fixed
+
+- **Desktop GUI: main screen no longer asserts on teardown** (gitlab#143 /
+  github#61): `_MainScreenState.dispose()` cleaned up the debug overlay through
+  `_hideDebugWindow()`, which calls `setState()` — but by the time `dispose()`
+  runs the element is already defunct, so Flutter's
+  `_lifecycleState != _ElementLifecycle.defunct` assertion fired on every
+  shutdown of the main screen in debug builds (in release builds assertions are
+  compiled out, but marking a defunct element as needing rebuild is still
+  wrong). `dispose()` now detaches the overlay entry through a new
+  `_removeDebugOverlay()` helper that touches no widget state; the interactive
+  hide path keeps its `setState()`. Covered by a teardown regression test.
+
 ### Security
 
 - **Plugin sandbox no longer authorizes sibling directories via a bare path
