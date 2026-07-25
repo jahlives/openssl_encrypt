@@ -29,9 +29,12 @@ import os
 import re
 import threading
 import time
+from collections import OrderedDict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
+
+from .debug_redaction import secret_fingerprint
 
 logger = logging.getLogger(__name__)
 
@@ -42,9 +45,64 @@ _SECRET_TOKEN_RE = re.compile(r"[A-Za-z0-9+_=]{32,}")
 
 # Environment variables known to carry secrets; a logged value equal to one of
 # these is redacted even if it is short/low-entropy (e.g. a plain password).
-_SECRET_ENV_VARS = ("CRYPT_PASSWORD", "OPENSSL_ENCRYPT_PASSWORD")
+_SECRET_ENV_VARS = (
+    "CRYPT_PASSWORD",
+    "OPENSSL_ENCRYPT_PASSWORD",
+    "OPENSSL_ENCRYPT_REKEY_PASSWORD",
+    "OPENSSL_ENCRYPT_RECOVERY_CODE",
+    "OPENSSL_ENCRYPT_RECOVERY_PASSPHRASE",
+    "OPENSSL_ENCRYPT_ADD_RECOVERY_PASSPHRASE",
+)
 
 _REDACTED = "***REDACTED***"
+
+# Secrets that recovery_slots._consume_env read out of the environment and
+# removed. _value_looks_secret resolves _SECRET_ENV_VARS against the LIVE
+# environment, so once a variable is consumed that comparison can never match
+# again — these fingerprints keep redaction working afterwards. The claim is
+# scoped to that helper: other call sites delete their env vars without
+# registering, and are unaffected either way.
+#
+# The fingerprint is HMAC-keyed with debug_redaction's ephemeral per-process key,
+# NOT a plain digest: an unkeyed hash of a live secret, retained for the process
+# lifetime, would be an offline dictionary-confirmation oracle for anyone who
+# read the registry — exactly what debug_redaction's module docstring forbids.
+# Only intra-process equality is needed, so a keyed value is equivalent. (The key
+# is co-resident, so this does not defend against a full core dump, which would
+# yield the secret anyway; it defends against registry-only disclosure.)
+#
+# Keyed by variable name with a small ring per name, so a long-lived process
+# cannot grow the store without bound AND one variable's churn can never evict
+# another variable's still-live secret — eviction there would silently fail open,
+# since the entropy heuristic below does not catch short low-entropy passwords.
+_CONSUMED_SECRET_CAP_PER_NAME = 4
+_CONSUMED_SECRET_NAME_CAP = 8
+_consumed_secret_fingerprints = OrderedDict()
+_consumed_secret_lock = threading.Lock()
+
+
+def register_consumed_secret(name: str, value: str) -> None:
+    """Remember a secret removed from the environment so logs still redact it.
+
+    Args:
+        name: Environment variable the value came from, used to bound eviction
+            per variable.
+        value: The secret value that was consumed. Empty values are ignored.
+    """
+    if not value:
+        return
+    fp = secret_fingerprint(value.encode("utf-8", "surrogateescape"))
+    with _consumed_secret_lock:
+        ring = _consumed_secret_fingerprints.get(name)
+        if ring is None:
+            ring = OrderedDict()
+            _consumed_secret_fingerprints[name] = ring
+            while len(_consumed_secret_fingerprints) > _CONSUMED_SECRET_NAME_CAP:
+                _consumed_secret_fingerprints.popitem(last=False)
+        ring.pop(fp, None)
+        ring[fp] = True
+        while len(ring) > _CONSUMED_SECRET_CAP_PER_NAME:
+            ring.popitem(last=False)
 
 
 def _shannon_entropy(s: str) -> float:
@@ -64,6 +122,19 @@ def _value_looks_secret(value: str) -> bool:
         env_val = os.environ.get(var)
         if env_val and value == env_val:
             return True
+    # Secrets already consumed out of the environment are matched by keyed
+    # fingerprint, since the loop above can no longer see them. The emptiness
+    # check short-circuits the HMAC and the lock on the common path, so routine
+    # logging does not serialize on it.
+    if value and _consumed_secret_fingerprints:
+        fp = secret_fingerprint(value.encode("utf-8", "surrogateescape"))
+        with _consumed_secret_lock:
+            for ring in _consumed_secret_fingerprints.values():
+                if fp in ring:
+                    # Refresh on match, making eviction LRU rather than FIFO so
+                    # a frequently redacted secret does not age out while live.
+                    ring.move_to_end(fp)
+                    return True
     # A long token-charset run is only treated as secret if it is actually
     # high-entropy, so long low-entropy values (e.g. "x" * 500) are truncated,
     # not redacted.

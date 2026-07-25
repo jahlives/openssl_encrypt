@@ -26,14 +26,40 @@ import base64
 import hashlib
 import hmac
 import json
+import os
 import secrets
 from typing import List
 
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
+from .crypt_utils import eprint
 from .secure_memory import secure_memzero
 from .secure_ops import constant_time_compare
+from .security_logger import register_consumed_secret
+
+# Environment variables carrying recovery credentials for non-interactive
+# callers (the desktop GUI). Each is consumed on read, so the credential is not
+# on the process list and is not inherited by a child process spawned later.
+# (Spawns reachable from these paths do sanitize their env; unsanitized ones do
+# exist in the tree — e.g. crypt_cli.py:1306 and :1516 pass no env= — so the
+# guarantee rests on consumption here rather than on every caller behaving.)
+#
+# Scope of that protection: del os.environ[...] calls unsetenv(), which drops the
+# pointer from environ[] but does NOT scrub the exec-time copy of the string that
+# /proc/self/environ exposes. A value set by our parent therefore stays readable
+# there for this process's lifetime. That file is 0400 and gated by
+# PTRACE_MODE_READ_FSCREDS (same uid or root), whereas /proc/PID/cmdline is
+# world-readable — so this converts a cross-user leak into a same-user residual.
+# It protects the credential from other local users, not from a compromised
+# session of the user's own.
+#
+# The values are also registered with security_logger.register_consumed_secret()
+# on read: _value_looks_secret resolves _SECRET_ENV_VARS against the live
+# environment, which cannot match once the variable has been consumed.
+RECOVERY_CODE_ENV = "OPENSSL_ENCRYPT_RECOVERY_CODE"
+RECOVERY_PASSPHRASE_ENV = "OPENSSL_ENCRYPT_RECOVERY_PASSPHRASE"
+ADD_RECOVERY_PASSPHRASE_ENV = "OPENSSL_ENCRYPT_ADD_RECOVERY_PASSPHRASE"
 
 # The recovery-credential types a slot may use to wrap the DEK.
 SLOT_TYPES = {"recovery_code", "passphrase", "pqc"}
@@ -273,7 +299,13 @@ def _passphrase_kek(passphrase: bytes, salt: bytes, time_cost, memory_cost, para
 
     _validate_argon2_params(time_cost, memory_cost, parallelism)
     if isinstance(passphrase, str):
-        passphrase = passphrase.encode("utf-8")
+        # surrogateescape, not strict: os.environ decodes with surrogateescape,
+        # so an env-supplied passphrase containing non-UTF-8 bytes arrives with
+        # lone surrogates. A strict encode would raise UnicodeEncodeError, whose
+        # message embeds one byte of the passphrase and its offset and is printed
+        # verbatim by the generic CLI handler — outside debug_secret(). Identical
+        # bytes for any surrogate-free string, so no existing slot's KEK changes.
+        passphrase = passphrase.encode("utf-8", "surrogateescape")
     return argon2.low_level.hash_secret_raw(
         secret=bytes(passphrase),
         salt=bytes(salt),
@@ -527,27 +559,200 @@ def build_recovery_slots(dek: bytes, credentials: List[dict]) -> List[dict]:
 # reserved for piped data), matching secret_sharing's CLI convention.
 
 
-def _read_password(args, prompt="Password: "):
-    """Resolve a password from --password, $CRYPT_PASSWORD, or a prompt."""
+def _consume_env(name):
+    """Read a secret-bearing env var and remove it from the environment.
+
+    Removing it immediately keeps the credential out of the environment of any
+    process spawned later, mirroring the OPENSSL_ENCRYPT_REKEY_PASSWORD
+    handling in crypt_cli.
+
+    The None/"" distinction is load-bearing: callers rely on it to tell "not
+    supplied" from "supplied blank" and fail fast on the latter, rather than
+    dropping into a getpass() that a GUI subprocess could never answer. Do not
+    collapse the two.
+
+    See the module-level note on the /proc/self/environ residual, which this
+    does not remove.
+
+    Args:
+        name: Environment variable to read.
+
+    Returns:
+        The value — possibly the empty string when the variable is present but
+        empty — or None only when the variable is absent.
+    """
+    if name not in os.environ:
+        return None
+    value = os.environ.get(name)
+    # Register before deleting: in between, the value would match neither the
+    # live-environment check nor the fingerprint registry, so a concurrent
+    # log_event from another thread could write it unredacted.
+    register_consumed_secret(name, value)
+    try:
+        del os.environ[name]
+    except KeyError:  # pragma: no cover - concurrent unset
+        pass
+    return value
+
+
+def _consume_recovery_env():
+    """Consume every credential-bearing env var this module reads.
+
+    Called first in each handler, before any validation that can raise:
+    consumption must not depend on which branch runs or on validation
+    succeeding, or an early error would strand the remaining credentials in the
+    environment for a later child process to inherit.
+
+    Returns:
+        Dict of consumed values keyed 'code', 'passphrase', 'add_passphrase'
+        and 'password'. Each is the value, "" if set-but-empty, or None if the
+        variable was absent.
+    """
+    return {
+        "code": _consume_env(RECOVERY_CODE_ENV),
+        "passphrase": _consume_env(RECOVERY_PASSPHRASE_ENV),
+        "add_passphrase": _consume_env(ADD_RECOVERY_PASSPHRASE_ENV),
+        "password": _consume_env("CRYPT_PASSWORD"),
+    }
+
+
+def _read_password(args, env_pw, prompt="Password: "):
+    """Resolve a password from --password, an already-consumed env value, or a prompt.
+
+    Args:
+        args: Parsed CLI namespace.
+        env_pw: Value already consumed from $CRYPT_PASSWORD by
+            _consume_recovery_env, or None if it was absent.
+        prompt: Prompt text used when neither source supplied one.
+
+    Returns:
+        The password as bytes.
+    """
     import getpass
-    import os
 
     pw = getattr(args, "password", None)
-    if pw is None:
-        pw = os.environ.get("CRYPT_PASSWORD")
+    if pw is None and env_pw:
+        # An empty CRYPT_PASSWORD keeps its long-standing meaning of "not
+        # supplied" here; only the new recovery channels treat blank as an error.
+        pw = env_pw
     if pw is None:
         pw = getpass.getpass(prompt)
-    return pw.encode("utf-8") if isinstance(pw, str) else pw
+    # surrogateescape round-trips bytes that os.environ decoded the same way, so
+    # a non-UTF-8 password neither crashes nor echoes its bytes in the traceback.
+    return pw.encode("utf-8", "surrogateescape") if isinstance(pw, str) else pw
+
+
+def _read_recovery_code(args, env_code):
+    """Resolve an existing recovery code from --recovery-code or the env value.
+
+    Pure resolution over an already-consumed value: it may raise, so it must run
+    after _consume_recovery_env has emptied every variable, never before.
+
+    The flag takes precedence but warns: a recovery credential on argv is
+    visible in the world-readable /proc/PID/cmdline. The warning is deliberately
+    not silenced by --quiet, matching the --rekey-password warning.
+
+    Args:
+        args: Parsed CLI namespace.
+        env_code: Value already consumed from the env var, "" if it was set but
+            empty, or None if it was absent.
+
+    Returns:
+        The recovery code, or None if neither source supplied one.
+
+    Raises:
+        ValueError: If the env var was set but empty and no flag was given.
+    """
+    flag_code = getattr(args, "recovery_code", None)
+    if flag_code:
+        eprint(
+            "WARNING: --recovery-code is visible in process list. "
+            f"Use the {RECOVERY_CODE_ENV} env var instead."
+        )
+        return flag_code
+    if env_code == "":
+        # Set but empty: fail fast rather than fall through to a password
+        # prompt no GUI subprocess can answer.
+        raise ValueError(f"${RECOVERY_CODE_ENV} is set but empty")
+    return env_code
+
+
+def _read_recovery_passphrase(env_name, env_value, prompt):
+    """Resolve a recovery passphrase from its env var, else prompt for it.
+
+    Only called once the caller has explicitly selected the passphrase path via
+    its flag; the env var supplies the value, it never selects the path.
+
+    Args:
+        env_name: Environment variable the value came from (for messages).
+        env_value: Already-consumed value, or None if the variable was absent.
+        prompt: Prompt text used when the env var was absent.
+
+    Returns:
+        The passphrase as a str.
+
+    Raises:
+        ValueError: If the passphrase is blank, from either source.
+    """
+    import getpass
+
+    if env_value is not None:
+        validated = _validated_passphrase(env_value, f"${env_name}")
+        eprint(f"Using recovery passphrase from ${env_name}.")
+        return validated
+    return _validated_passphrase(getpass.getpass(prompt), "interactive prompt")
+
+
+def _validated_passphrase(value, source):
+    """Reject a blank/whitespace-only recovery passphrase, whatever its source.
+
+    A recovery slot is an *additional* wrapping of the same DEK, so the file's
+    confidentiality is that of its weakest slot: a blank-passphrase slot is
+    equivalent to publishing the file, and nothing downstream rejects one
+    (_passphrase_kek feeds the value straight to Argon2id).
+
+    The value is validated but deliberately NOT modified. Stripping here while
+    the interactive path stores the raw input would wrap a slot under one string
+    and later look it up under another, leaving it permanently unopenable
+    through the other channel — an availability failure with no fallback,
+    precisely when the primary password is already gone.
+
+    Args:
+        value: The candidate passphrase.
+        source: Human-readable origin, used in the error message.
+
+    Returns:
+        The passphrase, unmodified.
+
+    Raises:
+        ValueError: If it is empty or whitespace-only.
+    """
+    if not value or not value.strip():
+        raise ValueError(f"Recovery passphrase ({source}) is empty or whitespace-only")
+    return value
 
 
 def _recover_kwargs_from_args(args):
-    """Build decrypt/unlock recovery kwargs from CLI args (one credential)."""
-    if getattr(args, "recovery_code", None):
-        return {"recovery_code": args.recovery_code}
-    if getattr(args, "recovery_passphrase", False):
-        import getpass
+    """Build decrypt/unlock recovery kwargs from CLI args (one credential).
 
-        return {"recovery_passphrase": getpass.getpass("Recovery passphrase: ")}
+    Every credential env var is consumed before anything that can raise, so no
+    branch and no early error leaves one behind. `recover` itself uses neither
+    the add-passphrase value nor the password, but both are consumed anyway.
+    """
+    env = _consume_recovery_env()
+    code = _read_recovery_code(args, env["code"])
+    env_phrase = env["passphrase"]
+    if code:
+        return {"recovery_code": code}
+    # The flag selects the passphrase path; the env var only supplies the value.
+    # Letting the environment alone select it would let a planted variable steer
+    # the credential type behind the user's back.
+    if getattr(args, "recovery_passphrase", False):
+        return {
+            "recovery_passphrase": _read_recovery_passphrase(
+                RECOVERY_PASSPHRASE_ENV, env_phrase, "Recovery passphrase: "
+            )
+        }
     return {}
 
 
@@ -576,8 +781,9 @@ def recover_cli(args) -> None:
     kwargs = _recover_kwargs_from_args(args)
     if not kwargs:
         raise ValueError(
-            "Provide a recovery credential: --recovery-code, "
-            "--recovery-passphrase, or --recovery-share"
+            "Provide a recovery credential: --recovery-code (or "
+            f"${RECOVERY_CODE_ENV}), or --recovery-passphrase (value optionally "
+            f"via ${RECOVERY_PASSPHRASE_ENV})"
         )
     decrypt_file(
         input_file=args.input,
@@ -599,26 +805,57 @@ def add_recovery_cli(args) -> None:
     from .crypt_core import add_recovery_slots
     from .crypt_utils import eprint
 
+    add_code = getattr(args, "add_code", False)
+    add_passphrase = getattr(args, "add_passphrase", False)
+
+    # Consume every credential env var first, before any check that can raise,
+    # so no branch and no early error leaves one behind for a later child.
+    env = _consume_recovery_env()
+    env_phrase = env["add_passphrase"]
+
+    # Validate the selector BEFORE acquiring the unlock credential: otherwise a
+    # bare `add-recovery -i f -o g` blocks on a getpass() prompt (indefinitely,
+    # for a GUI subprocess) only to fail with a usage error afterwards.
+    if add_code and add_passphrase:
+        raise ValueError("Specify only one of --add-code or --add-passphrase")
+    if not add_code and not add_passphrase:
+        raise ValueError("Specify --add-code or --add-passphrase")
+
+    existing_code = _read_recovery_code(args, env["code"])
+
     # How to unlock the existing file (to recover the DEK).
     unlock = {}
-    if getattr(args, "recovery_code", None):
-        unlock["recovery_code"] = args.recovery_code
+    if existing_code:
+        unlock["recovery_code"] = existing_code
     else:
-        unlock["password"] = _read_password(args)
+        unlock["password"] = _read_password(args, env["password"])
 
     creds = []
     generated_code = None
-    if getattr(args, "add_code", False):
+    if add_code:
         generated_code = generate_recovery_code()
         creds.append({"type": "recovery_code", "code": generated_code})
-    elif getattr(args, "add_passphrase", False):
-        p1 = getpass.getpass("New recovery passphrase: ")
-        p2 = getpass.getpass("Confirm recovery passphrase: ")
-        if p1 != p2:
-            raise ValueError("Recovery passphrases do not match")
-        creds.append({"type": "passphrase", "passphrase": p1})
+        slot_source = "generated recovery code"
     else:
-        raise ValueError("Specify --add-code or --add-passphrase")
+        # --add-passphrase selects the path; the env var only supplies the
+        # value. If the environment alone could select it, anyone able to plant
+        # a variable in the user's session once would get a durable extra
+        # decryption path into every file later passed to add-recovery.
+        if env_phrase is not None:
+            # Supplied non-interactively; there is no second channel to confirm
+            # against, so the caller owns the typo risk.
+            phrase = _validated_passphrase(env_phrase, f"${ADD_RECOVERY_PASSPHRASE_ENV}")
+            slot_source = f"passphrase from ${ADD_RECOVERY_PASSPHRASE_ENV}"
+        else:
+            p1 = getpass.getpass("New recovery passphrase: ")
+            p2 = getpass.getpass("Confirm recovery passphrase: ")
+            if p1 != p2:
+                raise ValueError("Recovery passphrases do not match")
+            # Same validation as the env path: two Enter presses would otherwise
+            # wrap the DEK under an empty passphrase, which anyone can unwrap.
+            phrase = _validated_passphrase(p1, "interactive prompt")
+            slot_source = "interactively entered passphrase"
+        creds.append({"type": "passphrase", "passphrase": phrase})
 
     add_recovery_slots(
         args.input,
@@ -627,7 +864,9 @@ def add_recovery_cli(args) -> None:
         allow_high_kdf_cost=getattr(args, "allow_high_kdf_cost", False),
         **unlock,
     )
-    eprint(f"Recovery slot added; wrote: {args.output}")
+    # Name the credential source: an unintended env-driven path must be visible
+    # rather than reported as a bare "slot added".
+    eprint(f"Recovery slot added ({slot_source}); wrote: {args.output}")
     if generated_code is not None:
         eprint("\n=== RECOVERY CODE (store this securely; it is shown only once) ===")
         eprint(f"  {generated_code}")
@@ -638,11 +877,17 @@ def remove_recovery_cli(args) -> None:
     from .crypt_core import remove_recovery_slot
     from .crypt_utils import eprint
 
+    # Consume every credential env var first, before any check that can raise.
+    # remove-recovery adds no slot, so the passphrase values are unused here —
+    # consumed anyway so a stray value cannot survive the invocation.
+    env = _consume_recovery_env()
+
     unlock = {}
-    if getattr(args, "recovery_code", None):
-        unlock["recovery_code"] = args.recovery_code
+    existing_code = _read_recovery_code(args, env["code"])
+    if existing_code:
+        unlock["recovery_code"] = existing_code
     else:
-        unlock["password"] = _read_password(args)
+        unlock["password"] = _read_password(args, env["password"])
     remove_recovery_slot(
         args.input,
         args.output,
