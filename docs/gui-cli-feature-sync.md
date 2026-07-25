@@ -52,7 +52,83 @@ or tested here** (no Flutter toolchain) — run `flutter analyze && flutter test
   encryption would stall with no visible reason. Needs the same
   `--json` + `--generated-password-out` treatment as gitlab#146 first.
 
-- **P16–P34 — NOT YET STARTED**: recovery slots (P12/P13), encrypt-tab flag gaps (P14–P19), batch-tab parity (P20–P24), sign/verify screens (P25/P26), identity flag gaps (P27–P29), analysis/templates/recommendations/telemetry (P30–P34). All are pure GUI work shelling to **existing** CLI commands (no CLI change needed, unlike P2). Each still needs the full gate treatment: GitLab+GitHub issue → TDD (Dart widget test) → security review for the sensitive ones (P27/P28 `--no-touch`/`--allow-key-change`, P25/P26 signing) → 4-file changelog → one commit per feature on `feature/gui-cli-sync`.
+- **P16/P17/P19 — DONE, narrower than specified** (gitlab#153/gh#71). Review found
+  **three of the four flags inert on the GUI's path**, so they were removed rather
+  than shipped as controls that do not control anything: `--keyring-store`/`-load`
+  are gated on the `-p` value while the GUI passes `CRYPT_PASSWORD`, so the store
+  never runs *and* its confirmation never prints (gitlab#156) — a user could
+  discard the only copy of a password that was never saved; `--pqc-store-key` is
+  already emitted unconditionally (gitlab#157). **Remark:** "Sequential XOR" was
+  first presented as a neutral third option; it pins legacy format v13 and drops
+  four hardening measures, so it is now an off-by-default switch labelled as the
+  downgrade it is.
+
+- **P20–P24 — DONE except P24** (gitlab#155/gh#73). Hash/KDF panels extracted into
+  a shared widget rather than duplicated. **Remark:** two review passes, and both
+  of my fixes were wrong in opposite directions — seeding only argon2 dropped the
+  CLI's STANDARD template (weaker than the `null` it replaced), then sending the
+  config unconditionally suppressed that template for asymmetric/cascade. The
+  Encrypt tab's existing rule (symmetric only) was right all along. Also: the
+  symmetric branch displayed HSM/pepper controls it never sent.
+
+- **P25 — BLOCKED on gitlab#159/gh#77** (`sign` unlocks the identity via
+  `getpass()`; no environment path).
+
+- **P26 — DONE** (gitlab#158/gh#76). **Remark:** review found a pinned-signer
+  mismatch rendering in the "could not check — not a verdict either way" card,
+  i.e. the strongest negative result shown in the most reassuring style. Component
+  names are not covered by the signature (gitlab#160).
+
+- **P27/P28/P29 — IMPLEMENTED, THEN ABANDONED UNSHIPPED.** The branch was deleted
+  rather than merged, because security review established that all three flags are
+  inert or misdescribed:
+  - `--no-touch` disables **nothing**. `require_touch`'s only consumer is
+    `identity_protection.py:363`, which prints "👆 Touch your Yubikey to
+    continue..."; it is never passed to a plugin. The real touch requirement lives
+    in the device's OTP slot config, which this tool never touches. My warning
+    dialog stated the opposite in confident, specific language — a control whose
+    warning is wrong is worse than no control (gitlab#163).
+  - `--hsm-piv-slot` is accepted by `identity create` and then discarded unread
+    (`cmd_create` never reads it), and `piv` is not even an `--hsm` choice there.
+  - `--allow-key-change` could never execute: `importContact` sends `--data`/
+    `--alias`, which do not exist, so **GUI contact import has never worked** —
+    pre-existing, gitlab#164.
+  - **Remark:** review also judged a confirmation dialog insufficient for
+    `--allow-key-change` regardless. This repo already has the right pattern in
+    `plugin trust-key --trust-fingerprint`: a typed out-of-band fingerprint that
+    fails closed on mismatch. Hold `identity import` to that before exposing it.
+
+- **P30–P34 — triaged; mostly blocked on gitlab#162/gh#80.** Verified per command:
+  - **P31 (`analyze-config`) — IMPLEMENTED, THEN ABANDONED UNSHIPPED** (gitlab#166).
+    It has `--output-format json`, but the command analyses `vars(args)`, i.e. the
+    argparse defaults — there is no way to submit a configuration, so the score is
+    not about anything the user has set. Worse, `--pqc-algorithm` defaults to the
+    *string* `"none"`, which is truthy, so the report asserts
+    `post_quantum_enabled: true` when PQC is off *and* suppresses the
+    recommendation to enable it. A security readout that is neither about the
+    user's configuration nor internally truthful must not be rendered in a GUI.
+  - **P34 opt-out — IMPLEMENTED, THEN ABANDONED UNSHIPPED** (gitlab#166). The
+    `telemetry` command ends in an unconditional `sys.exit(0)`, so a failed
+    opt-out is indistinguishable from a successful one: the GUI would report that
+    a user's telemetry data had been deleted when it had not. Opt-out also writes
+    no persistent flag, so a config- or env-enabled install re-enables collection
+    on the next run.
+  - **P34 opt-out action — buildable** (`--force` behind a GUI confirmation); its
+    *state display* is blocked, since `telemetry status` has no JSON and a toggle
+    that can show the wrong state is worse than none.
+  - **P30 / P33 — blocked**: no machine-readable output at all. Parsing free text
+    is worse than not building it — a misparsed security analysis is a reassuring
+    screen derived from text the parser did not understand.
+  - **P32/P33 scope — resolved: read-only views** (user decision, 2026-07-25).
+
+### Note on the "no CLI change needed" classification
+
+The plan states P12–P34 are "pure GUI work shelling to **existing** CLI commands
+(no CLI change needed, unlike P2)". That was wrong for **P12/P13, P15, P18, P25,
+P27–P29, P30, P33 and part of P34** — most of the plan. Four separate
+credential-input gaps (gitlab#144, #152, #154, #159) suggest one shared resolver
+rather than five one-off additions. Verify each command's surface, and that each
+flag is actually consumed, before starting an item.: recovery slots (P12/P13), encrypt-tab flag gaps (P14–P19), batch-tab parity (P20–P24), sign/verify screens (P25/P26), identity flag gaps (P27–P29), analysis/templates/recommendations/telemetry (P30–P34). All are pure GUI work shelling to **existing** CLI commands (no CLI change needed, unlike P2). Each still needs the full gate treatment: GitLab+GitHub issue → TDD (Dart widget test) → security review for the sensitive ones (P27/P28 `--no-touch`/`--allow-key-change`, P25/P26 signing) → 4-file changelog → one commit per feature on `feature/gui-cli-sync`.
 
 ### Autonomous-run stopping point (2026-07-24)
 
@@ -208,3 +284,25 @@ gaps (encrypt-tab options, batch-tab parity), and remaining nice-to-haves
 - P32/P33 (`template`, `smart-recommendations`) are heavy CLI surfaces with many
   subcommands — confirm whether full management UI is wanted or a read-only
   "recommend/get" view is sufficient.
+
+### Second autonomous-run stopping point (2026-07-25)
+
+Delivered and merged: P1-P14, P16-P24 (less P24), P26. Two branches were
+**implemented, reviewed, and then deleted rather than merged** — P27-P29
+(gitlab#163, #164) and P31/P34-opt-out (gitlab#166) — because in both cases
+review established that the controls did not do what their UI said. That is the
+right outcome, not a failure of the run: a control that misreports is worse than
+an absent one.
+
+Every remaining plan item is blocked on a CLI change, all filed:
+gitlab#152 (P15), #154 (P18), #159 (P25), #162 (P30/P33/P34-state),
+#163/#164 (P27-P29), #166 (P31/P34-opt-out). Genuinely buildable without any of
+them: **P24** (steganography into the batch tab) and **P32 read-only**
+(`template list`/`compare` both have `--format json`).
+
+Eleven security reviews ran across this session and every one found something
+that would otherwise have shipped, including three cases where the defect was
+introduced by the fix to the previous finding. Treat "the CLI flag exists" as
+the start of verification, not the end: check that the flag is *consumed*, that
+the command *exits non-zero on failure*, and that what the UI says about it is
+true.
