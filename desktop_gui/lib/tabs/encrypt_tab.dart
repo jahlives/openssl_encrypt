@@ -19,6 +19,11 @@ class _EncryptTabState extends State<EncryptTab> {
   // Input mode toggle
   bool _isFileMode = true;
 
+  /// Securely delete the source file after a successful encryption (gitlab#151).
+  /// Off by default: it destroys the user's only plaintext copy.
+  bool _shredSourceAfterEncrypt = false;
+  int _shredPasses = 3;
+
   // Text input controllers
   final TextEditingController _textController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
@@ -378,6 +383,78 @@ class _EncryptTabState extends State<EncryptTab> {
     }
   }
 
+  /// Securely delete the source file after a successful encryption.
+  ///
+  /// The GUI encrypts file-mode input by reading its text and passing it
+  /// through the temp-file path, so the CLI's own `--shred` would wipe that
+  /// temp file rather than the user's source. The source is therefore shredded
+  /// as a separate step here, through the same CLI `shred` command the Secure
+  /// Shred screen uses.
+  ///
+  /// Gated behind its own confirmation regardless of the toggle: this destroys
+  /// the user's only plaintext copy, and afterwards the encrypted file plus its
+  /// password are the only way back to the data.
+  Future<void> _maybeShredSource(String outputPath) async {
+    if (!_shredSourceAfterEncrypt || _selectedFile == null) return;
+    final sourcePath = _selectedFile!.path;
+
+    if (!mounted) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.warning_amber, color: Colors.red.shade700),
+            const SizedBox(width: 8),
+            const Expanded(child: Text('Securely delete the source file?')),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('This overwrites and deletes:\n\n$sourcePath'),
+            const SizedBox(height: 12),
+            Text(
+              'The encrypted file at $outputPath becomes the only copy. If its '
+              'password is lost, the data cannot be recovered. This cannot be '
+              'undone.',
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Keep the source file'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Shred it'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    try {
+      await CLIService.shred(sourcePath, passes: _shredPasses);
+      if (mounted) {
+        setState(() {
+          result = '$result\n\nSource file securely deleted: $sourcePath';
+          _selectedFile = null;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          result = '$result\n\nThe source file was NOT deleted: $e';
+        });
+      }
+    }
+  }
+
   Future<void> _encryptFile() async {
     if (_selectedFile == null || _passwordController.text.isEmpty) {
       setState(() {
@@ -558,6 +635,10 @@ class _EncryptTabState extends State<EncryptTab> {
           result = 'File encrypted successfully!\n\nSaved to: $outputPath';
           _isLoading = false;
         });
+        // Only after the encrypted copy is confirmed written: shredding the
+        // source is irreversible, so it must never run on a path where the
+        // encryption or the save failed.
+        await _maybeShredSource(outputPath);
       } else {
         throw Exception('Failed to save encrypted file');
       }
@@ -2665,12 +2746,55 @@ class _EncryptTabState extends State<EncryptTab> {
                     Card(
                       child: Padding(
                         padding: const EdgeInsets.all(12.0),
-                        child: CheckboxListTile(
-                          title: const Text('Force Overwrite'),
-                          subtitle: const Text('Replace source file with encrypted version'),
-                          value: _forceOverwrite,
-                          onChanged: (value) => setState(() => _forceOverwrite = value ?? false),
-                          contentPadding: EdgeInsets.zero,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            CheckboxListTile(
+                              title: const Text('Force Overwrite'),
+                              subtitle: const Text('Replace source file with encrypted version'),
+                              value: _forceOverwrite,
+                              onChanged: (value) =>
+                                  setState(() => _forceOverwrite = value ?? false),
+                              contentPadding: EdgeInsets.zero,
+                            ),
+                            const Divider(),
+                            SwitchListTile(
+                              title: const Text(
+                                  'Securely delete the source file after encrypting'),
+                              subtitle: const Text(
+                                'Overwrites and deletes the original once the '
+                                'encrypted copy is written. The encrypted file and '
+                                'its password then become the only way back to the '
+                                'data — if the password is lost it cannot be '
+                                'recovered. You are asked to confirm each time.',
+                              ),
+                              value: _shredSourceAfterEncrypt,
+                              onChanged: (value) =>
+                                  setState(() => _shredSourceAfterEncrypt = value),
+                              contentPadding: EdgeInsets.zero,
+                            ),
+                            if (_shredSourceAfterEncrypt)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 8),
+                                child: Row(
+                                  children: [
+                                    const Text('Overwrite passes:'),
+                                    const SizedBox(width: 12),
+                                    DropdownButton<int>(
+                                      value: _shredPasses,
+                                      items: const [1, 3, 7]
+                                          .map((n) => DropdownMenuItem(
+                                                value: n,
+                                                child: Text('$n'),
+                                              ))
+                                          .toList(),
+                                      onChanged: (v) =>
+                                          setState(() => _shredPasses = v ?? 3),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                          ],
                         ),
                       ),
                     ),

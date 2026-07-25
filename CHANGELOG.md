@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Desktop GUI: securely delete the source file after encrypting**
+  (gitlab#151 / github#69): the Encrypt tab's Advanced Options gain an
+  off-by-default switch that overwrites and deletes the original file once the
+  encrypted copy has been written, with a selectable pass count. Every run is
+  gated behind a confirmation naming the file and stating that the encrypted
+  copy and its password become the only way back to the data.
+
+  Implemented as a separate `shred` invocation after a successful encryption
+  rather than by passing the CLI's own `--shred`: the GUI encrypts file-mode
+  input by reading its text and passing it through a temporary file, so
+  `--shred` would have wiped that temporary file instead of the user's source.
+  The shred only runs once the encrypted output is confirmed written, never on
+  a path where the encryption or the save failed.
+
 - **Desktop GUI: Recovery Slots screen** (gitlab#145 / github#63): a new
   Pro-mode "Recovery" screen lists an envelope file's recovery slots, adds a
   generated recovery code or a recovery passphrase, removes a slot, and
