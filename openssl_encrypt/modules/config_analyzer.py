@@ -288,15 +288,41 @@ class ConfigurationAnalyzer:
 
     def _extract_pqc_info(self, config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Extract post-quantum configuration from full config."""
-        pqc_algorithm = config.get("pqc_algorithm")
-        if not pqc_algorithm:
+        normalized = self._normalized_pqc_algorithm(config)
+        if normalized is None:
             return None
 
         return {
             "enabled": True,
-            "algorithm": pqc_algorithm,
-            "hybrid": "hybrid" in pqc_algorithm.lower(),
+            "algorithm": normalized,
+            "hybrid": "hybrid" in normalized.lower(),
         }
+
+    @staticmethod
+    def _normalized_pqc_algorithm(config: Dict[str, Any]) -> Optional[str]:
+        """The configured post-quantum algorithm, or None when there is none.
+
+        "none" is the argparse default and a truthy string, so a bare falsiness
+        check reported post-quantum as ENABLED for a configuration that has it
+        off (gitlab#166). Non-strings are rejected rather than coerced, so a
+        hand-written template cannot smuggle a value through.
+        """
+        value = config.get("pqc_algorithm")
+        if not isinstance(value, str):
+            return None
+        stripped = value.strip()
+        if stripped.lower() in ("", "none"):
+            return None
+        return stripped
+
+    def _pqc_enabled(self, config: Dict[str, Any]) -> bool:
+        """Whether the configuration actually has post-quantum protection.
+
+        Every report field must ask this rather than testing the raw value:
+        fixing only the extractor left the summary and future-proofing sections
+        still claiming quantum resistance that was not configured.
+        """
+        return self._normalized_pqc_algorithm(config) is not None
 
     def _generate_recommendations(
         self,
@@ -395,7 +421,12 @@ class ConfigurationAnalyzer:
         # Post-quantum recommendations
         if not security_analysis["pqc_analysis"]["enabled"]:
             priority = RecommendationPriority.MEDIUM
-            if any(case in config.get("use_case", "") for case in ["archival", "compliance"]):
+            # argparse declares --use-case with choices and no default, so the
+            # key exists with value None and the "" default never applies.
+            # This branch was unreachable while PQC was wrongly reported as
+            # enabled; correcting that exposed the crash.
+            selected_use_case = config.get("use_case") or ""
+            if any(case in selected_use_case for case in ["archival", "compliance"]):
                 priority = RecommendationPriority.HIGH
 
             recommendations.append(
@@ -907,7 +938,7 @@ class ConfigurationAnalyzer:
             longevity_score = 9.0  # Very modern
 
         # Post-quantum readiness
-        pqc_ready = config.get("pqc_algorithm") is not None
+        pqc_ready = self._pqc_enabled(config)
         if pqc_ready:
             longevity_score += 2.0
 
@@ -936,7 +967,7 @@ class ConfigurationAnalyzer:
         """Get future-proofing tips."""
         tips = []
 
-        if not config.get("pqc_algorithm"):
+        if not self._pqc_enabled(config):
             tips.append("Consider enabling post-quantum encryption for long-term security")
 
         algorithm = config.get("algorithm", "aes-gcm")
@@ -973,7 +1004,7 @@ class ConfigurationAnalyzer:
             "algorithm": algorithm,
             "active_hash_functions": active_hashes,
             "active_kdfs": active_kdfs,
-            "post_quantum_enabled": bool(config.get("pqc_algorithm")),
+            "post_quantum_enabled": self._pqc_enabled(config),
             "security_level": security_analysis["overall"]["level"].name,
             "overall_score": security_analysis["overall"]["score"],
             "configuration_complexity": self._assess_complexity(config),
@@ -1001,7 +1032,7 @@ class ConfigurationAnalyzer:
         complexity_score += hash_count
 
         # PQC adds complexity
-        if config.get("pqc_algorithm"):
+        if self._pqc_enabled(config):
             complexity_score += 2
 
         if complexity_score <= 2:

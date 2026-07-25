@@ -225,6 +225,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `_removeDebugOverlay()` helper that touches no widget state; the interactive
   hide path keeps its `setState()`. Covered by a teardown regression test.
 
+- **`telemetry` reports failure through its exit code** (gitlab#166 /
+  github#84): the command ended in an unconditional `sys.exit(0)`, and every
+  failure inside the handler — plugin unavailable, plugin initialisation
+  failure, a refused `opt-out`, a failed `flush` — only printed to stderr and
+  returned. A caller could not tell a completed opt-out from one that never
+  happened, which matters because opt-out is destructive: it deletes pending
+  events and the API key. Any wrapper checking the exit status would have
+  reported a user's telemetry data as deleted when it was not, or cleared local
+  state believing a failed upload had succeeded. Declining the confirmation
+  prompt now returns a distinct status as well, so a caller can tell "the user
+  said no" from "done" and from "it broke". The success message no longer
+  overstates the effect: opt-out writes no persistent setting, so telemetry can
+  be switched on again by `OPENSSL_ENCRYPT_TELEMETRY=1` or a config file, which
+  registers a new key.
+
+- **`analyze-config` no longer claims post-quantum protection that is not
+  configured** (gitlab#166 / github#84): `--pqc-algorithm` defaults to the
+  string `"none"`, and five separate places tested the raw value for
+  truthiness, which a non-empty string satisfies. The report therefore said
+  `post_quantum_enabled: true`, `post_quantum_ready: true` and estimated
+  longevity as "quantum-resistant" for a configuration with post-quantum off,
+  while suppressing the recommendation to enable it — asserting a protection
+  the user did not have and withholding the advice that would provide it. All
+  five now use one predicate that normalises the value, so `"none"`, `"None"`,
+  whitespace, empty and non-string values are treated as absent. The reported
+  overall score for such a configuration drops slightly, because it no longer
+  receives a post-quantum bonus it had not earned. Correcting this also exposed
+  a latent crash: the branch recommending post-quantum encryption was
+  unreachable while the flag was wrongly read as enabled, and it indexed
+  `--use-case`, which argparse leaves as `None` rather than empty — so
+  `analyze-config` with no options now runs instead of failing.
+
+- **Telemetry confirmation prompts no longer traceback without a terminal**
+  (gitlab#166 / github#84): `telemetry clear` and `telemetry opt-out` called
+  `input()` directly, so a caller with no usable stdin — a GUI subprocess or a
+  CI job — got an `EOFError` traceback and an exit code outside the command's
+  own contract. Both now treat that, and an interrupt, as a decline. Declining
+  returns status 3 rather than 2, so it cannot be confused with argparse's
+  usage-error code.
+
 ### Security
 
 - **Plugin sandbox no longer authorizes sibling directories via a bare path

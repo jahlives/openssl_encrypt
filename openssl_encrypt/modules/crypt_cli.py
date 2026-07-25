@@ -3310,14 +3310,14 @@ def handle_telemetry_command(args):
     except ImportError as e:
         eprint("Error: Telemetry plugin not available.")
         eprint(f"Details: {e}")
-        return
+        return 1
 
     # Get or create telemetry plugin instance
     try:
         plugin = OpenSSLEncryptTelemetryPlugin()
     except Exception as e:
         eprint(f"Error: Failed to initialize telemetry plugin: {e}")
-        return
+        return 1
 
     # Handle subcommands
     action = args.telemetry_action
@@ -3396,6 +3396,9 @@ def handle_telemetry_command(args):
             eprint(f"✓ {result.message}")
         else:
             eprint(f"✗ {result.message}")
+            # A wrapper may clear local state believing the events were
+            # uploaded; a failed flush has to reach the exit status.
+            return 1
 
     elif action == "clear":
         # Delete all pending events without uploading
@@ -3406,10 +3409,20 @@ def handle_telemetry_command(args):
             return
 
         if not args.force:
-            response = input(f"Delete {pending_count} pending events without uploading? (yes/no): ")
+            try:
+                response = input(
+                    f"Delete {pending_count} pending events without uploading? (yes/no): "
+                )
+            except (EOFError, KeyboardInterrupt):
+                # No usable stdin (a GUI or CI caller) or an interrupt: treat as
+                # a decline rather than a traceback outside the status contract.
+                eprint("\nCancelled.")
+                return 3
             if response.lower() not in ["yes", "y"]:
                 eprint("Cancelled.")
-                return
+                # Distinct from both success and failure: nothing was changed, and
+                # a caller must not read a decline as a completed action.
+                return 3
 
         deleted = plugin.buffer.clear_all()
         eprint(f"✓ Deleted {deleted} pending events.")
@@ -3426,22 +3439,41 @@ def handle_telemetry_command(args):
             eprint("  3. Delete your API key")
             eprint("  4. Stop background uploads")
             eprint()
-            response = input("Are you sure you want to opt out? (yes/no): ")
+            try:
+                response = input("Are you sure you want to opt out? (yes/no): ")
+            except (EOFError, KeyboardInterrupt):
+                # No usable stdin (a GUI or CI caller) or an interrupt: treat as
+                # a decline rather than a traceback outside the status contract.
+                eprint("\nCancelled.")
+                return 3
             if response.lower() not in ["yes", "y"]:
                 eprint("Cancelled.")
-                return
+                # Distinct from both success and failure: nothing was changed, and
+                # a caller must not read a decline as a completed action.
+                return 3
 
         result = plugin.opt_out()
 
         if result.success:
             eprint(f"✓ {result.message}")
-            eprint("\nTelemetry has been completely disabled.")
-            eprint("To re-enable, use: --telemetry flag or set OPENSSL_ENCRYPT_TELEMETRY=1")
+            eprint("\nTelemetry collection is disabled and the stored data is deleted.")
+            eprint(
+                "This does not write a persistent setting: telemetry can be switched "
+                "on again by OPENSSL_ENCRYPT_TELEMETRY=1 or a config file, which "
+                "would register a new key."
+            )
         else:
             eprint(f"✗ {result.message}")
+            # Opt-out is destructive. A caller that cannot tell a refusal from a
+            # completed deletion may tell the user their data is gone when it is
+            # not, so the failure has to reach the exit status.
+            return 1
 
     else:
         eprint(f"Unknown telemetry action: {action}")
+        return 1
+
+    return 0
 
 
 def main():
@@ -5356,8 +5388,10 @@ def main_with_args(args=None):
         sys.exit(plugin_main(args))
 
     elif args.action == "telemetry":
-        handle_telemetry_command(args)
-        sys.exit(0)
+        _status = handle_telemetry_command(args)
+        # Explicit: `or 0` would silently turn a future falsy status into
+        # success, and sys.exit(None) exits 0.
+        sys.exit(0 if _status is None else _status)
 
     elif args.action == "keyserver":
         handle_keyserver_command(args)
