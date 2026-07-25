@@ -4,6 +4,66 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
 
+/// Result of a `generate-password --json` invocation.
+class GeneratedPassword {
+  final String password;
+  final double entropyBits;
+  final String mode; // "character" | "diceware"
+  final String? strength; // character mode only
+  final int? length; // character mode only
+  final int? wordCount; // diceware mode only
+
+  GeneratedPassword({
+    required this.password,
+    required this.entropyBits,
+    required this.mode,
+    this.strength,
+    this.length,
+    this.wordCount,
+  });
+
+  factory GeneratedPassword.fromJson(Map<String, dynamic> json) {
+    return GeneratedPassword(
+      password: json['password'] as String,
+      entropyBits: (json['entropy_bits'] as num).toDouble(),
+      mode: json['mode'] as String,
+      strength: json['strength'] as String?,
+      length: (json['length'] as num?)?.toInt(),
+      wordCount: (json['word_count'] as num?)?.toInt(),
+    );
+  }
+}
+
+/// Result of a `check-password --json` strength report.
+class PasswordStrength {
+  final int length;
+  final double bits; // pattern-aware estimate
+  final double rawBits; // raw search-space estimate
+  final String category; // e.g. "very weak" .. "strong"
+  final List<String> warnings;
+
+  PasswordStrength({
+    required this.length,
+    required this.bits,
+    required this.rawBits,
+    required this.category,
+    required this.warnings,
+  });
+
+  factory PasswordStrength.fromJson(Map<String, dynamic> json) {
+    return PasswordStrength(
+      length: (json['length'] as num?)?.toInt() ?? 0,
+      bits: (json['bits'] as num?)?.toDouble() ?? 0,
+      rawBits: (json['raw_bits'] as num?)?.toDouble() ?? 0,
+      category: (json['category'] as String?) ?? 'unknown',
+      warnings: (json['warnings'] as List<dynamic>?)
+              ?.map((w) => w.toString())
+              .toList() ??
+          const [],
+    );
+  }
+}
+
 /// Service layer for integrating with OpenSSL Encrypt CLI
 /// Replaces all pure Dart crypto implementations
 class CLIService {
@@ -901,7 +961,14 @@ class CLIService {
 
 
   /// Run CLI command with appropriate executable path
-  static Future<ProcessResult> _runCLICommand(List<String> args) async {
+  /// Run a CLI command and return its result.
+  ///
+  /// [logStdout] must be false for commands whose stdout contains secret
+  /// material (e.g. `generate-password --json`, whose stdout is the generated
+  /// password). When false, the debug log records only the stdout length, so a
+  /// secret cannot land in the persistent debug log under --debug.
+  static Future<ProcessResult> _runCLICommand(List<String> args,
+      {bool logStdout = true}) async {
     // When running inside Flatpak, use direct CLI path for better performance and reliability
     if (_isFlaspakVersion && await File(_cliPath).exists()) {
       _outputDebugLog('Using direct Flatpak CLI: $_cliPath ${args.join(' ')}');
@@ -939,7 +1006,13 @@ class CLIService {
         environment: env);
 
       _outputDebugLog('Development CLI exit code: ${result.exitCode}');
-      _outputDebugLog('Development CLI stdout: ${result.stdout}');
+      if (logStdout) {
+        _outputDebugLog('Development CLI stdout: ${result.stdout}');
+      } else {
+        // Secret-bearing stdout (e.g. a generated password): log only length.
+        _outputDebugLog(
+            'Development CLI stdout: <redacted, ${(result.stdout as String).length} chars>');
+      }
       _outputDebugLog('Development CLI stderr: ${result.stderr}');
 
       return result;
@@ -950,22 +1023,29 @@ class CLIService {
   }
 
   /// Run CLI command with stdin input (for passphrases, etc.)
-  static Future<ProcessResult> _runCLICommandWithStdin(List<String> args, String stdinInput) async {
+  static Future<ProcessResult> _runCLICommandWithStdin(List<String> args, String stdinInput,
+      {Map<String, String>? environment}) async {
     Process process;
 
     // When running inside Flatpak, use direct CLI path
     if (_isFlaspakVersion && await File(_cliPath).exists()) {
       _outputDebugLog('Using direct Flatpak CLI with stdin: $_cliPath ${args.join(' ')}');
-      process = await Process.start(_cliPath, args);
+      // When an explicit environment is given it is authoritative (used to
+      // remove vars like CRYPT_PASSWORD that would override the stdin value).
+      process = environment != null
+          ? await Process.start(_cliPath, args,
+              environment: environment, includeParentEnvironment: false)
+          : await Process.start(_cliPath, args);
     } else {
       // Development CLI
       final pythonArgs = ['-m', 'openssl_encrypt.cli', ...args];
       _outputDebugLog('Attempting development CLI with stdin: python ${pythonArgs.join(' ')}');
 
-      final env = Map<String, String>.from(Platform.environment);
+      final env = environment ?? Map<String, String>.from(Platform.environment);
       process = await Process.start('python', pythonArgs,
         workingDirectory: '/home/work/private/git/openssl_encrypt',
-        environment: env);
+        environment: env,
+        includeParentEnvironment: environment == null);
     }
 
     // Send stdin input
@@ -2261,6 +2341,188 @@ class CLIService {
     } catch (e) {
       throw Exception('Failed to delete credential: $e');
     }
+  }
+
+  // ==================== Password Generation ====================
+
+  /// Generate a password via the CLI `generate-password --json` command.
+  ///
+  /// Character mode (default) uses [length] and the four charset toggles; if
+  /// no charset is selected the CLI defaults to all four. Diceware mode
+  /// ([dice] = true) draws [diceCount] words joined by [diceSep], optionally
+  /// from a custom [diceList] wordlist. Requires the CLI's `--json` support
+  /// (gitlab#138). Throws on non-zero exit.
+  static Future<GeneratedPassword> generatePassword({
+    int length = 32,
+    bool useLowercase = true,
+    bool useUppercase = true,
+    bool useDigits = true,
+    bool useSpecial = true,
+    bool dice = false,
+    int diceCount = 10,
+    String diceSep = '',
+    String? diceList,
+    bool forceWordlist = false,
+  }) async {
+    final args = <String>['generate-password'];
+
+    if (dice) {
+      args.add('--dice');
+      args.addAll(['--dice-count', diceCount.toString()]);
+      // Only pass a non-default separator; the empty default is valid but
+      // passing "--dice-sep ''" is harmless. Skip when empty for a cleaner argv.
+      if (diceSep.isNotEmpty) {
+        args.addAll(['--dice-sep', diceSep]);
+      }
+      if (diceList != null && diceList.isNotEmpty) {
+        args.addAll(['--dice-list', diceList]);
+      }
+      if (forceWordlist) {
+        args.add('--force-wordlist');
+      }
+    } else {
+      // Length is a positional argument in character mode.
+      args.add(length.toString());
+      if (useLowercase) args.add('--use-lowercase');
+      if (useUppercase) args.add('--use-uppercase');
+      if (useDigits) args.add('--use-digits');
+      if (useSpecial) args.add('--use-special');
+    }
+
+    args.add('--json');
+
+    // logStdout: false — stdout is the generated password; keep it out of logs.
+    final result = await _runCLICommand(args, logStdout: false);
+    if (result.exitCode != 0) {
+      throw Exception('Password generation failed: ${result.stderr}');
+    }
+
+    try {
+      // stdout is a single JSON object; the password never touches stderr
+      // under --json (see gitlab#138).
+      final data = jsonDecode((result.stdout as String).trim()) as Map<String, dynamic>;
+      return GeneratedPassword.fromJson(data);
+    } catch (_) {
+      // Do not interpolate the decode error: its message can echo a snippet of
+      // the (secret-bearing) stdout into the UI error card.
+      throw Exception('Could not parse generated password output (invalid JSON)');
+    }
+  }
+
+  // ==================== Password Strength ====================
+
+  /// Report the strength of [password] via `check-password --json`.
+  ///
+  /// The password is passed on **stdin** (never as a `-p` argument, which would
+  /// leak it to the process list), and the policy is set to "none" so this is a
+  /// pure strength report that always exits 0. Returns null for an empty
+  /// password. The password is not written to any log (the stdin runner logs
+  /// only the argv; stdout is the report, not the password).
+  static Future<PasswordStrength?> checkPassword(String password) async {
+    if (password.isEmpty) return null;
+    final args = <String>[
+      'check-password',
+      '--json',
+      '--password-policy',
+      'none',
+    ];
+    // Strip CRYPT_PASSWORD so the CLI scores the typed password (it reads that
+    // env var before stdin), making the meter reflect the field, not the env.
+    final env = Map<String, String>.from(Platform.environment)..remove('CRYPT_PASSWORD');
+    final result = await _runCLICommandWithStdin(args, password, environment: env);
+    if (result.exitCode != 0) {
+      throw Exception('Strength check failed: ${(result.stderr as String).trim()}');
+    }
+    final data = jsonDecode((result.stdout as String).trim()) as Map<String, dynamic>;
+    return PasswordStrength.fromJson(data);
+  }
+
+  // ==================== Rekey ====================
+
+  /// Re-encrypt [inputPath] to [outputPath] with a new password (and optionally
+  /// a new [algorithm]) via the CLI `rekey` command.
+  ///
+  /// The OLD password is passed via `CRYPT_PASSWORD` and the NEW password via
+  /// `OPENSSL_ENCRYPT_REKEY_PASSWORD` — both environment variables, which the
+  /// CLI reads and then deletes; neither reaches the process list or a temp
+  /// file. Throws on non-zero exit (e.g. wrong old password, weak new password
+  /// without [forcePassword]).
+  static Future<String> rekey({
+    required String inputPath,
+    required String outputPath,
+    required String oldPassword,
+    required String newPassword,
+    String? algorithm,
+    bool forcePassword = false,
+  }) async {
+    final args = <String>['rekey', '-i', inputPath, '-o', outputPath];
+    if (algorithm != null && algorithm.isNotEmpty) {
+      args.addAll(['--algorithm', algorithm]);
+    }
+    if (forcePassword) {
+      args.add('--force-password');
+    }
+
+    final result = await _runCLICommandWithProgress(
+      args,
+      environment: {
+        'CRYPT_PASSWORD': oldPassword,
+        'OPENSSL_ENCRYPT_REKEY_PASSWORD': newPassword,
+      },
+    );
+    if (result.exitCode != 0) {
+      final err = (result.stderr as String).trim();
+      throw Exception(err.isEmpty ? 'Rekey failed (exit ${result.exitCode})' : err);
+    }
+    return (result.stdout as String).trim();
+  }
+
+  // ==================== Secure Shred ====================
+
+  /// Securely delete a file (or directory with [recursive]) via the CLI
+  /// `shred` command. [inputPath] may be a glob pattern. Overwrites with
+  /// [passes] passes. Returns the CLI's human-readable output (stderr).
+  /// Throws on non-zero exit.
+  ///
+  /// The caller MUST confirm this irreversible action first, and MUST set
+  /// [recursive] when [inputPath] is (or matches) a directory — the CLI would
+  /// otherwise fall into an interactive confirmation prompt that has no stdin
+  /// under Process.run.
+  static Future<String> shred(
+    String inputPath, {
+    int passes = 3,
+    bool recursive = false,
+  }) async {
+    // The CLI shred handler runs -i through glob expansion (glob.glob), so a
+    // real, picker-supplied path whose name contains glob metacharacters (e.g.
+    // "data*.bin") would expand to and irreversibly delete siblings that were
+    // never in the confirmation dialog. GUI paths are always literal, so escape
+    // the metacharacters (mirrors Python's glob.escape) to force literal match.
+    final args = <String>[
+      'shred',
+      '-i',
+      _escapeGlob(inputPath),
+      '--shred-passes',
+      passes.toString(),
+    ];
+    if (recursive) {
+      args.add('--recursive');
+    }
+
+    final result = await _runCLICommand(args);
+    if (result.exitCode != 0) {
+      final err = (result.stderr as String).trim();
+      throw Exception(err.isEmpty ? 'Shred failed (exit ${result.exitCode})' : err);
+    }
+    // shred writes its progress/summary to stderr; stdout is empty.
+    return (result.stderr as String).trim();
+  }
+
+  /// Escape glob metacharacters (`*`, `?`, `[`) so the CLI treats the argument
+  /// as a literal path, mirroring Python's `glob.escape`. Each special char is
+  /// wrapped in a single-character class; `]` needs no escaping.
+  static String _escapeGlob(String path) {
+    return path.replaceAllMapped(RegExp(r'([*?\[])'), (m) => '[${m[1]}]');
   }
 
   // ==================== Identity Management Methods ====================

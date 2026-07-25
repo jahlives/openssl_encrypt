@@ -3,6 +3,7 @@ import 'package:path/path.dart' as path;
 import '../cli_service.dart';
 import '../file_manager.dart';
 import '../widgets/crypto_widgets.dart';
+import '../widgets/password_strength_meter.dart';
 
 class EncryptTab extends StatefulWidget {
   final FileManager fileManager;
@@ -2510,6 +2511,9 @@ class _EncryptTabState extends State<EncryptTab> {
                       obscureText: true,
                       enabled: !_isLoading,
                     ),
+                    // Live strength meter (shells out to check-password --json,
+                    // debounced). Shown while choosing a password to encrypt.
+                    PasswordStrengthMeter(controller: _passwordController),
                     if (widget.isProMode) ...[
                       const SizedBox(height: 8),
                       CheckboxListTile(

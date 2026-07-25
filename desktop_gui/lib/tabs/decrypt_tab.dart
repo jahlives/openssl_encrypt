@@ -40,11 +40,40 @@ class _DecryptTabState extends State<DecryptTab> {
   bool _verifyIntegrity = false;  // Remote server verification - off by default
   bool _showProgress = false;
 
+  // Identities available for asymmetric decryption (--with-key / --verify-from)
+  List<Map<String, dynamic>> _ownIdentities = [];
+  List<Map<String, dynamic>> _contacts = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadIdentities();
+  }
+
   @override
   void dispose() {
     _textController.dispose();
     _passwordController.dispose();
     super.dispose();
+  }
+
+  /// Load identities (own + contacts) for asymmetric decryption controls.
+  Future<void> _loadIdentities() async {
+    try {
+      final identities = await CLIService.listIdentities();
+      if (!mounted) return;
+      setState(() {
+        _ownIdentities = identities['own'] ?? [];
+        _contacts = identities['contacts'] ?? [];
+      });
+    } catch (e) {
+      CLIService.outputDebugLog('Failed to load identities: $e');
+      if (!mounted) return;
+      setState(() {
+        _ownIdentities = [];
+        _contacts = [];
+      });
+    }
   }
 
   Future<void> _pickFile() async {
@@ -293,6 +322,187 @@ class _DecryptTabState extends State<DecryptTab> {
     return result ?? false;  // Default to false (abort) if dialog dismissed
   }
 
+  /// Build a dropdown label for an identity/contact map.
+  String _identityLabel(Map<String, dynamic> id) {
+    final name = id['name'] as String? ?? 'Unknown';
+    final email = id['email'] as String?;
+    return (email != null && email.isNotEmpty) ? '$name <$email>' : name;
+  }
+
+  /// Drop entries with an empty/missing name and dedupe by name.
+  ///
+  /// The dropdowns use the identity name as their value; duplicate or null
+  /// values (including a null name colliding with the null "None" sentinel)
+  /// make DropdownButton assert and crash the tab. Names are unique in the
+  /// identity store, but a contact can share a name with an own identity in
+  /// the merged signer list, and imported contacts are untrusted input.
+  List<Map<String, dynamic>> _dedupeByName(List<Map<String, dynamic>> ids) {
+    final seen = <String>{};
+    final out = <Map<String, dynamic>>[];
+    for (final id in ids) {
+      final name = id['name'] as String?;
+      if (name == null || name.isEmpty) continue;
+      if (seen.add(name)) out.add(id);
+    }
+    return out;
+  }
+
+  /// Advanced asymmetric-decryption controls (--with-key / --verify-from /
+  /// --no-verify). Only relevant for files encrypted to an identity; symmetric
+  /// files are auto-detected from metadata and need none of this.
+  Widget _buildAsymmetricDecryptSection() {
+    // Only own identities hold the private key needed to decrypt.
+    final ownIds = _dedupeByName(_ownIdentities);
+    // A signature can be verified against any known identity or contact.
+    final signerIds = _dedupeByName([..._ownIdentities, ..._contacts]);
+
+    final identityItems = <DropdownMenuItem<String?>>[
+      const DropdownMenuItem<String?>(
+        value: null,
+        child: Text('None (symmetric / auto-detect)'),
+      ),
+      ...ownIds.map((id) => DropdownMenuItem<String?>(
+            value: id['name'] as String,
+            child: Text(_identityLabel(id)),
+          )),
+    ];
+
+    final signerItems = <DropdownMenuItem<String?>>[
+      const DropdownMenuItem<String?>(
+        value: null,
+        child: Text('Any / not specified'),
+      ),
+      ...signerIds.map((id) => DropdownMenuItem<String?>(
+            value: id['name'] as String,
+            child: Text(_identityLabel(id)),
+          )),
+    ];
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.vpn_key, size: 20),
+              SizedBox(width: 8),
+              Text('Asymmetric Decryption',
+                  style: TextStyle(fontWeight: FontWeight.bold)),
+            ],
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Only needed for files encrypted to an identity (ML-KEM). '
+            'Symmetric files are auto-detected and need no selection.',
+            style: TextStyle(fontSize: 12, color: Colors.grey),
+          ),
+          const SizedBox(height: 12),
+          const Text('Decryption identity'),
+          const SizedBox(height: 4),
+          DropdownButtonFormField<String?>(
+            value: _decryptionIdentity,
+            isExpanded: true,
+            decoration: const InputDecoration(
+              border: OutlineInputBorder(),
+              isDense: true,
+              prefixIcon: Icon(Icons.badge),
+            ),
+            items: identityItems,
+            onChanged: _isLoading
+                ? null
+                : (value) {
+                    setState(() {
+                      _decryptionIdentity = value;
+                      // Always re-derive the signature options for the newly
+                      // selected identity: never carry a "skip verification"
+                      // choice across a change of identity (or to symmetric).
+                      _verifyFrom = null;
+                      _skipVerification = false;
+                    });
+                  },
+          ),
+          if (ownIds.isEmpty) ...[
+            const SizedBox(height: 6),
+            const Text(
+              'No local identities found. Create one under Identity Management '
+              'to decrypt asymmetric files.',
+              style: TextStyle(fontSize: 12, color: Colors.orange),
+            ),
+          ],
+          // --verify-from / --no-verify are only sent by CLIService when a
+          // non-empty decryption identity is set (cli_service.dart:759-766),
+          // so gate them behind exactly that condition — otherwise the warning
+          // banner could imply verification is off while no flags are sent.
+          if (_decryptionIdentity != null && _decryptionIdentity!.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            DropdownButtonFormField<String?>(
+              value: _verifyFrom,
+              isExpanded: true,
+              decoration: const InputDecoration(
+                labelText: 'Verify signature from',
+                border: OutlineInputBorder(),
+                isDense: true,
+                prefixIcon: Icon(Icons.verified_user),
+              ),
+              items: signerItems,
+              onChanged: (_isLoading || _skipVerification)
+                  ? null
+                  : (value) => setState(() => _verifyFrom = value),
+            ),
+            const SizedBox(height: 8),
+            CheckboxListTile(
+              value: _skipVerification,
+              onChanged: _isLoading
+                  ? null
+                  : (value) {
+                      setState(() {
+                        _skipVerification = value ?? false;
+                        // Verifying a specific signer is meaningless if
+                        // verification is skipped entirely.
+                        if (_skipVerification) _verifyFrom = null;
+                      });
+                    },
+              title: const Text('Skip signature verification'),
+              subtitle: const Text(
+                'Do not verify the sender signature. Only use if you fully '
+                'trust the file source — this removes authenticity protection.',
+              ),
+              contentPadding: EdgeInsets.zero,
+              controlAffinity: ListTileControlAffinity.leading,
+              dense: true,
+            ),
+            if (_skipVerification)
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade50,
+                  border: Border.all(color: Colors.red.shade200),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.warning_amber, color: Colors.red, size: 20),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Signature verification disabled — the sender\'s '
+                        'authenticity will NOT be checked.',
+                        style: TextStyle(
+                            color: Colors.red,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -421,9 +631,12 @@ class _DecryptTabState extends State<DecryptTab> {
               // Advanced Options (Rarely needed - collapsed by default)
               ExpansionTile(
                 title: const Text('Advanced Options'),
-                subtitle: const Text('Integrity verification settings'),
+                subtitle: const Text('Asymmetric decryption & integrity settings'),
                 leading: const Icon(Icons.settings),
                 children: [
+                  // Asymmetric decryption identity / signature verification
+                  _buildAsymmetricDecryptSection(),
+                  const Divider(height: 24),
                   // Integrity Verification
                   IntegrityConfigSection(
                     enableIntegrity: false,

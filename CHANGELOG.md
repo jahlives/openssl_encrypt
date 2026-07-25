@@ -7,6 +7,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.4.9] - TBD
 
+### Added
+
+- **Desktop GUI: Rekey screen** (gitlab#142 / github#60): a new Pro-mode
+  "Rekey" screen re-encrypts an existing file with a new password (and
+  optionally a new algorithm) via the CLI `rekey` command, writing a new output
+  file and leaving the original untouched. The old password is passed via
+  `CRYPT_PASSWORD` and the new via `OPENSSL_ENCRYPT_REKEY_PASSWORD` (both
+  environment variables the CLI deletes after reading — never on the process
+  list or a temp file). This iteration changes password/algorithm only; full
+  KDF/hash reconfiguration during rekey is not yet exposed.
+
+- **Desktop GUI: live password-strength meter** (gitlab#141 / github#59): the
+  Encrypt tab's password field now shows a live strength indicator (bar,
+  category, entropy in bits, and weakness warnings) driven by the CLI
+  `check-password --json` command. The password is passed on stdin (never as an
+  argument) and the check is debounced to avoid spawning a CLI process per
+  keystroke. Placed on the Encrypt tab only — where a password is being chosen;
+  the Decrypt tab (entering an existing password) and the Password Generator
+  (which already reports entropy/strength) intentionally omit it.
+
+- **Desktop GUI: Secure Shred screen** (gitlab#140 / github#58): a new
+  Pro-mode "Secure Shred" screen securely overwrites and deletes files (and
+  directories, with a recursive toggle) via the CLI `shred` command, with a
+  selectable pass count. Every run is gated behind a mandatory
+  irreversible-action confirmation dialog listing the exact targets, and the
+  UI blocks shredding a directory unless "recursive" is enabled (avoiding the
+  CLI's stdin-less interactive prompt).
+
+- **Desktop GUI: Password Generator screen** (gitlab#139 / github#57): a new
+  Pro-mode "Password Gen" screen generates passwords via the CLI
+  `generate-password --json` command in both **character** mode (length +
+  lowercase/uppercase/digits/special toggles) and **diceware** passphrase mode
+  (word count, separator, optional custom wordlist, force-small-wordlist). The
+  generated password is shown with its entropy/strength and can be copied to
+  the clipboard. Requires the CLI `generate-password --json` support
+  (gitlab#138).
+
+- **Desktop GUI: asymmetric-decryption controls in the Decrypt tab**
+  (gitlab#137 / github#55): the Flutter desktop GUI can now decrypt files
+  encrypted to an identity. The Decrypt tab's Advanced Options (Pro mode) expose
+  a **decryption-identity** selector (`--with-key`) and, once an identity is
+  chosen, a **verify-signature-from** selector (`--verify-from`) and a
+  **skip-signature-verification** checkbox (`--no-verify`). These map to
+  CLI flags that were already wired into the GUI's CLI service but had no
+  widget setting them, so they were previously unreachable. Skipping signature
+  verification is off by default and requires an explicit opt-in behind a clear
+  warning; identity lists are de-duplicated and empty names skipped so a
+  duplicate/blank identity name can no longer crash the tab.
+
+### Fixed
+
+- **Desktop GUI: main screen no longer asserts on teardown** (gitlab#143 /
+  github#61): `_MainScreenState.dispose()` cleaned up the debug overlay through
+  `_hideDebugWindow()`, which calls `setState()` — but by the time `dispose()`
+  runs the element is already defunct, so Flutter's
+  `_lifecycleState != _ElementLifecycle.defunct` assertion fired on every
+  shutdown of the main screen in debug builds (in release builds assertions are
+  compiled out, but marking a defunct element as needing rebuild is still
+  wrong). `dispose()` now detaches the overlay entry through a new
+  `_removeDebugOverlay()` helper that touches no widget state; the interactive
+  hide path keeps its `setState()`. Covered by a teardown regression test.
+
 ### Security
 
 - **Plugin sandbox no longer authorizes sibling directories via a bare path
@@ -182,6 +244,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   design, common to all callers). Derived outputs are unchanged.
 
 ### Internal
+
+- **Desktop GUI widget tests: corrected button finders**: the Rekey and Secure
+  Shred screen tests looked their action button up with
+  `find.widgetWithText(ElevatedButton, ...)`, but both buttons are built with
+  `ElevatedButton.icon`, whose runtime type is the private
+  `_ElevatedButtonWithIcon` subclass. `find.byType` compares `runtimeType`
+  exactly and does no subtype test, so those finders matched nothing and the
+  tests could never pass. They now match on `find.bySubtype<ElevatedButton>()`.
+  The Rekey tap test additionally calls `ensureVisible()` first — the button
+  sits below the fold of the 800x600 test viewport, so the tap previously
+  missed silently.
 
 - **Completed plan documents removed from `docs/`** (plan-tracker
   verification 2026-07-13, mirroring the 1.5.x cleanup):
