@@ -9626,8 +9626,26 @@ def _write_envelope_header(meta: dict, payload: bytes, input_file, output_file, 
         try:
             with os.fdopen(fd, "wb") as out:
                 out.write(new_payload)
+                # Durability, not just atomicity: closing only flushes to the
+                # page cache, so without this a power loss between the write
+                # and the rename can leave the new name pointing at empty or
+                # partial content — destroying the envelope, which is the very
+                # outcome the atomic path exists to prevent.
+                out.flush()
+                os.fsync(out.fileno())
+                # fchmod on the descriptor rather than chmod on the path after
+                # the rename: no window in which the path can be swapped for a
+                # symlink that redirects the mode change.
+                os.fchmod(out.fileno(), original_mode)
             os.replace(tmp_path, input_file)
-            os.chmod(input_file, original_mode)
+            # Commit the directory entry too, so the rename itself survives.
+            dir_fd = os.open(input_dir, os.O_RDONLY)
+            try:
+                os.fsync(dir_fd)
+            except OSError:  # pragma: no cover - platform dependent
+                pass
+            finally:
+                os.close(dir_fd)
         except BaseException:
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)

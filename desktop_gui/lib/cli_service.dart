@@ -690,8 +690,10 @@ class CLIService {
         final stdoutMsg = result.stdout.toString().trim();
         _outputDebugLog('CLI encryption failed. Exit code: ${result.exitCode}');
         _outputDebugLog('Stderr: $errorMsg');
-        _outputDebugLog('Stdout: $stdoutMsg');
-        throw Exception('Encryption failed: ${errorMsg.isNotEmpty ? errorMsg : stdoutMsg}\n\nCommand executed: $maskedCommand');
+        // An error path is exactly when stdout may hold partially written
+        // plaintext or a credential; length only.
+        _outputDebugLog('Stdout: <suppressed, ${stdoutMsg.length} chars>');
+        throw Exception('Encryption failed: ${errorMsg.isNotEmpty ? errorMsg : "exit ${result.exitCode}"}\n\nCommand executed: $maskedCommand');
       }
 
       // Read encrypted output
@@ -894,8 +896,10 @@ class CLIService {
         final stdoutMsg = result.stdout.toString().trim();
         _outputDebugLog('CLI decryption failed. Exit code: ${result.exitCode}');
         _outputDebugLog('Stderr: $errorMsg');
-        _outputDebugLog('Stdout: $stdoutMsg');
-        throw Exception('Decryption failed: ${errorMsg.isNotEmpty ? errorMsg : stdoutMsg}\n\nCommand executed: $maskedCommand');
+        // An error path is exactly when stdout may hold partially written
+        // plaintext or a credential; length only.
+        _outputDebugLog('Stdout: <suppressed, ${stdoutMsg.length} chars>');
+        throw Exception('Decryption failed: ${errorMsg.isNotEmpty ? errorMsg : "exit ${result.exitCode}"}\n\nCommand executed: $maskedCommand');
       }
 
       // Read decrypted output
@@ -967,12 +971,35 @@ class CLIService {
   /// material (e.g. `generate-password --json`, whose stdout is the generated
   /// password). When false, the debug log records only the stdout length, so a
   /// secret cannot land in the persistent debug log under --debug.
+  ///
+  /// Defaults to NOT logging stdout: it carries data (decrypted plaintext,
+  /// generated credentials), so logging is opted into per call rather than
+  /// opted out of.
+  ///
+  /// [environment] is merged over the inherited environment for this child
+  /// only. Secrets belong here rather than on argv, which is visible in the
+  /// world-readable /proc/PID/cmdline; the CLI consumes each variable on read
+  /// so it is not inherited further.
   static Future<ProcessResult> _runCLICommand(List<String> args,
-      {bool logStdout = true}) async {
+      {bool logStdout = false, Map<String, String>? environment}) async {
+    // Strip inherited credential variables before applying ours. If this
+    // process itself inherited e.g. OPENSSL_ENCRYPT_RECOVERY_CODE, the CLI
+    // would use it to unlock INSTEAD of the password the user typed, silently.
+    // Clearing to '' is not equivalent -- the CLI refuses a set-but-empty
+    // credential -- so the key must be absent.
+    Map<String, String>? childEnv;
+    if (environment != null) {
+      childEnv = {...Platform.environment};
+      for (final name in _credentialEnvNames) {
+        childEnv.remove(name);
+      }
+      childEnv.addAll(environment);
+    }
+
     // When running inside Flatpak, use direct CLI path for better performance and reliability
     if (_isFlaspakVersion && await File(_cliPath).exists()) {
       _outputDebugLog('Using direct Flatpak CLI: $_cliPath ${args.join(' ')}');
-      final result = await Process.run(_cliPath, args);
+      final result = await Process.run(_cliPath, args, environment: childEnv);
       _outputDebugLog('Flatpak CLI exit code: ${result.exitCode}');
       return result;
     }
@@ -1001,6 +1028,12 @@ class CLIService {
       _outputDebugLog('Environment LD_LIBRARY_PATH: ${env['LD_LIBRARY_PATH'] ?? 'not set'}');
       _outputDebugLog('Environment PYTHONPATH: ${env['PYTHONPATH'] ?? 'not set'}');
 
+      if (environment != null) {
+        for (final name in _credentialEnvNames) {
+          env.remove(name);
+        }
+        env.addAll(environment);
+      }
       final result = await Process.run('python', pythonArgs,
         workingDirectory: '/home/work/private/git/openssl_encrypt',
         environment: env);
@@ -3057,6 +3090,300 @@ class CLIService {
     } catch (e) {
       _outputDebugLog('Integrity verification failed: $e');
       return false;
+    }
+  }
+
+  // ==================== Recovery slots (gitlab#145) ====================
+
+  /// List the recovery slots on [inputPath]. Requires no credential.
+  static Future<List<RecoverySlot>> listRecoverySlots(String inputPath) async {
+    // logStdout stays false: the slot fields are non-secret but come verbatim
+    // from an untrusted file header, and nothing bounds how many slots a
+    // crafted file declares. Log the count instead of the document.
+    final result = await _runCLICommand(['list-recovery', '-i', inputPath, '--json']);
+    if (result.exitCode != 0) {
+      throw Exception(_cliError(result, 'Could not read recovery slots'));
+    }
+    final doc = jsonDecode(result.stdout as String) as Map<String, dynamic>;
+    return ((doc['slots'] as List<dynamic>?) ?? const [])
+        .map((e) => RecoverySlot.fromJson(e as Map<String, dynamic>))
+        .toList(growable: false);
+  }
+
+  /// Add a freshly generated recovery code to [inputPath].
+  ///
+  /// The code is password-equivalent, so the CLI writes it to a 0600 file of
+  /// our choosing rather than to any stream (gitlab#146); this reads it back,
+  /// deletes the file, and returns it for one-time display.
+  /// Add a freshly generated recovery code to [inputPath].
+  ///
+  /// [onCode] receives the code as soon as it exists and MUST deliver it to the
+  /// user; the temporary file is shredded only after it returns. Delivery is
+  /// deliberately a precondition of deletion — the CLI itself refuses to delete
+  /// this file on failure, because a failure does not prove the slot is absent,
+  /// and deleting it unread would destroy the only credential that opens a slot
+  /// that exists. Losing it because a widget went away is the same bug.
+  static Future<void> addRecoveryCode({
+    required String inputPath,
+    required String outputPath,
+    required Future<void> Function(String code, bool afterFailure) onCode,
+    String? password,
+    String? recoveryCode,
+  }) async {
+    final dir = await _credentialTempDir();
+    final codeFile = File('${dir.path}/code');
+    String? code;
+    Object? failure;
+
+    try {
+      final result = await _runCLICommand(
+        [
+          'add-recovery',
+          '-i', inputPath,
+          '-o', outputPath,
+          '--add-code',
+          '--json',
+          '--recovery-code-out', codeFile.path,
+        ],
+        environment: _recoveryEnv(password: password, recoveryCode: recoveryCode),
+      );
+      if (result.exitCode != 0) {
+        failure = RecoveryCodeException(
+          _cliError(result, 'Could not add a recovery code'));
+      }
+    } catch (e) {
+      // A throw is not proof the code was not written either.
+      failure = e;
+    }
+
+    try {
+      if (await codeFile.exists()) {
+        final read = (await codeFile.readAsString()).trim();
+        if (read.isNotEmpty) code = read;
+      }
+
+      if (code != null) {
+        // Deliver first, shred second. If delivery throws, the file is left in
+        // place rather than destroyed.
+        await onCode(code, failure != null);
+      } else if (failure == null) {
+        failure = Exception(
+          'The CLI reported success but wrote no recovery code',
+        );
+      }
+    } finally {
+      if (code != null) {
+        final warning = await _shredTempDir(dir, codeFile);
+        if (warning != null) _lastShredWarning = warning;
+      }
+    }
+
+    if (failure != null) throw failure;
+  }
+
+  /// Set when a temporary credential file could not be removed.
+  ///
+  /// Surfaced in the UI rather than only logged: the debug log is off by
+  /// default, so logging alone would silently leave a credential on disk.
+  static String? _lastShredWarning;
+
+  /// Take and clear the pending shred warning, if any.
+  static String? takeShredWarning() {
+    final w = _lastShredWarning;
+    _lastShredWarning = null;
+    return w;
+  }
+
+  /// A directory for a short-lived credential file.
+  ///
+  /// Prefers $XDG_RUNTIME_DIR: it is tmpfs-backed, 0700, per-user and cleared
+  /// at logout, whereas systemTemp is usually disk-backed /tmp and can survive
+  /// a reboot. Falls back to systemTemp when unset (e.g. on Windows).
+  static Future<Directory> _credentialTempDir() async {
+    final runtimeDir = Platform.environment['XDG_RUNTIME_DIR'];
+    if (runtimeDir != null && runtimeDir.isNotEmpty) {
+      final base = Directory(runtimeDir);
+      if (await base.exists()) {
+        return base.createTemp('oe_recovery_');
+      }
+    }
+    return Directory.systemTemp.createTemp('oe_recovery_');
+  }
+
+  /// Overwrite the credential file's bytes, then remove the directory.
+  ///
+  /// An unlink alone leaves a password-equivalent credential in free blocks.
+  /// Best effort: a failure is logged (path only) rather than swallowed, so a
+  /// credential left on disk is at least visible.
+  static Future<String?> _shredTempDir(Directory dir, File codeFile) async {
+    try {
+      if (await codeFile.exists()) {
+        final length = await codeFile.length();
+        await codeFile.writeAsBytes(List<int>.filled(length, 0), flush: true);
+      }
+      await dir.delete(recursive: true);
+      return null;
+    } catch (e) {
+      final warning =
+          'WARNING: the temporary recovery-code file at ${codeFile.path} could '
+          'not be removed and may still be on disk. Delete it manually.';
+      _outputDebugLog(warning);
+      return warning;
+    }
+  }
+
+  /// Add a recovery passphrase slot to [inputPath].
+  static Future<void> addRecoveryPassphrase({
+    required String inputPath,
+    required String outputPath,
+    required String newPassphrase,
+    String? password,
+    String? recoveryCode,
+  }) async {
+    final result = await _runCLICommand(
+      ['add-recovery', '-i', inputPath, '-o', outputPath, '--add-passphrase', '--json'],
+      environment: _recoveryEnv(
+        password: password,
+        recoveryCode: recoveryCode,
+        addPassphrase: newPassphrase,
+      ),
+    );
+    if (result.exitCode != 0) {
+      throw Exception(_cliError(result, 'Could not add a recovery passphrase'));
+    }
+  }
+
+  /// Remove the recovery slot [slotId] from [inputPath].
+  ///
+  /// The caller MUST confirm first: this revokes that recovery path on the
+  /// rewritten file and cannot be undone.
+  static Future<void> removeRecoverySlot({
+    required String inputPath,
+    required String outputPath,
+    required String slotId,
+    String? password,
+    String? recoveryCode,
+  }) async {
+    final result = await _runCLICommand(
+      ['remove-recovery', '-i', inputPath, '-o', outputPath, '--slot-id', slotId, '--json'],
+      environment: _recoveryEnv(password: password, recoveryCode: recoveryCode),
+    );
+    if (result.exitCode != 0) {
+      throw Exception(_cliError(result, 'Could not remove the recovery slot'));
+    }
+  }
+
+  /// Decrypt [inputPath] using a recovery credential instead of the password.
+  static Future<void> recoverFile({
+    required String inputPath,
+    required String outputPath,
+    String? recoveryCode,
+    String? recoveryPassphrase,
+  }) async {
+    final args = ['recover', '-i', inputPath, '-o', outputPath, '--json'];
+    if (recoveryPassphrase != null && recoveryPassphrase.isNotEmpty) {
+      // The flag selects the credential type; the env var carries its value.
+      args.add('--recovery-passphrase');
+    }
+    final result = await _runCLICommand(
+      args,
+      environment: _recoveryEnv(
+        recoveryCode: recoveryCode,
+        recoveryPassphrase: recoveryPassphrase,
+      ),
+    );
+    if (result.exitCode != 0) {
+      throw Exception(_cliError(result, 'Could not recover the file'));
+    }
+  }
+
+  /// Build the credential environment for a recovery command.
+  ///
+  /// Every value goes through the environment, never argv: a recovery code on
+  /// the command line is visible in the world-readable /proc/PID/cmdline. The
+  /// CLI reads each variable once and removes it.
+  /// Credential-bearing variables the CLI reads; never inherited into a child.
+  static const List<String> _credentialEnvNames = [
+    'CRYPT_PASSWORD',
+    'OPENSSL_ENCRYPT_PASSWORD',
+    'OPENSSL_ENCRYPT_RECOVERY_CODE',
+    'OPENSSL_ENCRYPT_RECOVERY_PASSPHRASE',
+    'OPENSSL_ENCRYPT_ADD_RECOVERY_PASSPHRASE',
+  ];
+
+  static Map<String, String> _recoveryEnv({
+    String? password,
+    String? recoveryCode,
+    String? recoveryPassphrase,
+    String? addPassphrase,
+  }) {
+    final env = <String, String>{};
+    if (password != null && password.isNotEmpty) {
+      env['CRYPT_PASSWORD'] = password;
+    }
+    if (recoveryCode != null && recoveryCode.isNotEmpty) {
+      env['OPENSSL_ENCRYPT_RECOVERY_CODE'] = recoveryCode;
+    }
+    if (recoveryPassphrase != null && recoveryPassphrase.isNotEmpty) {
+      env['OPENSSL_ENCRYPT_RECOVERY_PASSPHRASE'] = recoveryPassphrase;
+    }
+    if (addPassphrase != null && addPassphrase.isNotEmpty) {
+      env['OPENSSL_ENCRYPT_ADD_RECOVERY_PASSPHRASE'] = addPassphrase;
+    }
+    return env;
+  }
+
+  /// Human-readable message for a failed recovery command.
+  ///
+  /// Uses stderr only: stdout on these commands is the JSON document, which on
+  /// a failure path may be partial, and is never surfaced.
+  static String _cliError(ProcessResult result, String fallback) {
+    final err = (result.stderr as String).trim();
+    return err.isEmpty ? '$fallback (exit ${result.exitCode})' : err;
+  }
+}
+
+/// An add-recovery failure that may nonetheless have produced a live code.
+///
+/// The CLI writes the recovery code before modifying the envelope and does not
+/// delete it on failure, because a failure does not prove the slot was absent.
+/// When [code] is non-null the caller MUST show it to the user rather than
+/// discard it: a slot may exist that only this code opens.
+class RecoveryCodeException implements Exception {
+  final String message;
+  final String? code;
+
+  const RecoveryCodeException(this.message, {this.code});
+
+  @override
+  String toString() => message;
+}
+
+/// One recovery slot on an envelope file.
+class RecoverySlot {
+  final String id;
+  final String type;
+  final String? keyId;
+
+  const RecoverySlot({required this.id, required this.type, this.keyId});
+
+  factory RecoverySlot.fromJson(Map<String, dynamic> json) => RecoverySlot(
+        id: (json['id'] ?? '') as String,
+        type: (json['type'] ?? '') as String,
+        keyId: json['key_id'] as String?,
+      );
+
+  /// Label for the slot type, for display.
+  String get typeLabel {
+    switch (type) {
+      case 'recovery_code':
+        return 'Recovery code';
+      case 'passphrase':
+        return 'Passphrase';
+      case 'pqc':
+        return 'PQC escrow';
+      default:
+        return type;
     }
   }
 }

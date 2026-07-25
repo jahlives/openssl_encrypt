@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Desktop GUI: Recovery Slots screen** (gitlab#145 / github#63): a new
+  Pro-mode "Recovery" screen lists an envelope file's recovery slots, adds a
+  generated recovery code or a recovery passphrase, removes a slot, and
+  decrypts a file with a recovery credential when the password is unavailable.
+  Every credential travels through the environment rather than the command
+  line, and a generated code is written by the CLI to a private temporary file,
+  shown once with copy-to-clipboard, and deleted — it is never placed on a
+  stream or held in widget state. Removing a slot is gated behind an explicit
+  confirmation naming the slot, since it irreversibly revokes that recovery
+  path.
+
+  Two GUI-side leaks found while building it are fixed with it: `CLIService`
+  now defaults to **not** logging a command's stdout (it carries decrypted
+  plaintext and generated credentials, so logging is opted into per call rather
+  than opted out of), and the encrypt/decrypt error paths no longer write
+  stdout to the debug log or embed it in the exception message — an error is
+  precisely when stdout may hold a partially written secret.
+
 - **`--json` output for the recovery-slot commands** (gitlab#146 / github#64):
   `list-recovery`, `recover`, `add-recovery` and `remove-recovery` gain a
   `--json` flag that emits a single JSON document on stdout *instead of* the

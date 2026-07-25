@@ -723,6 +723,44 @@ def _capped(value, limit=256):
         return value[:limit]
     return value
 
+def _rewrites_in_place(args):
+    """Whether this command rewrites its input file rather than a new one.
+
+    The envelope writer has an atomic path (mkstemp in the same directory plus
+    os.replace, preserving mode) and a truncating one, selected by in_place.
+    The CLI never set it, so every same-file rewrite took the truncating path:
+    a crash or ENOSPC mid-write destroyed the user's ciphertext outright.
+    Adding or removing a recovery slot naturally targets the same file, so that
+    was the common case rather than an edge one (gitlab#148).
+
+    Identity is tested with samestat rather than by comparing resolved path
+    strings: two hardlinks to one inode compare unequal as paths, and a
+    case-insensitive filesystem makes two spellings of one file compare unequal
+    too. Either mistake sends a genuine same-file rewrite down the destructive
+    truncating path.
+
+    A symlink on either side is deliberately excluded. os.replace does not
+    follow symlinks, so the atomic path would replace the *link* with a regular
+    file and leave the real file carrying its old header — for remove-recovery
+    that is a silent revocation failure, where the tool reports success and the
+    slot it claims to have removed still opens the actual file. The truncating
+    path follows the link correctly, so it stays in charge of that case.
+
+    Args:
+        args: Parsed CLI namespace carrying input and output.
+
+    Returns:
+        True when input and output are the same regular file.
+    """
+    try:
+        if os.path.islink(args.input) or os.path.islink(args.output):
+            return False
+        return os.path.samestat(os.stat(args.input), os.stat(args.output))
+    except (OSError, TypeError, ValueError):
+        # Output not yet created, or an unresolvable path: not an in-place edit.
+        return False
+
+
 def _display_safe(value, limit=256):
     """Bound and de-fang an untrusted header field before printing it.
 
@@ -1019,6 +1057,7 @@ def add_recovery_cli(args) -> None:
             args.input,
             args.output,
             creds,
+            in_place=_rewrites_in_place(args),
             allow_high_kdf_cost=getattr(args, "allow_high_kdf_cost", False),
             **unlock,
         )
@@ -1089,6 +1128,7 @@ def remove_recovery_cli(args) -> None:
         args.input,
         args.output,
         args.slot_id,
+        in_place=_rewrites_in_place(args),
         allow_high_kdf_cost=getattr(args, "allow_high_kdf_cost", False),
         **unlock,
     )
