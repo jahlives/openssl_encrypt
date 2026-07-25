@@ -214,6 +214,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Global flags after a subcommand are relocated for every subcommand, not
+  half of them** (gitlab#171 / github#89): `--debug`, `--verbose`, `--quiet`
+  and the other top-level flags are declared on the main parser, so argparse
+  rejects them once a subcommand has been seen. `preprocess_global_args`
+  exists to move them to the front, but kept its own hand-maintained copy of
+  the subcommand list, and that copy had drifted to 20 of the 42 real
+  subcommands. For the missing 22 — including `identity`, `keyserver`,
+  `telemetry`, `plugin`, `hsm`, `test`, `sign`, `verify-signature` and the
+  recovery commands — argv was returned unchanged and the subparser rejected
+  the flag with exit 2. The desktop GUI appends `--debug` after the
+  subcommand at 19 call sites, so with its debug toggle on every one of those
+  commands failed before doing any work. Both the preprocessor and `main()`
+  now read a single module-level `SUBPARSER_COMMANDS` constant, so the two
+  cannot drift again; a test asserts relocation works for every entry rather
+  than for a list of names that would itself need maintaining.
+
+  Relocating a flag is only half the job — argparse parses a subcommand into a
+  fresh namespace and copies every key back over the parent's, so a subparser
+  that declares the same option name silently overwrites the relocated value
+  with its own default. Five subparsers (`recover`, `add-recovery`,
+  `remove-recovery`, `verify-integrity` and the `test` subcommands) declare
+  their own `--quiet`; those now use `default=argparse.SUPPRESS` so the key
+  stays absent unless the flag is actually given there. Tests assert the flag
+  survives a full parse, not merely that it was moved.
+
+  Third-party HTTP loggers (`urllib3`, `requests`, `httpx`, `httpcore`) are
+  now clamped to WARNING under `--debug`. `--debug` set the *root* logger to
+  DEBUG, which was previously unreachable for `keyserver` and `telemetry`
+  because argparse rejected the flag; urllib3 logs the full request line, and
+  the keyserver interpolates the identifier — a fingerprint or an email
+  address — into the request path, so contact metadata would have reached
+  stderr and the desktop GUI's persistent debug log outside the
+  `debug_secret()` chokepoint.
+
+  Two latent argv-handling bugs found in the same code are fixed: `main()`'s
+  scan for the command never actually skipped `--kdf-workers`' value (both
+  branches fell through to the same `continue`), so with the flag now
+  relocated to the front for every subcommand the value itself would have been
+  read as the command name and silently routed to the monolithic parser; and
+  `-t`/`--template` was listed as a value-carrying global flag, which was dead
+  code — it is a subcommand option selecting KDF parameters, and making it
+  reachable would have meant `encrypt -t hardened` silently encrypting at
+  default cost. `--kdf-workers=4` (the `=` spelling) is now relocated too; an
+  exact-token test missed it, leaving the same symptom live for that form.
+
+  `verify-integrity --quiet` now always prints the `Signature: VALID/NOT
+  VALID` verdict. `--quiet` is documented as shortening the trust warning, but
+  it had been silently dropped for this command, and once it started working
+  it would have reduced a failed verification to an exit code.
 - **`identity import` accepts `--data-stdin` and `--alias`; GUI contact import
   works for the first time** (gitlab#164 / github#82):
   `CLIService.importContact` has always emitted `identity import --data <json>`
@@ -321,6 +370,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **`keyserver login <client_id>` no longer appears in the `--debug` argv dump
+  or in the keyserver logs** (gitlab#171 / github#89): `client_id` is a
+  positional argument, so `SECRET_VALUE_CLI_OPTIONS` — which matches option
+  *names* — could not redact it, and the login request body is
+  `{"client_id": ...}` with the password optional, meaning the client_id alone
+  yields access and refresh tokens. `sanitize_argv_for_debug` now redacts the
+  value following any subcommand in the new `SECRET_POSITIONAL_SUBCOMMANDS`
+  set (`set-token`, `login`), and three `logger.info` calls in the keyserver
+  plugin no longer interpolate the client_id. Newly *reachable* rather than
+  newly introduced, and only on this development branch: until the global-flag
+  fix in this release, argparse rejected `--debug` after `keyserver`, so
+  neither code path could run in any released version.
+- **Third-party HTTP loggers are clamped under `--debug`** (gitlab#171): the
+  `--debug` handler sets the *root* logger to DEBUG, and urllib3 logs the full
+  request line. The keyserver interpolates the identifier — a fingerprint or
+  an email address — into the request path, so enabling `--debug` for
+  `keyserver`/`telemetry` would have written contact metadata to stderr and to
+  the desktop GUI's persistent debug log, outside the `debug_secret()`
+  chokepoint. `urllib3`, `requests`, `httpx`, `httpcore` and `asyncio` are now
+  held at WARNING.
 - **Plugin sandbox no longer authorizes sibling directories via a bare path
   prefix** (gitlab#133 / F15, GHSA-vr4h-5xqv-xxxf): `PluginSandbox._is_safe_path` allowed a
   path with a plain string-prefix match, so a sandboxed plugin `foo` (without

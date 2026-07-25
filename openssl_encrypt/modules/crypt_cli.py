@@ -787,6 +787,10 @@ def get_template_config(template: str or SecurityTemplate) -> Dict[str, Any]:
 # redaction chokepoint instead. Keep in sync with the parsers in this module
 # and crypt_cli_subparser.py. File-path/fd options (--password-file,
 # --password-fd, --recovery-share, ...) are not secrets themselves.
+# Subcommands whose credential arrives as a POSITIONAL argument, which
+# SECRET_VALUE_CLI_OPTIONS cannot match because it keys on option names.
+SECRET_POSITIONAL_SUBCOMMANDS = frozenset({"set-token", "login"})
+
 SECRET_VALUE_CLI_OPTIONS = frozenset(
     {
         "-p",
@@ -825,10 +829,17 @@ def sanitize_argv_for_debug(argv: list) -> list:
             redact_next = False
         elif arg in SECRET_VALUE_CLI_OPTIONS:
             redact_next = True
-        elif arg == "set-token":
-            # gitlab#134 (F17): the keyserver bearer token is a positional
-            # argument to `keyserver set-token <token>`; redact the value that
-            # follows it so it is not echoed cleartext in the --debug argv dump.
+        elif arg in SECRET_POSITIONAL_SUBCOMMANDS:
+            # These subcommands take a credential as a POSITIONAL argument, so
+            # SECRET_VALUE_CLI_OPTIONS (which matches option names) cannot see
+            # it; redact whatever follows.
+            #
+            # `keyserver set-token <token>` is the bearer token (gitlab#134,
+            # F17). `keyserver login <client_id>` is equally a credential: the
+            # login body is {"client_id": ...} with the password optional, so
+            # the client_id alone yields access and refresh tokens. It became
+            # reachable here only with gitlab#171 -- before that, argparse
+            # rejected `--debug` after `keyserver` and this dump never ran.
             redact_next = True
         elif "=" in arg and arg.split("=", 1)[0] in SECRET_VALUE_CLI_OPTIONS:
             opt, value = arg.split("=", 1)
@@ -838,46 +849,99 @@ def sanitize_argv_for_debug(argv: list) -> list:
     return sanitized
 
 
+# The list of subcommand names recognised on the command line, used both by
+# preprocess_global_args (to find where the command starts) and by main() (to
+# decide whether to use the subparser). It is ONE list on purpose: these were
+# previously two hand-maintained copies, and the preprocessor's had drifted to
+# less than half the real set, so global flags placed after `identity`,
+# `keyserver`, `telemetry`, `plugin`, `hsm`, `test` and 11 others were never
+# relocated and argparse rejected them (gitlab#171).
+#
+# NOT a guarantee that each entry has a registered subparser: create-usb,
+# verify-usb and the five *-plugin commands are listed here (and were listed
+# in main()'s copy long before gitlab#171) but have no subparser, so routing
+# on them reaches `invalid choice`. That breakage is pre-existing and tracked
+# in gitlab#179 -- do not read this list as "these all work".
+SUBPARSER_COMMANDS = (
+    "encrypt",
+    "decrypt",
+    "rekey",
+    "armor",
+    "dearmor",
+    "shred",
+    "generate-password",
+    "derive-password",
+    "list-algorithms",
+    "list-available-algorithms",
+    "install-dependencies",
+    "security-info",
+    "analyze-security",
+    "config-wizard",
+    "analyze-config",
+    "template",
+    "smart-recommendations",
+    "test",
+    "identity",
+    "check-argon2",
+    "check-pqc",
+    "check-password",
+    "version",
+    "show-version-file",
+    "create-usb",
+    "verify-usb",
+    "list-plugins",
+    "plugin-info",
+    "enable-plugin",
+    "disable-plugin",
+    "reload-plugin",
+    "plugin",
+    "telemetry",
+    "keyserver",
+    "hsm",
+    "verify-integrity",
+    "sign",
+    "verify-signature",
+    "list-recovery",
+    "recover",
+    "add-recovery",
+    "remove-recovery",
+)
+
+
+# Flags that are truly global and can appear anywhere on the command line.
+#
+# Membership here means "relocate this to the front so the top-level parser
+# consumes it". Only add a flag that is declared ONLY on the top-level parser:
+# if a subparser also declares the same dest, its default overwrites the
+# relocated value when argparse copies the subcommand namespace back, and the
+# flag is silently dropped instead of working (gitlab#171).
+#
+# In particular -t/--template must never appear here: it is a subcommand
+# option on encrypt/decrypt that selects the KDF/hash parameters, so a silent
+# drop would mean encrypting at default cost instead of the requested one.
+TRULY_GLOBAL_FLAGS = frozenset({
+    "--debug",
+    "--unsafe-show-secrets",
+    "--verbose",
+    "--quiet",
+    "-q",
+    "--progress",
+    "--parallel-kdf",
+    "--kdf-workers",
+})
+
+# The single global flag that carries a value; its value must move with it.
+VALUE_CARRYING_GLOBAL_FLAGS = frozenset({"--kdf-workers"})
+
+
 def preprocess_global_args(argv):
     """Preprocess sys.argv to move truly global flags to the front for subparser compatibility.
 
     This allows global flags like --debug, --verbose, --quiet, --progress to be specified
     anywhere in the command line, maintaining backward compatibility with v1.2.1 behavior.
     """
-    # Flags that are truly global and can appear anywhere
-    TRULY_GLOBAL_FLAGS = {
-        "--debug",
-        "--unsafe-show-secrets",
-        "--verbose",
-        "--quiet",
-        "-q",
-        "--progress",
-        "--parallel-kdf",
-        "--kdf-workers",
-    }
-
     # Find the command position
-    commands = {
-        "encrypt",
-        "decrypt",
-        "rekey",
-        "shred",
-        "generate-password",
-        "derive-password",
-        "security-info",
-        "analyze-security",
-        "config-wizard",
-        "analyze-config",
-        "template",
-        "smart-recommendations",
-        "check-argon2",
-        "check-pqc",
-        "check-password",
-        "version",
-        "show-version-file",
-        "create-usb",
-        "verify-usb",
-    }
+    commands = set(SUBPARSER_COMMANDS)
 
     command_pos = None
     for i, arg in enumerate(argv[1:], 1):  # Skip argv[0] (script name)
@@ -896,11 +960,26 @@ def preprocess_global_args(argv):
     while i < len(argv):
         arg = argv[i]
 
-        if arg in TRULY_GLOBAL_FLAGS:
+        # The --flag=value form is one token, so an exact membership test
+        # misses it and argparse then rejects it after a subcommand -- the
+        # same gitlab#171 symptom, for the "=" spelling.
+        if "=" in arg and arg.split("=", 1)[0] in VALUE_CARRYING_GLOBAL_FLAGS:
             global_args.append(arg)
-            # Check if this flag takes a value
+        elif arg in TRULY_GLOBAL_FLAGS:
+            global_args.append(arg)
+            # Check if this flag takes a value.
+            #
+            # --kdf-workers is the only value-carrying global flag. Do NOT add
+            # --template/-t here: it is a *subcommand* option on encrypt and
+            # decrypt, and it selects the KDF/hash parameters. Relocating it
+            # would hand it to the top-level parser, whose value the encrypt
+            # subparser's own `template=None` default then overwrites -- so
+            # `encrypt -t hardened` would silently encrypt at default KDF cost
+            # instead of the requested one. (It was listed here for a long
+            # time but is unreachable: the branch above requires membership in
+            # TRULY_GLOBAL_FLAGS, which -t/--template are not.)
             if (
-                arg in ["--template", "-t", "--kdf-workers"]
+                arg in VALUE_CARRYING_GLOBAL_FLAGS
                 and i + 1 < len(argv)
                 and not argv[i + 1].startswith("-")
             ):
@@ -3562,77 +3641,44 @@ def main():
     # Check if position 1 is a subcommand to decide which parser to use.
     # This allows backward compatibility: when global flags are BEFORE the command,
     # the monolithic parser is used (which has all arguments).
-    subparser_commands = [
-        "encrypt",
-        "decrypt",
-        "rekey",
-        "armor",
-        "dearmor",
-        "shred",
-        "generate-password",
-        "derive-password",
-        "list-algorithms",
-        "list-available-algorithms",
-        "install-dependencies",
-        "security-info",
-        "analyze-security",
-        "config-wizard",
-        "analyze-config",
-        "template",
-        "smart-recommendations",
-        "test",
-        "identity",
-        "check-argon2",
-        "check-pqc",
-        "check-password",
-        "version",
-        "show-version-file",
-        "create-usb",
-        "verify-usb",
-        "list-plugins",
-        "plugin-info",
-        "enable-plugin",
-        "disable-plugin",
-        "reload-plugin",
-        "plugin",
-        "telemetry",
-        "keyserver",
-        "hsm",
-        "verify-integrity",
-        "sign",
-        "verify-signature",
-        "list-recovery",
-        "recover",
-        "add-recovery",
-        "remove-recovery",
-    ]
+    # Single source of truth, shared with preprocess_global_args (gitlab#171).
+    subparser_commands = SUBPARSER_COMMANDS
 
     # Use subparser only if a subcommand is present
     # (after global flags have been moved to the front by preprocess_global_args)
     # Find the first non-flag argument (skip global flags)
-    global_flags = {
-        "--progress",
-        "--verbose",
-        "--debug",
-        "--unsafe-show-secrets",
-        "--quiet",
-        "--yes",
-        "-y",
-        "--parallel-kdf",
-        "--kdf-workers",
-    }
+    # Derived, not a third hand-maintained copy. This set previously omitted
+    # -q and added --yes/-y, and the value-skip below is gated on membership
+    # here first -- so a future value-carrying flag added to
+    # TRULY_GLOBAL_FLAGS but forgotten here would have its value read as the
+    # command name and silently routed to the monolithic parser: gitlab#171
+    # all over again. --yes/-y stay as explicit extras because they are
+    # recognised for routing but are NOT relocatable (a subparser declares its
+    # own --yes, so relocating would let that default clobber it -- see
+    # gitlab#176).
+    global_flags = TRULY_GLOBAL_FLAGS | {"--yes", "-y"}
     first_command = None
+    skip_next = False
     for i in range(1, len(sys.argv)):
+        if skip_next:
+            # The value of a value-carrying global flag, consumed below.
+            skip_next = False
+            continue
         arg = sys.argv[i]
         # Skip global flags (and their values if applicable)
         if arg in global_flags:
-            # Skip the flag and its value if it takes one
+            # Skip the flag's value too. This used to `continue` in both
+            # branches, so the value was never actually skipped: since
+            # preprocess_global_args now moves `--kdf-workers N` to the front
+            # for every subcommand, the scan saw "N" as the first non-flag
+            # token and treated it as the command, silently falling back to
+            # the monolithic parser (gitlab#171).
             if (
-                arg in ["--kdf-workers"]
+                arg in VALUE_CARRYING_GLOBAL_FLAGS
                 and i + 1 < len(sys.argv)
                 and not sys.argv[i + 1].startswith("-")
             ):
-                continue  # Will skip the value in next iteration
+                skip_next = True
             continue
         # Found a non-flag argument
         if not arg.startswith("-"):
@@ -5090,6 +5136,17 @@ def main_with_args(args=None):
 
         # Also configure this module's logger explicitly
         logger.setLevel(logging.DEBUG)
+
+        # Keep third-party HTTP libraries out of DEBUG. urllib3 logs the full
+        # request line, and the keyserver interpolates the identifier -- a
+        # fingerprint or an email address -- into the request path, so DEBUG
+        # would put contact metadata on stderr and into the desktop GUI's
+        # persistent debug log, entirely outside the debug_secret()
+        # chokepoint. This matters since gitlab#171: --debug now actually
+        # reaches `keyserver` and `telemetry`, where argparse used to reject
+        # it before any of this ran.
+        for _noisy in ("urllib3", "requests", "httpx", "httpcore", "asyncio"):
+            logging.getLogger(_noisy).setLevel(logging.WARNING)
 
         # Try to configure basic config for new handlers, but don't fail if handlers exist
         try:
