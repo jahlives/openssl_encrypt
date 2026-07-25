@@ -225,6 +225,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `_removeDebugOverlay()` helper that touches no widget state; the interactive
   hide path keeps its `setState()`. Covered by a teardown regression test.
 
+- **`template list --format json` now emits JSON** (gitlab#167 / github#85):
+  `--format {table,json}` was declared and never read, so a caller could request
+  the machine-readable form, receive exit 0, and get nothing on stdout. The
+  document is now written to stdout with the human report left on stderr, and
+  `template` no longer exits 0 for an unrecognised subcommand. The payload
+  deliberately omits the security score and level: for the metadata-bearing
+  template format those are taken verbatim from the file and never recomputed,
+  and templates are ranked by that value, so publishing it as an authoritative
+  rating would be the wrong direction to resolve that in (gitlab#169). Every
+  remaining field is length-bounded and type-coerced, since a template file is
+  any document a local process can place in the template directory.
+
 - **`telemetry` reports failure through its exit code** (gitlab#166 /
   github#84): the command ended in an unconditional `sys.exit(0)`, and every
   failure inside the handler — plugin unavailable, plugin initialisation

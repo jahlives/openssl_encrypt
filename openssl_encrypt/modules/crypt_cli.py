@@ -1967,10 +1967,15 @@ def run_template_manager(args):
             _handle_template_delete(template_mgr, args)
         else:
             eprint("Invalid template subcommand. Use --help for available options.")
+            # Previously fell through to an unconditional sys.exit(0) at the
+            # dispatch, so a mistyped subcommand reported success (gitlab#167).
+            return 1
 
     except Exception as e:
         eprint(f"Error in template management: {e}")
-        sys.exit(1)
+        return 1
+
+    return 0
 
 
 def run_smart_recommendations(args):
@@ -2350,6 +2355,38 @@ def run_security_tests(args):
         sys.exit(1)
 
 
+
+def _template_list_payload(templates):
+    """Build the `template list --format json` entries.
+
+    Every string here originates in a template file, which is any .json/.yaml
+    a local process can drop into the template directory, so each field is
+    coerced to the expected type and bounded. One malformed file must not fail
+    the whole listing -- list_templates() already skips files it cannot load,
+    and this keeps that property.
+    """
+    def _text(value, limit=256):
+        return str(value)[:limit] if isinstance(value, (str, int, float)) else ""
+
+    def _texts(value, limit=32):
+        return [_text(v, 64) for v in value[:limit]] if isinstance(value, list) else []
+
+    payload = []
+    for template in templates[:256]:
+        try:
+            payload.append(
+                {
+                    "name": _text(template.metadata.name),
+                    "description": _text(template.metadata.description, 1024),
+                    "use_cases": _texts(template.metadata.use_cases),
+                    "tags": _texts(template.metadata.tags),
+                    "built_in": bool(template.is_built_in),
+                }
+            )
+        except Exception:  # noqa: BLE001 - one bad file must not kill the list
+            continue
+    return payload
+
 def _handle_template_list(template_mgr: TemplateManager, args):
     """Handle template list command."""
     category = getattr(args, "category", None)
@@ -2357,6 +2394,25 @@ def _handle_template_list(template_mgr: TemplateManager, args):
         category = TemplateCategory(category)
 
     templates = template_mgr.list_templates(category)
+
+    if getattr(args, "format", "table") == "json":
+        # --format was declared on this parser and never read, so a caller could
+        # ask for JSON, get exit 0, and receive nothing (gitlab#167). stdout
+        # carries the document; the human report stays on stderr.
+        #
+        # security_score / security_level are deliberately NOT published here.
+        # For the metadata-bearing template format they are taken verbatim from
+        # the file and never recomputed, and list_templates() sorts by that
+        # value -- so a planted template claiming a top score would rank first
+        # and be handed to an automated consumer as an authoritative rating
+        # (gitlab#169). Publishing an untrusted number as a security rating is
+        # the wrong direction to fix that in.
+        print(json.dumps({"templates": _template_list_payload(templates)}, indent=2))
+        try:
+            sys.stdout.flush()
+        except BrokenPipeError:  # pragma: no cover - `| head` and friends
+            pass
+        return
 
     if not templates:
         eprint("No templates found.")
@@ -5366,8 +5422,8 @@ def main_with_args(args=None):
         sys.exit(0)
 
     elif args.action == "template":
-        run_template_manager(args)
-        sys.exit(0)
+        _status = run_template_manager(args)
+        sys.exit(0 if _status is None else _status)
 
     elif args.action == "smart-recommendations":
         run_smart_recommendations(args)
