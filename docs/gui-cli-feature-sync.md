@@ -18,7 +18,41 @@ or tested here** (no Flutter toolchain) — run `flutter analyze && flutter test
 - **P6/P7 — DONE** (gitlab#140/gh#58): Secure Shred screen + `CLIService.shred()`, mandatory confirmation. Security review MEDIUM fixed: CLI globs `-i`, so GUI now escapes glob metacharacters (glob.escape equivalent) so confirmed target == deleted target. **Remark:** a durable CLI-side `shred --no-glob`/literal mode is recommended future hardening for all callers.
 - **P8/P9 — DONE** (gitlab#141/gh#59): `CLIService.checkPassword()` (password via stdin) + live strength meter widget. **Remark/deviation from plan:** meter placed on the **Encrypt tab only**. Decrypt tab omitted (entering an existing password — strength is not meaningful); Password Generator omitted (already displays entropy/strength). Security review pending at time of writing.
 - **P10/P11 (Rekey) — DONE** (gitlab#142/gh#60): Rekey screen re-encrypts a file with a new password/algorithm. Old password via `CRYPT_PASSWORD`, new via `OPENSSL_ENCRYPT_REKEY_PASSWORD` (env, CLI clears after read). Security review LOW fixed (refuse output==input; confirm overwrite). **Remark:** password/algorithm only — full KDF/hash reconfiguration during rekey is deferred (the Encrypt tab already exposes full KDF config for new files).
-- **P12–P34 — NOT YET STARTED**: recovery slots (P12/P13), encrypt-tab flag gaps (P14–P19), batch-tab parity (P20–P24), sign/verify screens (P25/P26), identity flag gaps (P27–P29), analysis/templates/recommendations/telemetry (P30–P34). All are pure GUI work shelling to **existing** CLI commands (no CLI change needed, unlike P2). Each still needs the full gate treatment: GitLab+GitHub issue → TDD (Dart widget test) → security review for the sensitive ones (P27/P28 `--no-touch`/`--allow-key-change`, P25/P26 signing) → 4-file changelog → one commit per feature on `feature/gui-cli-sync`.
+- **P12/P13 (Recovery slots) — DONE** (gitlab#145/gh#63), but scope grew to **two**
+  CLI enablers first, both landed:
+  - gitlab#144/gh#62 — recovery credentials via the environment. `--recovery-code`
+    was argv-only (visible in the world-readable `/proc/PID/cmdline`, and unlike
+    `--password` it carried no warning), and passphrases were reachable only
+    through a `getpass()` prompt on `/dev/tty` that no GUI subprocess can answer.
+    Four security-review passes; two MEDIUMs were designs I had got wrong, not
+    omissions — an env var could *select* the credential path (a planted variable
+    silently wrapping the DEK under an attacker's passphrase), and my log-redaction
+    registration was inert by construction while my test asserted only tuple
+    membership.
+  - gitlab#146/gh#64 — `--json` output plus `--recovery-code-out`. The first design
+    put the generated code on stdout, justified by a GUI redaction gate that does
+    not exist: `logStdout` defaulted to on, the streaming helper had no such
+    parameter, and stdout was logged and embedded in the exception on any non-zero
+    exit. Three passes.
+  - **Remark:** the screen also fixed gitlab#148 (same-file rewrites took the
+    envelope writer's truncating path; `in_place` existed but no CLI caller set
+    it). Identity is tested with `samestat`, and symlinks are excluded — `os.replace`
+    would swap the link for a regular file and leave the real file carrying its old
+    header, which for `remove-recovery` is a silent revocation failure reported as
+    success.
+
+- **P14 (encrypt-tab `--shred`) — IN PROGRESS** (gitlab#151/gh#69). Pure GUI over
+  flags that already exist.
+
+- **P15 (encrypt-tab `--random`) — BLOCKED on gitlab#152/gh#70.** Not skipped for
+  lack of a decision: `--random` prints the file's password to **stderr**
+  (`crypt_cli.py:9522`) and then blocks 10 seconds on a countdown
+  (`:9532-9547`). The GUI streams stderr into its persistent debug log, so
+  exposing this as-is would write the encryption password to disk, and every such
+  encryption would stall with no visible reason. Needs the same
+  `--json` + `--generated-password-out` treatment as gitlab#146 first.
+
+- **P16–P34 — NOT YET STARTED**: recovery slots (P12/P13), encrypt-tab flag gaps (P14–P19), batch-tab parity (P20–P24), sign/verify screens (P25/P26), identity flag gaps (P27–P29), analysis/templates/recommendations/telemetry (P30–P34). All are pure GUI work shelling to **existing** CLI commands (no CLI change needed, unlike P2). Each still needs the full gate treatment: GitLab+GitHub issue → TDD (Dart widget test) → security review for the sensitive ones (P27/P28 `--no-touch`/`--allow-key-change`, P25/P26 signing) → 4-file changelog → one commit per feature on `feature/gui-cli-sync`.
 
 ### Autonomous-run stopping point (2026-07-24)
 
