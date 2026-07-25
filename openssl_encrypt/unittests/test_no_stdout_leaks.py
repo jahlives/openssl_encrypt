@@ -39,10 +39,10 @@ STDOUT_WHITELIST = [
     # Machine-readable output for non-interactive callers. None of these carries
     # a credential: a generated recovery code is written to its own 0600 file via
     # --recovery-code-out, and only that path appears in the JSON.
-    ("modules/recovery_slots.py", 830, "list-recovery JSON slot list"),
-    ("modules/recovery_slots.py", 876, "recover JSON result"),
-    ("modules/recovery_slots.py", 1012, "add-recovery JSON result (no credential)"),
-    ("modules/recovery_slots.py", 1054, "remove-recovery JSON result"),
+    ("modules/recovery_slots.py", 884, "list-recovery JSON slot list"),
+    ("modules/recovery_slots.py", 938, "recover JSON result"),
+    ("modules/recovery_slots.py", 1077, "add-recovery JSON result (no credential)"),
+    ("modules/recovery_slots.py", 1120, "remove-recovery JSON result"),
     # crypt_core.py — JSON data output
     ("crypt_core.py", 8766, "print_file_info JSON output"),
     # crypt_core.py — protected DO NOT CHANGE block

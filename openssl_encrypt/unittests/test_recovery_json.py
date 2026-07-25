@@ -346,6 +346,74 @@ class TestRemoveAndRecoverJson(RecoveryJsonBase):
         self.assertEqual(doc["output"], self.out)
 
 
+class TestInPlaceRewriteSelection(RecoveryJsonBase):
+    """Same-file rewrites must take the envelope writer's atomic path.
+
+    The truncating path opens the user's ciphertext "wb" and rewrites it, so a
+    crash or ENOSPC mid-write destroys it. Adding or removing a recovery slot
+    naturally targets the same file, so this is the common case (gitlab#148).
+    """
+
+    def test_same_path_selects_in_place(self):
+        from openssl_encrypt.modules.recovery_slots import _rewrites_in_place
+
+        self._encrypt()  # identity is tested by stat, so the file must exist
+        self.assertTrue(
+            _rewrites_in_place(_ns(input=self.enc, output=self.enc))
+        )
+
+    def test_relative_and_absolute_forms_of_one_file_match(self):
+        from openssl_encrypt.modules.recovery_slots import _rewrites_in_place
+
+        self._encrypt()
+        rel = os.path.join(self.tmp, ".", os.path.basename(self.enc))
+        self.assertTrue(_rewrites_in_place(_ns(input=self.enc, output=rel)))
+
+    def test_distinct_paths_do_not(self):
+        from openssl_encrypt.modules.recovery_slots import _rewrites_in_place
+
+        self._encrypt()
+        other = os.path.join(self.tmp, "other.enc")
+        self.assertFalse(_rewrites_in_place(_ns(input=self.enc, output=other)))
+
+    def test_symlinked_input_is_excluded(self):
+        """os.replace would swap the link for a regular file.
+
+        The real file would keep its old header — for remove-recovery a silent
+        revocation failure, reported as success (re-review finding F2).
+        """
+        from openssl_encrypt.modules.recovery_slots import _rewrites_in_place
+
+        self._encrypt()
+        link = os.path.join(self.tmp, "link.enc")
+        os.symlink(self.enc, link)
+        self.assertFalse(_rewrites_in_place(_ns(input=link, output=link)))
+
+    def test_hardlinked_names_of_one_file_match(self):
+        """Two names for one inode compare unequal as paths but are one file."""
+        from openssl_encrypt.modules.recovery_slots import _rewrites_in_place
+
+        self._encrypt()
+        other = os.path.join(self.tmp, "hardlink.enc")
+        os.link(self.enc, other)
+        self.assertTrue(_rewrites_in_place(_ns(input=self.enc, output=other)))
+
+    def test_in_place_rewrite_preserves_slot_contents(self):
+        """End-to-end: the atomic path must produce the same result."""
+        code = generate_recovery_code()
+        self._encrypt([{"type": "recovery_code", "code": code}])
+
+        add_recovery_cli(
+            _ns(input=self.enc, output=self.enc, password=PASSWORD, add_code=True,
+                json=True, recovery_code_out=os.path.join(self.tmp, "c.txt"))
+        )
+        self.assertEqual(len(list_recovery_slots(self.enc)), 2)
+        # The original credential still opens the rewritten file.
+        recover_cli(_ns(input=self.enc, output=self.out, recovery_code=code))
+        with open(self.out, "rb") as f:
+            self.assertEqual(f.read(), PLAINTEXT)
+
+
 class TestJsonParserRegistration(unittest.TestCase):
     def test_all_four_subparsers_accept_json(self):
         from openssl_encrypt.modules.crypt_cli_subparser import (
