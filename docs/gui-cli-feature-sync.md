@@ -92,7 +92,22 @@ or tested here** (no Flutter toolchain) — run `flutter analyze && flutter test
     (`cmd_create` never reads it), and `piv` is not even an `--hsm` choice there.
   - `--allow-key-change` could never execute: `importContact` sends `--data`/
     `--alias`, which do not exist, so **GUI contact import has never worked** —
-    pre-existing, gitlab#164.
+    pre-existing, gitlab#164. **FIXED**: `identity import` now takes `--file` /
+    `--data-stdin` (mutually exclusive, one required) plus `--alias`, and the
+    GUI pipes the document over stdin rather than argv. The document is *not*
+    passable as a command-line value by design — `/proc/PID/cmdline` is
+    world-readable and the GUI field is a free-text paste box, so an inline
+    flag would expose a mis-pasted private key or passphrase at `execve`.
+  - **Remaining gap (deliberate, not a regression):** the GUI still has no way
+    to accept a *legitimate* re-key. `importContact` never passes
+    `--allow-key-change` and there is no UI for it, so a contact who genuinely
+    rotates keys cannot be re-imported from the GUI. This fails closed, which
+    is the right default, but the user is stuck with a clear error and no
+    remedy inside the app. Per the remark below, the fix is **not** a
+    confirmation dialog: hold it to the `plugin trust-key
+    --trust-fingerprint` pattern (typed out-of-band fingerprint, fails closed
+    on mismatch) before exposing it. Not attempted here — it is a new trust
+    UI, not a wiring fix.
   - **Remark:** review also judged a confirmation dialog insufficient for
     `--allow-key-change` regardless. This repo already has the right pattern in
     `plugin trust-key --trust-fingerprint`: a typed out-of-band fingerprint that

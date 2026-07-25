@@ -2661,7 +2661,23 @@ def setup_identity_parser(subparser):
 
     # Import public identity
     import_parser = identity_subparsers.add_parser("import", help="Import public identity")
-    import_parser.add_argument("--file", required=True, help="JSON file to import")
+    import_source = import_parser.add_mutually_exclusive_group(required=True)
+    import_source.add_argument("--file", help="JSON file to import")
+    import_source.add_argument(
+        "--data-stdin",
+        action="store_true",
+        help="Read the identity document from standard input instead of a "
+        "file. Use this for documents already held in memory (the desktop "
+        "GUI's paste field): argv is world-readable through /proc, which "
+        "would expose both the contact metadata and anything pasted into the "
+        "field by mistake.",
+    )
+    import_parser.add_argument(
+        "--alias",
+        help="Store the contact under this local name instead of the name "
+        "carried in the document. A purely local label: the fingerprint, not "
+        "the name, identifies the keys.",
+    )
     import_parser.add_argument(
         "--overwrite", action="store_true", help="Overwrite existing identity"
     )

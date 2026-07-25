@@ -214,6 +214,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`identity import` accepts `--data-stdin` and `--alias`; GUI contact import
+  works for the first time** (gitlab#164 / github#82):
+  `CLIService.importContact` has always emitted `identity import --data <json>`
+  plus an optional `--alias <name>`, but the parser accepted neither — only a
+  required `--file` — so every contact import from the desktop GUI died at
+  argparse with exit 2. The import parser now takes `--file` and
+  `--data-stdin` as a required mutually exclusive group, and `cmd_import`
+  reads whichever was given.
+
+  The document is read from **stdin rather than argv**: `/proc/PID/cmdline` is
+  world-readable, so an inline flag would publish the contact's name, email
+  and fingerprint to every local process — and the GUI field feeding it is a
+  free-text paste box, so a mis-pasted private key or passphrase would be
+  exposed at `execve`, before the CLI could reject it. Both the stdin and the
+  file path now parse through `SecureJSONValidator.validate_json_security`,
+  picking up the pre-parse nesting-depth scan added for #94, and a document
+  that is not a JSON object is rejected with a clear message instead of a
+  `TypeError` from inside `import_public`.
+
+  `--alias` stores the contact under a local name instead of the one in the
+  document. The fingerprint is computed from the algorithms and public keys
+  (`calculate_fingerprint_v2`) and does not cover the name, so an alias cannot
+  mask a key substitution; the alias is run through `validate_identity_name`
+  because the name becomes a directory name under the identity store. The
+  rename happens before `add_identity`, so TOFU key-change pinning keys on the
+  name actually stored — covered by an end-to-end test that imports a
+  different key under an existing alias and asserts the import is refused.
+
+  Because the document and the interactive key-change confirmation would
+  otherwise share one channel, the refusal to replace a pinned key now keys on
+  the document's *source* rather than on `isatty()` alone: a pty EOF is soft,
+  so a supplier sending `{...}<^D>yes` could otherwise have answered its own
+  trust prompt. A stdin-sourced document never reaches the prompt and always
+  requires `--allow-key-change`.
+
+  Both input paths are read through a shared bounded read, so the file path is
+  no longer materialised before its size is checked, and `--file` now requires
+  a regular file — a FIFO or `/dev/zero` previously passed the `exists()`
+  check and blocked forever. Identity documents are read and written as UTF-8
+  explicitly rather than in the locale default, under which a name or email
+  could round-trip to different characters while the ASCII key fields kept the
+  fingerprint check passing.
 - **Desktop GUI: main screen no longer asserts on teardown** (gitlab#143 /
   github#61): `_MainScreenState.dispose()` cleaned up the debug overlay through
   `_hideDebugWindow()`, which calls `setState()` — but by the time `dispose()`

@@ -111,6 +111,30 @@ openssl_encrypt identity import --file bob_public.json
 
 This adds Bob as a contact (public keys only).
 
+If you already hold the document in memory rather than in a file, pipe it in
+with `--data-stdin`:
+
+```bash
+cat bob_public.json | openssl_encrypt identity import --data-stdin
+```
+
+There is deliberately no flag that takes the document as a command-line
+*value*: `/proc/PID/cmdline` is world-readable, so an inline argument would
+publish the contact's name, email and fingerprint to every other process on
+the machine — and would irreversibly expose anything pasted in by mistake.
+
+Use `--alias` to file the contact under a name of your choosing instead of
+the one in the document:
+
+```bash
+openssl_encrypt identity import --file bob_public.json --alias bob-work
+```
+
+The alias is a local label only. Identities are pinned by fingerprint, not by
+name, so an alias cannot disguise a changed key: importing different keys
+under a name you already have is refused unless you pass
+`--allow-key-change`, after verifying the new fingerprint out of band.
+
 ### Deleting Identities
 
 ```bash
