@@ -657,7 +657,11 @@ class KeyserverPlugin(BasePlugin):
                 # Save password for future logins
                 if effective_password:
                     self.config.save_password(effective_password)
-                logger.info(f"Logged in to keyserver, client_id={data['client_id']}")
+                # Do NOT log client_id: the login body is
+                # {"client_id": ...} with the password optional, so it
+                # alone yields access and refresh tokens. A credential
+                # in a log is outside the debug_secret() chokepoint.
+                logger.info("Logged in to keyserver")
                 return data
             elif response.status_code == 403:
                 # Server requires password setup (legacy client)
@@ -737,7 +741,7 @@ class KeyserverPlugin(BasePlugin):
                 # Save refresh token if provided
                 if data.get("refresh_token"):
                     self.config.save_refresh_token(data["refresh_token"])
-                logger.info(f"Registered with keyserver, client_id={data['client_id']}")
+                logger.info("Registered with keyserver")
                 return data
             else:
                 raise NetworkError(
@@ -854,7 +858,7 @@ class KeyserverPlugin(BasePlugin):
                 # Save refresh token if provided
                 if status_data.get("refresh_token"):
                     self.config.save_refresh_token(status_data["refresh_token"])
-                logger.info(f"Email registration confirmed, client_id={status_data['client_id']}")
+                logger.info("Email registration confirmed")
                 return status_data
 
             # Still pending — wait and poll again

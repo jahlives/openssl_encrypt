@@ -2040,7 +2040,18 @@ def setup_recover_parser(subparser):
         action="store_true",
         help="Emit the result as JSON on stdout (human output otherwise goes to stderr)",
     )
-    subparser.add_argument("-q", "--quiet", action="store_true", help="Suppress output")
+    # default=SUPPRESS, not False: argparse parses a subcommand into a fresh
+    # namespace and copies every key back over the parent's, so a default here
+    # would overwrite a --quiet that was given before the subcommand and
+    # relocated to the front by preprocess_global_args (gitlab#171). SUPPRESS
+    # leaves the key absent unless the flag is actually passed here.
+    subparser.add_argument(
+        "-q",
+        "--quiet",
+        action="store_true",
+        default=argparse.SUPPRESS,
+        help="Suppress output",
+    )
 
 
 def setup_add_recovery_parser(subparser):
@@ -2083,7 +2094,18 @@ def setup_add_recovery_parser(subparser):
         action="store_true",
         help="Emit the result as JSON on stdout (human output otherwise goes to stderr)",
     )
-    subparser.add_argument("-q", "--quiet", action="store_true", help="Suppress output")
+    # default=SUPPRESS, not False: argparse parses a subcommand into a fresh
+    # namespace and copies every key back over the parent's, so a default here
+    # would overwrite a --quiet that was given before the subcommand and
+    # relocated to the front by preprocess_global_args (gitlab#171). SUPPRESS
+    # leaves the key absent unless the flag is actually passed here.
+    subparser.add_argument(
+        "-q",
+        "--quiet",
+        action="store_true",
+        default=argparse.SUPPRESS,
+        help="Suppress output",
+    )
 
 
 def setup_remove_recovery_parser(subparser):
@@ -2109,7 +2131,18 @@ def setup_remove_recovery_parser(subparser):
         action="store_true",
         help="Emit the result as JSON on stdout (human output otherwise goes to stderr)",
     )
-    subparser.add_argument("-q", "--quiet", action="store_true", help="Suppress output")
+    # default=SUPPRESS, not False: argparse parses a subcommand into a fresh
+    # namespace and copies every key back over the parent's, so a default here
+    # would overwrite a --quiet that was given before the subcommand and
+    # relocated to the front by preprocess_global_args (gitlab#171). SUPPRESS
+    # leaves the key absent unless the flag is actually passed here.
+    subparser.add_argument(
+        "-q",
+        "--quiet",
+        action="store_true",
+        default=argparse.SUPPRESS,
+        help="Suppress output",
+    )
 
 
 def setup_simple_parser(subparser):
@@ -2787,7 +2820,12 @@ def setup_test_parser(subparser):
             default=["json", "html"],
             help="Output format(s) for test reports",
         )
-        parser.add_argument("--quiet", action="store_true", help="Suppress test progress output")
+        parser.add_argument(
+            "--quiet",
+            action="store_true",
+            default=argparse.SUPPRESS,
+            help="Suppress test progress output",
+        )
 
 
 def setup_list_algorithms_parser(subparser):
@@ -3426,7 +3464,10 @@ def create_subparser_main():
         "--json", action="store_true", help="Emit a JSON report (trust warning retained)"
     )
     verify_integrity_parser.add_argument(
-        "--quiet", action="store_true", help="Shorten the trust warning to one line"
+        "--quiet",
+        action="store_true",
+        default=argparse.SUPPRESS,
+        help="Shorten the trust warning to one line",
     )
     vi_scope = verify_integrity_parser.add_mutually_exclusive_group()
     vi_scope.add_argument(

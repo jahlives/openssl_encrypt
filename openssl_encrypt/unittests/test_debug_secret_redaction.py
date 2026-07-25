@@ -312,6 +312,21 @@ class ArgvSanitizerTests(unittest.TestCase):
         self.assertEqual(out[:3], ["crypt.py", "keyserver", "set-token"])
         self.assertEqual(out[4], "--verbose")
 
+    def test_keyserver_login_client_id_is_redacted(self):
+        """`keyserver login <client_id>` — also a positional credential.
+
+        The login body is {"client_id": ...} with the password optional, so
+        the client_id alone yields access and refresh tokens. It became
+        reachable in the argv dump only with gitlab#171: before that argparse
+        rejected `--debug` after `keyserver`, so this code never ran.
+        """
+        out = self._sanitize(["crypt.py", "keyserver", "login", self.SECRET, "--verbose"])
+        joined = " ".join(out)
+        self.assertNotIn(self.SECRET, joined)
+        self.assertIn("<redacted:", joined)
+        self.assertEqual(out[:3], ["crypt.py", "keyserver", "login"])
+        self.assertEqual(out[4], "--verbose")
+
     def test_keyserver_set_token_shown_in_unsafe_mode(self):
         set_show_secrets(True)
         try:
