@@ -2013,6 +2013,11 @@ def setup_armor_parser(subparser):
 def setup_list_recovery_parser(subparser):
     """Set up arguments for the list-recovery command."""
     subparser.add_argument("--input", "-i", required=True, help="Encrypted file to inspect")
+    subparser.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit the result as JSON on stdout (human output otherwise goes to stderr)",
+    )
 
 
 def setup_recover_parser(subparser):
@@ -2029,6 +2034,11 @@ def setup_recover_parser(subparser):
         action="store_true",
         help="Prompt for a recovery passphrase to unlock the file "
         "(or set OPENSSL_ENCRYPT_RECOVERY_PASSPHRASE to supply it non-interactively)",
+    )
+    subparser.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit the result as JSON on stdout (human output otherwise goes to stderr)",
     )
     subparser.add_argument("-q", "--quiet", action="store_true", help="Suppress output")
 
@@ -2054,10 +2064,24 @@ def setup_add_recovery_parser(subparser):
         "OPENSSL_ENCRYPT_ADD_RECOVERY_PASSPHRASE to supply it non-interactively)",
     )
     subparser.add_argument(
+        "--recovery-code-out",
+        metavar="PATH",
+        help="Write the generated recovery code to PATH, created 0600 and "
+        "refused if it already exists. Required with --add-code --json: the "
+        "code unwraps the file's key, so it is never written to stdout (the "
+        "usual target of shell redirection) or stderr (terminal scrollback and "
+        "GUI debug logs)",
+    )
+    subparser.add_argument(
         "--allow-high-kdf-cost",
         action="store_true",
         help="Permit unlocking even when the file's key-derivation parameters "
         "would exceed the memory safety ceiling (only for files you trust).",
+    )
+    subparser.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit the result as JSON on stdout (human output otherwise goes to stderr)",
     )
     subparser.add_argument("-q", "--quiet", action="store_true", help="Suppress output")
 
@@ -2079,6 +2103,11 @@ def setup_remove_recovery_parser(subparser):
         action="store_true",
         help="Permit unlocking even when the file's key-derivation parameters "
         "would exceed the memory safety ceiling (only for files you trust).",
+    )
+    subparser.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit the result as JSON on stdout (human output otherwise goes to stderr)",
     )
     subparser.add_argument("-q", "--quiet", action="store_true", help="Suppress output")
 

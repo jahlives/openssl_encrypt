@@ -57,6 +57,41 @@ openssl-encrypt recover -i secret.enc -o secret.txt --recovery-code ABCDE-FGHIJ-
 openssl-encrypt recover -i secret.enc -o secret.txt --recovery-passphrase
 ```
 
+### Non-interactive use (scripts, the desktop GUI)
+
+Credentials are passed through the environment, never on the command line — a
+recovery code on argv is visible in the world-readable `/proc/PID/cmdline`.
+Each variable is read once and removed from the environment:
+
+| Variable | Purpose |
+|---|---|
+| `OPENSSL_ENCRYPT_RECOVERY_CODE` | existing code, to unlock |
+| `OPENSSL_ENCRYPT_RECOVERY_PASSPHRASE` | existing passphrase, to unlock |
+| `OPENSSL_ENCRYPT_ADD_RECOVERY_PASSPHRASE` | new passphrase for `--add-passphrase` |
+| `CRYPT_PASSWORD` | the file's primary password |
+
+An explicit flag still selects *which* credential is used; the variable only
+supplies its value. Passing `--recovery-code` on the command line still works
+but warns.
+
+`--json` emits a single JSON document on stdout instead of the human report:
+
+```bash
+openssl-encrypt list-recovery -i secret.enc --json
+#   -> {"slots": [{"id": ..., "type": ..., "key_id": ...}]}
+
+# A generated code is never written to stdout or stderr in JSON mode — it
+# unwraps the file's key. Name a destination; it is created 0600 and the
+# command refuses to overwrite an existing file:
+openssl-encrypt add-recovery -i secret.enc -o secret.enc --add-code --json \
+    --recovery-code-out /run/user/1000/code.txt
+#   -> {"output": ..., "slot_type": "recovery_code",
+#       "credential_source": ..., "recovery_code_written_to": "/run/user/1000/code.txt"}
+```
+
+`--recovery-code-out` works without `--json` too, and then replaces the
+one-time terminal display rather than adding to it.
+
 > The PQC escrow type is available via the Python API
 > (`recovery_credentials=[{"type": "pqc", "public_key": ..., "kem_algorithm": ...}]`
 > and `decrypt_file(recovery_private_key=...)`); CLI flags for it are a planned

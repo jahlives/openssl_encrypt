@@ -28,6 +28,7 @@ import hmac
 import json
 import os
 import secrets
+import sys
 from typing import List
 
 from cryptography.hazmat.primitives import hashes
@@ -555,8 +556,9 @@ def build_recovery_slots(dek: bytes, credentials: List[dict]) -> List[dict]:
 #
 # These wrap the recovery-slot API (crypt_core add/remove/list_recovery_slots
 # and decrypt_file) for the list-recovery / add-recovery / remove-recovery /
-# recover subcommands. All human output goes to stderr via eprint (stdout is
-# reserved for piped data), matching secret_sharing's CLI convention.
+# recover subcommands. Human output goes to stderr via eprint; stdout carries
+# only the --json document, and never a credential (see
+# _write_recovery_code_file for why the generated code gets its own file).
 
 
 def _consume_env(name):
@@ -703,6 +705,99 @@ def _read_recovery_passphrase(env_name, env_value, prompt):
     return _validated_passphrase(getpass.getpass(prompt), "interactive prompt")
 
 
+
+def _capped(value, limit=256):
+    """Bound an untrusted header field before echoing it into JSON output.
+
+    id/type/key_id are copied verbatim out of the plaintext file header, so a
+    crafted file could otherwise drive an arbitrarily large stdout document at a
+    consumer that buffers the whole thing. A non-string is not merely long, it is
+    the wrong shape for the documented schema, so it is reported as null rather
+    than passed through.
+    """
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        return None
+    if len(value) > limit:
+        return value[:limit]
+    return value
+
+def _display_safe(value, limit=256):
+    """Bound and de-fang an untrusted header field before printing it.
+
+    json.dumps escapes control characters for the --json path; the human path
+    writes straight to a terminal, so strip C0/C1 controls (ANSI escapes,
+    carriage returns, newlines) that a crafted file could otherwise use to
+    spoof or overwrite output.
+
+    Args:
+        value: The raw header field.
+        limit: Maximum characters to keep.
+
+    Returns:
+        A printable string, or "" for a missing or non-string value.
+    """
+    capped = _capped(value, limit)
+    if capped is None:
+        return ""
+    return "".join(ch for ch in capped if ch.isprintable())
+
+
+def _write_recovery_code_file(path, code):
+    """Write a generated recovery code to a file only its owner can read.
+
+    A recovery code unwraps the DEK of every file it is added to, so it is
+    password-equivalent and must not travel on a general-purpose stream. stdout
+    is the conventional target of `> file` (created at the caller's umask,
+    typically world-readable) and is collapsed into stderr by `2>&1`; stderr
+    lands in terminal scrollback and in the desktop GUI's persistent debug log.
+    Writing it ourselves is the only way the tool controls the permissions.
+
+    Args:
+        path: Destination path, created 0600 and refused if it already exists.
+        code: The generated recovery code.
+
+    Raises:
+        ValueError: If the destination already exists.
+        OSError: If the file cannot be created or written.
+    """
+    from .file_permissions import PermissionLevel, create_secure_file
+
+    # Delegate to the hardened primitive rather than a local os.open: it adds
+    # O_NOFOLLOW, rejects non-regular and foreign-owned targets, pins the mode
+    # with an unconditional fchmod (open()'s mode is ignored for an existing
+    # file, and a restrictive umask would otherwise subtract from it), and
+    # applies a DACL on Windows, where mode bits alone do nothing. exclusive
+    # adds O_EXCL, so a pre-planted symlink, FIFO or device is refused outright.
+    fd = create_secure_file(path, PermissionLevel.OWNER_ONLY, exclusive=True)
+    try:
+        os.write(fd, (code + "\n").encode("ascii"))
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+    # fsync the directory too: the whole point of writing the credential before
+    # the envelope is that it survives a crash the envelope also survives, and
+    # an unsynced directory entry can vanish while the envelope's new slot stays.
+    #
+    # Best-effort by design. Windows cannot open a directory handle this way at
+    # all, and a write-only destination directory refuses it on POSIX; failing
+    # the command here would abort a correct operation *after* the O_EXCL file
+    # already exists, so the obvious retry would then die with FileExistsError.
+    # Losing the extra durability is much cheaper than that.
+    try:
+        dir_fd = os.open(os.path.dirname(os.path.abspath(path)), os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(dir_fd)
+    except OSError:  # pragma: no cover - platform/filesystem dependent
+        pass
+    finally:
+        os.close(dir_fd)
+
+
 def _validated_passphrase(value, source):
     """Reject a blank/whitespace-only recovery passphrase, whatever its source.
 
@@ -759,24 +854,50 @@ def _recover_kwargs_from_args(args):
 def list_recovery_cli(args) -> None:
     """`list-recovery`: print the recovery slots in a file (no credential)."""
     from .crypt_core import list_recovery_slots
-    from .crypt_utils import eprint
 
     slots = list_recovery_slots(args.input)
+    if getattr(args, "json", False):
+        # Full key_id, not the 16-char display truncation below: a machine
+        # consumer needs the whole value.
+        print(
+            json.dumps(
+                {
+                    "slots": [
+                        {
+                            "id": _capped(s.get("id")),
+                            "type": _capped(s.get("type")),
+                            "key_id": _capped(s.get("key_id")),
+                        }
+                        for s in slots
+                    ]
+                },
+                indent=2,
+            )
+        )
+        sys.stdout.flush()
+        return
     if not slots:
         eprint("No recovery slots on this file.")
         return
     eprint(f"{len(slots)} recovery slot(s):")
     for s in slots:
-        line = f"  id={s['id']}  type={s['type']}"
-        if s.get("key_id"):
-            line += f"  key_id={s['key_id'][:16]}..."
+        # These come verbatim from the plaintext file header, i.e. from whoever
+        # authored the file. Listing a file requires no credential, so raw
+        # output here would let a crafted file emit ANSI escapes and newlines
+        # into the operator's terminal, and an over-long or non-string value
+        # would garble or crash the listing.
+        slot_id = _display_safe(s.get("id"))
+        slot_type = _display_safe(s.get("type"))
+        key_id = _display_safe(s.get("key_id"))
+        line = f"  id={slot_id}  type={slot_type}"
+        if key_id:
+            line += f"  key_id={key_id[:16]}..."
         eprint(line)
 
 
 def recover_cli(args) -> None:
     """`recover`: decrypt a file using a recovery credential (not the password)."""
     from .crypt_core import decrypt_file
-    from .crypt_utils import eprint
 
     kwargs = _recover_kwargs_from_args(args)
     if not kwargs:
@@ -791,7 +912,11 @@ def recover_cli(args) -> None:
         quiet=getattr(args, "quiet", False),
         **kwargs,
     )
-    eprint(f"Recovered to: {args.output}")
+    if getattr(args, "json", False):
+        print(json.dumps({"output": args.output}, indent=2))
+        sys.stdout.flush()
+    else:
+        eprint(f"Recovered to: {args.output}")
 
 
 def add_recovery_cli(args) -> None:
@@ -803,7 +928,6 @@ def add_recovery_cli(args) -> None:
     import getpass
 
     from .crypt_core import add_recovery_slots
-    from .crypt_utils import eprint
 
     add_code = getattr(args, "add_code", False)
     add_passphrase = getattr(args, "add_passphrase", False)
@@ -813,13 +937,35 @@ def add_recovery_cli(args) -> None:
     env = _consume_recovery_env()
     env_phrase = env["add_passphrase"]
 
-    # Validate the selector BEFORE acquiring the unlock credential: otherwise a
-    # bare `add-recovery -i f -o g` blocks on a getpass() prompt (indefinitely,
-    # for a GUI subprocess) only to fail with a usage error afterwards.
+    # Validate EVERY usage error before acquiring the unlock credential:
+    # otherwise a bare `add-recovery -i f -o g` blocks on a getpass() prompt
+    # (indefinitely, for a GUI subprocess) only to fail with a usage error
+    # afterwards.
+    code_out = getattr(args, "recovery_code_out", None)
     if add_code and add_passphrase:
         raise ValueError("Specify only one of --add-code or --add-passphrase")
     if not add_code and not add_passphrase:
         raise ValueError("Specify --add-code or --add-passphrase")
+    if code_out and not add_code:
+        # Silently ignoring it would let a wrapper that always passes the flag
+        # read back a stale file from an earlier run and present it as the new
+        # credential.
+        raise ValueError("--recovery-code-out is only meaningful with --add-code")
+    if getattr(args, "json", False) and add_code and not code_out:
+        # Fail closed rather than silently withhold the credential: under --json
+        # there is no safe general-purpose stream to put it on (see
+        # _write_recovery_code_file), so the caller must name a destination.
+        raise ValueError(
+            "--add-code with --json requires --recovery-code-out PATH: the "
+            "generated code is never written to stdout or stderr in JSON mode"
+        )
+    if code_out:
+        # A destination equal to the envelope would be truncated by the header
+        # write moments later, destroying the credential and reporting success.
+        code_real = os.path.realpath(code_out)
+        for label, other in (("--input", args.input), ("--output", args.output)):
+            if other and code_real == os.path.realpath(other):
+                raise ValueError(f"--recovery-code-out must differ from {label}")
 
     existing_code = _read_recovery_code(args, env["code"])
 
@@ -834,6 +980,9 @@ def add_recovery_cli(args) -> None:
     generated_code = None
     if add_code:
         generated_code = generate_recovery_code()
+        # Not caught by the log redactor's shape heuristic: a grouped base32
+        # code has no 32-char contiguous run. Register it explicitly.
+        register_consumed_secret("generated_recovery_code", generated_code)
         creds.append({"type": "recovery_code", "code": generated_code})
         slot_source = "generated recovery code"
     else:
@@ -857,25 +1006,73 @@ def add_recovery_cli(args) -> None:
             slot_source = "interactively entered passphrase"
         creds.append({"type": "passphrase", "passphrase": phrase})
 
-    add_recovery_slots(
-        args.input,
-        args.output,
-        creds,
-        allow_high_kdf_cost=getattr(args, "allow_high_kdf_cost", False),
-        **unlock,
-    )
+    # Deliver the credential BEFORE modifying the envelope. The reverse order
+    # risks the worst outcome available here: the slot is durably written and
+    # the only credential that opens it is then lost to a failed write, leaving
+    # an extra decryption path nobody can use and nobody can remove without the
+    # primary password.
+    if generated_code is not None and code_out:
+        _write_recovery_code_file(code_out, generated_code)
+
+    try:
+        add_recovery_slots(
+            args.input,
+            args.output,
+            creds,
+            allow_high_kdf_cost=getattr(args, "allow_high_kdf_cost", False),
+            **unlock,
+        )
+    except Exception:
+        # Deliberately do NOT delete the code file here. A raise does not prove
+        # the slot was not written: add_recovery_slots writes the envelope and
+        # only then sets its permissions, so a failure in that later step leaves
+        # the slot durably on disk. Deleting the file would then destroy the one
+        # credential that opens it. An orphan code file, by contrast, is a random
+        # string that opens nothing.
+        if generated_code is not None and code_out:
+            eprint(
+                f"NOTE: a recovery code was written to {code_out} before this "
+                "failure. If the slot was not added, that file is unused and "
+                "can be deleted; verify with list-recovery before deleting. "
+                "A retry with the same --recovery-code-out will fail with "
+                "FileExistsError until this file is removed."
+            )
+        raise
+
+    if getattr(args, "json", False):
+        doc = {
+            "output": args.output,
+            "slot_type": creds[0]["type"],
+            # Which credential produced the slot. Omitting this would make a
+            # slot wrapped under a planted $OPENSSL_ENCRYPT_ADD_RECOVERY_PASSPHRASE
+            # indistinguishable from one the user typed — the very disclosure
+            # the human path exists to provide.
+            "credential_source": slot_source,
+        }
+        if generated_code is not None:
+            doc["recovery_code_written_to"] = code_out
+        print(json.dumps(doc, indent=2))
+        sys.stdout.flush()
+        return
+
     # Name the credential source: an unintended env-driven path must be visible
     # rather than reported as a bare "slot added".
     eprint(f"Recovery slot added ({slot_source}); wrote: {args.output}")
     if generated_code is not None:
-        eprint("\n=== RECOVERY CODE (store this securely; it is shown only once) ===")
-        eprint(f"  {generated_code}")
+        if code_out:
+            # The caller named a private destination, which is the strongest
+            # possible statement that the credential must not go on a stream —
+            # stderr reaches terminal scrollback and the GUI's persistent debug
+            # log. Honour that regardless of --json.
+            eprint(f"Recovery code written to: {code_out}")
+        else:
+            eprint("\n=== RECOVERY CODE (store this securely; it is shown only once) ===")
+            eprint(f"  {generated_code}")
 
 
 def remove_recovery_cli(args) -> None:
     """`remove-recovery`: remove a recovery slot by id from an envelope file."""
     from .crypt_core import remove_recovery_slot
-    from .crypt_utils import eprint
 
     # Consume every credential env var first, before any check that can raise.
     # remove-recovery adds no slot, so the passphrase values are unused here —
@@ -895,4 +1092,10 @@ def remove_recovery_cli(args) -> None:
         allow_high_kdf_cost=getattr(args, "allow_high_kdf_cost", False),
         **unlock,
     )
-    eprint(f"Removed recovery slot {args.slot_id!r}; wrote: {args.output}")
+    if getattr(args, "json", False):
+        print(
+            json.dumps({"output": args.output, "removed_slot_id": args.slot_id}, indent=2)
+        )
+        sys.stdout.flush()
+    else:
+        eprint(f"Removed recovery slot {args.slot_id!r}; wrote: {args.output}")

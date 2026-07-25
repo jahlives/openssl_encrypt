@@ -9,6 +9,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`--json` output for the recovery-slot commands** (gitlab#146 / github#64):
+  `list-recovery`, `recover`, `add-recovery` and `remove-recovery` gain a
+  `--json` flag that emits a single JSON document on stdout *instead of* the
+  human report, which otherwise goes to stderr as before. `list-recovery --json`
+  reports every slot's `id`, `type` and full `key_id` (the human view truncates
+  it to 16 characters for display; the value is bounded, since it comes from an
+  untrusted file header). `add-recovery --json` reports the output path, the
+  slot type, and which credential produced the slot — so a slot wrapped under a
+  planted `$OPENSSL_ENCRYPT_ADD_RECOVERY_PASSPHRASE` is distinguishable from one
+  the user typed. Previously the only way to read a slot list or a generated
+  code was to scrape an unversioned human-readable stderr format.
+
+  A generated recovery code is **never** written to stdout or stderr in JSON
+  mode. It unwraps the file's key, so it is password-equivalent, and neither
+  stream is safe for it: stdout is the conventional target of `> file` (created
+  at the caller's umask) and is merged into stderr by `2>&1`, while stderr
+  reaches terminal scrollback and log files. Instead, `--recovery-code-out PATH`
+  has the tool write the code itself to a file it creates `0600` and refuses to
+  overwrite, and the JSON carries only that path; `--add-code --json` without a
+  destination is refused rather than silently withholding the credential. The
+  code is written *before* the envelope is modified, so the credential cannot be
+  lost to a failed write; if the slot write then fails, the code file is left
+  in place and reported rather than deleted, since a failure does not prove the
+  slot was not written and an orphan code opens nothing. Prerequisite for the
+  desktop GUI Recovery Slots screen.
+
 - **Recovery credentials can be supplied through the environment**
   (gitlab#144 / github#62): the recovery-slot commands previously accepted a
   recovery code only on the command line — where it is visible in the process
