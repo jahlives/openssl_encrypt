@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Desktop GUI: Encrypt tab PQC key file and key-derivation controls**
+  (gitlab#153 / github#71): the Encrypt tab's Advanced Options gain a field to
+  load an existing post-quantum key file, an off-by-default switch for the
+  legacy sequential key derivation, and a parallel key-derivation option with a
+  worker count.
+
+  The legacy switch is labelled as the downgrade it is: it pins the older
+  format version 13, whose derived key is only as strong as the weakest step in
+  the chain, which funnels wide-key ciphers through a narrower intermediate and
+  omits the newer transcript binding. It is never the default.
+
+  Three flags that plan items P16/P17 called for were deliberately **not**
+  exposed, because on the GUI's code path they do nothing: `--keyring-store`
+  and `--keyring-load` are gated on the `-p` value and the GUI passes the
+  password through the environment, so the store never runs and prints nothing
+  (gitlab#156) — offering it would invite a user to discard the only copy of a
+  password that was never saved; and `--pqc-store-key` is already emitted
+  unconditionally for every post-quantum algorithm, so a toggle could not turn
+  it off (gitlab#157). Saving a new PQC key file is likewise unreachable
+  without `--pqc-gen-key`, so the field loads only.
+
 - **Desktop GUI: securely delete the source file after encrypting**
   (gitlab#151 / github#69): the Encrypt tab's Advanced Options gain an
   off-by-default switch that overwrites and deletes the original file once the

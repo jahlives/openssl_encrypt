@@ -24,6 +24,22 @@ class _EncryptTabState extends State<EncryptTab> {
   bool _shredSourceAfterEncrypt = false;
   int _shredPasses = 3;
 
+  // Encrypt-tab flag gaps (gitlab#153). Default off/empty so behaviour is
+  // unchanged unless the user opts in.
+  //
+  // Deliberately NOT exposed, because on this code path they do nothing:
+  //  - --keyring-store/-load: the CLI reads args.password, which is only the
+  //    -p value; the GUI passes the password via CRYPT_PASSWORD, so the store
+  //    never runs. Surfacing it would invite a user to discard their only copy
+  //    of a password that was never saved (gitlab#156).
+  //  - --pqc-store-key: already emitted unconditionally for every PQC
+  //    algorithm, so a toggle could not turn it off (gitlab#157).
+  final TextEditingController _pqcKeyfileController = TextEditingController();
+  /// Opt in to the legacy sequential composition (pins format v13).
+  bool _useSequentialXor = false;
+  bool _parallelKdf = false;
+  int _kdfWorkers = 4;
+
   // Text input controllers
   final TextEditingController _textController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
@@ -168,6 +184,7 @@ class _EncryptTabState extends State<EncryptTab> {
     _cascadeAlgorithmsTextController.dispose();
     _stegoPasswordController.dispose();
     _pepperNameController.dispose();
+    _pqcKeyfileController.dispose();
     super.dispose();
   }
 
@@ -345,6 +362,12 @@ class _EncryptTabState extends State<EncryptTab> {
         noDiversityCheck: _encryptionMode == EncryptionMode.cascade ? _disableDiversityCheck : false,
         strictDiversity: _encryptionMode == EncryptionMode.cascade ? _strictDiversity : false,
         forcePassword: _forcePassword,
+        pqcKeyfile: _pqcKeyfileController.text.trim().isEmpty
+            ? null
+            : _pqcKeyfileController.text.trim(),
+        useXorComposition: _useSequentialXor,
+        parallelKdf: _parallelKdf,
+        kdfWorkers: _parallelKdf ? _kdfWorkers : null,
         enablePepper: _enablePepper,
         pepperName: _pepperMode == 'named' ? _pepperNameController.text : null,
         showProgress: _showProgress,
@@ -597,6 +620,12 @@ class _EncryptTabState extends State<EncryptTab> {
         noDiversityCheck: _encryptionMode == EncryptionMode.cascade ? _disableDiversityCheck : false,
         strictDiversity: _encryptionMode == EncryptionMode.cascade ? _strictDiversity : false,
         forcePassword: _forcePassword,
+        pqcKeyfile: _pqcKeyfileController.text.trim().isEmpty
+            ? null
+            : _pqcKeyfileController.text.trim(),
+        useXorComposition: _useSequentialXor,
+        parallelKdf: _parallelKdf,
+        kdfWorkers: _parallelKdf ? _kdfWorkers : null,
         enablePepper: _enablePepper,
         pepperName: _pepperMode == 'named' ? _pepperNameController.text : null,
         showProgress: _showProgress,
@@ -2739,6 +2768,85 @@ class _EncryptTabState extends State<EncryptTab> {
 
                   // Steganography Configuration
                   _buildSteganographyConfig(),
+                  const SizedBox(height: 12),
+
+                  // PQC keyfile / KDF composition (gitlab#153)
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(12.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          TextField(
+                            controller: _pqcKeyfileController,
+                            decoration: const InputDecoration(
+                              labelText: 'Load PQC key file',
+                              helperText:
+                                  'Optional path to an EXISTING post-quantum key '
+                                  'file to encrypt with. Generating one is not '
+                                  'available here.',
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                          const Divider(height: 24),
+                          Text('Key derivation',
+                              style: Theme.of(context).textTheme.titleSmall),
+                          const SizedBox(height: 8),
+                          SwitchListTile(
+                            title: const Text(
+                                'Use legacy sequential key derivation'),
+                            subtitle: const Text(
+                              'Writes the older format version 13 instead of the '
+                              'current default. The derived key is only as strong '
+                              'as the weakest step in the chain, wide-key ciphers '
+                              'are funnelled through a narrower intermediate, and '
+                              'the newer transcript binding is not applied. Leave '
+                              'off unless you need to interoperate with an older '
+                              'release. Not available for files over 10 MB.',
+                              style: TextStyle(color: Colors.orange),
+                            ),
+                            value: _useSequentialXor,
+                            onChanged: (v) => setState(() {
+                              _useSequentialXor = v;
+                              // Parallel derivation applies to the independent
+                              // composition only.
+                              if (v) _parallelKdf = false;
+                            }),
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                          SwitchListTile(
+                            title: const Text('Parallel key derivation'),
+                            subtitle: const Text(
+                              'Derives the key chain in parallel. Uses more memory '
+                              'at once, since the cost of each step is incurred '
+                              'together rather than one after another.',
+                            ),
+                            value: _parallelKdf,
+                            onChanged: _useSequentialXor
+                                ? null
+                                : (v) => setState(() => _parallelKdf = v),
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                          if (_parallelKdf)
+                            Row(
+                              children: [
+                                const Text('Worker threads:'),
+                                const SizedBox(width: 12),
+                                DropdownButton<int>(
+                                  value: _kdfWorkers,
+                                  items: const [2, 4, 8, 16]
+                                      .map((n) => DropdownMenuItem(
+                                          value: n, child: Text('$n')))
+                                      .toList(),
+                                  onChanged: (v) =>
+                                      setState(() => _kdfWorkers = v ?? 4),
+                                ),
+                              ],
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
                   const SizedBox(height: 12),
 
                   // File-specific options
