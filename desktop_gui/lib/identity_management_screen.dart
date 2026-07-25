@@ -327,8 +327,11 @@ class _IdentityManagementScreenState extends State<IdentityManagementScreen>
               TextField(
                 controller: publicKeyController,
                 decoration: const InputDecoration(
-                  labelText: 'Public Key *',
-                  hintText: 'Paste base64-encoded public key',
+                  labelText: 'Public Identity Document *',
+                  // The wire format is the JSON object written by
+                  // `identity export`, not a bare base64 key: cmd_import
+                  // rejects anything that is not a JSON object.
+                  hintText: 'Paste the JSON document from "identity export"',
                   border: OutlineInputBorder(),
                 ),
                 maxLines: 8,

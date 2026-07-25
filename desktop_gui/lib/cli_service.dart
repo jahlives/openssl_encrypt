@@ -2705,17 +2705,18 @@ class CLIService {
   /// Import a contact's public key
   static Future<void> importContact(String publicKeyData, {String? alias}) async {
     try {
-      final args = ['identity', 'import', '--data', publicKeyData];
+      // The document goes over stdin, never argv: /proc/PID/cmdline is
+      // world-readable, so an argv channel would publish the contact's
+      // metadata to every local process -- and this field is a free-text
+      // paste box, so a mis-pasted private key or passphrase would be leaked
+      // at execve, before the CLI could reject it (gitlab#164).
+      final args = ['identity', 'import', '--data-stdin'];
 
       if (alias != null && alias.isNotEmpty) {
         args.addAll(['--alias', alias]);
       }
 
-      if (debugEnabled) {
-        args.add('--debug');
-      }
-
-      final result = await _runCLICommand(args);
+      final result = await _runCLICommandWithStdin(args, publicKeyData);
 
       if (result.exitCode != 0) {
         throw Exception('Failed to import contact: ${result.stderr}');

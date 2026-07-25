@@ -20,9 +20,80 @@ from pathlib import Path
 from typing import Optional
 
 from .crypt_utils import eprint
-from .identity import Identity, IdentityError, IdentityKeyChangedError, IdentityStore
+from .identity import (
+    Identity,
+    IdentityError,
+    IdentityKeyChangedError,
+    IdentityStore,
+    validate_identity_name,
+)
 from .identity_protection import HSMNotAvailableError, IdentityKeyProtectionService, ProtectionLevel
+from .json_validator import JSONSecurityError, SecureJSONValidator, get_json_validator
 from .pqc_signing import LIBOQS_AVAILABLE
+
+# Upper bound on an identity document, whether it arrives on stdin or in a
+# file. Derived from the JSON validator's own limit rather than duplicated, so
+# the two cannot drift apart.
+#
+# Note the units differ deliberately: this bound is enforced in BYTES (below),
+# while SecureJSONValidator compares len() in CHARACTERS (json_validator.py).
+# Bytes are the stricter reading for any non-ASCII document, so a document
+# accepted here always satisfies the validator too.
+MAX_IDENTITY_DOCUMENT_BYTES = SecureJSONValidator.MAX_JSON_SIZE
+
+
+class IdentityDocumentTooLarge(IdentityError):
+    """Raised when an identity document exceeds MAX_IDENTITY_DOCUMENT_BYTES."""
+
+
+def _read_bounded(stream) -> str:
+    """Read an identity document without materialising an unbounded one.
+
+    Reads one character more than the limit: since every character encodes to
+    at least one byte, a stream longer than the limit always yields more than
+    MAX_IDENTITY_DOCUMENT_BYTES bytes here and is rejected. Truncation can
+    therefore never be followed by acceptance.
+
+    Args:
+        stream: A text stream positioned at the start of the document.
+
+    Returns:
+        The document text.
+
+    Raises:
+        IdentityDocumentTooLarge: If the document exceeds the byte bound.
+    """
+    raw = stream.read(MAX_IDENTITY_DOCUMENT_BYTES + 1)
+    # surrogatepass only ever over-counts (3 bytes for a lone surrogate from a
+    # surrogateescape-configured stream), which is the safe direction.
+    if len(raw.encode("utf-8", "surrogatepass")) > MAX_IDENTITY_DOCUMENT_BYTES:
+        raise IdentityDocumentTooLarge(
+            f"identity document exceeds {MAX_IDENTITY_DOCUMENT_BYTES} bytes"
+        )
+    return raw
+
+
+def _parse_identity_document(raw: str) -> object:
+    """Parse an untrusted identity document.
+
+    Routes through SecureJSONValidator first: its pre-parse linear depth
+    scan (#94) exists because json.loads recurses, and a hostile deeply
+    nested document would otherwise reach the interpreter stack. Both the
+    stdin and the file path use it -- an imported bundle is untrusted
+    whichever way it arrived.
+
+    Args:
+        raw: The document as read from stdin or a file.
+
+    Returns:
+        The parsed document.
+
+    Raises:
+        JSONSecurityError: If the document violates a security constraint.
+        json.JSONDecodeError: If the document is not valid JSON.
+    """
+    get_json_validator().validate_json_security(raw)
+    return json.loads(raw)
 
 
 def get_identity_store(base_path: Optional[Path] = None) -> IdentityStore:
@@ -412,8 +483,11 @@ def cmd_export(args) -> int:
             eprint(error_msg, file=sys.stderr)
             return 1
 
-        # Write to file
-        with open(output_file, "w") as f:
+        # Write to file. Explicit UTF-8, not the locale default: under a
+        # latin-1 locale a name or email would round-trip to different
+        # characters, and the base64 key fields are ASCII, so the fingerprint
+        # check would still pass on a mangled name.
+        with open(output_file, "w", encoding="utf-8") as f:
             json.dump(public_data, f, indent=2)
 
         eprint(f"Public identity exported to: {output_file}")
@@ -437,18 +511,66 @@ def cmd_import(args) -> int:
         Exit code (0 = success, 1 = error)
     """
     try:
-        # Read file
-        input_file = Path(args.file)
+        # The document may arrive as a file or, for callers that already hold
+        # it in memory (the GUI's paste field), on stdin (gitlab#164).
+        # Deliberately NOT an argv value: /proc/PID/cmdline is world-readable,
+        # which would publish the contact metadata to every local process and
+        # would irreversibly expose anything pasted into that field by
+        # mistake -- a private key or passphrase is leaked at execve, before
+        # this function can reject it.
+        file_arg = getattr(args, "file", None)
+        # A source counts only if it is the right type. argparse guarantees
+        # this, but programmatic callers need not, and a stray attribute must
+        # never select a branch by accident.
+        from_stdin = getattr(args, "data_stdin", False) is True
 
-        if not input_file.exists():
-            eprint(f"ERROR: File '{input_file}' not found", file=sys.stderr)
+        if from_stdin:
+            raw = _read_bounded(sys.stdin)
+        elif isinstance(file_arg, (str, Path)):
+            input_file = Path(file_arg)
+
+            # is_file() rather than exists(): a FIFO or character device
+            # passes exists(), and reading one blocks forever (/dev/zero) or
+            # never returns (an unwritten FIFO).
+            if not input_file.is_file():
+                eprint(
+                    f"ERROR: '{input_file}' is not a regular file",
+                    file=sys.stderr,
+                )
+                return 1
+
+            # Same bounded read as stdin: the size check must happen before
+            # the document is materialised, not after.
+            with open(input_file, "r", encoding="utf-8") as f:
+                raw = _read_bounded(f)
+        else:
+            eprint(
+                "ERROR: one of --file or --data-stdin is required", file=sys.stderr
+            )
             return 1
 
-        with open(input_file, "r") as f:
-            public_data = json.load(f)
+        public_data = _parse_identity_document(raw)
+
+        if not isinstance(public_data, dict):
+            # json.loads happily returns a list, a string or a number; passing
+            # one on produces a TypeError from deep inside import_public.
+            eprint(
+                "ERROR: identity document must be a JSON object", file=sys.stderr
+            )
+            return 1
 
         # Import identity
         identity = Identity.import_public(public_data)
+
+        # An alias renames the local label only. The fingerprint is computed
+        # from the algorithms and public keys (Identity.calculate_fingerprint)
+        # and does not cover the name, so renaming cannot mask a key change --
+        # but the name becomes a directory name, so it gets the same
+        # validation import_public applies to the document's own name.
+        alias = getattr(args, "alias", None)
+        if isinstance(alias, str):
+            validate_identity_name(alias)
+            identity.name = alias
 
         # Add to store
         store = get_identity_store(getattr(args, "identity_store", None))
@@ -463,6 +585,14 @@ def cmd_import(args) -> int:
             )
         except IdentityKeyChangedError as e:
             # M8: TOFU key-change. Refuse non-interactively; prompt on a TTY.
+            #
+            # The refusal keys on the document's SOURCE, not only on isatty().
+            # With --data-stdin the bundle and the confirmation would share one
+            # channel, and a pty EOF is soft: a supplier could send
+            # `{...}<^D>yes` and have isatty() still report True, so whoever
+            # supplied the untrusted bundle would also supply the confirmation
+            # that it is trustworthy. That is precisely what pinning exists to
+            # prevent, so a stdin-sourced document never gets the prompt.
             eprint("\n⚠️  WARNING: the key for this contact has CHANGED.")
             eprint(f"  Identity:        {e.name}")
             eprint(f"  Stored (pinned): {e.old_fingerprint}")
@@ -472,7 +602,7 @@ def cmd_import(args) -> int:
                 "bundle is forged / a man-in-the-middle. Only accept if you "
                 "have verified the new fingerprint out of band."
             )
-            if not sys.stdin.isatty():
+            if from_stdin or not sys.stdin.isatty():
                 eprint(
                     "ERROR: refusing to replace a pinned key non-interactively. "
                     "Re-run with --allow-key-change once you have verified the "
@@ -498,7 +628,10 @@ def cmd_import(args) -> int:
         eprint(f"ERROR: {e}", file=sys.stderr)
         return 1
     except json.JSONDecodeError as e:
-        eprint(f"ERROR: Invalid JSON file: {e}", file=sys.stderr)
+        eprint(f"ERROR: Invalid JSON identity document: {e}", file=sys.stderr)
+        return 1
+    except JSONSecurityError as e:
+        eprint(f"ERROR: Rejected identity document: {e}", file=sys.stderr)
         return 1
     except Exception as e:
         eprint(f"ERROR: Failed to import identity: {e}", file=sys.stderr)
