@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Desktop GUI: Batch Operations tab parity** (gitlab#155 / github#73): the
+  Batch tab gains the HSM/YubiKey, remote-pepper and hash/KDF-chain controls the
+  single-file Encrypt tab already had, and now sends them. Previously it passed
+  no hash or KDF configuration and omitted HSM and pepper entirely, so batching
+  silently used CLI defaults while the same files encrypted one at a time used
+  whatever the user had configured — with nothing in the UI to show the
+  difference.
+
+  The hash and KDF panels were extracted from the Encrypt tab into a shared
+  widget rather than duplicated, so the two surfaces cannot drift apart again.
+  As on the Encrypt tab, that configuration is sent for symmetric encryption
+  only: supplying it in asymmetric or cascade mode would take the CLI out of the
+  branch that applies its built-in security template, and the panel is hidden in
+  those modes so the interface never implies a setting applies where it is not
+  sent.
+
 - **Desktop GUI: Encrypt tab PQC key file and key-derivation controls**
   (gitlab#153 / github#71): the Encrypt tab's Advanced Options gain a field to
   load an existing post-quantum key file, an off-by-default switch for the
