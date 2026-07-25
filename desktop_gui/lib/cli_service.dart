@@ -404,9 +404,38 @@ class CLIService {
      String? pepperName,                // Remote pepper: named pepper to use
      bool showProgress = false,         // CLI --progress flag
      String? template,                  // Security template: 'standard', 'quick', 'paranoid'
+     String? pqcKeyfile,                // Path to LOAD an existing PQC key file
+     bool independentXor = false,       // KDF composition: independent XOR
+     bool useXorComposition = false,    // KDF composition: sequential XOR (v13-pinned)
+     bool parallelKdf = false,          // Parallel key derivation (requires independentXor)
+     int? kdfWorkers,                   // Worker count for parallel key derivation
      Function(String)? onProgress,
      Function(String)? onStatus}
   ) async {
+    // The CLI does not validate this pair (verified: no check anywhere in
+    // crypt_cli.py), and the current default composition already IS independent
+    // XOR, so parallel derivation is valid without an explicit flag. What is
+    // genuinely invalid is asking for both compositions at once, which
+    // crypt_cli.py:8421-8427 rejects.
+    if (independentXor && useXorComposition) {
+      throw ArgumentError(
+        'Choose either independent XOR or sequential XOR composition, not both.',
+      );
+    }
+    // Sequential composition pins the legacy v13 format. A security template
+    // forces independent XOR, and crypt_cli.py:7093 lets the composition flag
+    // win — silently downgrading the template the user asked for.
+    if (template != null && (useXorComposition || independentXor)) {
+      throw ArgumentError(
+        'A security template already selects the key-derivation composition; '
+        'do not override it.',
+      );
+    }
+    if (kdfWorkers != null && (kdfWorkers < 1 || kdfWorkers > 64)) {
+      // Not clamped by the CLI: parallel_kdf.py uses an explicit value
+      // verbatim, and encrypt-side memory is the sum of component costs.
+      throw ArgumentError('Key-derivation workers must be between 1 and 64.');
+    }
     Directory? tempDir;
     try {
       // Create temporary directory with restrictive permissions
@@ -656,6 +685,22 @@ class CLIService {
       if (forcePassword) {
         args.add('--force-password');
       }
+      if (pqcKeyfile != null && pqcKeyfile.isNotEmpty) {
+        args.addAll(['--pqc-keyfile', pqcKeyfile]);
+      }
+      if (independentXor) {
+        args.add('--independent-xor');
+      }
+      if (useXorComposition) {
+        args.add('--use-xor-composition');
+      }
+      if (parallelKdf) {
+        args.add('--parallel-kdf');
+      }
+      if (kdfWorkers != null) {
+        args.addAll(['--kdf-workers', '$kdfWorkers']);
+      }
+
 
       // Add progress flag if enabled
       if (showProgress) {

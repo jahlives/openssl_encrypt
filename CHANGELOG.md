@@ -9,6 +9,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Desktop GUI: Batch Operations tab parity** (gitlab#155 / github#73): the
+  Batch tab gains the HSM/YubiKey, remote-pepper and hash/KDF-chain controls the
+  single-file Encrypt tab already had, and now sends them. Previously it passed
+  no hash or KDF configuration and omitted HSM and pepper entirely, so batching
+  silently used CLI defaults while the same files encrypted one at a time used
+  whatever the user had configured — with nothing in the UI to show the
+  difference.
+
+  The hash and KDF panels were extracted from the Encrypt tab into a shared
+  widget rather than duplicated, so the two surfaces cannot drift apart again.
+  As on the Encrypt tab, that configuration is sent for symmetric encryption
+  only: supplying it in asymmetric or cascade mode would take the CLI out of the
+  branch that applies its built-in security template, and the panel is hidden in
+  those modes so the interface never implies a setting applies where it is not
+  sent.
+
+- **Desktop GUI: Encrypt tab PQC key file and key-derivation controls**
+  (gitlab#153 / github#71): the Encrypt tab's Advanced Options gain a field to
+  load an existing post-quantum key file, an off-by-default switch for the
+  legacy sequential key derivation, and a parallel key-derivation option with a
+  worker count.
+
+  The legacy switch is labelled as the downgrade it is: it pins the older
+  format version 13, whose derived key is only as strong as the weakest step in
+  the chain, which funnels wide-key ciphers through a narrower intermediate and
+  omits the newer transcript binding. It is never the default.
+
+  Three flags that plan items P16/P17 called for were deliberately **not**
+  exposed, because on the GUI's code path they do nothing: `--keyring-store`
+  and `--keyring-load` are gated on the `-p` value and the GUI passes the
+  password through the environment, so the store never runs and prints nothing
+  (gitlab#156) — offering it would invite a user to discard the only copy of a
+  password that was never saved; and `--pqc-store-key` is already emitted
+  unconditionally for every post-quantum algorithm, so a toggle could not turn
+  it off (gitlab#157). Saving a new PQC key file is likewise unreachable
+  without `--pqc-gen-key`, so the field loads only.
+
 - **Desktop GUI: securely delete the source file after encrypting**
   (gitlab#151 / github#69): the Encrypt tab's Advanced Options gain an
   off-by-default switch that overwrites and deletes the original file once the

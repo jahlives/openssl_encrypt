@@ -17,6 +17,7 @@ import 'shred_screen.dart';
 import 'rekey_screen.dart';
 import 'recovery_slots_screen.dart';
 import 'input_validation.dart';
+import 'widgets/crypto_widgets.dart';
 import 'tabs/encrypt_tab.dart';
 import 'tabs/decrypt_tab.dart';
 
@@ -2341,6 +2342,83 @@ class BatchOperationsTab extends StatefulWidget {
 }
 
 class _BatchOperationsTabState extends State<BatchOperationsTab> {
+  // Parity with the single-file Encrypt tab (gitlab#155). Without these the
+  // batch path silently used CLI defaults while the Encrypt tab used whatever
+  // the user had configured, with nothing in the UI to show the difference.
+  /// Populate the hash panel, mirroring the Encrypt tab.
+  ///
+  /// Without this the panel renders empty and _buildHashConfigMap() always
+  /// returns null, so the hash chain silently falls back to CLI defaults.
+  @override
+  void dispose() {
+    _pepperNameController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadHashAlgorithms() async {
+    try {
+      final algorithms = await CLIService.getHashAlgorithms();
+      if (!mounted) return;
+      setState(() {
+        _hashAlgorithms = algorithms;
+        for (final group in algorithms.values) {
+          for (final algo in group) {
+            _hashConfig[algo] = algo == 'sha3-512'
+                ? {'enabled': true, 'rounds': 100000}
+                : {'enabled': false, 'rounds': 1000};
+          }
+        }
+        // Seed sha3-512 even when the algorithm list came from the offline
+        // fallback, which omits it: otherwise the hash chain silently
+        // contributes nothing while argon2 is still emitted.
+        _hashConfig.putIfAbsent(
+            'sha3-512', () => {'enabled': true, 'rounds': 100000});
+      });
+    } catch (e) {
+      CLIService.outputDebugLog('Failed to load hash algorithms: $e');
+    }
+  }
+
+  /// Enabled hash entries only, matching the Encrypt tab's filter.
+  Map<String, Map<String, dynamic>>? _buildHashConfigMap() {
+    final enabled = Map<String, Map<String, dynamic>>.fromEntries(
+        _hashConfig.entries.where((e) => e.value['enabled'] == true));
+    return enabled.isEmpty ? null : enabled;
+  }
+
+  /// Enabled KDF entries only, matching the Encrypt tab's filter.
+  Map<String, Map<String, dynamic>>? _buildKdfConfigMap() {
+    final enabled = Map<String, Map<String, dynamic>>.fromEntries(
+        _kdfConfig.entries.where((e) => e.value['enabled'] == true));
+    return enabled.isEmpty ? null : enabled;
+  }
+
+  String _hsmType = 'none';
+  int _yubikeySlot = 1;
+  // Hash/KDF chain config, shared with the Encrypt tab via HashKdfConfigSection
+  // (gitlab#155). Seeded identically to that tab, for two reasons:
+  //  - the shared panel's preset buttons index every KDF key directly, so a
+  //    partial map makes them throw;
+  //  - parity with that tab is the point of this change.
+  //
+  // Note what the seeding does NOT do: _buildKdfConfigMap() filters to
+  // enabled == true, so the four disabled entries emit no arguments at all.
+  // Sending any KDF config takes the CLI out of the branch that applies its
+  // STANDARD template — that is true here exactly as it is on the Encrypt tab
+  // in Pro mode, and it is why the config is sent for symmetric mode only.
+  final Map<String, Map<String, dynamic>> _hashConfig = {};
+  Map<String, List<String>> _hashAlgorithms = {};
+  final Map<String, Map<String, dynamic>> _kdfConfig = {
+    'argon2': {'enabled': true, 'time_cost': 3, 'memory_cost': 65536, 'parallelism': 4, 'hash_len': 32, 'type': 2, 'rounds': 10},
+    'scrypt': {'enabled': false, 'n': 16384, 'r': 8, 'p': 1, 'rounds': 10},
+    'hkdf': {'enabled': false, 'rounds': 1, 'algorithm': 'sha256', 'info': 'openssl_encrypt_hkdf'},
+    'balloon': {'enabled': false, 'time_cost': 3, 'space_cost': 65536, 'parallelism': 4, 'rounds': 2, 'hash_len': 32},
+    'randomx': {'enabled': false, 'mode': 'light', 'rounds': 1, 'height': 1, 'hash_len': 32},
+  };
+  bool _enablePepper = false;
+  String _pepperMode = 'auto'; // 'auto' or 'named'; must match the dropdown
+  final TextEditingController _pepperNameController = TextEditingController();
+
   List<FileInfo> _selectedFiles = [];
   bool _isLoading = false;
   String _selectedAlgorithm = 'aes-gcm';
@@ -2387,6 +2465,7 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
   @override
   void initState() {
     super.initState();
+    _loadHashAlgorithms();
     _loadIdentities();
   }
 
@@ -2669,6 +2748,7 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
                     dense: true,
                   ),
                 ),
+
               ],
             ],
           ],
@@ -3523,6 +3603,41 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
                       ],
                     ),
 
+                    // Parity with the single-file Encrypt tab (gitlab#155).
+                    // These apply to every file in the batch and are shown for
+                    // encryption so the user can see what the batch will
+                    // actually use, rather than silently inheriting CLI
+                    // defaults while the Encrypt tab uses their configuration.
+                    if (_selectedOperation == 'encrypt') ...[
+                      const SizedBox(height: 16),
+                      HsmConfigSection(
+                        hsmType: _hsmType,
+                        yubikeySlot: _yubikeySlot,
+                        onHsmTypeChanged: (value) =>
+                            setState(() => _hsmType = value),
+                        onYubikeySlotChanged: (value) =>
+                            setState(() => _yubikeySlot = value),
+                      ),
+                      const SizedBox(height: 12),
+                      PepperConfigSection(
+                        enablePepper: _enablePepper,
+                        pepperMode: _pepperMode,
+                        pepperNameController: _pepperNameController,
+                        onEnablePepperChanged: (value) =>
+                            setState(() => _enablePepper = value),
+                        onPepperModeChanged: (mode) =>
+                            setState(() => _pepperMode = mode),
+                      ),
+                      if (_encryptionMode == EncryptionMode.symmetric) ...[
+                        const SizedBox(height: 12),
+                        HashKdfConfigSection(
+                          hashConfig: _hashConfig,
+                          hashAlgorithms: _hashAlgorithms,
+                          kdfConfig: _kdfConfig,
+                        ),
+                      ],
+                    ],
+
                     // Integrity verification section (for encrypt/decrypt operations)
                     if (SettingsService.getIntegrityEnabled() && _selectedOperation != 'verify-integrity') ...[
                       const SizedBox(height: 16),
@@ -3912,12 +4027,16 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
             content,
             _password,
             'aes-256-gcm',
-            null,
-            null,
+            _encryptionMode == EncryptionMode.symmetric ? _buildHashConfigMap() : null,
+            _encryptionMode == EncryptionMode.symmetric ? _buildKdfConfigMap() : null,
             forIdentities: _selectedRecipients,
             signWith: _signingIdentity,
             useKeyserver: _useKeyserver,
             enableIntegrity: _enableIntegrity,
+            hsmPlugin: _hsmType != 'none' ? _hsmType : null,
+            hsmSlot: _hsmType == 'yubikey' ? _yubikeySlot : null,
+            enablePepper: _enablePepper,
+            pepperName: _pepperMode == 'named' ? _pepperNameController.text : null,
           );
         } else if (_encryptionMode == EncryptionMode.cascade) {
           // Cascade encryption mode
@@ -3925,12 +4044,16 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
             content,
             _password,
             'aes-256-gcm',
-            null,
-            null,
+            _encryptionMode == EncryptionMode.symmetric ? _buildHashConfigMap() : null,
+            _encryptionMode == EncryptionMode.symmetric ? _buildKdfConfigMap() : null,
             cascadePreset: _cascadePreset != 'custom' ? _cascadePreset : null,
             cascadeAlgorithms: _cascadePreset == 'custom' ? _cascadeAlgorithms : null,
             cascadeHash: _cascadeHash,
             enableIntegrity: _enableIntegrity,
+            hsmPlugin: _hsmType != 'none' ? _hsmType : null,
+            hsmSlot: _hsmType == 'yubikey' ? _yubikeySlot : null,
+            enablePepper: _enablePepper,
+            pepperName: _pepperMode == 'named' ? _pepperNameController.text : null,
           );
         } else {
           // Symmetric encryption mode (default)
@@ -3938,10 +4061,14 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
             content,
             _password,
             _selectedAlgorithm,
-            null,
-            null,
+            _encryptionMode == EncryptionMode.symmetric ? _buildHashConfigMap() : null,
+            _encryptionMode == EncryptionMode.symmetric ? _buildKdfConfigMap() : null,
             encryptData: _isPostQuantumAlgorithm(_selectedAlgorithm) ? _selectedEncryptData : null,
             enableIntegrity: _enableIntegrity,
+                      hsmPlugin: _hsmType != 'none' ? _hsmType : null,
+            hsmSlot: _hsmType == 'yubikey' ? _yubikeySlot : null,
+            enablePepper: _enablePepper,
+            pepperName: _pepperMode == 'named' ? _pepperNameController.text : null,
           );
         }
 
