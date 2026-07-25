@@ -16,6 +16,7 @@ import 'password_generator_screen.dart';
 import 'shred_screen.dart';
 import 'rekey_screen.dart';
 import 'recovery_slots_screen.dart';
+import 'verify_signature_screen.dart';
 import 'input_validation.dart';
 import 'widgets/crypto_widgets.dart';
 import 'tabs/encrypt_tab.dart';
@@ -483,6 +484,8 @@ class _MainScreenState extends State<MainScreen> {
           return RekeyScreen(fileManager: _fileManager);
         case 10:
           return RecoverySlotsScreen(fileManager: _fileManager);
+        case 11:
+          return VerifySignatureScreen(fileManager: _fileManager);
         default:
           return EncryptTab(fileManager: _fileManager, isProMode: true);
       }
@@ -677,6 +680,11 @@ class _MainScreenState extends State<MainScreen> {
                     icon: Icon(Icons.vpn_key_outlined),
                     selectedIcon: Icon(Icons.vpn_key),
                     label: Text('Recovery'),
+                  ),
+                  NavigationRailDestination(
+                    icon: Icon(Icons.fact_check_outlined),
+                    selectedIcon: Icon(Icons.fact_check),
+                    label: Text('Verify Sig'),
                   ),
                 ]
               : const [

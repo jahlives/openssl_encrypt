@@ -3138,6 +3138,70 @@ class CLIService {
     }
   }
 
+  // ==================== Signature verification (gitlab#158) ============
+
+  /// Verify a detached signature over [inputPath].
+  ///
+  /// Needs no credential: verification uses public keys, and trust comes from
+  /// the local identity store — the CLI refuses an unknown signer rather than
+  /// reporting the file as merely unverified.
+  ///
+  /// [signer] pins the expected identity by name. Without it the signer is
+  /// resolved from the signature's fingerprint, which is a materially weaker
+  /// statement: "signed by someone in your store" rather than "signed by the
+  /// identity you named".
+  ///
+  /// Throws when verification could not be performed. A signature that is
+  /// simply BAD is returned as a result with `valid == false`, never as an
+  /// exception — conflating the two would let a genuine bad signature be
+  /// reported as an error the user shrugs off.
+  static Future<SignatureVerification> verifySignature({
+    required String inputPath,
+    String? signaturePath,
+    String? signer,
+    String? identityStore,
+  }) async {
+    final args = ['verify-signature', '-i', inputPath, '--json'];
+    if (signaturePath != null && signaturePath.isNotEmpty) {
+      args.addAll(['--signature', signaturePath]);
+    }
+    if (signer != null && signer.isNotEmpty) {
+      args.addAll(['--signer', signer]);
+    }
+    if (identityStore != null && identityStore.isNotEmpty) {
+      args.addAll(['--identity-store', identityStore]);
+    }
+
+    // logStdout stays false. The verdict is public, but the document is not
+    // just the verdict: signed_at and every component label come verbatim from
+    // an attacker-supplied .sig, unbounded in count and length, and are NOT
+    // covered by the signature. A summary is everything a bug report needs.
+    final result = await _runCLICommand(args);
+    final out = (result.stdout as String).trim();
+
+    // The CLI exits 1 for a bad signature AND for "could not check at all"
+    // (missing signature file, unknown signer), but only the former emits
+    // JSON. Parse first, and treat the absence of a document as an error.
+    if (out.isEmpty) {
+      throw Exception(_cliError(result, 'Could not verify the signature'));
+    }
+    try {
+      final v = SignatureVerification.fromJson(
+          jsonDecode(out) as Map<String, dynamic>);
+      _outputDebugLog(
+        'verify-signature: valid=${v.valid} file_match=${v.fileMatch} '
+        'signature_valid=${v.signatureValid} components=${v.components.length} '
+        'failing=${v.components.where((c) => !c.valid).length}',
+      );
+      return v;
+    } catch (_) {
+      // Catch, not `on FormatException`: a wrong-typed field raises TypeError,
+      // which is an Error rather than an Exception and would escape the
+      // documented contract.
+      throw Exception(_cliError(result, 'Could not verify the signature'));
+    }
+  }
+
   // ==================== Recovery slots (gitlab#145) ====================
 
   /// List the recovery slots on [inputPath]. Requires no credential.
@@ -3402,6 +3466,73 @@ class RecoveryCodeException implements Exception {
 
   @override
   String toString() => message;
+}
+
+/// One algorithm's contribution to a signature verification.
+class SignatureComponent {
+  final String component;
+  final bool valid;
+
+  const SignatureComponent({required this.component, required this.valid});
+
+  factory SignatureComponent.fromJson(Map<String, dynamic> json) =>
+      SignatureComponent(
+        component: (json['component'] ?? '') as String,
+        valid: json['valid'] == true,
+      );
+}
+
+/// The result of verifying a detached signature.
+///
+/// [valid] is the only field that should drive a pass/fail indicator. The
+/// component list exists so a partial failure is visible: a post-quantum
+/// component failing while a classical one passes is still a bad signature,
+/// and showing only the classical result would hide that.
+class SignatureVerification {
+  final bool valid;
+  final bool fileMatch;
+  final bool signatureValid;
+  final String signer;
+  final String signerFingerprint;
+  final String signedAt;
+  final List<SignatureComponent> components;
+  final String reason;
+
+  const SignatureVerification({
+    required this.valid,
+    required this.fileMatch,
+    required this.signatureValid,
+    required this.signer,
+    required this.signerFingerprint,
+    required this.signedAt,
+    required this.components,
+    required this.reason,
+  });
+
+  factory SignatureVerification.fromJson(Map<String, dynamic> json) {
+    final components = ((json['components'] as List<dynamic>?) ?? const [])
+        .map((e) => SignatureComponent.fromJson(e as Map<String, dynamic>))
+        .toList(growable: false);
+    final fileMatch = json['file_match'] == true;
+    final signatureValid = json['signature_valid'] == true;
+    return SignatureVerification(
+        // Re-derived rather than trusted: a truncated but parseable
+        // {"valid": true} would otherwise render a full green verdict with no
+        // signer, no fingerprint and no components at all.
+        valid: json['valid'] == true &&
+            fileMatch &&
+            signatureValid &&
+            components.isNotEmpty &&
+            components.every((c) => c.valid),
+        fileMatch: fileMatch,
+        signatureValid: signatureValid,
+        signer: (json['signer'] ?? '') as String,
+        signerFingerprint: (json['signer_fingerprint'] ?? '') as String,
+        signedAt: (json['signed_at'] ?? '') as String,
+        components: components,
+        reason: (json['reason'] ?? '') as String,
+    );
+  }
 }
 
 /// One recovery slot on an envelope file.

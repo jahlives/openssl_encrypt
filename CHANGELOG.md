@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Desktop GUI: Verify Signature screen** (gitlab#158 / github#76): a new
+  Pro-mode screen checks a detached signature against a file. Verification needs
+  no password — it uses public keys, and trust comes from the local identity
+  store, which refuses an unknown signer outright rather than reporting the file
+  as merely unverified.
+
+  The screen is built around not being misread. Three outcomes are kept
+  visually distinct: a valid signature, an invalid one, and a check that could
+  not be performed — the last shown as explicitly not a verdict. Naming an
+  expected signer that the signature does not match is treated as a hard
+  failure rather than an inability to check, since that is the strongest
+  negative result available and it only arises when the user asked for it. A
+  failed verification never attributes the file to a named person; it reports
+  the claimed signer as unverified. Each algorithm component is listed so a
+  failing one is not hidden by a passing one, with the caveat that component
+  names come from the signature file and are not themselves signed
+  (gitlab#160). The overall verdict is re-derived from the individual fields
+  rather than trusted, so a truncated or inconsistent result cannot render as
+  valid.
+
 - **Desktop GUI: Batch Operations tab parity** (gitlab#155 / github#73): the
   Batch tab gains the HSM/YubiKey, remote-pepper and hash/KDF-chain controls the
   single-file Encrypt tab already had, and now sends them. Previously it passed
