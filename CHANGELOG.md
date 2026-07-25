@@ -9,6 +9,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Recovery credentials can be supplied through the environment**
+  (gitlab#144 / github#62): the recovery-slot commands previously accepted a
+  recovery code only on the command line — where it is visible in the process
+  list, and unlike `--password`/`--rekey-password` with no warning — while
+  recovery passphrases were reachable only through a `getpass()` prompt that
+  reads `/dev/tty`, so no non-interactive caller could drive them at all.
+  Three env vars now carry these credentials: `OPENSSL_ENCRYPT_RECOVERY_CODE`
+  and `OPENSSL_ENCRYPT_RECOVERY_PASSPHRASE` (to unlock, for `recover`,
+  `add-recovery` and `remove-recovery`) and
+  `OPENSSL_ENCRYPT_ADD_RECOVERY_PASSPHRASE` (the new passphrase for
+  `add-recovery --add-passphrase`). Each is read once and deleted from the
+  environment immediately — including when an explicit flag supersedes it — so
+  it is not on the process list and is not inherited by a later child process
+  (several call sites run `subprocess.run()` with no `env=`). `$CRYPT_PASSWORD`
+  is now consumed on the same paths, closing a hygiene gap where the
+  higher-value primary password outlived the lower-value recovery credentials.
+  An explicit flag still selects *which* credential is used — an environment
+  variable alone can never select the passphrase path, so a planted variable
+  cannot silently wrap a file's key under an attacker-chosen passphrase — and
+  `add-recovery` now names the credential source it used. Passing
+  `--recovery-code` on the command line warns that it is visible in the process
+  list (not silenced by `--quiet`). A blank or whitespace-only recovery
+  passphrase is now refused from **either** channel — previously two Enter
+  presses at the interactive prompt would wrap the file's key under an empty
+  passphrase, and since a recovery slot is an additional wrapping of the same
+  key, such a slot lets anyone unwrap the file. A blank environment value fails
+  fast rather than falling through to a prompt a GUI subprocess could never
+  answer, and passphrases are validated without being modified, so a slot added
+  through one channel always opens through the other. Redaction of these values
+  in the security audit log survives their removal from the environment,
+  matched by an HMAC fingerprint under an ephemeral per-process key (never a
+  bare hash, which would be an offline guessing oracle) — the existing check
+  resolves the live environment and would otherwise never fire.
+  `OPENSSL_ENCRYPT_REKEY_PASSWORD` is added to that list too, which it
+  previously was not — though its own consumption site does not yet register
+  the value, so its redaction still stops once consumed. Note that `unsetenv()`
+  does not scrub the exec-time copy visible in
+  `/proc/self/environ`, so this converts a world-readable `cmdline` leak into a
+  same-uid residual rather than eliminating it entirely. Prerequisite for the
+  desktop GUI Recovery Slots screen.
+
 - **Desktop GUI: Rekey screen** (gitlab#142 / github#60): a new Pro-mode
   "Rekey" screen re-encrypts an existing file with a new password (and
   optionally a new algorithm) via the CLI `rekey` command, writing a new output

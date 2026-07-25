@@ -2019,11 +2019,16 @@ def setup_recover_parser(subparser):
     """Set up arguments for the recover command (decrypt via a recovery credential)."""
     subparser.add_argument("--input", "-i", required=True, help="Encrypted file to recover")
     subparser.add_argument("--output", "-o", required=True, help="Output (decrypted) file")
-    subparser.add_argument("--recovery-code", help="Recovery code to unlock the file")
+    subparser.add_argument(
+        "--recovery-code",
+        help="Recovery code to unlock the file (WARNING: visible in process "
+        "list; prefer the OPENSSL_ENCRYPT_RECOVERY_CODE env var)",
+    )
     subparser.add_argument(
         "--recovery-passphrase",
         action="store_true",
-        help="Prompt for a recovery passphrase to unlock the file",
+        help="Prompt for a recovery passphrase to unlock the file "
+        "(or set OPENSSL_ENCRYPT_RECOVERY_PASSPHRASE to supply it non-interactively)",
     )
     subparser.add_argument("-q", "--quiet", action="store_true", help="Suppress output")
 
@@ -2034,13 +2039,19 @@ def setup_add_recovery_parser(subparser):
     subparser.add_argument("--output", "-o", required=True, help="Output file with the new slot")
     subparser.add_argument("-p", "--password", help="Password to unlock the file")
     subparser.add_argument(
-        "--recovery-code", help="Existing recovery code to unlock the file (instead of --password)"
+        "--recovery-code",
+        help="Existing recovery code to unlock the file (instead of --password). "
+        "WARNING: visible in process list; prefer the "
+        "OPENSSL_ENCRYPT_RECOVERY_CODE env var",
     )
     subparser.add_argument(
         "--add-code", action="store_true", help="Add a freshly generated recovery code"
     )
     subparser.add_argument(
-        "--add-passphrase", action="store_true", help="Add a recovery passphrase (prompted)"
+        "--add-passphrase",
+        action="store_true",
+        help="Add a recovery passphrase (prompted; or set "
+        "OPENSSL_ENCRYPT_ADD_RECOVERY_PASSPHRASE to supply it non-interactively)",
     )
     subparser.add_argument(
         "--allow-high-kdf-cost",
@@ -2058,7 +2069,10 @@ def setup_remove_recovery_parser(subparser):
     subparser.add_argument("--slot-id", required=True, help="Id of the recovery slot to remove")
     subparser.add_argument("-p", "--password", help="Password to unlock the file")
     subparser.add_argument(
-        "--recovery-code", help="Recovery code to unlock the file (instead of --password)"
+        "--recovery-code",
+        help="Recovery code to unlock the file (instead of --password). "
+        "WARNING: visible in process list; prefer the "
+        "OPENSSL_ENCRYPT_RECOVERY_CODE env var",
     )
     subparser.add_argument(
         "--allow-high-kdf-cost",
