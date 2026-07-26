@@ -331,3 +331,84 @@ introduced by the fix to the previous finding. Treat "the CLI flag exists" as
 the start of verification, not the end: check that the flag is *consumed*, that
 the command *exits non-zero on failure*, and that what the UI says about it is
 true.
+
+---
+
+## Outstanding issue register (added 2026-07-26)
+
+The body of this plan tracks GUI parity items (P-numbers) and the CLI blockers
+found while triaging them. It did **not** track the CLI issues found by reading
+CLI surface directly, nor the follow-ups raised by the security reviews — 16
+issues in total. They are all filed on GitLab (and mirrored to GitHub except
+where confidential), but this plan is the resumption record, so they are listed
+here too.
+
+### Landed this session
+
+| Issue | Was |
+|---|---|
+| gitlab#164 / gh#82 | GUI contact import had never worked (`--data`/`--alias` did not exist). Now `--file` / `--data-stdin` + `--alias`. |
+| gitlab#171 / gh#89 | Global flags after a subcommand rejected for 22 of 42 subcommands (drifted command list). Also fixed two credential leaks it made reachable. |
+| gitlab#154 / gh#72, gitlab#159 / gh#77 | Second password and signer passphrase had no non-interactive input path. Shared `modules/credential_env.py`. |
+| gitlab#152 / gh#70, gitlab#181 / gh#96 | `--random` had no safe delivery channel — and crashed with `AttributeError` before ever reaching it. |
+
+### Open CLI work (blocks GUI items)
+
+- **gitlab#162 / gh#80** — no machine-readable output for `analyze-security`,
+  `smart-recommendations`, `telemetry status`. Blocks P30/P33.
+- **gitlab#163 / gh#81** — `--no-touch` only suppresses a prompt;
+  `--hsm-piv-slot` discarded on create. Blocks P27–P29.
+- **gitlab#167 / gh#85 (remainder)** — `template compare --format json` still
+  ignored (`template list` was fixed).
+- **gitlab#168 / gh#86** — `analyze-config` reads KDF/cipher keys its own
+  parser never sets.
+- **gitlab#169 / gh#87** — template self-asserted security score is the sort
+  key; unbounded `hash_config`; secret-to-disk in create.
+- **gitlab#170 / gh#88** — video steganography options are dead surface; MP4
+  support advertised but absent. Blocks P24.
+
+### Open follow-ups from security reviews
+
+Confidential (pre-existing, affect released versions):
+
+- **gitlab#172** — imported identity `email` is never validated and is printed
+  raw directly above the `Fingerprint:` line, so ANSI escapes can forge it.
+  Out-of-band fingerprint comparison is the only authenticity mechanism this
+  design has. **Highest priority of everything listed here.**
+- **gitlab#173** — a contact can shadow an own identity's name; deleting the
+  own identity then silently promotes the attacker's keys, and recipient
+  resolution goes through `get_by_name`.
+- **gitlab#178** — `keyserver show-token` prints 12 characters of the bearer
+  token outside `debug_secret()`.
+
+Public:
+
+- **gitlab#174 / gh#90** — interactive confirmation prompts go to stdout while
+  their warning text goes to stderr, so a redirected stdout hides the question.
+- **gitlab#175 / gh#91** — GUI `_runCLICommandWithStdin` writes and closes
+  stdin before draining stdout/stderr.
+- **gitlab#176 / gh#92** — `install-dependencies --yes` still rejected;
+  `main()`'s routing skip-set is still a hand-maintained duplicate.
+- **gitlab#177 / gh#93** — global-flag preprocessing ignores `--` and can take
+  an option value as the command position.
+- **gitlab#179 / gh#94** — seven documented commands (`create-usb`,
+  `verify-usb`, the five `*-plugin`) route to a subparser that does not exist.
+  Verified pre-existing.
+- **gitlab#180 / gh#95** — credential-channel follow-ups: late consume on the
+  encrypt path, `info` has no way to *request* the credential, the fd blank
+  check duplicates the rule.
+- **gitlab#182 / gh#97** — `generate-password` still claims to clear the
+  screen; the orphan-password NOTE misses the `return 1` paths; `realpath`
+  does not resolve hardlinks.
+- **gitlab#147, gitlab#149, gitlab#150** — earlier follow-ups (#150 is the
+  stdout-leak lint's ±50 line tolerance, which has forced a manual re-anchor
+  on nearly every commit this session).
+
+### A defect class worth a lint
+
+`--hsm-piv-slot`, `template --format`, the `analyze-config` KDF keys, the video
+steganography group, and `encrypt --random`'s character-class flags were all
+the same shape: surface that is accepted or advertised but that no handler can
+service. A test asserting that every `args.<attr>` read in a subcommand handler
+is declared on that subcommand's parser would catch the whole class at once —
+it would have caught gitlab#181 immediately.
