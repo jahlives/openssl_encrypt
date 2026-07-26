@@ -83,6 +83,7 @@ from .credential_env import (
     resolve_credential,
 )
 from .credential_env import validated as credential_validated
+from .security_logger import register_consumed_secret
 from .keystore_utils import auto_generate_pqc_key
 
 # Import keystore-related modules
@@ -792,15 +793,16 @@ def get_template_config(template: str or SecurityTemplate) -> Dict[str, Any]:
 # Read once and deleted; see modules/credential_env.py for the rationale.
 SECOND_PASSWORD_ENV = "OPENSSL_ENCRYPT_SECOND_PASSWORD"
 
-# Value-taking CLI options whose VALUE is a secret. Their values must never
-# appear in the --debug argv dump; they are routed through the debug_secret()
-# redaction chokepoint instead. Keep in sync with the parsers in this module
-# and crypt_cli_subparser.py. File-path/fd options (--password-file,
-# --password-fd, --recovery-share, ...) are not secrets themselves.
 # Subcommands whose credential arrives as a POSITIONAL argument, which
 # SECRET_VALUE_CLI_OPTIONS cannot match because it keys on option names.
 SECRET_POSITIONAL_SUBCOMMANDS = frozenset({"set-token", "login"})
 
+# Value-taking CLI options whose VALUE is a secret. Their values must never
+# appear in the --debug argv dump; they are routed through the debug_secret()
+# redaction chokepoint instead. Keep in sync with the parsers in this module
+# and crypt_cli_subparser.py. File-path/fd options (--password-file,
+# --password-fd, --recovery-share, --random-password-out, ...) are not secrets
+# themselves.
 SECRET_VALUE_CLI_OPTIONS = frozenset(
     {
         "-p",
@@ -813,6 +815,165 @@ SECRET_VALUE_CLI_OPTIONS = frozenset(
         "--encryption-data",
     }
 )
+
+
+def _write_generated_password_file(path, password):
+    """Write a `--random` generated password to a file only its owner can read.
+
+    The generated password is the only thing standing between an attacker and
+    the file's plaintext, so it must not travel on a general-purpose stream.
+    stderr -- where it used to be printed -- is collapsed into stdout by
+    `2>&1`, lands in terminal scrollback, in `script(1)` transcripts, in CI job
+    logs and in the desktop GUI's persistent debug log. Writing it ourselves is
+    the only way the tool controls the permissions (gitlab#152).
+
+    Args:
+        path: Destination, created 0600 and refused if it already exists.
+        password: The generated password.
+
+    Raises:
+        ValueError: If the destination already exists.
+        OSError: If the file cannot be created or written.
+    """
+    from .file_permissions import PermissionLevel, create_secure_file
+
+    # Same hardened primitive as the recovery-code writer (gitlab#146): it adds
+    # O_NOFOLLOW and O_EXCL, so a pre-planted symlink, FIFO or device is
+    # refused outright, rejects non-regular and foreign-owned targets, and pins
+    # the mode with an unconditional fchmod rather than trusting open()'s mode
+    # (which is ignored for an existing file, and which a restrictive umask
+    # would otherwise subtract from).
+    fd = create_secure_file(path, PermissionLevel.OWNER_ONLY, exclusive=True)
+    try:
+        os.write(fd, (password + "\n").encode("utf-8"))
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+    # fsync the directory too: the whole point of writing the credential before
+    # the ciphertext is that it survives a crash the ciphertext also survives,
+    # and an unsynced directory entry can vanish while the encrypted file stays.
+    #
+    # Best-effort by design. Windows cannot open a directory handle this way,
+    # and a write-only destination directory refuses it on POSIX; failing here
+    # would abort a correct operation *after* the O_EXCL file already exists,
+    # so the obvious retry would then die with FileExistsError.
+    try:
+        dir_fd = os.open(os.path.dirname(os.path.abspath(path)), os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(dir_fd)
+    except OSError:  # pragma: no cover - platform/filesystem dependent
+        pass
+    finally:
+        os.close(dir_fd)
+
+
+def _effective_encrypt_output(args):
+    """The path the encrypt run will actually write its ciphertext to.
+
+    `args.output` is not normalized anywhere, so reading it alone misses the
+    two derived cases: `--overwrite` writes back over the input, and an
+    omitted `--output` appends ".encrypted". A collision check that consulted
+    only `args.output` would therefore pass for
+    `encrypt -i f --random-password-out f.encrypted` and let the ciphertext
+    truncate the password file (gitlab#152).
+
+    Args:
+        args: Parsed CLI arguments.
+
+    Returns:
+        The output path, or None when it cannot be determined (stdin input
+        with no explicit output, which goes to stdout).
+    """
+    if getattr(args, "overwrite", False):
+        return args.input
+    if getattr(args, "output", None):
+        return args.output
+    if args.input == "/dev/stdin":
+        return None
+    return args.input + ".encrypted"
+
+
+def _check_random_password_destination(out_path, input_path, output_path):
+    """Refuse a destination that the run would then destroy.
+
+    A destination equal to the output would be truncated by the ciphertext
+    write moments later, destroying the password and reporting success -- the
+    file would be sealed under a value that no longer exists anywhere. O_EXCL
+    does not catch it, because the destination does not exist yet at the time
+    it is created.
+
+    Args:
+        out_path: Destination given with --random-password-out.
+        input_path: The --input path.
+        output_path: The --output path.
+
+    Raises:
+        ValueError: If the destination collides with the input or output.
+    """
+    if out_path is None:
+        return
+    if not out_path.strip():
+        raise ValueError("--random-password-out needs a path")
+    out_real = os.path.realpath(out_path)
+    for label, other in (("--input", input_path), ("--output", output_path)):
+        if other and out_real == os.path.realpath(other):
+            raise ValueError(f"--random-password-out must differ from {label}")
+
+
+def _random_password_destination_ok(isatty, out_path, quiet=False):
+    """Whether a generated password has somewhere safe to go.
+
+    A destination is required whenever the password cannot be displayed:
+    without a terminal there is nowhere safe to put it, and under --quiet the
+    banner is suppressed entirely -- which would otherwise encrypt the file
+    successfully, print nothing, exit 0, and leave nobody holding the
+    password. This mirrors `add-recovery --add-code --json`, refused rather
+    than silently withholding the credential.
+
+    Args:
+        isatty: Whether the display stream is a terminal.
+        out_path: Destination given with --random-password-out, or None.
+        quiet: Whether --quiet suppresses the display.
+
+    Returns:
+        True if the password can actually be delivered.
+    """
+    if out_path:
+        return True
+    return bool(isatty) and not quiet
+
+
+def _display_generated_password(password):
+    """Show a generated password on the terminal, once, before encrypting.
+
+    Called BEFORE the ciphertext is written: any later failure would otherwise
+    leave an encrypted file whose password was never disclosed.
+
+    Deliberately makes no claim to erase anything. The previous version ran a
+    10-second countdown, emitted \\033[2J and announced "Password has been
+    cleared from screen" -- which was false. That sequence repaints the visible
+    screen; it removes nothing from scrollback, from a pipe, from a `script(1)`
+    transcript, or from a CI log. Claiming otherwise is worse than saying
+    nothing, because the user stops taking their own precautions
+    (gitlab#152).
+
+    Args:
+        password: The generated password.
+    """
+    eprint("\n" + "!" * 80)
+    eprint("SAVE THIS PASSWORD NOW".center(80))
+    eprint("!" * 80)
+    eprint(f"\nGenerated Password: {password}")
+    eprint("\nThis is the ONLY time this password is shown.")
+    eprint("If you lose it, the data CANNOT be recovered.")
+    eprint(
+        "\nIt is now in this terminal's scrollback, and in any transcript or\n"
+        "log of this session. Use --random-password-out PATH to have it\n"
+        "written to a 0600 file instead and never displayed."
+    )
 
 
 def sanitize_argv_for_debug(argv: list) -> list:
@@ -4838,21 +4999,31 @@ def main_with_args(args=None):
         help="Length of generated password (default: 16)",
     )
     password_group.add_argument(
-        "--use-digits", action="store_true", help="Include digits in generated password"
+        "--use-digits",
+        action="store_true",
+        # default=None, not the implicit False: _charclass then treats both
+        # parser routes alike (gitlab#181). With False the monolithic route
+        # fell into generate_strong_password's empty-pool fallback and
+        # produced a 62-char alphabet while the subparser route produced 94.
+        default=None,
+        help="Include digits in generated password",
     )
     password_group.add_argument(
         "--use-lowercase",
         action="store_true",
+        default=None,
         help="Include lowercase letters in generated password",
     )
     password_group.add_argument(
         "--use-uppercase",
         action="store_true",
+        default=None,
         help="Include uppercase letters in generated password",
     )
     password_group.add_argument(
         "--use-special",
         action="store_true",
+        default=None,
         help="Include special characters in generated password",
     )
 
@@ -6618,6 +6789,29 @@ def main_with_args(args=None):
             eprint("\nUse 'list-algorithms' command to see available algorithms.")
             eprint("Install required packages or choose different algorithms.\n")
 
+    # Validated ABOVE the asymmetric gate below: --for-identity sets
+    # is_asymmetric_encrypt, which skips the whole password-resolution block --
+    # so a guard placed inside it silently ignored both --random and
+    # --random-password-out for asymmetric runs, which is the very
+    # "stale file read back as this run's password" hazard it exists to stop
+    # (gitlab#152).
+    if getattr(args, "random_password_out", None):
+        if is_asymmetric_encrypt or is_asymmetric_decrypt:
+            eprint(
+                "ERROR: --random-password-out does not apply to asymmetric "
+                "encryption: --for-identity encrypts to a recipient's public "
+                "key, so no password is generated."
+            )
+            raise SystemExit(2)
+        if not (args.action == "encrypt" and args.random and not args.password):
+            eprint(
+                "ERROR: --random-password-out has no effect without --random "
+                "on an encrypt with no explicit password. Refusing rather "
+                "than leaving a stale file that looks like this run's "
+                "password."
+            )
+            raise SystemExit(2)
+
     if args.action in ["encrypt", "decrypt", "rekey"] and not (
         is_asymmetric_encrypt or is_asymmetric_decrypt
     ):
@@ -6705,10 +6899,21 @@ def main_with_args(args=None):
                 # Handle random password generation for encryption
                 if args.action == "encrypt" and args.random and not args.password:
                     # Determine character sets based on args or defaults
-                    use_lowercase = args.use_lowercase if args.use_lowercase is not None else True
-                    use_uppercase = args.use_uppercase if args.use_uppercase is not None else True
-                    use_digits = args.use_digits if args.use_digits is not None else True
-                    use_special = args.use_special if args.use_special is not None else True
+                    # getattr, not attribute access: the character-class flags
+                    # are declared on `generate-password` and on the monolithic
+                    # parser, but NOT on the `encrypt` subparser -- so
+                    # `encrypt --random` raised AttributeError and the feature
+                    # was unusable on the only route `encrypt` takes
+                    # (gitlab#181). All four default to enabled, which is the
+                    # strongest generation setting.
+                    def _charclass(name):
+                        value = getattr(args, name, None)
+                        return True if value is None else value
+
+                    use_lowercase = _charclass("use_lowercase")
+                    use_uppercase = _charclass("use_uppercase")
+                    use_digits = _charclass("use_digits")
+                    use_special = _charclass("use_special")
 
                     # Ensure length meets policy requirements
                     if args.password_policy != "none" and not args.force_password:
@@ -6762,6 +6967,96 @@ def main_with_args(args=None):
                                     eprint(f"\n{msg}")
 
                     password_secure.extend(generated_password.encode())
+
+                    # Deliver the password BEFORE encrypting (gitlab#152).
+                    #
+                    # Order matters and only one order is safe: if the write
+                    # failed after the file were encrypted, the file would be
+                    # sealed under a password nobody has -- unrecoverable data
+                    # loss. Writing first means a failure costs at most a
+                    # not-yet-encrypted file, and the user still has nothing to
+                    # lose. This mirrors the recovery-code channel (gitlab#146),
+                    # where the code is likewise written before the envelope is
+                    # modified.
+                    # The generated password is not reliably caught by the
+                    # audit log's shape heuristic: _SECRET_TOKEN_RE needs a
+                    # 32-char run of [A-Za-z0-9+_=], which a shorter password
+                    # never has and which punctuation breaks. Register it
+                    # explicitly so any path that logs it redacts it.
+                    register_consumed_secret(
+                        "generated_random_password", generated_password
+                    )
+
+                    _random_out = getattr(args, "random_password_out", None)
+
+                    # A destination the run would then destroy is refused:
+                    # equal to --output, it would be truncated by the
+                    # ciphertext write moments later, sealing the file under a
+                    # password that no longer exists anywhere. O_EXCL does not
+                    # catch it -- the destination does not exist yet.
+                    try:
+                        _check_random_password_destination(
+                            _random_out,
+                            args.input,
+                            _effective_encrypt_output(args),
+                        )
+                    except ValueError as _e:
+                        eprint(f"ERROR: {_e}")
+                        raise SystemExit(2)
+
+                    try:
+                        _stderr_isatty = sys.stderr.isatty()
+                    except (AttributeError, ValueError):
+                        # Replaced or closed stream: fail closed, so a
+                        # destination is required rather than assumed.
+                        _stderr_isatty = False
+                    if not _random_password_destination_ok(
+                        isatty=_stderr_isatty,
+                        out_path=_random_out,
+                        quiet=args.quiet,
+                    ):
+                        eprint(
+                            "ERROR: --random has nowhere to deliver the "
+                            "generated password: stderr is not a terminal, or "
+                            "--quiet suppresses the display. Encrypting anyway "
+                            "would seal the file under a password nobody "
+                            "holds. Name a destination with "
+                            "--random-password-out PATH."
+                        )
+                        raise SystemExit(2)
+
+                    # Deliver BEFORE encrypting -- both channels, not just the
+                    # file (gitlab#152).
+                    #
+                    # Only one order is safe. Disclosing after the ciphertext
+                    # is written means any later failure (armor, stego, the
+                    # permissions call, the audit log) leaves an encrypted file
+                    # on disk whose password was never disclosed --
+                    # unrecoverable. Disclosing first costs, at worst,
+                    # over-disclosing a password for a file that was never
+                    # created, which is harmless. Mirrors the recovery-code
+                    # channel (gitlab#146), where the code is likewise written
+                    # before the envelope is modified.
+                    if _random_out:
+                        try:
+                            _write_generated_password_file(
+                                _random_out, generated_password
+                            )
+                        except Exception as _e:
+                            # Never echo the password itself in the message.
+                            eprint(
+                                f"ERROR: could not write the generated "
+                                f"password to {_random_out}: {_e}"
+                            )
+                            raise SystemExit(1)
+                        if not args.quiet:
+                            eprint(
+                                f"\nGenerated password written to "
+                                f"{_random_out} (mode 0600)."
+                            )
+                    else:
+                        _display_generated_password(generated_password)
+
                     if not args.quiet:
                         eprint("\nGenerated a random password for encryption.")
 
@@ -9761,75 +10056,14 @@ def main_with_args(args=None):
                     prefix = "" if output_file in ("/dev/stdout", "/dev/stderr") else "\n"
                     eprint(f"{prefix}File encrypted successfully: {output_file}")
 
-                    # If we used a generated password, display it with a
-                    # warning
-                    if generated_password:
-                        # Store the original signal handler
-                        original_sigint = signal.getsignal(signal.SIGINT)
-
-                        # Flag to track if Ctrl+C was pressed
-                        interrupted = False
-
-                        # Custom signal handler for SIGINT
-                        def sigint_handler(signum, frame):
-                            nonlocal interrupted
-                            interrupted = True
-                            # Restore original handler immediately
-                            signal.signal(signal.SIGINT, original_sigint)
-
-                        try:
-                            # Set our custom handler
-                            signal.signal(signal.SIGINT, sigint_handler)
-
-                            eprint("\n" + "!" * 80)
-                            eprint("IMPORTANT: SAVE THIS PASSWORD NOW".center(80))
-                            eprint("!" * 80)
-                            eprint(f"\nGenerated Password: {generated_password}")
-                            eprint(
-                                "\nWARNING: This is the ONLY time this password will be displayed."
-                            )
-                            eprint("         If you lose it, your data CANNOT be recovered.")
-                            eprint(
-                                "         Please write it down or save it in a password manager now."
-                            )
-                            eprint("\nThis message will disappear in 10 seconds...")
-
-                            # Wait for 10 seconds or until keyboard interrupt
-                            for remaining in range(10, 0, -1):
-                                if interrupted:
-                                    break
-                                # Overwrite the line with updated countdown
-                                eprint(
-                                    f"\rTime remaining: {remaining} seconds...",
-                                    end="",
-                                    flush=True,
-                                )
-                                # Sleep in small increments to check for
-                                # interruption more frequently
-                                for _ in range(10):
-                                    if interrupted:
-                                        break
-                                    time.sleep(0.1)
-
-                        finally:
-                            # Restore original signal handler no matter what
-                            signal.signal(signal.SIGINT, original_sigint)
-
-                            # Give an indication that we're clearing the screen
-                            if interrupted:
-                                eprint("\n\nClearing password from screen (interrupted by user)...")
-                            else:
-                                eprint("\n\nClearing password from screen...")
-
-                            # Clear screen using ANSI escape sequences (safer than os.system)
-                            # \033[2J clears the entire screen, \033[H moves cursor to home position
-                            sys.stderr.write("\033[2J\033[H")
-                            sys.stderr.flush()
-
-                            eprint("Password has been cleared from screen.")
-                            eprint(
-                                "For additional security, consider clearing your terminal history."
-                            )
+                    # The generated password was disclosed BEFORE the
+                    # encryption ran (gitlab#152). Disclosing it here, as
+                    # this code used to, meant any failure after the
+                    # ciphertext was written left an encrypted file whose
+                    # password had never been shown. The 10-second
+                    # countdown and the screen-clear claim went with it:
+                    # they repainted the visible screen and removed
+                    # nothing from scrollback, a pipe, or a log.
 
                 # If shredding was requested and encryption was successful
                 if args.shred and not args.overwrite:
@@ -11189,6 +11423,23 @@ def main_with_args(args=None):
     except Exception as e:
         if not args.quiet:
             eprint(f"\nError: {e}")
+        # The generated password is written before the ciphertext, so a failure
+        # here can leave it on disk for a file that may or may not exist. It is
+        # deliberately NOT deleted: a raise does not prove the ciphertext was
+        # not written, and deleting would destroy the only credential for it.
+        # But an unannounced 0600 file is its own hazard -- the obvious retry
+        # dies with FileExistsError, and a stale file left beside a later run
+        # looks like a live credential (gitlab#152, mirroring gitlab#146).
+        _orphan = getattr(args, "random_password_out", None)
+        if _orphan and os.path.exists(_orphan):
+            eprint(
+                f"\nNOTE: a generated password was already written to "
+                f"{_orphan}. It is NOT deleted, because this failure does not "
+                f"prove the encrypted file was not written. Check whether the "
+                f"output file exists and is decryptable with it before "
+                f"removing it; until you do, a retry with the same "
+                f"--random-password-out will refuse to overwrite it."
+            )
         exit_code = 1
 
     # Exit with appropriate code

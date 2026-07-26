@@ -589,10 +589,28 @@ python -m openssl_encrypt.crypt generate-password --length 20 \
 python -m openssl_encrypt.crypt generate-password --length 16 \
     --use-lowercase --use-uppercase --use-digits
 
-# Generate and use a random password for encryption
+# Generate and use a random password for encryption.
+# Write it to a file only you can read (created 0600, never overwritten):
+python -m openssl_encrypt.crypt encrypt -i file.txt --random 24 \
+    --random-password-out ~/secret-password.txt
+
+# Or, at an interactive terminal, have it displayed once instead:
 python -m openssl_encrypt.crypt encrypt -i file.txt --random 24
-# The tool displays the generated password for 10 seconds
 ```
+
+`--random-password-out` is **required** whenever the password cannot be
+displayed -- when stderr is not a terminal, or under `--quiet`. Encrypting
+anyway would seal the file under a password nobody holds, so the command
+refuses instead.
+
+The password is delivered *before* the file is encrypted. If delivery fails
+you lose nothing; if the file were encrypted first and delivery then failed,
+the data would be unrecoverable.
+
+Note that the displayed form is inherently leaky: it goes to stderr, which is
+merged into stdout by `2>&1` and lands in terminal scrollback, `script(1)`
+transcripts and CI logs. The tool does not claim to erase it. Prefer
+`--random-password-out` for anything you care about.
 
 ### Environment Variable Support
 

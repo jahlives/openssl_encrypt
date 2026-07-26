@@ -426,6 +426,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **`encrypt --random` has a safe delivery channel for the generated password**
+  (gitlab#152 / github#70): the password was printed to **stderr** in a banner,
+  held for a 10-second countdown, then "cleared" with ANSI escapes. stderr is
+  merged into stdout by `2>&1` and lands in terminal scrollback, `script(1)`
+  transcripts, CI job logs and the desktop GUI's persistent debug log; the
+  screen-clear repainted the visible screen and removed the password from none
+  of those. A non-interactive caller had no way to receive it at all.
+
+  `--random-password-out PATH` now writes it to a file created 0600 through the
+  same hardened primitive as the recovery-code channel (gitlab#146): `O_EXCL`
+  and `O_NOFOLLOW`, non-regular and foreign-owned targets rejected, mode pinned
+  with an unconditional `fchmod`, and both the file and its directory entry
+  fsynced. Naming a destination replaces the display rather than adding to it,
+  and a destination equal to `--input` or `--output` is refused — equal to the
+  output it would have been truncated by the ciphertext write moments later,
+  sealing the file under a password that no longer existed anywhere, and
+  reporting success.
+
+  A destination is **required** whenever the password cannot be displayed:
+  stderr not a terminal, or `--quiet`, which suppresses the banner entirely.
+  Encrypting anyway would have produced a file nobody could open. The password
+  is now delivered *before* the file is encrypted, on both channels — disclosing
+  after the ciphertext is written means any later failure (armor, steganography,
+  the permissions call, the audit log) leaves an encrypted file whose password
+  was never shown. If encryption then fails, the password file is deliberately
+  **not** deleted — a failure does not prove the ciphertext was not written —
+  but its existence is now reported.
+
+  The retained terminal display no longer claims to erase anything; it states
+  plainly that the password is in scrollback and in any transcript of the
+  session. The generated password is also registered with the audit-log
+  redactor, which its shape heuristic would not otherwise match.
+- **`encrypt --random` crashed instead of running** (gitlab#181 / github#96):
+  the handler read `args.use_lowercase` and three siblings, which are declared
+  on `generate-password` and on the monolithic parser but not on the `encrypt`
+  subparser — and `encrypt` always routes through the subparser. The feature
+  had never worked, which also means the stderr display above was unreachable
+  in practice. The reads now default to all character classes enabled.
 - **`keyserver login <client_id>` no longer appears in the `--debug` argv dump
   or in the keyserver logs** (gitlab#171 / github#89): `client_id` is a
   positional argument, so `SECRET_VALUE_CLI_OPTIONS` — which matches option
