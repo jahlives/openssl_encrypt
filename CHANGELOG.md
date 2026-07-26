@@ -9,6 +9,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Environment input path for the second password and the signer passphrase**
+  (gitlab#154 / github#72, gitlab#159 / github#77): the keyed-hidden-mode
+  second password and the `sign` signer-identity passphrase could be supplied
+  only through a `getpass()` prompt, which reads `/dev/tty` — so neither the
+  desktop GUI nor any CI caller could drive them at all, blocking GUI
+  hidden-header support and the Sign screen. `OPENSSL_ENCRYPT_SECOND_PASSWORD`
+  and `OPENSSL_ENCRYPT_SIGNER_PASSPHRASE` now carry them.
+
+  Rather than a third and fourth private copy of the mechanism, the
+  read-once-and-delete channel built for recovery slots (gitlab#144) is
+  generalized into `modules/credential_env.py` and shared. Each variable is
+  read once and removed from the environment immediately — including when a
+  higher-priority source supersedes it — so it is not inherited by a later
+  child process (several call sites run `subprocess.run()` with no `env=`); it
+  is registered for audit-log redaction *before* the deletion, since in
+  between it would match neither the live-environment check nor the
+  fingerprint registry; a blank value is refused rather than falling through
+  to a prompt a GUI subprocess could never answer; and the value is validated
+  without being modified, so a credential set through one channel still opens
+  through another.
+
+  Neither variable can *enable* the feature it belongs to. This matters most
+  for the second password: a non-`None` value there is what switches keyed
+  hidden mode on, so a bare exported variable would otherwise write every file
+  with a keyed hidden header the user never chose and cannot reproduce —
+  readable by whoever planted it, and locking the user out of their own
+  metadata. `--hidden-header` (or an explicit `--second-password*` form) must
+  request the credential before the variable is read, and an HSM-only signer
+  identity is never given a passphrase merely because a variable is set. The
+  environment supplies a value; an explicit flag still selects the path.
+
+  On the new environment channel a value containing a newline is refused
+  rather than silently trimmed: the file-descriptor and prompt channels both
+  stop at the first newline, so a trailing `\n` — exactly what passing a GUI
+  text field's contents produces — would otherwise derive a different key from
+  the same passphrase typed at the prompt, with no error at any point. The
+  pre-existing `--second-password` flag deliberately keeps its exact byte
+  semantics, so a file already encrypted with a newline-bearing value stays
+  decryptable. `--second-password ""` now errors like a blank variable instead
+  of falling through to a silently keyless header.
+  `sign` with no passphrase and no terminal exits with an instruction naming
+  the variable instead of a `getpass` traceback, and Ctrl-C at the prompt exits
+  130 rather than being reported as a missing terminal. `encrypt --sign-with`
+  uses the same variable and the same error handling — it signs with the same
+  identity and was equally undriveable without a terminal.
+
+  A variable that is set but not requested is now reported as a warning naming
+  the variable (never its value) rather than dropped in silence: the help text
+  points callers at it, so setting it and receiving a plain legacy-format file
+  with cleartext metadata, at exit code 0 with no output, would be the worst
+  possible outcome. `--second-password-fd` gained the same blank check as the
+  other channels — an empty or EOF-closed descriptor previously yielded a
+  silently *keyless* header for a caller who asked for a keyed one. Blank
+  values are refused when encrypting but accepted when decrypting, so a file
+  written by an earlier release with a whitespace-only value stays
+  decryptable.
 - **Desktop GUI: Verify Signature screen** (gitlab#158 / github#76): a new
   Pro-mode screen checks a detached signature against a file. Verification needs
   no password — it uses public keys, and trust comes from the local identity

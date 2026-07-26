@@ -77,6 +77,12 @@ from . import crypt_errors
 from .cli_aliases import add_cli_aliases, process_cli_aliases
 from .config_analyzer import ConfigurationAnalyzer
 from .config_wizard import generate_cli_arguments, run_configuration_wizard
+from .credential_env import (
+    CredentialError,
+    consume_env,
+    resolve_credential,
+)
+from .credential_env import validated as credential_validated
 from .keystore_utils import auto_generate_pqc_key
 
 # Import keystore-related modules
@@ -781,6 +787,10 @@ def get_template_config(template: str or SecurityTemplate) -> Dict[str, Any]:
             eprint(f"Error loading template file: {e}")
             sys.exit(1)
 
+
+# Environment channel for the keyed-hidden-mode second password (gitlab#154).
+# Read once and deleted; see modules/credential_env.py for the rationale.
+SECOND_PASSWORD_ENV = "OPENSSL_ENCRYPT_SECOND_PASSWORD"
 
 # Value-taking CLI options whose VALUE is a secret. Their values must never
 # appear in the --debug argv dump; they are routed through the debug_secret()
@@ -3838,17 +3848,82 @@ def _resolve_second_password(args):
     """Resolve the optional second password (keyed hidden mode) to bytes or None.
 
     Priority: ``--second-password-fd`` > ``--second-password`` >
-    ``--second-password-prompt``. Returns ``None`` when none is supplied (the
-    keyless / non-hidden case). The trailing newline from fd/prompt sources is
-    stripped, mirroring the primary-password handling.
+    ``$OPENSSL_ENCRYPT_SECOND_PASSWORD`` > ``--second-password-prompt``.
+    Returns ``None`` when none is supplied (the keyless / non-hidden case).
+    The trailing newline from fd/prompt sources is stripped, mirroring the
+    primary-password handling.
+
+    The environment variable exists because the prompt reads /dev/tty, which
+    the desktop GUI and any CI caller cannot answer, while ``--second-password``
+    puts the credential in world-readable ``/proc/PID/cmdline`` (gitlab#154).
+    It is consumed on every call, even when a higher-priority source wins, so
+    it is never inherited by a later child process.
+
+    An environment value alone does NOT enable keyed hidden mode. A non-None
+    return here makes `_hidden_for_encrypt` turn hidden mode on, so if the
+    variable could supply a value unasked, an exported variable would silently
+    write every file with a keyed hidden header under a value the user never
+    chose and cannot reproduce -- readable by whoever planted it, and locking
+    the user out of their own metadata. The variable is therefore only read
+    when a flag has actually requested the credential: the environment
+    supplies a value, an explicit flag still selects the path.
     """
+    # Consumed unconditionally, before the branches and regardless of whether
+    # it is wanted: a value left behind is inherited by any child process, and
+    # several call sites run subprocess.run() with no env=.
+    env_value = consume_env(SECOND_PASSWORD_ENV)
+
+    # A blank credential is a hard error when ENCRYPTING -- wrapping metadata
+    # under a secret anyone can guess is the actual harm. When decrypting it
+    # is allowed through: a file encrypted on an earlier release with a
+    # whitespace-only value must stay decryptable, and the same
+    # data-preservation reasoning that motivates reject_newline=False applies.
+    encrypting = getattr(args, "action", None) not in ("decrypt", "info")
+
     fd = getattr(args, "second_password_fd", None)
     if fd is not None:
         with os.fdopen(os.dup(fd), "rb") as f:
-            return f.read().split(b"\n", 1)[0]
+            from_fd = f.read().split(b"\n", 1)[0]
+        # The fd path used to skip validation entirely, so an empty or
+        # EOF-closed descriptor yielded b"", which hidden_header maps back to
+        # "keyless" -- silently giving a keyless header to a caller who asked
+        # for a keyed one. That is exactly what `--second-password ""` now
+        # errors on, so it errors here too.
+        if encrypting and not from_fd.strip():
+            raise CredentialError(
+                "--second-password-fd supplied no credential; "
+                "refusing to write a keyless header for a keyed request"
+            )
+        return from_fd
     val = getattr(args, "second_password", None)
-    if val:
+    if val is not None:
+        # `is not None`, not truthiness: `--second-password ""` used to fall
+        # through to the next source and silently produce a keyless header.
+        # reject_newline=False: this flag predates that rule, and a file
+        # already encrypted with a newline-bearing value must stay
+        # decryptable. Only the new environment channel enforces it.
+        if encrypting:
+            credential_validated(val, "--second-password", reject_newline=False)
         return val.encode("utf-8")
+
+    requested = bool(
+        getattr(args, "hidden_header", False)
+        or getattr(args, "second_password_prompt", False)
+    )
+    if env_value is not None and not requested:
+        # Silently dropping it would leave a GUI or CI caller believing the
+        # metadata is keyed when the file was written in plain legacy format.
+        # The NAME only -- never the value.
+        eprint(
+            f"WARNING: ${SECOND_PASSWORD_ENV} was set but ignored. Keyed "
+            f"hidden mode must be requested with --hidden-header or "
+            f"--second-password-prompt; the variable supplies the value, it "
+            f"does not enable the mode."
+        )
+    if requested and env_value is not None:
+        return credential_validated(
+            env_value, f"${SECOND_PASSWORD_ENV}"
+        ).encode("utf-8")
     if getattr(args, "second_password_prompt", False):
         import getpass
 
@@ -4972,9 +5047,13 @@ def main_with_args(args=None):
         # Process CLI aliases and apply overrides
         args, alias_errors = process_cli_aliases(args, alias_processor)
         if alias_errors:
+            # No `sys.` here: the local `import sys` further down makes the
+            # name local to this whole function, so touching it above that
+            # line raises UnboundLocalError -- this path would have crashed
+            # with a traceback instead of reporting the alias errors.
             for error in alias_errors:
-                eprint(f"Error: {error}", file=sys.stderr)
-            sys.exit(1)
+                eprint(f"Error: {error}")
+            raise SystemExit(1)
 
     # Add compatibility layer for subparser args - set missing attributes to defaults
     default_attrs = {
@@ -5104,7 +5183,19 @@ def main_with_args(args=None):
     # resolved here. The auto-detect fallback (keyless peek + prompt) runs later,
     # AFTER stdin buffering and de-armoring, so it can peek a seekable file even
     # when the ciphertext arrives on stdin (e.g. armor ... | decrypt -i /dev/stdin).
-    _hidden_second_password = _resolve_second_password(args)
+    # This runs for EVERY subcommand, well outside the main try/except, so an
+    # unhandled CredentialError here would be a raw traceback out of an
+    # unrelated command (`shred`, `list-algorithms`, ...) merely because a
+    # blank variable was exported.
+    try:
+        _hidden_second_password = _resolve_second_password(args)
+    except CredentialError as e:
+        # No `sys.` here: main_with_args has a local `import sys` further down,
+        # which makes the name local to the whole function, so touching it
+        # before that line raises UnboundLocalError. eprint already writes to
+        # stderr, and SystemExit is sys.exit's underlying mechanism.
+        eprint(f"ERROR: {e}")
+        raise SystemExit(2)
 
     # Store the original user-provided algorithm name from command line
     import sys
@@ -7682,14 +7773,41 @@ def main_with_args(args=None):
                 # Determine if passphrase is needed
                 from .identity_protection import ProtectionLevel
 
-                sender_passphrase = None
-                if (
+                # Same environment channel as `sign` (gitlab#159): this path
+                # signs with the same identity and reached only a /dev/tty
+                # prompt, so a GUI or CI caller could not use --sign-with at
+                # all -- and the variable would have survived the whole run,
+                # contradicting the read-once-and-remove guarantee.
+                from .file_signature import SIGNER_PASSPHRASE_ENV
+
+                _sender_needs_passphrase = (
                     not sender_metadata.protection
                     or sender_metadata.protection.level != ProtectionLevel.HSM_ONLY
-                ):
-                    sender_passphrase = getpass.getpass(
-                        f"Passphrase for sender identity '{args.sign_with}': "
+                )
+                try:
+                    sender_passphrase = resolve_credential(
+                        requested=_sender_needs_passphrase,
+                        env_name=SIGNER_PASSPHRASE_ENV,
+                        prompt=f"Passphrase for sender identity "
+                        f"'{args.sign_with}': ",
                     )
+                except CredentialError as e:
+                    eprint(f"ERROR: {e} ❌")
+                    raise SystemExit(1)
+                except EOFError:
+                    # Matches `sign`: name the variable rather than surfacing
+                    # an empty message from the generic handler.
+                    eprint(
+                        f"ERROR: no passphrase supplied and no terminal to "
+                        f"prompt on; set ${SIGNER_PASSPHRASE_ENV} ❌"
+                    )
+                    raise SystemExit(1)
+                except KeyboardInterrupt:
+                    # Also matches `sign`. KeyboardInterrupt is a
+                    # BaseException, so without this it escapes the outer
+                    # `except Exception` as a raw traceback.
+                    eprint("Aborted.")
+                    raise SystemExit(130)
 
                 try:
                     sender = store.get_by_name(
