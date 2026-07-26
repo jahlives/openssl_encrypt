@@ -443,7 +443,9 @@ def _add_hidden_header_args(subparser):
         "--hidden-header",
         action="store_true",
         help="Produce/expect the hidden (whitened) format that looks like random "
-        "bytes. Keyless unless a second password is given.",
+        "bytes. Keyless unless a second password is given; this flag is also "
+        "what REQUESTS a second password, so $OPENSSL_ENCRYPT_SECOND_PASSWORD "
+        "is read only when it (or --second-password-prompt) is present.",
     )
     group.add_argument(
         "--legacy-format",
@@ -456,7 +458,8 @@ def _add_hidden_header_args(subparser):
         metavar="PW",
         help="Second password enabling keyed hidden mode (real metadata "
         "confidentiality). DEPRECATED: visible in process list; prefer "
-        "--second-password-fd or --second-password-prompt.",
+        "$OPENSSL_ENCRYPT_SECOND_PASSWORD, --second-password-fd or "
+        "--second-password-prompt.",
     )
     group.add_argument(
         "--second-password-fd",
@@ -467,7 +470,10 @@ def _add_hidden_header_args(subparser):
     group.add_argument(
         "--second-password-prompt",
         action="store_true",
-        help="Prompt interactively for the second password (keyed hidden mode).",
+        help="Prompt interactively for the second password (keyed hidden mode). "
+        "The prompt reads /dev/tty, so a GUI or CI caller should keep this "
+        "flag (it is what REQUESTS keyed mode) and supply the value in "
+        "$OPENSSL_ENCRYPT_SECOND_PASSWORD, which is read once then cleared.",
     )
     group.add_argument(
         "--no-second-password-prompt",
@@ -3087,7 +3093,10 @@ def setup_sign_parser(subparser):
         dest="sign_with",
         metavar="IDENTITY",
         required=True,
-        help="Signer identity (an own identity holding a private signing key)",
+        help="Signer identity (an own identity holding a private signing key). "
+        "Its passphrase is prompted for on /dev/tty; a GUI or CI caller should "
+        "set $OPENSSL_ENCRYPT_SIGNER_PASSPHRASE instead, which is read once "
+        "and then cleared from the environment.",
     )
     subparser.add_argument(
         "--no-armor",

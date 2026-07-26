@@ -1119,11 +1119,15 @@ class CLIService {
       final pythonArgs = ['-m', 'openssl_encrypt.cli', ...args];
       _outputDebugLog('Attempting development CLI with stdin: python ${pythonArgs.join(' ')}');
 
-      final env = environment ?? Map<String, String>.from(Platform.environment);
+      // includeParentEnvironment is false in both cases: with it true the
+      // parent environment is merged back over `env`, which would undo the
+      // credential scrub entirely. _inheritableEnvironment() is a full copy
+      // of the parent minus credentials, so nothing else is lost.
+      final env = environment ?? _inheritableEnvironment();
       process = await Process.start('python', pythonArgs,
         workingDirectory: '/home/work/private/git/openssl_encrypt',
         environment: env,
-        includeParentEnvironment: environment == null);
+        includeParentEnvironment: false);
     }
 
     // Send stdin input
@@ -1151,8 +1155,13 @@ class CLIService {
   ) async {
     Process process;
 
-    // Merge environment variables for secure password passing
-    final processEnv = Map<String, String>.from(Platform.environment);
+    // Merge environment variables for secure password passing.
+    //
+    // The credential scrub runs unconditionally, not only when an explicit
+    // `environment` map is passed: this is the helper encrypt and decrypt use,
+    // so a credential inherited from the GUI's own environment would otherwise
+    // reach the child on the path that matters most.
+    final processEnv = _inheritableEnvironment();
     processEnv['PYTHONUNBUFFERED'] = '1';  // Force unbuffered Python output for real-time YubiKey prompts
     if (environment != null) {
       processEnv.addAll(environment);
@@ -1289,8 +1298,10 @@ class CLIService {
   ) async {
     Process process;
 
-    // Merge environment variables for secure password passing
-    final processEnv = Map<String, String>.from(Platform.environment);
+    // Merge environment variables for secure password passing.
+    // Scrubbed unconditionally, like the other spawn helpers: this one serves
+    // decrypt when integrity verification is interactive.
+    final processEnv = _inheritableEnvironment();
     processEnv['PYTHONUNBUFFERED'] = '1';  // Force unbuffered Python output
     if (environment != null) {
       processEnv.addAll(environment);
@@ -2506,7 +2517,9 @@ class CLIService {
     ];
     // Strip CRYPT_PASSWORD so the CLI scores the typed password (it reads that
     // env var before stdin), making the meter reflect the field, not the env.
-    final env = Map<String, String>.from(Platform.environment)..remove('CRYPT_PASSWORD');
+    // _inheritableEnvironment() already drops CRYPT_PASSWORD along with every
+    // other credential variable.
+    final env = _inheritableEnvironment();
     final result = await _runCLICommandWithStdin(args, password, environment: env);
     if (result.exitCode != 0) {
       throw Exception('Strength check failed: ${(result.stderr as String).trim()}');
@@ -3413,12 +3426,32 @@ class CLIService {
   /// the command line is visible in the world-readable /proc/PID/cmdline. The
   /// CLI reads each variable once and removes it.
   /// Credential-bearing variables the CLI reads; never inherited into a child.
+  ///
+  /// Keep in lockstep with `security_logger._SECRET_ENV_VARS` on the CLI side:
+  /// a name missing here is inherited from the GUI's own environment straight
+  /// into every child process.
+  /// The parent environment minus every credential-bearing variable.
+  ///
+  /// Use this instead of `Platform.environment` in every spawn helper: a
+  /// credential inherited from the GUI's own environment would otherwise
+  /// reach the CLI child and, for variables the CLI acts on, change what it
+  /// does.
+  static Map<String, String> _inheritableEnvironment() {
+    final env = Map<String, String>.from(Platform.environment);
+    for (final name in _credentialEnvNames) {
+      env.remove(name);
+    }
+    return env;
+  }
+
   static const List<String> _credentialEnvNames = [
     'CRYPT_PASSWORD',
     'OPENSSL_ENCRYPT_PASSWORD',
     'OPENSSL_ENCRYPT_RECOVERY_CODE',
     'OPENSSL_ENCRYPT_RECOVERY_PASSPHRASE',
     'OPENSSL_ENCRYPT_ADD_RECOVERY_PASSPHRASE',
+    'OPENSSL_ENCRYPT_SECOND_PASSWORD',
+    'OPENSSL_ENCRYPT_SIGNER_PASSPHRASE',
   ];
 
   static Map<String, String> _recoveryEnv({

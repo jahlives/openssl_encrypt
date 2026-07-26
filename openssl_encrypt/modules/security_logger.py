@@ -52,16 +52,20 @@ _SECRET_ENV_VARS = (
     "OPENSSL_ENCRYPT_RECOVERY_CODE",
     "OPENSSL_ENCRYPT_RECOVERY_PASSPHRASE",
     "OPENSSL_ENCRYPT_ADD_RECOVERY_PASSPHRASE",
+    # gitlab#154 / gitlab#159, via modules/credential_env.py
+    "OPENSSL_ENCRYPT_SECOND_PASSWORD",
+    "OPENSSL_ENCRYPT_SIGNER_PASSPHRASE",
 )
 
 _REDACTED = "***REDACTED***"
 
-# Secrets that recovery_slots._consume_env read out of the environment and
+# Secrets that credential_env.consume_env read out of the environment and
 # removed. _value_looks_secret resolves _SECRET_ENV_VARS against the LIVE
 # environment, so once a variable is consumed that comparison can never match
-# again — these fingerprints keep redaction working afterwards. The claim is
-# scoped to that helper: other call sites delete their env vars without
-# registering, and are unaffected either way.
+# again — these fingerprints keep redaction working afterwards. Since
+# gitlab#154 that helper is shared: recovery_slots._consume_env delegates to
+# it, so every consumed credential channel registers here, not just the
+# recovery ones.
 #
 # The fingerprint is HMAC-keyed with debug_redaction's ephemeral per-process key,
 # NOT a plain digest: an unkeyed hash of a live secret, retained for the process

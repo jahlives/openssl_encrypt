@@ -37,6 +37,7 @@ from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from .crypt_utils import eprint
 from .secure_memory import secure_memzero
 from .secure_ops import constant_time_compare
+from .credential_env import consume_env as _shared_consume_env
 from .security_logger import register_consumed_secret
 
 # Environment variables carrying recovery credentials for non-interactive
@@ -564,37 +565,21 @@ def build_recovery_slots(dek: bytes, credentials: List[dict]) -> List[dict]:
 def _consume_env(name):
     """Read a secret-bearing env var and remove it from the environment.
 
-    Removing it immediately keeps the credential out of the environment of any
-    process spawned later, mirroring the OPENSSL_ENCRYPT_REKEY_PASSWORD
-    handling in crypt_cli.
-
-    The None/"" distinction is load-bearing: callers rely on it to tell "not
-    supplied" from "supplied blank" and fail fast on the latter, rather than
-    dropping into a getpass() that a GUI subprocess could never answer. Do not
-    collapse the two.
-
-    See the module-level note on the /proc/self/environ residual, which this
-    does not remove.
+    Delegates to the shared implementation in credential_env (gitlab#154):
+    this primitive must stay in lockstep with
+    security_logger._value_looks_secret, and the gitlab#144 review already
+    found one "inert by construction" bug in that interaction -- a second copy
+    would let a future hardening be applied to one and not the other, failing
+    silently and open.
 
     Args:
         name: Environment variable to read.
 
     Returns:
-        The value — possibly the empty string when the variable is present but
-        empty — or None only when the variable is absent.
+        The value -- possibly the empty string when the variable is present
+        but empty -- or None only when the variable is absent.
     """
-    if name not in os.environ:
-        return None
-    value = os.environ.get(name)
-    # Register before deleting: in between, the value would match neither the
-    # live-environment check nor the fingerprint registry, so a concurrent
-    # log_event from another thread could write it unredacted.
-    register_consumed_secret(name, value)
-    try:
-        del os.environ[name]
-    except KeyError:  # pragma: no cover - concurrent unset
-        pass
-    return value
+    return _shared_consume_env(name)
 
 
 def _consume_recovery_env():

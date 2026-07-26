@@ -32,7 +32,12 @@ import json
 from typing import List, Optional, Union
 
 from .armor import armor, dearmor, is_armored
+from .credential_env import CredentialError, consume_env, resolve_credential
 from .pqc_signing import PQCSigner
+
+# Environment channel for the signer identity passphrase (gitlab#159).
+# Read once and deleted; see modules/credential_env.py for the rationale.
+SIGNER_PASSPHRASE_ENV = "OPENSSL_ENCRYPT_SIGNER_PASSPHRASE"
 
 # On-disk signature format version (the integer stored under the
 # "openssl_encrypt_signature" key).
@@ -300,7 +305,6 @@ def verify_signature(actual_file_hash: str, sig: dict, signer_public_key: bytes)
 
 def sign_file_cli(args) -> None:
     """CLI handler for the ``sign`` action."""
-    import getpass
     import sys
     from datetime import datetime, timezone
 
@@ -309,6 +313,11 @@ def sign_file_cli(args) -> None:
     from .identity_cli import get_identity_store
     from .identity_protection import ProtectionLevel
     from .secure_memory import secure_memzero
+
+    # Consumed first, before any store lookup or early exit: a value left in
+    # the environment is inherited by any child process, and the guarantee
+    # must not depend on the identity-load path happening not to spawn one.
+    env_passphrase = consume_env(SIGNER_PASSPHRASE_ENV)
 
     input_file = args.input
     output_file = getattr(args, "output", None) or (input_file + ".sig")
@@ -326,9 +335,43 @@ def sign_file_cli(args) -> None:
         eprint(f"ERROR: '{signer_name}' is a contact (public key only) and cannot sign ❌")
         sys.exit(1)
 
-    passphrase = None
-    if not signer_meta.protection or signer_meta.protection.level != ProtectionLevel.HSM_ONLY:
-        passphrase = getpass.getpass(f"Passphrase for signer identity '{signer_name}': ")
+    # The passphrase reached only a getpass() prompt, which reads /dev/tty and
+    # cannot be answered by the desktop GUI or a CI caller, so `sign` was not
+    # driveable non-interactively at all (gitlab#159). The environment channel
+    # supplies it instead; it is never accepted on the command line, where
+    # /proc/PID/cmdline would publish it.
+    #
+    # `requested` is the HSM_ONLY check: an HSM-only identity needs no
+    # passphrase, and a planted variable must not introduce one.
+    needs_passphrase = (
+        not signer_meta.protection
+        or signer_meta.protection.level != ProtectionLevel.HSM_ONLY
+    )
+    try:
+        passphrase = resolve_credential(
+            requested=needs_passphrase,
+            env_name=SIGNER_PASSPHRASE_ENV,
+            prompt=f"Passphrase for signer identity '{signer_name}': ",
+            explicit=env_passphrase,
+            explicit_source=f"${SIGNER_PASSPHRASE_ENV}",
+        )
+    except CredentialError as e:
+        eprint(f"ERROR: {e} ❌")
+        sys.exit(1)
+    except EOFError:
+        # No stdin (a GUI or CI caller): fail with a usable instruction rather
+        # than a traceback from getpass.
+        eprint(
+            f"ERROR: no passphrase supplied and no terminal to prompt on; "
+            f"set ${SIGNER_PASSPHRASE_ENV} ❌"
+        )
+        sys.exit(1)
+    except KeyboardInterrupt:
+        # A deliberate abort, not a headless environment. Telling the user to
+        # export a variable they chose not to would be wrong, and 130 lets a
+        # wrapper distinguish user-abort from failure.
+        eprint("Aborted.")
+        sys.exit(130)
 
     try:
         signer = store.get_by_name(signer_name, passphrase=passphrase, load_private_keys=True)

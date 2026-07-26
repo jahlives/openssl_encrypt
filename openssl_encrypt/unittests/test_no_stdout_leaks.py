@@ -18,25 +18,25 @@ import pytest
 STDOUT_WHITELIST = [
     # crypt_cli.py — JSON data outputs
     # (line numbers shifted by the gitlab#131 F16 keyfile-KDF helper insertion)
-    ("crypt_cli.py", 1290, "JSON error response"),
-    ("crypt_cli.py", 1487, "JSON algorithm result"),
-    ("crypt_cli.py", 2004, "JSON smart-recommendations"),
-    ("crypt_cli.py", 3234, "JSON keyserver bundle"),
-    ("crypt_cli.py", 3465, "JSON telemetry events"),
-    ("crypt_cli.py", 5910, "check-password JSON report"),
+    ("crypt_cli.py", 1322, "JSON error response"),
+    ("crypt_cli.py", 1519, "JSON algorithm result"),
+    ("crypt_cli.py", 2036, "JSON smart-recommendations"),
+    ("crypt_cli.py", 3266, "JSON keyserver bundle"),
+    ("crypt_cli.py", 3497, "JSON telemetry events"),
+    ("crypt_cli.py", 6022, "check-password JSON report"),
     # crypt_cli.py — template list --format json (gitlab#167). Machine-readable
     # output for a non-interactive caller; the human report stays on stderr.
     # Carries template metadata only: no credential, no key material.
-    ("crypt_cli.py", 2467, "template list JSON output"),
+    ("crypt_cli.py", 2499, "template list JSON output"),
     # crypt_cli.py — decrypted plaintext outputs
-    ("crypt_cli.py", 9876, "asymmetric decrypted plaintext"),
-    ("crypt_cli.py", 9879, "asymmetric decrypted plaintext (quiet)"),
-    ("crypt_cli.py", 10071, "asymmetric decrypted plaintext path 2"),
-    ("crypt_cli.py", 10074, "asymmetric decrypted plaintext path 2 (quiet)"),
-    ("crypt_cli.py", 10891, "symmetric decrypted text content"),
+    ("crypt_cli.py", 10015, "asymmetric decrypted plaintext"),
+    ("crypt_cli.py", 10018, "asymmetric decrypted plaintext (quiet)"),
+    ("crypt_cli.py", 10210, "asymmetric decrypted plaintext path 2"),
+    ("crypt_cli.py", 10213, "asymmetric decrypted plaintext path 2 (quiet)"),
+    ("crypt_cli.py", 11030, "symmetric decrypted text content"),
     # crypt_cli.py — derive-password output to stdout
-    ("crypt_cli.py", 6335, "derive-password hex output"),
-    ("crypt_cli.py", 6339, "derive-password base64 output"),
+    ("crypt_cli.py", 6447, "derive-password hex output"),
+    ("crypt_cli.py", 6451, "derive-password base64 output"),
     # file_signature.py — verify-signature --json result (machine-readable, stdout)
     ("modules/file_signature.py", 425, "verify-signature JSON result"),
     # recovery_slots.py — recovery commands' --json results (gitlab#146).

@@ -74,6 +74,31 @@ An explicit flag still selects *which* credential is used; the variable only
 supplies its value. Passing `--recovery-code` on the command line still works
 but warns.
 
+The same mechanism carries two other credentials that likewise have no safe
+command-line channel:
+
+| Variable | Purpose |
+|---|---|
+| `OPENSSL_ENCRYPT_SECOND_PASSWORD` | second password for keyed hidden mode |
+| `OPENSSL_ENCRYPT_SIGNER_PASSPHRASE` | signer identity passphrase for `sign` |
+
+Both are read once and removed, and both are refused when blank rather than
+falling through to a prompt no GUI subprocess could answer.
+
+Neither can *enable* the feature it belongs to. Keyed hidden mode is switched
+on by the presence of a second password, so `--hidden-header` (or an explicit
+`--second-password*` form) must request the credential before the variable is
+read — otherwise a stray exported value would silently write every file with a
+keyed hidden header you never chose and cannot reproduce. An HSM-only signer
+identity is likewise never given a passphrase just because a variable is set.
+
+A value containing a newline is refused rather than trimmed: the
+file-descriptor and prompt channels stop at the first newline, so a trailing
+`\n` would derive a different key from the same passphrase typed at the
+prompt. This applies to the environment channel only — the older
+`--second-password` flag keeps its exact byte semantics so that files already
+encrypted with such a value stay decryptable.
+
 `--json` emits a single JSON document on stdout instead of the human report:
 
 ```bash
