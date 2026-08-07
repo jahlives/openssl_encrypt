@@ -69,7 +69,6 @@ EXPECTED_INTERPOLATED = {
 # bare command-path element. Each entry must name a real tracked bug -- this
 # is a list of known defects, not a place to silence the lint.
 KNOWN_BROKEN = [
-    ("generatePassword", "--json", "gitlab#187: generate-password has no JSON mode"),
     ("deleteIdentity", "--contact", "gitlab#185: GUI delete sends a flag that never existed"),
     (
         "encryptWithSteganography",
