@@ -21,6 +21,7 @@ import math
 import os
 import re
 import secrets
+import shutil
 import stat
 import sys
 import tempfile
@@ -8676,6 +8677,11 @@ def _rekey_envelope_fast(
             or tampering) -- callers must NOT swallow this into a fallback.
         RekeyError: If the envelope_aad invariant does not hold (should never
             happen; indicates a metadata-handling bug -- fail closed).
+
+    Note:
+        ``in_place`` is accepted for backward compatibility and IGNORED; the
+        envelope write is delegated to _write_envelope_header, which derives
+        eligibility itself (gitlab#148).
     """
     from .envelope import envelope_aad, unwrap_dek, unwrap_dek_cascade, wrap_dek, wrap_dek_cascade
 
@@ -8797,25 +8803,12 @@ def _rekey_envelope_fast(
     if envelope_aad(new_meta) != envelope_aad(meta):
         raise RekeyError("Envelope rekey would change the bound metadata subset")
 
-    new_payload = base64.b64encode(json.dumps(new_meta).encode("utf-8")) + b":" + payload
-
-    input_dir = os.path.dirname(os.path.abspath(input_file))
-    if in_place:
-        original_mode = stat.S_IMODE(os.stat(input_file).st_mode)
-        fd, tmp_path = tempfile.mkstemp(prefix=".rekey_env_", dir=input_dir)
-        try:
-            with os.fdopen(fd, "wb") as out:
-                out.write(new_payload)
-            os.replace(tmp_path, input_file)
-            os.chmod(input_file, original_mode)
-        except BaseException:
-            if os.path.exists(tmp_path):
-                os.remove(tmp_path)
-            raise
-    else:
-        with open(output_file, "wb") as out:
-            out.write(new_payload)
-        set_secure_permissions(output_file)
+    # Delegated so there is ONE definition of "write an envelope without
+    # destroying the file it replaces". This block used to be a second copy
+    # of the same logic, which meant the gitlab#148 guarantees landed on the
+    # recovery-slot path only and silently did not apply to rekey. The bytes
+    # are identical: _write_envelope_header builds b64(json(meta)):payload.
+    _write_envelope_header(new_meta, payload, input_file, output_file)
 
     return True
 
@@ -8967,23 +8960,392 @@ def _recover_envelope_dek(
     return dek
 
 
-def _write_envelope_header(meta: dict, payload: bytes, input_file, output_file, in_place):
+def _fsync_directory(path) -> None:
+    """Commit a directory entry so a rename or create survives a power loss.
+
+    Best effort in full: the operation that needed this has already happened,
+    so a failure to open, fsync or close the directory must not be reported
+    as a failed write -- the caller would report failure for a change that is
+    durably on disk.
+    """
+    try:
+        dir_fd = os.open(path, os.O_RDONLY)
+    except OSError:  # pragma: no cover - platform dependent
+        return
+    try:
+        os.fsync(dir_fd)
+    except OSError:  # pragma: no cover - platform dependent
+        pass
+    finally:
+        try:
+            os.close(dir_fd)
+        except OSError:  # pragma: no cover - platform dependent
+            pass
+
+
+def _restore_from_backup(backup_path, target_path, target_dir) -> None:
+    """Copy a backup back over the file it was taken from, durably.
+
+    shutil.copyfile would leave the restored bytes in the page cache while
+    the backup -- at that moment the only other copy -- is unlinked right
+    afterwards. A power loss in that window reproduces exactly the data loss
+    the backup exists to prevent, so the restore is fsynced before anything
+    is removed.
+    """
+    # O_WRONLY|O_TRUNC without O_CREAT: if the target has vanished under us
+    # (a concurrent unlink, a removed symlink target) this fails loudly into
+    # the keep-the-backup path instead of silently recreating the ciphertext
+    # at the umask -- open(..., "wb") would have made it 0644 on most
+    # systems, since only the success path calls set_secure_permissions.
+    fd = os.open(target_path, os.O_WRONLY | os.O_TRUNC)
+    try:
+        dst = os.fdopen(fd, "wb")
+    except BaseException:
+        try:
+            os.close(fd)
+        except OSError:  # pragma: no cover - platform dependent
+            pass
+        raise
+    with dst, open(backup_path, "rb") as src:
+        shutil.copyfileobj(src, dst)
+        dst.flush()
+        os.fsync(dst.fileno())
+    _fsync_directory(target_dir)
+
+
+def _remove_or_warn(path) -> None:
+    """Delete a backup copy, saying so on stderr if it cannot be removed.
+
+    The leftover is a byte-for-byte copy of the file BEFORE the change, so
+    for remove-recovery it is still openable by the credential the user has
+    just revoked, and for rekey by the old password. It is dot-prefixed and
+    therefore invisible to a plain ls, so staying silent would hide it
+    completely.
+    """
+    try:
+        os.remove(path)
+    except FileNotFoundError:
+        pass
+    except OSError as exc:  # pragma: no cover - needs an unremovable path
+        eprint(
+            f"WARNING: could not remove the temporary backup "
+            f"{sanitize_for_display(path)}: {sanitize_for_display(str(exc))}"
+        )
+        eprint(
+            "  It is a copy of the file as it was BEFORE this change -- "
+            "delete it yourself once you no longer need it."
+        )
+
+
+def _is_regular_file(path) -> bool:
+    """Whether path resolves to a regular file (symlinks followed)."""
+    try:
+        return stat.S_ISREG(os.stat(path).st_mode)
+    except (OSError, TypeError, ValueError):
+        return False
+
+
+def _remove_quietly(path) -> None:
+    """Delete a path, ignoring its absence and any failure to remove it.
+
+    Used on cleanup paths where a raising remove would replace the real
+    exception with its own. os.path.exists() is deliberately not used as a
+    guard: it follows symlinks, so a dangling one reports False and is left
+    behind.
+    """
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+
+
+def _write_destroys_input(input_file, output_file) -> bool:
+    """Whether writing output_file overwrites the bytes of input_file.
+
+    This is the IDENTITY question, and it is deliberately NOT the same as
+    _rewrites_same_file's "can this be replaced atomically". Folding the two
+    together made the recoverable truncating path in _write_envelope_header
+    unreachable for exactly the cases it was written for: a hardlinked or
+    symlinked envelope is excluded from the atomic path, but it is still
+    the user's only ciphertext, and that is the whole of gitlab#148.
+
+    Symlinks ARE followed here -- writing through a link destroys the file
+    it points at. Errors on OUTPUT mean "not the same file"; an error on
+    INPUT propagates, as in _rewrites_same_file.
+
+    Args:
+        input_file: Path the payload was read from.
+        output_file: Path about to be written, or None for "in place".
+
+    Returns:
+        True when the write lands on the same file the payload came from.
+    """
+    if output_file is None:
+        return True
+    input_stat = os.stat(input_file)  # deliberately NOT swallowed
+    try:
+        output_stat = os.stat(output_file)
+    except (OSError, TypeError, ValueError):
+        return False
+    return os.path.samestat(input_stat, output_stat)
+
+
+def _rewrites_same_file(input_file, output_file) -> bool:
+    """Whether a rewrite of output_file can be done atomically in place.
+
+    Identity is by samestat, not by comparing path strings: a
+    case-insensitive filesystem makes two spellings of one file compare
+    unequal, which would send a genuine same-file rewrite down the
+    destructive truncating path.
+
+    Three cases are deliberately excluded, all for the same reason -- the
+    atomic path installs a NEW inode via os.replace, so anything that
+    depends on the existing inode surviving would silently break:
+
+    * A symlink on either side. os.replace does not follow symlinks, so the
+      link would be replaced by a regular file and the real file would keep
+      its old header.
+    * A file with more than one hard link. No rename can update two names
+      at once: the other name would keep the OLD envelope. For
+      remove-recovery that is a silent revocation failure -- the tool
+      reports success while the slot it claims to have removed still opens
+      the file under its other name. Writing through the shared inode is
+      the only way to keep every name consistent, so the truncating path
+      stays in charge.
+    * Anything that is not a regular file. samestat is happily true for a
+      FIFO or a device node named as both input and output, and os.replace
+      would destroy it, leaving a regular file where the truncating path
+      would have written through the pipe.
+
+    Errors on OUTPUT are normal (it need not exist yet) and mean "not a
+    rewrite". An error on INPUT is not normal -- the caller has just read
+    it -- and is allowed to propagate rather than silently selecting the
+    destructive path.
+    """
+    if output_file is None:
+        return False
+    try:
+        output_stat = os.stat(output_file, follow_symlinks=False)
+    except (OSError, TypeError, ValueError):
+        # Output not created yet, or an unresolvable path: not a rewrite.
+        return False
+    if os.path.islink(input_file) or stat.S_ISLNK(output_stat.st_mode):
+        return False
+
+    input_stat = os.stat(input_file)  # deliberately NOT swallowed
+    if not stat.S_ISREG(input_stat.st_mode) or not stat.S_ISREG(output_stat.st_mode):
+        return False
+    if input_stat.st_nlink > 1 or output_stat.st_nlink > 1:
+        return False
+    return os.path.samestat(input_stat, output_stat)
+
+
+def _write_envelope_header(meta: dict, payload: bytes, input_file, output_file):
     """Write metadata||payload, preserving the bulk payload verbatim."""
     new_payload = base64.b64encode(json.dumps(meta).encode("utf-8")) + b":" + payload
+    # The truncating branch below opens the destination "wb", so a failure
+    # part-way through leaves a shortened, unreadable file and no copy of the
+    # original. When the destination IS the input, that is the user's only
+    # ciphertext. The CLI already selects the atomic path for this case, but
+    # the guarantee must not depend on every caller remembering to
+    # (gitlab#148): recovery slots exist so a file survives losing its
+    # password, and destroying it while managing them defeats the feature.
+    # Eligibility is DERIVED here and takes no caller input at all. There
+    # used to be an in_place flag: passing it False could truncate a file in
+    # place, passing it True bypassed every exclusion below, and the CLI
+    # evaluated its own copy of the check before a multi-second KDF, leaving
+    # a long window in which the paths could be swapped. Deciding here,
+    # immediately before the write, shrinks that window to
+    # stat -> mkstemp -> write -> replace, makes the exclusions
+    # unconditional, and removes the channel entirely rather than leaving a
+    # parameter that looks load-bearing and is not (gitlab#148 re-review).
+    #
+    # output_file=None is the documented "rewrite in place" convention of
+    # the sibling rekey API; it previously reached open(None, "wb").
+    destroys_input = _write_destroys_input(input_file, output_file)
+    if output_file is None:
+        output_file = input_file
+    # Two separate questions, and conflating them is what left the excluded
+    # cases unprotected once already: "does this write destroy the input"
+    # decides whether a backup is needed at all, "can it be replaced
+    # atomically" decides which mechanism gets used.
+    in_place = destroys_input and _rewrites_same_file(input_file, output_file)
+
     if in_place:
-        original_mode = stat.S_IMODE(os.stat(input_file).st_mode)
-        input_dir = os.path.dirname(os.path.abspath(input_file))
-        fd, tmp_path = tempfile.mkstemp(prefix=".slotmgmt_", dir=input_dir)
+        # Everything below names output_file rather than input_file. They are
+        # the same file here, but samestat can be a false positive where a
+        # filesystem reports st_ino as 0, and then renaming onto input_file
+        # would silently write to the wrong one of the two and never create
+        # the file the caller asked for.
+        original_mode = stat.S_IMODE(os.stat(output_file).st_mode)
+        target_dir = os.path.dirname(os.path.abspath(output_file))
+        fd, tmp_path = tempfile.mkstemp(prefix=".slotmgmt_", dir=target_dir)
         try:
-            with os.fdopen(fd, "wb") as out:
-                out.write(new_payload)
-            os.replace(tmp_path, input_file)
-            os.chmod(input_file, original_mode)
+            handle = os.fdopen(fd, "wb")
         except BaseException:
-            if os.path.exists(tmp_path):
-                os.remove(tmp_path)
+            # fdopen never took ownership of the descriptor, so the outer
+            # handler below would leak it for the process lifetime. Both
+            # cleanups are themselves guarded: a raising close or remove
+            # would otherwise replace the real exception with its own and
+            # skip the rest of the cleanup.
+            try:
+                os.close(fd)
+            except OSError:  # pragma: no cover - fdopen may have closed it
+                pass
+            _remove_quietly(tmp_path)
             raise
+        try:
+            with handle as out:
+                out.write(new_payload)
+                # Durability, not just atomicity: closing only flushes to the
+                # page cache, so without this a power loss between the write
+                # and the rename can leave the new name pointing at empty or
+                # partial content — destroying the envelope, which is the very
+                # outcome the atomic path exists to prevent.
+                out.flush()
+                os.fsync(out.fileno())
+                # fchmod on the descriptor rather than chmod on the path after
+                # the rename: no window in which the path can be swapped for a
+                # symlink that redirects the mode change. fchmod is Unix-only,
+                # so Windows falls back to the path form (the same split
+                # file_permissions.create_secure_file makes).
+                if hasattr(os, "fchmod"):
+                    os.fchmod(out.fileno(), original_mode)
+                else:  # pragma: no cover - Windows
+                    os.chmod(tmp_path, original_mode)
+            os.replace(tmp_path, output_file)
+            # Commit the directory entry too, so the rename itself survives.
+            _fsync_directory(target_dir)
+        except BaseException:
+            _remove_quietly(tmp_path)
+            raise
+    elif destroys_input and _is_regular_file(output_file):
+        # The atomic path was ruled out -- a symlink, a multiply-linked inode
+        # -- but this write still lands on the user's only ciphertext, so
+        # "not eligible for os.replace" must not mean "unprotected". These
+        # cases have to be written THROUGH the existing inode to keep every
+        # name consistent, which is the truncating open. It is made
+        # recoverable instead: copy the original to an fsynced backup beside
+        # it, restore on failure, remove it on success. A crash leaves that
+        # backup on disk for manual recovery.
+        #
+        # Cost: this reads and writes the whole file, so an operation
+        # documented as O(header) becomes O(file) here and needs free space
+        # equal to the file. Only a symlinked or multiply-linked envelope
+        # reaches it.
+        # realpath, not abspath: for a symlinked target this puts the backup
+        # beside the real ciphertext rather than beside the link, which may
+        # sit in a world-writable directory, on another filesystem, or
+        # somewhere the user never chose to store their data.
+        target_dir = os.path.dirname(os.path.realpath(output_file))
+        backup_fd, backup_path = tempfile.mkstemp(prefix=".slotbak_", dir=target_dir)
+        try:
+            backup = os.fdopen(backup_fd, "wb")
+        except BaseException:
+            # Reachable ONLY while fdopen has not taken ownership of the
+            # descriptor. Closing it after the `with` below has run would
+            # close a number the OS may already have reissued to another
+            # thread, which no exception handler could detect.
+            try:
+                os.close(backup_fd)
+            except OSError:  # pragma: no cover - platform dependent
+                pass
+            _remove_quietly(backup_path)
+            raise
+        try:
+            # Read output_file, not input_file: output_file is by definition
+            # the one about to be truncated. They are the same file here, but
+            # samestat can be a false positive where a filesystem reports
+            # st_ino as 0, and backing up A while truncating B would restore
+            # A's bytes over B -- destroying a file that was never at risk.
+            with backup, open(output_file, "rb") as src:
+                shutil.copyfileobj(src, backup)
+                backup.flush()
+                os.fsync(backup.fileno())
+            # Commit the backup's NAME too. Fsyncing its data is not enough:
+            # without this, "a crash leaves the backup on disk" is not a
+            # guarantee POSIX makes.
+            _fsync_directory(target_dir)
+        except BaseException:
+            _remove_quietly(backup_path)
+            raise
+
+        try:
+            out = open(output_file, "wb")
+        except BaseException:
+            # The open itself failed -- EACCES on a file we can read but not
+            # write, EPERM on an immutable file, EROFS. NOTHING was truncated,
+            # so the handler below must not run: it would report the file as
+            # destroyed and orphan a full copy of it over a routine
+            # permission error.
+            _remove_or_warn(backup_path)
+            raise
+        try:
+            with out:
+                out.write(new_payload)
+                # Durability for this path too: without it a power loss after
+                # a successful return can still leave partial content.
+                out.flush()
+                os.fsync(out.fileno())
+        except BaseException as write_error:
+            # BaseException on the restore as well, not OSError: the handler
+            # this sits in catches a KeyboardInterrupt mid-write on purpose,
+            # and a SECOND Ctrl-C during the restore is the realistic case on
+            # a large file. Catching only OSError there would leave the file
+            # truncated, the backup orphaned and nothing said.
+            try:
+                _restore_from_backup(backup_path, output_file, target_dir)
+            except BaseException as restore_error:
+                # The original now exists ONLY in the backup, which is
+                # dot-prefixed and so invisible to a plain ls. The path has to
+                # reach the user HERE: RekeyError is a SecureError, which
+                # REPLACES the message it is given with a generic one unless
+                # DEBUG=1 is set in the environment, so putting the path in
+                # the exception would silently discard it in production.
+                eprint(
+                    "CRITICAL: rewriting the envelope failed and the original could "
+                    "not be restored."
+                )
+                eprint(
+                    f"  The only remaining copy is {sanitize_for_display(backup_path)} "
+                    "-- move it back into place manually."
+                )
+                eprint(f"  The write failed with: {sanitize_for_display(str(write_error))}")
+                eprint(f"  The restore failed with: {sanitize_for_display(str(restore_error))}")
+                raise RekeyError(
+                    "envelope rewrite failed and the original could not be restored"
+                ) from restore_error
+            _remove_or_warn(backup_path)
+            raise
+        _remove_or_warn(backup_path)
+        set_secure_permissions(output_file)
+    elif destroys_input:
+        # Same file, but not a regular one: a FIFO or a device node named as
+        # both input and output. No backup can be taken -- reading a FIFO
+        # back would block, and a device node cannot be restored by copying
+        # bytes into it -- so this write cannot be made recoverable. Refuse
+        # rather than write, which answers a residual left open in the first
+        # round. Nothing legitimate reaches here: rekey_file already refuses
+        # a non-regular input via os.path.isfile, and the recovery-slot
+        # commands would have had to read a complete envelope out of the
+        # special file first.
+        # eprint first, for the same reason the restore handler does:
+        # ValidationError is a SecureError, which replaces the message it is
+        # given with a generic "Security validation check failed" unless
+        # DEBUG=1 is set, so the reason would otherwise reach test runs and
+        # nobody else.
+        eprint(
+            f"Refusing to rewrite {sanitize_for_display(output_file)} in place: it is "
+            "not a regular file, so no backup of it can be taken and the "
+            "rewrite could not be undone if it failed."
+        )
+        raise ValidationError(
+            "Refusing to rewrite a non-regular file in place: no recoverable "
+            "backup of it can be taken"
+        )
     else:
+        # A genuinely distinct destination -- nothing of the user's is at
+        # risk, so this is the ordinary write.
         with open(output_file, "wb") as out:
             out.write(new_payload)
         set_secure_permissions(output_file)
@@ -9005,6 +9367,13 @@ def add_recovery_slots(
     """Add recovery slots to an existing envelope file without re-encrypting
     the bulk. The DEK is recovered via the supplied password or recovery
     credential; the bulk ciphertext is retained verbatim.
+
+    Note:
+        ``in_place`` is accepted for backward compatibility and IGNORED. The
+        writer derives whether the write lands on its own input immediately
+        before writing, because a caller-supplied flag could both truncate a
+        file in place when omitted and skip the safety exclusions when
+        asserted (gitlab#148).
     """
     from .envelope import envelope_aad
     from .recovery_slots import build_recovery_slots, compute_slot_set_mac
@@ -9038,7 +9407,7 @@ def add_recovery_slots(
     # dek_slots/_mac are excluded from envelope_aad, so the bulk AAD is unchanged.
     if envelope_aad(meta) != aad_before:
         raise RekeyError("Recovery-slot change would alter the bound metadata subset")
-    _write_envelope_header(meta, payload, input_file, output_file, in_place)
+    _write_envelope_header(meta, payload, input_file, output_file)
     return True
 
 
@@ -9057,6 +9426,10 @@ def remove_recovery_slot(
 ) -> bool:
     """Remove a recovery slot (by id) from an existing envelope file without
     re-encrypting the bulk. The DEK is recovered to re-MAC the remaining set.
+
+    Note:
+        ``in_place`` is accepted for backward compatibility and IGNORED; see
+        :func:`add_recovery_slots`.
     """
     from .envelope import envelope_aad
     from .recovery_slots import compute_slot_set_mac
@@ -9092,7 +9465,7 @@ def remove_recovery_slot(
 
     if envelope_aad(meta) != aad_before:
         raise RekeyError("Recovery-slot change would alter the bound metadata subset")
-    _write_envelope_header(meta, payload, input_file, output_file, in_place)
+    _write_envelope_header(meta, payload, input_file, output_file)
     return True
 
 
