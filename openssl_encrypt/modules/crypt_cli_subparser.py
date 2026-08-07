@@ -3184,6 +3184,34 @@ def create_subparser_main():
     Create a main function that uses subparsers instead of the monolithic approach.
 
     This is a replacement for the main() function in crypt_cli.py for 1.0.0 compatibility.
+
+    Returns:
+        Tuple of (parser, parsed args), or 1 when no command was given.
+    """
+    parser = build_subparser()
+
+    # Parse arguments
+    args = parser.parse_args()
+
+    # Handle the case where no command is provided
+    if args.action is None:
+        parser.print_help()
+        return 1
+
+    return parser, args
+
+
+def build_subparser():
+    """
+    Build the subparser-based argument parser WITHOUT parsing anything.
+
+    Split out of create_subparser_main so the parser can be introspected:
+    a factory that reads sys.argv cannot be asked what surface it exposes,
+    and the GUI-argv lint (gitlab#186) has to compare against the same
+    parser the CLI actually uses, not a reconstruction of it.
+
+    Returns:
+        The configured argparse.ArgumentParser.
     """
     # Set up main argument parser with subcommands
     parser = argparse.ArgumentParser(
@@ -3545,12 +3573,4 @@ def create_subparser_main():
     # Note: Steganography is now integrated into encrypt/decrypt commands
     # rather than separate commands
 
-    # Parse arguments
-    args = parser.parse_args()
-
-    # Handle the case where no command is provided
-    if args.action is None:
-        parser.print_help()
-        return 1
-
-    return parser, args
+    return parser
