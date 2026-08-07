@@ -27,6 +27,13 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Dict, Optional
 
 from .crypt_utils import eprint
+from .identity import (
+    IdentityError,
+    validate_identity_created_at,
+    validate_identity_email,
+    validate_identity_fingerprint,
+    validate_identity_name,
+)
 from .pqc_signing import PQCSigner, calculate_fingerprint, calculate_fingerprint_v2
 
 if TYPE_CHECKING:
@@ -122,17 +129,20 @@ class PublicKeyBundle:
             InvalidAlgorithmError: If algorithms not in whitelist
             ValueError: If required fields are invalid
         """
-        # Validate algorithms
+        # Validate algorithms. The rejected value is deliberately NOT
+        # interpolated: a bundle is remote input, its algorithm field is
+        # unbounded, and this message travels through NetworkError into
+        # logger output on the terminal (gitlab#172).
         if self.encryption_algorithm not in self.ALLOWED_KEM_ALGORITHMS:
             raise InvalidAlgorithmError(
-                f"Invalid encryption algorithm: {self.encryption_algorithm}. "
-                f"Allowed: {', '.join(self.ALLOWED_KEM_ALGORITHMS)}"
+                f"Invalid encryption algorithm (not in the KEM whitelist: "
+                f"{', '.join(self.ALLOWED_KEM_ALGORITHMS)})"
             )
 
         if self.signing_algorithm not in self.ALLOWED_SIGNING_ALGORITHMS:
             raise InvalidAlgorithmError(
-                f"Invalid signing algorithm: {self.signing_algorithm}. "
-                f"Allowed: {', '.join(self.ALLOWED_SIGNING_ALGORITHMS)}"
+                f"Invalid signing algorithm (not in the signing whitelist: "
+                f"{', '.join(self.ALLOWED_SIGNING_ALGORITHMS)})"
             )
 
         # Validate required fields
@@ -141,6 +151,21 @@ class PublicKeyBundle:
 
         if not self.fingerprint or not isinstance(self.fingerprint, str):
             raise ValueError("Fingerprint is required and must be a string")
+
+        # Content validation (gitlab#172): a bundle arrives from a keyserver
+        # — a fully remote attacker — and its name/email/created_at are
+        # printed by the TOFU trust prompt directly around the fingerprint
+        # the user is told to verify out of band. The self-signature is no
+        # defence: it verifies against the signing key shipped IN the
+        # bundle. Same rules as identity import; IdentityError is mapped to
+        # this class's ValueError contract.
+        try:
+            validate_identity_name(self.name)
+            validate_identity_email(self.email)
+            validate_identity_fingerprint(self.fingerprint)
+            validate_identity_created_at(self.created_at)
+        except IdentityError as exc:
+            raise ValueError(str(exc)) from exc
 
         if not self.encryption_public_key or not isinstance(self.encryption_public_key, bytes):
             raise ValueError("Encryption public key is required and must be bytes")
@@ -182,14 +207,17 @@ class PublicKeyBundle:
             raise ValueError("Can only create bundles from own identities")
 
         # Validate algorithms
+        # The rejected value is deliberately not interpolated — the identity
+        # may come from an unvalidated store file, and this message reaches
+        # the terminal via {e} handlers (gitlab#172).
         if identity.encryption_algorithm not in cls.ALLOWED_KEM_ALGORITHMS:
             raise InvalidAlgorithmError(
-                f"Identity uses unsupported encryption algorithm: {identity.encryption_algorithm}"
+                "Identity uses an unsupported encryption algorithm " "(not in the KEM whitelist)"
             )
 
         if identity.signing_algorithm not in cls.ALLOWED_SIGNING_ALGORITHMS:
             raise InvalidAlgorithmError(
-                f"Identity uses unsupported signing algorithm: {identity.signing_algorithm}"
+                "Identity uses an unsupported signing algorithm " "(not in the signing whitelist)"
             )
 
         # Create bundle data (everything except signature)

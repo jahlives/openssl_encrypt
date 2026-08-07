@@ -53,6 +53,7 @@ from .crypt_utils import (
     expand_glob_patterns,
     generate_strong_password,
     request_confirmation,
+    sanitize_for_display,
     secure_shred_file,
     show_security_recommendations,
     tty_clear_line,
@@ -77,18 +78,14 @@ from . import crypt_errors
 from .cli_aliases import add_cli_aliases, process_cli_aliases
 from .config_analyzer import ConfigurationAnalyzer
 from .config_wizard import generate_cli_arguments, run_configuration_wizard
-from .credential_env import (
-    CredentialError,
-    consume_env,
-    resolve_credential,
-)
+from .credential_env import CredentialError, consume_env, resolve_credential
 from .credential_env import validated as credential_validated
-from .security_logger import register_consumed_secret
 from .keystore_utils import auto_generate_pqc_key
 
 # Import keystore-related modules
 from .keystore_wrapper import decrypt_file_with_keystore, encrypt_file_with_keystore
 from .password_policy import PasswordPolicy, get_password_strength
+from .security_logger import register_consumed_secret
 from .security_scorer import SecurityScorer
 
 # Import security audit logger
@@ -1090,16 +1087,18 @@ SUBPARSER_COMMANDS = (
 # In particular -t/--template must never appear here: it is a subcommand
 # option on encrypt/decrypt that selects the KDF/hash parameters, so a silent
 # drop would mean encrypting at default cost instead of the requested one.
-TRULY_GLOBAL_FLAGS = frozenset({
-    "--debug",
-    "--unsafe-show-secrets",
-    "--verbose",
-    "--quiet",
-    "-q",
-    "--progress",
-    "--parallel-kdf",
-    "--kdf-workers",
-})
+TRULY_GLOBAL_FLAGS = frozenset(
+    {
+        "--debug",
+        "--unsafe-show-secrets",
+        "--verbose",
+        "--quiet",
+        "-q",
+        "--progress",
+        "--parallel-kdf",
+        "--kdf-workers",
+    }
+)
 
 # The single global flag that carries a value; its value must move with it.
 VALUE_CARRYING_GLOBAL_FLAGS = frozenset({"--kdf-workers"})
@@ -2605,7 +2604,6 @@ def run_security_tests(args):
         sys.exit(1)
 
 
-
 def _template_list_payload(templates):
     """Build the `template list --format json` entries.
 
@@ -2615,6 +2613,7 @@ def _template_list_payload(templates):
     the whole listing -- list_templates() already skips files it cannot load,
     and this keeps that property.
     """
+
     def _text(value, limit=256):
         return str(value)[:limit] if isinstance(value, (str, int, float)) else ""
 
@@ -2636,6 +2635,7 @@ def _template_list_payload(templates):
         except Exception:  # noqa: BLE001 - one bad file must not kill the list
             continue
     return payload
+
 
 def _handle_template_list(template_mgr: TemplateManager, args):
     """Handle template list command."""
@@ -2794,7 +2794,9 @@ def _handle_template_analyze(template_mgr: TemplateManager, args):
                 priority_icon = (
                     "🚨"
                     if rec["priority"] == "critical"
-                    else "⚠️" if rec["priority"] == "high" else "💡"
+                    else "⚠️"
+                    if rec["priority"] == "high"
+                    else "💡"
                 )
                 eprint(f"   {i}. {priority_icon} {rec['title']}")
                 eprint(f"      {rec['description']}")
@@ -3342,8 +3344,8 @@ def handle_keyserver_command(args):
 
                 eprint("\n✓ Email confirmed! Registration complete.")
                 eprint("=" * 60)
-                eprint(f"Client ID:   {result['client_id']}")
-                eprint(f"Token Type:  {result.get('token_type', 'Bearer')}")
+                eprint(f"Client ID:   {sanitize_for_display(result['client_id'])}")
+                eprint(f"Token Type:  {sanitize_for_display(result.get('token_type', 'Bearer'))}")
                 eprint(f"Token File:  {config.api_token_file}")
                 eprint("=" * 60)
             else:
@@ -3353,9 +3355,9 @@ def handle_keyserver_command(args):
 
                 eprint("\n✓ Successfully registered with keyserver")
                 eprint("=" * 60)
-                eprint(f"Client ID:   {result['client_id']}")
-                eprint(f"Expires:     {result['expires_at']}")
-                eprint(f"Token Type:  {result['token_type']}")
+                eprint(f"Client ID:   {sanitize_for_display(result['client_id'])}")
+                eprint(f"Expires:     {sanitize_for_display(result['expires_at'])}")
+                eprint(f"Token Type:  {sanitize_for_display(result['token_type'])}")
                 eprint(f"Token File:  {config.api_token_file}")
                 eprint("=" * 60)
 
@@ -3367,7 +3369,7 @@ def handle_keyserver_command(args):
         except KeyboardInterrupt:
             eprint("\n\n✗ Registration cancelled.")
         except Exception as e:
-            eprint(f"\n✗ Registration failed: {e}")
+            eprint(f"\n✗ Registration failed: {sanitize_for_display(e)}")
             eprint("\nTroubleshooting:")
             eprint("  - Check network connectivity")
             eprint("  - Verify keyserver URL is correct")
@@ -3391,8 +3393,8 @@ def handle_keyserver_command(args):
 
             eprint("\n✓ Login successful")
             eprint("=" * 60)
-            eprint(f"Client ID:     {result['client_id']}")
-            eprint(f"Token Type:    {result.get('token_type', 'Bearer')}")
+            eprint(f"Client ID:     {sanitize_for_display(result['client_id'])}")
+            eprint(f"Token Type:    {sanitize_for_display(result.get('token_type', 'Bearer'))}")
             eprint(f"Token File:    {config.api_token_file}")
             eprint(f"Refresh File:  {config.refresh_token_file}")
             eprint("=" * 60)
@@ -3402,7 +3404,7 @@ def handle_keyserver_command(args):
             eprint("  openssl-encrypt keyserver revoke <fingerprint>")
 
         except Exception as e:
-            eprint(f"\n✗ Login failed: {e}")
+            eprint(f"\n✗ Login failed: {sanitize_for_display(e)}")
             eprint("\nTroubleshooting:")
             eprint("  - Verify your client ID is correct (from registration email)")
             eprint("  - Check network connectivity")
@@ -3426,13 +3428,21 @@ def handle_keyserver_command(args):
             if args.json:
                 print(json.dumps(bundle.to_dict(), indent=2))
             else:
+                # Sanitized like the trust prompt in key_resolver
+                # (gitlab#172): the bundle is remote attacker input, and
+                # cached bundles predate __post_init__ content validation.
                 eprint("\n✓ Key found")
                 eprint("-" * 60)
-                eprint(f"Name:        {bundle.name}")
-                eprint(f"Email:       {bundle.email or 'N/A'}")
-                eprint(f"Fingerprint: {bundle.fingerprint}")
-                eprint(f"Algorithms:  {bundle.encryption_algorithm} / {bundle.signing_algorithm}")
-                eprint(f"Created:     {bundle.created_at}")
+                eprint(f"Name:        {sanitize_for_display(bundle.name)}")
+                eprint(
+                    f"Email:       {sanitize_for_display(bundle.email) if bundle.email else 'N/A'}"
+                )
+                eprint(f"Fingerprint: {sanitize_for_display(bundle.fingerprint)}")
+                eprint(
+                    f"Algorithms:  {sanitize_for_display(bundle.encryption_algorithm)} / "
+                    f"{sanitize_for_display(bundle.signing_algorithm)}"
+                )
+                eprint(f"Created:     {sanitize_for_display(bundle.created_at)}")
                 eprint("-" * 60)
         else:
             eprint(f"✗ Key not found for '{identifier}'")
@@ -3459,14 +3469,17 @@ def handle_keyserver_command(args):
 
         try:
             identity = resolver.resolve(args.identifier, load_private_keys=False)
-            eprint(f"✓ Successfully imported '{identity.name}' to local store")
-            eprint(f"  Fingerprint: {identity.fingerprint}")
+            eprint(
+                f"✓ Successfully imported "
+                f"'{sanitize_for_display(identity.name)}' to local store"
+            )
+            eprint(f"  Fingerprint: {sanitize_for_display(identity.fingerprint)}")
         except KeyNotFoundError:
             eprint(f"✗ Key not found for '{args.identifier}'")
         except TrustDeclinedError:
             eprint("✗ Import cancelled (user declined to trust key)")
         except Exception as e:
-            eprint(f"✗ Failed to import key: {e}")
+            eprint(f"✗ Failed to import key: {sanitize_for_display(e)}")
 
     elif action == "upload":
         # Upload key to keyserver
@@ -3510,13 +3523,13 @@ def handle_keyserver_command(args):
             success = plugin.upload_key(bundle)
 
             if success:
-                eprint(f"✓ Successfully uploaded '{identity_name}'")
-                eprint(f"  Fingerprint: {bundle.fingerprint}")
+                eprint(f"✓ Successfully uploaded '{sanitize_for_display(identity_name)}'")
+                eprint(f"  Fingerprint: {sanitize_for_display(bundle.fingerprint)}")
             else:
                 eprint(f"✗ Failed to upload '{identity_name}'")
 
         except Exception as e:
-            eprint(f"✗ Failed to upload key: {e}")
+            eprint(f"✗ Failed to upload key: {sanitize_for_display(e)}")
 
     elif action == "revoke":
         # Revoke key on keyserver
@@ -3593,7 +3606,8 @@ def handle_keyserver_command(args):
 
         if stats["most_accessed"]:
             eprint(
-                f"Most Accessed Key: {stats['most_accessed']['name']} ({stats['most_accessed']['count']} times)"
+                f"Most Accessed Key: {sanitize_for_display(stats['most_accessed']['name'])} "
+                f"({stats['most_accessed']['count']} times)"
             )
 
         eprint(f"Cache Path: {stats['cache_path']}")
@@ -4068,8 +4082,7 @@ def _resolve_second_password(args):
         return val.encode("utf-8")
 
     requested = bool(
-        getattr(args, "hidden_header", False)
-        or getattr(args, "second_password_prompt", False)
+        getattr(args, "hidden_header", False) or getattr(args, "second_password_prompt", False)
     )
     if env_value is not None and not requested:
         # Silently dropping it would leave a GUI or CI caller believing the
@@ -4082,9 +4095,7 @@ def _resolve_second_password(args):
             f"does not enable the mode."
         )
     if requested and env_value is not None:
-        return credential_validated(
-            env_value, f"${SECOND_PASSWORD_ENV}"
-        ).encode("utf-8")
+        return credential_validated(env_value, f"${SECOND_PASSWORD_ENV}").encode("utf-8")
     if getattr(args, "second_password_prompt", False):
         import getpass
 
@@ -5805,7 +5816,7 @@ def main_with_args(args=None):
             sign_file_cli(args)
             sys.exit(0)
         except Exception as e:
-            print(f"Error: {e}", file=sys.stderr)
+            print(f"Error: {sanitize_for_display(e)}", file=sys.stderr)
             sys.exit(1)
 
     elif args.action == "verify-signature":
@@ -5816,7 +5827,7 @@ def main_with_args(args=None):
             verify_signature_cli(args)
             sys.exit(0)
         except Exception as e:
-            print(f"Error: {e}", file=sys.stderr)
+            print(f"Error: {sanitize_for_display(e)}", file=sys.stderr)
             sys.exit(1)
 
     elif args.action in ("list-recovery", "recover", "add-recovery", "remove-recovery"):
@@ -6983,9 +6994,7 @@ def main_with_args(args=None):
                     # 32-char run of [A-Za-z0-9+_=], which a shorter password
                     # never has and which punctuation breaks. Register it
                     # explicitly so any path that logs it redacts it.
-                    register_consumed_secret(
-                        "generated_random_password", generated_password
-                    )
+                    register_consumed_secret("generated_random_password", generated_password)
 
                     _random_out = getattr(args, "random_password_out", None)
 
@@ -7039,9 +7048,7 @@ def main_with_args(args=None):
                     # before the envelope is modified.
                     if _random_out:
                         try:
-                            _write_generated_password_file(
-                                _random_out, generated_password
-                            )
+                            _write_generated_password_file(_random_out, generated_password)
                         except Exception as _e:
                             # Never echo the password itself in the message.
                             eprint(
@@ -7051,8 +7058,7 @@ def main_with_args(args=None):
                             raise SystemExit(1)
                         if not args.quiet:
                             eprint(
-                                f"\nGenerated password written to "
-                                f"{_random_out} (mode 0600)."
+                                f"\nGenerated password written to " f"{_random_out} (mode 0600)."
                             )
                     else:
                         _display_generated_password(generated_password)
@@ -7221,9 +7227,9 @@ def main_with_args(args=None):
                                             policy_params["check_common_passwords"] = False
 
                                         if args.custom_password_list:
-                                            policy_params["common_passwords_path"] = (
-                                                args.custom_password_list
-                                            )
+                                            policy_params[
+                                                "common_passwords_path"
+                                            ] = args.custom_password_list
 
                                         # Create policy and validate password
                                         policy = PasswordPolicy(
@@ -8066,14 +8072,13 @@ def main_with_args(args=None):
                     sys.exit(1)
 
                 # Determine if passphrase is needed
-                from .identity_protection import ProtectionLevel
-
                 # Same environment channel as `sign` (gitlab#159): this path
                 # signs with the same identity and reached only a /dev/tty
                 # prompt, so a GUI or CI caller could not use --sign-with at
                 # all -- and the variable would have survived the whole run,
                 # contradicting the read-once-and-remove guarantee.
                 from .file_signature import SIGNER_PASSPHRASE_ENV
+                from .identity_protection import ProtectionLevel
 
                 _sender_needs_passphrase = (
                     not sender_metadata.protection
@@ -8083,8 +8088,7 @@ def main_with_args(args=None):
                     sender_passphrase = resolve_credential(
                         requested=_sender_needs_passphrase,
                         env_name=SIGNER_PASSPHRASE_ENV,
-                        prompt=f"Passphrase for sender identity "
-                        f"'{args.sign_with}': ",
+                        prompt=f"Passphrase for sender identity " f"'{args.sign_with}': ",
                     )
                 except CredentialError as e:
                     eprint(f"ERROR: {e} ❌")

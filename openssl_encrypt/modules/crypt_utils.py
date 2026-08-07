@@ -11,6 +11,7 @@ import glob
 import json
 import os
 import random
+import re
 import secrets
 import signal
 import stat
@@ -23,6 +24,49 @@ def eprint(*args, **kwargs):
     """Print to stderr. Drop-in replacement for print() for non-data output."""
     kwargs.setdefault("file", sys.stderr)
     print(*args, **kwargs)
+
+
+# C0 controls, DEL, and the C1 range: ESC (\x1b) starts most terminal escape
+# sequences, but C1 CSI (\x9b) is a one-byte introducer on some terminals
+# (VTE/xterm decode U+009B from its UTF-8 bytes), so the whole range is
+# covered, not just ESC. Backslash is escaped so output stays unambiguous —
+# a literal seven-character "a\\x1b[1A" must not render identically to an
+# escaped real ESC, or the evidence trail the escaping exists to provide is
+# forgeable. The bidi/format controls (LRM/RLM, LRE..RLO/PDF, the isolate
+# pair) ARE honoured by VTE and Kitty and can visually reorder text within a
+# line — email spoofing, not fingerprint forgery. U+2028/U+2029 were
+# considered and excluded: terminals do not line-break on them.
+_DISPLAY_UNSAFE_RE = re.compile(r"[\x00-\x1f\x5c\x7f-\x9f\u200e\u200f\u202a-\u202e\u2066-\u2069]")
+
+
+def sanitize_for_display(value) -> str:
+    """Escape terminal control characters in an untrusted value for display.
+
+    Untrusted text (an imported identity's email, a rejected name echoed in
+    an error message) printed to the terminal can carry ANSI escape sequences
+    that move the cursor and overwrite adjacent lines — e.g. forging the
+    ``Fingerprint:`` line that out-of-band verification depends on
+    (gitlab#172). Escaping rather than stripping keeps the evidence visible:
+    the user sees ``\\x1b[1A`` instead of having their display rewritten.
+
+    This is NOT a secret-redaction chokepoint: the value is printed in full,
+    merely escaped. Secrets (passwords, tokens, key material) go through
+    debug_secret() in debug_redaction.py — never through this helper.
+
+    The "safe to display" contract assumes a stream that does not raise on
+    unencodable code points (CPython's stderr uses errors="backslashreplace",
+    which also covers lone surrogates JSON may smuggle in); a consumer
+    writing elsewhere must provide the same guarantee.
+
+    Args:
+        value: Untrusted value; coerced with str() (error paths pass
+            exception objects).
+
+    Returns:
+        The value with every C0 control, DEL, C1, backslash, and bidi/format
+        control replaced by its backslash escape.
+    """
+    return _DISPLAY_UNSAFE_RE.sub(lambda m: repr(m.group())[1:-1], str(value))
 
 
 def tty_write(message: str) -> bool:

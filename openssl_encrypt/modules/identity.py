@@ -43,6 +43,7 @@ from .identity_protection import (
     InvalidCredentialsError,
     ProtectionLevel,
 )
+from .json_validator import SecureJSONValidator, get_json_validator
 from .pqc import PQCipher
 from .pqc_signing import PQCSigner, calculate_fingerprint, calculate_fingerprint_v2
 from .secure_memory import secure_memzero
@@ -107,7 +108,7 @@ class IdentityAmbiguousError(IdentityError):
 
 import re
 
-from .crypt_utils import eprint
+from .crypt_utils import eprint, sanitize_for_display
 
 # Strict pattern for identity names: alphanumeric, hyphens, underscores, dots.
 # No path separators, no ".." sequences, no leading dots.
@@ -131,13 +132,154 @@ def validate_identity_name(name: str) -> None:
     if len(name) > 255:
         raise IdentityError("Identity name too long (max 255 characters)")
     if not _IDENTITY_NAME_RE.match(name):
+        # The rejected value is echoed in error output; a name carrying ANSI
+        # escapes must not reach the terminal verbatim (gitlab#172).
         raise IdentityError(
-            f"Invalid identity name '{name}': must contain only "
+            f"Invalid identity name '{sanitize_for_display(name)}': must contain only "
             f"alphanumeric characters, hyphens, underscores, and dots, "
             f"and must not start with a dot"
         )
     if ".." in name:
-        raise IdentityError(f"Invalid identity name '{name}': must not contain '..'")
+        raise IdentityError(
+            f"Invalid identity name '{sanitize_for_display(name)}': must not contain '..'"
+        )
+
+
+# RFC 5321 caps a mailbox at 254 octets; 320 leaves headroom for the
+# historical 64+1+255 reading without admitting unbounded strings.
+_IDENTITY_EMAIL_MAX = 320
+
+# Deliberately its own policy, NOT reuse of the display sanitizer's class:
+# that helper may grow (it now escapes backslash and bidi controls for
+# display unambiguity), and an input-validation rule that silently shifts
+# with a presentation helper would start rejecting bundles that were
+# previously accepted, under an error message that no longer describes the
+# cause. C0, DEL, C1 — the terminal-control class — is the import contract.
+_IDENTITY_CONTROL_CHAR_RE = re.compile(r"[\x00-\x1f\x7f-\x9f]")
+
+
+def _validate_display_text(value, field: str, max_len: int) -> None:
+    """Reject a non-string, overlong, or control-character-bearing field.
+
+    Shared rule for untrusted display-only metadata (email, created_at):
+    what is dangerous to display or store is rejected; the offending value
+    is never interpolated into the message.
+
+    Args:
+        value: Field value from an untrusted document.
+        field: Field name for the error message.
+        max_len: Maximum accepted length in characters.
+
+    Raises:
+        IdentityError: If the value is not a string, too long, or contains
+            control characters.
+    """
+    if not isinstance(value, str):
+        raise IdentityError(f"Identity {field} must be a string")
+    if len(value) > max_len:
+        raise IdentityError(f"Identity {field} too long (max {max_len} characters)")
+    if _IDENTITY_CONTROL_CHAR_RE.search(value):
+        raise IdentityError(f"Identity {field} must not contain control characters")
+
+
+def validate_identity_email(email) -> None:
+    """Validate an identity email taken from an untrusted import document.
+
+    Unlike ``name`` (which becomes a directory name and is locked to a strict
+    regex), ``email`` is display-only metadata — so this rejects only what is
+    dangerous to display or store: non-strings, unbounded lengths, and
+    control characters that could smuggle terminal escape sequences into
+    output printed next to the fingerprint (gitlab#172).
+
+    Args:
+        email: Value of the document's ``email`` field; ``None`` is valid.
+
+    Raises:
+        IdentityError: If the email is not a string, too long, or contains
+            control characters. The offending value is never interpolated
+            into the message.
+    """
+    if email is None:
+        return
+    _validate_display_text(email, "email", _IDENTITY_EMAIL_MAX)
+
+
+def validate_identity_created_at(created_at) -> None:
+    """Validate an identity's created_at timestamp from an untrusted source.
+
+    An ISO 8601 timestamp needs ~35 characters; 64 is generous. The field is
+    displayed by the keyserver trust prompt directly BELOW the fingerprint
+    line, so an unconstrained value is a cursor-movement vector against the
+    fingerprint the user is being told to verify (gitlab#172).
+
+    Args:
+        created_at: Value of the document's ``created_at`` field.
+
+    Raises:
+        IdentityError: If the value is not a string, too long, or contains
+            control characters.
+    """
+    _validate_display_text(created_at, "created_at", 64)
+
+
+# Algorithm identifiers ("ML-KEM-768", "ML-DSA-65", legacy "Dilithium3").
+# Displayed directly under the Fingerprint: line, so they get the same
+# format contract as the sidecar's algorithm field (gitlab#172). "+", "_"
+# and "." are deliberately excluded — no identity algorithm ever used them;
+# if 1.5.x exposes SLH-DSA under the legacy "SPHINCS+..." spelling, widen
+# this to the new canonical name, not to "+".
+_IDENTITY_ALGORITHM_RE = re.compile(r"^[A-Za-z0-9-]{1,32}$")
+
+
+def validate_identity_algorithm(algorithm) -> None:
+    """Validate an algorithm identifier from an untrusted source.
+
+    Args:
+        algorithm: Value of an ``encryption_algorithm`` /
+            ``signing_algorithm`` field.
+
+    Raises:
+        IdentityError: If the value is not a plausible algorithm name. The
+            offending value is never interpolated into the message.
+    """
+    if not isinstance(algorithm, str) or not _IDENTITY_ALGORITHM_RE.match(algorithm):
+        raise IdentityError("Identity algorithm is not a valid algorithm name")
+
+
+# Both fingerprint generations (v1 legacy and v2) format as lowercase hex
+# byte pairs joined by colons (pqc_signing.calculate_fingerprint). 191 chars
+# is a SHA-512 fingerprint (64 pairs); nothing legitimate is longer.
+_IDENTITY_FINGERPRINT_MAX = 191
+_IDENTITY_FINGERPRINT_RE = re.compile(r"^[0-9a-f]{2}(:[0-9a-f]{2})+$")
+
+
+def validate_identity_fingerprint(fingerprint) -> None:
+    """Validate the format of a fingerprint from an untrusted source.
+
+    Every fingerprint this tool has ever written is lowercase hex pairs
+    joined by colons; anything else in a stored identity file or an imported
+    document is crafted or corrupted. Format validation keeps an arbitrary
+    attacker string out of the ``Fingerprint:`` display sites — the exact
+    line out-of-band verification depends on (gitlab#172). Consistency with
+    the actual keys is checked separately (check_fingerprint_consistency).
+
+    Args:
+        fingerprint: Fingerprint string from a document or stored file.
+
+    Raises:
+        IdentityError: If the value is not a colon-separated lowercase hex
+            fingerprint. The offending value is never interpolated into the
+            message.
+    """
+    # Length first: a SHA-512 fingerprint is 64 pairs = 191 chars; the cap
+    # keeps a multi-megabyte all-hex string from passing the regex and then
+    # being printed in full.
+    if (
+        not isinstance(fingerprint, str)
+        or len(fingerprint) > _IDENTITY_FINGERPRINT_MAX
+        or not _IDENTITY_FINGERPRINT_RE.match(fingerprint)
+    ):
+        raise IdentityError("Identity fingerprint is not a colon-separated hex fingerprint")
 
 
 @dataclass
@@ -220,6 +362,10 @@ class Identity:
             HSMNotAvailableError: If HSM required but not available
         """
         validate_identity_name(name)
+        # The email is persisted, re-emitted verbatim by export_public() and
+        # uploaded in a PublicKeyBundle — an unvalidated value here becomes
+        # an attack on OTHER users' trust prompts (gitlab#172).
+        validate_identity_email(email)
         logger.info(f"Generating identity '{name}' with {kem_algorithm} + {sig_algorithm}")
 
         try:
@@ -307,8 +453,34 @@ class Identity:
         if not identity_json_path.exists():
             raise IdentityNotFoundError(f"identity.json not found in {path}")
 
-        with open(identity_json_path, "r") as f:
-            data = json.load(f)
+        # Bounded and explicit-UTF-8, like the import path: under the
+        # supplied-store threat model a gigabyte or deeply nested
+        # identity.json must not DoS `identity list`, and a locale-dependent
+        # read would mangle a non-ASCII name or email (gitlab#172). Bounding
+        # the read itself (not a stat() gate) also covers a symlink to a
+        # huge file, /dev/zero, or a swap between check and open. The
+        # validator's pre-parse depth scan guards json.loads' recursion.
+        with open(identity_json_path, "r", encoding="utf-8") as f:
+            raw = f.read(SecureJSONValidator.MAX_JSON_SIZE + 1)
+        if len(raw) > SecureJSONValidator.MAX_JSON_SIZE:
+            raise IdentityError(
+                f"identity.json exceeds {SecureJSONValidator.MAX_JSON_SIZE} characters"
+            )
+        get_json_validator().validate_json_security(raw)
+        data = json.loads(raw)
+
+        # A stored identity file is untrusted display input too: with
+        # --identity-store / OPENSSL_ENCRYPT_IDENTITY_STORE pointing at a
+        # supplied directory (a shared contacts dir, an extracted archive),
+        # these fields feed list/show and the TOFU key-change warning without
+        # ever having passed an import-time check (gitlab#172). Validated
+        # before the private-key KDF below, so a crafted file fails cheap.
+        validate_identity_name(data["name"])
+        validate_identity_email(data.get("email"))
+        validate_identity_fingerprint(data["fingerprint"])
+        validate_identity_created_at(data["created_at"])
+        validate_identity_algorithm(data["encryption_algorithm"])
+        validate_identity_algorithm(data["signing_algorithm"])
 
         name = data["name"]
         logger.debug(f"Loading identity '{name}' from {path}")
@@ -536,6 +708,16 @@ class Identity:
             IdentityError: If name is invalid or fingerprint doesn't match keys
         """
         validate_identity_name(data["name"])
+        # email was the one field taken raw from the document (gitlab#172):
+        # printed straight to the terminal directly above the Fingerprint:
+        # line, it could carry ANSI escapes forging the only authenticity
+        # readout this design has. fingerprint and created_at get the same
+        # treatment — both are displayed adjacent to it.
+        validate_identity_email(data.get("email"))
+        validate_identity_fingerprint(data["fingerprint"])
+        validate_identity_created_at(data["created_at"])
+        validate_identity_algorithm(data["encryption_algorithm"])
+        validate_identity_algorithm(data["signing_algorithm"])
         identity = cls(
             name=data["name"],
             email=data.get("email"),
@@ -551,8 +733,12 @@ class Identity:
         )
         # Verify fingerprint matches the actual public keys to detect tampering
         if not identity.check_fingerprint_consistency():
+            # The name has passed validate_identity_name by here, so it is
+            # regex-clean today — sanitized anyway so a future reordering of
+            # these checks cannot silently reopen the escape channel.
             raise IdentityError(
-                f"Fingerprint verification failed for imported identity '{data['name']}': "
+                f"Fingerprint verification failed for imported identity "
+                f"'{sanitize_for_display(data['name'])}': "
                 f"the fingerprint does not match the public keys"
             )
         return identity
@@ -688,7 +874,13 @@ class IdentityStore:
                     identity = Identity.load(item, load_private_keys=False)
                     identities.append(identity)
                 except Exception as e:
-                    logger.warning(f"Failed to load identity from {item}: {e}")
+                    # item is a directory name — attacker-controlled in the supplied-
+                    # store threat model, and control characters are legal in
+                    # POSIX filenames (gitlab#172).
+                    logger.warning(
+                        f"Failed to load identity from "
+                        f"{sanitize_for_display(item.name)}: {sanitize_for_display(e)}"
+                    )
 
         # Contacts (public keys only)
         if include_contacts:
@@ -698,7 +890,10 @@ class IdentityStore:
                         identity = Identity.load(item, load_private_keys=False)
                         identities.append(identity)
                     except Exception as e:
-                        logger.warning(f"Failed to load contact from {item}: {e}")
+                        logger.warning(
+                            f"Failed to load contact from "
+                            f"{sanitize_for_display(item.name)}: {sanitize_for_display(e)}"
+                        )
 
         return identities
 

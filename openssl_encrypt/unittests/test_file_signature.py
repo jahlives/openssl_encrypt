@@ -90,7 +90,9 @@ class TestSerialize(unittest.TestCase):
             "algorithm": "ML-DSA-65",
             "hash_algorithm": "SHA-512",
             "file_hash": "deadbeef",
-            "signer_fingerprint": "fp",
+            # A real-shaped fingerprint: parse_signature format-validates the
+            # field since gitlab#172 (it is displayed pre-verification).
+            "signer_fingerprint": "aa:bb:cc:dd",
             "signed_at": "2026-01-01T00:00:00Z",
             "signatures": [{"component": "ml-dsa-65", "value": "AAAA"}],
         }

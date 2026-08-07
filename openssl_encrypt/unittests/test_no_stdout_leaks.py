@@ -38,7 +38,7 @@ STDOUT_WHITELIST = [
     ("crypt_cli.py", 6597, "derive-password hex output"),
     ("crypt_cli.py", 6601, "derive-password base64 output"),
     # file_signature.py — verify-signature --json result (machine-readable, stdout)
-    ("modules/file_signature.py", 425, "verify-signature JSON result"),
+    ("modules/file_signature.py", 488, "verify-signature JSON result"),
     # recovery_slots.py — recovery commands' --json results (gitlab#146).
     # Machine-readable output for non-interactive callers. None of these carries
     # a credential: a generated recovery code is written to its own 0600 file via
