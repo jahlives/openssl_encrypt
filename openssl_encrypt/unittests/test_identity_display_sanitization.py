@@ -301,6 +301,7 @@ class TestListShowDisplaySanitized(_CmdTestBase):
         args = argparse.Namespace(identity_store=None, include_contacts=True)
         store = mock.Mock()
         store.list_identities.return_value = [self._identity(FORGED)]
+        store.find_shadowed_names.return_value = []
         stderr = io.StringIO()
         with mock.patch(
             "openssl_encrypt.modules.identity_cli.get_identity_store",
