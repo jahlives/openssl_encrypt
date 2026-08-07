@@ -136,6 +136,23 @@ class TestEmailValidation(unittest.TestCase):
                 with self.assertRaises(IdentityError):
                     validate_identity_email(f"a{ch}b@example.com")
 
+    def test_bidi_and_line_separators_are_rejected(self):
+        """Widened for gitlab#183: these pass every terminal-escape check but
+        reorder text in any UAX #9 renderer (Flutter), and U+2028/U+2029 are
+        mandatory line breaks under UAX #14 — so a GUI consumer of the
+        machine-readable channel would render attacker text on its own line."""
+        for cp in (0x061C, 0x200E, 0x200F, 0x202A, 0x202E, 0x2028, 0x2029, 0x2066, 0x2069):
+            with self.subTest(cp=hex(cp)):
+                with self.assertRaises(IdentityError):
+                    validate_identity_email(f"a{chr(cp)}b@example.com")
+                with self.assertRaises(IdentityError):
+                    validate_identity_created_at(f"2026-01-01{chr(cp)}")
+
+    def test_zero_width_joiners_are_still_accepted(self):
+        """ZWNJ/ZWJ are load-bearing in Persian and Indic scripts and in
+        emoji sequences; the display side neutralizes them instead."""
+        validate_identity_email(f"a{chr(0x200C)}b{chr(0x200D)}c@example.com")
+
     def test_rejection_message_carries_no_raw_control_chars(self):
         try:
             validate_identity_email(FORGED)

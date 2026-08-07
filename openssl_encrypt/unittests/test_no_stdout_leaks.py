@@ -14,7 +14,10 @@ import pytest
 
 # Whitelisted print() calls that MUST remain on stdout (data output)
 # Format: (filename_suffix, line_number, description)
-# Line numbers are checked with a tolerance of ±5 to handle minor edits
+# Line numbers are checked with a tolerance of LINE_TOLERANCE (see below)
+# to handle minor edits. NOTE: that window is wide enough to blanket a
+# whole function, so a future print() near a whitelisted one passes
+# silently — tracked as gitlab#150.
 STDOUT_WHITELIST = [
     # crypt_cli.py — JSON data outputs
     # (line numbers shifted by the gitlab#131 F16 keyfile-KDF helper insertion)
@@ -39,6 +42,8 @@ STDOUT_WHITELIST = [
     ("crypt_cli.py", 6601, "derive-password base64 output"),
     # file_signature.py — verify-signature --json result (machine-readable, stdout)
     ("modules/file_signature.py", 488, "verify-signature JSON result"),
+    # identity_cli.py — identity list --json result (machine-readable, stdout)
+    ("modules/identity_cli.py", 339, "identity list JSON result"),
     # recovery_slots.py — recovery commands' --json results (gitlab#146).
     # Machine-readable output for non-interactive callers. None of these carries
     # a credential: a generated recovery code is written to its own 0600 file via

@@ -2460,6 +2460,10 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
   bool _useKeyserver = false;
   List<Map<String, dynamic>> _ownIdentities = [];
   List<Map<String, dynamic>> _contacts = [];
+  // Store entries that could not be read: surfaced in the recipient picker,
+  // because a silently short recipient list means a file nobody expected to
+  // be excluded cannot be decrypted by them (gitlab#183).
+  List<Map<String, dynamic>> _skippedIdentities = [];
 
   // Cascade encryption state
   String _cascadePreset = 'standard';
@@ -2482,14 +2486,17 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
     try {
       final identities = await CLIService.listIdentities();
       setState(() {
-        _ownIdentities = identities['own'] ?? [];
-        _contacts = identities['contacts'] ?? [];
+        _ownIdentities = (identities['own'] as List<Map<String, dynamic>>?) ?? [];
+        _contacts = (identities['contacts'] as List<Map<String, dynamic>>?) ?? [];
+        _skippedIdentities =
+            (identities['skipped'] as List<Map<String, dynamic>>?) ?? [];
       });
     } catch (e) {
       CLIService.outputDebugLog('Failed to load identities: $e');
       setState(() {
         _ownIdentities = [];
         _contacts = [];
+        _skippedIdentities = [];
       });
     }
   }
@@ -2779,6 +2786,24 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
             children: [
               const Text('Select a recipient who will be able to decrypt this data:'),
               const SizedBox(height: 16),
+              if (_skippedIdentities.isNotEmpty) ...[
+                // A short list here means a recipient is missing, and the
+                // file would simply be undecryptable for them.
+                Container(
+                  width: double.infinity,
+                  color: Colors.orange.shade100,
+                  padding: const EdgeInsets.all(8),
+                  child: Text(
+                    '${_skippedIdentities.length} store entr'
+                    '${_skippedIdentities.length == 1 ? 'y' : 'ies'} could not be '
+                    'read and ${_skippedIdentities.length == 1 ? 'is' : 'are'} not '
+                    'listed below: '
+                    '${_skippedIdentities.map((s) => s['entry']).join(', ')}',
+                    style: TextStyle(color: Colors.orange.shade900, fontSize: 12),
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
               ...(_ownIdentities.isEmpty && _contacts.isEmpty)
                   ? [const Text('No identities or contacts available')]
                   : [

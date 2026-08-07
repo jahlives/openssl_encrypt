@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'cli_service.dart';
+import 'input_validation.dart';
 
 /// Identity Management Screen
 /// Allows users to create, view, and manage identities and contacts for asymmetric encryption
@@ -15,6 +16,7 @@ class _IdentityManagementScreenState extends State<IdentityManagementScreen>
     with SingleTickerProviderStateMixin {
   List<Map<String, dynamic>> _ownIdentities = [];
   List<Map<String, dynamic>> _contacts = [];
+  List<Map<String, dynamic>> _skipped = [];
   bool _isLoading = false;
   String? _errorMessage;
   late TabController _tabController;
@@ -41,13 +43,17 @@ class _IdentityManagementScreenState extends State<IdentityManagementScreen>
     try {
       final identities = await CLIService.listIdentities();
       setState(() {
-        _ownIdentities = identities['own'] ?? [];
-        _contacts = identities['contacts'] ?? [];
+        _ownIdentities = (identities['own'] as List<Map<String, dynamic>>?) ?? [];
+        _contacts = (identities['contacts'] as List<Map<String, dynamic>>?) ?? [];
+        _skipped = (identities['skipped'] as List<Map<String, dynamic>>?) ?? [];
         _isLoading = false;
       });
     } catch (e) {
       setState(() {
-        _errorMessage = 'Failed to load identities: $e';
+        // The exception text can embed CLI output (a FormatException quotes
+        // the stdout excerpt), so it is untrusted display input.
+        _errorMessage =
+            InputValidator.sanitizeForDisplay('Failed to load identities: $e');
         _isLoading = false;
       });
     }
@@ -468,7 +474,9 @@ class _IdentityManagementScreenState extends State<IdentityManagementScreen>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (email != null) Text(email, style: const TextStyle(fontSize: 12)),
-            Text('Fingerprint: ${fingerprint.substring(0, 16)}...', style: const TextStyle(fontSize: 11)),
+            Text(
+                'Fingerprint: ${fingerprint.length > 16 ? '${fingerprint.substring(0, 16)}...' : fingerprint}',
+                style: const TextStyle(fontSize: 11)),
             if (!isContact && kemAlgorithm != null)
               Text('KEM: $kemAlgorithm  |  Sig: $sigAlgorithm', style: const TextStyle(fontSize: 11)),
             if (createdAt != null) Text('Created: $createdAt', style: const TextStyle(fontSize: 11)),
@@ -560,6 +568,18 @@ class _IdentityManagementScreenState extends State<IdentityManagementScreen>
           ),
 
           // Tab View
+          if (_skipped.isNotEmpty)
+            Container(
+              width: double.infinity,
+              color: Colors.orange.shade100,
+              padding: const EdgeInsets.all(8),
+              child: Text(
+                '${_skipped.length} store entr${_skipped.length == 1 ? 'y' : 'ies'} '
+                'could not be read and ${_skipped.length == 1 ? 'is' : 'are'} not '
+                'listed: ${_skipped.map((s) => s['entry']).join(', ')}',
+                style: TextStyle(color: Colors.orange.shade900, fontSize: 12),
+              ),
+            ),
           Expanded(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
