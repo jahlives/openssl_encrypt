@@ -1,4 +1,6 @@
 import 'dart:convert';
+
+import 'input_validation.dart';
 import 'dart:io';
 import 'dart:async';
 import 'package:flutter/foundation.dart';
@@ -2266,7 +2268,7 @@ class CLIService {
   // ==================== Identity Management Methods ====================
 
   /// List all identities (own + contacts)
-  static Future<Map<String, List<Map<String, dynamic>>>> listIdentities() async {
+  static Future<Map<String, dynamic>> listIdentities() async {
     try {
       final args = ['identity', 'list', '--include-contacts', '--json'];
 
@@ -2277,19 +2279,68 @@ class CLIService {
       final result = await _runCLICommand(args);
 
       if (result.exitCode != 0) {
-        _outputDebugLog('Failed to list identities: ${result.stderr}');
-        return {'own': [], 'contacts': []};
+        // Throw, do not return empty: an empty list is indistinguishable
+        // from an empty store, which is exactly how a CLI flag that never
+        // existed went unnoticed for the whole life of this feature
+        // (gitlab#183). Every caller has an error path.
+        _outputDebugLog('Failed to list identities (exit ${result.exitCode})');
+        final detail = result.stderr.trim();
+        throw Exception(
+          'identity list failed (exit ${result.exitCode})'
+          '${detail.isEmpty ? '' : ': ${InputValidator.sanitizeForDisplay(detail)}'}',
+        );
       }
 
       final data = jsonDecode(result.stdout) as Map<String, dynamic>;
 
+      // Sanitize once, here, rather than at each widget: this is where the
+      // untrusted values enter the app, and a per-widget approach silently
+      // misses the next new screen (gitlab#183).
+      //
+      // Only the free-text fields. `name` and `fingerprint` are regex-locked
+      // by the CLI AND are passed back to it as argument values
+      // (--with-key, recipient selection), so substituting characters there
+      // would corrupt the argument, not harden the display.
+      List<Map<String, dynamic>> clean(String key) =>
+          (data[key] as List<dynamic>?)
+              ?.map((i) => i as Map<String, dynamic>)
+              .map((i) => {
+                    ...i,
+                    if (i['email'] != null)
+                      'email': InputValidator.sanitizeForDisplay(i['email'] as String),
+                    if (i['created_at'] != null)
+                      'created_at':
+                          InputValidator.sanitizeForDisplay(i['created_at'] as String),
+                  })
+              .toList() ??
+          [];
+
+      // Absent entries are not the same as absent identities, so `skipped`
+      // is RETURNED, not just logged: a debug-log line is invisible in a
+      // default build, and the whole point is that the user learns a
+      // recipient is missing rather than silently omitting one.
+      final skipped = ((data['skipped'] as List<dynamic>?) ?? [])
+          .map((s) => s as Map<String, dynamic>)
+          .map((s) => {
+                ...s,
+                if (s['entry'] != null)
+                  'entry': InputValidator.sanitizeForDisplay(s['entry'] as String),
+                if (s['reason'] != null)
+                  'reason': InputValidator.sanitizeForDisplay(s['reason'] as String),
+              })
+          .toList();
+      if (skipped.isNotEmpty) {
+        _outputDebugLog('identity list: ${skipped.length} store entry/entries could not be loaded');
+      }
+
       return {
-        'own': (data['own'] as List<dynamic>?)?.map((i) => i as Map<String, dynamic>).toList() ?? [],
-        'contacts': (data['contacts'] as List<dynamic>?)?.map((i) => i as Map<String, dynamic>).toList() ?? [],
+        'own': clean('own'),
+        'contacts': clean('contacts'),
+        'skipped': skipped,
       };
     } catch (e) {
       _outputDebugLog('Error listing identities: $e');
-      return {'own': [], 'contacts': []};
+      rethrow;
     }
   }
 

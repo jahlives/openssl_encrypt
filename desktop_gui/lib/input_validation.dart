@@ -116,11 +116,35 @@ class InputValidator {
 
   /// Sanitize string for safe display (remove/escape dangerous characters)
   static String sanitizeForDisplay(String input) {
-    // Security: Remove null bytes and control characters
-    String sanitized = input.replaceAll('\u0000', '');
+    // NUL is escaped like every other control character, not stripped:
+    // deleting it would contradict the escape rule below and hide it.
+    String sanitized = input;
 
-    // Replace control characters with visible representations
-    sanitized = sanitized.replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '�');
+    // Escape, do not blank out: the CLI states the rule (crypt_utils
+    // sanitize_for_display) -- keeping the evidence visible lets the user
+    // tell a spoofing attempt from an unrenderable glyph, and U+FFFD is
+    // itself a legal input character an attacker could pre-seed to make the
+    // two indistinguishable.
+    //
+    // Backslash is escaped too, for the same reason the CLI escapes it: a
+    // stored value containing the literal six characters \u202e must not
+    // render identically to a real U+202E that was escaped, or the evidence
+    // trail is forgeable.
+    //
+    // Covers C0, DEL, C1, the Unicode bidi/format controls, U+2028/U+2029
+    // and the zero-width set (gitlab#183). Flutter honours bidi overrides in
+    // text rendering, and unlike a terminal it treats U+2028/U+2029 as
+    // mandatory line breaks (UAX #14), so attacker text could otherwise
+    // start its own line inside trust UI. ZWNJ/ZWJ (U+200C/U+200D) are
+    // deliberately NOT escaped: they are load-bearing in Persian and Indic
+    // scripts and in emoji sequences. The CLI's JSON channel is
+    // deliberately unsanitized (machine-readable) -- the renderer owns
+    // display safety.
+    sanitized = sanitized.replaceAllMapped(
+      RegExp(r'[\x00-\x1F\x5C\x7F-\x9F\u061C\u200B\u200E\u200F\u202A-\u202E\u2028\u2029\u2060-\u2064\u2066-\u2069\uFEFF]'),
+      (m) =>
+          '\\u${m[0]!.codeUnitAt(0).toRadixString(16).padLeft(4, '0')}',
+    );
 
     return sanitized;
   }

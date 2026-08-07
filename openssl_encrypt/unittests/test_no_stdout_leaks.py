@@ -55,6 +55,8 @@ STDOUT_WHITELIST = [
     ("modules/crypt_cli.py", "print(json.dumps(", "JSON data output"),
     # file_signature.py — verify-signature --json result (machine-readable, stdout)
     ("modules/file_signature.py", "print(result_json)", "verify-signature JSON result"),
+    # identity_cli.py — identity list --json result (machine-readable, stdout)
+    ("modules/identity_cli.py", "print(listing_json)", "identity list JSON result"),
     # crypt_cli.py — Decrypted plaintext output
     ("modules/crypt_cli.py", "print(plaintext.decode(", "Decrypted plaintext to stdout"),
     ("modules/crypt_cli.py", "print(decrypted.decode(", "Decrypted text to stdout"),

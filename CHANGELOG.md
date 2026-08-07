@@ -312,6 +312,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Desktop GUI identity listing has never worked** (gitlab#183 /
+  github#100): `CLIService.listIdentities()` runs
+  `identity list --include-contacts --json`, but `identity list` declared no
+  `--json` flag, so argparse exited 2 and the GUI swallowed the failure into
+  empty lists. Every consumer was affected — the Identity Management screen,
+  the Decrypt tab's identity selector, and the main window — so the GUI
+  always showed an empty identity list with no error. Third flag in this
+  series that was emitted but never existed, after `--data`/`--alias`
+  (gitlab#164) and `encrypt --random`'s character-class reads (gitlab#181).
+
+  `identity list --json` now emits a single JSON document on stdout —
+  `own` and `contacts` lists of `{name, email, fingerprint, kem_algorithm,
+  sig_algorithm, created_at}` — and nothing else, since the GUI feeds all of
+  stdout to a JSON parser; the human report is unchanged without the flag.
+  The JSON channel is deliberately **not** display-sanitized: it is
+  machine-readable, the transport escapes control characters, and the
+  consumer renders. Display safety therefore belongs to the renderer, so the
+  GUI sanitizes at the decode boundary — where the untrusted values enter
+  the app, rather than per widget, which had already missed the recipient
+  picker and the signature-verification picker, the two controls that decide
+  who can read the plaintext and whose signature is trusted. Its sanitizer
+  now escapes rather than blanks (matching the CLI's escape-not-strip rule,
+  so a spoofing attempt stays distinguishable from an unrenderable glyph)
+  and covers the C1 range, the bidi/format controls, U+2028/U+2029 and the
+  zero-width set; ZWNJ/ZWJ stay untouched, being load-bearing in Persian and
+  Indic scripts and in emoji sequences. Flutter honours bidi overrides in
+  text rendering and, unlike a terminal, treats U+2028/U+2029 as mandatory
+  line breaks, so those characters are now also rejected at the CLI's own
+  import boundary alongside gitlab#172's terminal-control class.
+
+  Two failure modes that let this bug hide for the feature's whole life are
+  closed with it: the GUI no longer turns a failed `identity list` into an
+  empty identity list (it raises, so the screen's error banner — previously
+  dead code — actually renders), and a store entry that fails to load is now
+  reported rather than silently absent, in both the JSON (`skipped`) and the
+  human output. Presenting a short list as complete would silently drop a
+  recipient, or make an own identity look deleted.
 - **Stale cryptography pin in requirements-prod.in** (gitlab#127 / github#53,
   2026-07-20): the GHSA-537c-gmf6-5ccf bump (48.0.1) updated
   `requirements.txt`, the compiled lockfiles and the Flatpak manifest but

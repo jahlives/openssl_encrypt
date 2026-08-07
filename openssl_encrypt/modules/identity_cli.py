@@ -240,15 +240,64 @@ def cmd_list(args) -> int:
 
         # Get identities based on filter
         include_contacts = getattr(args, "include_contacts", True)
-        identities = store.list_identities(include_contacts=include_contacts)
-
-        if not identities:
-            eprint("No identities found.")
-            return 0
+        skipped: list = []
+        identities = store.list_identities(include_contacts=include_contacts, skipped=skipped)
 
         # Separate own identities and contacts
         own_identities = [i for i in identities if i.is_own_identity]
         contacts = [i for i in identities if not i.is_own_identity]
+
+        if getattr(args, "json", False):
+            # Machine-readable output for the desktop GUI (gitlab#183): a
+            # single JSON document on stdout, nothing else. Deliberately NOT
+            # display-sanitized — the transport escapes control characters
+            # (ensure_ascii) and the consumer renders the values itself. The
+            # key names kem_algorithm/sig_algorithm are the GUI's contract.
+            def _entry(identity: Identity) -> dict:
+                return {
+                    "name": identity.name,
+                    "email": identity.email,
+                    "fingerprint": identity.fingerprint,
+                    "kem_algorithm": identity.encryption_algorithm,
+                    "sig_algorithm": identity.signing_algorithm,
+                    "created_at": identity.created_at,
+                }
+
+            # ensure_ascii pinned explicitly, not left to the default: it is
+            # what keeps a direct `identity list --json` in a terminal free of
+            # decoded escape sequences, and "nicer output" is a tempting edit.
+            listing_json = json.dumps(
+                {
+                    "own": [_entry(i) for i in own_identities],
+                    "contacts": [_entry(i) for i in contacts],
+                    # Absent entries must be visible: a consumer that treats
+                    # this listing as complete would otherwise silently drop
+                    # a recipient or report an own identity as deleted
+                    # (gitlab#183).
+                    "skipped": [{"entry": s["entry"], "reason": s["reason"]} for s in skipped],
+                },
+                indent=2,
+                ensure_ascii=True,
+            )
+            print(listing_json)
+            return 0
+
+        if skipped:
+            eprint(
+                f"WARNING: {len(skipped)} store entr"
+                f"{'y' if len(skipped) == 1 else 'ies'} could not be loaded "
+                f"and {'is' if len(skipped) == 1 else 'are'} not listed below:"
+            )
+            for entry in skipped:
+                eprint(
+                    f"  - {sanitize_for_display(entry['entry'])}: "
+                    f"{sanitize_for_display(entry['reason'])}"
+                )
+            eprint()
+
+        if not identities:
+            eprint("No identities found.")
+            return 0
 
         # Display own identities
         if own_identities:

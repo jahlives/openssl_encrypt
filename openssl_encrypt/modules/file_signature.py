@@ -441,7 +441,8 @@ def verify_signature_cli(args) -> None:
             )
             sys.exit(1)
     else:
-        for ident in store.list_identities(include_contacts=True):
+        skipped: list = []
+        for ident in store.list_identities(include_contacts=True, skipped=skipped):
             if ident.fingerprint == signer_fp:
                 signer_identity = ident
                 break
@@ -453,6 +454,14 @@ def verify_signature_cli(args) -> None:
                 f"ERROR: Unknown signer (fingerprint {sanitize_for_display(signer_fp)}); "
                 f"not found among your identities or contacts ❌"
             )
+            if skipped:
+                # Fail-closed is right, but "not found" would misdirect: the
+                # entry may exist and merely be unreadable (gitlab#183).
+                eprint(
+                    f"       NOTE: {len(skipped)} store entr"
+                    f"{'y' if len(skipped) == 1 else 'ies'} could not be read and "
+                    f"{'was' if len(skipped) == 1 else 'were'} not searched."
+                )
             eprint("       Add the signer as a contact, or use --signer to pin a known identity.")
             sys.exit(1)
 

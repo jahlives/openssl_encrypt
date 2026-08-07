@@ -159,8 +159,17 @@ _IDENTITY_EMAIL_MAX = 320
 # display unambiguity), and an input-validation rule that silently shifts
 # with a presentation helper would start rejecting bundles that were
 # previously accepted, under an error message that no longer describes the
-# cause. C0, DEL, C1 — the terminal-control class — is the import contract.
-_IDENTITY_CONTROL_CHAR_RE = re.compile(r"[\x00-\x1f\x7f-\x9f]")
+# cause. C0, DEL, C1 — the terminal-control class — plus the Unicode
+# bidi/format controls: those pass every terminal-escape check yet reorder
+# text in any renderer implementing UAX #9 (Flutter does), and U+2028/U+2029
+# are mandatory line breaks under UAX #14, so a GUI consumer of the
+# machine-readable channel would render attacker text on its own line
+# (gitlab#183). Zero-width space/joiners are deliberately NOT rejected:
+# U+200C/U+200D are load-bearing in Persian and Indic scripts and in emoji
+# sequences, and the display side neutralizes them.
+_IDENTITY_CONTROL_CHAR_RE = re.compile(
+    r"[\x00-\x1f\x7f-\x9f\u061c\u200e\u200f\u202a-\u202e\u2028\u2029\u2066-\u2069]"
+)
 
 
 def _validate_display_text(value, field: str, max_len: int) -> None:
@@ -827,12 +836,20 @@ class IdentityStore:
         create_secure_directory(self.base_path)
         create_secure_directory(self.contacts_path)
 
-    def list_identities(self, include_contacts: bool = True) -> List[Identity]:
+    def list_identities(
+        self, include_contacts: bool = True, skipped: Optional[List[Dict]] = None
+    ) -> List[Identity]:
         """
         List all identities.
 
         Args:
             include_contacts: Include contacts (public keys only)
+            skipped: Optional list that receives one
+                ``{"entry": name, "reason": message}`` dict per store entry
+                that failed to load. Callers that present this listing as
+                complete — the GUI's recipient and signer pickers — need to
+                know an entry is missing rather than silently omitting a
+                recipient or reporting an identity as deleted (gitlab#183).
 
         Returns:
             List of Identity instances
@@ -853,6 +870,8 @@ class IdentityStore:
                         f"Failed to load identity from "
                         f"{sanitize_for_display(item.name)}: {sanitize_for_display(e)}"
                     )
+                    if skipped is not None:
+                        skipped.append({"entry": item.name, "reason": str(e)})
 
         # Contacts (public keys only)
         if include_contacts:
@@ -866,6 +885,8 @@ class IdentityStore:
                             f"Failed to load contact from "
                             f"{sanitize_for_display(item.name)}: {sanitize_for_display(e)}"
                         )
+                        if skipped is not None:
+                            skipped.append({"entry": item.name, "reason": str(e)})
 
         return identities
 
