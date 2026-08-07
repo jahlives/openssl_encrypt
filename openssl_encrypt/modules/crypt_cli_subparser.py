@@ -2696,6 +2696,19 @@ def setup_identity_parser(subparser):
         default=True,
         help="Include contacts (default: True)",
     )
+    # The desktop GUI has emitted this flag since gitlab#137; it never
+    # existed, so GUI identity listing silently showed nothing (gitlab#183).
+    # SUPPRESS, not the store_true default: `json` is also a global option
+    # dest, and argparse copies the subcommand namespace back over the
+    # parent's — a False default here would silently undo
+    # `openssl-encrypt --json identity list`. cmd_list reads it with
+    # getattr(args, "json", False), so absence is handled (gitlab#183).
+    list_parser.add_argument(
+        "--json",
+        action="store_true",
+        default=argparse.SUPPRESS,
+        help="Emit identities as JSON on stdout (human report otherwise goes to stderr)",
+    )
 
     # Show identity details
     show_parser = identity_subparsers.add_parser("show", help="Show identity details")

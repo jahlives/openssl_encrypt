@@ -63,8 +63,8 @@ class _DecryptTabState extends State<DecryptTab> {
       final identities = await CLIService.listIdentities();
       if (!mounted) return;
       setState(() {
-        _ownIdentities = identities['own'] ?? [];
-        _contacts = identities['contacts'] ?? [];
+        _ownIdentities = (identities['own'] as List<Map<String, dynamic>>?) ?? [];
+        _contacts = (identities['contacts'] as List<Map<String, dynamic>>?) ?? [];
       });
     } catch (e) {
       CLIService.outputDebugLog('Failed to load identities: $e');
