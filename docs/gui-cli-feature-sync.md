@@ -11,6 +11,13 @@ commit per feature off the P1 branch). All Dart is committed but **not compiled
 or tested here** (no Flutter toolchain) — run `flutter analyze && flutter test`.
 
 - **P1 — DONE** (`feature/gui-decrypt-asym-fields`): decrypt asymmetric fields wired; security review MEDIUM+2 LOW fixed. gitlab#137/gh#55.
+  **Correction (2026-08-07):** the identity selector this delivered could
+  never have populated — `CLIService.listIdentities()` called
+  `identity list --json`, a flag that did not exist, and swallowed the
+  failure into an empty list (gitlab#183, fixed). The widgets were right;
+  the data never arrived. A GUI feature is not verified until it has been
+  driven against the real CLI, which is also why nothing in this plan was
+  ever compiled or run — see the stopping-point note.
 - **P2 — DONE, scope grew to a CLI change**: `generate-password` had no machine-readable output (password only on stderr behind a 10s timeout), so added `generate-password --json` on `feature/generate-password-json` (gitlab#138/gh#59… gh#56), then `CLIService.generatePassword()` consumes it. Full pytest run: no regressions.
 - **P3 — DONE**: diceware supported in `CLIService.generatePassword()` and the generator screen (per explicit user request).
 - **P4 — DONE** (gitlab#139/gh#57): Password Generator screen. **Remark:** added to **Pro mode only**; not added to Simple mode (kept deliberately minimal). Security review MEDIUM (password leaked to debug log via `_runCLICommand` dev-path stdout dump) + LOW fixed.
@@ -334,7 +341,7 @@ true.
 
 ---
 
-## Outstanding issue register (added 2026-07-26)
+## Outstanding issue register (added 2026-07-26, updated 2026-08-07)
 
 The body of this plan tracks GUI parity items (P-numbers) and the CLI blockers
 found while triaging them. It did **not** track the CLI issues found by reading
@@ -351,6 +358,13 @@ here too.
 | gitlab#171 / gh#89 | Global flags after a subcommand rejected for 22 of 42 subcommands (drifted command list). Also fixed two credential leaks it made reachable. |
 | gitlab#154 / gh#72, gitlab#159 / gh#77 | Second password and signer passphrase had no non-interactive input path. Shared `modules/credential_env.py`. |
 | gitlab#152 / gh#70, gitlab#181 / gh#96 | `--random` had no safe delivery channel — and crashed with `AttributeError` before ever reaching it. |
+
+### Landed 2026-08-07
+
+| Issue | Was |
+|---|---|
+| gitlab#172 (confidential) | Imported identity `email` printed raw above the `Fingerprint:` line — ANSI escapes could forge the only authenticity readout this design has. Four review rounds; scope grew to the keyserver TOFU prompt (remote bundles), `identity create --email`, stored identity files, the signature sidecar (incl. the unsigned `component` field) and keyserver HTTP error bodies. Draft **GHSA-qjr2-x6mr-8xgf** + SECURITY.md ADVISORY 2026-14 **held until release**. |
+| gitlab#183 / gh#100 | **GUI identity listing had never worked**: `CLIService.listIdentities()` emitted `identity list --json`, a flag that did not exist, and swallowed the argparse failure into empty lists. Now `identity list --json` (+ `skipped`), GUI sanitizes at the decode boundary, and a failed listing raises instead of returning empty. |
 
 ### Open CLI work (blocks GUI items)
 
@@ -371,10 +385,6 @@ here too.
 
 Confidential (pre-existing, affect released versions):
 
-- **gitlab#172** — imported identity `email` is never validated and is printed
-  raw directly above the `Fingerprint:` line, so ANSI escapes can forge it.
-  Out-of-band fingerprint comparison is the only authenticity mechanism this
-  design has. **Highest priority of everything listed here.**
 - **gitlab#173** — a contact can shadow an own identity's name; deleting the
   own identity then silently promotes the attacker's keys, and recipient
   resolution goes through `get_by_name`.
@@ -412,3 +422,35 @@ the same shape: surface that is accepted or advertised but that no handler can
 service. A test asserting that every `args.<attr>` read in a subcommand handler
 is declared on that subcommand's parser would catch the whole class at once —
 it would have caught gitlab#181 immediately.
+
+**The mirror image is worth a lint too** (gitlab#183, 2026-08-07): the GUI
+*emits* flags the CLI does not declare. `identity list --json` had never
+existed, so GUI identity listing never worked at all — the third instance
+after `--data`/`--alias` (gitlab#164) and `encrypt --random` (gitlab#181). A
+test that extracts every argv list `CLIService` builds and parses it against
+the real parser would catch that direction, and the two lints together close
+the whole "flag exists on one side only" class.
+
+Two habits made these invisible for so long, both now fixed in the GUI but
+worth checking wherever else they appear:
+
+- **`CLIService` swallowed non-zero exits into empty results.** An empty
+  identity list is indistinguishable from an empty store, so an argparse
+  error looked exactly like a fresh install. `listIdentities` now raises;
+  the Identity screen's error banner had been dead code until then.
+- **Absent entries were reported as absence, not as failure.** A store entry
+  that fails to load simply vanished from the listing. Presenting a short
+  list as complete silently drops a recipient, or makes an own identity look
+  deleted, so `list_identities` now collects skipped entries and every
+  consumer surfaces them.
+
+### Display safety after gitlab#172/#183
+
+The rule these two settled, since it constrains every future GUI feature that
+renders CLI output: **`--json` channels stay unsanitized** (machine-readable,
+`ensure_ascii` pinned, the consumer renders), and display safety belongs to
+the renderer — in the GUI that means the **decode boundary** in `CLIService`,
+not the individual widget. A per-widget pass had already missed the recipient
+picker and the signature-verification picker, the two controls that decide who
+can read the plaintext and whose signature is trusted. Never sanitize `name`
+or `fingerprint` there: both are passed back to the CLI as argument values.
