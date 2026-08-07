@@ -107,6 +107,15 @@ class IdentityKeyChangedError(IdentityError):
         )
 
 
+class IdentityNamespaceCollisionError(IdentityExistsError):
+    """Raised when a name is already taken by the OTHER kind of entry.
+
+    Distinct from IdentityExistsError so a caller can tell "your store
+    refused a name collision" from "no such key" -- the keyserver path
+    otherwise reports both as a lookup failure (gitlab#173).
+    """
+
+
 class IdentityAmbiguousError(IdentityError):
     """Raised when a fingerprint lookup matches more than one identity."""
 
@@ -118,6 +127,9 @@ import re
 # Strict pattern for identity names: alphanumeric, hyphens, underscores, dots.
 # No path separators, no ".." sequences, no leading dots.
 _IDENTITY_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
+
+# Directory name the store uses for pinned contacts; never a valid entry name.
+_CONTACTS_DIR_NAME = "contacts"
 
 
 def validate_identity_name(name: str) -> None:
@@ -147,6 +159,16 @@ def validate_identity_name(name: str) -> None:
     if ".." in name:
         raise IdentityError(
             f"Invalid identity name '{sanitize_for_display(name)}': must not contain '..'"
+        )
+    # `contacts` is the container directory inside the identity store, so an
+    # entry of that name would be written INTO it: unlistable (list_identities
+    # skips the container), unreportable, yet resolvable by get_by_name -- and
+    # deleting it would remove every pinned contact in the store (gitlab#173).
+    # Case-folded because the store lives on case-insensitive filesystems too.
+    if name.casefold() == _CONTACTS_DIR_NAME:
+        raise IdentityError(
+            f"Invalid identity name '{sanitize_for_display(name)}': "
+            f"'{_CONTACTS_DIR_NAME}' is reserved for the identity store itself"
         )
 
 
@@ -909,14 +931,15 @@ class IdentityStore:
         """
         validate_identity_name(name)
 
-        # Check own identities first
+        # is_dir(), not exists(): a stray file or dangling symlink at this
+        # path must not shadow a real contact behind it (gitlab#173).
         path = self.base_path / name
-        if path.exists():
+        if path.is_dir():
             return Identity.load(path, passphrase, load_private_keys)
 
         # Check contacts
         contact_path = self.contacts_path / name
-        if contact_path.exists():
+        if contact_path.is_dir():
             return Identity.load(contact_path, passphrase, load_private_keys)
 
         return None
@@ -999,6 +1022,43 @@ class IdentityStore:
         """
         validate_identity_name(identity.name)
 
+        if identity.is_own_identity:
+            path = self.base_path / identity.name
+            shadowed = self.contacts_path / identity.name
+            kinds = ("own identity", "contact")
+        else:
+            path = self.contacts_path / identity.name
+            shadowed = self.base_path / identity.name
+            kinds = ("contact", "own identity")
+
+        # gitlab#173: get_by_name resolves base_path/<name> before
+        # contacts/<name>, so storing the two kinds under one name creates a
+        # SHADOW -- invisible while both exist, and a key substitution the
+        # moment the shadowing entry is deleted.
+        #
+        # Checked BEFORE the TOFU dialogue below: for a contact bundle named
+        # after an own identity the key-change prompt would otherwise present
+        # the user's OWN fingerprint as a "pinned contact" key and ask them to
+        # accept replacing it, only for this check to refuse afterwards.
+        #
+        # Deliberately NOT folded into that dialogue: it gates a changed KEY,
+        # is designed to be passable with --allow-key-change, and does not
+        # fire at all when the fingerprints happen to match. A name collision
+        # across the two kinds must fail closed on its own.
+        #
+        # Accepted residual: this is a check-then-write with no lock, so two
+        # concurrent writers can both pass it. The store has no locking
+        # anywhere, and an attacker who can write to it needs no race; the
+        # collision is reported by find_shadowed_names() if it ever occurs.
+        if shadowed.is_dir():
+            raise IdentityNamespaceCollisionError(
+                f"Cannot store {kinds[0]} '{sanitize_for_display(identity.name)}': "
+                f"a {kinds[1]} of that name already exists. One name resolves to "
+                f"one key, so storing both would let the hidden one take over "
+                f"if the other is removed. Delete or rename the existing entry "
+                f"first."
+            )
+
         # M8: TOFU key-change detection. If a contact/identity with this name is
         # already pinned, compare the stored key fingerprint to the incoming
         # one. A different fingerprint is a key substitution and must be
@@ -1010,42 +1070,125 @@ class IdentityStore:
                     identity.name, existing.fingerprint, identity.fingerprint
                 )
 
-        if identity.is_own_identity:
-            path = self.base_path / identity.name
-        else:
-            path = self.contacts_path / identity.name
-
         identity.save(path, passphrase, overwrite)
 
-    def delete_identity(self, name: str) -> bool:
+    def find_shadowed_names(self) -> List[str]:
+        """Names that exist as BOTH an own identity and a contact.
+
+        add_identity refuses to create these (gitlab#173), but a store
+        written before that rule can already contain one, where it is
+        invisible: get_by_name resolves the own identity and the contact
+        never appears, until the own identity is deleted. Callers that
+        present the store to a user should surface these rather than show
+        two identically named entries with no disambiguation.
+
+        Returns:
+            Sorted list of colliding names (usually empty).
+        """
+        if not self.base_path.is_dir() or not self.contacts_path.is_dir():
+            return []
+        own = {
+            p.name for p in self.base_path.iterdir() if p.is_dir() and p.name != _CONTACTS_DIR_NAME
+        }
+        contacts = {p.name for p in self.contacts_path.iterdir() if p.is_dir()}
+        return sorted(own & contacts)
+
+    def has_misplaced_container_entry(self) -> bool:
+        """Whether an identity was written INTO the contacts container.
+
+        Possible on stores predating the reserved-name rule: such an entry is
+        invisible to list_identities (which skips the container) yet
+        resolvable by get_by_name, and it cannot be removed with
+        `identity delete` because the name is now refused -- deleting it that
+        way would take every pinned contact with it. Reported separately from
+        a real name collision, because the remedy is different: move or
+        delete the files by hand (gitlab#173).
+
+        Returns:
+            True if the contacts container itself holds an identity.json.
+        """
+        return (self.contacts_path / "identity.json").is_file()
+
+    def describe_name(self, name: str) -> List[Dict]:
+        """Describe every store entry using this name, both kinds.
+
+        get_by_name deliberately resolves the own identity first, which is
+        what hides a shadowed contact; a caller about to DELETE a name has to
+        see both (gitlab#173).
+
+        Args:
+            name: Identity name.
+
+        Returns:
+            List of ``{"kind": "own"|"contact", "fingerprint": str}``, own
+            first; empty if the name is not present.
+        """
+        validate_identity_name(name)
+        entries: List[Dict] = []
+        for kind, path in (
+            ("own", self.base_path / name),
+            ("contact", self.contacts_path / name),
+        ):
+            if not path.is_dir():
+                continue
+            try:
+                identity = Identity.load(path, passphrase=None, load_private_keys=False)
+                fingerprint = identity.fingerprint
+            except Exception as exc:  # unreadable entry still has to be shown
+                fingerprint = f"<unreadable: {exc}>"
+            entries.append({"kind": kind, "fingerprint": fingerprint})
+        return entries
+
+    def delete_identity(self, name: str, kind: str = "both") -> List[str]:
         """
         Delete identity from store.
 
         Args:
             name: Identity name
+            kind: Which entry to remove -- "own", "contact", or "both"
+                (default). A store written before gitlab#173 can hold the
+                same name as both, and the caller must be able to keep one:
+                removing an own identity destroys its private keys, and
+                removing a contact drops its TOFU pin.
 
         Returns:
-            True if deleted, False if not found
+            The kinds actually removed, e.g. ``["own"]`` or
+            ``["own", "contact"]``; empty if the name was not found.
         """
         import shutil
 
         validate_identity_name(name)
 
-        # Check own identities
+        if kind not in ("own", "contact", "both"):
+            raise ValueError(f"kind must be 'own', 'contact' or 'both', not {kind!r}")
+
+        # Default removes BOTH locations, not just the first one found
+        # (gitlab#173): a store written before the namespace rule can already
+        # contain a shadow, and deleting only the own identity would silently
+        # promote the shadowed contact's keys under a name the user still
+        # trusts -- the substitution this deletion is often performed to
+        # prevent. The caller can still keep one side deliberately, which is
+        # what the CLI offers once it has shown the user both fingerprints.
         path = self.base_path / name
-        if path.exists():
-            shutil.rmtree(path)
-            logger.info(f"Deleted identity '{name}'")
-            return True
-
-        # Check contacts
         contact_path = self.contacts_path / name
-        if contact_path.exists():
-            shutil.rmtree(contact_path)
-            logger.info(f"Deleted contact '{name}'")
-            return True
+        removed: List[str] = []
 
-        return False
+        if kind in ("own", "both") and path.is_dir():
+            shutil.rmtree(path)
+            logger.info(f"Deleted identity '{sanitize_for_display(name)}'")
+            removed.append("own")
+
+        if kind in ("contact", "both") and contact_path.is_dir():
+            if removed:
+                logger.warning(
+                    f"Removed a shadowed contact that shared the name "
+                    f"'{sanitize_for_display(name)}' (gitlab#173)"
+                )
+            shutil.rmtree(contact_path)
+            logger.info(f"Deleted contact '{sanitize_for_display(name)}'")
+            removed.append("contact")
+
+        return removed
 
     def identity_exists(self, name: str) -> bool:
         """

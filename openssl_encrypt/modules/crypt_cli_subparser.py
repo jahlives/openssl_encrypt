@@ -2238,6 +2238,17 @@ def setup_identity_parser(subparser):
     delete_parser = identity_subparsers.add_parser("delete", help="Delete identity")
     delete_parser.add_argument("identity_name", help="Identity name to delete")
     delete_parser.add_argument("--force", action="store_true", help="Skip confirmation")
+    # A store written before gitlab#173 can hold one name as BOTH an own
+    # identity and a contact. Removing both is the safe default -- leaving a
+    # resolvable shadow is how the name gets silently substituted -- but the
+    # user must be able to keep one: deleting the own identity destroys its
+    # private keys, and deleting the contact drops its TOFU pin.
+    delete_parser.add_argument(
+        "--kind",
+        choices=["own", "contact", "both"],
+        default="both",
+        help="Which entry to delete when a name exists as both (default: both)",
+    )
 
     # Change password
     change_password_parser = identity_subparsers.add_parser(

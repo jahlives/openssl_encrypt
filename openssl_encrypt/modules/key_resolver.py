@@ -22,7 +22,7 @@ import os
 from typing import TYPE_CHECKING, Callable, Optional
 
 from .crypt_utils import eprint, sanitize_for_display
-from .identity import Identity, IdentityStore
+from .identity import Identity, IdentityNamespaceCollisionError, IdentityStore
 from .key_bundle import InvalidFingerprintError, InvalidSignatureError
 
 if TYPE_CHECKING:
@@ -169,8 +169,16 @@ class KeyResolver:
 
                     return identity
 
-            except (TrustDeclinedError, InvalidSignatureError, InvalidFingerprintError):
-                # Re-raise these specific exceptions
+            except (
+                TrustDeclinedError,
+                InvalidSignatureError,
+                InvalidFingerprintError,
+                IdentityNamespaceCollisionError,
+            ):
+                # Re-raise these specific exceptions. The namespace collision
+                # belongs here (gitlab#173): swallowing it would report "key
+                # not found" for a store that actually refused a name
+                # collision, and the operator could not tell the two apart.
                 raise
             except Exception as e:
                 logger.warning(f"Keyserver lookup failed: {e}")
