@@ -1276,27 +1276,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 },
               ),
               const SizedBox(height: 8),
-
-              // Action buttons
               Row(
                 children: [
                   Expanded(
                     child: ElevatedButton.icon(
                       onPressed: () async {
-                        final success = await CLIService.testKeyserverConnection(keyserverUrl);
+                        // Reports on the CONFIGURED server: the CLI's
+                        // `keyserver status` takes no --url, so the message
+                        // must not claim the URL in the field was probed
+                        // (gitlab#188).
+                        final success = await CLIService.checkKeyserverStatus();
                         if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
                               content: Text(success
-                                ? 'Connection successful!'
-                                : 'Connection failed. Check URL and network.'),
+                                ? 'Configured keyserver reachable.'
+                                : 'Configured keyserver unreachable. Check the CLI keyserver settings and network.'),
                               backgroundColor: success ? Colors.green : Colors.red,
                             ),
                           );
                         }
                       },
                       icon: const Icon(Icons.wifi_tethering, size: 16),
-                      label: const Text('Test', style: TextStyle(fontSize: 12)),
+                      label: const Text('Check status', style: TextStyle(fontSize: 12)),
                       style: ElevatedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 8),
                       ),
@@ -1468,9 +1470,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 _buildCertificatePemInputs(setState),
 
               const SizedBox(height: 8),
-
-              // Action buttons
-              _buildPepperActionButtons(pepperUrl, certMode, setState),
             ],
           ],
         );
@@ -1658,98 +1657,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _buildPepperActionButtons(String pepperUrl, String certMode, StateSetter setState) {
-    return Column(
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: ElevatedButton.icon(
-                onPressed: () async {
-                  final result = await CLIService.testPepperConnection(
-                    url: pepperUrl,
-                    clientCertPath: certMode == 'file' ? SettingsService.getPepperClientCertPath() : null,
-                    clientKeyPath: certMode == 'file' ? SettingsService.getPepperClientKeyPath() : null,
-                    caCertPath: certMode == 'file' ? SettingsService.getPepperCaCertPath() : null,
-                  );
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(result['success']
-                          ? 'mTLS connection successful!'
-                          : 'Connection failed: ${result['message']}'),
-                        backgroundColor: result['success'] ? Colors.green : Colors.red,
-                      ),
-                    );
-                  }
-                },
-                icon: const Icon(Icons.wifi_tethering, size: 16),
-                label: const Text('Test mTLS', style: TextStyle(fontSize: 12)),
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: ElevatedButton.icon(
-                onPressed: () async {
-                  final peppers = await CLIService.listPeppers();
-                  if (context.mounted) {
-                    showDialog(
-                      context: context,
-                      builder: (context) => AlertDialog(
-                        title: const Text('Stored Peppers'),
-                        content: peppers.isEmpty
-                          ? const Text('No peppers stored yet.')
-                          : SizedBox(
-                              width: double.maxFinite,
-                              child: ListView.builder(
-                                shrinkWrap: true,
-                                itemCount: peppers.length,
-                                itemBuilder: (context, i) => ListTile(
-                                  leading: const Icon(Icons.fiber_manual_record, size: 12),
-                                  title: Text(peppers[i]['id'] ?? 'Unknown', style: const TextStyle(fontSize: 12)),
-                                  subtitle: Text('Created: ${peppers[i]['created_at'] ?? 'N/A'}', style: const TextStyle(fontSize: 10)),
-                                ),
-                              ),
-                            ),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(context),
-                            child: const Text('Close'),
-                          ),
-                        ],
-                      ),
-                    );
-                  }
-                },
-                icon: const Icon(Icons.list, size: 16),
-                label: const Text('List Peppers', style: TextStyle(fontSize: 12)),
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                ),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        ElevatedButton.icon(
-          onPressed: () {
-            // TODO: Implement TOTP setup dialog
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('TOTP setup coming soon')),
-            );
-          },
-          icon: const Icon(Icons.qr_code, size: 16),
-          label: const Text('Setup 2FA (TOTP)', style: TextStyle(fontSize: 12)),
-          style: ElevatedButton.styleFrom(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-          ),
-        ),
-      ],
-    );
-  }
 
   Widget _buildIntegritySection() {
     return StatefulBuilder(
@@ -1863,9 +1770,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 _buildIntegrityCertificatePemInputs(setState),
 
               const SizedBox(height: 8),
-
-              // Action buttons
-              _buildIntegrityActionButtons(integrityUrl, certMode, setState),
             ],
           ],
         );
@@ -2053,81 +1957,4 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _buildIntegrityActionButtons(String integrityUrl, String certMode, StateSetter setState) {
-    return Column(
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: ElevatedButton.icon(
-                onPressed: () async {
-                  final result = await CLIService.testIntegrityConnection(
-                    url: integrityUrl,
-                    clientCertPath: certMode == 'file' ? SettingsService.getIntegrityClientCertPath() : null,
-                    clientKeyPath: certMode == 'file' ? SettingsService.getIntegrityClientKeyPath() : null,
-                    caCertPath: certMode == 'file' ? SettingsService.getIntegrityCaCertPath() : null,
-                  );
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(result['success']
-                          ? 'mTLS connection successful!'
-                          : 'Connection failed: ${result['message']}'),
-                        backgroundColor: result['success'] ? Colors.green : Colors.red,
-                      ),
-                    );
-                  }
-                },
-                icon: const Icon(Icons.wifi_tethering, size: 16),
-                label: const Text('Test Connection', style: TextStyle(fontSize: 12)),
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: ElevatedButton.icon(
-                onPressed: () async {
-                  final stats = await CLIService.getIntegrityStats();
-                  if (context.mounted) {
-                    showDialog(
-                      context: context,
-                      builder: (context) => AlertDialog(
-                        title: const Text('Verification Statistics'),
-                        content: stats['success']
-                          ? Column(
-                              mainAxisSize: MainAxisSize.min,
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text('Total Verifications: ${stats['total_verifications']}', style: const TextStyle(fontSize: 13)),
-                                Text('Successful: ${stats['successful_verifications']}', style: const TextStyle(fontSize: 13, color: Colors.green)),
-                                Text('Failed: ${stats['failed_verifications']}', style: const TextStyle(fontSize: 13, color: Colors.red)),
-                                if (stats['last_verification'] != null)
-                                  Text('Last: ${stats['last_verification']}', style: const TextStyle(fontSize: 11)),
-                              ],
-                            )
-                          : Text('Failed to retrieve stats: ${stats['message']}'),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(context),
-                            child: const Text('Close'),
-                          ),
-                        ],
-                      ),
-                    );
-                  }
-                },
-                icon: const Icon(Icons.bar_chart, size: 16),
-                label: const Text('View Stats', style: TextStyle(fontSize: 12)),
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
 }

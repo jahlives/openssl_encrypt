@@ -50,7 +50,7 @@ CLI_SERVICE = os.path.join(REPO_ROOT, "desktop_gui", "lib", "cli_service.dart")
 # Exact, not a lower bound: the first version of this lint silently stopped
 # seeing encrypt/decrypt/shred when its extractor regressed, and a loose ">"
 # assertion had the headroom to hide it.
-EXPECTED_CALL_SITES = 22
+EXPECTED_CALL_SITES = 14
 
 # Commands whose loss would gut the lint. Asserted present by name so an
 # extractor change cannot quietly drop the KDF/cascade flag surface.
@@ -138,16 +138,6 @@ KNOWN_BROKEN = [
         "--no-video-temporal-spread",
         "gitlab#170: the CLI flag is --video-temporal-spread",
     ),
-    ("configurePepperDeadman", "pepper", "gitlab#188: no `plugin pepper` subcommand"),
-    ("listPeppers", "pepper", "gitlab#188: no `plugin pepper` subcommand"),
-    ("setupPepperTotp", "pepper", "gitlab#188: no `plugin pepper` subcommand"),
-    ("verifyPepperTotp", "pepper", "gitlab#188: no `plugin pepper` subcommand"),
-    ("testPepperConnection", "pepper", "gitlab#188: no `plugin pepper` subcommand"),
-    ("testKeyserverConnection", "keyserver", "gitlab#188: no `plugin keyserver` subcommand"),
-    ("clearKeyserverCache", "keyserver", "gitlab#188: no `plugin keyserver` subcommand"),
-    ("testIntegrityConnection", "integrity", "gitlab#188: no `plugin integrity` subcommand"),
-    ("verifyFileIntegrity", "integrity", "gitlab#188: no `plugin integrity` subcommand"),
-    ("getIntegrityStats", "integrity", "gitlab#188: no `plugin integrity` subcommand"),
 ]
 
 # A Dart method declaration at exactly two-space (class body) indentation.

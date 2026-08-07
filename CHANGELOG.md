@@ -374,6 +374,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Desktop GUI: dead `plugin` subcommand controls removed or rewired**
+  (gitlab#188 / github#105): the GUI's keyserver, pepper and integrity
+  controls called `plugin keyserver`/`plugin pepper`/`plugin integrity`
+  subcommands that have never existed — `plugin` offers only `sign`,
+  `trust-key` and `list-keys` — so every one failed at argparse and was
+  swallowed.
+
+  The keyserver controls are **rewired to the commands that do exist**:
+  cache clearing now calls `keyserver cache-clear --force` (the `--force`
+  skips a confirmation no GUI subprocess can answer), and the connection
+  test calls `keyserver status`. That command takes no `--url`, so the
+  button is relabelled "Check status" and reports on the *configured*
+  server rather than implying the URL in the field was probed.
+
+  The pepper and integrity controls are **removed**, with the CLI surface
+  tracked as feature requests (gitlab#193, gitlab#194). A settings screen
+  that appears to configure a dead-man switch, or to verify a file against
+  a remote service, while every call fails is worse than an absent screen.
+  One of these was actively misleading rather than merely dead: batch
+  integrity verification treated the argparse failure as a verification
+  *failure* and reported "Integrity verification failed - hash mismatch" —
+  an integrity alarm for a file that was fine. It now reports plainly that
+  remote verification is unavailable in this build.
+
 - **Whirlpool removed from the desktop GUI** (gitlab#189 / github#106): the
   GUI offered Whirlpool as a hash option and emitted `--whirlpool-rounds`,
   which no subparser declares — so any encryption configured with it exited

@@ -2521,15 +2521,18 @@ class CLIService {
 
   // ==================== Network Plugin Methods ====================
 
-  /// Test keyserver connection
-  static Future<bool> testKeyserverConnection(String url) async {
+  /// Check the configured keyserver.
+  ///
+  /// Reports on the server the CLI is configured with. It used to send
+  /// `plugin keyserver test --url <url>`, a command that has never existed
+  /// (`plugin` offers only sign/trust-key/list-keys), so the check always
+  /// failed at argparse and the GUI reported "unreachable" for a server
+  /// that was fine -- gitlab#188. `keyserver status` takes no --url, so the
+  /// caller's url is no longer accepted: callers must not imply that an
+  /// arbitrary server was probed.
+  static Future<bool> checkKeyserverStatus() async {
     try {
-      final args = [
-        'plugin',
-        'keyserver',
-        'test',
-        '--url', url,
-      ];
+      final args = ['keyserver', 'status'];
 
       if (debugEnabled) {
         args.add('--debug');
@@ -2538,7 +2541,7 @@ class CLIService {
       final result = await _runCLICommand(args);
       return result.exitCode == 0;
     } catch (e) {
-      _outputDebugLog('Keyserver connection test failed: $e');
+      _outputDebugLog('Keyserver status check failed: $e');
       return false;
     }
   }
@@ -2546,11 +2549,10 @@ class CLIService {
   /// Clear keyserver cache
   static Future<bool> clearKeyserverCache() async {
     try {
-      final args = [
-        'plugin',
-        'keyserver',
-        'clear-cache',
-      ];
+      // `plugin keyserver clear-cache` never existed (gitlab#188); the
+      // real command is `keyserver cache-clear`. --force skips its
+      // confirmation prompt, which no GUI subprocess can answer.
+      final args = ['keyserver', 'cache-clear', '--force'];
 
       if (debugEnabled) {
         args.add('--debug');
@@ -2564,285 +2566,13 @@ class CLIService {
     }
   }
 
-  /// Test pepper server connection with mTLS
-  static Future<Map<String, dynamic>> testPepperConnection({
-    required String url,
-    String? clientCertPath,
-    String? clientKeyPath,
-    String? caCertPath,
-  }) async {
-    try {
-      final args = [
-        'plugin',
-        'pepper',
-        'test',
-        '--url', url,
-      ];
 
-      if (clientCertPath != null && clientCertPath.isNotEmpty) {
-        args.addAll(['--client-cert', clientCertPath]);
-      }
-      if (clientKeyPath != null && clientKeyPath.isNotEmpty) {
-        args.addAll(['--client-key', clientKeyPath]);
-      }
-      if (caCertPath != null && caCertPath.isNotEmpty) {
-        args.addAll(['--ca-cert', caCertPath]);
-      }
 
-      if (debugEnabled) {
-        args.add('--debug');
-      }
 
-      final result = await _runCLICommand(args);
 
-      return {
-        'success': result.exitCode == 0,
-        'message': result.exitCode == 0 ? result.stdout : result.stderr,
-      };
-    } catch (e) {
-      _outputDebugLog('Pepper connection test failed: $e');
-      return {
-        'success': false,
-        'message': 'Connection test failed: $e',
-      };
-    }
-  }
 
-  /// List stored peppers
-  static Future<List<Map<String, dynamic>>> listPeppers() async {
-    try {
-      final args = [
-        'plugin',
-        'pepper',
-        'list',
-      ];
 
-      if (debugEnabled) {
-        args.add('--debug');
-      }
 
-      final result = await _runCLICommand(args);
-
-      if (result.exitCode == 0 && result.stdout.isNotEmpty) {
-        final data = jsonDecode(result.stdout);
-        if (data is Map && data.containsKey('peppers')) {
-          return (data['peppers'] as List<dynamic>)
-              .map((p) => p as Map<String, dynamic>)
-              .toList();
-        }
-      }
-
-      return [];
-    } catch (e) {
-      _outputDebugLog('Failed to list peppers: $e');
-      return [];
-    }
-  }
-
-  /// Setup TOTP 2FA for pepper
-  static Future<Map<String, dynamic>> setupPepperTotp() async {
-    try {
-      final args = [
-        'plugin',
-        'pepper',
-        'setup-totp',
-      ];
-
-      if (debugEnabled) {
-        args.add('--debug');
-      }
-
-      final result = await _runCLICommand(args);
-
-      if (result.exitCode == 0 && result.stdout.isNotEmpty) {
-        final data = jsonDecode(result.stdout);
-        return {
-          'success': true,
-          'secret': data['secret'],
-          'qr_code': data['qr_code'],
-        };
-      }
-
-      return {
-        'success': false,
-        'message': result.stderr,
-      };
-    } catch (e) {
-      _outputDebugLog('Failed to setup TOTP: $e');
-      return {
-        'success': false,
-        'message': 'Setup failed: $e',
-      };
-    }
-  }
-
-  /// Verify TOTP code
-  static Future<bool> verifyPepperTotp(String code) async {
-    try {
-      final args = [
-        'plugin',
-        'pepper',
-        'verify-totp',
-        '--code', code,
-      ];
-
-      if (debugEnabled) {
-        args.add('--debug');
-      }
-
-      final result = await _runCLICommand(args);
-      return result.exitCode == 0;
-    } catch (e) {
-      _outputDebugLog('TOTP verification failed: $e');
-      return false;
-    }
-  }
-
-  /// Configure dead man's switch
-  static Future<bool> configurePepperDeadman({
-    required bool enabled,
-    int? intervalDays,
-    int? gracePeriodDays,
-  }) async {
-    try {
-      final args = [
-        'plugin',
-        'pepper',
-        'configure-deadman',
-      ];
-
-      if (enabled) {
-        args.add('--enable');
-        if (intervalDays != null) {
-          args.addAll(['--interval', intervalDays.toString()]);
-        }
-        if (gracePeriodDays != null) {
-          args.addAll(['--grace-period', gracePeriodDays.toString()]);
-        }
-      } else {
-        args.add('--disable');
-      }
-
-      if (debugEnabled) {
-        args.add('--debug');
-      }
-
-      final result = await _runCLICommand(args);
-      return result.exitCode == 0;
-    } catch (e) {
-      _outputDebugLog('Failed to configure dead man switch: $e');
-      return false;
-    }
-  }
-
-  /// Test integrity server connection with mTLS
-  static Future<Map<String, dynamic>> testIntegrityConnection({
-    required String url,
-    String? clientCertPath,
-    String? clientKeyPath,
-    String? caCertPath,
-  }) async {
-    try {
-      final args = [
-        'plugin',
-        'integrity',
-        'test',
-        '--url', url,
-      ];
-
-      if (clientCertPath != null && clientCertPath.isNotEmpty) {
-        args.addAll(['--client-cert', clientCertPath]);
-      }
-      if (clientKeyPath != null && clientKeyPath.isNotEmpty) {
-        args.addAll(['--client-key', clientKeyPath]);
-      }
-      if (caCertPath != null && caCertPath.isNotEmpty) {
-        args.addAll(['--ca-cert', caCertPath]);
-      }
-
-      if (debugEnabled) {
-        args.add('--debug');
-      }
-
-      final result = await _runCLICommand(args);
-
-      return {
-        'success': result.exitCode == 0,
-        'message': result.exitCode == 0 ? result.stdout : result.stderr,
-      };
-    } catch (e) {
-      _outputDebugLog('Integrity connection test failed: $e');
-      return {
-        'success': false,
-        'message': 'Connection test failed: $e',
-      };
-    }
-  }
-
-  /// Get integrity verification statistics
-  static Future<Map<String, dynamic>> getIntegrityStats() async {
-    try {
-      final args = [
-        'plugin',
-        'integrity',
-        'stats',
-      ];
-
-      if (debugEnabled) {
-        args.add('--debug');
-      }
-
-      final result = await _runCLICommand(args);
-
-      if (result.exitCode == 0 && result.stdout.isNotEmpty) {
-        final data = jsonDecode(result.stdout);
-        return {
-          'success': true,
-          'total_verifications': data['total_verifications'] ?? 0,
-          'successful_verifications': data['successful_verifications'] ?? 0,
-          'failed_verifications': data['failed_verifications'] ?? 0,
-          'last_verification': data['last_verification'],
-        };
-      }
-
-      return {
-        'success': false,
-        'message': result.stderr,
-      };
-    } catch (e) {
-      _outputDebugLog('Failed to get integrity stats: $e');
-      return {
-        'success': false,
-        'message': 'Failed to get stats: $e',
-      };
-    }
-  }
-
-  /// Verify file integrity
-  static Future<bool> verifyFileIntegrity({
-    required String fileId,
-    required String metadataHash,
-  }) async {
-    try {
-      final args = [
-        'plugin',
-        'integrity',
-        'verify',
-        '--file-id', fileId,
-        '--metadata-hash', metadataHash,
-      ];
-
-      if (debugEnabled) {
-        args.add('--debug');
-      }
-
-      final result = await _runCLICommand(args);
-      return result.exitCode == 0;
-    } catch (e) {
-      _outputDebugLog('Integrity verification failed: $e');
-      return false;
-    }
-  }
 }
 
 /// Algorithm availability information
