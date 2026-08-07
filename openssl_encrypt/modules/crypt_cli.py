@@ -52,6 +52,7 @@ from .crypt_utils import (
     expand_glob_patterns,
     generate_strong_password,
     request_confirmation,
+    sanitize_for_display,
     secure_shred_file,
     show_security_recommendations,
     tty_clear_line,
@@ -1921,7 +1922,8 @@ def handle_keyserver_command(args):
         eprint(f"Total Accesses: {cache_stats['total_accesses']}")
         if cache_stats["most_accessed"]:
             eprint(
-                f"Most Accessed: {cache_stats['most_accessed']['name']} ({cache_stats['most_accessed']['count']} times)"
+                f"Most Accessed: {sanitize_for_display(cache_stats['most_accessed']['name'])} "
+                f"({cache_stats['most_accessed']['count']} times)"
             )
         eprint("=" * 60)
 
@@ -1949,8 +1951,8 @@ def handle_keyserver_command(args):
 
                 eprint("\n✓ Email confirmed! Registration complete.")
                 eprint("=" * 60)
-                eprint(f"Client ID:   {result['client_id']}")
-                eprint(f"Token Type:  {result.get('token_type', 'Bearer')}")
+                eprint(f"Client ID:   {sanitize_for_display(result['client_id'])}")
+                eprint(f"Token Type:  {sanitize_for_display(result.get('token_type', 'Bearer'))}")
                 eprint(f"Token File:  {config.api_token_file}")
                 eprint("=" * 60)
             else:
@@ -1960,9 +1962,9 @@ def handle_keyserver_command(args):
 
                 eprint("\n✓ Successfully registered with keyserver")
                 eprint("=" * 60)
-                eprint(f"Client ID:   {result['client_id']}")
-                eprint(f"Expires:     {result['expires_at']}")
-                eprint(f"Token Type:  {result['token_type']}")
+                eprint(f"Client ID:   {sanitize_for_display(result['client_id'])}")
+                eprint(f"Expires:     {sanitize_for_display(result['expires_at'])}")
+                eprint(f"Token Type:  {sanitize_for_display(result['token_type'])}")
                 eprint(f"Token File:  {config.api_token_file}")
                 eprint("=" * 60)
 
@@ -1974,7 +1976,7 @@ def handle_keyserver_command(args):
         except KeyboardInterrupt:
             eprint("\n\n✗ Registration cancelled.")
         except Exception as e:
-            eprint(f"\n✗ Registration failed: {e}")
+            eprint(f"\n✗ Registration failed: {sanitize_for_display(e)}")
             eprint("\nTroubleshooting:")
             eprint("  - Check network connectivity")
             eprint("  - Verify keyserver URL is correct")
@@ -1998,8 +2000,8 @@ def handle_keyserver_command(args):
 
             eprint("\n✓ Login successful")
             eprint("=" * 60)
-            eprint(f"Client ID:     {result['client_id']}")
-            eprint(f"Token Type:    {result.get('token_type', 'Bearer')}")
+            eprint(f"Client ID:     {sanitize_for_display(result['client_id'])}")
+            eprint(f"Token Type:    {sanitize_for_display(result.get('token_type', 'Bearer'))}")
             eprint(f"Token File:    {config.api_token_file}")
             eprint(f"Refresh File:  {config.refresh_token_file}")
             eprint("=" * 60)
@@ -2009,7 +2011,7 @@ def handle_keyserver_command(args):
             eprint("  openssl-encrypt keyserver revoke <fingerprint>")
 
         except Exception as e:
-            eprint(f"\n✗ Login failed: {e}")
+            eprint(f"\n✗ Login failed: {sanitize_for_display(e)}")
             eprint("\nTroubleshooting:")
             eprint("  - Verify your client ID is correct (from registration email)")
             eprint("  - Check network connectivity")
@@ -2035,11 +2037,16 @@ def handle_keyserver_command(args):
             else:
                 eprint("\n✓ Key found")
                 eprint("-" * 60)
-                eprint(f"Name:        {bundle.name}")
-                eprint(f"Email:       {bundle.email or 'N/A'}")
-                eprint(f"Fingerprint: {bundle.fingerprint}")
-                eprint(f"Algorithms:  {bundle.encryption_algorithm} / {bundle.signing_algorithm}")
-                eprint(f"Created:     {bundle.created_at}")
+                eprint(f"Name:        {sanitize_for_display(bundle.name)}")
+                eprint(
+                    f"Email:       {sanitize_for_display(bundle.email) if bundle.email else 'N/A'}"
+                )
+                eprint(f"Fingerprint: {sanitize_for_display(bundle.fingerprint)}")
+                eprint(
+                    f"Algorithms:  {sanitize_for_display(bundle.encryption_algorithm)} / "
+                    f"{sanitize_for_display(bundle.signing_algorithm)}"
+                )
+                eprint(f"Created:     {sanitize_for_display(bundle.created_at)}")
                 eprint("-" * 60)
         else:
             eprint(f"✗ Key not found for '{identifier}'")
@@ -2066,14 +2073,16 @@ def handle_keyserver_command(args):
 
         try:
             identity = resolver.resolve(args.identifier, load_private_keys=False)
-            eprint(f"✓ Successfully imported '{identity.name}' to local store")
-            eprint(f"  Fingerprint: {identity.fingerprint}")
+            eprint(
+                f"✓ Successfully imported '{sanitize_for_display(identity.name)}' to local store"
+            )
+            eprint(f"  Fingerprint: {sanitize_for_display(identity.fingerprint)}")
         except KeyNotFoundError:
             eprint(f"✗ Key not found for '{args.identifier}'")
         except TrustDeclinedError:
             eprint("✗ Import cancelled (user declined to trust key)")
         except Exception as e:
-            eprint(f"✗ Failed to import key: {e}")
+            eprint(f"✗ Failed to import key: {sanitize_for_display(e)}")
 
     elif action == "upload":
         # Upload key to keyserver
@@ -2117,13 +2126,13 @@ def handle_keyserver_command(args):
             success = plugin.upload_key(bundle)
 
             if success:
-                eprint(f"✓ Successfully uploaded '{identity_name}'")
-                eprint(f"  Fingerprint: {bundle.fingerprint}")
+                eprint(f"✓ Successfully uploaded '{sanitize_for_display(identity_name)}'")
+                eprint(f"  Fingerprint: {sanitize_for_display(bundle.fingerprint)}")
             else:
                 eprint(f"✗ Failed to upload '{identity_name}'")
 
         except Exception as e:
-            eprint(f"✗ Failed to upload key: {e}")
+            eprint(f"✗ Failed to upload key: {sanitize_for_display(e)}")
 
     elif action == "revoke":
         # Revoke key on keyserver
@@ -2200,7 +2209,8 @@ def handle_keyserver_command(args):
 
         if stats["most_accessed"]:
             eprint(
-                f"Most Accessed Key: {stats['most_accessed']['name']} ({stats['most_accessed']['count']} times)"
+                f"Most Accessed Key: {sanitize_for_display(stats['most_accessed']['name'])} "
+                f"({stats['most_accessed']['count']} times)"
             )
 
         eprint(f"Cache Path: {stats['cache_path']}")
@@ -4888,15 +4898,11 @@ def main_with_args(args=None):
             hsm_value = args.hsm.lower()
             try:
                 if hsm_value == "yubikey":
-                    from ..plugins.hsm.yubikey_challenge_response import (
-                        YubikeyHSMPlugin,
-                    )
+                    from ..plugins.hsm.yubikey_challenge_response import YubikeyHSMPlugin
 
                     hsm_plugin_instance = YubikeyHSMPlugin()
                 elif hsm_value == "onlykey":
-                    from ..plugins.hsm.onlykey_challenge_response import (
-                        OnlykeyHSMPlugin,
-                    )
+                    from ..plugins.hsm.onlykey_challenge_response import OnlykeyHSMPlugin
 
                     hsm_plugin_instance = OnlykeyHSMPlugin()
                 elif hsm_value == "piv":
@@ -8293,7 +8299,7 @@ def main_with_args(args=None):
                 sign_file_cli(args)
                 sys.exit(0)
             except Exception as e:
-                print(f"Error: {e}", file=sys.stderr)
+                print(f"Error: {sanitize_for_display(e)}", file=sys.stderr)
                 sys.exit(1)
 
         elif args.action == "verify-signature":
@@ -8304,7 +8310,7 @@ def main_with_args(args=None):
                 verify_signature_cli(args)
                 sys.exit(0)
             except Exception as e:
-                print(f"Error: {e}", file=sys.stderr)
+                print(f"Error: {sanitize_for_display(e)}", file=sys.stderr)
                 sys.exit(1)
 
         elif args.action == "decrypt":

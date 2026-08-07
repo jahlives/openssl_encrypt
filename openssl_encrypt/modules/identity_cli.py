@@ -19,10 +19,10 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+from .crypt_utils import eprint, sanitize_for_display
 from .identity import Identity, IdentityError, IdentityKeyChangedError, IdentityStore
 from .identity_protection import HSMNotAvailableError, IdentityKeyProtectionService, ProtectionLevel
 from .pqc_signing import LIBOQS_AVAILABLE
-from .crypt_utils import eprint
 
 
 def get_identity_store(base_path: Optional[Path] = None) -> IdentityStore:
@@ -160,7 +160,7 @@ def cmd_create(args) -> int:
         sig_algo = getattr(args, "sig_algorithm", "ML-DSA-65")
 
         # Generate identity
-        eprint(f"Generating identity for '{args.name}'...")
+        eprint(f"Generating identity for '{sanitize_for_display(args.name)}'...")
 
         if protection_level in (ProtectionLevel.PASSWORD_AND_HSM, ProtectionLevel.HSM_ONLY):
             eprint("Touch your Yubikey to generate keys...")
@@ -192,12 +192,12 @@ def cmd_create(args) -> int:
         )
 
         eprint("\nIdentity created successfully!")
-        eprint(f"Name: {identity.name}")
+        eprint(f"Name: {sanitize_for_display(identity.name)}")
         if identity.email:
-            eprint(f"Email: {identity.email}")
-        eprint(f"Fingerprint: {identity.fingerprint}")
-        eprint(f"Encryption: {identity.encryption_algorithm}")
-        eprint(f"Signing: {identity.signing_algorithm}")
+            eprint(f"Email: {sanitize_for_display(identity.email)}")
+        eprint(f"Fingerprint: {sanitize_for_display(identity.fingerprint)}")
+        eprint(f"Encryption: {sanitize_for_display(identity.encryption_algorithm)}")
+        eprint(f"Signing: {sanitize_for_display(identity.signing_algorithm)}")
 
         # Show protection level
         if identity.protection:
@@ -212,16 +212,16 @@ def cmd_create(args) -> int:
         return 0
 
     except IdentityError as e:
-        print(f"ERROR: {e}", file=sys.stderr)
+        print(f"ERROR: {sanitize_for_display(e)}", file=sys.stderr)
         return 1
     except ValueError as e:
-        print(f"ERROR: {e}", file=sys.stderr)
+        print(f"ERROR: {sanitize_for_display(e)}", file=sys.stderr)
         return 1
     except HSMNotAvailableError as e:
-        print(f"ERROR: {e}", file=sys.stderr)
+        print(f"ERROR: {sanitize_for_display(e)}", file=sys.stderr)
         return 1
     except Exception as e:
-        print(f"ERROR: Failed to create identity: {e}", file=sys.stderr)
+        print(f"ERROR: Failed to create identity: {sanitize_for_display(e)}", file=sys.stderr)
         return 1
 
 
@@ -255,13 +255,13 @@ def cmd_list(args) -> int:
             eprint("Own Identities:")
             eprint("-" * 80)
             for identity in own_identities:
-                eprint(f"Name: {identity.name}")
+                eprint(f"Name: {sanitize_for_display(identity.name)}")
                 if identity.email:
-                    eprint(f"  Email: {identity.email}")
-                eprint(f"  Fingerprint: {identity.fingerprint}")
+                    eprint(f"  Email: {sanitize_for_display(identity.email)}")
+                eprint(f"  Fingerprint: {sanitize_for_display(identity.fingerprint)}")
                 alg_str = f"{identity.encryption_algorithm} / "
                 alg_str += identity.signing_algorithm
-                eprint(f"  Algorithms: {alg_str}")
+                eprint(f"  Algorithms: {sanitize_for_display(alg_str)}")
                 eprint()
 
         # Display contacts
@@ -269,13 +269,13 @@ def cmd_list(args) -> int:
             eprint("\nContacts (public keys only):")
             eprint("-" * 80)
             for identity in contacts:
-                eprint(f"Name: {identity.name}")
+                eprint(f"Name: {sanitize_for_display(identity.name)}")
                 if identity.email:
-                    eprint(f"  Email: {identity.email}")
-                eprint(f"  Fingerprint: {identity.fingerprint}")
+                    eprint(f"  Email: {sanitize_for_display(identity.email)}")
+                eprint(f"  Fingerprint: {sanitize_for_display(identity.fingerprint)}")
                 alg_str = f"{identity.encryption_algorithm} / "
                 alg_str += identity.signing_algorithm
-                eprint(f"  Algorithms: {alg_str}")
+                eprint(f"  Algorithms: {sanitize_for_display(alg_str)}")
                 eprint()
 
         # Summary
@@ -291,7 +291,7 @@ def cmd_list(args) -> int:
         return 0
 
     except Exception as e:
-        print(f"ERROR: Failed to list identities: {e}", file=sys.stderr)
+        print(f"ERROR: Failed to list identities: {sanitize_for_display(e)}", file=sys.stderr)
         return 1
 
 
@@ -313,7 +313,7 @@ def cmd_show(args) -> int:
 
         if identity is None:
             eprint(
-                f"ERROR: Identity '{args.identity_name}' not found ❌",
+                f"ERROR: Identity '{sanitize_for_display(args.identity_name)}' not found ❌",
                 file=sys.stderr,
             )
             return 1
@@ -321,10 +321,10 @@ def cmd_show(args) -> int:
         # Display information
         eprint("Identity Information:")
         eprint("=" * 80)
-        eprint(f"Name: {identity.name}")
+        eprint(f"Name: {sanitize_for_display(identity.name)}")
         if identity.email:
-            eprint(f"Email: {identity.email}")
-        eprint(f"Fingerprint: {identity.fingerprint}")
+            eprint(f"Email: {sanitize_for_display(identity.email)}")
+        eprint(f"Fingerprint: {sanitize_for_display(identity.fingerprint)}")
         identity_type = (
             "Own identity (has private keys)"
             if identity.is_own_identity
@@ -334,8 +334,8 @@ def cmd_show(args) -> int:
         eprint()
 
         eprint("Algorithms:")
-        eprint(f"  Encryption: {identity.encryption_algorithm}")
-        eprint(f"  Signing: {identity.signing_algorithm}")
+        eprint(f"  Encryption: {sanitize_for_display(identity.encryption_algorithm)}")
+        eprint(f"  Signing: {sanitize_for_display(identity.signing_algorithm)}")
         eprint()
 
         eprint("Public Keys:")
@@ -354,10 +354,16 @@ def cmd_show(args) -> int:
                 if identity.protection.requires_password():
                     eprint("  Password: Required")
                 if identity.protection.requires_hsm():
-                    eprint(f"  HSM: Required ({identity.protection.hsm_config.hsm_type})")
+                    eprint(
+                        f"  HSM: Required ({sanitize_for_display(identity.protection.hsm_config.hsm_type)}"
+                    )
                     if identity.protection.hsm_config.slot:
-                        eprint(f"    Slot: {identity.protection.hsm_config.slot}")
-                    eprint(f"    Touch required: {identity.protection.hsm_config.require_touch}")
+                        eprint(
+                            f"    Slot: {sanitize_for_display(identity.protection.hsm_config.slot)}"
+                        )
+                    eprint(
+                        f"    Touch required: {sanitize_for_display(identity.protection.hsm_config.require_touch)}"
+                    )
             else:
                 eprint()
                 eprint("Protection: password_only (default)")
@@ -365,7 +371,7 @@ def cmd_show(args) -> int:
         return 0
 
     except Exception as e:
-        print(f"ERROR: Failed to show identity: {e}", file=sys.stderr)
+        print(f"ERROR: Failed to show identity: {sanitize_for_display(e)}", file=sys.stderr)
         return 1
 
 
@@ -387,7 +393,7 @@ def cmd_export(args) -> int:
 
         if identity is None:
             eprint(
-                f"ERROR: Identity '{args.identity_name}' not found ❌",
+                f"ERROR: Identity '{sanitize_for_display(args.identity_name)}' not found ❌",
                 file=sys.stderr,
             )
             return 1
@@ -414,12 +420,12 @@ def cmd_export(args) -> int:
             json.dump(public_data, f, indent=2)
 
         eprint(f"Public identity exported to: {output_file}")
-        eprint(f"Fingerprint: {identity.fingerprint}")
+        eprint(f"Fingerprint: {sanitize_for_display(identity.fingerprint)}")
 
         return 0
 
     except Exception as e:
-        print(f"ERROR: Failed to export identity: {e}", file=sys.stderr)
+        print(f"ERROR: Failed to export identity: {sanitize_for_display(e)}", file=sys.stderr)
         return 1
 
 
@@ -461,9 +467,9 @@ def cmd_import(args) -> int:
         except IdentityKeyChangedError as e:
             # M8: TOFU key-change. Refuse non-interactively; prompt on a TTY.
             eprint("\n⚠️  WARNING: the key for this contact has CHANGED.")
-            eprint(f"  Identity:        {e.name}")
-            eprint(f"  Stored (pinned): {e.old_fingerprint}")
-            eprint(f"  Imported:        {e.new_fingerprint}")
+            eprint(f"  Identity:        {sanitize_for_display(e.name)}")
+            eprint(f"  Stored (pinned): {sanitize_for_display(e.old_fingerprint)}")
+            eprint(f"  Imported:        {sanitize_for_display(e.new_fingerprint)}")
             eprint(
                 "  A changed key can mean the contact re-keyed - or that this "
                 "bundle is forged / a man-in-the-middle. Only accept if you "
@@ -484,21 +490,21 @@ def cmd_import(args) -> int:
             store.add_identity(identity, passphrase=None, overwrite=True, allow_key_change=True)
 
         eprint("Identity imported successfully!")
-        eprint(f"Name: {identity.name}")
+        eprint(f"Name: {sanitize_for_display(identity.name)}")
         if identity.email:
-            eprint(f"Email: {identity.email}")
-        eprint(f"Fingerprint: {identity.fingerprint}")
+            eprint(f"Email: {sanitize_for_display(identity.email)}")
+        eprint(f"Fingerprint: {sanitize_for_display(identity.fingerprint)}")
 
         return 0
 
     except IdentityError as e:
-        print(f"ERROR: {e}", file=sys.stderr)
+        print(f"ERROR: {sanitize_for_display(e)}", file=sys.stderr)
         return 1
     except json.JSONDecodeError as e:
-        print(f"ERROR: Invalid JSON file: {e}", file=sys.stderr)
+        print(f"ERROR: Invalid JSON file: {sanitize_for_display(e)}", file=sys.stderr)
         return 1
     except Exception as e:
-        print(f"ERROR: Failed to import identity: {e}", file=sys.stderr)
+        print(f"ERROR: Failed to import identity: {sanitize_for_display(e)}", file=sys.stderr)
         return 1
 
 
@@ -520,15 +526,17 @@ def cmd_delete(args) -> int:
 
         if identity is None:
             eprint(
-                f"ERROR: Identity '{args.identity_name}' not found ❌",
+                f"ERROR: Identity '{sanitize_for_display(args.identity_name)}' not found ❌",
                 file=sys.stderr,
             )
             return 1
 
         # Confirm deletion unless --force
         if not getattr(args, "force", False):
-            eprint(f"WARNING: This will delete identity '{args.identity_name}'")
-            eprint(f"Fingerprint: {identity.fingerprint}")
+            eprint(
+                f"WARNING: This will delete identity '{sanitize_for_display(args.identity_name)}'"
+            )
+            eprint(f"Fingerprint: {sanitize_for_display(identity.fingerprint)}")
             if identity.is_own_identity:
                 eprint("This includes the private keys!")
 
@@ -541,17 +549,17 @@ def cmd_delete(args) -> int:
         result = store.delete_identity(args.identity_name)
 
         if result:
-            eprint(f"Identity '{args.identity_name}' deleted successfully.")
+            eprint(f"Identity '{sanitize_for_display(args.identity_name)}' deleted successfully.")
             return 0
         else:
             eprint(
-                f"ERROR: Failed to delete identity '{args.identity_name}'",
+                f"ERROR: Failed to delete identity '{sanitize_for_display(args.identity_name)}'",
                 file=sys.stderr,
             )
             return 1
 
     except Exception as e:
-        print(f"ERROR: Failed to delete identity: {e}", file=sys.stderr)
+        print(f"ERROR: Failed to delete identity: {sanitize_for_display(e)}", file=sys.stderr)
         return 1
 
 
@@ -575,7 +583,7 @@ def cmd_change_password(args) -> int:
 
         if identity_check is None:
             eprint(
-                f"ERROR: Identity '{args.identity_name}' not found ❌",
+                f"ERROR: Identity '{sanitize_for_display(args.identity_name)}' not found ❌",
                 file=sys.stderr,
             )
             return 1
@@ -583,7 +591,7 @@ def cmd_change_password(args) -> int:
         if not identity_check.is_own_identity:
             error_msg = (
                 f"ERROR: Cannot change passphrase for contact "
-                f"'{args.identity_name}' (no private keys)"
+                f"'{sanitize_for_display(args.identity_name)}' (no private keys)"
             )
             print(error_msg, file=sys.stderr)
             return 1
@@ -615,15 +623,15 @@ def cmd_change_password(args) -> int:
         # Save with new passphrase
         store.add_identity(identity, new_passphrase, overwrite=True)
 
-        eprint(f"Passphrase changed successfully for '{args.identity_name}'")
+        eprint(f"Passphrase changed successfully for '{sanitize_for_display(args.identity_name)}'")
 
         return 0
 
     except ValueError as e:
-        print(f"ERROR: {e}", file=sys.stderr)
+        print(f"ERROR: {sanitize_for_display(e)}", file=sys.stderr)
         return 1
     except Exception as e:
-        print(f"ERROR: Failed to change passphrase: {e}", file=sys.stderr)
+        print(f"ERROR: Failed to change passphrase: {sanitize_for_display(e)}", file=sys.stderr)
         return 1
 
 

@@ -593,6 +593,63 @@ inflated KDF metadata parameters, not cosmetic output.
 
 ### Security
 
+- **Imported identity email can no longer forge the fingerprint line with
+  terminal escapes** (gitlab#172, ADVISORY 2026-14): `Identity.import_public`
+  validated the identity name but took `email` completely raw, and the CLI
+  printed it unsanitized directly above the `Fingerprint:` line in
+  `identity import`/`list`/`show`. A JSON string may carry `\u001b` escape
+  sequences — the JSON security validator rejects only *literal* control
+  characters, whose escaped source text is printable — so a crafted bundle's
+  email could move the cursor and overwrite the genuine fingerprint with one
+  the victim trusts. Out-of-band fingerprint comparison is the only
+  authenticity mechanism the identity design has, so forging that readout
+  enables exactly the key substitution the TOFU ceremony exists to surface.
+  The same class existed on error paths: a rejected identity name or
+  `--alias` was interpolated verbatim into the `IdentityError` message the
+  CLI echoes.
+
+  Security review of the fix found the same class live on **every other
+  identity display surface**, including one reachable by a fully remote
+  attacker: the keyserver TOFU trust prompt printed a fetched bundle's
+  `name`/`email`/`created_at` raw around the very fingerprint it tells the
+  user to verify out of band (`created_at` is printed *after* the
+  fingerprint and was completely unconstrained) — and the bundle's
+  self-signature is no defence, since it verifies against the signing key
+  shipped *in* the bundle. `identity create --email` was the producer-side
+  gap: the value is exported verbatim and uploaded, attacking other users'
+  prompts. Stored identity files were a third channel (an
+  `--identity-store` directory from an archive or shared folder feeds
+  `list`/`show` and the TOFU key-change warning without any import-time
+  check), and a signature sidecar leaked through three fields: its
+  `signer_fingerprint` printed on the unknown-signer error path before any
+  cryptographic check, its `algorithm` echoed by the unsupported-algorithm
+  error pre-verification, and its display-only `component` name — deliberately
+  excluded from the signed payload, so any tamperer can rewrite it on a
+  *valid* signature — printed inside the ✅ GOOD-signature verdict block. A
+  keyserver's raw HTTP error body (unbounded remote text) also reached the
+  terminal through exception messages.
+
+  The fix validates at every boundary and sanitizes at every display:
+  `import_public`, `Identity.generate`, `Identity.load`, and
+  `PublicKeyBundle` now validate `email` (string, ≤ 320 chars, no control
+  characters), `fingerprint` (the colon-separated lowercase hex shape the
+  tool has always written), and `created_at` (≤ 64 chars, no controls);
+  `parse_signature` format-validates `signer_fingerprint`, `algorithm`, and
+  every `component` name; keyserver HTTP error bodies are truncated and
+  sanitized; and `identity.json` is read bounded, explicitly UTF-8, and
+  through the JSON security validator, so a hostile store directory cannot
+  DoS `identity list`. A display
+  sanitizer escapes C0 controls, DEL, the C1 range (one-byte CSI
+  introducers included), backslash (so escaped output is unambiguous), and
+  the bidi/format controls (which VTE/Kitty honour and which can visually
+  reverse an email within its line) at every terminal display of identity
+  name/email/fingerprint, the keyserver trust prompt and `keyserver search`
+  display, the TOFU key-change warning, the verified-signature sender line,
+  and every identity CLI error path. Escaping rather than stripping keeps
+  the evidence visible — the user sees `\x1b[1A` instead of having their
+  display rewritten. Contacts and cached keyserver bundles imported by
+  earlier versions with crafted fields are neutralized at display time by
+  the same sanitizer.
 - **Plugin sandbox no longer authorizes sibling directories via a bare path
   prefix** (gitlab#133 / F15, GHSA-vr4h-5xqv-xxxf): `PluginSandbox._is_safe_path`
   allowed a path with a plain string-prefix match, so a sandboxed plugin `foo`

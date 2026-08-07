@@ -658,8 +658,10 @@ class TestIdentity(unittest.TestCase):
         identity = Identity.generate(name="Mallory", email=None, passphrase="test")
         public_data = identity.export_public()
 
-        # Tamper with the fingerprint
-        public_data["fingerprint"] = "AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99"
+        # Tamper with the fingerprint. Lowercase valid-format on purpose:
+        # import_public format-validates the field first (gitlab#172), and
+        # this test must reach the CONSISTENCY check behind it.
+        public_data["fingerprint"] = "aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99"
 
         with self.assertRaises(IdentityError) as ctx:
             Identity.import_public(public_data)

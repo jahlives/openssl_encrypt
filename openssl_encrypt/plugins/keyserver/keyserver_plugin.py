@@ -31,7 +31,7 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.poolmanager import PoolManager
 
-from openssl_encrypt.modules.crypt_utils import eprint
+from openssl_encrypt.modules.crypt_utils import eprint, sanitize_for_display
 
 from ...modules.key_bundle import PublicKeyBundle, create_pop_signature
 from ...modules.plugin_system.plugin_base import (
@@ -45,6 +45,16 @@ from .cache import KeyserverCache
 from .config import KeyserverConfig
 
 logger = logging.getLogger(__name__)
+
+
+def _safe_body(response) -> str:
+    """Sanitize + truncate a server response body for an error message.
+
+    The body is remote attacker input, unbounded and free-form; it must
+    never reach the terminal raw (gitlab#172), and a multi-megabyte error
+    page must not become a multi-megabyte exception message.
+    """
+    return sanitize_for_display(response.text[:200])
 
 
 class CertPinningAdapter(HTTPAdapter):
@@ -460,7 +470,7 @@ class KeyserverPlugin(BasePlugin):
                     return None
                 else:
                     raise NetworkError(
-                        f"Keyserver returned status {response.status_code}: {response.text}"
+                        f"Keyserver returned status {response.status_code}: {_safe_body(response)}"
                     )
             else:
                 # Use search endpoint
@@ -489,7 +499,7 @@ class KeyserverPlugin(BasePlugin):
 
                 else:
                     raise NetworkError(
-                        f"Keyserver returned status {response.status_code}: {response.text}"
+                        f"Keyserver returned status {response.status_code}: {_safe_body(response)}"
                     )
 
         except requests.exceptions.Timeout:
@@ -647,15 +657,20 @@ class KeyserverPlugin(BasePlugin):
                 try:
                     data = response.json()
                     if data.get("status") == "password_required":
-                        raise PasswordRequiredError(data.get("message", "Password setup required."))
+                        # The message is remote JSON content; a hostile
+                        # server must not own the login terminal (gitlab#172).
+                        raise PasswordRequiredError(
+                            sanitize_for_display(str(data.get("message", ""))[:200])
+                            or "Password setup required."
+                        )
                 except (ValueError, KeyError):
                     pass
-                raise AuthenticationError(f"Login forbidden: {response.text}")
+                raise AuthenticationError(f"Login forbidden: {_safe_body(response)}")
             elif response.status_code == 401:
                 raise AuthenticationError("Invalid credentials")
             else:
                 raise NetworkError(
-                    f"Login failed with status {response.status_code}: {response.text}"
+                    f"Login failed with status {response.status_code}: {_safe_body(response)}"
                 )
 
         except requests.exceptions.Timeout:
@@ -715,7 +730,7 @@ class KeyserverPlugin(BasePlugin):
                 return data
             else:
                 raise NetworkError(
-                    f"Registration failed with status {response.status_code}: {response.text}"
+                    f"Registration failed with status {response.status_code}: {_safe_body(response)}"
                 )
 
         except requests.exceptions.Timeout:
@@ -774,7 +789,7 @@ class KeyserverPlugin(BasePlugin):
 
         if response.status_code != 202:
             raise NetworkError(
-                f"Email registration failed with status {response.status_code}: {response.text}"
+                f"Email registration failed with status {response.status_code}: {_safe_body(response)}"
             )
 
         data = response.json()
@@ -849,7 +864,7 @@ class KeyserverPlugin(BasePlugin):
         response = self._authenticated_request("post", challenge_url, json=body)
         if response.status_code != 200:
             raise NetworkError(
-                f"Challenge request failed with status {response.status_code}: {response.text}"
+                f"Challenge request failed with status {response.status_code}: {_safe_body(response)}"
             )
         return response.json()
 
