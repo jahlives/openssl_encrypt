@@ -85,25 +85,6 @@ class _EncryptTabState extends State<EncryptTab> {
   bool _disableDiversityCheck = false;
   bool _strictDiversity = false;
 
-  // Steganography options
-  bool _useSteganography = false;
-  FileInfo? _coverMediaFile;
-  String _stegoMethod = 'lsb';
-  final TextEditingController _stegoPasswordController = TextEditingController();
-  int _stegoBitsPerChannel = 1;
-  bool _stegoRandomizePixels = false;
-  bool _stegoDecoyData = false;
-
-  // JPEG-specific steganography
-  int _jpegQuality = 85;
-
-  // Video-specific steganography (MP4)
-  double _videoQuantizationStep = 8.0;
-  double _videoAdaptationFactor = 1.2;
-  double _videoCompensationFactor = 0.5;
-  int _videoBitsPerCoefficient = 2;
-  bool _videoTemporalSpread = true;
-  int _videoQualityPreservation = 8;
 
   // Cascade presets
   static const Map<String, List<String>> _cascadePresets = {
@@ -131,21 +112,8 @@ class _EncryptTabState extends State<EncryptTab> {
     'blake2s',
   ];
 
-  // Steganography methods by format type
-  static const Map<String, List<String>> _stegoMethodsByFormat = {
-    'jpeg': ['f5', 'outguess', 'basic'],
-    'image': ['lsb', 'adaptive'],  // PNG, BMP, TIFF
-    'audio': ['lsb'],              // WAV, FLAC, MP3
-    'video': ['uniform', 'adaptive', 'distortion_comp', 'multi_level'],
-  };
 
   // Format detection by extension
-  static const Map<String, String> _stegoFormatByExtension = {
-    '.jpg': 'jpeg', '.jpeg': 'jpeg',
-    '.png': 'image', '.bmp': 'image', '.tiff': 'image', '.tif': 'image',
-    '.wav': 'audio', '.flac': 'audio', '.mp3': 'audio',
-    '.mp4': 'video',
-  };
 
   @override
   void initState() {
@@ -160,7 +128,6 @@ class _EncryptTabState extends State<EncryptTab> {
     _recipientIdentityController.dispose();
     _identityStorePathController.dispose();
     _cascadeAlgorithmsTextController.dispose();
-    _stegoPasswordController.dispose();
     _pepperNameController.dispose();
     super.dispose();
   }
@@ -238,24 +205,6 @@ class _EncryptTabState extends State<EncryptTab> {
       }
     }
 
-    // Validate steganography requirements
-    if (_useSteganography) {
-      if (_coverMediaFile == null) {
-        setState(() {
-          result = 'Please select a cover media file for steganography';
-        });
-        return;
-      }
-
-      final format = _detectStegoFormat(_coverMediaFile!.path);
-      if (format == null) {
-        setState(() {
-          result = 'Unsupported cover media format. Use PNG, BMP, TIFF, JPEG, WAV, FLAC, MP3, or MP4.';
-        });
-        return;
-      }
-    }
-
     setState(() {
       _isLoading = true;
       result = 'Encrypting...';
@@ -263,62 +212,6 @@ class _EncryptTabState extends State<EncryptTab> {
     });
 
     try {
-      // Handle steganography path
-      if (_useSteganography && _coverMediaFile != null) {
-        // Get output path for stego file
-        final outputPath = await widget.fileManager.getSaveLocation(
-          suggestedName: '${path.basenameWithoutExtension(_coverMediaFile!.path)}_stego${path.extension(_coverMediaFile!.path)}',
-        );
-        if (outputPath == null) {
-          setState(() {
-            result = 'Steganography cancelled - no output location selected';
-            _isLoading = false;
-          });
-          return;
-        }
-
-        await CLIService.encryptTextWithSteganography(
-          text: _textController.text,
-          coverMediaPath: _coverMediaFile!.path,
-          outputPath: outputPath,
-          password: _passwordController.text,
-          stegoPassword: _stegoPasswordController.text.isNotEmpty ? _stegoPasswordController.text : null,
-          algorithm: _selectedAlgorithm,
-          stegoMethod: _stegoMethod,
-          bitsPerChannel: _stegoBitsPerChannel,
-          randomizePixels: _stegoRandomizePixels,
-          addDecoyData: _stegoDecoyData,
-          jpegQuality: _isCoverJpeg() ? _jpegQuality : null,
-          videoQuantizationStep: _isCoverVideo() ? _videoQuantizationStep : null,
-          videoAdaptationFactor: _isCoverVideo() ? _videoAdaptationFactor : null,
-          videoCompensationFactor: _isCoverVideo() ? _videoCompensationFactor : null,
-          videoBitsPerCoefficient: _isCoverVideo() ? _videoBitsPerCoefficient : null,
-          videoTemporalSpread: _isCoverVideo() ? _videoTemporalSpread : true,
-          videoQualityPreservation: _isCoverVideo() ? _videoQualityPreservation : null,
-          hashConfig: _encryptionMode == EncryptionMode.symmetric ? _buildHashConfigMap() : null,
-          kdfConfig: _encryptionMode == EncryptionMode.symmetric ? _buildKdfConfigMap() : null,
-          hsmPlugin: _hsmType != 'none' ? _hsmType : null,
-          hsmSlot: _hsmType == 'yubikey' ? _yubikeySlot : null,
-          enableIntegrity: _enableIntegrity,
-          forIdentities: _encryptionMode == EncryptionMode.asymmetric ? _recipientIdentities : null,
-          signWith: _encryptionMode == EncryptionMode.asymmetric ? _signingIdentity : null,
-          useKeyserver: _encryptionMode == EncryptionMode.asymmetric ? _useKeyserver : false,
-          identityStore: _encryptionMode == EncryptionMode.asymmetric && _identityStorePathController.text.isNotEmpty ? _identityStorePathController.text : null,
-          cascadePreset: _encryptionMode == EncryptionMode.cascade && _cascadePreset != 'custom' ? _cascadePreset : null,
-          cascadeAlgorithms: _encryptionMode == EncryptionMode.cascade && _cascadePreset == 'custom' ? _cascadeAlgorithms : null,
-          cascadeHash: _encryptionMode == EncryptionMode.cascade ? _cascadeHash : 'sha256',
-          noDiversityCheck: _encryptionMode == EncryptionMode.cascade ? _disableDiversityCheck : false,
-          strictDiversity: _encryptionMode == EncryptionMode.cascade ? _strictDiversity : false,
-        );
-
-        setState(() {
-          result = 'Text encrypted and hidden in: $outputPath';
-          _isLoading = false;
-        });
-        return;
-      }
-
-      // Normal encryption (no steganography)
       final encrypted = await CLIService.encryptTextWithProgress(
         _textController.text,
         _passwordController.text,
@@ -411,24 +304,6 @@ class _EncryptTabState extends State<EncryptTab> {
       }
     }
 
-    // Validate steganography requirements
-    if (_useSteganography) {
-      if (_coverMediaFile == null) {
-        setState(() {
-          result = 'Please select a cover media file for steganography';
-        });
-        return;
-      }
-
-      final format = _detectStegoFormat(_coverMediaFile!.path);
-      if (format == null) {
-        setState(() {
-          result = 'Unsupported cover media format. Use PNG, BMP, TIFF, JPEG, WAV, FLAC, MP3, or MP4.';
-        });
-        return;
-      }
-    }
-
     setState(() {
       _isLoading = true;
       result = 'Encrypting file...';
@@ -436,62 +311,6 @@ class _EncryptTabState extends State<EncryptTab> {
     });
 
     try {
-      // Handle steganography path
-      if (_useSteganography && _coverMediaFile != null) {
-        // Get output path for stego file
-        final outputPath = await widget.fileManager.getSaveLocation(
-          suggestedName: '${path.basenameWithoutExtension(_coverMediaFile!.path)}_stego${path.extension(_coverMediaFile!.path)}',
-        );
-        if (outputPath == null) {
-          setState(() {
-            result = 'Steganography cancelled - no output location selected';
-            _isLoading = false;
-          });
-          return;
-        }
-
-        await CLIService.encryptWithSteganography(
-          inputPath: _selectedFile!.path,
-          coverImagePath: _coverMediaFile!.path,
-          outputPath: outputPath,
-          password: _passwordController.text,
-          stegoPassword: _stegoPasswordController.text.isNotEmpty ? _stegoPasswordController.text : null,
-          algorithm: _selectedAlgorithm,
-          stegoMethod: _stegoMethod,
-          bitsPerChannel: _stegoBitsPerChannel,
-          randomizePixels: _stegoRandomizePixels,
-          addDecoyData: _stegoDecoyData,
-          jpegQuality: _isCoverJpeg() ? _jpegQuality : null,
-          videoQuantizationStep: _isCoverVideo() ? _videoQuantizationStep : null,
-          videoAdaptationFactor: _isCoverVideo() ? _videoAdaptationFactor : null,
-          videoCompensationFactor: _isCoverVideo() ? _videoCompensationFactor : null,
-          videoBitsPerCoefficient: _isCoverVideo() ? _videoBitsPerCoefficient : null,
-          videoTemporalSpread: _isCoverVideo() ? _videoTemporalSpread : true,
-          videoQualityPreservation: _isCoverVideo() ? _videoQualityPreservation : null,
-          hashConfig: _encryptionMode == EncryptionMode.symmetric ? _buildHashConfigMap() : null,
-          kdfConfig: _encryptionMode == EncryptionMode.symmetric ? _buildKdfConfigMap() : null,
-          hsmPlugin: _hsmType != 'none' ? _hsmType : null,
-          hsmSlot: _hsmType == 'yubikey' ? _yubikeySlot : null,
-          enableIntegrity: _enableIntegrity,
-          forIdentities: _encryptionMode == EncryptionMode.asymmetric ? _recipientIdentities : null,
-          signWith: _encryptionMode == EncryptionMode.asymmetric ? _signingIdentity : null,
-          useKeyserver: _encryptionMode == EncryptionMode.asymmetric ? _useKeyserver : false,
-          identityStore: _encryptionMode == EncryptionMode.asymmetric && _identityStorePathController.text.isNotEmpty ? _identityStorePathController.text : null,
-          cascadePreset: _encryptionMode == EncryptionMode.cascade && _cascadePreset != 'custom' ? _cascadePreset : null,
-          cascadeAlgorithms: _encryptionMode == EncryptionMode.cascade && _cascadePreset == 'custom' ? _cascadeAlgorithms : null,
-          cascadeHash: _encryptionMode == EncryptionMode.cascade ? _cascadeHash : 'sha256',
-          noDiversityCheck: _encryptionMode == EncryptionMode.cascade ? _disableDiversityCheck : false,
-          strictDiversity: _encryptionMode == EncryptionMode.cascade ? _strictDiversity : false,
-        );
-
-        setState(() {
-          result = 'File encrypted and hidden in: $outputPath';
-          _isLoading = false;
-        });
-        return;
-      }
-
-      // Normal encryption (no steganography)
       // Read file content
       final fileContent = await widget.fileManager.readFileText(_selectedFile!.path);
       if (fileContent == null) {
@@ -1713,389 +1532,6 @@ class _EncryptTabState extends State<EncryptTab> {
     );
   }
 
-  /// Build steganography configuration widget
-  Widget _buildSteganographyConfig() {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Header with checkbox
-            Row(
-              children: [
-                const Icon(Icons.visibility_off),
-                const SizedBox(width: 8),
-                const Expanded(
-                  child: Text(
-                    'Steganography',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                  ),
-                ),
-                Switch(
-                  value: _useSteganography,
-                  onChanged: _isLoading ? null : (value) {
-                    setState(() {
-                      _useSteganography = value;
-                    });
-                  },
-                ),
-              ],
-            ),
-
-            if (_useSteganography) ...[
-              const SizedBox(height: 12),
-              const Text(
-                'Hide encrypted data inside image, audio, or video files',
-                style: TextStyle(fontSize: 12, color: Colors.grey),
-              ),
-              const SizedBox(height: 16),
-
-              // Cover Media File Picker
-              const Row(
-                children: [
-                  Icon(Icons.image, size: 16),
-                  SizedBox(width: 8),
-                  Text('Cover Media', style: TextStyle(fontWeight: FontWeight.w500)),
-                ],
-              ),
-              const SizedBox(height: 8),
-              if (_coverMediaFile == null)
-                OutlinedButton.icon(
-                  onPressed: _isLoading ? null : () async {
-                    final file = await widget.fileManager.pickFile(
-                      allowedExtensions: ['png', 'bmp', 'jpg', 'jpeg', 'tiff', 'tif',
-                                          'wav', 'flac', 'mp3', 'mp4'],
-                    );
-                    if (file != null) {
-                      setState(() {
-                        _coverMediaFile = file;
-                        // Reset method to first available for new format
-                        final methods = _getAvailableStegoMethods();
-                        if (!methods.contains(_stegoMethod)) {
-                          _stegoMethod = methods.first;
-                        }
-                      });
-                    }
-                  },
-                  icon: const Icon(Icons.folder_open),
-                  label: const Text('Select Cover Media'),
-                )
-              else
-                Card(
-                  child: ListTile(
-                    leading: Icon(
-                      _isCoverVideo() ? Icons.videocam :
-                      _detectStegoFormat(_coverMediaFile?.path) == 'audio' ? Icons.audiotrack :
-                      Icons.image,
-                      color: Colors.blue.shade700,
-                    ),
-                    title: Text(_coverMediaFile!.name),
-                    subtitle: Text(_coverMediaFile!.sizeFormatted),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.close),
-                      onPressed: _isLoading ? null : () {
-                        setState(() {
-                          _coverMediaFile = null;
-                        });
-                      },
-                    ),
-                  ),
-                ),
-
-              if (_coverMediaFile != null) ...[
-                const SizedBox(height: 16),
-
-                // Method Dropdown
-                DropdownButtonFormField<String>(
-                  value: _stegoMethod,
-                  decoration: const InputDecoration(
-                    labelText: 'Steganography Method',
-                    border: OutlineInputBorder(),
-                    helperText: 'Method auto-filtered based on cover file type',
-                  ),
-                  items: _getAvailableStegoMethods().map((method) {
-                    return DropdownMenuItem(
-                      value: method,
-                      child: Text(_formatStegoMethodName(method)),
-                    );
-                  }).toList(),
-                  onChanged: _isLoading ? null : (value) {
-                    setState(() {
-                      _stegoMethod = value ?? 'lsb';
-                    });
-                  },
-                ),
-                const SizedBox(height: 16),
-
-                // Bits per Channel Slider
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text('Bits per Channel: $_stegoBitsPerChannel'),
-                    ),
-                  ],
-                ),
-                Slider(
-                  value: _stegoBitsPerChannel.toDouble(),
-                  min: 1,
-                  max: 3,
-                  divisions: 2,
-                  label: '$_stegoBitsPerChannel',
-                  onChanged: _isLoading ? null : (value) {
-                    setState(() {
-                      _stegoBitsPerChannel = value.toInt();
-                    });
-                  },
-                ),
-                const Text(
-                  'Higher values = more capacity, lower stealth',
-                  style: TextStyle(fontSize: 11, color: Colors.grey),
-                ),
-                const SizedBox(height: 16),
-
-                // Steganography Password
-                TextField(
-                  controller: _stegoPasswordController,
-                  decoration: const InputDecoration(
-                    labelText: 'Steganography Password (optional)',
-                    border: OutlineInputBorder(),
-                    helperText: 'Separate password for steg security',
-                    prefixIcon: Icon(Icons.vpn_key),
-                  ),
-                  obscureText: true,
-                  enabled: !_isLoading,
-                ),
-                const SizedBox(height: 12),
-
-                // Randomize Pixels Checkbox
-                CheckboxListTile(
-                  title: const Text('Randomize pixel selection'),
-                  subtitle: Text(_stegoPasswordController.text.isEmpty
-                    ? 'Requires steganography password'
-                    : 'Enhances security against detection'),
-                  value: _stegoRandomizePixels,
-                  onChanged: _stegoPasswordController.text.isEmpty || _isLoading
-                    ? null
-                    : (value) {
-                        setState(() {
-                          _stegoRandomizePixels = value ?? false;
-                        });
-                      },
-                  contentPadding: EdgeInsets.zero,
-                  controlAffinity: ListTileControlAffinity.leading,
-                  dense: true,
-                ),
-
-                // Decoy Data Checkbox
-                CheckboxListTile(
-                  title: const Text('Fill with decoy data'),
-                  subtitle: const Text('Fill unused capacity with random data'),
-                  value: _stegoDecoyData,
-                  onChanged: _isLoading ? null : (value) {
-                    setState(() {
-                      _stegoDecoyData = value ?? false;
-                    });
-                  },
-                  contentPadding: EdgeInsets.zero,
-                  controlAffinity: ListTileControlAffinity.leading,
-                  dense: true,
-                ),
-
-                // JPEG Quality Slider (if JPEG)
-                if (_isCoverJpeg()) ...[
-                  const SizedBox(height: 16),
-                  const Divider(),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      const Icon(Icons.photo, size: 16),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text('JPEG Quality: $_jpegQuality'),
-                      ),
-                    ],
-                  ),
-                  Slider(
-                    value: _jpegQuality.toDouble(),
-                    min: 70,
-                    max: 100,
-                    divisions: 30,
-                    label: '$_jpegQuality',
-                    onChanged: _isLoading ? null : (value) {
-                      setState(() {
-                        _jpegQuality = value.toInt();
-                      });
-                    },
-                  ),
-                  const Text(
-                    'Higher quality = better image, lower capacity',
-                    style: TextStyle(fontSize: 11, color: Colors.grey),
-                  ),
-                ],
-
-                // Video Options (if MP4)
-                if (_isCoverVideo()) ...[
-                  const SizedBox(height: 16),
-                  const Divider(),
-                  ExpansionTile(
-                    leading: const Icon(Icons.videocam),
-                    title: const Text('Video Steganography Options'),
-                    subtitle: const Text('DCT-based QIM embedding parameters'),
-                    children: [
-                      const SizedBox(height: 8),
-
-                      // Quantization Step
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text('Quantization Step: ${_videoQuantizationStep.toStringAsFixed(1)}'),
-                          ),
-                        ],
-                      ),
-                      Slider(
-                        value: _videoQuantizationStep,
-                        min: 1.0,
-                        max: 20.0,
-                        divisions: 38,
-                        label: _videoQuantizationStep.toStringAsFixed(1),
-                        onChanged: _isLoading ? null : (value) {
-                          setState(() {
-                            _videoQuantizationStep = value;
-                          });
-                        },
-                      ),
-                      const Text(
-                        'Lower = higher quality, less capacity',
-                        style: TextStyle(fontSize: 11, color: Colors.grey),
-                      ),
-                      const SizedBox(height: 12),
-
-                      // Adaptation Factor
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text('Adaptation Factor: ${_videoAdaptationFactor.toStringAsFixed(1)}'),
-                          ),
-                        ],
-                      ),
-                      Slider(
-                        value: _videoAdaptationFactor,
-                        min: 0.5,
-                        max: 3.0,
-                        divisions: 50,
-                        label: _videoAdaptationFactor.toStringAsFixed(1),
-                        onChanged: _isLoading ? null : (value) {
-                          setState(() {
-                            _videoAdaptationFactor = value;
-                          });
-                        },
-                      ),
-                      const Text(
-                        'For adaptive QIM algorithm (default: 1.2)',
-                        style: TextStyle(fontSize: 11, color: Colors.grey),
-                      ),
-                      const SizedBox(height: 12),
-
-                      // Compensation Factor
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text('Compensation Factor: ${_videoCompensationFactor.toStringAsFixed(1)}'),
-                          ),
-                        ],
-                      ),
-                      Slider(
-                        value: _videoCompensationFactor,
-                        min: 0.0,
-                        max: 1.0,
-                        divisions: 20,
-                        label: _videoCompensationFactor.toStringAsFixed(1),
-                        onChanged: _isLoading ? null : (value) {
-                          setState(() {
-                            _videoCompensationFactor = value;
-                          });
-                        },
-                      ),
-                      const Text(
-                        'For distortion-compensated QIM (default: 0.5)',
-                        style: TextStyle(fontSize: 11, color: Colors.grey),
-                      ),
-                      const SizedBox(height: 12),
-
-                      // Bits per Coefficient
-                      DropdownButtonFormField<int>(
-                        value: _videoBitsPerCoefficient,
-                        decoration: const InputDecoration(
-                          labelText: 'Bits per DCT Coefficient',
-                          border: OutlineInputBorder(),
-                          helperText: 'For multi-level QIM algorithm',
-                        ),
-                        items: [1, 2, 3, 4].map((bits) {
-                          return DropdownMenuItem(
-                            value: bits,
-                            child: Text('$bits bit${bits > 1 ? "s" : ""}'),
-                          );
-                        }).toList(),
-                        onChanged: _isLoading ? null : (value) {
-                          setState(() {
-                            _videoBitsPerCoefficient = value ?? 2;
-                          });
-                        },
-                      ),
-                      const SizedBox(height: 12),
-
-                      // Temporal Spread Checkbox
-                      CheckboxListTile(
-                        title: const Text('Temporal spread'),
-                        subtitle: const Text('Spread data across frames for redundancy'),
-                        value: _videoTemporalSpread,
-                        onChanged: _isLoading ? null : (value) {
-                          setState(() {
-                            _videoTemporalSpread = value ?? true;
-                          });
-                        },
-                        contentPadding: EdgeInsets.zero,
-                        controlAffinity: ListTileControlAffinity.leading,
-                        dense: true,
-                      ),
-
-                      // Quality Preservation Slider
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text('Quality Preservation: $_videoQualityPreservation'),
-                          ),
-                        ],
-                      ),
-                      Slider(
-                        value: _videoQualityPreservation.toDouble(),
-                        min: 1,
-                        max: 10,
-                        divisions: 9,
-                        label: '$_videoQualityPreservation',
-                        onChanged: _isLoading ? null : (value) {
-                          setState(() {
-                            _videoQualityPreservation = value.toInt();
-                          });
-                        },
-                      ),
-                      const Text(
-                        '1 = max capacity, 10 = max quality (default: 8)',
-                        style: TextStyle(fontSize: 11, color: Colors.grey),
-                      ),
-                      const SizedBox(height: 8),
-                    ],
-                  ),
-                ],
-              ],
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
   /// Show cascade algorithm picker dialog
   void _showCascadeAlgorithmPicker() {
     showDialog(
@@ -2385,53 +1821,7 @@ class _EncryptTabState extends State<EncryptTab> {
     return descriptions[algorithm] ?? 'Symmetric cipher';
   }
 
-  /// Detect cover media format from file extension
-  String? _detectStegoFormat(String? filePath) {
-    if (filePath == null) return null;
-    final ext = path.extension(filePath).toLowerCase();
-    return _stegoFormatByExtension[ext];
-  }
-
-  /// Get available stego methods for current cover file
-  List<String> _getAvailableStegoMethods() {
-    final format = _detectStegoFormat(_coverMediaFile?.path);
-    if (format == null) return ['lsb']; // default
-    return _stegoMethodsByFormat[format] ?? ['lsb'];
-  }
-
-  /// Check if current cover file is JPEG
-  bool _isCoverJpeg() {
-    return _detectStegoFormat(_coverMediaFile?.path) == 'jpeg';
-  }
-
   /// Check if current cover file is MP4 video
-  bool _isCoverVideo() {
-    return _detectStegoFormat(_coverMediaFile?.path) == 'video';
-  }
-
-  /// Format steganography method name for display
-  String _formatStegoMethodName(String method) {
-    switch (method) {
-      case 'lsb':
-        return 'LSB (Least Significant Bit)';
-      case 'adaptive':
-        return 'Adaptive LSB';
-      case 'f5':
-        return 'F5 Algorithm';
-      case 'outguess':
-        return 'OutGuess';
-      case 'basic':
-        return 'Basic JPEG';
-      case 'uniform':
-        return 'Uniform QIM';
-      case 'distortion_comp':
-        return 'Distortion-Compensated QIM';
-      case 'multi_level':
-        return 'Multi-Level QIM';
-      default:
-        return method.toUpperCase();
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -2652,8 +2042,6 @@ class _EncryptTabState extends State<EncryptTab> {
                   ),
                   const SizedBox(height: 12),
 
-                  // Steganography Configuration
-                  _buildSteganographyConfig(),
                   const SizedBox(height: 12),
 
                   // File-specific options

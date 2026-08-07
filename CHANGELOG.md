@@ -374,6 +374,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Desktop GUI: steganography removed** (gitlab#192 / github#109): 1.5.0
+  removed the steganography subsystem from the CLI, but the GUI still
+  offered it and emitted the whole `--stego-*` / `--jpeg-quality` /
+  `--video-*` flag set, so every steganographic operation failed at
+  argparse and was swallowed. The Encrypt tab's steganography section, its
+  cover-media selection and format detection, and the three `CLIService`
+  methods behind them are gone, along with the JPEG and video parameter
+  state that existed only to serve them.
+
 - **Desktop GUI: dead `plugin` subcommand controls removed or rewired**
   (gitlab#188 / github#105): the GUI's keyserver, pepper and integrity
   controls called `plugin keyserver`/`plugin pepper`/`plugin integrity`

@@ -50,7 +50,7 @@ CLI_SERVICE = os.path.join(REPO_ROOT, "desktop_gui", "lib", "cli_service.dart")
 # Exact, not a lower bound: the first version of this lint silently stopped
 # seeing encrypt/decrypt/shred when its extractor regressed, and a loose ">"
 # assertion had the headroom to hide it.
-EXPECTED_CALL_SITES = 14
+EXPECTED_CALL_SITES = 20
 
 # Commands whose loss would gut the lint. Asserted present by name so an
 # extractor change cannot quietly drop the KDF/cascade flag surface.
@@ -63,81 +63,34 @@ REQUIRED_COMMANDS = {"encrypt", "decrypt", "identity"}
 EXPECTED_INTERPOLATED = {
     ("encryptTextWithProgress", "--$template"),
     ("encryptTextWithProgress", "--cascade=$cascadePreset"),
-    ("encryptWithSteganography", "--${hashName}-rounds"),
-    ("encryptWithSteganography", "--cascade=$cascadePreset"),
 }
 
 # (dart_method, offending_token, issue). The token is either a "--flag" or a
 # bare command-path element. Each entry must name a real tracked bug -- this
 # is a list of known defects, not a place to silence the lint.
 KNOWN_BROKEN = [
+    # The pepper and integrity controls are kept deliberately: the CLI
+    # surface for them is planned (gitlab#193, gitlab#194). Until it lands
+    # these calls fail at argparse, so they are declared here rather than
+    # silently tolerated -- and the stale-entry test will demand these
+    # entries be deleted the day the subcommands appear.
+    ("configurePepperDeadman", "pepper", "gitlab#193: pepper CLI not implemented yet"),
+    ("listPeppers", "pepper", "gitlab#193: pepper CLI not implemented yet"),
+    ("setupPepperTotp", "pepper", "gitlab#193: pepper CLI not implemented yet"),
+    ("verifyPepperTotp", "pepper", "gitlab#193: pepper CLI not implemented yet"),
+    ("testPepperConnection", "pepper", "gitlab#193: pepper CLI not implemented yet"),
+    ("testIntegrityConnection", "integrity", "gitlab#194: integrity CLI not implemented yet"),
+    ("verifyFileIntegrity", "integrity", "gitlab#194: integrity CLI not implemented yet"),
+    ("getIntegrityStats", "integrity", "gitlab#194: integrity CLI not implemented yet"),
     # 1.5.x removed surface the GUI still calls (gitlab#192).
     (
         "encryptTextWithProgress",
         "--pbkdf2-iterations",
         "gitlab#192: PBKDF2 chain stage removed in 1.5",
     ),
-    (
-        "encryptWithSteganography",
-        "--pbkdf2-iterations",
-        "gitlab#192: PBKDF2 chain stage removed in 1.5",
-    ),
-    ("encryptWithSteganography", "--stego-hide", "gitlab#192: steganography removed in 1.5"),
-    ("encryptWithSteganography", "--stego-method", "gitlab#192: steganography removed in 1.5"),
-    (
-        "encryptWithSteganography",
-        "--stego-bits-per-channel",
-        "gitlab#192: steganography removed in 1.5",
-    ),
-    ("encryptWithSteganography", "--stego-password", "gitlab#192: steganography removed in 1.5"),
-    (
-        "encryptWithSteganography",
-        "--stego-randomize-pixels",
-        "gitlab#192: steganography removed in 1.5",
-    ),
-    ("encryptWithSteganography", "--stego-decoy-data", "gitlab#192: steganography removed in 1.5"),
-    ("encryptWithSteganography", "--jpeg-quality", "gitlab#192: steganography removed in 1.5"),
-    (
-        "encryptWithSteganography",
-        "--video-quantization-step",
-        "gitlab#192: steganography removed in 1.5",
-    ),
-    (
-        "encryptWithSteganography",
-        "--video-adaptation-factor",
-        "gitlab#192: steganography removed in 1.5",
-    ),
-    (
-        "encryptWithSteganography",
-        "--video-compensation-factor",
-        "gitlab#192: steganography removed in 1.5",
-    ),
-    (
-        "encryptWithSteganography",
-        "--video-bits-per-coefficient",
-        "gitlab#192: steganography removed in 1.5",
-    ),
-    (
-        "encryptWithSteganography",
-        "--video-quality-preservation",
-        "gitlab#192: steganography removed in 1.5",
-    ),
-    ("decryptFromSteganography", "--stego-extract", "gitlab#192: steganography removed in 1.5"),
-    ("decryptFromSteganography", "--stego-method", "gitlab#192: steganography removed in 1.5"),
-    (
-        "decryptFromSteganography",
-        "--stego-bits-per-channel",
-        "gitlab#192: steganography removed in 1.5",
-    ),
-    ("decryptFromSteganography", "--stego-password", "gitlab#192: steganography removed in 1.5"),
     ("importContact", "--data", "gitlab#192: gitlab#164's import work is 1.4.x-only"),
     ("importContact", "--alias", "gitlab#192: gitlab#164's import work is 1.4.x-only"),
     ("deleteIdentity", "--contact", "gitlab#185: GUI delete sends a flag that never existed"),
-    (
-        "encryptWithSteganography",
-        "--no-video-temporal-spread",
-        "gitlab#170: the CLI flag is --video-temporal-spread",
-    ),
 ]
 
 # A Dart method declaration at exactly two-space (class body) indentation.

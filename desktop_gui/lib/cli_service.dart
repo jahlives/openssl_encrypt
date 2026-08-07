@@ -1824,361 +1824,8 @@ class CLIService {
            algorithm.contains('cross');
   }
 
-  /// Encrypt file and hide in steganographic cover image
-  static Future<ProcessResult> encryptWithSteganography({
-    required String inputPath,
-    required String coverImagePath,
-    required String outputPath,
-    required String password,
-    String? stegoPassword,
-    String algorithm = 'aes-gcm',
-    String stegoMethod = 'lsb',              // Steganography method
-    int bitsPerChannel = 1,
-    bool randomizePixels = false,
-    bool addDecoyData = false,
-    int? jpegQuality,                        // JPEG quality (70-100)
-    // Video steganography options
-    double? videoQuantizationStep,           // default 8.0
-    double? videoAdaptationFactor,           // default 1.2
-    double? videoCompensationFactor,         // default 0.5
-    int? videoBitsPerCoefficient,            // 1-4, default 2
-    bool videoTemporalSpread = true,         // default enabled
-    int? videoQualityPreservation,           // 1-10, default 8
-    Map<String, Map<String, dynamic>>? hashConfig,
-    Map<String, Map<String, dynamic>>? kdfConfig,
-    String? hsmPlugin,
-    int? hsmSlot,
-    bool enableIntegrity = false,
-    List<String>? forIdentities,      // Asymmetric: recipients
-    String? signWith,                  // Asymmetric: signing identity
-    bool useKeyserver = false,         // Asymmetric: keyserver lookup
-    String? identityStore,             // Asymmetric: identity store path
-    String? cascadePreset,             // Cascade: 'standard', 'paranoia', or null
-    List<String>? cascadeAlgorithms,   // Cascade: custom algorithm chain
-    String cascadeHash = 'sha256',     // Cascade: HKDF hash function
-    bool noDiversityCheck = false,     // Cascade: --no-diversity-check
-    bool strictDiversity = false,      // Cascade: --strict-diversity
-  }) async {
-    final args = [
-      'encrypt',
-      '-i', inputPath,
-      '--stego-hide', coverImagePath,
-      '-o', outputPath,
-      '-a', algorithm,
-      '--stego-method', stegoMethod,
-      '--stego-bits-per-channel', bitsPerChannel.toString(),
-    ];
 
-    // Add steganography password if provided
-    if (stegoPassword != null && stegoPassword.isNotEmpty) {
-      args.addAll(['--stego-password', stegoPassword]);
-    }
 
-    // Add pixel randomization if enabled and stego password is provided
-    if (randomizePixels && stegoPassword != null && stegoPassword.isNotEmpty) {
-      args.add('--stego-randomize-pixels');
-    }
-
-    // Add decoy data if enabled
-    if (addDecoyData) {
-      args.add('--stego-decoy-data');
-    }
-
-    // Add JPEG quality if provided
-    if (jpegQuality != null) {
-      args.addAll(['--jpeg-quality', jpegQuality.toString()]);
-    }
-
-    // Add video steganography options if provided
-    if (videoQuantizationStep != null) {
-      args.addAll(['--video-quantization-step', videoQuantizationStep.toString()]);
-    }
-    if (videoAdaptationFactor != null) {
-      args.addAll(['--video-adaptation-factor', videoAdaptationFactor.toString()]);
-    }
-    if (videoCompensationFactor != null) {
-      args.addAll(['--video-compensation-factor', videoCompensationFactor.toString()]);
-    }
-    if (videoBitsPerCoefficient != null) {
-      args.addAll(['--video-bits-per-coefficient', videoBitsPerCoefficient.toString()]);
-    }
-    if (!videoTemporalSpread) {
-      // Only add flag if disabled (default is enabled)
-      args.add('--no-video-temporal-spread');
-    }
-    if (videoQualityPreservation != null) {
-      args.addAll(['--video-quality-preservation', videoQualityPreservation.toString()]);
-    }
-
-    // Add hash configuration if provided
-    if (hashConfig != null) {
-      for (final entry in hashConfig.entries) {
-        final hashName = entry.key;
-        final config = entry.value;
-        if (config['enabled'] == true && config['rounds'] != null && config['rounds'] > 0) {
-          args.addAll(['--${hashName}-rounds', config['rounds'].toString()]);
-        }
-      }
-    }
-
-    // Add KDF configuration if provided
-    if (kdfConfig != null) {
-      for (final entry in kdfConfig.entries) {
-        final kdfName = entry.key;
-        final config = entry.value;
-        if (config['enabled'] == true) {
-          switch (kdfName) {
-            case 'pbkdf2':
-              if (config['iterations'] != null && config['iterations'] > 0) {
-                args.addAll(['--pbkdf2-iterations', config['iterations'].toString()]);
-              }
-              break;
-            case 'scrypt':
-              args.add('--enable-scrypt');
-              if (config['n'] != null) args.addAll(['--scrypt-n', config['n'].toString()]);
-              if (config['r'] != null) args.addAll(['--scrypt-r', config['r'].toString()]);
-              if (config['p'] != null) args.addAll(['--scrypt-p', config['p'].toString()]);
-              if (config['rounds'] != null) args.addAll(['--scrypt-rounds', config['rounds'].toString()]);
-              break;
-            case 'argon2':
-              args.add('--enable-argon2');
-              if (config['time_cost'] != null) args.addAll(['--argon2-time', config['time_cost'].toString()]);
-              if (config['memory_cost'] != null) args.addAll(['--argon2-memory', config['memory_cost'].toString()]);
-              if (config['parallelism'] != null) args.addAll(['--argon2-parallelism', config['parallelism'].toString()]);
-              if (config['hash_len'] != null) args.addAll(['--argon2-hash-len', config['hash_len'].toString()]);
-              if (config['type'] != null) {
-                final typeMap = {0: 'd', 1: 'i', 2: 'id'};
-                args.addAll(['--argon2-type', typeMap[config['type']] ?? 'id']);
-              }
-              if (config['rounds'] != null) args.addAll(['--argon2-rounds', config['rounds'].toString()]);
-              break;
-            case 'hkdf':
-              args.add('--enable-hkdf');
-              if (config['rounds'] != null) args.addAll(['--hkdf-rounds', config['rounds'].toString()]);
-              if (config['algorithm'] != null) args.addAll(['--hkdf-algorithm', config['algorithm']]);
-              if (config['info'] != null) args.addAll(['--hkdf-info', config['info']]);
-              break;
-            case 'balloon':
-              args.add('--enable-balloon');
-              if (config['time_cost'] != null) args.addAll(['--balloon-time-cost', config['time_cost'].toString()]);
-              if (config['space_cost'] != null) args.addAll(['--balloon-space-cost', config['space_cost'].toString()]);
-              if (config['parallelism'] != null) args.addAll(['--balloon-parallelism', config['parallelism'].toString()]);
-              if (config['rounds'] != null) args.addAll(['--balloon-rounds', config['rounds'].toString()]);
-              if (config['hash_len'] != null) args.addAll(['--balloon-hash-len', config['hash_len'].toString()]);
-              break;
-            case 'randomx':
-              args.add('--enable-randomx');
-              if (config['rounds'] != null) args.addAll(['--randomx-rounds', config['rounds'].toString()]);
-              if (config['mode'] != null) args.addAll(['--randomx-mode', config['mode']]);
-              if (config['height'] != null) args.addAll(['--randomx-height', config['height'].toString()]);
-              if (config['hash_len'] != null) args.addAll(['--randomx-hash-len', config['hash_len'].toString()]);
-              break;
-          }
-        }
-      }
-    }
-
-    // Add HSM arguments if specified
-    if (hsmPlugin != null && hsmPlugin != 'none') {
-      args.addAll(['--hsm', hsmPlugin]);
-      if (hsmSlot != null) {
-        args.addAll(['--hsm-slot', hsmSlot.toString()]);
-      }
-    }
-
-    // Add integrity plugin if enabled
-    if (enableIntegrity) {
-      args.add('--integrity');
-    }
-
-    // Add asymmetric encryption parameters if provided
-    if (forIdentities != null && forIdentities.isNotEmpty) {
-      for (final recipient in forIdentities) {
-        args.addAll(['--for-identity', recipient]);
-      }
-      if (signWith != null && signWith.isNotEmpty) {
-        args.addAll(['--sign-with', signWith]);
-      }
-      if (useKeyserver) {
-        args.add('--use-keyserver');
-      }
-      if (identityStore != null && identityStore.isNotEmpty) {
-        args.addAll(['--identity-store', identityStore]);
-      }
-    }
-
-    // Add cascade encryption parameters if provided
-    if (cascadePreset != null || cascadeAlgorithms != null) {
-      if (cascadePreset != null && cascadePreset != 'custom') {
-        args.add('--cascade=$cascadePreset');
-      } else if (cascadeAlgorithms != null && cascadeAlgorithms.isNotEmpty) {
-        args.add('--cascade');
-        args.addAll(['--algorithm', cascadeAlgorithms.join(',')]);
-      }
-      args.addAll(['--cascade-hash', cascadeHash]);
-      if (noDiversityCheck) {
-        args.add('--no-diversity-check');
-      }
-      if (strictDiversity) {
-        args.add('--strict-diversity');
-      }
-    }
-
-    return await _runCLICommandWithProgress(
-      args,
-      environment: {'CRYPT_PASSWORD': password},
-    );
-  }
-
-  /// Encrypt text and hide in steganographic cover media
-  static Future<String> encryptTextWithSteganography({
-    required String text,
-    required String coverMediaPath,
-    required String outputPath,
-    required String password,
-    String? stegoPassword,
-    String algorithm = 'aes-gcm',
-    String stegoMethod = 'lsb',
-    int bitsPerChannel = 1,
-    bool randomizePixels = false,
-    bool addDecoyData = false,
-    int? jpegQuality,
-    // Video steganography options
-    double? videoQuantizationStep,
-    double? videoAdaptationFactor,
-    double? videoCompensationFactor,
-    int? videoBitsPerCoefficient,
-    bool videoTemporalSpread = true,
-    int? videoQualityPreservation,
-    Map<String, Map<String, dynamic>>? hashConfig,
-    Map<String, Map<String, dynamic>>? kdfConfig,
-    String? hsmPlugin,
-    int? hsmSlot,
-    bool enableIntegrity = false,
-    List<String>? forIdentities,
-    String? signWith,
-    bool useKeyserver = false,
-    String? identityStore,
-    String? cascadePreset,
-    List<String>? cascadeAlgorithms,
-    String cascadeHash = 'sha256',
-    bool noDiversityCheck = false,
-    bool strictDiversity = false,
-  }) async {
-    // Create temporary file for text
-    final tempDir = await Directory.systemTemp.createTemp('stego_text_');
-    final tempFile = File('${tempDir.path}/input.txt');
-    await tempFile.writeAsString(text);
-
-    try {
-      // Encrypt temp file with steganography
-      final result = await encryptWithSteganography(
-        inputPath: tempFile.path,
-        coverImagePath: coverMediaPath,
-        outputPath: outputPath,
-        password: password,
-        stegoPassword: stegoPassword,
-        algorithm: algorithm,
-        stegoMethod: stegoMethod,
-        bitsPerChannel: bitsPerChannel,
-        randomizePixels: randomizePixels,
-        addDecoyData: addDecoyData,
-        jpegQuality: jpegQuality,
-        videoQuantizationStep: videoQuantizationStep,
-        videoAdaptationFactor: videoAdaptationFactor,
-        videoCompensationFactor: videoCompensationFactor,
-        videoBitsPerCoefficient: videoBitsPerCoefficient,
-        videoTemporalSpread: videoTemporalSpread,
-        videoQualityPreservation: videoQualityPreservation,
-        hashConfig: hashConfig,
-        kdfConfig: kdfConfig,
-        hsmPlugin: hsmPlugin,
-        hsmSlot: hsmSlot,
-        enableIntegrity: enableIntegrity,
-        forIdentities: forIdentities,
-        signWith: signWith,
-        useKeyserver: useKeyserver,
-        identityStore: identityStore,
-        cascadePreset: cascadePreset,
-        cascadeAlgorithms: cascadeAlgorithms,
-        cascadeHash: cascadeHash,
-        noDiversityCheck: noDiversityCheck,
-        strictDiversity: strictDiversity,
-      );
-
-      if (result.exitCode != 0) {
-        throw Exception('Steganography encryption failed: ${result.stderr}');
-      }
-
-      return outputPath;
-    } finally {
-      // Clean up temp file and directory
-      try {
-        if (await tempFile.exists()) await tempFile.delete();
-        if (await tempDir.exists()) await tempDir.delete();
-      } catch (e) {
-        outputDebugLog('Failed to clean up temp file: $e');
-      }
-    }
-  }
-
-  /// Decrypt file from steganographic image
-  static Future<ProcessResult> decryptFromSteganography({
-    required String stegoImagePath,
-    required String outputPath,
-    required String password,
-    String? stegoPassword,
-    int bitsPerChannel = 1,
-    String? hsmPlugin,
-    int? hsmSlot,
-    bool verifyIntegrity = false,
-    String? withKey,                // Asymmetric: decryption identity
-    String? verifyFrom,             // Asymmetric: sender verification
-    bool skipVerification = false,  // Asymmetric: skip signature check
-  }) async {
-    final args = [
-      'decrypt',
-      '-i', stegoImagePath,
-      '-o', outputPath,
-      '--stego-extract',
-      '--stego-method', 'lsb',
-      '--stego-bits-per-channel', bitsPerChannel.toString(),
-    ];
-
-    // Add steganography password if provided
-    if (stegoPassword != null && stegoPassword.isNotEmpty) {
-      args.addAll(['--stego-password', stegoPassword]);
-    }
-
-    // Add HSM arguments if specified
-    if (hsmPlugin != null && hsmPlugin != 'none') {
-      args.addAll(['--hsm', hsmPlugin]);
-      if (hsmSlot != null) {
-        args.addAll(['--hsm-slot', hsmSlot.toString()]);
-      }
-    }
-
-    // Add integrity verification if enabled
-    if (verifyIntegrity) {
-      args.add('--verify-integrity');
-    }
-
-    // Add asymmetric decryption parameters if provided
-    if (withKey != null && withKey.isNotEmpty) {
-      args.addAll(['--with-key', withKey]);
-      if (verifyFrom != null && verifyFrom.isNotEmpty) {
-        args.addAll(['--verify-from', verifyFrom]);
-      }
-      if (skipVerification) {
-        args.add('--no-verify');
-      }
-    }
-
-    return await _runCLICommandWithProgress(
-      args,
-      environment: {'CRYPT_PASSWORD': password},
-    );
-  }
 
   /// Register a new FIDO2 credential
   static Future<void> registerFido2Credential(String description, bool isBackup) async {
@@ -2566,13 +2213,285 @@ class CLIService {
     }
   }
 
+  /// Test pepper server connection with mTLS
+  static Future<Map<String, dynamic>> testPepperConnection({
+    required String url,
+    String? clientCertPath,
+    String? clientKeyPath,
+    String? caCertPath,
+  }) async {
+    try {
+      final args = [
+        'plugin',
+        'pepper',
+        'test',
+        '--url', url,
+      ];
 
+      if (clientCertPath != null && clientCertPath.isNotEmpty) {
+        args.addAll(['--client-cert', clientCertPath]);
+      }
+      if (clientKeyPath != null && clientKeyPath.isNotEmpty) {
+        args.addAll(['--client-key', clientKeyPath]);
+      }
+      if (caCertPath != null && caCertPath.isNotEmpty) {
+        args.addAll(['--ca-cert', caCertPath]);
+      }
 
+      if (debugEnabled) {
+        args.add('--debug');
+      }
 
+      final result = await _runCLICommand(args);
 
+      return {
+        'success': result.exitCode == 0,
+        'message': result.exitCode == 0 ? result.stdout : result.stderr,
+      };
+    } catch (e) {
+      _outputDebugLog('Pepper connection test failed: $e');
+      return {
+        'success': false,
+        'message': 'Connection test failed: $e',
+      };
+    }
+  }
 
+  /// List stored peppers
+  static Future<List<Map<String, dynamic>>> listPeppers() async {
+    try {
+      final args = [
+        'plugin',
+        'pepper',
+        'list',
+      ];
 
+      if (debugEnabled) {
+        args.add('--debug');
+      }
 
+      final result = await _runCLICommand(args);
+
+      if (result.exitCode == 0 && result.stdout.isNotEmpty) {
+        final data = jsonDecode(result.stdout);
+        if (data is Map && data.containsKey('peppers')) {
+          return (data['peppers'] as List<dynamic>)
+              .map((p) => p as Map<String, dynamic>)
+              .toList();
+        }
+      }
+
+      return [];
+    } catch (e) {
+      _outputDebugLog('Failed to list peppers: $e');
+      return [];
+    }
+  }
+
+  /// Setup TOTP 2FA for pepper
+  static Future<Map<String, dynamic>> setupPepperTotp() async {
+    try {
+      final args = [
+        'plugin',
+        'pepper',
+        'setup-totp',
+      ];
+
+      if (debugEnabled) {
+        args.add('--debug');
+      }
+
+      final result = await _runCLICommand(args);
+
+      if (result.exitCode == 0 && result.stdout.isNotEmpty) {
+        final data = jsonDecode(result.stdout);
+        return {
+          'success': true,
+          'secret': data['secret'],
+          'qr_code': data['qr_code'],
+        };
+      }
+
+      return {
+        'success': false,
+        'message': result.stderr,
+      };
+    } catch (e) {
+      _outputDebugLog('Failed to setup TOTP: $e');
+      return {
+        'success': false,
+        'message': 'Setup failed: $e',
+      };
+    }
+  }
+
+  /// Verify TOTP code
+  static Future<bool> verifyPepperTotp(String code) async {
+    try {
+      final args = [
+        'plugin',
+        'pepper',
+        'verify-totp',
+        '--code', code,
+      ];
+
+      if (debugEnabled) {
+        args.add('--debug');
+      }
+
+      final result = await _runCLICommand(args);
+      return result.exitCode == 0;
+    } catch (e) {
+      _outputDebugLog('TOTP verification failed: $e');
+      return false;
+    }
+  }
+
+  /// Configure dead man's switch
+  static Future<bool> configurePepperDeadman({
+    required bool enabled,
+    int? intervalDays,
+    int? gracePeriodDays,
+  }) async {
+    try {
+      final args = [
+        'plugin',
+        'pepper',
+        'configure-deadman',
+      ];
+
+      if (enabled) {
+        args.add('--enable');
+        if (intervalDays != null) {
+          args.addAll(['--interval', intervalDays.toString()]);
+        }
+        if (gracePeriodDays != null) {
+          args.addAll(['--grace-period', gracePeriodDays.toString()]);
+        }
+      } else {
+        args.add('--disable');
+      }
+
+      if (debugEnabled) {
+        args.add('--debug');
+      }
+
+      final result = await _runCLICommand(args);
+      return result.exitCode == 0;
+    } catch (e) {
+      _outputDebugLog('Failed to configure dead man switch: $e');
+      return false;
+    }
+  }
+
+  /// Test integrity server connection with mTLS
+  static Future<Map<String, dynamic>> testIntegrityConnection({
+    required String url,
+    String? clientCertPath,
+    String? clientKeyPath,
+    String? caCertPath,
+  }) async {
+    try {
+      final args = [
+        'plugin',
+        'integrity',
+        'test',
+        '--url', url,
+      ];
+
+      if (clientCertPath != null && clientCertPath.isNotEmpty) {
+        args.addAll(['--client-cert', clientCertPath]);
+      }
+      if (clientKeyPath != null && clientKeyPath.isNotEmpty) {
+        args.addAll(['--client-key', clientKeyPath]);
+      }
+      if (caCertPath != null && caCertPath.isNotEmpty) {
+        args.addAll(['--ca-cert', caCertPath]);
+      }
+
+      if (debugEnabled) {
+        args.add('--debug');
+      }
+
+      final result = await _runCLICommand(args);
+
+      return {
+        'success': result.exitCode == 0,
+        'message': result.exitCode == 0 ? result.stdout : result.stderr,
+      };
+    } catch (e) {
+      _outputDebugLog('Integrity connection test failed: $e');
+      return {
+        'success': false,
+        'message': 'Connection test failed: $e',
+      };
+    }
+  }
+
+  /// Get integrity verification statistics
+  static Future<Map<String, dynamic>> getIntegrityStats() async {
+    try {
+      final args = [
+        'plugin',
+        'integrity',
+        'stats',
+      ];
+
+      if (debugEnabled) {
+        args.add('--debug');
+      }
+
+      final result = await _runCLICommand(args);
+
+      if (result.exitCode == 0 && result.stdout.isNotEmpty) {
+        final data = jsonDecode(result.stdout);
+        return {
+          'success': true,
+          'total_verifications': data['total_verifications'] ?? 0,
+          'successful_verifications': data['successful_verifications'] ?? 0,
+          'failed_verifications': data['failed_verifications'] ?? 0,
+          'last_verification': data['last_verification'],
+        };
+      }
+
+      return {
+        'success': false,
+        'message': result.stderr,
+      };
+    } catch (e) {
+      _outputDebugLog('Failed to get integrity stats: $e');
+      return {
+        'success': false,
+        'message': 'Failed to get stats: $e',
+      };
+    }
+  }
+
+  /// Verify file integrity
+  static Future<bool> verifyFileIntegrity({
+    required String fileId,
+    required String metadataHash,
+  }) async {
+    try {
+      final args = [
+        'plugin',
+        'integrity',
+        'verify',
+        '--file-id', fileId,
+        '--metadata-hash', metadataHash,
+      ];
+
+      if (debugEnabled) {
+        args.add('--debug');
+      }
+
+      final result = await _runCLICommand(args);
+      return result.exitCode == 0;
+    } catch (e) {
+      _outputDebugLog('Integrity verification failed: $e');
+      return false;
+    }
+  }
 }
 
 /// Algorithm availability information
