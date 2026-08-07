@@ -43,7 +43,7 @@ STDOUT_WHITELIST = [
     # file_signature.py — verify-signature --json result (machine-readable, stdout)
     ("modules/file_signature.py", 488, "verify-signature JSON result"),
     # identity_cli.py — identity list --json result (machine-readable, stdout)
-    ("modules/identity_cli.py", 339, "identity list JSON result"),
+    ("modules/identity_cli.py", 358, "identity list JSON result"),
     # recovery_slots.py — recovery commands' --json results (gitlab#146).
     # Machine-readable output for non-interactive callers. None of these carries
     # a credential: a generated recovery code is written to its own 0600 file via

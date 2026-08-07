@@ -340,27 +340,20 @@ def cmd_list(args) -> int:
             # ensure_ascii pinned explicitly, not left to the default: it is
             # what keeps a direct `identity list --json` in a terminal free of
             # decoded escape sequences, and "nicer output" is a tempting edit.
-            print(
-                json.dumps(
-                    {
-                        "own": [_entry(i) for i in own_identities],
-                        "contacts": [_entry(i) for i in contacts],
-                        # Absent entries must be visible: a consumer that
-                        # treats this listing as complete would otherwise
-                        # silently drop a recipient or report an own identity
-                        # as deleted (gitlab#183).
-                        "skipped": [
-                            {
-                                "entry": s["entry"],
-                                "reason": s["reason"],
-                            }
-                            for s in skipped
-                        ],
-                    },
-                    indent=2,
-                    ensure_ascii=True,
-                )
+            listing_json = json.dumps(
+                {
+                    "own": [_entry(i) for i in own_identities],
+                    "contacts": [_entry(i) for i in contacts],
+                    # Absent entries must be visible: a consumer that treats
+                    # this listing as complete would otherwise silently drop
+                    # a recipient or report an own identity as deleted
+                    # (gitlab#183).
+                    "skipped": [{"entry": s["entry"], "reason": s["reason"]} for s in skipped],
+                },
+                indent=2,
+                ensure_ascii=True,
             )
+            print(listing_json)
             return 0
 
         if skipped:
