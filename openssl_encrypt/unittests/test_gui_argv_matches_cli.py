@@ -133,7 +133,6 @@ KNOWN_BROKEN = [
     ("importContact", "--data", "gitlab#192: gitlab#164's import work is 1.4.x-only"),
     ("importContact", "--alias", "gitlab#192: gitlab#164's import work is 1.4.x-only"),
     ("deleteIdentity", "--contact", "gitlab#185: GUI delete sends a flag that never existed"),
-    ("encryptTextWithProgress", "--whirlpool-rounds", "gitlab#189: not on the encrypt subparser"),
     (
         "encryptWithSteganography",
         "--no-video-temporal-spread",

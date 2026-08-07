@@ -1017,7 +1017,6 @@ class _CreateProfileDialogState extends State<CreateProfileDialog> {
       'blake3': {'enabled': false, 'rounds': 1000},
       'shake128': {'enabled': false, 'rounds': 1000},
       'shake256': {'enabled': false, 'rounds': 1000},
-      if (!CLIService.shouldHideLegacyAlgorithms()) 'whirlpool': {'enabled': false, 'rounds': 1000},
     };
 
     // Initialize default KDF configuration
@@ -1197,11 +1196,11 @@ class _CreateProfileDialogState extends State<CreateProfileDialog> {
         const SizedBox(height: 8),
         Column(
           children: _hashConfig.entries.where((entry) {
-            // Hide legacy algorithms in CLI v1.2+
-            if (CLIService.shouldHideLegacyAlgorithms() && entry.key == 'whirlpool') {
-              return false;
-            }
-            return true;
+            // Whirlpool is gone: decrypt-only on 1.4, removed in 1.5, and no
+            // subparser declares --whirlpool-rounds (gitlab#189). A profile
+            // saved by an older build can still carry it, so it is filtered
+            // here rather than assumed absent.
+            return entry.key != 'whirlpool';
           }).map((entry) {
             final hashName = entry.key;
             final config = entry.value;
