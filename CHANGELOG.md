@@ -308,6 +308,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Whirlpool removed from the desktop GUI** (gitlab#189 / github#106): the
+  GUI offered Whirlpool as a hash option and emitted `--whirlpool-rounds`,
+  which no subparser declares — so any encryption configured with it exited
+  2 before doing work, and the GUI swallowed the error. Whirlpool is
+  decrypt-only on this line and removed entirely in 1.5, so it has no place
+  in a configuration for *new* encryption.
+
+  The option is gone from the profile editor and from both argv builders
+  (the executed one and the command preview). The gating it previously sat
+  behind defaulted to *showing* the option whenever CLI version detection
+  failed — the moment the GUI should be most conservative — so it is
+  removed rather than inverted. Profiles saved by an older build can still
+  carry a whirlpool entry, so the editor filters it out rather than
+  assuming it is absent.
+
 - **stdout-leak lint authorizes individual calls, not regions** (gitlab#150 /
   github#68): the whitelist that permits a `print()` to write to stdout —
   stdout carries decrypted plaintext and derived key material, so every

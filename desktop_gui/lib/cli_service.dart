@@ -358,7 +358,10 @@ class CLIService {
         result['BLAKE Family'] = blakeHashes;
       }
 
-      // NOTE: WHIRLPOOL is intentionally excluded (legacy, not recommended)
+      // NOTE: WHIRLPOOL is intentionally excluded. It is decrypt-only on
+      // 1.4 and removed entirely in 1.5, and no subparser declares
+      // --whirlpool-rounds, so offering it produced argv that exited 2
+      // (gitlab#189).
 
       return result;
     } catch (e) {
@@ -543,9 +546,6 @@ class CLIService {
                 break;
               case 'sha3-512':
                 args.addAll(['--sha3-512-rounds', config['rounds'].toString()]);
-                break;
-              case 'whirlpool':
-                args.addAll(['--whirlpool-rounds', config['rounds'].toString()]);
                 break;
             }
           }
@@ -1851,11 +1851,6 @@ class CLIService {
               break;
             case 'sha3-512':
               args.addAll(['--sha3-512-rounds', config['rounds'].toString()]);
-              break;
-            case 'whirlpool':
-              if (config['rounds'] != null && config['rounds'] > 0) {
-                args.addAll(['--whirlpool-rounds', config['rounds'].toString()]);
-              }
               break;
           }
         }
