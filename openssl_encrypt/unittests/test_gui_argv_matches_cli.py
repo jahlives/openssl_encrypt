@@ -71,7 +71,6 @@ EXPECTED_INTERPOLATED = {
 KNOWN_BROKEN = [
     ("generatePassword", "--json", "gitlab#187: generate-password has no JSON mode"),
     ("deleteIdentity", "--contact", "gitlab#185: GUI delete sends a flag that never existed"),
-    ("encryptTextWithProgress", "--whirlpool-rounds", "gitlab#189: not on the encrypt subparser"),
     (
         "encryptWithSteganography",
         "--no-video-temporal-spread",
