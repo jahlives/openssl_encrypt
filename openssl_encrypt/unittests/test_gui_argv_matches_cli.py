@@ -50,7 +50,7 @@ CLI_SERVICE = os.path.join(REPO_ROOT, "desktop_gui", "lib", "cli_service.dart")
 # Exact, not a lower bound: the first version of this lint silently stopped
 # seeing encrypt/decrypt/shred when its extractor regressed, and a loose ">"
 # assertion had the headroom to hide it.
-EXPECTED_CALL_SITES = 24
+EXPECTED_CALL_SITES = 32
 
 # Commands whose loss would gut the lint. Asserted present by name so an
 # extractor change cannot quietly drop the KDF/cascade flag surface.
@@ -70,6 +70,19 @@ EXPECTED_INTERPOLATED = {
 # is a list of known defects, not a place to silence the lint.
 KNOWN_BROKEN = [
     ("deleteIdentity", "--contact", "gitlab#185: GUI delete sends a flag that never existed"),
+    # The pepper and integrity controls are kept deliberately: the CLI
+    # surface for them is planned (gitlab#193, gitlab#194). Until it lands
+    # these calls fail at argparse, so they are declared here rather than
+    # silently tolerated -- and the stale-entry test will demand these
+    # entries be deleted the day the subcommands appear.
+    ("configurePepperDeadman", "pepper", "gitlab#193: pepper CLI not implemented yet"),
+    ("listPeppers", "pepper", "gitlab#193: pepper CLI not implemented yet"),
+    ("setupPepperTotp", "pepper", "gitlab#193: pepper CLI not implemented yet"),
+    ("verifyPepperTotp", "pepper", "gitlab#193: pepper CLI not implemented yet"),
+    ("testPepperConnection", "pepper", "gitlab#193: pepper CLI not implemented yet"),
+    ("testIntegrityConnection", "integrity", "gitlab#194: integrity CLI not implemented yet"),
+    ("verifyFileIntegrity", "integrity", "gitlab#194: integrity CLI not implemented yet"),
+    ("getIntegrityStats", "integrity", "gitlab#194: integrity CLI not implemented yet"),
     (
         "encryptWithSteganography",
         "--no-video-temporal-spread",

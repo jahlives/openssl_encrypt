@@ -4192,18 +4192,30 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
           final String? metadataHash = data['metadata_hash'];
 
           if (fileId != null && metadataHash != null) {
-            // Remote integrity verification is not available: it called
-            // `plugin integrity verify`, a subcommand that has never existed,
-            // so every check failed at argparse and was reported as a hash
-            // mismatch -- an integrity FAILURE for a file that was fine
-            // (gitlab#188). Reporting honestly is the only safe option until
-            // the CLI surface exists (gitlab#194).
-            return BatchOperationResult(
-              fileName: file.name,
-              success: false,
-              errorMessage: 'Remote integrity verification is not available '
-                  'in this build',
+            final verified = await CLIService.verifyFileIntegrity(
+              fileId: fileId,
+              metadataHash: metadataHash,
             );
+
+            if (verified) {
+              return BatchOperationResult(
+                fileName: file.name,
+                success: true,
+                outputPath: 'Integrity verified ✓',
+              );
+            } else {
+              // Do NOT claim a hash mismatch: verifyFileIntegrity returns
+              // exitCode == 0, so false conflates a genuine mismatch with a
+              // failed call (unreachable server, missing CLI surface --
+              // gitlab#194). Reporting an integrity ALARM for a healthy file
+              // is the worse error, so the message states only what is known.
+              return BatchOperationResult(
+                fileName: file.name,
+                success: false,
+                errorMessage: 'Integrity could not be verified '
+                    '(no confirmation from the integrity service)',
+              );
+            }
           } else {
             return BatchOperationResult(
               fileName: file.name,
