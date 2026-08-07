@@ -21,7 +21,7 @@ import logging
 import os
 from typing import TYPE_CHECKING, Callable, Optional
 
-from .crypt_utils import eprint
+from .crypt_utils import eprint, sanitize_for_display
 from .identity import Identity, IdentityStore
 from .key_bundle import InvalidFingerprintError, InvalidSignatureError
 
@@ -205,14 +205,22 @@ def default_trust_callback(bundle: "PublicKeyBundle") -> bool:
         logger.error("Invalid bundle type in trust callback")
         return False
 
+    # Sanitized even though __post_init__ now validates these fields
+    # (gitlab#172): bundles already sitting in a keyserver cache predate that
+    # validation, and this prompt is the TOFU decision point — the one
+    # display where a smuggled escape sequence could repaint the fingerprint
+    # the user is being told to verify out of band.
     eprint("\n" + "=" * 60)
     eprint("KEYSERVER KEY VERIFICATION")
     eprint("=" * 60)
-    eprint(f"Identity:    {bundle.name}")
-    eprint(f"Email:       {bundle.email or 'N/A'}")
-    eprint(f"Fingerprint: {bundle.fingerprint}")
-    eprint(f"Algorithms:  {bundle.encryption_algorithm} / {bundle.signing_algorithm}")
-    eprint(f"Created:     {bundle.created_at}")
+    eprint(f"Identity:    {sanitize_for_display(bundle.name)}")
+    eprint(f"Email:       {sanitize_for_display(bundle.email) if bundle.email else 'N/A'}")
+    eprint(f"Fingerprint: {sanitize_for_display(bundle.fingerprint)}")
+    eprint(
+        f"Algorithms:  {sanitize_for_display(bundle.encryption_algorithm)} / "
+        f"{sanitize_for_display(bundle.signing_algorithm)}"
+    )
+    eprint(f"Created:     {sanitize_for_display(bundle.created_at)}")
     eprint("=" * 60)
     eprint()
     eprint("IMPORTANT: Verify the fingerprint through a trusted channel")

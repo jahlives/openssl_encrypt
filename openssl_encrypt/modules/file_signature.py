@@ -29,6 +29,7 @@ Security notes:
 import base64
 import hashlib
 import json
+import re
 from typing import List, Optional, Union
 
 from .armor import armor, dearmor, is_armored
@@ -56,6 +57,16 @@ DEFAULT_SIG_ALGORITHM = "ML-DSA-65"
 # any other signing context (e.g. the encrypted-file metadata signature) so a
 # signature produced here cannot be accepted elsewhere and vice versa.
 _DOMAIN_TAG = b"openssl-encrypt/detached-file-signature/v1"
+
+# Same shape identity.validate_identity_fingerprint enforces; kept local so
+# this module stays free of an identity import.
+_FINGERPRINT_RE = re.compile(r"^[0-9a-f]{2}(:[0-9a-f]{2})+$")
+
+# Shapes for the sidecar's other displayed strings. algorithm feeds
+# PQCSigner (whose unsupported-algorithm error echoes it) and component is
+# printed in the GOOD-signature block; both are attacker-supplied.
+_ALGORITHM_NAME_RE = re.compile(r"^[A-Za-z0-9-]{1,32}$")
+_COMPONENT_NAME_RE = re.compile(r"^[a-z0-9-]{1,64}$")
 
 # Chunk size for streaming file hashing.
 _HASH_CHUNK = 1024 * 1024
@@ -192,6 +203,36 @@ def parse_signature(data: Union[bytes, bytearray, str]) -> dict:
         raise FileSignatureError(f"invalid signature file (not JSON): {exc}")
     if not isinstance(obj, dict) or "signatures" not in obj:
         raise FileSignatureError("invalid signature file: missing required fields")
+    # The sidecar is attacker-supplied, and several of its fields reach the
+    # terminal — signer_fingerprint and algorithm BEFORE any cryptographic
+    # verification, component even after a GOOD verdict (it is display-only
+    # and deliberately excluded from the signed payload, so any tamperer can
+    # rewrite it on a valid signature). Every value this tool writes matches
+    # these shapes; reject anything else here, without echoing the value
+    # (gitlab#172).
+    # signer_fingerprint and algorithm are REQUIRED: every sidecar this
+    # tool has ever written carries both (build_signature), a missing
+    # fingerprint would surface as "Unknown signer (fingerprint None)", and
+    # a missing algorithm would fail later on an exception path that skips
+    # the intended error formatting.
+    signer_fp = obj.get("signer_fingerprint")
+    if not isinstance(signer_fp, str) or not _FINGERPRINT_RE.match(signer_fp):
+        raise FileSignatureError(
+            "invalid signature file: signer_fingerprint is not a " "colon-separated hex fingerprint"
+        )
+    algorithm = obj.get("algorithm")
+    if not isinstance(algorithm, str) or not _ALGORITHM_NAME_RE.match(algorithm):
+        raise FileSignatureError("invalid signature file: algorithm is not a valid algorithm name")
+    if not isinstance(obj["signatures"], list):
+        raise FileSignatureError("invalid signature file: signatures must be a list")
+    for comp in obj["signatures"]:
+        if not isinstance(comp, dict):
+            raise FileSignatureError("invalid signature file: signature entries must be objects")
+        name = comp.get("component")
+        if name is not None and (not isinstance(name, str) or not _COMPONENT_NAME_RE.match(name)):
+            raise FileSignatureError(
+                "invalid signature file: component is not a valid component name"
+            )
     return obj
 
 
@@ -309,7 +350,7 @@ def sign_file_cli(args) -> None:
     from datetime import datetime, timezone
 
     from .crypt_cli import resolve_identity_store_path
-    from .crypt_utils import eprint
+    from .crypt_utils import eprint, sanitize_for_display
     from .identity_cli import get_identity_store
     from .identity_protection import ProtectionLevel
     from .secure_memory import secure_memzero
@@ -329,10 +370,13 @@ def sign_file_cli(args) -> None:
     # Load metadata first (no private keys) to validate and check protection.
     signer_meta = store.get_by_name(signer_name, load_private_keys=False)
     if signer_meta is None:
-        eprint(f"ERROR: Signer identity '{signer_name}' not found ❌")
+        eprint(f"ERROR: Signer identity '{sanitize_for_display(signer_name)}' not found ❌")
         sys.exit(1)
     if not getattr(signer_meta, "is_own_identity", False):
-        eprint(f"ERROR: '{signer_name}' is a contact (public key only) and cannot sign ❌")
+        eprint(
+            f"ERROR: '{sanitize_for_display(signer_name)}' is a contact "
+            f"(public key only) and cannot sign ❌"
+        )
         sys.exit(1)
 
     # The passphrase reached only a getpass() prompt, which reads /dev/tty and
@@ -344,8 +388,7 @@ def sign_file_cli(args) -> None:
     # `requested` is the HSM_ONLY check: an HSM-only identity needs no
     # passphrase, and a planted variable must not introduce one.
     needs_passphrase = (
-        not signer_meta.protection
-        or signer_meta.protection.level != ProtectionLevel.HSM_ONLY
+        not signer_meta.protection or signer_meta.protection.level != ProtectionLevel.HSM_ONLY
     )
     try:
         passphrase = resolve_credential(
@@ -376,7 +419,7 @@ def sign_file_cli(args) -> None:
     try:
         signer = store.get_by_name(signer_name, passphrase=passphrase, load_private_keys=True)
         if signer is None:
-            eprint(f"ERROR: Signer identity '{signer_name}' not found ❌")
+            eprint(f"ERROR: Signer identity '{sanitize_for_display(signer_name)}' not found ❌")
             sys.exit(1)
         file_hash = hash_file(input_file)
         signed_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -390,9 +433,12 @@ def sign_file_cli(args) -> None:
         f.write(blob)
 
     if not getattr(args, "quiet", False):
-        eprint(f"✅ Signed '{input_file}' as '{signer.name}' ({sig['algorithm']})")
+        eprint(
+            f"✅ Signed '{input_file}' as '{sanitize_for_display(signer.name)}' "
+            f"({sig['algorithm']})"
+        )
         eprint(f"   Signature:          {output_file}")
-        eprint(f"   Signer fingerprint: {signer.fingerprint}")
+        eprint(f"   Signer fingerprint: {sanitize_for_display(signer.fingerprint)}")
 
 
 def verify_signature_cli(args) -> None:
@@ -401,7 +447,7 @@ def verify_signature_cli(args) -> None:
     import sys
 
     from .crypt_cli import resolve_identity_store_path
-    from .crypt_utils import eprint
+    from .crypt_utils import eprint, sanitize_for_display
     from .identity_cli import get_identity_store
 
     input_file = args.input
@@ -442,9 +488,12 @@ def verify_signature_cli(args) -> None:
                 signer_identity = ident
                 break
         if signer_identity is None:
+            # signer_fp is format-validated in parse_signature, but this line
+            # renders pre-verification attacker input — sanitized so a future
+            # parse-path change cannot reopen the escape channel (gitlab#172).
             eprint(
-                f"ERROR: Unknown signer (fingerprint {signer_fp}); not found among "
-                f"your identities or contacts ❌"
+                f"ERROR: Unknown signer (fingerprint {sanitize_for_display(signer_fp)}); "
+                f"not found among your identities or contacts ❌"
             )
             eprint("       Add the signer as a contact, or use --signer to pin a known identity.")
             sys.exit(1)
@@ -467,15 +516,26 @@ def verify_signature_cli(args) -> None:
         )
         print(result_json)
     elif result.valid:
+        # Everything here is sanitized: `component` is display-only sidecar
+        # data DELIBERATELY excluded from the signed payload (any tamperer
+        # can rewrite it on a valid signature), and signed_at/name, though
+        # authenticated, are only as trusted as the pinned signer — the ✅
+        # verdict block is the one display a forger most wants to repaint
+        # (gitlab#172).
         comp = ", ".join(
             f"{c['component']}={'ok' if c['valid'] else 'BAD'}" for c in result.components
         )
-        eprint(f"✅ GOOD signature from '{signer_identity.name}'")
-        eprint(f"   Signer fingerprint: {result.signer_fingerprint}")
-        eprint(f"   Signed at:          {result.signed_at}")
-        eprint(f"   Components:         {comp}")
+        eprint(f"✅ GOOD signature from '{sanitize_for_display(signer_identity.name)}'")
+        eprint(f"   Signer fingerprint: {sanitize_for_display(result.signer_fingerprint)}")
+        eprint(f"   Signed at:          {sanitize_for_display(result.signed_at)}")
+        eprint(f"   Components:         {sanitize_for_display(comp)}")
     else:
-        eprint(f"❌ BAD signature: {result.reason}")
-        eprint(f"   Claimed signer: '{signer_identity.name}' ({result.signer_fingerprint})")
+        # Same sanitization as the GOOD block: format-constrained today,
+        # but a future check reordering must not reopen the channel.
+        eprint(f"❌ BAD signature: {sanitize_for_display(result.reason)}")
+        eprint(
+            f"   Claimed signer: '{sanitize_for_display(signer_identity.name)}' "
+            f"({sanitize_for_display(result.signer_fingerprint)})"
+        )
 
     sys.exit(0 if result.valid else 1)

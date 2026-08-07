@@ -71,7 +71,7 @@ from .crypt_errors import (  # Error handling imports are at the top of file
 )
 
 # Import utility functions
-from .crypt_utils import eprint, safe_open_file
+from .crypt_utils import eprint, safe_open_file, sanitize_for_display
 
 # Redaction chokepoint: ALL secret material in debug output must be formatted
 # through debug_secret() (redacted by default, cleartext only with
@@ -5798,8 +5798,11 @@ def decrypt_file_asymmetric(
             )
 
         if not quiet:
+            # key_id is signature-covered, but the signer is only as trusted
+            # as the pinned contact — a malicious pinned sender must not be
+            # able to repaint this line's verdict (gitlab#172).
             sender_id = metadata["asymmetric"]["sender"]["key_id"]
-            eprint(f"Signature verified from: {sender_id} ✅")
+            eprint(f"Signature verified from: {sanitize_for_display(sender_id)} ✅")
 
     else:
         if not quiet:

@@ -226,6 +226,70 @@ relevant.
 
 ## Security Advisories
 
+### ADVISORY 2026-14: Imported Identity Email Printed Unsanitized Lets ANSI Escapes Forge the Fingerprint Verification Line — Resolved
+
+**Severity:** Medium · **CWE-150** (Improper Neutralization of Escape, Meta, or Control Sequences) / **CWE-20**
+**Affected versions:** all releases up to and including **1.4.8**. **Fixed in 1.4.9 (1.4.x line) and 1.5.0 (1.5.x line).**
+**Advisory:** [GHSA-qjr2-x6mr-8xgf](https://github.com/jahlives/openssl_encrypt/security/advisories/GHSA-qjr2-x6mr-8xgf)
+
+**Summary:** `Identity.import_public` validated the identity `name` but accepted
+the `email` field of an imported identity document completely raw, and the CLI
+printed it to the terminal unsanitized (`identity import` success output,
+`identity list`, `identity show`) — directly above the `Fingerprint:` line. A
+JSON string may carry `\u001b` escape sequences (the JSON security validator
+rejects only *literal* control characters, whose escaped source text is
+printable), so a crafted bundle's email could carry ANSI cursor-movement
+sequences that overwrite the genuine fingerprint line with one the victim
+trusts. The same class existed on the **keyserver TOFU trust prompt** — which
+renders a *remotely fetched* bundle's `name`/`email`/`created_at` raw around
+the fingerprint it tells the user to verify out of band, where the bundle's
+self-signature is no defence (it verifies against the signing key shipped *in*
+the bundle) — on stored identity files read back from disk (an
+`--identity-store` directory feeds `list`/`show` and the TOFU key-change
+warning with no import-time check), on a signature sidecar
+(`signer_fingerprint` printed before any cryptographic check; `algorithm`
+echoed by the unsupported-algorithm error pre-verification; and the
+display-only `component` name — deliberately excluded from the signed
+payload, so any tamperer can rewrite it on a *valid* signature — printed
+inside the GOOD-signature verdict block), on a keyserver's raw HTTP error
+body reaching the terminal through exception messages, and on error paths
+where a rejected identity name or `--alias` was interpolated verbatim into
+the `IdentityError` message the CLI echoes.
+
+**Impact:** out-of-band fingerprint comparison is the only authenticity
+mechanism the identity design has. An attacker who can deliver an identity
+bundle to the victim — the normal contact-exchange flow (`--file`, the GUI's
+paste field) or a keyserver response — can forge the fingerprint readout used
+for that comparison, enabling exactly the key substitution the TOFU pinning
+ceremony exists to surface.
+
+**Fixed in 1.4.9 / 1.5.0:** identity metadata is validated at every boundary —
+`import_public`, `Identity.generate` (`identity create --email` is the
+producer side: the value is exported verbatim and uploaded), `Identity.load`,
+and `PublicKeyBundle` validate `email` (string, ≤ 320 chars, no control
+characters), `fingerprint` (colon-separated lowercase hex, the only shape the
+tool has ever written), and `created_at` (≤ 64 chars, no controls);
+`parse_signature` format-validates `signer_fingerprint`, `algorithm`, and
+every `component` name; keyserver HTTP error bodies are truncated and
+sanitized; and `identity.json` is read bounded, explicitly UTF-8, and through
+the JSON security validator. A display sanitizer
+escapes C0 controls, DEL, the C1 range (one-byte CSI introducers included),
+backslash (output unambiguity), and the bidi/format controls (honoured by
+VTE/Kitty, able to visually reverse an email within its line) at every
+terminal display of these fields: the identity CLI, the keyserver trust
+prompt and `keyserver search`, the TOFU key-change warning, the
+verified-signature sender line, and every identity CLI error path. Escaping
+rather than stripping keeps the evidence visible.
+
+**Mitigation:** upgrade. Contacts and cached keyserver bundles imported by
+earlier versions with crafted fields are neutralized at display time by the
+same sanitizer; re-verify the fingerprint of any contact imported or trusted
+via the keyserver prompt on an affected version if the displayed readout was
+relied upon.
+
+**Disclosure:** internal security review of the contact-import path
+(2026-07-26, gitlab#172). **Credit:** internal security review.
+
 ### ADVISORY 2026-13: Plugin-Signing Trust-Anchor Enrollment Accepts a Partial/Suffix Fingerprint Match — Resolved
 
 **Severity:** Low · **CWE-297** (Improper Validation of Certificate/Key with Host Mismatch, adapted) / **CWE-347**
