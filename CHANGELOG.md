@@ -499,6 +499,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **A contact stored under an own identity's name can no longer substitute
+  its keys** (gitlab#173, ADVISORY 2026-15): `get_by_name` resolves own
+  identities before contacts, but `add_identity` chose its destination purely
+  from whether the identity was an own one. Importing a contact whose name
+  matched an existing own identity created a *shadowed* contact entry —
+  invisible while the own identity existed, because every lookup resolved the
+  own identity first. `delete_identity` removed only the first location it
+  found, so deleting the own identity left the shadow behind and `get_by_name`
+  then resolved to the contact's keys under a name the user trusts. Since
+  recipient resolution goes through `get_by_name`, that is a live key
+  substitution: files encrypted to that name go to the attacker's key. The
+  TOFU key-change dialogue does fire on the import, but it is a gate about a
+  *changed key* — designed to be passable with `--allow-key-change`, and
+  silent when the fingerprints happen to match.
+
+  `add_identity` now refuses a name that already exists as the other kind, in
+  both directions and independently of the key-change gate: one name resolves
+  to one key, so the collision fails closed on its own. `delete_identity`
+  removes both locations, so a store that already contains a shadow cannot
+  promote it. `IdentityStore.find_shadowed_names()` reports colliding names,
+  and `identity list` surfaces them in both its human output and its `--json`
+  document (a `shadowed` key), so an existing shadow is visible rather than
+  silent.
+
+  Review of the fix caught that deleting both sides had become a trap: the
+  warning told users to remove "the one you did not intend to keep", but
+  `identity delete` had no way to do that and removed both — destroying the
+  own identity's private keys (making every file encrypted to it unreadable)
+  *and* the contact's TOFU pin, so a later import of that name would be
+  accepted as first use with no key-change warning at all. `identity delete`
+  now takes `--kind own|contact|both` (default `both`), shows both entries
+  and both fingerprints before the confirmation, and says what each deletion
+  costs. `contacts` is also reserved as an entry name: it is the store's own
+  container directory, so an entry of that name was written *into* it —
+  unlistable yet resolvable, and deleting it would have removed every pinned
+  contact in the store.
+
 - **Imported identity email can no longer forge the fingerprint line with
   terminal escapes** (gitlab#172, ADVISORY 2026-14): `Identity.import_public`
   validated the identity name but took `email` completely raw, and the CLI

@@ -143,7 +143,17 @@ openssl_encrypt identity delete Alice
 
 # Skip confirmation
 openssl_encrypt identity delete Alice --force
+
+# If a name exists as BOTH an own identity and a contact (possible on stores
+# written before 1.4.9), choose which entry to remove. The default removes
+# both: leaving one behind means the name silently resolves to the survivor.
+openssl_encrypt identity delete Alice --kind own      # keeps the contact
+openssl_encrypt identity delete Alice --kind contact  # keeps your identity
 ```
+
+`identity list` reports such a collision. Deleting an own identity destroys
+its private keys, so every file encrypted to it becomes unreadable — back up
+the identity store first.
 
 ### Changing Passphrases
 

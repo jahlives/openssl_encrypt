@@ -226,6 +226,53 @@ relevant.
 
 ## Security Advisories
 
+### ADVISORY 2026-15: Contact Stored Under an Own Identity's Name Silently Substitutes Its Keys on Deletion — Resolved
+
+**Severity:** High · **CWE-706** (Use of Incorrectly-Resolved Name or Reference) / **CWE-345**
+**Affected versions:** all releases up to and including **1.4.8**. **Fixed in 1.4.9 (1.4.x line) and 1.5.0 (1.5.x line).**
+**Advisory:** [GHSA-8gmx-w9m8-vx7q](https://github.com/jahlives/openssl_encrypt/security/advisories/GHSA-8gmx-w9m8-vx7q)
+
+**Summary:** `IdentityStore.get_by_name` resolves own identities before
+contacts, but `add_identity` chose its destination directory purely from
+whether the identity was an own one. Importing a contact whose name matched an
+existing own identity created a **shadowed** contact entry — invisible while
+the own identity existed, since every lookup resolved the own identity first.
+`delete_identity` removed only the first location it found, so deleting the own
+identity left the shadow in place and `get_by_name` then resolved to the
+contact's keys under a name the user trusts. `identity list` showed both
+entries under one name with no disambiguation.
+
+**Impact:** recipient resolution goes through `get_by_name`, so this is a live
+key substitution: after the user deletes their own identity — an ordinary
+action, e.g. following a key rotation — files encrypted to that name are
+encrypted to the attacker's key. The TOFU key-change dialogue fires on the
+import, but it is a gate about a *changed key*: it is designed to be passable
+with `--allow-key-change`, and it does not fire at all when the fingerprints
+match. The desktop GUI's contact-import alias field made this materially easier
+to reach, turning "guess a name and get the user past a warning about a bundle
+claiming to be their own identity" into "the user types their own identity's
+name into a free-text alias box".
+
+**Fixed in 1.4.9 / 1.5.0:** `add_identity` refuses a name that already exists
+as the other kind, in both directions and independently of the key-change gate
+— a name resolves to one key, so the collision fails closed on its own.
+`delete_identity` removes both locations, so a store that already contains a
+shadow cannot promote it. `IdentityStore.find_shadowed_names()` reports
+colliding names, and `identity list` surfaces them in both its human output and
+its `--json` document.
+
+**Mitigation:** upgrade. On an affected version, run `identity list` and look
+for a name appearing as both an own identity and a contact; verify any such
+contact's fingerprint out of band before deleting anything.
+
+**Remediation note:** `identity delete <name>` removes **both** entries by
+default, which is correct for a collision — leaving a resolvable shadow is the
+substitution — but destroys the own identity's private keys. Use
+`--kind own|contact` to remove one side, and back up the identity store first.
+
+**Disclosure:** internal security review of the contact-import path
+(2026-07-26, gitlab#173). **Credit:** internal security review.
+
 ### ADVISORY 2026-14: Imported Identity Email Printed Unsanitized Lets ANSI Escapes Forge the Fingerprint Verification Line — Resolved
 
 **Severity:** Medium · **CWE-150** (Improper Neutralization of Escape, Meta, or Control Sequences) / **CWE-20**

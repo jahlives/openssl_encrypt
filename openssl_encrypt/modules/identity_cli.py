@@ -349,12 +349,58 @@ def cmd_list(args) -> int:
                     # a recipient or report an own identity as deleted
                     # (gitlab#183).
                     "skipped": [{"entry": s["entry"], "reason": s["reason"]} for s in skipped],
+                    # Same disambiguation the human path gets: a consumer
+                    # showing this listing must be able to tell the user a
+                    # name is contested (gitlab#173).
+                    "shadowed": store.find_shadowed_names(),
+                    # Distinct from a name collision: an entry inside the
+                    # container needs a manual move, not a delete.
+                    "contacts_container_entry": store.has_misplaced_container_entry(),
                 },
                 indent=2,
                 ensure_ascii=True,
             )
             print(listing_json)
             return 0
+
+        # A store written before gitlab#173 can carry a name that exists as
+        # both an own identity and a contact. get_by_name resolves the own
+        # identity, so the contact is invisible here until the own identity
+        # is deleted -- at which point it silently takes over the name.
+        if store.has_misplaced_container_entry():
+            # Deliberately NOT reported as a name collision: `identity
+            # delete contacts` is refused (reserved name), and routing it
+            # there would remove every pinned contact in the store.
+            eprint(
+                "WARNING: an identity is stored inside the store's own "
+                "'contacts/' directory, where it is not listed below but is "
+                "still resolvable by name."
+            )
+            eprint(
+                "  Move its identity.json and *.pem files into a directory of "
+                "their own next to it to make it usable again, or delete those "
+                "files to discard it. 'identity delete' cannot touch this "
+                "entry: the name 'contacts' is reserved for the store."
+            )
+            eprint()
+
+        shadowed = store.find_shadowed_names()
+        if shadowed:
+            eprint(
+                "WARNING: these names exist as BOTH an own identity and a "
+                "contact, so deleting the identity would hand the name to the "
+                "contact's keys:"
+            )
+            for name in shadowed:
+                eprint(f"  - {sanitize_for_display(name)}")
+            eprint(
+                "  Verify the contact's fingerprint out of band, then remove "
+                "the entry you did not intend to keep with "
+                "'identity delete <name> --kind own|contact'. Back up the "
+                "identity store first: deleting an own identity destroys its "
+                "private keys."
+            )
+            eprint()
 
         if skipped:
             eprint(
@@ -720,43 +766,119 @@ def cmd_delete(args) -> int:
     """
     try:
         store = get_identity_store(getattr(args, "identity_store", None))
-
-        # Check if identity exists
-        identity = store.get_by_name(args.identity_name, passphrase=None, load_private_keys=False)
-
-        if identity is None:
+        name = args.identity_name
+        # A value counts only if it is one of the three. argparse guarantees
+        # that, but programmatic callers need not, and a stray attribute must
+        # never select a branch by accident -- it falls back to the same
+        # default argparse would have supplied.
+        kind = getattr(args, "kind", "both")
+        if not isinstance(kind, str):
+            kind = "both"
+        elif kind not in ("own", "contact", "both"):
+            # An explicit but invalid value is an ERROR, never silently
+            # upgraded to "both": that would fail open to the most
+            # destructive branch, which removes the private keys AND the
+            # pinned key.
             eprint(
-                f"ERROR: Identity '{sanitize_for_display(args.identity_name)}' not found ❌",
+                f"ERROR: --kind must be 'own', 'contact' or 'both', not "
+                f"'{sanitize_for_display(kind)}' ❌",
                 file=sys.stderr,
             )
             return 1
 
+        # Both locations are inspected directly rather than through
+        # get_by_name, which resolves the own identity first and would hide a
+        # shadowed contact from the confirmation prompt -- exactly the entry
+        # the user needs to see before deciding (gitlab#173).
+        entries = store.describe_name(name)
+
+        if not entries:
+            eprint(
+                f"ERROR: Identity '{sanitize_for_display(name)}' not found ❌",
+                file=sys.stderr,
+            )
+            return 1
+
+        labels = {"own": "own identity", "contact": "contact"}
+        targeted = [e for e in entries if kind in ("both", e["kind"])]
+        if not targeted:
+            present = ", ".join(e["kind"] for e in entries)
+            eprint(
+                f"ERROR: No {kind} entry named '{sanitize_for_display(name)}' "
+                f"(found: {present}) ❌",
+                file=sys.stderr,
+            )
+            return 1
+
+        shadowed = len(entries) > 1
+
+        if shadowed:
+            # Never delete both sides of a collision without saying so: one
+            # side holds private keys, the other holds a TOFU pin.
+            eprint(
+                f"NOTE: '{sanitize_for_display(name)}' exists as BOTH an own "
+                f"identity and a contact."
+            )
+            for entry in entries:
+                eprint(
+                    f"  - {entry['kind']}: fingerprint "
+                    f"{sanitize_for_display(entry['fingerprint'])}"
+                )
+            eprint(
+                "  Deleting the own identity destroys its private keys, so any "
+                "file encrypted to it becomes unreadable. Deleting the contact "
+                "drops its pinned key, so a later import of that name is "
+                "accepted as first use with no key-change warning."
+            )
+            eprint(
+                "  Use --kind own or --kind contact to remove just one; "
+                "back up the identity store first."
+            )
+            eprint()
+
         # Confirm deletion unless --force
         if not getattr(args, "force", False):
-            eprint(
-                f"WARNING: This will delete identity '{sanitize_for_display(args.identity_name)}'"
-            )
-            eprint(f"Fingerprint: {sanitize_for_display(identity.fingerprint)}")
-            if identity.is_own_identity:
-                eprint("This includes the private keys!")
+            removing = " and ".join(labels[e["kind"]] for e in targeted)
+            eprint(f"WARNING: This will delete the {removing} named '{sanitize_for_display(name)}'")
+            for entry in targeted:
+                eprint(
+                    f"  {entry['kind']} fingerprint: "
+                    f"{sanitize_for_display(entry['fingerprint'])}"
+                )
+                if entry["kind"] == "own":
+                    eprint("  This includes the private keys!")
 
             response = input("Are you sure? (yes/no): ")
             if response.lower() not in ["yes", "y"]:
                 eprint("Deletion cancelled.")
                 return 0
 
-        # Delete identity
-        result = store.delete_identity(args.identity_name)
+        removed = store.delete_identity(name, kind=kind)
 
-        if result:
-            eprint(f"Identity '{sanitize_for_display(args.identity_name)}' deleted successfully.")
-            return 0
-        else:
+        if removed:
             eprint(
-                f"ERROR: Failed to delete identity '{sanitize_for_display(args.identity_name)}'",
-                file=sys.stderr,
+                f"Deleted the {' and '.join(labels[k] for k in removed)} named "
+                f"'{sanitize_for_display(name)}'."
             )
-            return 1
+            # After removing one side of a collision, say what the name now
+            # resolves to: that promotion is precisely the event this issue
+            # is about, so it must not be left implicit.
+            survivors = [e for e in entries if e["kind"] not in removed]
+            for entry in survivors:
+                eprint(
+                    f"NOTE: '{sanitize_for_display(name)}' now resolves to the "
+                    f"{labels[entry['kind']]} entry, fingerprint "
+                    f"{sanitize_for_display(entry['fingerprint'])}."
+                )
+            if not survivors and shadowed:
+                eprint("Both entries are gone, so the name no longer resolves to anything.")
+            return 0
+
+        eprint(
+            f"ERROR: Failed to delete identity '{sanitize_for_display(name)}'",
+            file=sys.stderr,
+        )
+        return 1
 
     except Exception as e:
         eprint(f"ERROR: Failed to delete identity: {sanitize_for_display(e)}", file=sys.stderr)

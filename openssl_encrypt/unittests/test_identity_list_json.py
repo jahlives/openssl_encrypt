@@ -66,11 +66,13 @@ class TestListJsonOutput(unittest.TestCase):
         identity.protection = None
         return identity
 
-    def _run(self, identities, json_flag=True, skips=None):
+    def _run(self, identities, json_flag=True, skips=None, shadowed=None):
         from openssl_encrypt.modules.identity_cli import cmd_list
 
         args = argparse.Namespace(identity_store=None, include_contacts=True, json=json_flag)
         store = mock.Mock()
+        store.find_shadowed_names.return_value = shadowed or []
+        store.has_misplaced_container_entry.return_value = False
 
         def _list(include_contacts=True, skipped=None):
             if skipped is not None:
@@ -111,6 +113,8 @@ class TestListJsonOutput(unittest.TestCase):
         )
         self.assertEqual(data["contacts"][0]["name"], "bob")
         self.assertEqual(data["skipped"], [])
+        self.assertEqual(data["shadowed"], [])
+        self.assertFalse(data["contacts_container_entry"])
         self.assertIsNone(data["contacts"][0]["email"])
 
     def test_stdout_carries_only_json(self):
@@ -121,7 +125,16 @@ class TestListJsonOutput(unittest.TestCase):
     def test_empty_store_yields_empty_lists(self):
         status, out, _err = self._run([])
         self.assertEqual(status, 0)
-        self.assertEqual(json.loads(out), {"own": [], "contacts": [], "skipped": []})
+        self.assertEqual(
+            json.loads(out),
+            {
+                "own": [],
+                "contacts": [],
+                "skipped": [],
+                "shadowed": [],
+                "contacts_container_entry": False,
+            },
+        )
 
     def test_json_values_are_not_display_sanitized(self):
         """Machine-readable contract: the transport escapes what needs
@@ -165,6 +178,21 @@ class TestListJsonOutput(unittest.TestCase):
         self.assertEqual(status, 0)
         self.assertEqual(out, "")
         self.assertIn("No identities found.", err)
+
+    def test_shadowed_names_are_reported(self):
+        """A name existing as both an own identity and a contact is
+        invisible in the listing itself (gitlab#173), so it has to be
+        reported separately or the consumer cannot warn about it."""
+        status, out, _err = self._run([self._identity("alice", None, own=True)], shadowed=["alice"])
+        self.assertEqual(status, 0)
+        self.assertEqual(json.loads(out)["shadowed"], ["alice"])
+
+    def test_shadowed_names_are_reported_on_the_human_path_too(self):
+        _status, _out, err = self._run(
+            [self._identity("alice", None, own=True)], json_flag=False, shadowed=["alice"]
+        )
+        self.assertIn("BOTH an own identity and a contact", err)
+        self.assertIn("alice", err)
 
     def test_human_output_is_unchanged_without_the_flag(self):
         status, out, err = self._run([self._identity("alice", None, own=True)], json_flag=False)
