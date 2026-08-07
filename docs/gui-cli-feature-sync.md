@@ -365,6 +365,7 @@ here too.
 |---|---|
 | gitlab#172 (confidential) | Imported identity `email` printed raw above the `Fingerprint:` line — ANSI escapes could forge the only authenticity readout this design has. Four review rounds; scope grew to the keyserver TOFU prompt (remote bundles), `identity create --email`, stored identity files, the signature sidecar (incl. the unsigned `component` field) and keyserver HTTP error bodies. Draft **GHSA-qjr2-x6mr-8xgf** + SECURITY.md ADVISORY 2026-14 **held until release**. |
 | gitlab#183 / gh#100 | **GUI identity listing had never worked**: `CLIService.listIdentities()` emitted `identity list --json`, a flag that did not exist, and swallowed the argparse failure into empty lists. Now `identity list --json` (+ `skipped`), GUI sanitizes at the decode boundary, and a failed listing raises instead of returning empty. |
+| gitlab#148 | **Envelope rewrites could destroy the ciphertext they manage.** The writer chose its atomic vs. truncating path from a caller-supplied flag; it now derives eligibility itself immediately before the write. Identity ("does this write land on its own input") and atomicity ("can `os.replace` be used") are separate predicates — conflating them made the recoverable path unreachable for exactly the cases it was written for, caught in review. Symlinked and multiply-linked targets must be written *through*, so they get a fsynced backup + restore instead of an unprotected truncate. `_rekey_envelope_fast` carried a second, weaker copy and now delegates. Residual: `rekey_file`/`decrypt_file` with `-o` equal to `-i` → **gitlab#195 / gh#112**. |
 
 ### Open CLI work (blocks GUI items)
 
@@ -413,6 +414,10 @@ Public:
 - **gitlab#147, gitlab#149, gitlab#150** — earlier follow-ups (#150 is the
   stdout-leak lint's ±50 line tolerance, which has forced a manual re-anchor
   on nearly every commit this session).
+- **gitlab#195 / gh#112** — the same-file truncating write that gitlab#148
+  fixed in the envelope header writer still exists on the slow paths:
+  `rekey -i f -o f` and `decrypt -i f -o f` hand the input path straight to
+  a `"wb"` open. Filed with the two predicates the fix should reuse.
 
 ### A defect class worth a lint
 

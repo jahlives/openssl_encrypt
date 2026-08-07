@@ -5845,7 +5845,11 @@ def main_with_args(args=None):
             }[args.action](args)
             sys.exit(0)
         except Exception as e:
-            print(f"Error: {e}", file=sys.stderr)
+            # Sanitized like its sibling handlers: these messages interpolate
+            # untrusted header fields and filesystem paths, and one of them
+            # now carries a data-recovery instruction -- exactly the line an
+            # escape sequence would want to forge (gitlab#172 class).
+            print(f"Error: {sanitize_for_display(e)}", file=sys.stderr)
             sys.exit(1)
 
     elif args.action == "list-algorithms":
