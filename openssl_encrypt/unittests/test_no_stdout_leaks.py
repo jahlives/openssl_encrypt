@@ -118,6 +118,16 @@ STDOUT_WHITELIST = [
         1,
         "verify-signature JSON result",
     ),
+    # crypt_cli.py — generate-password --json result (gitlab#187). The
+    # password IS the payload here; the human display path is skipped in
+    # this mode, so it never also reaches stderr. Two call sites, one
+    # shape: character mode and diceware mode.
+    (
+        "modules/crypt_cli.py",
+        "print(password_json)",
+        2,
+        "generate-password JSON result",
+    ),
     # identity_cli.py — identity list --json result (machine-readable, gitlab#183)
     (
         "modules/identity_cli.py",
