@@ -346,15 +346,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   button is relabelled "Check status" and reports on the *configured*
   server rather than implying the URL in the field was probed.
 
-  The pepper and integrity controls are **removed**, with the CLI surface
-  tracked as feature requests (gitlab#193, gitlab#194). A settings screen
-  that appears to configure a dead-man switch, or to verify a file against
-  a remote service, while every call fails is worse than an absent screen.
-  One of these was actively misleading rather than merely dead: batch
-  integrity verification treated the argparse failure as a verification
-  *failure* and reported "Integrity verification failed - hash mismatch" —
-  an integrity alarm for a file that was fine. It now reports plainly that
-  remote verification is unavailable in this build.
+  The pepper and integrity controls are **kept**: their CLI surface is
+  planned (gitlab#193, gitlab#194), and they are declared in the argv
+  lint's known-broken registry so the gap is tracked rather than silently
+  tolerated — the lint will demand those entries be deleted the day the
+  subcommands land.
+
+  One integrity defect is fixed independently of that: batch verification
+  treated *any* falsy result as a hash mismatch and reported "Integrity
+  verification failed - hash mismatch". The underlying call returns
+  `exitCode == 0`, so it cannot tell a genuine mismatch from an
+  unreachable server or a missing command — and raising an integrity alarm
+  for a healthy file is the worse error. It now reports only what is
+  known: that integrity could not be confirmed.
 
 - **Whirlpool removed from the desktop GUI** (gitlab#189 / github#106): the
   GUI offered Whirlpool as a hash option and emitted `--whirlpool-rounds`,
