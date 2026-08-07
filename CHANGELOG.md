@@ -270,6 +270,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **stdout-leak lint authorizes individual calls, not regions** (gitlab#150 /
+  github#68): the whitelist that permits a `print()` to write to stdout —
+  stdout carries decrypted plaintext and derived key material, so every
+  emission must be individually justified — matched on file plus line
+  proximity, with a tolerance of 50 lines against a documented ±5. Each entry
+  therefore authorized any stdout `print()` within 50 lines of its anchor,
+  and with several anchors in one file the windows merged: in
+  `recovery_slots.py` they covered 299 lines spanning the code that handles a
+  generated recovery code, so turning that `eprint` into a `print` would not
+  have tripped the lint added to guard exactly that file. Line drift also
+  forced a manual re-anchor on nearly every commit touching a whitelisted
+  file.
+
+  Entries now state the call's own source text and how many times it may
+  appear, compared against `ast.get_source_segment` for **equality** with
+  whitespace and black's magic trailing comma normalized away. Equality
+  rather than a prefix, because a prefix leaves everything after it
+  unconstrained — adding a credential to an authorized JSON payload would
+  otherwise still match. The occurrence count closes the one dimension where
+  shape matching is looser than a position anchor: a second copy of an
+  authorized call no longer inherits the first's authorization. Path
+  suffixes are matched on component boundaries, so a vendored or
+  similarly-named module cannot inherit another's entries.
+
+  One entry was stale in a way the old scheme could not detect: the
+  `usb_creator.py` entry authorized a `print(` that exists only inside a
+  *generated launcher-script string*, which raw-line matching cannot
+  distinguish from code — and `eprint(` contains `print(`, so the validity
+  check passed on the helper it was meant to exclude. That file has no real
+  `print()` call, so the entry is deleted. New tests pin properties rather
+  than positions: every entry must start with a `print(` call, the whitelist
+  must describe exactly the calls that exist, a `print()` adjacent to a
+  whitelisted call must not inherit its authorization, an authorized payload
+  extended with a credential must lose it, a vendored path must not inherit,
+  and an anchor must survive its own call being reflowed.
+
 - **Desktop GUI identity listing has never worked** (gitlab#183 /
   github#100): `CLIService.listIdentities()` runs
   `identity list --include-contacts --json`, but `identity list` declared no
