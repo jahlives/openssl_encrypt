@@ -838,23 +838,28 @@ def sanitize_argv_for_debug(argv: list) -> list:
     return sanitized
 
 
+# Flags that are truly global and can appear anywhere on the command line.
+# Module scope, not a local: the GUI-argv lint (gitlab#186) has to compare
+# against the same set this function relocates, and a private copy would
+# drift from it silently.
+TRULY_GLOBAL_FLAGS = {
+    "--debug",
+    "--unsafe-show-secrets",
+    "--verbose",
+    "--quiet",
+    "-q",
+    "--progress",
+    "--parallel-kdf",
+    "--kdf-workers",
+}
+
+
 def preprocess_global_args(argv):
     """Preprocess sys.argv to move truly global flags to the front for subparser compatibility.
 
     This allows global flags like --debug, --verbose, --quiet, --progress to be specified
     anywhere in the command line, maintaining backward compatibility with v1.2.1 behavior.
     """
-    # Flags that are truly global and can appear anywhere
-    TRULY_GLOBAL_FLAGS = {
-        "--debug",
-        "--unsafe-show-secrets",
-        "--verbose",
-        "--quiet",
-        "-q",
-        "--progress",
-        "--parallel-kdf",
-        "--kdf-workers",
-    }
 
     # Find the command position
     commands = {

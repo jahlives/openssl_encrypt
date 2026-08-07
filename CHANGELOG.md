@@ -9,6 +9,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Lint: every argv the desktop GUI builds must parse against the real CLI
+  parser** (gitlab#186 / github#103). Four times the GUI has emitted CLI
+  surface that does not exist — `identity import --data/--alias`
+  (gitlab#164), `identity list --json` (gitlab#183), `identity delete
+  --contact` (gitlab#185), `generate-password --json` (gitlab#187) — each
+  failing at argparse with exit 2 and each swallowed by the GUI into an
+  empty result, so the feature simply never worked. Writing the widget does
+  not verify the feature; only driving the real CLI does, and pytest never
+  exercises the GUI.
+
+  The lint reads `cli_service.dart`, extracts each call site's command path
+  and flag literals, and checks them against the parser `build_subparser()`
+  returns — the same object the CLI uses, not a reconstruction. (That
+  required splitting the parser construction out of `create_subparser_main`,
+  which built and immediately parsed `sys.argv`, so the surface it exposes
+  could not be inspected.) Dart-interpolated literals are skipped rather
+  than guessed at.
+
+  Call sites that fail today are listed in a `KNOWN_BROKEN` registry, each
+  naming its tracking issue, so the lint passes now but fails on anything
+  new; companion tests assert that every entry is still genuinely broken and
+  names an issue, so an exemption cannot outlive the bug it describes. It
+  surfaced two more dead surfaces than the four already known: the GUI's
+  pepper management and its keyserver/integrity connection tests call
+  `plugin pepper`/`plugin keyserver`/`plugin integrity` subcommands that do
+  not exist (gitlab#188) — `plugin` offers only `sign`, `trust-key` and
+  `list-keys`.
+
+  Review of the lint then found two more, in surface it had been blind to
+  until its extractor was rewritten to cover the encrypt/decrypt paths:
+  `--whirlpool-rounds`, which no subparser declares (gitlab#189), and
+  `-a <algorithm>` in the steganography path, where `-a` is the short form
+  of `--armor`, a boolean — so the cipher choice never reached the CLI and
+  the command failed outright (gitlab#190). The latter is an *arity*
+  defect, which a name-only model cannot see; the lint documents that gap
+  rather than implying it covers it, as it documents that the
+  command-preview builders are outside its anchor (gitlab#191).
+
 - **Format-version fixture corpus** (v14 implementation plan Phase 5):
   pre-encrypted fixtures under `unittests/testfiles/format_versions/` pin
   the decrypt path of every supported write topology — v9 plain, v11/v13
