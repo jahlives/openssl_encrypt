@@ -332,6 +332,78 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Recovery-slot rewrites cannot destroy the ciphertext they manage**
+  (gitlab#148): the envelope writer has an atomic path (temp file in the
+  same directory, fsync, `os.replace`, mode preserved) and a truncating one
+  that opens the destination `"wb"`. A crash or ENOSPC part-way through the
+  truncating path leaves a shortened, unreadable file and no copy of the
+  original — and when the destination is the input, that is the user's only
+  ciphertext. Recovery slots exist precisely so a file survives losing its
+  password, so destroying it while managing them defeats the feature.
+
+  The CLI already chose the atomic path for same-file rewrites; the writer
+  now derives that choice itself, immediately before the write, and no
+  longer trusts the caller's `in_place` flag — a caller that omits it (the
+  documented Python API example did exactly that) cannot truncate a file in
+  place, and a caller that asserts it cannot skip the exclusions below.
+  `output_file=None`, the sibling API's "rewrite in place" convention, is
+  honoured rather than raising.
+
+  Three cases cannot use the atomic path, because `os.replace` installs a
+  *new* inode and each of them depends on the existing one surviving: a
+  symlink on either side (the link itself would be replaced), a file with
+  more than one hard link (the other name would keep the old envelope — for
+  `remove-recovery` a silent revocation failure reported as success), and
+  anything that is not a regular file (a FIFO named as both input and
+  output would be destroyed rather than written through). The hardlink
+  exclusion reverses an earlier decision, for the same reason the symlink
+  one was made.
+
+  Being excluded from the atomic path does **not** mean being unprotected:
+  those cases must be written *through* the existing inode, so the writer
+  copies the original to an fsynced backup beside it first, restores it —
+  also fsynced, before the backup is removed — if the write fails, and
+  removes it on success. If the restore fails too, the backup is kept and
+  its location is printed to stderr, because at that point it is the only
+  copy of the file and it is dot-prefixed, so an `ls` would not show it. A
+  crash leaves the backup on disk for manual recovery; if it cannot be
+  removed afterwards, that is reported rather than passed over, since it is
+  a copy of the file as it was *before* the change — for `remove-recovery`
+  still openable by the credential just revoked, for `rekey` by the old
+  password.
+
+  A same-file rewrite of something that is *not* a regular file — a FIFO or
+  a device node named as both input and output — is now refused rather than
+  written: no backup of it can be taken, so it could not be made
+  recoverable. Nothing legitimate reaches that case.
+
+  A failure to *open* the destination — a read-only file in a writable
+  directory, an immutable one, a read-only filesystem — truncated nothing,
+  so it no longer runs the recovery handler. Otherwise a routine permission
+  error was reported as `CRITICAL: … the original could not be restored`
+  and left a full copy of the envelope behind, for a file that was never
+  touched.
+
+  This makes the two write-through commands O(file) rather than O(header)
+  for a symlinked or multiply-linked envelope, and they need free space
+  equal to the file; noted in `docs/OPEN_QUESTIONS.md`.
+
+  The envelope rekey fast-path carried a second, weaker copy of this write
+  logic (no fsync, no same-file check), so the guarantee applied to the
+  recovery-slot commands only. It now delegates to the same writer, which
+  is byte-for-byte equivalent, so both paths get the same protection.
+
+  Regression tests simulate a genuine disk-full failure part-way through
+  the write — earlier coverage only proved that failing *before* any byte
+  was written was safe — on both the atomic and the write-through paths,
+  and assert the original bytes and inode survive with nothing left behind.
+  One of them pins a mistake worth naming: the "your file is at *path*"
+  guidance was originally carried in the raised exception, and `SecureError`
+  replaces the message it is given with a generic string unless `DEBUG=1` is
+  set in the environment. The test passed only because pytest sets
+  `PYTEST_CURRENT_TEST`, which flips the same switch, so it asserted a
+  message no user would ever have seen.
+
 - **Desktop GUI: dead `plugin` subcommand controls removed or rewired**
   (gitlab#188 / github#105): the GUI's keyserver, pepper and integrity
   controls called `plugin keyserver`/`plugin pepper`/`plugin integrity`
