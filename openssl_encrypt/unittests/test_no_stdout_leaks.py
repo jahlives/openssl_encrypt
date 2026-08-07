@@ -55,6 +55,10 @@ STDOUT_WHITELIST = [
     ("modules/crypt_cli.py", "print(json.dumps(", "JSON data output"),
     # file_signature.py — verify-signature --json result (machine-readable, stdout)
     ("modules/file_signature.py", "print(result_json)", "verify-signature JSON result"),
+    # crypt_cli.py — generate-password --json result (gitlab#187). The
+    # password IS the payload here; the human display path is skipped in
+    # this mode, so it never also reaches stderr.
+    ("modules/crypt_cli.py", "print(password_json)", "generate-password JSON result"),
     # identity_cli.py — identity list --json result (machine-readable, stdout)
     ("modules/identity_cli.py", "print(listing_json)", "identity list JSON result"),
     # crypt_cli.py — Decrypted plaintext output

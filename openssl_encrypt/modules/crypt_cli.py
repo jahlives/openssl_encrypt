@@ -4554,7 +4554,10 @@ def main_with_args(args=None):
         # pipe, then an interactive prompt. The safer sources avoid leaking the
         # password via shell history / the process list.
         # NB: getpass is used module-wide in main_with_args; do not import it
-        # locally here or it becomes a function-local name and unbinds elsewhere.
+        # locally here or it becomes a function-local name and unbinds
+        # elsewhere. json is the opposite case: several branches of this
+        # function import it locally, which makes `json` function-local
+        # THROUGHOUT, so every branch that uses it needs its own import.
         import json
 
         from .password_policy import build_strength_report, format_strength_report
@@ -4636,6 +4639,30 @@ def main_with_args(args=None):
                 )
                 sys.exit(1)
 
+            if getattr(args, "json", False):
+                # Local import: `json` is function-local throughout
+                # main_with_args (see the check-password branch).
+                import json
+
+                # stdout IS the delivery channel here: the passphrase is the
+                # payload. It must not also go to stderr, which 2>&1 merges,
+                # which lands in scrollback, and which the GUI writes to its
+                # persistent debug log -- the reasoning applied to
+                # `encrypt --random` (gitlab#152). The human display below is
+                # skipped entirely rather than merely duplicated.
+                password_json = json.dumps(
+                    {
+                        "password": passphrase,
+                        "entropy_bits": round(entropy_bits, 1),
+                        "mode": "diceware",
+                        "word_count": args.dice_count,
+                    },
+                    indent=2,
+                    ensure_ascii=True,
+                )
+                print(password_json)
+                sys.exit(0)
+
             eprint(f"\nPassphrase entropy: {entropy_bits:.1f} bits " f"({args.dice_count} words)")
             display_password_with_timeout(passphrase)
             sys.exit(0)
@@ -4646,6 +4673,11 @@ def main_with_args(args=None):
             args.use_uppercase = True
             args.use_digits = True
             args.use_special = True
+
+        # Reported in the JSON document below. A machine caller cannot see
+        # the stderr warning, so the verdict has to travel in the payload.
+        policy_valid = True
+        policy_warnings: list = []
 
         # Apply password policy if specified
         if args.password_policy != "none" and not args.force_password:
@@ -4674,7 +4706,8 @@ def main_with_args(args=None):
 
         # Check password strength
         entropy, strength = get_password_strength(password)
-        eprint(f"\nPassword strength: {strength} (entropy: {entropy:.1f} bits)")
+        if not getattr(args, "json", False):
+            eprint(f"\nPassword strength: {strength} (entropy: {entropy:.1f} bits)")
 
         # Validate against policy
         if args.password_policy != "none":
@@ -4693,11 +4726,39 @@ def main_with_args(args=None):
             policy = PasswordPolicy(policy_level=args.password_policy, **policy_params)
 
             # Check if generated password meets policy (it should, but verify)
-            valid, _ = policy.validate_password(password, quiet=True)
+            valid, policy_messages = policy.validate_password(password, quiet=True)
+            policy_valid = valid
+            policy_warnings = list(policy_messages or []) if not valid else []
             if not valid:
                 # This is rare but could happen with specific combinations of constraints
                 eprint("Warning: Generated password does not meet policy requirements.")
                 eprint("Consider adjusting character requirements or using a longer length.")
+
+        if getattr(args, "json", False):
+            import json
+
+            # The policy check on this path WARNS rather than rejects (unlike
+            # the diceware gate above, which exits). Human mode shows that
+            # warning next to the password; a machine caller reads stderr
+            # only on a non-zero exit, so the verdict travels in the document
+            # instead of being lost. Mode parity is deliberate: JSON must not
+            # be stricter than the human path, and must not claim a guarantee
+            # the code does not provide.
+            password_json = json.dumps(
+                {
+                    "password": password,
+                    "entropy_bits": round(entropy, 1),
+                    "mode": "character",
+                    "strength": strength,
+                    "length": len(password),
+                    "policy_valid": policy_valid,
+                    "policy_warnings": policy_warnings,
+                },
+                indent=2,
+                ensure_ascii=True,
+            )
+            print(password_json)
+            sys.exit(0)
 
         # Display the password
         display_password_with_timeout(password)

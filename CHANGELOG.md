@@ -9,6 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`generate-password --json`** (gitlab#187 / github#104): the desktop GUI
+  has always appended `--json` and parsed stdout as a JSON object, but the
+  flag existed on no branch or release tag and the handler had no JSON path
+  at all — so GUI password generation, and the Password Generator screen
+  built on it, never worked. This is a JSON *mode*, not just a flag: the
+  handler now emits one document on stdout in both character and diceware
+  mode, carrying the fields the GUI reads (`password`, `entropy_bits`,
+  `mode`, plus `strength`/`length` or `word_count`).
+
+  The password is the payload on stdout and never reaches stderr in this
+  mode: stderr is merged by `2>&1`, lands in scrollback and in the GUI's
+  persistent debug log — the same reasoning applied to `encrypt --random`
+  (gitlab#152). The on-screen countdown display is skipped rather than
+  duplicated, and the generated password is registered with the audit-log
+  redactor, whose shape heuristic would not otherwise match it.
+  `ensure_ascii` is pinned, as for the other JSON channels.
+
+  The character-mode policy check *warns* rather than rejecting, unlike the
+  diceware gate which exits. Human mode shows that warning beside the
+  password, but a machine caller reads stderr only on a non-zero exit, so
+  the document carries `policy_valid` and `policy_warnings` instead of the
+  verdict being lost. JSON is deliberately not stricter than the human
+  path.
+
 - **Lint: every argv the desktop GUI builds must parse against the real CLI
   parser** (gitlab#186 / github#103). Four times the GUI has emitted CLI
   surface that does not exist — `identity import --data/--alias`

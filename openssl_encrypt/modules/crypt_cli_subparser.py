@@ -1579,6 +1579,17 @@ def setup_check_password_parser(subparser):
 
 def setup_generate_password_parser(subparser):
     """Set up arguments specific to the generate-password command."""
+    # The desktop GUI has emitted this since the Password Generator screen
+    # landed; it never existed, so generation always exited 2 (gitlab#187).
+    # SUPPRESS, not a False default: `json` is also a global option dest and
+    # argparse copies the subcommand namespace back over the parent's.
+    subparser.add_argument(
+        "--json",
+        action="store_true",
+        default=argparse.SUPPRESS,
+        help="Emit the generated password as JSON on stdout instead of the "
+        "on-screen display (the password is the payload; it never goes to stderr)",
+    )
     subparser.add_argument(
         "length",
         type=int,
