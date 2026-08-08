@@ -530,6 +530,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`install-dependencies --yes` was rejected** (gitlab#176): `--yes`/`-y`
+  is declared on the top-level parser with the help text "Automatic yes to
+  prompts (for install-dependencies command)" and was recognised by the
+  routing scan — but it was never *relocated*, and the
+  `install-dependencies` subparser declares no arguments at all, so the one
+  invocation the flag exists for exited 2 with
+  `unrecognized arguments: --yes`.
+
+  It was held back from gitlab#171 because `hsm fido2-unregister` declares
+  its own `--yes`, and argparse copies a subcommand's whole namespace back
+  over the parent's, so that subparser's `False` default would silently
+  overwrite a relocated one. That declaration now uses
+  `default=argparse.SUPPRESS` — the same treatment `--quiet` needed — and
+  `--yes` joins the relocatable set. Both directions are pinned: a relocated
+  `--yes` survives that subcommand, and not passing it still leaves it
+  false.
+
+  The other half of this issue — `main()`'s routing skip-set being a
+  hand-maintained duplicate — was closed by gitlab#177's shared scan. The
+  remaining list is now covered by a test asserting the monolithic parser's
+  command `choices` are all known commands, which immediately found `info`
+  missing from that list. Harmless today (it routes to the flat parser,
+  which accepts global flags anywhere) but latent: a subparser for `info`
+  would have broken it the day it was added.
+
 - **Global-flag relocation ignored `--` and could read an option value as
   the command** (gitlab#177): the preprocessing that lets `--debug` and
   friends work after a subcommand did not stop at a bare `--`, so a file

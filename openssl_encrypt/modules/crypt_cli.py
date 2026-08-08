@@ -1059,6 +1059,11 @@ KNOWN_COMMANDS = (
     "check-password",
     "version",
     "show-version-file",
+    # Handled by the monolithic parser, which accepts global flags anywhere,
+    # so its absence here was latent rather than user-visible -- but the list
+    # means "every command name", and a subparser for it would break the day
+    # it was added (gitlab#176).
+    "info",
     "create-usb",
     "verify-usb",
     "list-plugins",
@@ -1152,6 +1157,15 @@ TRULY_GLOBAL_FLAGS = frozenset(
         "--progress",
         "--parallel-kdf",
         "--kdf-workers",
+        # gitlab#176: declared top-level as "Automatic yes to prompts (for
+        # install-dependencies command)", recognised for routing, but never
+        # relocated -- so `install-dependencies --yes`, the one invocation it
+        # exists for, exited 2. Held back from gitlab#171 because `hsm
+        # fido2-unregister` declares its own --yes whose default would clobber
+        # a relocated one; that declaration now uses default=SUPPRESS, the
+        # same treatment --quiet needed.
+        "--yes",
+        "-y",
     }
 )
 

@@ -3010,10 +3010,17 @@ def setup_hsm_parser(subparser):
         "--rp-id",
         help="Custom Relying Party ID (default: openssl-encrypt.local)",
     )
+    # default=SUPPRESS, not False: argparse parses a subcommand into a fresh
+    # namespace and copies every key back over the parent's, so a default here
+    # would overwrite a --yes given before the subcommand and relocated to the
+    # front by preprocess_global_args. Same dest-clobber --quiet hit in
+    # gitlab#171; --yes could not join TRULY_GLOBAL_FLAGS until this was fixed
+    # (gitlab#176).
     fido2_unregister_parser.add_argument(
         "--yes",
         "-y",
         action="store_true",
+        default=argparse.SUPPRESS,
         help="Skip confirmation prompt",
     )
 

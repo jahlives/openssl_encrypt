@@ -144,14 +144,17 @@ class TestMainsScanAgrees(unittest.TestCase):
         self.assertEqual(self._first_command(["crypt", "--debug", "decrypt", "-i", "f"]), "decrypt")
 
     def test_a_top_level_boolean_does_not_swallow_the_command(self):
-        """--yes/-y and -h/--help are top-level booleans that are NOT in
-        TRULY_GLOBAL_FLAGS -- recognised for routing, but not relocatable,
-        because a subparser declares its own --yes.
+        """-h/--help is a top-level boolean that is not in
+        TRULY_GLOBAL_FLAGS, so keying "does this option take a value" off
+        that set alone made `crypt -h encrypt` treat `encrypt` as its value
+        and find no command at all. Caught in testing; the scan reads both
+        the value-taking and boolean sets off the real parser instead.
 
-        Keying "does this option take a value" off that set alone made
-        `crypt --yes encrypt` treat `encrypt` as --yes's value and find no
-        command at all. Caught in testing; the scan reads both the
-        value-taking and boolean sets off the real parser instead.
+        --yes/-y was in the same position when this was written and has
+        since joined TRULY_GLOBAL_FLAGS (gitlab#176). It stays in this list
+        deliberately: the property under test is that a BOOLEAN does not
+        swallow the command, and that must hold whether or not the flag also
+        happens to be relocatable.
         """
         for flag in ("--yes", "-y", "-h", "--help"):
             with self.subTest(flag=flag):
