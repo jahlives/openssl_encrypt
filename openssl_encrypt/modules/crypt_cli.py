@@ -58,7 +58,7 @@ from .crypt_utils import (
     show_security_recommendations,
     tty_clear_line,
 )
-from .debug_redaction import debug_secret, set_show_secrets
+from .debug_redaction import debug_secret, set_show_secrets, show_secrets_enabled
 
 # Try to import the CLI helper module
 try:
@@ -3546,16 +3546,19 @@ def handle_keyserver_command(args):
             eprint(f"✗ Failed to save API token: {e}")
 
     elif action == "show-token":
-        # Show API token (masked)
         token = config.load_api_token()
         if token:
-            # Mask token (show first 8 and last 4 characters)
-            if len(token) > 12:
-                masked = token[:8] + "*" * (len(token) - 12) + token[-4:]
-            else:
-                masked = "*" * len(token)
-            eprint(f"API Token: {masked}")
+            # Through the redaction chokepoint, not a private masking rule.
+            # This used to print the first 8 and last 4 characters, and 12
+            # characters of a bearer token is still key material: stderr
+            # reaches terminal scrollback, is merged by 2>&1, and the desktop
+            # GUI keeps a persistent debug log (gitlab#178). Reading the token
+            # back deliberately goes through the same explicit opt-in as every
+            # other secret.
+            eprint(debug_secret("API Token", token))
             eprint(f"Token file: {config.api_token_file}")
+            if not show_secrets_enabled():
+                eprint("  Run with --debug --unsafe-show-secrets to display it.")
         else:
             eprint("✗ No API token set")
             eprint("  Use: openssl-encrypt keyserver set-token <token>")
