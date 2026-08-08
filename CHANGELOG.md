@@ -332,6 +332,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **GUI command previews were not covered by the argv lint** (gitlab#191):
+  the lint anchored on `_runCLICommand*(` call sites, so it checked every
+  argv the GUI *executes* but neither of the two builders that construct a
+  full command line and render it to the user as copy-pasteable text. Same
+  defect surface — a preview that fails at argparse if pasted — and they
+  build `args` the same way, so only the anchor had to widen; a missing
+  builder is now a hard error rather than silent lost coverage.
+
+  On this line the previews were already flag-clean — `--whirlpool-rounds`
+  went with gitlab#189 — so widening the anchor added coverage without
+  finding a defect here. It found one on 1.5.x.
+- **GUI identity deletion sent `--contact`, a flag that never existed**
+  (gitlab#185): `identity delete <name> --contact` exited 2 at argparse, so
+  GUI contact deletion had never worked, and with no `--force` the CLI's
+  confirmation `input()` raised EOFError on a non-tty pipe. It now sends
+  `--kind own|contact` — the flag gitlab#173 added for exactly this choice —
+  and `--force`, since the app runs its own confirmation dialogue.
+
+  Getting this wrong is not cosmetic: deleting *both* entries destroys the
+  own identity's private keys, making every file encrypted to it unreadable,
+  and drops the contact's TOFU pin so a later import of that name is
+  accepted as first use with no key-change warning.
 - **`keyserver show-token` no longer prints part of the bearer token**
   (gitlab#178): the handler revealed the first 8 and last 4 characters with a
   plain `eprint`, bypassing the `debug_secret()` chokepoint every other
