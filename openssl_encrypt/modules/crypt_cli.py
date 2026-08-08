@@ -993,6 +993,13 @@ def sanitize_argv_for_debug(argv: list) -> list:
     redact_next = False
     for i, arg in enumerate(sanitized):
         if redact_next:
+            if arg == "--":
+                # The separator is not the credential -- it is what a user
+                # MUST type when the token starts with "-", and base64url
+                # tokens and JWT segments legitimately do. Redacting it here
+                # consumed the redaction and printed the token in cleartext
+                # on the next iteration (security review of gitlab#177).
+                continue
             sanitized[i] = debug_secret("", arg)
             redact_next = False
         elif arg in SECRET_VALUE_CLI_OPTIONS:
@@ -1257,6 +1264,33 @@ def _first_command_token(argv):
             index += 1
             continue
         return token if token in commands else None
+    return None
+
+
+def _keyring_remove_label(argv):
+    """The label `--keyring-remove` was given, or None.
+
+    Only honoured in top-level option position: before any `--`, and before
+    the command token. `--keyring-remove` is declared on the top-level
+    parser, so after a subcommand it is that subcommand's argument, not a
+    request to delete a credential.
+
+    Both spellings are recognised. The old scan matched only the separate
+    form, so `--keyring-remove=LABEL` silently did nothing.
+    """
+    command = _first_command_token(argv)
+    for index in range(1, len(argv)):
+        token = argv[index]
+        if token == "--":
+            return None
+        if command is not None and token == command:
+            return None
+        if token == "--keyring-remove":
+            if index + 1 < len(argv):
+                return argv[index + 1]
+            return None
+        if token.startswith("--keyring-remove="):
+            return token.split("=", 1)[1]
     return None
 
 
@@ -3965,21 +3999,26 @@ def main():
     import sys
 
     # Handle --keyring-remove early (before argparse) since it's a standalone action
-    if "--keyring-remove" in sys.argv:
-        idx = sys.argv.index("--keyring-remove")
-        if idx + 1 < len(sys.argv):
-            label = sys.argv[idx + 1]
-            try:
-                import keyring as _keyring
+    # Deliberately not a bare `"--keyring-remove" in sys.argv` membership
+    # test (security review of gitlab#177). That scan ran before any parsing,
+    # over the WHOLE of argv, so `crypt shred -- --keyring-remove label`
+    # deleted the stored password and exited 0 having shredded nothing --
+    # when what the user described was two files with those names. It also
+    # missed the `--keyring-remove=LABEL` spelling entirely, so that form
+    # silently did nothing.
+    label = _keyring_remove_label(sys.argv)
+    if label is not None:
+        try:
+            import keyring as _keyring
 
-                _keyring.delete_password("openssl_encrypt", label)
-                eprint(f"Password removed from keyring: '{label}'")
-            except ImportError:
-                eprint("Error: keyring package not installed. Install with: pip install keyring")
-                sys.exit(1)
-            except Exception:
-                eprint(f"No password found in keyring for label '{label}'")
-            sys.exit(0)
+            _keyring.delete_password("openssl_encrypt", label)
+            eprint(f"Password removed from keyring: '{label}'")
+        except ImportError:
+            eprint("Error: keyring package not installed. Install with: pip install keyring")
+            sys.exit(1)
+        except Exception:
+            eprint(f"No password found in keyring for label '{label}'")
+        sys.exit(0)
 
     sys.argv = preprocess_global_args(sys.argv)
 

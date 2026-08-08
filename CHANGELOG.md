@@ -332,6 +332,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **`--` defeated the keyserver-credential redaction, and could trigger a
+  keyring deletion** (security review of gitlab#177). gitlab#177 made `--`
+  a working spelling in the argv layer; two argv scanners had not learned
+  about it.
+
+  The `--debug` argv dump redacts the token *immediately after* the
+  `keyserver set-token`/`login` positional. With `--` in between it redacted
+  the separator and printed the credential verbatim — and `--` is precisely
+  what a user must type when the token starts with `-`, which base64url
+  tokens and JWT segments do. stderr reaches terminal scrollback, is merged
+  by `2>&1`, and the desktop GUI keeps a persistent debug log. The
+  separator is now skipped rather than consuming the redaction.
+
+  Separately, `--keyring-remove` was a raw membership test over the whole of
+  `sys.argv`, running before any parsing, so
+  `crypt shred -- --keyring-remove important-label` **deleted that stored
+  password** and exited 0 having shredded nothing — when what the user
+  described was two files with those names. It is now honoured only in
+  top-level option position (before any `--`, before the command), and the
+  `--keyring-remove=LABEL` spelling works, which the old scan missed
+  entirely.
+
+  Neither is a regression against a released version: the positional
+  redaction rule is itself new in 1.4.9 — 1.4.8 did not redact that token at
+  all, which is the already-recorded gitlab#133–136 item — and `--` was not
+  usable in this layer before gitlab#177.
+
 - **`enable-plugin`/`disable-plugin` reported success and changed nothing**
   (gitlab#199): both set an in-memory flag on a registration object that
   defaults to enabled at construction. Nothing wrote it to disk and nothing
