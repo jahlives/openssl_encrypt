@@ -1154,6 +1154,39 @@ inflated KDF metadata parameters, not cosmetic output.
 
 ### Security
 
+- **`enable-plugin`/`disable-plugin` reported success and changed nothing**
+  (gitlab#199): both set an in-memory flag on a registration object that
+  defaults to enabled at construction. Nothing wrote it to disk and nothing
+  read it back, and the CLI builds a fresh manager per invocation — so the
+  process died with the only copy of that state:
+
+  ```
+  $ openssl-encrypt disable-plugin --plugin-id steganography
+  ✅ Plugin steganography disabled successfully
+  $ openssl-encrypt list-plugins | grep -i stegano
+  🟢 Enabled Steganography (v1.0.0)
+  ```
+
+  This is worse than a missing feature: a user who disables a plugin *for a
+  security reason* got an unambiguous success message while the plugin
+  loaded and ran enabled on the very next command — a false assurance about
+  a control they believed they had applied.
+
+  The state is now persisted through the plugin config and read back at
+  load time, and a plugin recorded as disabled is registered but **not
+  initialized** — `initialize()` is where a plugin claims resources and
+  installs hooks — and not dispatched. It stays listed, as disabled, so it
+  can be turned back on. If the state cannot be written, the command now
+  reports failure instead of falling back to the flag that caused this.
+
+  Residual, stated rather than papered over: a disabled plugin is still
+  discovered and imported, so its module-level code runs. Refusing the
+  import needs a file-to-id map that does not exist before the module is
+  loaded.
+
+  Reachable only from 1.4.9 (gitlab#179), so no released version is
+  affected and no advisory is warranted.
+
 - **A contact stored under an own identity's name can no longer substitute
   its keys** (gitlab#173, ADVISORY 2026-15): `get_by_name` resolves own
   identities before contacts, but `add_identity` chose its destination purely
