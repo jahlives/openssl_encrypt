@@ -374,6 +374,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **OpenPGP: malformed input escaped the module's error taxonomy**
+  (gitlab#196 / github#113): `interop.openpgp.decrypt()` documents
+  `OpenPGPFormatError` for a malformed message, but the packet reader
+  indexed length fields and the S2K specifier without bounds checks, so a
+  truncated or crafted packet raised a raw `IndexError` or `struct.error`
+  instead. A caller catching `OpenPGPError` to report "not a valid OpenPGP
+  file" got an unhandled traceback, on input that is untrusted by
+  definition — a file someone handed you. Every length field in the packet
+  reader is now checked at the point of the read, and `decrypt()` translates
+  any remaining structural exception into `OpenPGPFormatError` so the
+  contract holds whatever a future field read forgets.
+
+  The **public-key** path (`decrypt --from pgp --pgp-key`) had the same
+  unchecked reads and no wrapper at all, and matters at least as much: a
+  public-key message is authored by anyone holding the recipient's *public*
+  key, so reaching that parser with hostile input needs no shared secret.
+  It now has the same guarantee, plus bounds checks on the ECDH session-key
+  fields and the `_MAX_INPUT` cap the symmetric side already had.
+
+  Two conditions were being mislabelled rather than merely uncaught.
+  `UnicodeEncodeError` subclasses `ValueError`, so a passphrase that is not
+  valid UTF-8 — `gpg` accepts a latin-1 one as raw bytes — was reported as a
+  malformed *message*, blaming the file for a credential problem; the
+  passphrase is now encoded outside that handler. And in the wrapped-session-
+  key branch a wrong passphrase decrypts the wrapper to noise, whose length
+  then failed inside the cipher constructor as a `ValueError`; both that and
+  the unknown-cipher case now raise `OpenPGPWrongPassphrase`, so the CLI's
+  dedicated wrong-passphrase message fires instead of "malformed message".
+
+  `InvalidTag`, `UnsupportedAlgorithm` and `InternalError` do not derive from
+  `ValueError`, so they escaped too — the second of those on any build whose
+  OpenSSL lacks CAST5 or 3DES, which sit in the 3.x legacy provider that many
+  distributions do not load. They are now mapped by name, `InvalidTag` to
+  `OpenPGPIntegrityError`, so that a later broadening of the catch cannot
+  silently downgrade "this file was tampered with" to "this file is
+  malformed". The tamper test asserts the integrity type specifically, which
+  it did not before.
+
+  A note on how this was verified, because the first attempt was not:
+  the corpus originally reached neither `_s2k_derive` nor three of the five
+  length guards — every blob died earlier, at the missing-integrity-packet
+  check that sits above the SKESK parse — so it passed while covering
+  nothing. It now splices the fixture's intact packets behind each crafted
+  one, and a companion test traces executed lines and fails if any guard is
+  not reached. The same trap repeated on the public-key side, where random
+  bytes almost never form a valid MPI header, so the crafted inputs there
+  are the exact shapes proven to reach each read.
+
+  Found via a flaky test: `test_not_openpgp` asserted that 64 random bytes
+  are never detected as OpenPGP, but `is_openpgp_file` is a one-byte
+  heuristic that accepts any first byte with bit 7 set and packet tag 3 —
+  1/64 for the old packet format plus 1/256 for the new one, measured at
+  1.97% over 200,000 draws. So the test failed about one run in fifty,
+  which made the baseline-vs-after regression comparison unreliable. It is
+  now deterministic, and the detector's intended false-positive behaviour is
+  pinned separately so the heuristic is not "fixed" in place of the test.
+
 - **Recovery-slot rewrites cannot destroy the ciphertext they manage**
   (gitlab#148): the envelope writer has an atomic path (temp file in the
   same directory, fsync, `os.replace`, mode preserved) and a truncating one

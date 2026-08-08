@@ -29,6 +29,7 @@ import struct
 import zlib
 from typing import Tuple
 
+from cryptography.exceptions import InternalError, InvalidTag, UnsupportedAlgorithm
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms
 
 # 3DES/CAST5/CFB are legacy; prefer the `decrepit` location (cryptography >=44)
@@ -144,6 +145,18 @@ def _maybe_dearmor(data: bytes) -> bytes:
 # --------------------------------------------------------------------------- #
 
 
+def _need(data: bytes, off: int, count: int, what: str) -> None:
+    """Refuse a field that runs past the end of the buffer.
+
+    Every length field below is read from untrusted input, and indexing or
+    struct.unpack past the end raises IndexError/struct.error -- outside the
+    OpenPGPError taxonomy this module documents and callers catch
+    (gitlab#196).
+    """
+    if off + count > len(data):
+        raise OpenPGPFormatError(f"truncated OpenPGP {what}")
+
+
 def _read_packet(data: bytes, off: int) -> Tuple[int, bytes, int]:
     """Read one packet starting at ``off``; return (tag, body, next_off)."""
     if off >= len(data):
@@ -167,10 +180,12 @@ def _read_packet(data: bytes, off: int) -> Tuple[int, bytes, int]:
                 length = n
                 partial = False
             elif n < 224:
+                _need(data, off, 1, "packet length")
                 length = ((n - 192) << 8) + data[off] + 192
                 off += 1
                 partial = False
             elif n == 255:
+                _need(data, off, 4, "packet length")
                 length = struct.unpack(">I", data[off : off + 4])[0]
                 off += 4
                 partial = False
@@ -189,12 +204,15 @@ def _read_packet(data: bytes, off: int) -> Tuple[int, bytes, int]:
     tag = (ctb >> 2) & 0x0F
     ltype = ctb & 0x03
     if ltype == 0:
+        _need(data, off, 1, "packet length")
         length = data[off]
         off += 1
     elif ltype == 1:
+        _need(data, off, 2, "packet length")
         length = struct.unpack(">H", data[off : off + 2])[0]
         off += 2
     elif ltype == 2:
+        _need(data, off, 4, "packet length")
         length = struct.unpack(">I", data[off : off + 4])[0]
         off += 4
     else:
@@ -224,24 +242,34 @@ def _s2k_derive(s2k: bytes, passphrase: bytes, key_len: int) -> Tuple[bytes, int
     if not s2k:
         raise OpenPGPFormatError("missing S2K specifier")
     s2k_type = s2k[0]
+    # Each branch states the length it needs BEFORE indexing. A truncated
+    # specifier used to raise IndexError straight out of the module, past
+    # the documented OpenPGPError taxonomy, on input that is by definition
+    # untrusted (gitlab#196).
     if s2k_type == 0:
-        hash_id = s2k[1]
+        needed, consumed = 2, 2
+    elif s2k_type == 1:
+        needed, consumed = 10, 10
+    elif s2k_type == 3:
+        needed, consumed = 11, 11
+    else:
+        raise OpenPGPFormatError(f"unsupported S2K type {s2k_type}")
+    if len(s2k) < needed:
+        raise OpenPGPFormatError(
+            f"truncated S2K specifier: type {s2k_type} needs {needed} bytes, got {len(s2k)}"
+        )
+
+    hash_id = s2k[1]
+    if s2k_type == 0:
         salt = b""
         count = None
-        consumed = 2
     elif s2k_type == 1:
-        hash_id = s2k[1]
         salt = s2k[2:10]
         count = None
-        consumed = 10
-    elif s2k_type == 3:
-        hash_id = s2k[1]
+    else:
         salt = s2k[2:10]
         coded = s2k[10]
         count = (16 + (coded & 15)) << ((coded >> 4) + 6)
-        consumed = 11
-    else:
-        raise OpenPGPFormatError(f"unsupported S2K type {s2k_type}")
 
     if hash_id not in _S2K_HASHES:
         raise OpenPGPFormatError(f"unsupported S2K hash algorithm {hash_id}")
@@ -333,6 +361,11 @@ def _ct_eq(a: bytes, b: bytes) -> bool:
 
 
 def _decompress(body: bytes) -> bytes:
+    if not body:
+        # Outside the try below, and reachable in the PUBLIC-KEY path by any
+        # sender who has the recipient's public key -- they can produce a
+        # valid MDC, so this is not gated on knowing a passphrase.
+        raise OpenPGPFormatError("empty compressed data packet")
     algo = body[0]
     data = body[1:]
     try:
@@ -414,6 +447,46 @@ def decrypt(data: bytes, *, passphrase: str) -> bytes:
         OpenPGPIntegrityError: MDC verification failed.
         OpenPGPWrongPassphrase: The passphrase did not decrypt the message.
     """
+    try:
+        # Encoded HERE, outside the try below: UnicodeEncodeError subclasses
+        # ValueError, so a passphrase that is not valid UTF-8 (gpg accepts a
+        # latin-1 one as raw bytes, and os.environ decodes with
+        # surrogateescape on POSIX) would have been reported as a malformed
+        # MESSAGE -- blaming the file for a passphrase problem.
+        passphrase.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise OpenPGPFormatError(
+            "passphrase cannot be encoded as UTF-8; OpenPGP passphrases are "
+            "hashed as bytes, so this one cannot be used here"
+        ) from exc
+
+    try:
+        return _decrypt_impl(data, passphrase)
+    except OpenPGPError:
+        raise
+    except InvalidTag as exc:
+        # Authentication failure is NOT a format problem. Mapped explicitly
+        # so a later broadening of the tuple below cannot silently downgrade
+        # "this file was tampered with" to "this file is malformed".
+        raise OpenPGPIntegrityError("OpenPGP AEAD authentication failed") from exc
+    except (UnsupportedAlgorithm, InternalError) as exc:
+        # Neither derives from ValueError, so both used to escape. Raised
+        # when the build's OpenSSL lacks a primitive -- CAST5 and 3DES sit
+        # in OpenSSL 3.x's legacy provider, which many distributions do not
+        # load, so a perfectly valid file hits this.
+        raise OpenPGPFormatError(f"unsupported OpenPGP algorithm for this build ({exc})") from exc
+    except (IndexError, struct.error, ValueError, KeyError, TypeError, OverflowError) as exc:
+        # Belt-and-braces on the documented taxonomy. Every field read below
+        # is bounds-checked at the point of the read, which gives a precise
+        # message; this catches whatever a future field read forgets. The
+        # input is untrusted by definition, so a structural error escaping as
+        # IndexError meant callers that catch OpenPGPError to report "not a
+        # valid OpenPGP file" got an unhandled traceback (gitlab#196).
+        raise OpenPGPFormatError(f"malformed OpenPGP message ({type(exc).__name__})") from exc
+
+
+def _decrypt_impl(data: bytes, passphrase: str) -> bytes:
+    """The body of :func:`decrypt`; see it for the contract."""
     if len(data) > _MAX_INPUT:
         raise OpenPGPFormatError("OpenPGP input too large")
     data = _maybe_dearmor(data)
@@ -456,8 +529,21 @@ def decrypt(data: bytes, *, passphrase: str) -> bytes:
             raise OpenPGPFormatError("empty wrapped session key")
         session_cipher = unwrapped[0]
         session_key = unwrapped[1:]
+        # A wrong passphrase decrypts this wrapper to noise, so both checks
+        # below fail on the CREDENTIAL, not on the file. Reporting a format
+        # error here would send the user looking for a corrupt message and
+        # would skip the CLI's dedicated wrong-passphrase message.
         if session_cipher not in _CIPHERS:
-            raise OpenPGPFormatError(f"unsupported session cipher {session_cipher}")
+            raise OpenPGPWrongPassphrase(
+                "wrapped session key did not decrypt to a known cipher (wrong passphrase?)"
+            )
+        if len(session_key) != _CIPHERS[session_cipher][1]:
+            # Without this, an unusable key length reached
+            # algorithms.AES(key), whose ValueError the wrapper turned into
+            # "malformed OpenPGP message".
+            raise OpenPGPWrongPassphrase(
+                "wrapped session key has the wrong length (wrong passphrase?)"
+            )
     else:
         # gpg -c: the S2K key IS the session key.
         session_cipher = cipher_id

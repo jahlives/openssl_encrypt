@@ -18,21 +18,22 @@ and unsupported algorithms/curves fail closed.
 """
 
 import hashlib
+import struct
 from typing import List, Optional
 
+from cryptography.exceptions import InternalError, InvalidTag, UnsupportedAlgorithm
 from cryptography.hazmat.primitives.asymmetric import ec, padding, rsa
-from cryptography.hazmat.primitives.asymmetric.x25519 import (
-    X25519PrivateKey,
-    X25519PublicKey,
-)
+from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey, X25519PublicKey
 from cryptography.hazmat.primitives.keywrap import aes_key_unwrap
 
 from . import openpgp as _pgp
 from .openpgp import (
     _CIPHERS,
+    _MAX_INPUT,
     CFB,
     OpenPGPError,
     OpenPGPFormatError,
+    OpenPGPIntegrityError,
     OpenPGPWrongPassphrase,
     _cipher_algo,
     _decrypt_seipd_v1,
@@ -277,8 +278,15 @@ def _ecdh_oid_bytes(curve: str) -> bytes:
 def _unwrap_ecdh(key: _SecretKey, esk: bytes) -> bytes:
     # ESK: MPI(ephemeral point) || 1-octet len || wrapped key
     _v, point_raw, off = _read_mpi(esk, 0)
+    if off >= len(esk):
+        # A well-formed MPI followed by nothing: the MPI reader is happy and
+        # this index used to raise a raw IndexError, outside the taxonomy
+        # (gitlab#196).
+        raise OpenPGPFormatError("truncated ECDH session key: no wrapped-key length")
     wrapped_len = esk[off]
     wrapped = esk[off + 1 : off + 1 + wrapped_len]
+    if len(wrapped) != wrapped_len:
+        raise OpenPGPFormatError("truncated ECDH wrapped session key")
 
     shared = _ecdh_shared(key, point_raw)
     hash_id, sym_id = key.kdf
@@ -306,6 +314,8 @@ def _unwrap_ecdh(key: _SecretKey, esk: bytes) -> bytes:
     except Exception:
         raise OpenPGPWrongPassphrase("ECDH key unwrap failed")
     # m is PKCS#5-padded: strip trailing pad bytes (value == count).
+    if not m:
+        raise OpenPGPFormatError("empty ECDH key-wrap result")
     pad = m[-1]
     if pad < 1 or pad > 8 or pad > len(m):
         raise OpenPGPFormatError("bad ECDH key-wrap padding")
@@ -334,7 +344,32 @@ def _recover_session_key(keys, key_id, algo, esk):
 
 
 def decrypt(data: bytes, *, secret_keys: List[_SecretKey]) -> bytes:
-    """Decrypt a public-key OpenPGP message using the supplied secret keys."""
+    """Decrypt a public-key OpenPGP message using the supplied secret keys.
+
+    Raises:
+        OpenPGPFormatError: Malformed or unsupported message.
+        OpenPGPIntegrityError: MDC verification failed.
+    """
+    try:
+        return _decrypt_impl(data, secret_keys=secret_keys)
+    except OpenPGPError:
+        raise
+    except InvalidTag as exc:
+        raise OpenPGPIntegrityError("OpenPGP AEAD authentication failed") from exc
+    except (UnsupportedAlgorithm, InternalError) as exc:
+        raise OpenPGPFormatError(f"unsupported OpenPGP algorithm for this build ({exc})") from exc
+    except (IndexError, struct.error, ValueError, KeyError, TypeError, OverflowError) as exc:
+        # Same taxonomy guarantee as the symmetric path (gitlab#196). This
+        # side matters at least as much: a PUBLIC-key message is authored by
+        # anyone holding the recipient's public key, so reaching this parser
+        # with hostile input needs no shared secret at all.
+        raise OpenPGPFormatError(f"malformed OpenPGP message ({type(exc).__name__})") from exc
+
+
+def _decrypt_impl(data: bytes, *, secret_keys: List[_SecretKey]) -> bytes:
+    """The body of :func:`decrypt`; see it for the contract."""
+    if len(data) > _MAX_INPUT:
+        raise OpenPGPFormatError("OpenPGP input too large")
     data = _maybe_dearmor(data)
     pkesks = []
     seipd = None
