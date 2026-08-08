@@ -583,6 +583,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Confirmation questions were invisible when stdout was redirected**
+  (gitlab#174): `eprint` writes to stderr, but `input("...")` writes its
+  prompt to *stdout*. Every security confirmation mixed the two — the
+  warning block to stderr, the question to stdout — so redirecting stdout
+  (`crypt … > out.txt`, a pipeline, a GUI capturing stdout as data) left the
+  user with a frightening warning followed by an apparently hung program,
+  no visible question, and no indication that typing anything other than
+  `yes` is what protects them.
+
+  Prompts now go through `tty_write`, which the codebase already had for
+  exactly this: it writes to `/dev/tty` so the question survives
+  redirection of either stream, falling back to stderr where there is no
+  terminal. End of input resolves to the refusing answer instead of
+  raising, so an unattended run cannot proceed by accident.
+
+  The issue named two sites; a lint over the whole `modules/` tree found
+  **21**, including the keyserver trust prompt, the telemetry opt-out, the
+  KDF-cost ceiling override and the shared `request_confirmation` helper.
+  The lint is now a test, so a new gate cannot reintroduce the pattern;
+  wholly interactive flows that own stdout for their whole run (the config
+  wizard, the password tester) are exempted by name.
+
 - **`--keyring-remove` deleted from the wrong position, was a no-op in two
   spellings, and reported failure as success** (follow-up security review of
   gitlab#177). Three defects in one credential-removal control:

@@ -72,7 +72,7 @@ from .crypt_errors import (  # Error handling imports are at the top of file
 )
 
 # Import utility functions
-from .crypt_utils import eprint, safe_open_file, sanitize_for_display
+from .crypt_utils import eprint, prompt_and_read, safe_open_file, sanitize_for_display
 
 # Redaction chokepoint: ALL secret material in debug output must be formatted
 # through debug_secret() (redacted by default, cleartext only with
@@ -10872,7 +10872,9 @@ def decrypt_file(
                         # Ask user if they want to proceed
                         try:
                             response = (
-                                input("Do you want to proceed anyway? [y/N]: ").strip().lower()
+                                prompt_and_read("Do you want to proceed anyway? [y/N]: ")
+                                .strip()
+                                .lower()
                             )
                             if response not in ("y", "yes"):
                                 raise IntegrityVerificationError(

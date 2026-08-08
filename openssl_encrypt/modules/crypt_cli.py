@@ -52,6 +52,7 @@ from .crypt_utils import (
     eprint,
     expand_glob_patterns,
     generate_strong_password,
+    prompt_and_read,
     request_confirmation,
     sanitize_for_display,
     secure_shred_file,
@@ -2094,7 +2095,7 @@ def install_optional_dependencies(args):
     eprint("=" * 70 + "\n")
 
     if not args.yes:
-        response = input("Continue? [y/N]: ").strip().lower()
+        response = prompt_and_read("Continue? [y/N]: ").strip().lower()
         if response not in ("y", "yes"):
             eprint("Installation cancelled.")
             return
@@ -2716,14 +2717,15 @@ def _handle_recommendations_profile(engine, args):
 
         # Interactive profile creation
         user_context.user_type = (
-            input("User type [personal/business/developer/compliance]: ").strip() or "personal"
+            prompt_and_read("User type [personal/business/developer/compliance]: ").strip()
+            or "personal"
         )
         user_context.experience_level = (
-            input("Experience level [beginner/intermediate/advanced/expert]: ").strip()
+            prompt_and_read("Experience level [beginner/intermediate/advanced/expert]: ").strip()
             or "intermediate"
         )
 
-        use_cases_str = input(
+        use_cases_str = prompt_and_read(
             "Primary use cases (comma-separated) [personal/business/compliance/archival]: "
         ).strip()
         if use_cases_str:
@@ -2732,13 +2734,14 @@ def _handle_recommendations_profile(engine, args):
             user_context.primary_use_cases = ["personal"]
 
         user_context.data_sensitivity = (
-            input("Data sensitivity [low/medium/high/top_secret]: ").strip() or "medium"
+            prompt_and_read("Data sensitivity [low/medium/high/top_secret]: ").strip() or "medium"
         )
         user_context.performance_priority = (
-            input("Performance priority [speed/security/balanced]: ").strip() or "balanced"
+            prompt_and_read("Performance priority [speed/security/balanced]: ").strip()
+            or "balanced"
         )
 
-        compliance_str = input(
+        compliance_str = prompt_and_read(
             "Compliance requirements (comma-separated) [fips_140_2/common_criteria/nist_guidelines]: "
         ).strip()
         if compliance_str:
@@ -3284,7 +3287,9 @@ def _handle_template_delete(template_mgr: TemplateManager, args):
 
     # Confirm deletion unless forced
     if not getattr(args, "force", False):
-        confirm = input(f"⚠️  Are you sure you want to delete template '{template_name}'? [y/N]: ")
+        confirm = prompt_and_read(
+            f"⚠️  Are you sure you want to delete template '{template_name}'? [y/N]: "
+        )
         if confirm.lower() != "y":
             eprint("Deletion cancelled.")
             return
@@ -3520,7 +3525,7 @@ def handle_hsm_command(args):
                 target = credential_id or "primary"
                 prompt = f"Are you sure you want to remove credential '{target}'? This cannot be undone. (y/N): "
 
-            confirmation = input(prompt).strip().lower()
+            confirmation = prompt_and_read(prompt).strip().lower()
             if confirmation != "y":
                 eprint("Operation cancelled.")
                 sys.exit(0)
@@ -3969,7 +3974,7 @@ def handle_keyserver_command(args):
             return
 
         if not args.force:
-            response = input(f"Clear {count} cached keys? (yes/no): ")
+            response = prompt_and_read(f"Clear {count} cached keys? (yes/no): ")
             if response.lower() not in ["yes", "y"]:
                 eprint("Cancelled")
                 return
@@ -4117,7 +4122,7 @@ def handle_telemetry_command(args):
 
         if not args.force:
             try:
-                response = input(
+                response = prompt_and_read(
                     f"Delete {pending_count} pending events without uploading? (yes/no): "
                 )
             except (EOFError, KeyboardInterrupt):
@@ -4147,7 +4152,7 @@ def handle_telemetry_command(args):
             eprint("  4. Stop background uploads")
             eprint()
             try:
-                response = input("Are you sure you want to opt out? (yes/no): ")
+                response = prompt_and_read("Are you sure you want to opt out? (yes/no): ")
             except (EOFError, KeyboardInterrupt):
                 # No usable stdin (a GUI or CI caller) or an interrupt: treat as
                 # a decline rather than a traceback outside the status contract.
@@ -6030,7 +6035,7 @@ def main_with_args(args=None):
                 if not sys.stdin.isatty():
                     eprint("Refusing to continue without --yes.")
                     return 1
-                answer = input("Continue? [y/N]: ").strip().lower()
+                answer = prompt_and_read("Continue? [y/N]: ").strip().lower()
                 if answer not in ("y", "yes"):
                     eprint("Aborted.")
                     return 1
@@ -9506,7 +9511,9 @@ def main_with_args(args=None):
                                         "Use --auto-create-keystore option to automatically create keystore"
                                     )
                                     create_prompt = (
-                                        input("Would you like to create a new keystore? (y/n): ")
+                                        prompt_and_read(
+                                            "Would you like to create a new keystore? (y/n): "
+                                        )
                                         .lower()
                                         .strip()
                                     )
@@ -10152,7 +10159,9 @@ def main_with_args(args=None):
                                     "Use --auto-create-keystore option to automatically create keystore"
                                 )
                                 create_prompt = (
-                                    input("Would you like to create a new keystore? (y/n): ")
+                                    prompt_and_read(
+                                        "Would you like to create a new keystore? (y/n): "
+                                    )
                                     .lower()
                                     .strip()
                                 )

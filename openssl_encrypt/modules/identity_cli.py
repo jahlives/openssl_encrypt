@@ -19,7 +19,7 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-from .crypt_utils import eprint, sanitize_for_display
+from .crypt_utils import eprint, prompt_and_read, sanitize_for_display
 from .identity import (
     Identity,
     IdentityError,
@@ -714,7 +714,7 @@ def cmd_import(args) -> int:
                     file=sys.stderr,
                 )
                 return 1
-            response = input("Accept the new key and replace the pinned one? (yes/no): ")
+            response = prompt_and_read("Accept the new key and replace the pinned one? (yes/no): ")
             if response.strip().lower() not in ("yes", "y"):
                 eprint("Import cancelled - pinned key kept.")
                 return 1
@@ -848,7 +848,7 @@ def cmd_delete(args) -> int:
                 if entry["kind"] == "own":
                     eprint("  This includes the private keys!")
 
-            response = input("Are you sure? (yes/no): ")
+            response = prompt_and_read("Are you sure? (yes/no): ")
             if response.lower() not in ["yes", "y"]:
                 eprint("Deletion cancelled.")
                 return 0
