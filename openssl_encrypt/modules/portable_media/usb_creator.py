@@ -328,24 +328,25 @@ class USBDriveCreator:
 
             # Create secure password key
             secure_password = SecureBytes(password.encode("utf-8"))
-            # Load this drive's salt (legacy fixed salt for pre-fix drives).
-            salt = self._load_or_create_salt(portable_root, create=False)
-            encryption_key = self._derive_encryption_key(secure_password, hash_config, salt)
+            encryption_key = None
+            try:
+                # Load this drive's salt (legacy fixed salt for pre-fix drives).
+                salt = self._load_or_create_salt(portable_root, create=False)
+                encryption_key = self._derive_encryption_key(secure_password, hash_config, salt)
 
-            # Verify integrity file
-            integrity_path = portable_root / self.INTEGRITY_FILE
-            if not integrity_path.exists():
-                raise USBCreationError("Integrity file missing - USB may be tampered")
+                # Verify integrity file
+                integrity_path = portable_root / self.INTEGRITY_FILE
+                if not integrity_path.exists():
+                    raise USBCreationError("Integrity file missing - USB may be tampered")
 
-            verification_result = self._verify_integrity_file(
-                portable_root, encryption_key, usb_root=usb_path
-            )
-
-            # Clean up
-            secure_memzero(encryption_key)
-            secure_memzero(secure_password)
-
-            return verification_result
+                return self._verify_integrity_file(portable_root, encryption_key, usb_root=usb_path)
+            finally:
+                # finally, not the success path only (gitlab#201): the common
+                # outcome here is a wrong password or an actually tampered
+                # drive, and both used to leave the key and password resident.
+                if encryption_key is not None:
+                    secure_memzero(encryption_key)
+                secure_memzero(secure_password)
 
         except Exception as e:
             raise USBCreationError(f"USB verification failed: {e}")
@@ -390,12 +391,18 @@ class USBDriveCreator:
         password: SecureBytes,
         hash_config: Optional[Dict] = None,
         salt: Optional[bytes] = None,
-    ) -> bytes:
+    ) -> bytearray:
         """
         Derive encryption key from password using complex hash chaining system
 
         Uses the same multi-hash approach as the main CLI for consistency.
         Falls back to PBKDF2 if no hash config provided or if import fails.
+
+        Returns a bytearray, not bytes (gitlab#201): this key protects an
+        encrypted keystore and the integrity manifest on removable media, and
+        secure_memzero refuses immutable input -- it returned False and every
+        caller discarded that, so the key stayed resident while the code read
+        as if it had been wiped.
 
         Args:
             password: The master password.
@@ -430,9 +437,12 @@ class USBDriveCreator:
                 # Hash the result to get the exact length we need
                 import hashlib
 
-                return hashlib.sha256(hashed_password).digest()[: self.KEY_LENGTH]
+                normalized = bytearray(hashlib.sha256(hashed_password).digest())
+                del normalized[self.KEY_LENGTH :]
+                secure_memzero(hashed_password)
+                return normalized
 
-            return hashed_password
+            return bytearray(hashed_password)
 
         except ImportError:
             # Fallback if crypt_core not available
@@ -444,7 +454,7 @@ class USBDriveCreator:
 
     def _derive_key_pbkdf2_fallback(
         self, password: SecureBytes, salt: Optional[bytes] = None
-    ) -> bytes:
+    ) -> bytearray:
         """Fallback PBKDF2 key derivation.
 
         Args:
@@ -469,8 +479,8 @@ class USBDriveCreator:
             iterations=iterations,
         )
 
-        key = kdf.derive(bytes(password))
-        return key
+        # bytearray, so secure_memzero can actually wipe it (gitlab#201).
+        return bytearray(kdf.derive(bytes(password)))
 
     def _create_portable_config(self, custom_config: Optional[Dict], include_logs: bool) -> Dict:
         """Create portable configuration file"""
@@ -1022,40 +1032,45 @@ fi
 
             # Try to decrypt with PBKDF2 (fallback method)
             secure_password = SecureBytes(password.encode("utf-8"))
-            salt = self._load_or_create_salt(portable_root, create=False)
-            pbkdf2_key = self._derive_key_pbkdf2_fallback(secure_password, salt)
-
-            with open(integrity_path, "rb") as f:
-                # Bounded read: the .integrity blob is small; cap it so an
-                # attacker cannot plant a huge file here to exhaust memory
-                # before authentication (gitlab#132).
-                encrypted_data = f.read(self._MAX_INTEGRITY_BYTES)
-
-            # Extract nonce and decrypt
-            nonce = encrypted_data[: self.NONCE_LENGTH]
-            ciphertext = encrypted_data[self.NONCE_LENGTH :]
-
-            cipher = AESGCM(pbkdf2_key)
+            pbkdf2_key = None
             try:
-                decrypted_data = cipher.decrypt(nonce, ciphertext, None)
-                integrity_data = json.loads(decrypted_data.decode("utf-8"))
+                salt = self._load_or_create_salt(portable_root, create=False)
+                pbkdf2_key = self._derive_key_pbkdf2_fallback(secure_password, salt)
 
-                # Clean up sensitive data
-                secure_memzero(pbkdf2_key)
-                secure_memzero(secure_password)
+                with open(integrity_path, "rb") as f:
+                    # Bounded read: the .integrity blob is small; cap it so an
+                    # attacker cannot plant a huge file here to exhaust memory
+                    # before authentication (gitlab#132).
+                    encrypted_data = f.read(self._MAX_INTEGRITY_BYTES)
 
-                # Return the stored hash_config if it exists
+                # Extract nonce and decrypt
+                nonce = encrypted_data[: self.NONCE_LENGTH]
+                ciphertext = encrypted_data[self.NONCE_LENGTH :]
+
+                cipher = AESGCM(bytes(pbkdf2_key))
+                try:
+                    decrypted_data = cipher.decrypt(nonce, ciphertext, None)
+                    integrity_data = json.loads(decrypted_data.decode("utf-8"))
+                except Exception:
+                    # PBKDF2 decryption failed, so complex hashing was likely
+                    # used; the caller has to supply the hash_config.
+                    return None
+
+                # This blob IS authenticated (AES-GCM under the
+                # password-derived key), unlike the plaintext
+                # hash_config.json handled above, so it needs no allowlist.
                 hash_config = integrity_data.get("hash_config")
                 if hash_config:
                     logger.debug("Successfully read hash_config from integrity file")
                 return hash_config
-
-            except Exception:
-                # Decryption with PBKDF2 failed, this means complex hashing was likely used
-                # Clean up and return None to indicate we need the hash_config parameter
-                secure_memzero(pbkdf2_key)
+            finally:
+                # finally, not per-branch (gitlab#201): a raise between
+                # deriving the key and the decrypt attempt -- a missing salt
+                # file, an unreadable .integrity -- used to leave both
+                # resident via the outer handler.
+                if pbkdf2_key is not None:
+                    secure_memzero(pbkdf2_key)
                 secure_memzero(secure_password)
-                return None
 
         except Exception as e:
             logger.debug(f"Failed to read hash_config from metadata: {e}")

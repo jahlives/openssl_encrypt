@@ -365,6 +365,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Reachable only from 1.4.9 (gitlab#179), so no released version is
   affected and no advisory is warranted.
 
+- **The portable-USB drive key was never actually wiped** (gitlab#201):
+  every `secure_memzero` call on that path was a no-op whose return value
+  was discarded. `PBKDF2HMAC.derive()`, `multi_hash_password` and the
+  length-normalising `sha256(...).digest()` all return immutable `bytes`,
+  and `secure_memzero` refuses immutable input and returns `False` without
+  touching the caller's buffer — the documented M10 contract. So the
+  AES-256 key protecting an encrypted keystore and the integrity manifest
+  *on removable media* stayed resident for the process lifetime while the
+  code read as though it had been wiped.
+
+  The derived key is now held in a `bytearray` from creation, so the
+  existing wipes take effect. Derived values are byte-identical — pinned by
+  a test against a known PBKDF2 vector — so existing drives verify
+  unchanged.
+
+  `verify_usb_integrity` also wiped on the success path only: a bare
+  `except: raise` with no `finally`, so the overwhelmingly common outcome —
+  a wrong password, or an actually tampered drive — left both the key and
+  the password resident. That and the equivalent gap in
+  `_read_hash_config_from_integrity` are now `try/finally`, matching
+  `create_portable_usb`, which already had it.
+
 - **`verify-usb` took its key-derivation cost from the drive it was
   checking** (gitlab#200): `verify-usb` is the command you run *because you
   do not trust the drive*, and with no `--sha*-rounds` flags it read
