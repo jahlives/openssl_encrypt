@@ -583,6 +583,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`generate-password` still claimed to have cleared the screen**
+  (gitlab#182): gitlab#152 removed that claim from `encrypt --random`
+  because it is false — the escape sequence repaints the visible screen and
+  removes nothing from scrollback, a pipe, a `script(1)` transcript or a CI
+  log — but the same message survived on the other command that shows a
+  generated password. It now says what actually happens, and adds the
+  "this is the only time it is shown" warning the other path already had.
+
+- **A hardlinked `--random-password-out` destination escaped the collision
+  check** (gitlab#182): the check used `realpath`, which resolves symlinks
+  but not hard links, so a destination hardlinked to `--output` was accepted
+  and then truncated by the ciphertext write moments later — destroying the
+  password while reporting success. `os.path.samefile` now closes that for
+  a destination that already exists; a destination this run creates is
+  still covered by the path comparison and `O_EXCL`.
+
 - **`telemetry status` reported a constant, not the real setting**
   (gitlab#166): `get_status()` returned a hardcoded `"enabled": True`, so
   the one command a user runs to check whether telemetry is on answered

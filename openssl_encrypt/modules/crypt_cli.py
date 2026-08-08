@@ -947,8 +947,22 @@ def _check_random_password_destination(out_path, input_path, output_path):
         raise ValueError("--random-password-out needs a path")
     out_real = os.path.realpath(out_path)
     for label, other in (("--input", input_path), ("--output", output_path)):
-        if other and out_real == os.path.realpath(other):
+        if not other:
+            continue
+        if out_real == os.path.realpath(other):
             raise ValueError(f"--random-password-out must differ from {label}")
+        # realpath resolves symlinks but NOT hard links, so a destination
+        # hardlinked to --output passed this check and was then truncated by
+        # the ciphertext write moments later (gitlab#182). samefile compares
+        # st_dev/st_ino, which is what "the same file" actually means.
+        # Only meaningful when both already exist; the usual case is a
+        # destination this run is about to create, and that is handled by the
+        # realpath comparison above plus O_EXCL at creation.
+        try:
+            if os.path.exists(out_path) and os.path.samefile(out_path, other):
+                raise ValueError(f"--random-password-out must differ from {label}")
+        except OSError:
+            pass  # unreadable/missing: the realpath comparison stands
 
 
 def _random_password_destination_ok(isatty, out_path, quiet=False):
