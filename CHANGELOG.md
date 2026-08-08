@@ -374,6 +374,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A lint for GUI service surface with no caller** (gitlab#198 /
+  github#116): the argv lint reads the argv `cli_service.dart` *builds* and
+  checks it against the real argparse tree, catching a flag the GUI sends
+  that the CLI cannot accept. This is the mirror image — surface the GUI
+  declares and never sends, because no widget passes it. Both are "the
+  plumbing exists, one end is missing", and both hide behind a green test
+  run.
+
+  It exists because the audit found `CHANGELOG` entries describing
+  Encrypt-tab controls that do not exist: the service half of gitlab#153
+  landed, the widget half did not, and nothing noticed. gitlab#141's
+  password-strength meter is in the same state — `checkPassword()` is
+  implemented and nothing calls it.
+
+  Run against the current tree it finds **50 unwired parameters across 8
+  methods**, including the whole steganography surface: `encryptWithStego­
+  graphy`, `encryptTextWithSteganography` and `decryptFromSteganography` are
+  declared with 35 parameters between them and **no widget calls any of
+  them**, so that feature is unreachable from this GUI regardless of what the
+  flags say. Each gap is registered in `KNOWN_UNWIRED` against the issue that
+  tracks it, and a stale entry is an error — an exemption that outlives its
+  gap stops the check protecting that surface.
 - **Recovery passphrases are held to the password policy** (gitlab#149):
   `add-recovery` accepted a one-character recovery passphrase — the check
   added under gitlab#144 rejected only blank and whitespace-only values —
