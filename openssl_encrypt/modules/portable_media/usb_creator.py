@@ -1432,12 +1432,19 @@ if __name__ == "__main__":
 
                 from ..crypt_core import EncryptionAlgorithm, encrypt_file
 
-                # Create temporary files for encryption
-                with tempfile.NamedTemporaryFile(mode="w", delete=False) as temp_input:
+                # Both temp paths are CLAIMED by mkstemp, not derived by
+                # string concatenation (gitlab#204). The output used to be
+                # `temp_input_path + ".enc"` -- an unclaimed sibling in the
+                # shared temp directory whose name anyone able to list it
+                # could derive, and encrypt_file's default secure_mode=False
+                # meant a symlink planted there was followed, giving a local
+                # attacker an arbitrary file overwrite as this user.
+                input_fd, temp_input_path = tempfile.mkstemp(suffix=".manifest")
+                with os.fdopen(input_fd, "w", encoding="utf-8") as temp_input:
                     temp_input.write(manifest_json)
-                    temp_input_path = temp_input.name
 
-                temp_output_path = temp_input_path + ".enc"
+                output_fd, temp_output_path = tempfile.mkstemp(suffix=".manifest.enc")
+                os.close(output_fd)
 
                 try:
                     # Convert string algorithm to EncryptionAlgorithm enum
@@ -1457,6 +1464,9 @@ if __name__ == "__main__":
                         progress=False,
                         verbose=False,
                         debug=False,
+                        # O_NOFOLLOW on the output: refuse a symlink at that
+                        # path rather than writing through it (gitlab#204).
+                        secure_mode=True,
                     )
 
                     if success:

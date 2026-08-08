@@ -1154,6 +1154,21 @@ inflated KDF metadata parameters, not cosmetic output.
 
 ### Security
 
+- **`create-usb` could be tricked into overwriting an arbitrary file**
+  (gitlab#204): the hash-manifest encryption wrote to a path built by
+  string concatenation — `temp_input_path + ".enc"`. The *input* was a
+  claimed 0600 temporary file, but the output was an unclaimed sibling in
+  the shared temp directory whose name anyone able to list it could derive,
+  and `encrypt_file` defaults to `secure_mode=False`, so no `O_NOFOLLOW`
+  was applied. A local attacker who pre-planted that name as a symlink got
+  an arbitrary file overwrite as the invoking user — demonstrated, with the
+  victim file replaced by ciphertext — and the subsequent permission fix-up
+  then chmod'd the symlink target.
+
+  Both temporary paths are now claimed by their own `mkstemp`, and the
+  encryption runs with `secure_mode=True` so a symlink at the output path
+  is refused at the OS level instead of followed.
+
 - **`create-usb` copied private keys onto the drive** (gitlab#203): the
   project copy used `shutil.copytree` with no filter and the default
   `symlinks=False`, so run from a source checkout — which the project-root
