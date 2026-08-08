@@ -172,32 +172,39 @@ gaps (encrypt-tab options, batch-tab parity), and remaining nice-to-haves
 
 ## Steps
 
+Checkbox state was audited against the code on 2026-08-08 rather than trusted:
+`[x]` means the emitting method AND a widget that reaches it both exist. Three
+items are annotated because only half of that is true — a service method with
+no consumer is dead surface, which is the same defect class as the
+emitted-but-nonexistent flags the argv lint now catches.
+
 ### Tier 1 — highest value-to-effort
 
-- [ ] P1: Decrypt tab exposes widgets for `--with-key` (recipient identity),
+- [x] P1: Decrypt tab exposes widgets for `--with-key` (recipient identity),
       `--verify-from` (signer identity), and `--no-verify` (skip signature,
       behind a warning) — the three fields already passed to `CLIService` but
       never set by any widget become reachable.
       target: desktop_gui/lib/tabs/decrypt_tab.dart
-- [ ] P2: `CLIService.generatePassword()` emits the `generate-password`
+- [x] P2: `CLIService.generatePassword()` emits the `generate-password`
       char-mode flags (`length`, `--use-lowercase/-uppercase/-digits/-special`).
       target: desktop_gui/lib/cli_service.dart
-- [ ] P3: `CLIService.generatePassword()` also supports diceware mode
+- [x] P3: `CLIService.generatePassword()` also supports diceware mode
       (`--dice`, `--dice-count`, `--dice-sep`, `--dice-list`, `--force-wordlist`).
       target: desktop_gui/lib/cli_service.dart
-- [ ] P4: New Password Generator screen with char/diceware toggle and a
+- [x] P4: New Password Generator screen with char/diceware toggle and a
       NavigationRail entry, calling P2/P3.
       target: desktop_gui/lib/ (new password_generator_screen.dart) + lib/main.dart
 - [ ] P5: Generated password can be inserted into the Encrypt and Decrypt
       password fields (copy-to-field action).
       target: desktop_gui/lib/tabs/encrypt_tab.dart, desktop_gui/lib/tabs/decrypt_tab.dart
-- [ ] P6: `CLIService.shred()` emits the `shred` command
+  - **Not wired**: no widget consumes the generated password; the screen shows and copies it, but there is no insert-into-tab path.
+- [x] P6: `CLIService.shred()` emits the `shred` command
       (`--input` incl. glob, `--shred-passes`, `--recursive`).
       target: desktop_gui/lib/cli_service.dart
-- [ ] P7: New Secure Shred screen (file/glob picker, passes, recursive) with a
+- [x] P7: New Secure Shred screen (file/glob picker, passes, recursive) with a
       NavigationRail entry and a mandatory irreversible-action confirmation.
       target: desktop_gui/lib/ (new shred_screen.dart) + lib/main.dart
-- [ ] P8: `CLIService.checkPassword()` emits `check-password`
+- [x] P8: `CLIService.checkPassword()` emits `check-password`
       (`--password-policy`, `--strict-strength`, `--json`) and parses the JSON
       strength result.
       target: desktop_gui/lib/cli_service.dart
@@ -207,19 +214,20 @@ gaps (encrypt-tab options, batch-tab parity), and remaining nice-to-haves
 
 ### Tier 2 — parity gaps
 
-- [ ] P10: `CLIService.rekey()` emits the `rekey` command (old-password vs
+  - **Service method exists, no consumer**: `CLIService.checkPassword()` is implemented (P8) but nothing calls it, so there is no live indicator. Dead surface in the same class as the emitted-but-nonexistent flags.
+- [x] P10: `CLIService.rekey()` emits the `rekey` command (old-password vs
       `--rekey-password*`, optional `--algorithm`, cascade flags, full hash/KDF
       group, `--password-policy` group).
       target: desktop_gui/lib/cli_service.dart
-- [ ] P11: New Rekey screen (change password and/or algorithm on an existing
+- [x] P11: New Rekey screen (change password and/or algorithm on an existing
       file) with a NavigationRail entry, calling P10.
       target: desktop_gui/lib/ (new rekey_screen.dart) + lib/main.dart
-- [ ] P12: `CLIService` gains methods for envelope recovery slots:
+- [x] P12: `CLIService` gains methods for envelope recovery slots:
       `list-recovery`, `add-recovery` (`--add-code`/`--add-passphrase`),
       `recover` (`--recovery-code`/`--recovery-passphrase`), and
       `remove-recovery` (`--slot-id`).
       target: desktop_gui/lib/cli_service.dart
-- [ ] P13: New Recovery Slots screen listing/adding/removing recovery slots and
+- [x] P13: New Recovery Slots screen listing/adding/removing recovery slots and
       recovering a file, calling P12.
       target: desktop_gui/lib/ (new recovery_screen.dart) + lib/main.dart
 - [ ] P14: Encrypt tab exposes `--shred` + `--shred-passes` to securely wipe the
@@ -233,6 +241,7 @@ gaps (encrypt-tab options, batch-tab parity), and remaining nice-to-haves
       target: desktop_gui/lib/tabs/encrypt_tab.dart, desktop_gui/lib/cli_service.dart
 - [ ] P17: Encrypt tab exposes `--pqc-keyfile` and `--pqc-store-key`.
       target: desktop_gui/lib/tabs/encrypt_tab.dart, desktop_gui/lib/cli_service.dart
+  - **Partly**: `cli_service.dart` emits `--pqc-keyfile`/`--pqc-store-key`, but `main.dart` never passes them, so no widget reaches them.
 - [ ] P18: Encrypt tab exposes the hidden/whitened header format
       (`--hidden-header`, `--second-password*` inputs).
       target: desktop_gui/lib/tabs/encrypt_tab.dart, desktop_gui/lib/cli_service.dart
@@ -257,7 +266,7 @@ gaps (encrypt-tab options, batch-tab parity), and remaining nice-to-haves
 - [ ] P25: `CLIService.sign()` emits `sign` (`--input`, `--output`,
       `--sign-with`, `--no-armor`) and a standalone Sign screen uses it.
       target: desktop_gui/lib/cli_service.dart + lib/ (new sign_screen.dart)
-- [ ] P26: `CLIService.verifySignature()` emits `verify-signature`
+- [x] P26: `CLIService.verifySignature()` emits `verify-signature`
       (`--input`, `--signature`, `--signer`, `--json`) and a Verify Signature
       screen uses it.
       target: desktop_gui/lib/cli_service.dart + lib/ (new verify_signature_screen.dart)
@@ -396,11 +405,7 @@ here too.
 
 ### Open follow-ups from security reviews
 
-Confidential (pre-existing, affect released versions):
-
-- **gitlab#173** — a contact can shadow an own identity's name; deleting the
-  own identity then silently promotes the attacker's keys, and recipient
-  resolution goes through `get_by_name`.
+(Confidential entries have all been fixed and made public; see the register.)
 
 Public:
 
@@ -421,9 +426,11 @@ Public:
 - **gitlab#182 / gh#97** — `generate-password` still claims to clear the
   screen; the orphan-password NOTE misses the `return 1` paths; `realpath`
   does not resolve hardlinks.
-- **gitlab#147, gitlab#149, gitlab#150** — earlier follow-ups (#150 is the
-  stdout-leak lint's ±50 line tolerance, which has forced a manual re-anchor
-  on nearly every commit this session).
+- **gitlab#147, gitlab#149** — earlier follow-ups. (#150, the stdout-leak
+  lint's ±50 line tolerance, is fixed on both lines.) #149 is the one with
+  teeth: recovery passphrases bypass the password-strength policy, and a
+  recovery slot is an additional wrapping of the same file key, so a weak one
+  is a weak key for the whole file.
 - **gitlab#195 / gh#112** — the same-file truncating write that gitlab#148
   fixed in the envelope header writer still exists on the slow paths:
   `rekey -i f -o f` and `decrypt -i f -o f` hand the input path straight to
