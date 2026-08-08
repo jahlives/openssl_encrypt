@@ -1154,6 +1154,33 @@ inflated KDF metadata parameters, not cosmetic output.
 
 ### Security
 
+- **A new USB drive got the weakest key derivation in the tool, and
+  `--pbkdf2-iterations` was silently ignored** (gitlab#205): every round
+  option defaults to 0, so a plain `create-usb --usb-path X` passed no
+  config and derived with PBKDF2-HMAC-SHA256 at 100 000 iterations — what
+  this codebase's own comment calls "below the OWASP floor" — to protect an
+  encrypted keystore and integrity manifest on removable media, the
+  artifact with the highest offline-attack exposure the tool writes.
+  Argon2, scrypt and Balloon are not wired into this path at all.
+
+  Separately, `multi_hash_password` never reads `pbkdf2_iterations`: 100k
+  and 5M derive the *identical* key. The value was still written into
+  `hash_config.json` and `.integrity`, so the drive advertised a work
+  factor that had never been applied. That option is now refused with a
+  pointer to the round options that do work, rather than recorded as a
+  control that was not applied.
+
+  A drive created with no explicit rounds now **records** a strong config
+  instead of falling through to the weak default. Expressed as hash rounds
+  rather than a raised PBKDF2 count deliberately: the fallback's iteration
+  count is recorded nowhere a verifier can read — the drive's
+  `security_profile` lives inside `.integrity`, which is encrypted with the
+  key derived from that profile — so raising it would derive a different
+  key, fail to decrypt, and report a good drive as **tampered**. Rounds are
+  stored on the drive and read back on verify, so new drives carry their
+  own parameters and the no-config path stays byte-identical for drives
+  that already exist.
+
 - **`create-usb` could be tricked into overwriting an arbitrary file**
   (gitlab#204): the hash-manifest encryption wrote to a path built by
   string concatenation — `temp_input_path + ".enc"`. The *input* was a

@@ -55,6 +55,31 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+# The KDF a new drive gets when the user names no rounds at all.
+#
+# Without this, a plain `create-usb --usb-path X` built an empty dict, passed
+# hash_config=None, and derived with PBKDF2-HMAC-SHA256 at 100 000 iterations
+# -- what crypt_cli's own comment calls "below the OWASP floor" -- to protect
+# an encrypted keystore and integrity manifest on removable media, the
+# highest offline-exposure artifact this tool writes (gitlab#205).
+#
+# Expressed as hash ROUNDS rather than a raised PBKDF2 count on purpose. The
+# fallback's iteration count is recorded nowhere a verifier can read: the
+# drive's security_profile lives inside .integrity, which is encrypted with
+# the key derived from that profile, and verify_usb_integrity always builds a
+# STANDARD creator. Raising it would derive a different key, fail to decrypt
+# .integrity, and report a good drive as TAMPERED. Rounds, by contrast, are
+# stored in hash_config.json and .integrity and read back on verify, so a new
+# drive carries its own parameters and the no-config path stays untouched for
+# drives already in existence.
+_DEFAULT_USB_HASH_ROUNDS = 600_000
+
+
+def default_usb_hash_config() -> Dict[str, int]:
+    """The hash config a create-usb with no explicit rounds should record."""
+    return {"sha512": _DEFAULT_USB_HASH_ROUNDS}
+
+
 class USBCreationError(KeystoreError):
     """USB drive creation specific errors"""
 

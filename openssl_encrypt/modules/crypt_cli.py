@@ -4017,6 +4017,34 @@ def main_with_args(args=None):
                 hash_config["shake256"] = args.shake256_rounds
             if hasattr(args, "shake128_rounds") and args.shake128_rounds:
                 hash_config["shake128"] = args.shake128_rounds
+            if hasattr(args, "whirlpool_rounds") and args.whirlpool_rounds:
+                hash_config["whirlpool"] = args.whirlpool_rounds
+
+            # --pbkdf2-iterations is refused rather than recorded (gitlab#205).
+            # multi_hash_password never reads it -- 100k and 5M derive the
+            # identical key -- but it WAS written into hash_config.json and
+            # .integrity, so the drive advertised a work factor that was never
+            # applied. Recording a control that was not applied is the same
+            # defect as gitlab#199; say so instead.
+            if getattr(args, "pbkdf2_iterations", 0):
+                eprint(
+                    "Error: --pbkdf2-iterations has no effect on USB drives and "
+                    "would be recorded without being applied."
+                )
+                eprint(
+                    "  Use the hash round options instead, e.g. --sha512-rounds, "
+                    "which are applied and stored on the drive."
+                )
+                return 1
+
+            # No rounds named at all: record a strong default rather than
+            # falling through to the PBKDF2-100k fallback (gitlab#205). It has
+            # to be RECORDED, not just used, because verification re-derives
+            # from whatever the drive stores.
+            if not hash_config:
+                from .portable_media.usb_creator import default_usb_hash_config
+
+                hash_config = default_usb_hash_config()
 
             # Build manifest hash config if manifest security profile specified
             manifest_hash_config = None
