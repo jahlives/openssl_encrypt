@@ -28,7 +28,7 @@ import tempfile
 import time
 from enum import Enum
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 try:
     from cryptography.hazmat.primitives import hashes
@@ -666,6 +666,69 @@ fi
     # JSON manifest; an attacker could otherwise plant a multi-GB file there).
     _MAX_INTEGRITY_BYTES = 128 * 1024 * 1024  # 128 MiB
 
+    # config/hash_config.json is plaintext, unauthenticated, and sits on the
+    # drive being verified, yet its contents set the KDF work factor before
+    # any integrity check runs (gitlab#200). It is a handful of small
+    # integers; anything larger is an attack, not a drive.
+    _MAX_HASH_CONFIG_BYTES = 64 * 1024
+
+    # An allowlist rather than a per-key ceiling, because the file is
+    # unauthenticated: there is no reason to honour a shape create-usb never
+    # writes. These are exactly the keys the CLI builds (crypt_cli.py, the
+    # create-usb/verify-usb hash_config blocks), plus the "type" that
+    # multi_hash_password mutates in. A memory-hard block (argon2, scrypt,
+    # balloon, derivation_config) is not among them, so the OOM vector is
+    # refused by shape.
+    _ALLOWED_HASH_CONFIG_ROUNDS = frozenset(
+        {
+            "sha512",
+            "sha384",
+            "sha256",
+            "sha224",
+            "sha3_512",
+            "sha3_384",
+            "sha3_256",
+            "sha3_224",
+            "blake2b",
+            "blake3",
+            "shake256",
+            "shake128",
+            "whirlpool",
+            "pbkdf2_iterations",
+        }
+    )
+    # Well above any real configuration (the CLI's own presets top out in the
+    # low millions of PBKDF2 iterations) and far below a denial of service.
+    _MAX_HASH_CONFIG_ROUNDS = 10_000_000
+    _ALLOWED_HASH_CONFIG_TYPES = frozenset({"id", "i", "d", "argon2id", "argon2i", "argon2d"})
+
+    @classmethod
+    def _validated_drive_hash_config(cls, raw: Any) -> Optional[Dict]:
+        """Accept a hash_config read off an untrusted drive, or reject it.
+
+        Returns None rather than raising: the caller's contract for "no
+        usable stored config" is already None, and a refused config must
+        fall back to the built-in derivation exactly as a missing file does
+        -- not abort the verification the user asked for.
+        """
+        if not isinstance(raw, dict):
+            return None
+
+        for key, value in raw.items():
+            if key == "type":
+                if value not in cls._ALLOWED_HASH_CONFIG_TYPES:
+                    return None
+                continue
+            if key not in cls._ALLOWED_HASH_CONFIG_ROUNDS:
+                return None
+            # bool is an int subclass; reject it and every non-int explicitly.
+            if isinstance(value, bool) or not isinstance(value, int):
+                return None
+            if not (0 <= value <= cls._MAX_HASH_CONFIG_ROUNDS):
+                return None
+
+        return raw
+
     def _sha256_file(self, path: Path) -> str:
         """SHA-256 of a file, streamed in fixed-size chunks and hard-bounded so a
         very large attacker-supplied file (or a FIFO/symlink to an unbounded
@@ -924,10 +987,33 @@ fi
             metadata_file = config_dir / "hash_config.json"
 
             if metadata_file.exists():
+                # Bounded read, then validate: this file is unauthenticated
+                # and on the drive under examination, and its contents set
+                # the KDF work factor before any integrity check runs
+                # (gitlab#200). An uncapped json.load OOMs on a planted
+                # multi-GB file before parsing even finishes.
                 with open(metadata_file, "r") as f:
-                    hash_config = json.load(f)
+                    blob = f.read(self._MAX_HASH_CONFIG_BYTES + 1)
+                if len(blob) > self._MAX_HASH_CONFIG_BYTES:
+                    logger.warning(
+                        "Ignoring hash_config.json on the drive: larger than "
+                        f"{self._MAX_HASH_CONFIG_BYTES} bytes"
+                    )
+                    return None
+                try:
+                    hash_config = json.loads(blob)
+                except ValueError:
+                    logger.warning("Ignoring hash_config.json on the drive: not valid JSON")
+                    return None
+                validated = self._validated_drive_hash_config(hash_config)
+                if validated is None:
+                    logger.warning(
+                        "Ignoring hash_config.json on the drive: unrecognised or "
+                        "out-of-range key-derivation parameters"
+                    )
+                    return None
                 logger.debug("Successfully read hash_config from metadata file")
-                return hash_config
+                return validated
 
             # Fallback: try to decrypt integrity file with PBKDF2 (for backwards compatibility)
             integrity_path = portable_root / self.INTEGRITY_FILE
