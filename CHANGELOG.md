@@ -1154,6 +1154,32 @@ inflated KDF metadata parameters, not cosmetic output.
 
 ### Security
 
+### Security
+
+- **`verify-usb` took its key-derivation cost from the drive it was
+  checking** (gitlab#200): `verify-usb` is the command you run *because you
+  do not trust the drive*, and with no `--sha*-rounds` flags it read
+  `config/hash_config.json` — plaintext, unauthenticated, sitting on that
+  same drive — and fed it straight to the KDF before any integrity check
+  ran. Measured before the fix, the attacker set the work factor linearly:
+  `{"sha512": 1}` derived in 0.02 s, `1000000` in 2.48 s, so `10**12`
+  extrapolates to roughly 29 days; an Argon2 or scrypt block with a large
+  `memory_cost`/`N` exhausts memory instead, and the uncapped `json.load`
+  OOM'd on a planted multi-GB file before parsing finished.
+
+  The read is now capped and the document validated against an allowlist of
+  exactly what `create-usb` writes — the flat hash-round keys, the PBKDF2
+  iteration count, and the `type` key — with integer values in range. An
+  allowlist rather than a per-key ceiling because the file carries no
+  authentication at all: there is no reason to honour a shape the writer
+  never produces, which is what refuses the memory-hard blocks by shape. A
+  rejected file falls back to the built-in derivation exactly as a missing
+  one does, so a real drive still verifies.
+
+  Reachable only from 1.4.9: `verify-usb` exits 2 with `invalid choice` in
+  every release up to 1.4.8 (gitlab#179), so no released version is
+  affected and no advisory is warranted.
+
 - **`enable-plugin`/`disable-plugin` reported success and changed nothing**
   (gitlab#199): both set an in-memory flag on a registration object that
   defaults to enabled at construction. Nothing wrote it to disk and nothing
