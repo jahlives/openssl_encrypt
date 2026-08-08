@@ -374,6 +374,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`--gui` was unreachable via `python -m`, and started the legacy GUI**
+  (gitlab#197 / github#115): two defects stacked on each other.
+
+  `python -m openssl_encrypt --gui` failed with `the following arguments are
+  required: action`. There were two entry points into the program and only
+  one handled the flag: the console script is declared as
+  `openssl_encrypt.cli:main`, which checks for `--gui`, but `__main__.py`
+  imported `main` from `modules.crypt_cli` directly and so never saw it.
+  `__main__.py` now routes through `cli.main`, and a test asserts the two
+  cannot diverge again.
+
+  Underneath that, `--gui` launched `crypt_gui.py` — the tkinter interface —
+  while the current GUI is the Flutter desktop application under
+  `desktop_gui/`, which had no entry point from the Python side at all.
+  Fixing only the routing would have sent the flag to the wrong program more
+  reliably.
+
+  `--gui` now starts the desktop application, looking in a defined order: the
+  `OPENSSL_ENCRYPT_GUI` override, the installed Flatpak
+  (`com.opensslencrypt.OpenSSLEncrypt`), a built bundle in the source tree
+  (release before debug), then a binary on `PATH`. If none is found it says
+  so and names the ways to get one, rather than falling back to the legacy
+  interface — silently starting a different program than the one asked for is
+  the defect this fixes, so it is not the remedy for it either.
+
+  The tkinter interface stays reachable as `--gui-legacy`; it needs no build
+  step, which makes it useful where the desktop app cannot run.
+
+  The Flutter toolchain is never invoked implicitly. `flutter run` compiles
+  and executes code from the working tree, which is not something a `--gui`
+  flag should do on the user's behalf, so it is only suggested in the
+  not-found message. The launcher passes an argv list to `subprocess.run`
+  with no shell, and the tests pin that.
+
 - **`--pqc-keyfile`: a second implementation wrote the post-quantum private
   key in the clear, and the flag could never save** (gitlab#157):
   `crypt_cli.py` carried two independent copies of the keyfile save/load
