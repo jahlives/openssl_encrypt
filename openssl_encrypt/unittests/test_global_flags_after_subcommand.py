@@ -83,19 +83,18 @@ class TestRelocationDoesNotDisturbSubcommandArguments(unittest.TestCase):
         result = preprocess_global_args(
             ["crypt", "identity", "import", "--file", "a.json", "--debug"]
         )
-        self.assertEqual(
-            result, ["crypt", "--debug", "identity", "import", "--file", "a.json"]
-        )
+        self.assertEqual(result, ["crypt", "--debug", "identity", "import", "--file", "a.json"])
 
     def test_a_later_value_matching_a_command_name_does_not_move_the_anchor(self):
-        """The command position is the FIRST match, so a later value is inert.
+        """A value that happens to equal a command name is inert.
 
-        Note this does not test that option values are excluded from the scan
-        generally -- they are not. `preprocess_global_args(["crypt", "--alias",
-        "telemetry", "--debug"])` does treat "telemetry" as the command
-        position. That is a real (pre-existing) wart, tracked separately;
-        asserting the stronger property here would be asserting something
-        false.
+        This used to carry a caveat: option values were NOT excluded from the
+        scan generally, so `preprocess_global_args(["crypt", "--alias",
+        "telemetry", "--debug"])` really did treat "telemetry" as the command
+        and open the relocation gate on an invocation with no subcommand.
+        That was gitlab#177 and is fixed -- the stronger property is asserted
+        directly in test_global_flag_argv_boundaries.py, so this stays as the
+        realistic-invocation case.
         """
         result = preprocess_global_args(
             ["crypt", "identity", "import", "--alias", "telemetry", "--debug"]
@@ -119,9 +118,7 @@ class TestValueCarryingGlobalFlag(unittest.TestCase):
 
     def test_the_value_moves_with_the_flag(self):
         self.assertEqual(
-            preprocess_global_args(
-                ["crypt", "identity", "list", "--kdf-workers", "4"]
-            ),
+            preprocess_global_args(["crypt", "identity", "list", "--kdf-workers", "4"]),
             ["crypt", "--kdf-workers", "4", "identity", "list"],
         )
 
@@ -141,9 +138,7 @@ class TestValueCarryingGlobalFlag(unittest.TestCase):
         """
         from openssl_encrypt.modules.crypt_cli import SUBPARSER_COMMANDS
 
-        argv = preprocess_global_args(
-            ["crypt", "identity", "list", "--kdf-workers", "4"]
-        )
+        argv = preprocess_global_args(["crypt", "identity", "list", "--kdf-workers", "4"])
         first_command = None
         skip_next = False
         for i in range(1, len(argv)):

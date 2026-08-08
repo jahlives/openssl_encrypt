@@ -530,6 +530,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Global-flag relocation ignored `--` and could read an option value as
+  the command** (gitlab#177): the preprocessing that lets `--debug` and
+  friends work after a subcommand did not stop at a bare `--`, so a file
+  literally named `--quiet` was hoisted out of its subcommand's arguments
+  and read as a flag — in exactly the place a user reaches for `--` to stop
+  that happening. And it looked for the command name anywhere, including
+  option *values*: gitlab#171 widened the recognised set from 20 names to
+  42, adding ordinary barewords (`test`, `version`, `sign`, `recover`,
+  `template`, `identity`, `plugin`, `hsm`, `armor`), so
+  `--alias telemetry` opened the relocation gate on a command line with no
+  subcommand at all.
+
+  Impact was low rather than nil — relocation moves only exact global-flag
+  tokens and preserves relative order, so no positional was ever read as a
+  password — but the behaviour was unpredictable in the two places users
+  reach for predictability.
+
+  Both scans now stop at `--` and skip an option's value. They are also now
+  the *same* scan: `main()`'s routing decision was a third hand-maintained
+  copy of "which flags carry a value", and it had already drifted twice.
+  Which options take a value is read off the real parser rather than
+  listed, and both the value-taking and boolean sets are needed — `--yes`
+  and `-h` are top-level booleans that are deliberately not relocatable, so
+  keying off the relocatable set alone made `crypt --yes encrypt` swallow
+  the command.
+
 - **Seven documented commands could not be run** (gitlab#179 / github#94):
   `create-usb`, `verify-usb`, `list-plugins`, `plugin-info`,
   `enable-plugin`, `disable-plugin` and `reload-plugin` were listed in

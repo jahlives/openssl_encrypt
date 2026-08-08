@@ -1159,24 +1159,104 @@ TRULY_GLOBAL_FLAGS = frozenset(
 VALUE_CARRYING_GLOBAL_FLAGS = frozenset({"--kdf-workers"})
 
 
+_TOP_LEVEL_FLAGS = None
+
+
+def _top_level_flags():
+    """(value-taking, boolean) top-level option strings.
+
+    Read off the real parser rather than hand-listed (gitlab#177), for the
+    same reason as _subparser_choices: a copy beside the definition drifts,
+    and this one decides whether the next token is a command or somebody
+    else's value.
+
+    Falls back to the known set if the parser cannot be built, so a failure
+    here degrades to today's behaviour rather than mis-scanning every argv.
+    """
+    global _TOP_LEVEL_FLAGS
+    if _TOP_LEVEL_FLAGS is None:
+        import argparse as _argparse
+
+        value_flags, boolean_flags = set(), set()
+        try:
+            from .crypt_cli_subparser import build_subparser
+
+            for action in build_subparser()._actions:
+                if not action.option_strings:
+                    continue
+                boolean = (
+                    isinstance(
+                        action,
+                        (
+                            _argparse._StoreTrueAction,
+                            _argparse._StoreFalseAction,
+                            _argparse._HelpAction,
+                            _argparse._VersionAction,
+                        ),
+                    )
+                    or action.nargs == 0
+                )
+                (boolean_flags if boolean else value_flags).update(action.option_strings)
+        except Exception:  # noqa: BLE001 - scanning must not be fatal
+            value_flags = {"--kdf-workers", "--identity-store", "--keyring-remove"}
+            boolean_flags = set(TRULY_GLOBAL_FLAGS) | {"--yes", "-y", "-h", "--help"}
+        _TOP_LEVEL_FLAGS = (frozenset(value_flags), frozenset(boolean_flags))
+    return _TOP_LEVEL_FLAGS
+
+
+def _first_command_token(argv):
+    """The command name in argv, or None.
+
+    Two rules the previous scans lacked (gitlab#177):
+
+      * Stop at a bare ``--``. Everything after it is data by POSIX
+        convention, so a file literally named ``--quiet`` must not be read as
+        a flag and a positional named ``encrypt`` must not be read as the
+        command.
+      * A value belongs to its option, not to the scan. gitlab#171 widened
+        the command set from 20 names to 42, which added ordinary barewords
+        -- test, version, sign, recover, template, identity, plugin, hsm,
+        armor -- so ``--alias telemetry`` used to look like the ``telemetry``
+        command.
+
+    An option this scan does not recognise is assumed to take a value. That
+    is safe because the recognised sets ARE the top-level parser's own: an
+    unrecognised option at this position is one argparse will reject anyway,
+    so consuming its value cannot break a command line that would otherwise
+    have worked. Both sets are needed, not just the value-taking one --
+    --yes/-y and -h/--help are top-level booleans that are NOT in
+    TRULY_GLOBAL_FLAGS (they are recognised but not relocatable), so keying
+    off that set alone made `crypt --yes encrypt` swallow the command.
+    """
+    commands = set(KNOWN_COMMANDS)
+    value_flags, boolean_flags = _top_level_flags()
+
+    index = 1
+    while index < len(argv):
+        token = argv[index]
+        if token == "--":
+            return None
+        if token.startswith("-") and token != "-":
+            # --flag=value is self-contained; it never consumes the next token.
+            if "=" not in token and token not in boolean_flags:
+                index += 1  # its value, whether the flag is known or not
+            index += 1
+            continue
+        return token if token in commands else None
+    return None
+
+
 def preprocess_global_args(argv):
     """Preprocess sys.argv to move truly global flags to the front for subparser compatibility.
 
     This allows global flags like --debug, --verbose, --quiet, --progress to be specified
     anywhere in the command line, maintaining backward compatibility with v1.2.1 behavior.
     """
-    # Find the command position
     # Every command, not just the routed ones: a flag written after
-    # `create-usb` belongs to create-usb regardless of which parser handles it.
-    commands = set(KNOWN_COMMANDS)
-
-    command_pos = None
-    for i, arg in enumerate(argv[1:], 1):  # Skip argv[0] (script name)
-        if arg in commands:
-            command_pos = i
-            break
-
-    if command_pos is None:
+    # `create-usb` belongs to create-usb regardless of which parser handles
+    # it. Shared with main()'s routing scan so the two cannot disagree
+    # (gitlab#177).
+    if _first_command_token(argv) is None:
         return argv  # No command found, return as-is
 
     # Extract global flags and their values from anywhere in the command line
@@ -1186,6 +1266,13 @@ def preprocess_global_args(argv):
 
     while i < len(argv):
         arg = argv[i]
+
+        if arg == "--":
+            # Everything from here is data, not flags (gitlab#177). Copy the
+            # rest verbatim: a file literally named --quiet was being hoisted
+            # out of its subcommand's argument list and read as a flag.
+            other_args.extend(argv[i:])
+            break
 
         # The --flag=value form is one token, so an exact membership test
         # misses it and argparse then rejects it after a subcommand -- the
@@ -3894,46 +3981,19 @@ def main():
     # commands were unreachable while still being listed in --help.
     subparser_commands = _subparser_choices()
 
-    # Use subparser only if a subcommand is present
-    # (after global flags have been moved to the front by preprocess_global_args)
-    # Find the first non-flag argument (skip global flags)
-    # Derived, not a third hand-maintained copy. This set previously omitted
-    # -q and added --yes/-y, and the value-skip below is gated on membership
-    # here first -- so a future value-carrying flag added to
-    # TRULY_GLOBAL_FLAGS but forgotten here would have its value read as the
-    # command name and silently routed to the monolithic parser: gitlab#171
-    # all over again. --yes/-y stay as explicit extras because they are
-    # recognised for routing but are NOT relocatable (a subparser declares its
-    # own --yes, so relocating would let that default clobber it -- see
-    # gitlab#176).
-    global_flags = TRULY_GLOBAL_FLAGS | {"--yes", "-y"}
-    first_command = None
-    skip_next = False
-    for i in range(1, len(sys.argv)):
-        if skip_next:
-            # The value of a value-carrying global flag, consumed below.
-            skip_next = False
-            continue
-        arg = sys.argv[i]
-        # Skip global flags (and their values if applicable)
-        if arg in global_flags:
-            # Skip the flag's value too. This used to `continue` in both
-            # branches, so the value was never actually skipped: since
-            # preprocess_global_args now moves `--kdf-workers N` to the front
-            # for every subcommand, the scan saw "N" as the first non-flag
-            # token and treated it as the command, silently falling back to
-            # the monolithic parser (gitlab#171).
-            if (
-                arg in VALUE_CARRYING_GLOBAL_FLAGS
-                and i + 1 < len(sys.argv)
-                and not sys.argv[i + 1].startswith("-")
-            ):
-                skip_next = True
-            continue
-        # Found a non-flag argument
-        if not arg.startswith("-"):
-            first_command = arg
-            break
+    # Use subparser only if a subcommand is present, after
+    # preprocess_global_args has moved the global flags to the front.
+    #
+    # The SAME scan the relocation gate uses (gitlab#177). This was a third
+    # hand-maintained copy of "which flags carry a value", and the copies had
+    # already drifted twice: it once omitted -q, and its value-skip once
+    # `continue`d without consuming the value, so `--kdf-workers N` made the
+    # scan read "N" as the command and silently fall back to the monolithic
+    # parser (gitlab#171). Sharing one implementation means the relocation
+    # gate and the routing decision cannot disagree about where the command
+    # is -- and disagreement is exactly how the flags end up moved for one
+    # parser and interpreted by the other.
+    first_command = _first_command_token(sys.argv)
 
     if first_command in subparser_commands:
         # Use subparser for all command-specific operations
