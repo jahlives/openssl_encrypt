@@ -35,7 +35,7 @@ from contextlib import redirect_stderr
 from unittest import mock
 
 from openssl_encrypt.modules.crypt_core import _write_envelope_header
-from openssl_encrypt.modules.crypt_errors import RekeyError, ValidationError
+from openssl_encrypt.modules.crypt_errors import ValidationError
 
 # The exclusions this module is about are POSIX file semantics: a second hard
 # link, a symlink, a FIFO. Windows either lacks the calls or needs privileges
@@ -329,9 +329,13 @@ class TestFailedRestoreKeepsTheOnlyCopy(_EnvelopeTestCase):
 
     Deleting it would destroy it, so it is kept -- and the user has to be
     told where it is, because it is dot-prefixed and invisible to a plain
-    ls. That message must NOT travel in the exception: RekeyError is a
-    SecureError, which replaces the message it is given with a generic
-    string unless DEBUG=1 is set. Asserting on str(exc) passes under pytest
+    ls. That message must NOT travel in the exception: these are all
+    SecureError subclasses, which replace the message they are given with a
+    generic string unless DEBUG=1 is set.
+
+    The type is ValidationError rather than RekeyError because this writer is
+    shared now -- a failed same-file DECRYPT raising RekeyError would be an
+    exception class no decrypt caller expects (gitlab#195 review). Asserting on str(exc) passes under pytest
     (which sets PYTEST_CURRENT_TEST) and proves nothing about production.
     """
 
@@ -346,7 +350,7 @@ class TestFailedRestoreKeepsTheOnlyCopy(_EnvelopeTestCase):
                 side_effect=OSError(28, "No space left on device"),
             ):
                 with redirect_stderr(captured):
-                    with self.assertRaises(RekeyError) as caught:
+                    with self.assertRaises(ValidationError) as caught:
                         _write_envelope_header({"new": True}, b"NEW-PAYLOAD", self.path, other)
         return captured.getvalue(), caught.exception
 

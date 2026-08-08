@@ -5197,9 +5197,18 @@ def decrypt_file_asymmetric(
             if not quiet:
                 eprint("Hash verified ✅")
 
-            # Write output
-            with open(output_file, "wb") as f:
-                f.write(plaintext)
+            if output_file is None:
+                # Pre-change this reached open(None, "wb") and raised
+                # TypeError. _write_replacement_bytes reads None as "in
+                # place", which would silently overwrite the CIPHERTEXT with
+                # plaintext -- a loud failure turned destructive.
+                raise ValidationError("decrypt_file_asymmetric requires an output path")
+            _write_replacement_bytes(plaintext, input_file, output_file)
+            # The atomic path preserves the ORIGINAL file's mode, and a .enc
+            # that arrived by scp or git checkout is commonly 0644. Without
+            # this, `decrypt --with-key --overwrite` left world-readable
+            # plaintext; decrypt_file has the same clamp.
+            set_secure_permissions(output_file)
 
             if not quiet:
                 eprint(f"File decrypted successfully: {output_file} ✅")
@@ -7772,11 +7781,24 @@ def encrypt_file(
     if not quiet:
         eprint(f"Writing encrypted file: {output_file}", end=" ")
 
-    with safe_open_file(output_file, "wb", secure_mode=secure_mode) as file:
-        file.write(output_bytes)
-        # Add two newlines after encrypted data when writing to stdout/stderr
-        if output_file in ("/dev/stdout", "/dev/stderr"):
-            file.write(b"\n\n")
+    # Identity is tested BEFORE the stream names: with fd 1 redirected to the
+    # input, /dev/stdout resolves back to it, so testing the names first would
+    # route the very case this guards straight past the guard.
+    if output_file not in ("/dev/stdout", "/dev/stderr") and _destroys_input_safely(
+        input_file, output_file
+    ):
+        # `encrypt -i f -o f` truncated the plaintext before the ciphertext
+        # existed, so a crash or ENOSPC in between left a partial ciphertext
+        # where the only copy of the data had been -- verified, not assumed.
+        # A successful run was always fine, so this protects the failure path
+        # without refusing a working command (gitlab#195 review).
+        _write_replacement_bytes(output_bytes, input_file, output_file)
+    else:
+        with safe_open_file(output_file, "wb", secure_mode=secure_mode) as file:
+            file.write(output_bytes)
+            # Add two newlines after encrypted data when writing to stdout/stderr
+            if output_file in ("/dev/stdout", "/dev/stderr"):
+                file.write(b"\n\n")
 
     # Set secure permissions on the output file
     set_secure_permissions(output_file)
@@ -9059,6 +9081,21 @@ def _remove_quietly(path) -> None:
         pass
 
 
+def _destroys_input_safely(input_file, output_file) -> bool:
+    """_write_destroys_input, but never raising.
+
+    That predicate deliberately lets an error on the INPUT propagate, which
+    is right where it is called before any work is done. At the encrypt and
+    decrypt write sites the work is already finished, so an input that
+    vanished mid-operation must not discard a completed result -- if it is
+    gone, there is nothing left to protect.
+    """
+    try:
+        return _write_destroys_input(input_file, output_file)
+    except (OSError, TypeError, ValueError):
+        return False
+
+
 def _write_destroys_input(input_file, output_file) -> bool:
     """Whether writing output_file overwrites the bytes of input_file.
 
@@ -9140,28 +9177,35 @@ def _rewrites_same_file(input_file, output_file) -> bool:
     return os.path.samestat(input_stat, output_stat)
 
 
-def _write_envelope_header(meta: dict, payload: bytes, input_file, output_file):
-    """Write metadata||payload, preserving the bulk payload verbatim."""
-    new_payload = base64.b64encode(json.dumps(meta).encode("utf-8")) + b":" + payload
-    # The truncating branch below opens the destination "wb", so a failure
-    # part-way through leaves a shortened, unreadable file and no copy of the
-    # original. When the destination IS the input, that is the user's only
-    # ciphertext. The CLI already selects the atomic path for this case, but
-    # the guarantee must not depend on every caller remembering to
-    # (gitlab#148): recovery slots exist so a file survives losing its
-    # password, and destroying it while managing them defeats the feature.
-    # Eligibility is DERIVED here and takes no caller input at all. There
-    # used to be an in_place flag: passing it False could truncate a file in
-    # place, passing it True bypassed every exclusion below, and the CLI
-    # evaluated its own copy of the check before a multi-second KDF, leaving
-    # a long window in which the paths could be swapped. Deciding here,
-    # immediately before the write, shrinks that window to
-    # stat -> mkstemp -> write -> replace, makes the exclusions
-    # unconditional, and removes the channel entirely rather than leaving a
-    # parameter that looks load-bearing and is not (gitlab#148 re-review).
-    #
-    # output_file=None is the documented "rewrite in place" convention of
-    # the sibling rekey API; it previously reached open(None, "wb").
+def _write_replacement_bytes(new_payload: bytes, input_file, output_file) -> None:
+    """Replace output_file's contents with new_payload without destroying it.
+
+    ONE implementation of "write over a file safely", used by every path that
+    rewrites a file it may also be reading from. It existed only inside the
+    envelope header writer (gitlab#148), so `rekey -i f -o f` and
+    `decrypt -i f -o f` kept the truncating write it was created to remove
+    (gitlab#195).
+
+    Three paths, chosen from the filesystem and never from a caller's flag:
+
+    * atomic -- mkstemp beside the target, write, fsync, fchmod to the
+      original mode, os.replace, fsync the directory.
+    * write-through -- for a symlink or a multiply-linked inode, where
+      os.replace would install a new inode and break the other name. The
+      original is copied to an fsynced backup first and restored if the
+      write fails.
+    * plain -- a genuinely distinct destination, where nothing of the
+      caller's is at risk.
+
+    Args:
+        new_payload: The bytes to leave in output_file.
+        input_file: The file the payload was derived from.
+        output_file: Where to write; None means "in place", i.e. input_file.
+
+    Raises:
+        ValidationError: A same-file rewrite of a non-regular file, which
+            cannot be backed up and so cannot be made recoverable.
+    """
     destroys_input = _write_destroys_input(input_file, output_file)
     if output_file is None:
         output_file = input_file
@@ -9303,8 +9347,7 @@ def _write_envelope_header(meta: dict, payload: bytes, input_file, output_file):
                 # DEBUG=1 is set in the environment, so putting the path in
                 # the exception would silently discard it in production.
                 eprint(
-                    "CRITICAL: rewriting the envelope failed and the original could "
-                    "not be restored."
+                    "CRITICAL: rewriting the file failed and the original could " "not be restored."
                 )
                 eprint(
                     f"  The only remaining copy is {sanitize_for_display(backup_path)} "
@@ -9312,8 +9355,8 @@ def _write_envelope_header(meta: dict, payload: bytes, input_file, output_file):
                 )
                 eprint(f"  The write failed with: {sanitize_for_display(str(write_error))}")
                 eprint(f"  The restore failed with: {sanitize_for_display(str(restore_error))}")
-                raise RekeyError(
-                    "envelope rewrite failed and the original could not be restored"
+                raise ValidationError(
+                    "file rewrite failed and the original could not be restored"
                 ) from restore_error
             _remove_or_warn(backup_path)
             raise
@@ -9349,6 +9392,12 @@ def _write_envelope_header(meta: dict, payload: bytes, input_file, output_file):
         with open(output_file, "wb") as out:
             out.write(new_payload)
         set_secure_permissions(output_file)
+
+
+def _write_envelope_header(meta: dict, payload: bytes, input_file, output_file):
+    """Write metadata||payload, preserving the bulk payload verbatim."""
+    new_payload = base64.b64encode(json.dumps(meta).encode("utf-8")) + b":" + payload
+    _write_replacement_bytes(new_payload, input_file, output_file)
 
 
 def add_recovery_slots(
@@ -9554,6 +9603,22 @@ def rekey_file(
         if not os.path.isfile(input_file):
             raise RekeyError(f"Input file not found: {input_file}")
 
+        # BOTH questions, not just identity. _write_destroys_input follows
+        # symlinks and counts a multiply-linked inode as the same file, which
+        # is right for "does this write destroy the input" and wrong for "may
+        # I os.replace it": replace installs a NEW inode, so for a hardlinked
+        # or symlinked target the other name keeps the OLD ciphertext -- a
+        # credential rotation reported as complete while a full copy stays
+        # readable under the password the user just retired. Deriving only
+        # identity here did exactly that (caught in review of gitlab#195).
+        rewrite_target = output_file if output_file is not None else input_file
+        destroys_input = output_file is None or _write_destroys_input(input_file, output_file)
+        in_place = destroys_input and _rewrites_same_file(input_file, rewrite_target)
+        # Same file, but not atomically replaceable: it has to be written
+        # THROUGH the shared inode, which _write_replacement_bytes does with a
+        # backup and a restore-on-failure.
+        write_through = destroys_input and not in_place
+
         # Read original file metadata to inherit settings
         try:
             file_metadata = extract_file_metadata(input_file)
@@ -9653,7 +9718,10 @@ def rekey_file(
         if not quiet:
             eprint("Re-encrypting with new password...")
 
-        input_dir = os.path.dirname(os.path.abspath(input_file))
+        # realpath, not abspath: for a symlinked target the temp must be
+        # created beside the REAL file, or os.replace can cross a filesystem
+        # boundary and raise EXDEV after a full decrypt and re-encrypt.
+        input_dir = os.path.dirname(os.path.realpath(rewrite_target))
 
         if in_place:
             # Write to a second temp file, then atomically replace
@@ -9662,7 +9730,14 @@ def rekey_file(
         else:
             temp_output_path = None
 
-        encrypt_target = temp_output_path if in_place else output_file
+        if in_place:
+            encrypt_target = temp_output_path
+        elif write_through:
+            # Ask for the bytes instead of a path, then let the shared writer
+            # place them without breaking the other name.
+            encrypt_target = None
+        else:
+            encrypt_target = output_file
 
         success = encrypt_file(
             input_file=plaintext_data,  # Pass bytes directly — no temp file!
@@ -9700,9 +9775,24 @@ def rekey_file(
 
         # Step 5: For in-place, atomically replace the original
         if in_place:
-            os.replace(temp_output_path, input_file)
-            os.chmod(input_file, original_mode)
+            # fchmod on the descriptor BEFORE the rename, not chmod on the
+            # path after it: the path form leaves a window in which the target
+            # can be swapped for a symlink that redirects the mode change.
+            mode_fd = os.open(temp_output_path, os.O_RDONLY)
+            try:
+                if hasattr(os, "fchmod"):
+                    os.fchmod(mode_fd, original_mode)
+                else:  # pragma: no cover - Windows
+                    os.chmod(temp_output_path, original_mode)
+            finally:
+                os.close(mode_fd)
+            os.replace(temp_output_path, rewrite_target)
+            _fsync_directory(input_dir)
             temp_output_path = None  # Prevent cleanup since it's been moved
+        elif write_through:
+            # success carries the ciphertext bytes when encrypt_file is given
+            # no output path.
+            _write_replacement_bytes(success, input_file, rewrite_target)
 
         if not quiet:
             eprint("Rekey completed successfully.")
@@ -11719,11 +11809,22 @@ def decrypt_file(
         if not quiet:
             eprint(f"Writing decrypted file: {output_file}")
 
-        with safe_open_file(output_file, "wb", secure_mode=secure_mode) as file:
-            file.write(decrypted_data)
-            # Add two newlines after decrypted data when writing to stdout/stderr
-            if output_file in ("/dev/stdout", "/dev/stderr"):
-                file.write(b"\n\n")
+        # Identity is tested BEFORE the stream names: with fd 1 redirected to
+        # the input, /dev/stdout resolves back to it, so testing the names
+        # first would route the very case this guards past the guard.
+        if output_file not in ("/dev/stdout", "/dev/stderr") and _destroys_input_safely(
+            input_file, output_file
+        ):
+            # `decrypt -i f -o f` names its own input as the destination. A
+            # bare "wb" truncated the only copy of the ciphertext before the
+            # plaintext existed (gitlab#195).
+            _write_replacement_bytes(decrypted_data, input_file, output_file)
+        else:
+            with safe_open_file(output_file, "wb", secure_mode=secure_mode) as file:
+                file.write(decrypted_data)
+                # Add two newlines when writing to stdout/stderr
+                if output_file in ("/dev/stdout", "/dev/stderr"):
+                    file.write(b"\n\n")
 
     # Set secure permissions on the output file (skip for directory archives)
     if not (archive_info and archive_info.get("type") == "tar"):

@@ -374,6 +374,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`rekey`/`decrypt` with `-o` equal to `-i` truncated the input**
+  (gitlab#195 / github#112): the residual gitlab#148 left behind. That issue
+  fixed the envelope header writer, but the slow paths still decided
+  atomicity from a flag rather than from the filesystem — `rekey_file` used
+  `in_place = output_file is None`, so naming the input as the output took
+  the non-atomic branch and handed that path straight to `encrypt_file`,
+  which opens it `"wb"`. `decrypt_file` had the same shape. Both truncated
+  the user's only copy before the replacement existed, so a crash, a full
+  disk or an exception in between left a shortened, unreadable file where the
+  original had been.
+
+  Both now derive the answer with `_write_destroys_input` — the same
+  predicate the envelope writer uses, so there is no third definition of "the
+  same file" to drift out of step, which is exactly how these two paths came
+  to be missed. `decrypt -i f -o f` and `rekey -i f -o f` go through a temp
+  file and `os.replace`; `/dev/stdout` and `/dev/stderr` still stream, since
+  they are not files to replace and nothing of the user's is at risk there.
+
+  The envelope writer's machinery is factored out as
+  `_write_replacement_bytes`, so "replace a file's contents without
+  destroying it" now has one implementation rather than one per caller. The
+  asymmetric decrypt path is routed through it too, and gained the plaintext
+  permission clamp it was missing — the atomic path inherits the *original*
+  file's mode, and a `.enc` that arrived by scp or a git checkout is commonly
+  0644, so `decrypt --with-key --overwrite` could leave world-readable
+  plaintext.
+
+  `encrypt -i f -o f` is covered as well, on the failure path only: a
+  successful same-file encrypt was always fine (verified at 3 MB and at
+  13.5 MB, above the streaming threshold), but an interrupted one destroyed
+  the plaintext before the ciphertext existed. Refusing the command would
+  have broken something that works.
+
+  `rekey` asks two questions rather than one. Deriving only "does this write
+  land on its own input" and then calling `os.replace` broke hard links:
+  replace installs a *new* inode, so `rekey -i a -o b` on two names for one
+  file gave `b` the new password and left `a` readable with the **old** one,
+  while reporting "Rekey completed successfully" — a rotation that silently
+  half-happened. It now also asks whether the target may be replaced at all,
+  and writes through the shared inode when it may not.
+
+  Both regression tests inject a disk-full failure at the layer the fixed
+  path actually writes through, which took two attempts to get right: the
+  first version patched `builtins.open`, which the atomic path never calls,
+  so it passed while asserting that a *successful* same-file decrypt leaves
+  the ciphertext unchanged — not the contract. Reverting either fix now fails
+  the corresponding test.
 - **`--gui` was unreachable via `python -m`, and started the legacy GUI**
   (gitlab#197 / github#115): two defects stacked on each other.
 
