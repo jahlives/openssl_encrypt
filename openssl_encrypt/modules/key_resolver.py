@@ -21,7 +21,7 @@ import logging
 import os
 from typing import TYPE_CHECKING, Callable, Optional
 
-from .crypt_utils import eprint, sanitize_for_display
+from .crypt_utils import eprint, prompt_and_read, sanitize_for_display
 from .identity import Identity, IdentityNamespaceCollisionError, IdentityStore
 from .key_bundle import InvalidFingerprintError, InvalidSignatureError
 
@@ -236,7 +236,7 @@ def default_trust_callback(bundle: "PublicKeyBundle") -> bool:
     eprint()
 
     try:
-        response = input("Trust and import this key? [y/N]: ").strip().lower()
+        response = prompt_and_read("Trust and import this key? [y/N]: ").strip().lower()
         return response in ("y", "yes")
     except (KeyboardInterrupt, EOFError):
         eprint("\nAborted")

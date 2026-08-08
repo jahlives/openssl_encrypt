@@ -18,7 +18,7 @@ import secrets
 import sys
 import time
 
-from .crypt_utils import eprint
+from .crypt_utils import eprint, prompt_and_read
 
 
 def get_memory_page_size():
@@ -1174,7 +1174,7 @@ def secure_input(prompt="Enter sensitive data: ", echo=False):
     buffer = SecureBytes()
     try:
         if echo:
-            user_input = input(prompt)
+            user_input = prompt_and_read(prompt)
         else:
             user_input = getpass.getpass(prompt)
 

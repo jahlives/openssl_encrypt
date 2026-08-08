@@ -691,6 +691,32 @@ def show_security_recommendations():
         eprint("    pip install argon2-cffi")
 
 
+def prompt_and_read(prompt: str) -> str:
+    """Write a prompt where the user will see it, then read one line.
+
+    `input(prompt)` writes its prompt to STDOUT, but every warning that
+    precedes a confirmation in this tool goes to stderr via eprint().
+    Redirecting stdout therefore left the user with a frightening warning and
+    an apparently hung program -- the question invisible, when typing
+    anything other than "yes" is exactly what protects them (gitlab#174).
+
+    tty_write() puts the prompt on /dev/tty so it survives redirection of
+    either stream, falling back to stderr where there is no terminal.
+
+    Args:
+        prompt: The question to display, including any trailing space.
+
+    Returns:
+        The line the user typed, or "" at end of input -- an unattended run
+        must resolve to the refusing answer, not raise.
+    """
+    tty_write(prompt)
+    try:
+        return input()
+    except EOFError:
+        return ""
+
+
 def request_confirmation(message):
     """
     Ask the user for confirmation before proceeding with an action.
@@ -701,7 +727,7 @@ def request_confirmation(message):
     Returns:
         bool: True if the user confirmed (y/yes), False otherwise
     """
-    response = input(f"{message} (y/N): ").strip().lower()
+    response = prompt_and_read(f"{message} (y/N): ").strip().lower()
     return response == "y" or response == "yes"
 
 

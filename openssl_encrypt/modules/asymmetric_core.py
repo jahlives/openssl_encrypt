@@ -236,8 +236,8 @@ class PasswordWrapper:
 
         try:
             # Derive 32-byte key from shared secret using HKDF
-            from cryptography.hazmat.primitives.kdf.hkdf import HKDF
             from cryptography.hazmat.primitives import hashes as crypto_hashes
+            from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
             if encapsulated_key is not None:
                 info = self._wrap_info_v3(encapsulated_key)

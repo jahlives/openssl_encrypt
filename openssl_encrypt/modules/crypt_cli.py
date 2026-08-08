@@ -51,6 +51,7 @@ from .crypt_utils import (
     eprint,
     expand_glob_patterns,
     generate_strong_password,
+    prompt_and_read,
     request_confirmation,
     sanitize_for_display,
     secure_shred_file,
@@ -1741,7 +1742,7 @@ def install_optional_dependencies(args):
     eprint("=" * 70 + "\n")
 
     if not args.yes:
-        response = input("Continue? [y/N]: ").strip().lower()
+        response = prompt_and_read("Continue? [y/N]: ").strip().lower()
         if response not in ("y", "yes"):
             eprint("Installation cancelled.")
             return
@@ -2181,7 +2182,7 @@ def handle_hsm_command(args):
                 target = credential_id or "primary"
                 prompt = f"Are you sure you want to remove credential '{target}'? This cannot be undone. (y/N): "
 
-            confirmation = input(prompt).strip().lower()
+            confirmation = prompt_and_read(prompt).strip().lower()
             if confirmation != "y":
                 eprint("Operation cancelled.")
                 sys.exit(0)
@@ -2627,7 +2628,7 @@ def handle_keyserver_command(args):
             return
 
         if not args.force:
-            response = input(f"Clear {count} cached keys? (yes/no): ")
+            response = prompt_and_read(f"Clear {count} cached keys? (yes/no): ")
             if response.lower() not in ["yes", "y"]:
                 eprint("Cancelled")
                 return
@@ -2771,7 +2772,9 @@ def handle_telemetry_command(args):
             return
 
         if not args.force:
-            response = input(f"Delete {pending_count} pending events without uploading? (yes/no): ")
+            response = prompt_and_read(
+                f"Delete {pending_count} pending events without uploading? (yes/no): "
+            )
             if response.lower() not in ["yes", "y"]:
                 eprint("Cancelled.")
                 return
@@ -2791,7 +2794,7 @@ def handle_telemetry_command(args):
             eprint("  3. Delete your API key")
             eprint("  4. Stop background uploads")
             eprint()
-            response = input("Are you sure you want to opt out? (yes/no): ")
+            response = prompt_and_read("Are you sure you want to opt out? (yes/no): ")
             if response.lower() not in ["yes", "y"]:
                 eprint("Cancelled.")
                 return
@@ -4513,7 +4516,7 @@ def main_with_args(args=None):
                 if not sys.stdin.isatty():
                     eprint("Refusing to continue without --yes.")
                     return 1
-                answer = input("Continue? [y/N]: ").strip().lower()
+                answer = prompt_and_read("Continue? [y/N]: ").strip().lower()
                 if answer not in ("y", "yes"):
                     eprint("Aborted.")
                     return 1
@@ -7732,7 +7735,9 @@ def main_with_args(args=None):
                                         "Use --auto-create-keystore option to automatically create keystore"
                                     )
                                     create_prompt = (
-                                        input("Would you like to create a new keystore? (y/n): ")
+                                        prompt_and_read(
+                                            "Would you like to create a new keystore? (y/n): "
+                                        )
                                         .lower()
                                         .strip()
                                     )
@@ -8325,7 +8330,9 @@ def main_with_args(args=None):
                                     "Use --auto-create-keystore option to automatically create keystore"
                                 )
                                 create_prompt = (
-                                    input("Would you like to create a new keystore? (y/n): ")
+                                    prompt_and_read(
+                                        "Would you like to create a new keystore? (y/n): "
+                                    )
                                     .lower()
                                     .strip()
                                 )

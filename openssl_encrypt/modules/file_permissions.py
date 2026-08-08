@@ -28,9 +28,9 @@ logger = logging.getLogger(__name__)
 _HAS_WIN32 = False
 if sys.platform == "win32":
     try:
-        import win32api
         import ntsecuritycon as con
         import pywintypes
+        import win32api
         import win32security
 
         _HAS_WIN32 = True

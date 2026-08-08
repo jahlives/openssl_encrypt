@@ -23,7 +23,6 @@ import warnings
 from pathlib import Path
 from typing import List, Optional, Union
 
-
 # A wordlist smaller than this yields less than 10 bits of entropy per
 # word, which is widely considered the minimum for passphrase use. The
 # bundled EFF Large Wordlist (7776 words) provides ~12.92 bits/word.
