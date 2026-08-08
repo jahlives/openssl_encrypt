@@ -374,6 +374,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **GUI command previews were not covered by the argv lint** (gitlab#191):
+  the lint anchored on `_runCLICommand*(` call sites, so it checked every
+  argv the GUI *executes* but neither of the two builders that construct a
+  full command line and render it to the user as copy-pasteable text. Same
+  defect surface — a preview that fails at argparse if pasted — and they
+  build `args` the same way, so only the anchor had to widen; a missing
+  builder is now a hard error rather than silent lost coverage.
+
+  Widening it immediately found one: `previewEncryptCommand` emitted
+  `--pbkdf2-iterations`, removed from this line with the PBKDF2 chain stage,
+  so a pasted preview would have failed. Removed from the preview and from
+  the live encrypt path, closing the last flag item of gitlab#192. A profile
+  saved by an older build may still carry the config key; it is ignored
+  rather than emitted.
+
+- **GUI identity deletion sent `--contact`, a flag that never existed**
+  (gitlab#185): `identity delete <name> --contact` exited 2 at argparse, so
+  GUI contact deletion had never worked, and with no `--force` the CLI's
+  confirmation `input()` raised EOFError on a non-tty pipe. It now sends
+  `--kind own|contact` — the flag gitlab#173 added for exactly this choice —
+  and `--force`, since the app runs its own confirmation dialogue.
+
+  Getting this wrong is not cosmetic: deleting *both* entries destroys the
+  own identity's private keys, making every file encrypted to it unreadable,
+  and drops the contact's TOFU pin so a later import of that name is
+  accepted as first use with no key-change warning.
+
 - **stdout-leak lint: entries authorized a prefix, not a call** (gitlab#184):
   the whitelist matched a *prefix* against the first source line of a
   `print()` call, and 9 of its 22 entries were bare prefixes such as

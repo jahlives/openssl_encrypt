@@ -50,7 +50,12 @@ CLI_SERVICE = os.path.join(REPO_ROOT, "desktop_gui", "lib", "cli_service.dart")
 # Exact, not a lower bound: the first version of this lint silently stopped
 # seeing encrypt/decrypt/shred when its extractor regressed, and a loose ">"
 # assertion had the headroom to hide it.
-EXPECTED_CALL_SITES = 20
+#
+# 20 methods that run the CLI, plus the 2 preview builders that construct an
+# argv and show it to the user (gitlab#191). Widening the anchor to those two
+# immediately found --pbkdf2-iterations in the encrypt preview, a flag 1.5
+# removed, which would have failed at argparse if the user pasted it.
+EXPECTED_CALL_SITES = 22
 
 # Commands whose loss would gut the lint. Asserted present by name so an
 # extractor change cannot quietly drop the KDF/cascade flag surface.
@@ -83,14 +88,8 @@ KNOWN_BROKEN = [
     ("verifyFileIntegrity", "integrity", "gitlab#194: integrity CLI not implemented yet"),
     ("getIntegrityStats", "integrity", "gitlab#194: integrity CLI not implemented yet"),
     # 1.5.x removed surface the GUI still calls (gitlab#192).
-    (
-        "encryptTextWithProgress",
-        "--pbkdf2-iterations",
-        "gitlab#192: PBKDF2 chain stage removed in 1.5",
-    ),
     ("importContact", "--data", "gitlab#192: gitlab#164's import work is 1.4.x-only"),
     ("importContact", "--alias", "gitlab#192: gitlab#164's import work is 1.4.x-only"),
-    ("deleteIdentity", "--contact", "gitlab#185: GUI delete sends a flag that never existed"),
 ]
 
 # A Dart method declaration at exactly two-space (class body) indentation.
@@ -123,6 +122,12 @@ _ARGV_UNHANDLED_RE = re.compile(
 )
 # The runner methods themselves are not call sites.
 _RUNNERS = re.compile(r"^_runCLICommand")
+# Methods that BUILD an argv without running it: the command preview the GUI
+# renders as a copy-pasteable line for the user. Same defect surface as a
+# call site -- the GUI can hand out a command that fails at argparse if
+# pasted -- and they construct `args` exactly the same way, so the extractor
+# reads them unchanged; only the anchor had to widen (gitlab#191).
+_PREVIEW_BUILDERS = ("previewEncryptCommand", "previewDecryptCommand")
 
 
 def _subcommands(parser):
@@ -230,6 +235,20 @@ def _method_bodies():
             continue  # the runner definitions, not call sites
         end = starts[index] if index < len(starts) else len(source)
         bodies[name] = source[start:end]
+
+    for position, (start, name) in enumerate(declarations):
+        if name not in _PREVIEW_BUILDERS or name in bodies:
+            continue
+        end = starts[position + 1] if position + 1 < len(starts) else len(source)
+        bodies[name] = source[start:end]
+
+    missing = [name for name in _PREVIEW_BUILDERS if name not in bodies]
+    if missing:
+        raise AssertionError(
+            f"preview builder(s) {missing} not found in cli_service.dart. "
+            "If they were renamed, update _PREVIEW_BUILDERS -- losing them "
+            "silently is how this surface went unchecked in the first place."
+        )
 
     return bodies
 

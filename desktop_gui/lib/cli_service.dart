@@ -470,11 +470,11 @@ class CLIService {
           final config = entry.value;
           if (config['enabled'] == true) {
             switch (kdfName) {
-              case 'pbkdf2':
-                if (config['enabled'] == true && config['iterations'] != null && config['iterations'] > 0) {
-                  args.addAll(['--pbkdf2-iterations', config['iterations'].toString()]);
-                }
-                break;
+              // 'pbkdf2' is deliberately absent: the PBKDF2 chain stage was
+              // removed in 1.5, so --pbkdf2-iterations no longer exists and
+              // sending it fails the whole command at argparse (gitlab#192).
+              // The config key may still be present in a profile saved by an
+              // older build; it is ignored rather than emitted.
               case 'scrypt':
                 if (config['enabled'] == true) {
                   args.add('--enable-scrypt');
@@ -1695,11 +1695,8 @@ class CLIService {
         final config = entry.value;
         if (config['enabled'] == true) {
           switch (kdfName) {
-            case 'pbkdf2':
-              if (config['enabled'] == true && config['iterations'] != null && config['iterations'] > 0) {
-                args.addAll(['--pbkdf2-iterations', config['iterations'].toString()]);
-              }
-              break;
+            // 'pbkdf2' is deliberately absent: the flag was removed in 1.5
+            // and a preview containing it would fail if pasted (gitlab#192).
             case 'scrypt':
               if (config['enabled'] == true) {
                 args.add('--enable-scrypt');
@@ -2078,14 +2075,29 @@ class CLIService {
     }
   }
 
-  /// Delete an identity or contact
+  /// Delete an identity or contact.
+  ///
+  /// `--kind` decides WHICH entry goes when a name exists as both an own
+  /// identity and a contact. Deleting both is destructive in two different
+  /// ways -- it destroys the own identity's private keys, making every file
+  /// encrypted to it unreadable, and it drops the contact's TOFU pin, so a
+  /// later import of that name is accepted as first use with no key-change
+  /// warning -- so the caller has to say which one it means.
+  ///
+  /// This used to send `--contact`, a flag that has never existed on any
+  /// branch: argparse exited 2 and GUI contact deletion had never worked
+  /// (gitlab#185). `--force` skips the CLI's confirmation prompt, which a
+  /// subprocess cannot answer -- the app runs its own dialogue first, and
+  /// without it the prompt's `input()` raised EOFError on a non-tty pipe.
   static Future<void> deleteIdentity(String name, {bool isContact = false}) async {
     try {
-      final args = ['identity', 'delete', name];
-
-      if (isContact) {
-        args.add('--contact');
-      }
+      final args = [
+        'identity',
+        'delete',
+        name,
+        '--kind', isContact ? 'contact' : 'own',
+        '--force',
+      ];
 
       if (debugEnabled) {
         args.add('--debug');
