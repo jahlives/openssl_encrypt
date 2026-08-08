@@ -374,6 +374,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`keyserver show-token` no longer prints part of the bearer token**
+  (gitlab#178): the handler revealed the first 8 and last 4 characters with a
+  plain `eprint`, bypassing the `debug_secret()` chokepoint every other
+  secret in this codebase goes through. Twelve characters of a bearer token
+  is still key material, and stderr is not a private channel — it reaches
+  terminal scrollback, is merged by `2>&1`, and the desktop GUI keeps a
+  persistent debug log.
+
+  The command keeps its job: it reports whether a token is configured, in
+  the standard redacted form (byte length plus a per-process keyed
+  fingerprint), and names the token file. Reading the value back
+  deliberately now goes through the same explicit `--debug
+  --unsafe-show-secrets` opt-in as every other secret, instead of a private
+  masking rule of its own. Rotate any token whose prefix may have been
+  captured in a log.
+
 - **OpenPGP: malformed input escaped the module's error taxonomy**
   (gitlab#196 / github#113): `interop.openpgp.decrypt()` documents
   `OpenPGPFormatError` for a malformed message, but the packet reader
