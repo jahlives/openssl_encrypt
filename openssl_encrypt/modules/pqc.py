@@ -867,12 +867,17 @@ class PQCipher:
                     aad,
                     legacy_kem_kdf=True,
                 )
-            except Exception:
+            except Exception as legacy_error:
                 raise ValueError(
                     "PQC decryption failed with both the HKDF (v12+) and the "
                     "legacy KEM key derivation. The file may be corrupted or "
                     "the wrong private key was provided."
-                )
+                    # Chained (gitlab#119): the message is static and says
+                    # nothing about which attempt failed or why, so the inner
+                    # exception was the only diagnostic and was being
+                    # discarded. No oracle: the text a caller sees is
+                    # unchanged, and the cause is visible only in a traceback.
+                ) from legacy_error
             if not self.quiet:
                 eprint(
                     "NOTICE: this file was encrypted with the legacy (pre-1.4.8) "
