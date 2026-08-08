@@ -280,7 +280,7 @@ correctly and are unaffected.
 
 **Disclosure:** found during the follow-up security review of gitlab#177
 (argv-layer scanning), which examined the surrounding argv handling after the
-initial fix. Tracked as gitlab#209.
+initial fix. Tracked as gitlab#209 / GHSA-jgvm-7jxv-cgcc (held until release).
 
 ### ADVISORY 2026-16: Post-Quantum Keyfile Written Without Encryption by a Duplicate Code Path — Resolved
 
