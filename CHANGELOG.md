@@ -374,6 +374,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`telemetry` always exited 0, so a failed opt-out was indistinguishable
+  from success** (gitlab#166): every failure inside the handler only printed
+  a message and returned, and the caller then exited 0 regardless — so a
+  script or GUI checking the exit code would report that the user's
+  telemetry data had been deleted when it had not. Plugin import failure,
+  plugin init failure, a failed `flush()` and a failed `opt_out()` now all
+  exit 1, and the code reaches the process.
+
+  Declining the confirmation still exits 0: the user was asked and said no,
+  so the tool did what was asked. Only an opt-out that was *attempted* and
+  did not complete is an error.
+
 - **`telemetry status` reported a constant, not the real setting**
   (gitlab#166): `get_status()` returned a hardcoded `"enabled": True`, so
   the one command a user runs to check whether telemetry is on answered

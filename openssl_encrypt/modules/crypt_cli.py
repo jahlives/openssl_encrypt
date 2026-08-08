@@ -2706,14 +2706,14 @@ def handle_telemetry_command(args):
     except ImportError as e:
         eprint("Error: Telemetry plugin not available.")
         eprint(f"Details: {e}")
-        return
+        return 1
 
     # Get or create telemetry plugin instance
     try:
         plugin = OpenSSLEncryptTelemetryPlugin()
     except Exception as e:
         eprint(f"Error: Failed to initialize telemetry plugin: {e}")
-        return
+        return 1
 
     # Handle subcommands
     action = args.telemetry_action
@@ -2792,6 +2792,7 @@ def handle_telemetry_command(args):
             eprint(f"✓ {result.message}")
         else:
             eprint(f"✗ {result.message}")
+            return 1
 
     elif action == "clear":
         # Delete all pending events without uploading
@@ -2807,7 +2808,10 @@ def handle_telemetry_command(args):
             )
             if response.lower() not in ["yes", "y"]:
                 eprint("Cancelled.")
-                return
+                # Not an error: the user declined. Distinguished from a
+                # FAILED opt-out below, which must not look like success
+                # (gitlab#166).
+                return 0
 
         deleted = plugin.buffer.clear_all()
         eprint(f"✓ Deleted {deleted} pending events.")
@@ -2827,7 +2831,10 @@ def handle_telemetry_command(args):
             response = prompt_and_read("Are you sure you want to opt out? (yes/no): ")
             if response.lower() not in ["yes", "y"]:
                 eprint("Cancelled.")
-                return
+                # Not an error: the user declined. Distinguished from a
+                # FAILED opt-out below, which must not look like success
+                # (gitlab#166).
+                return 0
 
         result = plugin.opt_out()
 
@@ -2837,9 +2844,16 @@ def handle_telemetry_command(args):
             eprint("To re-enable, use: --telemetry flag or set OPENSSL_ENCRYPT_TELEMETRY=1")
         else:
             eprint(f"✗ {result.message}")
+            # A destructive privacy action that FAILED. Exiting 0 here told a
+            # caller their telemetry data was deleted when it was not
+            # (gitlab#166).
+            return 1
 
     else:
         eprint(f"Unknown telemetry action: {action}")
+        return 1
+
+    return 0
 
 
 def main():
@@ -4693,8 +4707,10 @@ def main_with_args(args=None):
         sys.exit(plugin_main(args))
 
     elif args.action == "telemetry":
-        handle_telemetry_command(args)
-        sys.exit(0)
+        _status = handle_telemetry_command(args)
+        # Explicit: `or 0` would silently turn a future falsy status into
+        # success, and sys.exit(None) exits 0 (gitlab#166).
+        sys.exit(0 if _status is None else _status)
 
     elif args.action == "keyserver":
         handle_keyserver_command(args)
