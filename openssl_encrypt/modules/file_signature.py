@@ -412,12 +412,42 @@ def verify_signature_cli(args) -> None:
     sig_file = getattr(args, "signature", None) or (input_file + ".sig")
     json_out = getattr(args, "json", False)
 
+    def _refuse_early(message: str, reason: str) -> None:
+        """A refusal before the signature could even be parsed.
+
+        Same contract as _refuse below, minus the fields that come from the
+        sidecar: a --json consumer must never get an empty stdout and a bare
+        exit code (gitlab#160).
+        """
+        eprint(message)
+        if json_out:
+            refusal_json = _json.dumps(
+                {
+                    "valid": False,
+                    "file_match": None,
+                    "signature_valid": None,
+                    "signer": None,
+                    "signer_fingerprint": None,
+                    "signed_at": None,
+                    "algorithm": None,
+                    "components": None,
+                    "reason": reason,
+                },
+                indent=2,
+            )
+            print(refusal_json)
+        sys.exit(1)
+
     try:
         with open(sig_file, "rb") as f:
             sig = parse_signature(f.read())
     except FileNotFoundError:
-        eprint(f"ERROR: Signature file '{sig_file}' not found ❌")
-        sys.exit(1)
+        _refuse_early(
+            f"ERROR: Signature file '{sig_file}' not found ❌", "signature file not found"
+        )
+    except FileSignatureError as exc:
+        # The message is the parser's own, not attacker text.
+        _refuse_early(f"ERROR: {exc} ❌", str(exc))
     except FileSignatureError as exc:
         eprint(f"ERROR: {exc} ❌")
         sys.exit(1)
@@ -427,19 +457,49 @@ def verify_signature_cli(args) -> None:
 
     # Resolve the signer's public key. Trust comes from the local store: the
     # signer must be a known own-identity or contact (fail closed if unknown).
+    def _refuse(message: str, reason: str) -> None:
+        """Report a pre-verification refusal and exit non-zero.
+
+        A --json consumer used to get an empty stdout and a bare exit code
+        for exactly the outcomes that mean "this signature is not from who
+        you said" (gitlab#160). It now receives the same document shape as
+        any other invalid verdict, so it never has to infer the verdict from
+        the exit code.
+        """
+        eprint(message)
+        if json_out:
+            refusal_json = _json.dumps(
+                {
+                    "valid": False,
+                    "file_match": None,
+                    "signature_valid": None,
+                    "signer": None,
+                    "signer_fingerprint": signer_fp,
+                    "signed_at": sig.get("signed_at"),
+                    "algorithm": sig.get("algorithm"),
+                    "components": None,
+                    "reason": reason,
+                },
+                indent=2,
+            )
+            print(refusal_json)
+        sys.exit(1)
+
     pinned = getattr(args, "signer", None)
     signer_identity = None
     if pinned:
         signer_identity = store.get_by_name(pinned, load_private_keys=False)
         if signer_identity is None:
-            eprint(f"ERROR: Pinned signer identity '{pinned}' not found ❌")
-            sys.exit(1)
-        if signer_identity.fingerprint != signer_fp:
-            eprint(
-                f"ERROR: Pinned signer '{pinned}' does not match the signature's "
-                f"signer fingerprint ❌"
+            _refuse(
+                f"ERROR: Pinned signer identity '{pinned}' not found ❌",
+                "pinned signer identity not found",
             )
-            sys.exit(1)
+        if signer_identity.fingerprint != signer_fp:
+            _refuse(
+                f"ERROR: Pinned signer '{pinned}' does not match the signature's "
+                f"signer fingerprint ❌",
+                "signature is not from the pinned signer",
+            )
     else:
         skipped: list = []
         for ident in store.list_identities(include_contacts=True, skipped=skipped):
@@ -462,8 +522,10 @@ def verify_signature_cli(args) -> None:
                     f"{'y' if len(skipped) == 1 else 'ies'} could not be read and "
                     f"{'was' if len(skipped) == 1 else 'were'} not searched."
                 )
-            eprint("       Add the signer as a contact, or use --signer to pin a known identity.")
-            sys.exit(1)
+            _refuse(
+                "       Add the signer as a contact, or use --signer to pin a " "known identity.",
+                "signer is not among your identities or contacts",
+            )
 
     result = verify_signature(hash_file(input_file), sig, signer_identity.signing_public_key)
 
@@ -476,6 +538,11 @@ def verify_signature_cli(args) -> None:
                 "signer": signer_identity.name,
                 "signer_fingerprint": result.signer_fingerprint,
                 "signed_at": result.signed_at,
+                # The AUTHENTICATED algorithm: bound into _signed_payload,
+                # unlike `components`, whose labels are free text from the
+                # sidecar and can be relabelled without breaking the
+                # signature (gitlab#160).
+                "algorithm": sig.get("algorithm"),
                 "components": result.components,
                 "reason": result.reason,
             },

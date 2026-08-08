@@ -96,6 +96,11 @@ STDOUT_WHITELIST = [
         "verify-integrity --json report",
     ),
     ("modules/file_signature.py", "print(result_json)", 1, "verify-signature --json result"),
+    # The same channel for the refusal outcomes (gitlab#160): a --json
+    # consumer used to get an empty stdout and a bare exit code for exactly
+    # the cases meaning "not from who you said". Two sites, before and after
+    # the sidecar parses.
+    ("modules/file_signature.py", "print(refusal_json)", 2, "verify-signature JSON refusal"),
     (
         "modules/identity_cli.py",
         "print(listing_json)",

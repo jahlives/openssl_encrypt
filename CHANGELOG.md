@@ -374,6 +374,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`verify-signature --json` went silent on the outcomes that matter, and
+  exposed only the unauthenticated algorithm labels** (gitlab#160). A
+  pinned-signer mismatch, an unknown pinned identity, an unknown signer, a
+  malformed sidecar and a missing signature file each wrote to stderr and
+  exited 1 **without emitting any JSON** — so a consumer that asked for a
+  machine-readable answer got an empty stdout and a bare exit code for
+  exactly the cases meaning "this signature is not from who you said", and
+  had to infer the verdict. Every refusal now emits the same document shape
+  as any other invalid verdict, with a `reason`; the exit code still
+  signals failure.
+
+  Separately, the document carried `components[].component` — free text
+  from the sidecar, deliberately *not* part of the signed payload, so a
+  valid signature can carry labels naming an algorithm that was never used
+  — while `algorithm`, which **is** bound into the signed payload, was
+  absent entirely. The only algorithm information a consumer could display
+  was the part an attacker controls. The authenticated `algorithm` is now
+  included.
+
 - **`--keyring-store` silently stored nothing when the password came from
   the environment** (gitlab#156): the store was gated on `args.password`,
   which only `-p/--password` sets. `CRYPT_PASSWORD` is consumed straight
