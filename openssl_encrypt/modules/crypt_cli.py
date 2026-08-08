@@ -1220,7 +1220,15 @@ def _top_level_flags():
                 (boolean_flags if boolean else value_flags).update(action.option_strings)
         except Exception:  # noqa: BLE001 - scanning must not be fatal
             value_flags = {"--kdf-workers", "--identity-store", "--keyring-remove"}
-            boolean_flags = set(TRULY_GLOBAL_FLAGS) | {"--yes", "-y", "-h", "--help"}
+            # MINUS the value-carrying ones: TRULY_GLOBAL_FLAGS contains
+            # --kdf-workers, and calling it boolean here means the fallback
+            # would not consume its value and would read "4" as the command
+            # -- verbatim the gitlab#171 bug this file elsewhere says is
+            # fixed (security review of gitlab#177).
+            boolean_flags = (set(TRULY_GLOBAL_FLAGS) - set(VALUE_CARRYING_GLOBAL_FLAGS)) | {
+                "-h",
+                "--help",
+            }
         _TOP_LEVEL_FLAGS = (frozenset(value_flags), frozenset(boolean_flags))
     return _TOP_LEVEL_FLAGS
 
@@ -1256,15 +1264,59 @@ def _first_command_token(argv):
     while index < len(argv):
         token = argv[index]
         if token == "--":
-            return None
+            # POSIX and argparse both take the NEXT token as the positional,
+            # so the command can legitimately follow the separator. Returning
+            # None here sent `crypt -- identity list` to the wrong parser
+            # (security review of gitlab#177). Everything after is data, so
+            # the search stops at that one token.
+            following = argv[index + 1] if index + 1 < len(argv) else None
+            return following if following in commands else None
         if token.startswith("-") and token != "-":
             # --flag=value is self-contained; it never consumes the next token.
-            if "=" not in token and token not in boolean_flags:
+            if "=" not in token and not _is_boolean_option(token, boolean_flags, value_flags):
                 index += 1  # its value, whether the flag is known or not
             index += 1
             continue
         return token if token in commands else None
     return None
+
+
+def _is_boolean_option(token, boolean_flags, value_flags):
+    """Whether this option token takes no value.
+
+    Exact membership is not enough, because argparse accepts two forms the
+    flag sets cannot express (security review of gitlab#177):
+
+      * **Bundled short options.** `-qy` is `-q` plus `-y`, both booleans,
+        but matches neither set -- so the scan assumed a value and swallowed
+        the command. `-qy install-dependencies` failed while `-q -y
+        install-dependencies` worked, and `-qy` is the natural spelling for
+        the one command --yes exists for.
+      * **Abbreviated long options.** No parser here sets
+        `allow_abbrev=False`, so `--deb` is a valid unambiguous prefix of
+        `--debug` -- and it swallowed the command too.
+
+    Unknown or ambiguous stays "takes a value", which is the fail-closed
+    direction: it is what stopped `--alias telemetry` being read as the
+    `telemetry` command, and an option argparse cannot resolve is one it
+    will reject anyway.
+    """
+    if token in boolean_flags:
+        return True
+    if token in value_flags:
+        return False
+
+    if token.startswith("--"):
+        # Unambiguous prefix, resolved against both sets together so an
+        # abbreviation shared by a boolean and a value flag stays unknown.
+        matches = {flag for flag in boolean_flags | value_flags if flag.startswith(token)}
+        if len(matches) == 1:
+            return matches.pop() in boolean_flags
+        return False
+
+    # A short-option bundle is boolean only if EVERY letter in it is.
+    singles = {flag for flag in boolean_flags if len(flag) == 2 and flag[0] == "-"}
+    return len(token) > 2 and all(f"-{letter}" in singles for letter in token[1:])
 
 
 def _keyring_remove_label(argv):
@@ -1304,7 +1356,8 @@ def preprocess_global_args(argv):
     # `create-usb` belongs to create-usb regardless of which parser handles
     # it. Shared with main()'s routing scan so the two cannot disagree
     # (gitlab#177).
-    if _first_command_token(argv) is None:
+    command_token = _first_command_token(argv)
+    if command_token is None:
         return argv  # No command found, return as-is
 
     # Extract global flags and their values from anywhere in the command line
@@ -1319,7 +1372,18 @@ def preprocess_global_args(argv):
             # Everything from here is data, not flags (gitlab#177). Copy the
             # rest verbatim: a file literally named --quiet was being hoisted
             # out of its subcommand's argument list and read as a flag.
-            other_args.extend(argv[i:])
+            #
+            # A separator BEFORE the command is dropped rather than kept.
+            # POSIX reads `crypt -- identity list` as "identity is a
+            # positional", but argparse does not strip it for a subparser --
+            # it reports `invalid choice: '--'` -- so passing it through
+            # makes a legitimate invocation fail (security review of
+            # gitlab#177, whose premise that argparse strips it turned out
+            # not to hold; verified directly against argparse).
+            if command_token is not None and command_token not in other_args:
+                other_args.extend(argv[i + 1 :])
+            else:
+                other_args.extend(argv[i:])
             break
 
         # The --flag=value form is one token, so an exact membership test

@@ -557,6 +557,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Combined short options, abbreviated long options and a leading `--`
+  broke command routing** (security review of gitlab#177). The command scan
+  classified each leading option as boolean or value-taking by exact
+  membership, which cannot express two forms argparse accepts — so the
+  command was read as somebody else's value and the invocation failed:
+
+  ```
+  crypt -qy install-dependencies    ->  invalid choice: 'install-dependencies'
+  crypt -q -y install-dependencies  ->  works
+  crypt --deb identity list         ->  invalid choice: 'identity'
+  crypt --debug identity list       ->  works
+  ```
+
+  `-qy` is the natural spelling for the one command `--yes` exists for, and
+  no parser here sets `allow_abbrev=False`, so `--deb` is a valid prefix.
+  Bundled short options are now boolean only if every letter is, and long
+  options resolve by unambiguous prefix; unknown or ambiguous still means
+  "takes a value", the fail-closed direction that stopped `--alias
+  telemetry` being read as a command.
+
+  A leading `--` went the other way: `crypt -- identity list` found no
+  command and routed to the wrong parser. POSIX reads that as "identity is
+  a positional" — but argparse does **not** strip the separator before a
+  subparser, it reports `invalid choice: '--'`, so finding the command was
+  not enough and a leading separator is now removed. (The review's premise
+  that argparse strips it does not hold; verified directly.) A separator
+  *after* the command is still preserved, which is what gitlab#177 fixed.
+
+  Also fixes the hardcoded fallback used when the parser cannot be built:
+  it listed `--kdf-workers` as boolean, so on that path it would not consume
+  its value and the scan would read `4` as the command — verbatim the
+  gitlab#171 bug. It now excludes the value-carrying flags.
+
 - **`install-dependencies --yes` was rejected** (gitlab#176): `--yes`/`-y`
   is declared on the top-level parser with the help text "Automatic yes to
   prompts (for install-dependencies command)" and was recognised by the

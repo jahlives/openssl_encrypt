@@ -131,8 +131,18 @@ class TestMainsScanAgrees(unittest.TestCase):
 
         return _first_command_token(argv)
 
-    def test_nothing_after_the_separator_is_the_command(self):
-        self.assertIsNone(self._first_command(["crypt", "--", "encrypt"]))
+    def test_the_command_may_follow_the_separator(self):
+        """This asserted `is None` when gitlab#177 landed, and that was
+        wrong: POSIX reads `crypt -- encrypt` as "encrypt is a positional",
+        so returning None routed it to the wrong parser. Corrected by the
+        security review of that change (finding 6). The separator itself is
+        then stripped, because argparse does NOT remove it before a
+        subparser -- it reports `invalid choice: '--'`.
+        """
+        self.assertEqual(self._first_command(["crypt", "--", "encrypt"]), "encrypt")
+
+    def test_a_non_command_after_the_separator_is_still_none(self):
+        self.assertIsNone(self._first_command(["crypt", "--", "some-file.txt"]))
 
     def test_an_option_value_is_not_the_command(self):
         self.assertIsNone(self._first_command(["crypt", "--alias", "telemetry"]))
