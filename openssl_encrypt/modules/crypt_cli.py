@@ -787,6 +787,13 @@ def get_template_config(template: str or SecurityTemplate) -> Dict[str, Any]:
 # redaction chokepoint instead. Keep in sync with the parsers in this module
 # and crypt_cli_subparser.py. File-path/fd options (--password-file,
 # --password-fd, --recovery-share, ...) are not secrets themselves.
+# Subcommands that take a credential as a POSITIONAL argument, so the
+# option-name match below cannot see it: `keyserver set-token <token>` is a
+# bearer token, and `keyserver login <client_id>` is equally a credential
+# (the login body has the password optional, so the client_id alone yields
+# access and refresh tokens).
+SECRET_POSITIONAL_SUBCOMMANDS = frozenset({"set-token", "login"})
+
 SECRET_VALUE_CLI_OPTIONS = frozenset(
     {
         "-p",
@@ -821,20 +828,44 @@ def sanitize_argv_for_debug(argv: list) -> list:
     redact_next = False
     for i, arg in enumerate(sanitized):
         if redact_next:
+            if arg == "--":
+                # The separator is not the credential -- it is what a user
+                # MUST type when the token starts with "-", and base64url
+                # tokens and JWT segments legitimately do. Redacting it here
+                # consumed the redaction and printed the token in cleartext
+                # on the next iteration (security review of gitlab#177).
+                continue
             sanitized[i] = debug_secret("", arg)
             redact_next = False
-        elif arg in SECRET_VALUE_CLI_OPTIONS:
+        elif _resolve_secret_long_option(arg) or arg in SECRET_VALUE_CLI_OPTIONS:
             redact_next = True
-        elif arg == "set-token":
-            # gitlab#134 (F17): the keyserver bearer token is a positional
-            # argument to `keyserver set-token <token>`; redact the value that
-            # follows it so it is not echoed cleartext in the --debug argv dump.
+        elif arg in SECRET_POSITIONAL_SUBCOMMANDS:
+            # These subcommands take a credential as a POSITIONAL argument, so
+            # SECRET_VALUE_CLI_OPTIONS (which matches option names) cannot see
+            # it; redact whatever follows.
+            #
+            # `keyserver set-token <token>` is the bearer token (gitlab#134,
+            # F17). `keyserver login <client_id>` is equally a credential: the
+            # login body is {"client_id": ...} with the password optional, so
+            # the client_id alone yields access and refresh tokens. It became
+            # reachable here only with gitlab#171 -- before that, argparse
+            # rejected `--debug` after `keyserver` and this dump never ran.
             redact_next = True
-        elif "=" in arg and arg.split("=", 1)[0] in SECRET_VALUE_CLI_OPTIONS:
+        elif "=" in arg and _resolve_secret_long_option(arg.split("=", 1)[0]):
             opt, value = arg.split("=", 1)
             sanitized[i] = f"{opt}={debug_secret('', value)}"
-        elif arg.startswith("-p") and not arg.startswith("--") and len(arg) > 2:
-            sanitized[i] = f"-p{debug_secret('', arg[2:])}"
+        else:
+            # Short-option bundles: argparse reads -apSECRET as -a plus
+            # -p SECRET, and -ap SECRET as the same with the value in the
+            # next token. The old rule only matched a token literally
+            # starting with "-p", so both spellings printed the password
+            # (gitlab#209).
+            prefix, attached = _split_secret_short_bundle(arg)
+            if prefix is not None:
+                if attached is not None:
+                    sanitized[i] = f"{prefix}{debug_secret('', attached)}"
+                else:
+                    redact_next = True
     return sanitized
 
 
@@ -842,6 +873,68 @@ def sanitize_argv_for_debug(argv: list) -> list:
 # Module scope, not a local: the GUI-argv lint (gitlab#186) has to compare
 # against the same set this function relocates, and a private copy would
 # drift from it silently.
+# Every command name recognised on the command line, used by
+# preprocess_global_args to find where the command starts (gitlab#171,
+# gitlab#177). Membership says "this token is a command, so the flags after
+# it belong to it" -- true of every command whichever parser handles it.
+#
+# Which parser handles it is a DIFFERENT question, answered by
+# _subparser_choices() read off the real subparser (gitlab#179), minus the
+# deliberate exceptions below.
+KNOWN_COMMANDS = (
+    "add-recovery",
+    "armor",
+    "check-argon2",
+    "check-password",
+    "check-pqc",
+    "combine-secrets",
+    "create-usb",
+    "dearmor",
+    "decrypt",
+    "derive-password",
+    "disable-plugin",
+    "enable-plugin",
+    "encrypt",
+    "generate-password",
+    "hsm",
+    "identity",
+    "info",
+    "install-dependencies",
+    "keyserver",
+    "list-algorithms",
+    "list-available-algorithms",
+    "list-plugins",
+    "list-recovery",
+    "plugin",
+    "plugin-info",
+    "recover",
+    "rekey",
+    "reload-plugin",
+    "remove-recovery",
+    "security-info",
+    "show-version-file",
+    "shred",
+    "sign",
+    "split-secret",
+    "telemetry",
+    "verify",
+    "verify-integrity",
+    "verify-signature",
+    "verify-usb",
+    "version",
+)
+
+# Back-compatible alias, as on the 1.4.x line.
+SUBPARSER_COMMANDS = KNOWN_COMMANDS
+
+# Registered by the subparser but deliberately NOT routed to it (gitlab#208).
+# All three are declared by the monolithic parser and work through it today,
+# so routing them somewhere new is a behaviour change the gitlab#179 fix had
+# no business making. Explicit so the exception is visible and testable
+# rather than implied by an out-of-date list.
+_SUBPARSER_REGISTERED_BUT_NOT_ROUTED = frozenset({"combine-secrets", "split-secret", "verify"})
+
+
 TRULY_GLOBAL_FLAGS = {
     "--debug",
     "--unsafe-show-secrets",
@@ -851,7 +944,16 @@ TRULY_GLOBAL_FLAGS = {
     "--progress",
     "--parallel-kdf",
     "--kdf-workers",
+    # gitlab#176: declared top-level as "Automatic yes to prompts (for
+    # install-dependencies command)", recognised for routing but never
+    # relocated -- so `install-dependencies --yes` exited 2. Held back until
+    # hsm fido2-unregister's own --yes used default=SUPPRESS.
+    "--yes",
+    "-y",
 }
+
+# The single global flag that carries a value; its value must move with it.
+VALUE_CARRYING_GLOBAL_FLAGS = frozenset({"--kdf-workers"})
 
 
 _SUBPARSER_CHOICES = None
@@ -891,38 +993,300 @@ def _subparser_choices():
     return _SUBPARSER_CHOICES
 
 
+_BUILT_SUBPARSER = None
+_SUBPARSER_CHOICES = None
+_TOP_LEVEL_FLAGS = None
+_SECRET_SHORT_OPTIONS = frozenset(
+    opt for opt in SECRET_VALUE_CLI_OPTIONS if len(opt) == 2 and opt[0] == "-" and opt[1] != "-"
+)
+
+
+def _shared_subparser():
+    """One built subparser, shared by the two caches below.
+
+    Both _subparser_choices() and _top_level_flags() run on every
+    invocation, and each used to build its own -- double the few
+    milliseconds the caches were budgeted for (security review of
+    gitlab#177). Returns None if it cannot be built; each caller has its own
+    fallback for that.
+    """
+    global _BUILT_SUBPARSER
+    if _BUILT_SUBPARSER is None:
+        try:
+            from .crypt_cli_subparser import build_subparser
+
+            _BUILT_SUBPARSER = (build_subparser(),)
+        except Exception:  # noqa: BLE001 - routing must not be fatal
+            _BUILT_SUBPARSER = (None,)
+    return _BUILT_SUBPARSER[0]
+
+
+def _top_level_flags():
+    """(value-taking, boolean) top-level option strings.
+
+    Read off the real parser rather than hand-listed (gitlab#177), for the
+    same reason as _subparser_choices: a copy beside the definition drifts,
+    and this one decides whether the next token is a command or somebody
+    else's value.
+
+    Falls back to the known set if the parser cannot be built, so a failure
+    here degrades to today's behaviour rather than mis-scanning every argv.
+    """
+    global _TOP_LEVEL_FLAGS
+    if _TOP_LEVEL_FLAGS is None:
+        import argparse as _argparse
+
+        value_flags, boolean_flags = set(), set()
+        parser = _shared_subparser()
+        try:
+            if parser is None:
+                raise RuntimeError("subparser unavailable")
+            for action in parser._actions:
+                if not action.option_strings:
+                    continue
+                boolean = (
+                    isinstance(
+                        action,
+                        (
+                            _argparse._StoreTrueAction,
+                            _argparse._StoreFalseAction,
+                            _argparse._HelpAction,
+                            _argparse._VersionAction,
+                        ),
+                    )
+                    or action.nargs == 0
+                )
+                (boolean_flags if boolean else value_flags).update(action.option_strings)
+        except Exception:  # noqa: BLE001 - scanning must not be fatal
+            value_flags = {"--kdf-workers", "--identity-store", "--keyring-remove"}
+            # MINUS the value-carrying ones: TRULY_GLOBAL_FLAGS contains
+            # --kdf-workers, and calling it boolean here means the fallback
+            # would not consume its value and would read "4" as the command
+            # -- verbatim the gitlab#171 bug this file elsewhere says is
+            # fixed (security review of gitlab#177).
+            boolean_flags = (set(TRULY_GLOBAL_FLAGS) - set(VALUE_CARRYING_GLOBAL_FLAGS)) | {
+                "-h",
+                "--help",
+            }
+        _TOP_LEVEL_FLAGS = (frozenset(value_flags), frozenset(boolean_flags))
+    return _TOP_LEVEL_FLAGS
+
+
+def _find_command(argv):
+    """(command, index) for the command in argv, or (None, None).
+
+    The INDEX matters to preprocess_global_args: whether to strip a leading
+    `--` is a question about position, and testing "is the command already
+    in the output list" stood in for it badly -- a token equal to the
+    command name appearing earlier as some option's value suppressed a strip
+    that should have happened (follow-up review of gitlab#177).
+
+    Two rules the previous scans lacked (gitlab#177):
+
+      * Stop at a bare ``--``. Everything after it is data by POSIX
+        convention, so a file literally named ``--quiet`` must not be read as
+        a flag and a positional named ``encrypt`` must not be read as the
+        command.
+      * A value belongs to its option, not to the scan. gitlab#171 widened
+        the command set from 20 names to 42, which added ordinary barewords
+        -- test, version, sign, recover, template, identity, plugin, hsm,
+        armor -- so ``--alias telemetry`` used to look like the ``telemetry``
+        command.
+
+    An option this scan does not recognise is assumed to take a value. That
+    is safe because the recognised sets ARE the top-level parser's own: an
+    unrecognised option at this position is one argparse will reject anyway,
+    so consuming its value cannot break a command line that would otherwise
+    have worked. Both sets are needed, not just the value-taking one --
+    --yes/-y and -h/--help are top-level booleans that are NOT in
+    TRULY_GLOBAL_FLAGS (they are recognised but not relocatable), so keying
+    off that set alone made `crypt --yes encrypt` swallow the command.
+    """
+    commands = set(KNOWN_COMMANDS)
+    value_flags, boolean_flags = _top_level_flags()
+
+    index = 1
+    while index < len(argv):
+        token = argv[index]
+        if token == "--":
+            # POSIX and argparse both take the NEXT token as the positional,
+            # so the command can legitimately follow the separator. Returning
+            # None here sent `crypt -- identity list` to the wrong parser
+            # (security review of gitlab#177). Everything after is data, so
+            # the search stops at that one token.
+            following = argv[index + 1] if index + 1 < len(argv) else None
+            return (following, index + 1) if following in commands else (None, None)
+        if token.startswith("-") and token != "-":
+            # --flag=value is self-contained; it never consumes the next token.
+            if "=" not in token and not _is_boolean_option(token, boolean_flags, value_flags):
+                index += 1  # its value, whether the flag is known or not
+            index += 1
+            continue
+        return (token, index) if token in commands else (None, None)
+    return (None, None)
+
+
+def _first_command_token(argv):
+    """The command name in argv, or None. See _find_command for the rules."""
+    return _find_command(argv)[0]
+
+
+def _is_boolean_option(token, boolean_flags, value_flags):
+    """Whether this option token takes no value.
+
+    Exact membership is not enough, because argparse accepts two forms the
+    flag sets cannot express (security review of gitlab#177):
+
+      * **Bundled short options.** `-qy` is `-q` plus `-y`, both booleans,
+        but matches neither set -- so the scan assumed a value and swallowed
+        the command. `-qy install-dependencies` failed while `-q -y
+        install-dependencies` worked, and `-qy` is the natural spelling for
+        the one command --yes exists for.
+      * **Abbreviated long options.** No parser here sets
+        `allow_abbrev=False`, so `--deb` is a valid unambiguous prefix of
+        `--debug` -- and it swallowed the command too.
+
+    Unknown or ambiguous stays "takes a value", which is the fail-closed
+    direction: it is what stopped `--alias telemetry` being read as the
+    `telemetry` command, and an option argparse cannot resolve is one it
+    will reject anyway.
+    """
+    if token in boolean_flags:
+        return True
+    if token in value_flags:
+        return False
+
+    if token.startswith("--"):
+        # Unambiguous prefix, resolved against both sets together so an
+        # abbreviation shared by a boolean and a value flag stays unknown.
+        matches = {flag for flag in boolean_flags | value_flags if flag.startswith(token)}
+        if len(matches) == 1:
+            return matches.pop() in boolean_flags
+        return False
+
+    # A short-option bundle is boolean only if EVERY letter in it is.
+    singles = {flag for flag in boolean_flags if len(flag) == 2 and flag[0] == "-"}
+    return len(token) > 2 and all(f"-{letter}" in singles for letter in token[1:])
+
+
+def _keyring_remove_label(argv):
+    """The label `--keyring-remove` was given, or None.
+
+    Only honoured in top-level option position: before any `--`, and before
+    the command token. `--keyring-remove` is declared on the top-level
+    parser, so after a subcommand it is that subcommand's argument, not a
+    request to delete a credential.
+
+    Both spellings are recognised. The old scan matched only the separate
+    form, so `--keyring-remove=LABEL` silently did nothing.
+    """
+    _value_flags, boolean_flags = _top_level_flags()
+    command = _first_command_token(argv)
+    found = None
+
+    index = 1
+    while index < len(argv):
+        token = argv[index]
+        if token == "--":
+            break
+        if command is not None and token == command:
+            break
+
+        if token.startswith("--keyring-remove="):
+            candidate = token.split("=", 1)[1]
+            # An empty label is a mistake, not a request to delete "".
+            found = candidate or None
+            index += 1
+            continue
+
+        if _is_keyring_remove_option(token):
+            candidate = argv[index + 1] if index + 1 < len(argv) else None
+            # A label that looks like a flag means the user forgot it.
+            found = candidate if candidate and not candidate.startswith("-") else None
+            index += 2
+            continue
+
+        if token.startswith("-") and token != "-":
+            # Skip this option's VALUE too. Without it, `--identity-store
+            # --keyring-remove encrypt` deleted the entry named "encrypt" --
+            # a "forgot the path" typo that argparse would have rejected
+            # outright (follow-up review of gitlab#177).
+            if "=" not in token and not _is_boolean_option(token, boolean_flags, _value_flags):
+                index += 1
+            index += 1
+            continue
+
+        index += 1
+
+    # Last occurrence wins, as argparse binds it.
+    return found
+
+
+def _is_keyring_remove_option(token):
+    """Whether this token names --keyring-remove, abbreviations included.
+
+    argparse accepts unambiguous prefixes, so `--keyring-rem` binds the
+    option -- and the exact-match scan ignored it, making the option a
+    silent no-op in that spelling (follow-up review of gitlab#177).
+    """
+    if token == "--keyring-remove":
+        return True
+    if not token.startswith("--") or len(token) <= 2 or "=" in token:
+        return False
+    _value_flags, boolean_flags = _top_level_flags()
+    candidates = {flag for flag in set(_value_flags) | set(boolean_flags) if flag.startswith(token)}
+    return candidates == {"--keyring-remove"}
+
+
+def _resolve_secret_long_option(token):
+    """Whether a ``--`` token names a secret-valued option (gitlab#209).
+
+    argparse accepts unambiguous prefixes -- no parser here sets
+    ``allow_abbrev=False`` -- so ``--manifest-p`` binds
+    ``--manifest-password`` and the exact-membership test missed it.
+
+    Fails CLOSED, which is the opposite of _is_boolean_option's default: an
+    ambiguous prefix that could name a secret option is redacted, because
+    printing a password is worse than redacting a filename.
+    """
+    if token in SECRET_VALUE_CLI_OPTIONS:
+        return True
+    if not token.startswith("--") or len(token) <= 2:
+        return False
+    return any(opt.startswith(token) for opt in SECRET_VALUE_CLI_OPTIONS if opt.startswith("--"))
+
+
+def _split_secret_short_bundle(token):
+    """Split ``-apSECRET``/``-ap`` into (prefix, attached_value_or_None).
+
+    argparse resolves a bundle of short options, so ``-ap<value>`` is ``-a``
+    plus ``-p <value>`` -- and the previous ``startswith("-p")`` rule saw
+    neither (gitlab#209). Returns (None, None) when the token contains no
+    secret-valued short option.
+
+    A returned attached value of None means the SECRET IS THE NEXT TOKEN.
+    """
+    if not token.startswith("-") or token.startswith("--") or len(token) < 2:
+        return (None, None)
+    for position, letter in enumerate(token[1:], start=1):
+        if f"-{letter}" in _SECRET_SHORT_OPTIONS:
+            attached = token[position + 1 :]
+            return (token[: position + 1], attached if attached else None)
+    return (None, None)
+
+
 def preprocess_global_args(argv):
     """Preprocess sys.argv to move truly global flags to the front for subparser compatibility.
 
     This allows global flags like --debug, --verbose, --quiet, --progress to be specified
     anywhere in the command line, maintaining backward compatibility with v1.2.1 behavior.
     """
-
-    # Find the command position
-    commands = {
-        "encrypt",
-        "decrypt",
-        "rekey",
-        "shred",
-        "generate-password",
-        "derive-password",
-        "security-info",
-        "check-argon2",
-        "check-pqc",
-        "check-password",
-        "version",
-        "show-version-file",
-        "create-usb",
-        "verify-usb",
-    }
-
-    command_pos = None
-    for i, arg in enumerate(argv[1:], 1):  # Skip argv[0] (script name)
-        if arg in commands:
-            command_pos = i
-            break
-
-    if command_pos is None:
+    # Every command, not just the routed ones: a flag written after
+    # `create-usb` belongs to create-usb regardless of which parser handles
+    # it. Shared with main()'s routing scan so the two cannot disagree
+    # (gitlab#177).
+    command_token, command_index = _find_command(argv)
+    if command_token is None:
         return argv  # No command found, return as-is
 
     # Extract global flags and their values from anywhere in the command line
@@ -933,11 +1297,44 @@ def preprocess_global_args(argv):
     while i < len(argv):
         arg = argv[i]
 
-        if arg in TRULY_GLOBAL_FLAGS:
+        if arg == "--":
+            # Everything from here is data, not flags (gitlab#177). Copy the
+            # rest verbatim: a file literally named --quiet was being hoisted
+            # out of its subcommand's argument list and read as a flag.
+            #
+            # A separator BEFORE the command is dropped rather than kept.
+            # POSIX reads `crypt -- identity list` as "identity is a
+            # positional", but argparse does not strip it for a subparser --
+            # it reports `invalid choice: '--'` -- so passing it through
+            # makes a legitimate invocation fail (security review of
+            # gitlab#177, whose premise that argparse strips it turned out
+            # not to hold; verified directly against argparse).
+            if command_index == i + 1:
+                other_args.extend(argv[i + 1 :])
+            else:
+                other_args.extend(argv[i:])
+            break
+
+        # The --flag=value form is one token, so an exact membership test
+        # misses it and argparse then rejects it after a subcommand -- the
+        # same gitlab#171 symptom, for the "=" spelling.
+        if "=" in arg and arg.split("=", 1)[0] in VALUE_CARRYING_GLOBAL_FLAGS:
             global_args.append(arg)
-            # Check if this flag takes a value
+        elif arg in TRULY_GLOBAL_FLAGS:
+            global_args.append(arg)
+            # Check if this flag takes a value.
+            #
+            # --kdf-workers is the only value-carrying global flag. Do NOT add
+            # --template/-t here: it is a *subcommand* option on encrypt and
+            # decrypt, and it selects the KDF/hash parameters. Relocating it
+            # would hand it to the top-level parser, whose value the encrypt
+            # subparser's own `template=None` default then overwrites -- so
+            # `encrypt -t hardened` would silently encrypt at default KDF cost
+            # instead of the requested one. (It was listed here for a long
+            # time but is unreachable: the branch above requires membership in
+            # TRULY_GLOBAL_FLAGS, which -t/--template are not.)
             if (
-                arg in ["--template", "-t", "--kdf-workers"]
+                arg in VALUE_CARRYING_GLOBAL_FLAGS
                 and i + 1 < len(argv)
                 and not argv[i + 1].startswith("-")
             ):
@@ -2420,21 +2817,28 @@ def main():
     import sys
 
     # Handle --keyring-remove early (before argparse) since it's a standalone action
-    if "--keyring-remove" in sys.argv:
-        idx = sys.argv.index("--keyring-remove")
-        if idx + 1 < len(sys.argv):
-            label = sys.argv[idx + 1]
-            try:
-                import keyring as _keyring
+    label = _keyring_remove_label(sys.argv)
+    if label is not None:
+        try:
+            import keyring as _keyring
+        except ImportError:
+            eprint("Error: keyring package not installed. Install with: pip install keyring")
+            sys.exit(1)
 
-                _keyring.delete_password("openssl_encrypt", label)
-                eprint(f"Password removed from keyring: '{label}'")
-            except ImportError:
-                eprint("Error: keyring package not installed. Install with: pip install keyring")
-                sys.exit(1)
-            except Exception:
-                eprint(f"No password found in keyring for label '{label}'")
-            sys.exit(0)
+        # "Not found" and "the backend failed" are different answers, and a
+        # caller that cannot tell them apart may believe a credential is gone
+        # when it is still there (follow-up review of gitlab#177).
+        not_found = getattr(getattr(_keyring, "errors", None), "PasswordDeleteError", ())
+        try:
+            _keyring.delete_password("openssl_encrypt", label)
+            eprint(f"Password removed from keyring: '{label}'")
+        except not_found:
+            eprint(f"No password found in keyring for label '{label}'")
+        except Exception as error:
+            eprint(f"Error: could not remove '{label}' from the keyring: {error}")
+            eprint("  The password may still be stored.")
+            sys.exit(1)
+        sys.exit(0)
 
     sys.argv = preprocess_global_args(sys.argv)
 
@@ -2444,44 +2848,6 @@ def main():
     # the monolithic parser is used (which has all arguments).
     # Every command name the CLI knows. Membership here answers "is this
     # token the command", which is true whichever parser ends up handling it.
-    known_commands = [
-        "encrypt",
-        "decrypt",
-        "rekey",
-        "armor",
-        "dearmor",
-        "shred",
-        "generate-password",
-        "derive-password",
-        "list-algorithms",
-        "list-available-algorithms",
-        "install-dependencies",
-        "security-info",
-        "identity",
-        "check-argon2",
-        "check-pqc",
-        "check-password",
-        "version",
-        "show-version-file",
-        "create-usb",
-        "verify-usb",
-        "list-plugins",
-        "plugin-info",
-        "enable-plugin",
-        "disable-plugin",
-        "reload-plugin",
-        "plugin",
-        "telemetry",
-        "keyserver",
-        "hsm",
-        "verify-integrity",
-        "sign",
-        "verify-signature",
-        "list-recovery",
-        "recover",
-        "add-recovery",
-        "remove-recovery",
-    ]
 
     # Which parser handles it is a DIFFERENT question, and conflating the two
     # is what broke seven commands (gitlab#179): create-usb, verify-usb and
@@ -2497,7 +2863,11 @@ def main():
     # that list and today are handled by the monolithic parser. Routing them
     # somewhere new is a behaviour change this fix has no business making;
     # the intersection removes the seven and adds nothing.
-    subparser_commands = [c for c in known_commands if c in _subparser_choices()]
+    subparser_commands = [
+        c
+        for c in KNOWN_COMMANDS
+        if c in _subparser_choices() and c not in _SUBPARSER_REGISTERED_BUT_NOT_ROUTED
+    ]
 
     # Use subparser only if a subcommand is present
     # (after global flags have been moved to the front by preprocess_global_args)

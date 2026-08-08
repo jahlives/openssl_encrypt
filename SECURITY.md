@@ -228,6 +228,62 @@ relevant.
 
 ## Security Advisories
 
+### ADVISORY 2026-17: File Password Printed in Cleartext by the `--debug` argv Dump for Bundled and Abbreviated Option Spellings — Resolved
+
+**Severity:** Medium · **CWE-532** (Insertion of Sensitive Information into Log File) / **CWE-215** (Insertion of Sensitive Information Into Debugging Code)
+**Affected versions:** all releases up to and including **1.4.8**. **Fixed in 1.4.9 (1.4.x line) and 1.5.0 (1.5.x line).**
+
+**Summary:** under `--debug`, the tool prints its own argv, routing
+secret-valued options through the `debug_secret()` redaction chokepoint first.
+`sanitize_argv_for_debug` selected what to redact by **exact string
+membership** in `SECRET_VALUE_CLI_OPTIONS`, plus two special cases:
+`--option=value`, and a rule matching a token that literally starts with `-p`.
+argparse accepts two further spellings that neither covers.
+
+The `encrypt` subparser declares `-a/--armor`, `-f/--overwrite` and
+`-s/--shred` as `store_true` on the same parser as the value-taking
+`-p/--password`, so argparse resolves `-apHunter2` to `-a` plus
+`-p=Hunter2` — a token that does not start with `-p`. Separately, no parser
+sets `allow_abbrev=False`, so an abbreviated long option such as
+`--manifest-p` binds `--manifest-password` while matching no set member.
+
+**Impact:** the file password is written to stderr in cleartext, under the
+plain `--debug` mode whose own banner states that secrets are redacted (the
+loud cleartext warning is reserved for `--debug --unsafe-show-secrets`).
+stderr is not a private channel: it reaches terminal scrollback, is merged by
+`2>&1`, lands in CI job logs, and the desktop GUI keeps a persistent debug
+log. The value bypasses the `debug_secret()` chokepoint entirely.
+
+**Reachability in a released version — measured, not assumed:** the v1.4.8
+sanitizer was lifted verbatim from the `v1.4.8` tag and executed:
+
+```
+LEAK  ['secret.txt', '-apHunter2']              <- crypt --debug encrypt -i secret.txt -apHunter2
+LEAK  ['-ap', 'Hunter2']                        <- crypt --debug encrypt -i secret.txt -ap Hunter2
+safe  ['secret.txt', '-p<redacted: 7 bytes>']   <- the only spelling covered
+```
+
+The `--manifest-p` variant additionally requires `create-usb`, which is
+unreachable before 1.4.9 (gitlab#179), so that one affects no release.
+
+**Fixed in:** 1.4.9 / 1.5.0. Each token is now resolved the way argparse
+resolves it before the redaction decision: long options by unambiguous
+prefix, short-option bundles by walking the letters until a secret-valued
+short option is reached, redacting either the attached remainder or the
+following token. Ambiguity fails **closed** — an unresolvable option that
+could name a secret is redacted, the opposite of the command scan's default,
+because printing a password is worse than redacting a filename.
+
+**Mitigation:** rotate any password used with `--debug` together with a
+bundled (`-ap…`, `-afsp…`) or abbreviated (`--passw`, `--pass`) spelling, and
+review any retained terminal logs, CI output, or GUI debug logs for it. The
+documented `-p PASSWORD` and `-pPASSWORD` forms were always redacted
+correctly and are unaffected.
+
+**Disclosure:** found during the follow-up security review of gitlab#177
+(argv-layer scanning), which examined the surrounding argv handling after the
+initial fix. Tracked as gitlab#209 / GHSA-jgvm-7jxv-cgcc (held until release).
+
 ### ADVISORY 2026-16: Post-Quantum Keyfile Written Without Encryption by a Duplicate Code Path — Resolved
 
 **Severity:** Medium · **CWE-312** (Cleartext Storage of Sensitive Information) / **CWE-1041** (Redundant Code)

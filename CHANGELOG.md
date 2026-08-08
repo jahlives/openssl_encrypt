@@ -374,6 +374,113 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`--keyring-remove` deleted from the wrong position, was a no-op in two
+  spellings, and reported failure as success** (follow-up security review of
+  gitlab#177). Three defects in one credential-removal control:
+
+  Its pre-scan did not skip an option's *value*, so
+  `crypt --identity-store --keyring-remove encrypt -i f` — a "forgot the
+  path" typo — deleted the keyring entry named `encrypt` and exited 0, where
+  argparse would have failed outright and deleted nothing. The scan now
+  skips option values, takes the last occurrence as argparse does, and
+  refuses a label that looks like a flag or is empty.
+
+  Nothing anywhere reads `args.keyring_remove` — the option works only
+  through that pre-scan — so an abbreviation such as `--keyring-rem`, which
+  argparse binds happily, silently did nothing. Abbreviations are now
+  honoured. The option was also declared on `encrypt`, `decrypt` and two
+  other subcommands, where it appeared in `--help` and did nothing at all;
+  those dead declarations are removed.
+
+  A failed deletion was reported as "No password found" with exit 0, so a
+  script could not tell "removed" from "backend unavailable, still there".
+  A confirmed absence still exits 0; a backend error now says so and exits
+  1.
+
+- **Combined short options, abbreviated long options and a leading `--`
+  broke command routing** (security review of gitlab#177). The command scan
+  classified each leading option as boolean or value-taking by exact
+  membership, which cannot express two forms argparse accepts — so the
+  command was read as somebody else's value and the invocation failed:
+
+  ```
+  crypt -qy install-dependencies    ->  invalid choice: 'install-dependencies'
+  crypt -q -y install-dependencies  ->  works
+  crypt --deb identity list         ->  invalid choice: 'identity'
+  crypt --debug identity list       ->  works
+  ```
+
+  `-qy` is the natural spelling for the one command `--yes` exists for, and
+  no parser here sets `allow_abbrev=False`, so `--deb` is a valid prefix.
+  Bundled short options are now boolean only if every letter is, and long
+  options resolve by unambiguous prefix; unknown or ambiguous still means
+  "takes a value", the fail-closed direction that stopped `--alias
+  telemetry` being read as a command.
+
+  A leading `--` went the other way: `crypt -- identity list` found no
+  command and routed to the wrong parser. POSIX reads that as "identity is
+  a positional" — but argparse does **not** strip the separator before a
+  subparser, it reports `invalid choice: '--'`, so finding the command was
+  not enough and a leading separator is now removed. (The review's premise
+  that argparse strips it does not hold; verified directly.) A separator
+  *after* the command is still preserved, which is what gitlab#177 fixed.
+
+  Also fixes the hardcoded fallback used when the parser cannot be built:
+  it listed `--kdf-workers` as boolean, so on that path it would not consume
+  its value and the scan would read `4` as the command — verbatim the
+  gitlab#171 bug. It now excludes the value-carrying flags.
+
+- **`install-dependencies --yes` was rejected** (gitlab#176): `--yes`/`-y`
+  is declared on the top-level parser with the help text "Automatic yes to
+  prompts (for install-dependencies command)" and was recognised by the
+  routing scan — but it was never *relocated*, and the
+  `install-dependencies` subparser declares no arguments at all, so the one
+  invocation the flag exists for exited 2 with
+  `unrecognized arguments: --yes`.
+
+  It was held back from gitlab#171 because `hsm fido2-unregister` declares
+  its own `--yes`, and argparse copies a subcommand's whole namespace back
+  over the parent's, so that subparser's `False` default would silently
+  overwrite a relocated one. That declaration now uses
+  `default=argparse.SUPPRESS` — the same treatment `--quiet` needed — and
+  `--yes` joins the relocatable set. Both directions are pinned: a relocated
+  `--yes` survives that subcommand, and not passing it still leaves it
+  false.
+
+  The other half of this issue — `main()`'s routing skip-set being a
+  hand-maintained duplicate — was closed by gitlab#177's shared scan. The
+  remaining list is now covered by a test asserting the monolithic parser's
+  command `choices` are all known commands, which immediately found `info`
+  missing from that list. Harmless today (it routes to the flat parser,
+  which accepts global flags anywhere) but latent: a subparser for `info`
+  would have broken it the day it was added.
+
+- **Global-flag relocation ignored `--` and could read an option value as
+  the command** (gitlab#177): the preprocessing that lets `--debug` and
+  friends work after a subcommand did not stop at a bare `--`, so a file
+  literally named `--quiet` was hoisted out of its subcommand's arguments
+  and read as a flag — in exactly the place a user reaches for `--` to stop
+  that happening. And it looked for the command name anywhere, including
+  option *values*: gitlab#171 widened the recognised set from 20 names to
+  42, adding ordinary barewords (`test`, `version`, `sign`, `recover`,
+  `template`, `identity`, `plugin`, `hsm`, `armor`), so
+  `--alias telemetry` opened the relocation gate on a command line with no
+  subcommand at all.
+
+  Impact was low rather than nil — relocation moves only exact global-flag
+  tokens and preserves relative order, so no positional was ever read as a
+  password — but the behaviour was unpredictable in the two places users
+  reach for predictability.
+
+  Both scans now stop at `--` and skip an option's value. They are also now
+  the *same* scan: `main()`'s routing decision was a third hand-maintained
+  copy of "which flags carry a value", and it had already drifted twice.
+  Which options take a value is read off the real parser rather than
+  listed, and both the value-taking and boolean sets are needed — `--yes`
+  and `-h` are top-level booleans that are deliberately not relocatable, so
+  keying off the relocatable set alone made `crypt --yes encrypt` swallow
+  the command.
+
 - **Seven documented commands could not be run** (gitlab#179 / github#94):
   `create-usb`, `verify-usb`, `list-plugins`, `plugin-info`,
   `enable-plugin`, `disable-plugin` and `reload-plugin` were listed in
@@ -1178,6 +1285,59 @@ Deliberately kept after re-evaluation: the decryption cost estimator
 inflated KDF metadata parameters, not cosmetic output.
 
 ### Security
+
+- **The file password was printed in cleartext by the `--debug` argv dump
+  for bundled and abbreviated option spellings** (gitlab#209, ADVISORY
+  2026-17). Under `--debug` the tool prints its own argv, routing
+  secret-valued options through the redaction chokepoint first — but it
+  selected what to redact by *exact string membership*, plus `--option=value`
+  and a rule matching a token literally starting with `-p`. argparse accepts
+  two further spellings that neither covers.
+
+  `encrypt` declares `-a/--armor`, `-f/--overwrite` and `-s/--shred` as
+  booleans on the same parser as the value-taking `-p/--password`, so
+  argparse resolves `-apHunter2` to `-a` plus `-p=Hunter2` — a token that
+  does not start with `-p`. And no parser sets `allow_abbrev=False`, so
+  `--manifest-p` binds `--manifest-password` while matching no set member.
+
+  This one **does** affect released versions: the v1.4.8 sanitizer was
+  lifted from the tag and executed, and both `-apHunter2` and `-ap Hunter2`
+  printed the password. Rotate any password used with `--debug` and a
+  bundled or abbreviated spelling. The documented `-p PASSWORD` and
+  `-pPASSWORD` forms were always redacted and are unaffected.
+
+  Each token is now resolved the way argparse resolves it before the
+  redaction decision. Ambiguity fails **closed** — an unresolvable option
+  that could name a secret is redacted, which is deliberately the opposite
+  of the command scan's default, because printing a password is worse than
+  redacting a filename.
+
+- **`--` defeated the keyserver-credential redaction, and could trigger a
+  keyring deletion** (security review of gitlab#177). gitlab#177 made `--`
+  a working spelling in the argv layer; two argv scanners had not learned
+  about it.
+
+  The `--debug` argv dump redacts the token *immediately after* the
+  `keyserver set-token`/`login` positional. With `--` in between it redacted
+  the separator and printed the credential verbatim — and `--` is precisely
+  what a user must type when the token starts with `-`, which base64url
+  tokens and JWT segments do. stderr reaches terminal scrollback, is merged
+  by `2>&1`, and the desktop GUI keeps a persistent debug log. The
+  separator is now skipped rather than consuming the redaction.
+
+  Separately, `--keyring-remove` was a raw membership test over the whole of
+  `sys.argv`, running before any parsing, so
+  `crypt shred -- --keyring-remove important-label` **deleted that stored
+  password** and exited 0 having shredded nothing — when what the user
+  described was two files with those names. It is now honoured only in
+  top-level option position (before any `--`, before the command), and the
+  `--keyring-remove=LABEL` spelling works, which the old scan missed
+  entirely.
+
+  Neither is a regression against a released version: the positional
+  redaction rule is itself new in 1.4.9 — 1.4.8 did not redact that token at
+  all, which is the already-recorded gitlab#133–136 item — and `--` was not
+  usable in this layer before gitlab#177.
 
 - **`create-usb` overwrote root autorun files and wrote drive secrets at
   the default umask** (gitlab#207): `_is_removable_drive` only ever logged a
