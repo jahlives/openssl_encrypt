@@ -367,6 +367,18 @@ here too.
 | gitlab#183 / gh#100 | **GUI identity listing had never worked**: `CLIService.listIdentities()` emitted `identity list --json`, a flag that did not exist, and swallowed the argparse failure into empty lists. Now `identity list --json` (+ `skipped`), GUI sanitizes at the decode boundary, and a failed listing raises instead of returning empty. |
 | gitlab#148 | **Envelope rewrites could destroy the ciphertext they manage.** The writer chose its atomic vs. truncating path from a caller-supplied flag; it now derives eligibility itself immediately before the write. Identity ("does this write land on its own input") and atomicity ("can `os.replace` be used") are separate predicates — conflating them made the recoverable path unreachable for exactly the cases it was written for, caught in review. Symlinked and multiply-linked targets must be written *through*, so they get a fsynced backup + restore instead of an unprotected truncate. `_rekey_envelope_fast` carried a second, weaker copy and now delegates. Residual: `rekey_file`/`decrypt_file` with `-o` equal to `-i` → **gitlab#195 / gh#112**. |
 
+### Landed 2026-08-08
+
+| Issue | Was |
+|---|---|
+| gitlab#196 / gh#113 | **Malformed OpenPGP input escaped the module's error taxonomy** (1.5.x only — `interop/` does not exist on 1.4.x). Truncated packets raised raw `IndexError`/`struct.error` past the documented `OpenPGPError`, on untrusted input. Bounds checks at every length read, the same treatment for the **public-key** path (authored by anyone holding the recipient's public key — no shared secret needed), and `InvalidTag`/`UnsupportedAlgorithm` mapped by name so a later catch-broadening cannot downgrade tamper to malformed. Found via a test that failed ~2% of runs; the first two corpora reached none of the fixed code, which a line-trace assertion now prevents. |
+| gitlab#178 (confidential) | `keyserver show-token` printed the first 8 and last 4 characters of the bearer token outside `debug_secret()`. Now redacted by default, revealed only under `--debug --unsafe-show-secrets`. |
+| gitlab#184 | The 1.5.x stdout-leak lint matched a **prefix** against a call's first line; 9 of 22 entries were bare prefixes, so one entry authorized every `json.dumps` print in its file and left everything after the prefix unconstrained. Ported the 1.4.x call-anchored matcher: 22 loose entries → 29 exact ones. |
+| gitlab#191 | The argv lint checked every argv the GUI **executes** but neither builder that renders a copy-pasteable command to the user. Widening the anchor immediately found `--pbkdf2-iterations` in the 1.5.x encrypt preview, closing the last flag item of gitlab#192. |
+| gitlab#185 | GUI `identity delete` sent `--contact`, a flag that has never existed, so contact deletion had never worked; and without `--force` the CLI's confirmation `input()` raised EOFError on a pipe. Now `--kind own\|contact` + `--force`. |
+| gitlab#190 | GUI steganographic encryption sent `-a <algorithm>`, but `-a` is `--armor`, a `store_true` — the algorithm became a stray positional and the command exited 2. **The lint could not have caught this**: it checked flag *existence*, not arity. It now checks both, which required reading argv *elements* rather than string literals, because the value is a Dart variable. |
+| gitlab#157 | **A duplicate implementation wrote the post-quantum private key in the clear.** Reintroduced by a file-reconstruction commit *after* the wrapping fix landed, and missed by the Argon2id upgrade whose message says it touched "the one write site"; its loader also read `private_key` unconditionally, so a wrapped keyfile would have had its AES-GCM ciphertext used as the key. Deleted. Separately `--pqc-keyfile` could not save by **any** invocation (`--pqc-gen-key` lived only on a parser `main()` never routes to), so naming a new path was silently ignored. Now reachable, refused when missing, and written 0600 via `create_secure_file(exclusive=True)`. **SECURITY.md ADVISORY 2026-16**. |
+
 ### Open CLI work (blocks GUI items)
 
 - **gitlab#162 / gh#80** — no machine-readable output for `analyze-security`,
@@ -389,8 +401,6 @@ Confidential (pre-existing, affect released versions):
 - **gitlab#173** — a contact can shadow an own identity's name; deleting the
   own identity then silently promotes the attacker's keys, and recipient
   resolution goes through `get_by_name`.
-- **gitlab#178** — `keyserver show-token` prints 12 characters of the bearer
-  token outside `debug_secret()`.
 
 Public:
 

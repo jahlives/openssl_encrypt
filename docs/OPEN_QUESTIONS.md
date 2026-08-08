@@ -53,14 +53,13 @@ best-effort via `crypt_utils.secure_shred_file` (with the usual caveat that
 CoW and journalling filesystems defeat it)? Shredding the backup would
 double an already-O(file) path, which is why it was not done by default.
 
-## gitlab#192 — 1.5.x GUI, two items left
+## gitlab#192 — 1.5.x GUI, one item left
 
-Steganography is removed. Still emitted by that line's GUI, and registered
-in the argv lint rather than fixed:
+Steganography is removed, and `--pbkdf2-iterations` is now gone from both
+the live encrypt path and the command preview (widening the argv lint onto
+the preview builders for gitlab#191 is what surfaced the second copy). One
+item remains, still registered in the argv lint rather than fixed:
 
-- `--pbkdf2-iterations` — the PBKDF2 chain stage was removed in 1.5, so the
-  flag is gone. Dropping it from the GUI is mechanical; I left it because it
-  sits in the shared encrypt path and I could not compile-check Dart.
 - `identity import --data/--alias` — gitlab#164's import rework is 1.4.x
   only, so GUI contact import is broken on 1.5.x exactly as it was on 1.4.x
   before that fix. Question: port #164 to 1.5.x, or accept it?
@@ -69,10 +68,15 @@ in the argv lint rather than fixed:
 
 There is no Flutter toolchain in this container, so **no Dart was compiled
 or tested** in this run. `flutter analyze` was clean when run externally
-against an earlier state, but four later commits touched Dart — including a
-~300-line steganography removal across an interleaved widget file. Run
+against an earlier state, but every commit since has touched Dart —
+including a ~300-line steganography removal across an interleaved widget
+file, and the gitlab#185/#190 call-site rewrites. Run
 `cd desktop_gui && flutter analyze && flutter test` before relying on any
 of it.
+
+The argv lint parses `cli_service.dart` as text and checks it against the
+real argparse tree, so a flag that does not exist or cannot take its value
+is caught here; what it cannot tell you is whether the Dart still compiles.
 
 The signed source-integrity manifest is also stale: `crypt_cli.py`,
 `crypt_cli_subparser.py` and `crypt_core.py` all changed, so
