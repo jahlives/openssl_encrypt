@@ -374,6 +374,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **stdout-leak lint: entries authorized a prefix, not a call** (gitlab#184):
+  the whitelist matched a *prefix* against the first source line of a
+  `print()` call, and 9 of its 22 entries were bare prefixes such as
+  `print(json.dumps(`. Three consequences, all of which weakened the lint
+  that exists to stop secrets reaching stdout: one entry authorized every
+  `json.dumps` print in its file (five distinct calls in `crypt_cli.py`
+  alone, now named individually); being a prefix, everything after it was
+  unconstrained, so widening an authorized payload to include a credential
+  still matched; and matching only the first line meant a call reflowed
+  across lines was authorized on its opening fragment.
+
+  Ported from the 1.4.x mechanism (gitlab#150): an entry now names one call
+  shape and how many times it may appear, matched on the call's whole source
+  text with whitespace and black's magic trailing comma normalized away, so
+  reformatting cannot break an anchor and a second copy of an authorized
+  shape cannot inherit the first's authorization. A companion test asserts
+  every entry still matches exactly its stated number of real calls, in both
+  directions, so a dead entry is an authorization with no justification left
+  in the code. The scan scope is unchanged (`scripts/`, `examples/`,
+  `crypt_gui.py` and `example_usage.py` stay excluded).
+
+  Two dead heuristics went with it: the matcher skipped calls it judged to be
+  inside a string literal or a comment, neither of which `ast.walk` can
+  yield in the first place, so they could only ever have suppressed a real
+  call whose line happened to contain an odd number of quotes.
+
 - **`keyserver show-token` no longer prints part of the bearer token**
   (gitlab#178): the handler revealed the first 8 and last 4 characters with a
   plain `eprint`, bypassing the `debug_secret()` chokepoint every other
