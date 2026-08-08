@@ -276,12 +276,13 @@ def display_password_with_timeout(password, timeout_seconds=10):
         eprint(" GENERATED PASSWORD ".center(60, "="))
         eprint("=" * 60)
         eprint(f"\nPassword: {password}")
+        eprint("\nSAVE THIS PASSWORD NOW -- this is the only time it is shown.")
+        eprint("If you lose it, the data CANNOT be recovered.")
         eprint(
-            "\nThis password will be cleared from the screen in {0} seconds.".format(
-                timeout_seconds
-            )
+            "\nIt will be hidden from view in {0} seconds (a screen repaint, "
+            "not an erase).".format(timeout_seconds)
         )
-        eprint("Press Ctrl+C to clear immediately.")
+        eprint("Press Ctrl+C to hide it immediately.")
         eprint("=" * 60)
 
         # Countdown timer
@@ -300,19 +301,26 @@ def display_password_with_timeout(password, timeout_seconds=10):
         # Restore original signal handler no matter what
         signal.signal(signal.SIGINT, original_sigint)
 
-        # Give an indication that we're clearing the screen
+        # The visible screen is repainted, and that is ALL that happens. The
+        # escape sequence removes nothing from scrollback, from a pipe, from
+        # a script(1) transcript or from a CI log, so the old wording -- an
+        # announcement that the password had been cleared from the screen --
+        # was false. gitlab#152 removed that claim from the `encrypt
+        # --random` path; it survived here, on the other command that shows
+        # a generated password (gitlab#182). Claiming it is worse than saying nothing, because the
+        # user stops taking their own precautions.
         if interrupted:
-            eprint("\n\nClearing password from screen (interrupted by user)...")
+            eprint("\n\nHiding password from view (interrupted by user)...")
         else:
-            eprint("\n\nClearing password from screen...")
+            eprint("\n\nHiding password from view...")
 
-        # Clear screen using ANSI escape sequences (safer than os.system)
-        # \033[2J clears the entire screen, \033[H moves cursor to home position
+        # \033[2J clears the visible screen, \033[H moves cursor to home.
         sys.stderr.write("\033[2J\033[H")
         sys.stderr.flush()
 
-        eprint("Password has been cleared from screen.")
-        eprint("For additional security, consider clearing your terminal history.")
+        eprint("The password is no longer on screen, but this is only a repaint:")
+        eprint("it remains in scrollback, and in any pipe, transcript or CI log")
+        eprint("that captured this session. Clear those yourself if it matters.")
 
 
 def safe_open_file(file_path, mode, secure_mode=False, allow_special_files=True):

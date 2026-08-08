@@ -839,6 +839,223 @@ SECRET_VALUE_CLI_OPTIONS = frozenset(
 )
 
 
+def _write_generated_password_file(path, password):
+    """Write a `--random` generated password to a file only its owner can read.
+
+    The generated password is the only thing standing between an attacker and
+    the file's plaintext, so it must not travel on a general-purpose stream.
+    stderr -- where it used to be printed -- is collapsed into stdout by
+    `2>&1`, lands in terminal scrollback, in `script(1)` transcripts, in CI job
+    logs and in the desktop GUI's persistent debug log. Writing it ourselves is
+    the only way the tool controls the permissions (gitlab#152).
+
+    Args:
+        path: Destination, created 0600 and refused if it already exists.
+        password: The generated password.
+
+    Raises:
+        ValueError: If the destination already exists.
+        OSError: If the file cannot be created or written.
+    """
+    from .file_permissions import PermissionLevel, create_secure_file
+
+    # Same hardened primitive as the recovery-code writer (gitlab#146): it adds
+    # O_NOFOLLOW and O_EXCL, so a pre-planted symlink, FIFO or device is
+    # refused outright, rejects non-regular and foreign-owned targets, and pins
+    # the mode with an unconditional fchmod rather than trusting open()'s mode
+    # (which is ignored for an existing file, and which a restrictive umask
+    # would otherwise subtract from).
+    fd = create_secure_file(path, PermissionLevel.OWNER_ONLY, exclusive=True)
+    try:
+        os.write(fd, (password + "\n").encode("utf-8"))
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+    # fsync the directory too: the whole point of writing the credential before
+    # the ciphertext is that it survives a crash the ciphertext also survives,
+    # and an unsynced directory entry can vanish while the encrypted file stays.
+    #
+    # Best-effort by design. Windows cannot open a directory handle this way,
+    # and a write-only destination directory refuses it on POSIX; failing here
+    # would abort a correct operation *after* the O_EXCL file already exists,
+    # so the obvious retry would then die with FileExistsError.
+    try:
+        dir_fd = os.open(os.path.dirname(os.path.abspath(path)), os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(dir_fd)
+    except OSError:  # pragma: no cover - platform/filesystem dependent
+        pass
+    finally:
+        os.close(dir_fd)
+
+
+def _effective_encrypt_output(args):
+    """The path the encrypt run will actually write its ciphertext to.
+
+    `args.output` is not normalized anywhere, so reading it alone misses the
+    two derived cases: `--overwrite` writes back over the input, and an
+    omitted `--output` appends ".encrypted". A collision check that consulted
+    only `args.output` would therefore pass for
+    `encrypt -i f --random-password-out f.encrypted` and let the ciphertext
+    truncate the password file (gitlab#152).
+
+    Args:
+        args: Parsed CLI arguments.
+
+    Returns:
+        The output path, or None when it cannot be determined (stdin input
+        with no explicit output, which goes to stdout).
+    """
+    if getattr(args, "overwrite", False):
+        return args.input
+    if getattr(args, "output", None):
+        return args.output
+    if args.input == "/dev/stdin":
+        return None
+    return args.input + ".encrypted"
+
+
+def _check_random_password_destination(out_path, input_path, output_path):
+    """Refuse a destination that the run would then destroy.
+
+    A destination equal to the output would be truncated by the ciphertext
+    write moments later, destroying the password and reporting success -- the
+    file would be sealed under a value that no longer exists anywhere. O_EXCL
+    does not catch it, because the destination does not exist yet at the time
+    it is created.
+
+    Args:
+        out_path: Destination given with --random-password-out.
+        input_path: The --input path.
+        output_path: The --output path.
+
+    Raises:
+        ValueError: If the destination collides with the input or output.
+    """
+    if out_path is None:
+        return
+    if not out_path.strip():
+        raise ValueError("--random-password-out needs a path")
+    out_real = os.path.realpath(out_path)
+    for label, other in (("--input", input_path), ("--output", output_path)):
+        if not other:
+            continue
+        if out_real == os.path.realpath(other):
+            raise ValueError(f"--random-password-out must differ from {label}")
+        # realpath resolves symlinks but NOT hard links, so a destination
+        # hardlinked to --output passed this check and was then truncated by
+        # the ciphertext write moments later (gitlab#182). samefile compares
+        # st_dev/st_ino, which is what "the same file" actually means.
+        # Only meaningful when both already exist; the usual case is a
+        # destination this run is about to create, and that is handled by the
+        # realpath comparison above plus O_EXCL at creation.
+        try:
+            if os.path.exists(out_path) and os.path.samefile(out_path, other):
+                raise ValueError(f"--random-password-out must differ from {label}")
+        except OSError:
+            pass  # unreadable/missing: the realpath comparison stands
+
+
+def _random_password_destination_ok(isatty, out_path, quiet=False):
+    """Whether a generated password has somewhere safe to go.
+
+    A destination is required whenever the password cannot be displayed:
+    without a terminal there is nowhere safe to put it, and under --quiet the
+    banner is suppressed entirely -- which would otherwise encrypt the file
+    successfully, print nothing, exit 0, and leave nobody holding the
+    password. This mirrors `add-recovery --add-code --json`, refused rather
+    than silently withholding the credential.
+
+    Args:
+        isatty: Whether the display stream is a terminal.
+        out_path: Destination given with --random-password-out, or None.
+        quiet: Whether --quiet suppresses the display.
+
+    Returns:
+        True if the password can actually be delivered.
+    """
+    if out_path:
+        return True
+    return bool(isatty) and not quiet
+
+
+def _display_generated_password(password):
+    """Show a generated password on the terminal, once, before encrypting.
+
+    Called BEFORE the ciphertext is written: any later failure would otherwise
+    leave an encrypted file whose password was never disclosed.
+
+    Deliberately makes no claim to erase anything. The previous version ran a
+    10-second countdown, emitted \\033[2J and announced "Password has been
+    cleared from screen" -- which was false. That sequence repaints the visible
+    screen; it removes nothing from scrollback, from a pipe, from a `script(1)`
+    transcript, or from a CI log. Claiming otherwise is worse than saying
+    nothing, because the user stops taking their own precautions
+    (gitlab#152).
+
+    Args:
+        password: The generated password.
+    """
+    eprint("\n" + "!" * 80)
+    eprint("SAVE THIS PASSWORD NOW".center(80))
+    eprint("!" * 80)
+    eprint(f"\nGenerated Password: {password}")
+    eprint("\nThis is the ONLY time this password is shown.")
+    eprint("If you lose it, the data CANNOT be recovered.")
+    eprint(
+        "\nIt is now in this terminal's scrollback, and in any transcript or\n"
+        "log of this session. Use --random-password-out PATH to have it\n"
+        "written to a 0600 file instead and never displayed."
+    )
+
+
+# Short options that take a value and whose value is a secret. Derived from
+# SECRET_VALUE_CLI_OPTIONS so the two cannot drift.
+_SECRET_SHORT_OPTIONS = frozenset(
+    opt for opt in SECRET_VALUE_CLI_OPTIONS if len(opt) == 2 and opt[0] == "-" and opt[1] != "-"
+)
+
+
+def _resolve_secret_long_option(token):
+    """Whether a ``--`` token names a secret-valued option (gitlab#209).
+
+    argparse accepts unambiguous prefixes -- no parser here sets
+    ``allow_abbrev=False`` -- so ``--manifest-p`` binds
+    ``--manifest-password`` and the exact-membership test missed it.
+
+    Fails CLOSED, which is the opposite of _is_boolean_option's default: an
+    ambiguous prefix that could name a secret option is redacted, because
+    printing a password is worse than redacting a filename.
+    """
+    if token in SECRET_VALUE_CLI_OPTIONS:
+        return True
+    if not token.startswith("--") or len(token) <= 2:
+        return False
+    return any(opt.startswith(token) for opt in SECRET_VALUE_CLI_OPTIONS if opt.startswith("--"))
+
+
+def _split_secret_short_bundle(token):
+    """Split ``-apSECRET``/``-ap`` into (prefix, attached_value_or_None).
+
+    argparse resolves a bundle of short options, so ``-ap<value>`` is ``-a``
+    plus ``-p <value>`` -- and the previous ``startswith("-p")`` rule saw
+    neither (gitlab#209). Returns (None, None) when the token contains no
+    secret-valued short option.
+
+    A returned attached value of None means the SECRET IS THE NEXT TOKEN.
+    """
+    if not token.startswith("-") or token.startswith("--") or len(token) < 2:
+        return (None, None)
+    for position, letter in enumerate(token[1:], start=1):
+        if f"-{letter}" in _SECRET_SHORT_OPTIONS:
+            attached = token[position + 1 :]
+            return (token[: position + 1], attached if attached else None)
+    return (None, None)
+
+
 def sanitize_argv_for_debug(argv: list) -> list:
     """
     Return a copy of argv with secret option values redacted for debug output.
