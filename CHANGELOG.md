@@ -1734,6 +1734,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Internal
 
+- **The combined-pepper concatenation is now documented as an accepted
+  residual** (gitlab#117): `_combine_peppers` joins the HSM and remote
+  peppers and the result enters the v14 seed encoder as one length-prefixed
+  field, so the boundary between them is not itself prefixed. Not
+  exploitable — both peppers are fixed-length and tool-generated, so no two
+  distinct pairs can collide — and not fixable inside v14, whose seed
+  encoding is pinned by cross-line golden vectors. Recorded at the site, and
+  pinned by tests over the two assumptions that make it safe, so a future
+  variable-length pepper source fails there rather than silently
+  invalidating the analysis.
+
 - **Desktop GUI widget tests: corrected button finders**: the Rekey and Secure
   Shred screen tests looked their action button up with
   `find.widgetWithText(ElevatedButton, ...)`, but both buttons are built with

@@ -2273,6 +2273,22 @@ def _combine_peppers(hsm_pepper: bytes = None, remote_pepper: bytes = None) -> b
     Returns:
         ``hsm_pepper || remote_pepper`` as a bytearray, or ``None`` when
         neither pepper is present (empty values count as absent).
+
+    Accepted residual (gitlab#117 / fable-review INFO-1): the two peppers are
+    concatenated here and the result enters ``_v14_seed_encode`` as ONE
+    length-prefixed TLV field, so the boundary BETWEEN them is not itself
+    length-prefixed. That is the last of the ambiguity class v14 retired at
+    the password/salt/pepper level.
+
+    Not exploitable, for the reason the original gitlab#100 was rated
+    impractical: both peppers are fixed-length, tool-generated and not
+    attacker-controllable -- a YubiKey HMAC-SHA1 pepper is 20 bytes and a
+    remote pepper is 32 (validated 16-128) -- so no pair of distinct
+    (hsm, remote) inputs can produce the same concatenation.
+
+    It CANNOT be fixed inside v14: the seed encoding is pinned by
+    cross-line golden vectors, so length-prefixing the two sub-fields would
+    change every derived key. Do it in a format v15 if one ever happens.
     """
     hsm = hsm_pepper or b""
     remote = remote_pepper or b""
