@@ -8498,6 +8498,423 @@ def main_with_args(args=None):
                     eprint(f"Consider using '{data_replacement}' instead for better security.")
 
             # Handle output file path
+            # Resolved ONCE, before the overwrite branch, so both output
+            # paths use the same keypair. This used to be duplicated: the
+            # overwrite branch had its own copy (which wrote the private key
+            # in the clear and could not read a wrapped keyfile), and this
+            # one was labelled "for non-overwriting case". Deleting the
+            # duplicate without moving this left the overwrite path with no
+            # keyfile handling at all -- it encrypted with an ephemeral key
+            # and only reached this block afterwards, so a bad keyfile was
+            # reported after the input had already been replaced (gitlab#157).
+            # Handle PQC key operations (for non-overwriting case)
+            pqc_keypair = None
+            if args.algorithm in [
+                "kyber512-hybrid",
+                "kyber768-hybrid",
+                "kyber1024-hybrid",
+                "hqc-128-hybrid",
+                "hqc-192-hybrid",
+                "hqc-256-hybrid",
+                "ml-kem-512-hybrid",
+                "ml-kem-768-hybrid",
+                "ml-kem-1024-hybrid",
+                "ml-kem-512-chacha20",
+                "ml-kem-768-chacha20",
+                "ml-kem-1024-chacha20",
+            ]:
+                # Check if we should generate and save a new key pair
+                if args.pqc_gen_key and args.pqc_keyfile:
+                    from .pqc import PQCAlgorithm, PQCipher, check_pqc_support
+
+                    # Map algorithm name to PQCAlgorithm with fallbacks
+                    pqc_algorithms = check_pqc_support(quiet=args.quiet)[2]
+
+                    # Determine which variants are available
+                    kyber512_options = [
+                        alg
+                        for alg in pqc_algorithms
+                        if alg.lower().replace("-", "").replace("_", "") in ["kyber512", "mlkem512"]
+                    ]
+                    kyber768_options = [
+                        alg
+                        for alg in pqc_algorithms
+                        if alg.lower().replace("-", "").replace("_", "") in ["kyber768", "mlkem768"]
+                    ]
+                    kyber1024_options = [
+                        alg
+                        for alg in pqc_algorithms
+                        if alg.lower().replace("-", "").replace("_", "")
+                        in ["kyber1024", "mlkem1024"]
+                    ]
+                    hqc128_options = [
+                        alg
+                        for alg in pqc_algorithms
+                        if alg.lower().replace("-", "").replace("_", "") in ["hqc128"]
+                    ]
+                    hqc192_options = [
+                        alg
+                        for alg in pqc_algorithms
+                        if alg.lower().replace("-", "").replace("_", "") in ["hqc192"]
+                    ]
+                    hqc256_options = [
+                        alg
+                        for alg in pqc_algorithms
+                        if alg.lower().replace("-", "").replace("_", "") in ["hqc256"]
+                    ]
+
+                    # Choose first available or fall back to default name
+                    kyber512_algo = kyber512_options[0] if kyber512_options else "Kyber512"
+                    kyber768_algo = kyber768_options[0] if kyber768_options else "Kyber768"
+                    kyber1024_algo = kyber1024_options[0] if kyber1024_options else "Kyber1024"
+                    hqc128_algo = hqc128_options[0] if hqc128_options else "HQC-128"
+                    hqc192_algo = hqc192_options[0] if hqc192_options else "HQC-192"
+                    hqc256_algo = hqc256_options[0] if hqc256_options else "HQC-256"
+
+                    if not args.quiet:
+                        eprint(
+                            f"Using algorithm mappings: kyber512-hybrid → {kyber512_algo}, kyber768-hybrid → {kyber768_algo}, kyber1024-hybrid → {kyber1024_algo}, hqc-128-hybrid → {hqc128_algo}, hqc-192-hybrid → {hqc192_algo}, hqc-256-hybrid → {hqc256_algo}"
+                        )
+
+                    # Create direct string mapping
+                    algo_map = {
+                        "kyber512-hybrid": kyber512_algo,
+                        "kyber768-hybrid": kyber768_algo,
+                        "kyber1024-hybrid": kyber1024_algo,
+                        "hqc-128-hybrid": hqc128_algo,
+                        "hqc-192-hybrid": hqc192_algo,
+                        "hqc-256-hybrid": hqc256_algo,
+                        "ml-kem-512-hybrid": kyber512_algo,
+                        "ml-kem-768-hybrid": kyber768_algo,
+                        "ml-kem-1024-hybrid": kyber1024_algo,
+                        "ml-kem-512-chacha20": kyber512_algo,
+                        "ml-kem-768-chacha20": kyber768_algo,
+                        "ml-kem-1024-chacha20": kyber1024_algo,
+                    }
+
+                    # Generate key pair
+                    cipher = PQCipher(algo_map[args.algorithm], quiet=args.quiet)
+                    public_key, private_key = cipher.generate_keypair()
+
+                    # Save key pair to file
+                    import base64
+                    import json
+
+                    # Get password for encrypting the private key in the keyfile
+                    keyfile_password = None
+                    if "password" in locals() and password:
+                        # Use the same password as for the file encryption
+                        keyfile_password = password
+                    else:
+                        # Get a separate password for the keyfile
+                        keyfile_password = getpass.getpass(
+                            "Enter password to encrypt the private key in keyfile: "
+                        ).encode()
+
+                    # Encrypt the private key with the password.
+                    # gitlab#131 (F16): derive the wrapping key with Argon2id and
+                    # record a self-describing descriptor. Legacy keyfiles used
+                    # PBKDF2-SHA256 100k (below the OWASP floor); they still
+                    # decrypt via the no-"key_kdf" branch of
+                    # _derive_pqc_keyfile_key.
+                    key_salt = secrets.token_bytes(16)
+                    keyfile_kdf = _new_pqc_keyfile_kdf()
+                    encryption_key = _derive_pqc_keyfile_key(
+                        keyfile_password, key_salt, keyfile_kdf
+                    )
+
+                    # Use AES-GCM to encrypt the private key
+                    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+                    aes_cipher = AESGCM(encryption_key)
+                    nonce = secrets.token_bytes(12)  # 12 bytes for AES-GCM
+                    encrypted_private_key = nonce + aes_cipher.encrypt(nonce, private_key, None)
+
+                    key_data = {
+                        "algorithm": args.algorithm,
+                        "public_key": base64.b64encode(public_key).decode("utf-8"),
+                        "private_key": base64.b64encode(encrypted_private_key).decode("utf-8"),
+                        "key_salt": base64.b64encode(key_salt).decode("utf-8"),
+                        "key_kdf": keyfile_kdf,  # F16: Argon2id descriptor
+                        "key_encrypted": True,  # Mark that the key is encrypted
+                    }
+
+                    # 0600 via create_secure_file, not a bare open(): this file
+                    # holds the long-lived post-quantum private key. It is
+                    # wrapped with Argon2id + AES-GCM, so a world-readable copy
+                    # is not an immediate break, but it hands anyone on the host
+                    # an offline target and the mode was whatever the umask
+                    # said -- typically 0644 (gitlab#157). The same primitive
+                    # the recovery-code writer uses: O_NOFOLLOW and O_EXCL, so a
+                    # pre-planted symlink or FIFO is refused rather than
+                    # followed, and the mode is pinned with fchmod.
+                    from .file_permissions import PermissionLevel, create_secure_file
+
+                    try:
+                        fd = create_secure_file(
+                            args.pqc_keyfile, PermissionLevel.OWNER_ONLY, exclusive=True
+                        )
+                    except FileExistsError:
+                        # Unconditional eprint: the generic handler's message is
+                        # suppressed by --quiet, which would leave a bare exit 1.
+                        eprint(
+                            f"Error: {sanitize_for_display(args.pqc_keyfile)} already exists; "
+                            "refusing to overwrite a key file."
+                        )
+                        eprint(
+                            "  Remove it or choose another path. Overwriting would "
+                            "destroy the private key it holds, and anything encrypted "
+                            "to that key with it."
+                        )
+                        raise
+                    # fdopen rather than a bare os.write: os.write may write
+                    # fewer bytes than asked (a small tmpfs hitting ENOSPC),
+                    # and an unchecked short write would report a truncated
+                    # keyfile as saved.
+                    with os.fdopen(fd, "wb") as keyfile_handle:
+                        keyfile_handle.write(json.dumps(key_data).encode("utf-8"))
+                        keyfile_handle.flush()
+                        os.fsync(keyfile_handle.fileno())
+
+                    # Commit the directory entry too, the same way the
+                    # recovery-code writer does: the key must survive a crash
+                    # that the file encrypted to it also survives. Best effort
+                    # -- the key is already written, so a directory that
+                    # cannot be opened must not fail the run.
+                    try:
+                        keyfile_dir_fd = os.open(
+                            os.path.dirname(os.path.abspath(args.pqc_keyfile)), os.O_RDONLY
+                        )
+                    except OSError:
+                        keyfile_dir_fd = None
+                    if keyfile_dir_fd is not None:
+                        try:
+                            os.fsync(keyfile_dir_fd)
+                        except OSError:
+                            pass
+                        finally:
+                            os.close(keyfile_dir_fd)
+
+                    if not args.quiet:
+                        eprint(f"Post-quantum key pair saved to {args.pqc_keyfile}")
+
+                    pqc_keypair = (public_key, private_key)
+
+                # Check if we should load an existing key pair
+                elif args.pqc_keyfile and os.path.exists(args.pqc_keyfile):
+                    import base64
+                    import json
+
+                    with open(args.pqc_keyfile, "r") as f:
+                        # MED-8 Security fix: Use secure JSON validation for PQC key file loading
+                        json_content = f.read()
+                        try:
+                            from .json_validator import (
+                                JSONSecurityError,
+                                JSONValidationError,
+                                secure_json_loads,
+                            )
+
+                            key_data = secure_json_loads(json_content)
+                        except (JSONSecurityError, JSONValidationError) as e:
+                            eprint(f"Error: PQC key file validation failed: {e}")
+                            sys.exit(1)
+                        except ImportError:
+                            # Fallback to basic JSON loading if validator not available
+                            try:
+                                key_data = json.loads(json_content)
+                            except json.JSONDecodeError as e:
+                                eprint(f"Error: Invalid JSON in PQC key file: {e}")
+                                sys.exit(1)
+
+                    if "public_key" in key_data and "private_key" in key_data:
+                        public_key = base64.b64decode(key_data["public_key"])
+                        encrypted_private_key = base64.b64decode(key_data["private_key"])
+
+                        # Check if key is encrypted (will be for keys created after our fix)
+                        if key_data.get("key_encrypted", False):
+                            if not args.quiet:
+                                eprint("Found encrypted private key in keyfile")
+
+                            # Get password to decrypt the private key
+                            keyfile_password = None
+                            if "password" in locals() and password:
+                                # Try the same password as for the file
+                                keyfile_password = password
+                            else:
+                                # Ask for the keyfile password
+                                keyfile_password = getpass.getpass(
+                                    "Enter password to decrypt the private key in keyfile: "
+                                ).encode()
+
+                            # Import what we need to decrypt
+                            from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+                            # Derive the wrapping key. New keyfiles carry a "key_kdf"
+                            # Argon2id descriptor (gitlab#131 F16); legacy keyfiles
+                            # have none and use the PBKDF2-SHA256 100k path inside
+                            # _derive_pqc_keyfile_key.
+                            try:
+                                # key_salt is read INSIDE the try for the same
+                                # reason key_kdf is: a keyfile marked
+                                # key_encrypted but missing key_salt raised a
+                                # bare KeyError past this handler and aborted
+                                # with `Error: 'key_salt'` (gitlab#157 review).
+                                key_salt = base64.b64decode(key_data["key_salt"])
+                                # A malformed/tampered key_kdf raises ValueError;
+                                # keep it inside the try so it surfaces as the
+                                # graceful "Wrong password?" path, not a traceback.
+                                encryption_key = _derive_pqc_keyfile_key(
+                                    keyfile_password, key_salt, key_data.get("key_kdf")
+                                )
+                                # Format: nonce (12 bytes) + encrypted_key
+                                nonce = encrypted_private_key[:12]
+                                encrypted_key_data = encrypted_private_key[12:]
+
+                                # Decrypt the private key with the password-derived key
+                                aes_cipher = AESGCM(encryption_key)
+                                private_key = aes_cipher.decrypt(nonce, encrypted_key_data, None)
+
+                                if not args.quiet:
+                                    eprint("Successfully decrypted private key from keyfile")
+                            except Exception as e:
+                                eprint(f"Error decrypting private key: {e}. Wrong password?")
+                                eprint("Will proceed with only the public key.")
+                                private_key = None
+                        else:
+                            # Legacy support for non-encrypted keys (created before our fix)
+                            private_key = encrypted_private_key
+                            if not args.quiet:
+                                eprint("WARNING: Using legacy unencrypted private key from keyfile")
+
+                        pqc_keypair = (
+                            (public_key, private_key) if private_key else (public_key, None)
+                        )
+
+                        if not args.quiet:
+                            eprint(f"Loaded post-quantum key pair from {args.pqc_keyfile}")
+                elif args.pqc_gen_key:
+                    # The mirror image, and newly reachable because this change
+                    # exposes the flag: --pqc-gen-key with nowhere to save to
+                    # matched no branch, generated an ephemeral key and saved
+                    # nothing -- the same silent-ignore this issue exists to
+                    # remove (gitlab#157).
+                    from .crypt_errors import ValidationError
+
+                    eprint("Error: --pqc-gen-key needs --pqc-keyfile to say where to save.")
+                    raise ValidationError("--pqc-gen-key without --pqc-keyfile")
+                elif args.pqc_keyfile:
+                    # Named a path that does not exist, without --pqc-gen-key.
+                    # Neither branch above ran and no error was raised, so the
+                    # flag was silently ignored: the user asked for a keyfile,
+                    # got an ephemeral key instead, and could never decrypt with
+                    # the keyfile they thought they had made (gitlab#157).
+                    from .crypt_errors import ValidationError
+
+                    # eprint first: ValidationError is a SecureError, which
+                    # replaces the message it is given with a generic
+                    # "Security validation check failed" unless DEBUG=1 is set,
+                    # so the instruction would otherwise reach test runs and
+                    # nobody else.
+                    eprint(
+                        f"Error: --pqc-keyfile {sanitize_for_display(args.pqc_keyfile)} "
+                        "does not exist."
+                    )
+                    eprint(
+                        "  Pass --pqc-gen-key to generate and save a new key pair "
+                        "there, or point --pqc-keyfile at an existing key file."
+                    )
+                    raise ValidationError("--pqc-keyfile does not exist")
+                else:
+                    # No keyfile specified - generate an ephemeral keypair for this encryption
+                    from .pqc import PQCipher, check_pqc_support
+
+                    # Map algorithm name to available algorithms
+                    pqc_algorithms = check_pqc_support(quiet=args.quiet)[2]
+                    kyber512_options = [
+                        alg
+                        for alg in pqc_algorithms
+                        if alg.lower().replace("-", "").replace("_", "") in ["kyber512", "mlkem512"]
+                    ]
+                    kyber768_options = [
+                        alg
+                        for alg in pqc_algorithms
+                        if alg.lower().replace("-", "").replace("_", "") in ["kyber768", "mlkem768"]
+                    ]
+                    kyber1024_options = [
+                        alg
+                        for alg in pqc_algorithms
+                        if alg.lower().replace("-", "").replace("_", "")
+                        in ["kyber1024", "mlkem1024"]
+                    ]
+                    hqc128_options = [
+                        alg
+                        for alg in pqc_algorithms
+                        if alg.lower().replace("-", "").replace("_", "") in ["hqc128"]
+                    ]
+                    hqc192_options = [
+                        alg
+                        for alg in pqc_algorithms
+                        if alg.lower().replace("-", "").replace("_", "") in ["hqc192"]
+                    ]
+                    hqc256_options = [
+                        alg
+                        for alg in pqc_algorithms
+                        if alg.lower().replace("-", "").replace("_", "") in ["hqc256"]
+                    ]
+
+                    # Choose first available algorithm
+                    algo_map = {
+                        "kyber512-hybrid": (
+                            kyber512_options[0] if kyber512_options else "Kyber512"
+                        ),
+                        "kyber768-hybrid": (
+                            kyber768_options[0] if kyber768_options else "Kyber768"
+                        ),
+                        "kyber1024-hybrid": (
+                            kyber1024_options[0] if kyber1024_options else "Kyber1024"
+                        ),
+                        "hqc-128-hybrid": (hqc128_options[0] if hqc128_options else "HQC-128"),
+                        "hqc-192-hybrid": (hqc192_options[0] if hqc192_options else "HQC-192"),
+                        "hqc-256-hybrid": (hqc256_options[0] if hqc256_options else "HQC-256"),
+                        "ml-kem-512-hybrid": (
+                            kyber512_options[0] if kyber512_options else "Kyber512"
+                        ),
+                        "ml-kem-768-hybrid": (
+                            kyber768_options[0] if kyber768_options else "Kyber768"
+                        ),
+                        "ml-kem-1024-hybrid": (
+                            kyber1024_options[0] if kyber1024_options else "Kyber1024"
+                        ),
+                        "ml-kem-512-chacha20": (
+                            kyber512_options[0] if kyber512_options else "Kyber512"
+                        ),
+                        "ml-kem-768-chacha20": (
+                            kyber768_options[0] if kyber768_options else "Kyber768"
+                        ),
+                        "ml-kem-1024-chacha20": (
+                            kyber1024_options[0] if kyber1024_options else "Kyber1024"
+                        ),
+                    }
+
+                    # Generate a new ephemeral keypair
+                    if not args.quiet:
+                        eprint(f"Generating ephemeral post-quantum key pair for {args.algorithm}")
+                        if args.pqc_store_key:
+                            # Only log this message with INFO level so it only appears in verbose mode
+                            logger.info(
+                                "Private key will be stored in the encrypted file for self-decryption"
+                            )
+                        else:
+                            # Keep this as a print since it's a warning
+                            eprint(
+                                "WARNING: Private key will NOT be stored - you must use a key file for decryption"
+                            )
+
+                    cipher = PQCipher(algo_map[args.algorithm], quiet=args.quiet)
+                    public_key, private_key = cipher.generate_keypair()
+                    pqc_keypair = (public_key, private_key)
+
             if args.overwrite:
                 output_file = args.input
                 # Create a temporary file for the encryption to enable atomic
@@ -8514,151 +8931,18 @@ def main_with_args(args=None):
                 try:
                     # Get original file permissions before doing anything
                     original_permissions = get_file_permissions(args.input)
-                    # Handle PQC key operations
-                    pqc_keypair = None
-                    if args.algorithm in [
-                        "kyber512-hybrid",
-                        "kyber768-hybrid",
-                        "kyber1024-hybrid",
-                        "hqc-128-hybrid",
-                        "hqc-192-hybrid",
-                        "hqc-256-hybrid",
-                        "ml-kem-512-hybrid",
-                        "ml-kem-768-hybrid",
-                        "ml-kem-1024-hybrid",
-                        "ml-kem-512-chacha20",
-                        "ml-kem-768-chacha20",
-                        "ml-kem-1024-chacha20",
-                    ]:
-                        # Check if we should generate and save a new key pair
-                        if args.pqc_gen_key and args.pqc_keyfile:
-                            from .pqc import PQCAlgorithm, PQCipher, check_pqc_support
-
-                            # Map algorithm name to PQCAlgorithm with fallbacks
-                            pqc_algorithms = check_pqc_support(quiet=args.quiet)[2]
-
-                            # Determine which variants are available
-                            kyber512_options = [
-                                alg
-                                for alg in pqc_algorithms
-                                if alg.lower().replace("-", "").replace("_", "")
-                                in ["kyber512", "mlkem512"]
-                            ]
-                            kyber768_options = [
-                                alg
-                                for alg in pqc_algorithms
-                                if alg.lower().replace("-", "").replace("_", "")
-                                in ["kyber768", "mlkem768"]
-                            ]
-                            kyber1024_options = [
-                                alg
-                                for alg in pqc_algorithms
-                                if alg.lower().replace("-", "").replace("_", "")
-                                in ["kyber1024", "mlkem1024"]
-                            ]
-                            hqc128_options = [
-                                alg
-                                for alg in pqc_algorithms
-                                if alg.lower().replace("-", "").replace("_", "") in ["hqc128"]
-                            ]
-                            hqc192_options = [
-                                alg
-                                for alg in pqc_algorithms
-                                if alg.lower().replace("-", "").replace("_", "") in ["hqc192"]
-                            ]
-                            hqc256_options = [
-                                alg
-                                for alg in pqc_algorithms
-                                if alg.lower().replace("-", "").replace("_", "") in ["hqc256"]
-                            ]
-
-                            # Choose first available or fall back to default name
-                            kyber512_algo = kyber512_options[0] if kyber512_options else "Kyber512"
-                            kyber768_algo = kyber768_options[0] if kyber768_options else "Kyber768"
-                            kyber1024_algo = (
-                                kyber1024_options[0] if kyber1024_options else "Kyber1024"
-                            )
-                            hqc128_algo = hqc128_options[0] if hqc128_options else "HQC-128"
-                            hqc192_algo = hqc192_options[0] if hqc192_options else "HQC-192"
-                            hqc256_algo = hqc256_options[0] if hqc256_options else "HQC-256"
-
-                            if not args.quiet:
-                                eprint(
-                                    f"Using algorithm mappings: kyber512-hybrid → {kyber512_algo}, kyber768-hybrid → {kyber768_algo}, kyber1024-hybrid → {kyber1024_algo}, hqc-128-hybrid → {hqc128_algo}, hqc-192-hybrid → {hqc192_algo}, hqc-256-hybrid → {hqc256_algo}"
-                                )
-
-                            # Create direct string mapping instead of using enum
-                            algo_map = {
-                                "kyber512-hybrid": kyber512_algo,
-                                "kyber768-hybrid": kyber768_algo,
-                                "kyber1024-hybrid": kyber1024_algo,
-                                "hqc-128-hybrid": hqc128_algo,
-                                "hqc-192-hybrid": hqc192_algo,
-                                "hqc-256-hybrid": hqc256_algo,
-                                "ml-kem-512-hybrid": kyber512_algo,
-                                "ml-kem-768-hybrid": kyber768_algo,
-                                "ml-kem-1024-hybrid": kyber1024_algo,
-                                "ml-kem-512-chacha20": kyber512_algo,
-                                "ml-kem-768-chacha20": kyber768_algo,
-                                "ml-kem-1024-chacha20": kyber1024_algo,
-                            }
-
-                            # Generate key pair
-                            cipher = PQCipher(algo_map[args.algorithm], quiet=args.quiet)
-                            public_key, private_key = cipher.generate_keypair()
-
-                            # Save key pair to file
-                            import base64
-                            import json
-
-                            key_data = {
-                                "algorithm": args.algorithm,
-                                "public_key": base64.b64encode(public_key).decode("utf-8"),
-                                "private_key": base64.b64encode(private_key).decode("utf-8"),
-                            }
-
-                            with open(args.pqc_keyfile, "w") as f:
-                                json.dump(key_data, f)
-
-                            if not args.quiet:
-                                eprint(f"Post-quantum key pair saved to {args.pqc_keyfile}")
-
-                            pqc_keypair = (public_key, private_key)
-
-                        # Check if we should load an existing key pair
-                        elif args.pqc_keyfile and os.path.exists(args.pqc_keyfile):
-                            import base64
-                            import json
-
-                            with open(args.pqc_keyfile, "r") as f:
-                                # MED-8 Security fix: Use secure JSON validation for PQC key file loading
-                                json_content = f.read()
-                                try:
-                                    from .json_validator import (
-                                        JSONSecurityError,
-                                        JSONValidationError,
-                                        secure_json_loads,
-                                    )
-
-                                    key_data = secure_json_loads(json_content)
-                                except (JSONSecurityError, JSONValidationError) as e:
-                                    eprint(f"Error: PQC key file validation failed: {e}")
-                                    sys.exit(1)
-                                except ImportError:
-                                    # Fallback to basic JSON loading if validator not available
-                                    try:
-                                        key_data = json.loads(json_content)
-                                    except json.JSONDecodeError as e:
-                                        eprint(f"Error: Invalid JSON in PQC key file: {e}")
-                                        sys.exit(1)
-
-                            if "public_key" in key_data and "private_key" in key_data:
-                                public_key = base64.b64decode(key_data["public_key"])
-                                private_key = base64.b64decode(key_data["private_key"])
-                                pqc_keypair = (public_key, private_key)
-
-                                if not args.quiet:
-                                    eprint(f"Loaded post-quantum key pair from {args.pqc_keyfile}")
+                    # pqc_keypair is deliberately NOT reset here: it is
+                    # resolved once above, before this branch, so an
+                    # --overwrite run uses the same keyfile the non-overwrite
+                    # path would. A second copy of the keyfile logic used to
+                    # live here and wrote `private_key` as bare base64 with no
+                    # key_encrypted marker -- reintroduced by a
+                    # file-reconstruction commit after the wrapping fix had
+                    # landed, and missed by the later Argon2id upgrade, whose
+                    # message says it touched "the one write site". Its loader
+                    # read `private_key` unconditionally too, so given a
+                    # properly wrapped keyfile it would have base64-decoded the
+                    # AES-GCM ciphertext and used it as the key (gitlab#157).
 
                     # For PQC algorithms, we may need to generate a keypair if not specified
                     if (
@@ -9416,325 +9700,6 @@ def main_with_args(args=None):
                     return
                 else:
                     sys.exit(1)
-
-            # Handle PQC key operations (for non-overwriting case)
-            pqc_keypair = None
-            if args.algorithm in [
-                "kyber512-hybrid",
-                "kyber768-hybrid",
-                "kyber1024-hybrid",
-                "hqc-128-hybrid",
-                "hqc-192-hybrid",
-                "hqc-256-hybrid",
-                "ml-kem-512-hybrid",
-                "ml-kem-768-hybrid",
-                "ml-kem-1024-hybrid",
-                "ml-kem-512-chacha20",
-                "ml-kem-768-chacha20",
-                "ml-kem-1024-chacha20",
-            ]:
-                # Check if we should generate and save a new key pair
-                if args.pqc_gen_key and args.pqc_keyfile:
-                    from .pqc import PQCAlgorithm, PQCipher, check_pqc_support
-
-                    # Map algorithm name to PQCAlgorithm with fallbacks
-                    pqc_algorithms = check_pqc_support(quiet=args.quiet)[2]
-
-                    # Determine which variants are available
-                    kyber512_options = [
-                        alg
-                        for alg in pqc_algorithms
-                        if alg.lower().replace("-", "").replace("_", "") in ["kyber512", "mlkem512"]
-                    ]
-                    kyber768_options = [
-                        alg
-                        for alg in pqc_algorithms
-                        if alg.lower().replace("-", "").replace("_", "") in ["kyber768", "mlkem768"]
-                    ]
-                    kyber1024_options = [
-                        alg
-                        for alg in pqc_algorithms
-                        if alg.lower().replace("-", "").replace("_", "")
-                        in ["kyber1024", "mlkem1024"]
-                    ]
-                    hqc128_options = [
-                        alg
-                        for alg in pqc_algorithms
-                        if alg.lower().replace("-", "").replace("_", "") in ["hqc128"]
-                    ]
-                    hqc192_options = [
-                        alg
-                        for alg in pqc_algorithms
-                        if alg.lower().replace("-", "").replace("_", "") in ["hqc192"]
-                    ]
-                    hqc256_options = [
-                        alg
-                        for alg in pqc_algorithms
-                        if alg.lower().replace("-", "").replace("_", "") in ["hqc256"]
-                    ]
-
-                    # Choose first available or fall back to default name
-                    kyber512_algo = kyber512_options[0] if kyber512_options else "Kyber512"
-                    kyber768_algo = kyber768_options[0] if kyber768_options else "Kyber768"
-                    kyber1024_algo = kyber1024_options[0] if kyber1024_options else "Kyber1024"
-                    hqc128_algo = hqc128_options[0] if hqc128_options else "HQC-128"
-                    hqc192_algo = hqc192_options[0] if hqc192_options else "HQC-192"
-                    hqc256_algo = hqc256_options[0] if hqc256_options else "HQC-256"
-
-                    if not args.quiet:
-                        eprint(
-                            f"Using algorithm mappings: kyber512-hybrid → {kyber512_algo}, kyber768-hybrid → {kyber768_algo}, kyber1024-hybrid → {kyber1024_algo}, hqc-128-hybrid → {hqc128_algo}, hqc-192-hybrid → {hqc192_algo}, hqc-256-hybrid → {hqc256_algo}"
-                        )
-
-                    # Create direct string mapping
-                    algo_map = {
-                        "kyber512-hybrid": kyber512_algo,
-                        "kyber768-hybrid": kyber768_algo,
-                        "kyber1024-hybrid": kyber1024_algo,
-                        "hqc-128-hybrid": hqc128_algo,
-                        "hqc-192-hybrid": hqc192_algo,
-                        "hqc-256-hybrid": hqc256_algo,
-                        "ml-kem-512-hybrid": kyber512_algo,
-                        "ml-kem-768-hybrid": kyber768_algo,
-                        "ml-kem-1024-hybrid": kyber1024_algo,
-                        "ml-kem-512-chacha20": kyber512_algo,
-                        "ml-kem-768-chacha20": kyber768_algo,
-                        "ml-kem-1024-chacha20": kyber1024_algo,
-                    }
-
-                    # Generate key pair
-                    cipher = PQCipher(algo_map[args.algorithm], quiet=args.quiet)
-                    public_key, private_key = cipher.generate_keypair()
-
-                    # Save key pair to file
-                    import base64
-                    import json
-
-                    # Get password for encrypting the private key in the keyfile
-                    keyfile_password = None
-                    if "password" in locals() and password:
-                        # Use the same password as for the file encryption
-                        keyfile_password = password
-                    else:
-                        # Get a separate password for the keyfile
-                        keyfile_password = getpass.getpass(
-                            "Enter password to encrypt the private key in keyfile: "
-                        ).encode()
-
-                    # Encrypt the private key with the password.
-                    # gitlab#131 (F16): derive the wrapping key with Argon2id and
-                    # record a self-describing descriptor. Legacy keyfiles used
-                    # PBKDF2-SHA256 100k (below the OWASP floor); they still
-                    # decrypt via the no-"key_kdf" branch of
-                    # _derive_pqc_keyfile_key.
-                    key_salt = secrets.token_bytes(16)
-                    keyfile_kdf = _new_pqc_keyfile_kdf()
-                    encryption_key = _derive_pqc_keyfile_key(
-                        keyfile_password, key_salt, keyfile_kdf
-                    )
-
-                    # Use AES-GCM to encrypt the private key
-                    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-
-                    aes_cipher = AESGCM(encryption_key)
-                    nonce = secrets.token_bytes(12)  # 12 bytes for AES-GCM
-                    encrypted_private_key = nonce + aes_cipher.encrypt(nonce, private_key, None)
-
-                    key_data = {
-                        "algorithm": args.algorithm,
-                        "public_key": base64.b64encode(public_key).decode("utf-8"),
-                        "private_key": base64.b64encode(encrypted_private_key).decode("utf-8"),
-                        "key_salt": base64.b64encode(key_salt).decode("utf-8"),
-                        "key_kdf": keyfile_kdf,  # F16: Argon2id descriptor
-                        "key_encrypted": True,  # Mark that the key is encrypted
-                    }
-
-                    with open(args.pqc_keyfile, "w") as f:
-                        json.dump(key_data, f)
-
-                    if not args.quiet:
-                        eprint(f"Post-quantum key pair saved to {args.pqc_keyfile}")
-
-                    pqc_keypair = (public_key, private_key)
-
-                # Check if we should load an existing key pair
-                elif args.pqc_keyfile and os.path.exists(args.pqc_keyfile):
-                    import base64
-                    import json
-
-                    with open(args.pqc_keyfile, "r") as f:
-                        # MED-8 Security fix: Use secure JSON validation for PQC key file loading
-                        json_content = f.read()
-                        try:
-                            from .json_validator import (
-                                JSONSecurityError,
-                                JSONValidationError,
-                                secure_json_loads,
-                            )
-
-                            key_data = secure_json_loads(json_content)
-                        except (JSONSecurityError, JSONValidationError) as e:
-                            eprint(f"Error: PQC key file validation failed: {e}")
-                            sys.exit(1)
-                        except ImportError:
-                            # Fallback to basic JSON loading if validator not available
-                            try:
-                                key_data = json.loads(json_content)
-                            except json.JSONDecodeError as e:
-                                eprint(f"Error: Invalid JSON in PQC key file: {e}")
-                                sys.exit(1)
-
-                    if "public_key" in key_data and "private_key" in key_data:
-                        public_key = base64.b64decode(key_data["public_key"])
-                        encrypted_private_key = base64.b64decode(key_data["private_key"])
-
-                        # Check if key is encrypted (will be for keys created after our fix)
-                        if key_data.get("key_encrypted", False):
-                            if not args.quiet:
-                                eprint("Found encrypted private key in keyfile")
-
-                            # Get password to decrypt the private key
-                            keyfile_password = None
-                            if "password" in locals() and password:
-                                # Try the same password as for the file
-                                keyfile_password = password
-                            else:
-                                # Ask for the keyfile password
-                                keyfile_password = getpass.getpass(
-                                    "Enter password to decrypt the private key in keyfile: "
-                                ).encode()
-
-                            # Import what we need to decrypt
-                            from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-
-                            # Derive the wrapping key. New keyfiles carry a "key_kdf"
-                            # Argon2id descriptor (gitlab#131 F16); legacy keyfiles
-                            # have none and use the PBKDF2-SHA256 100k path inside
-                            # _derive_pqc_keyfile_key.
-                            key_salt = base64.b64decode(key_data["key_salt"])
-
-                            try:
-                                # A malformed/tampered key_kdf raises ValueError;
-                                # keep it inside the try so it surfaces as the
-                                # graceful "Wrong password?" path, not a traceback.
-                                encryption_key = _derive_pqc_keyfile_key(
-                                    keyfile_password, key_salt, key_data.get("key_kdf")
-                                )
-                                # Format: nonce (12 bytes) + encrypted_key
-                                nonce = encrypted_private_key[:12]
-                                encrypted_key_data = encrypted_private_key[12:]
-
-                                # Decrypt the private key with the password-derived key
-                                aes_cipher = AESGCM(encryption_key)
-                                private_key = aes_cipher.decrypt(nonce, encrypted_key_data, None)
-
-                                if not args.quiet:
-                                    eprint("Successfully decrypted private key from keyfile")
-                            except Exception as e:
-                                eprint(f"Error decrypting private key: {e}. Wrong password?")
-                                eprint("Will proceed with only the public key.")
-                                private_key = None
-                        else:
-                            # Legacy support for non-encrypted keys (created before our fix)
-                            private_key = encrypted_private_key
-                            if not args.quiet:
-                                eprint("WARNING: Using legacy unencrypted private key from keyfile")
-
-                        pqc_keypair = (
-                            (public_key, private_key) if private_key else (public_key, None)
-                        )
-
-                        if not args.quiet:
-                            eprint(f"Loaded post-quantum key pair from {args.pqc_keyfile}")
-                else:
-                    # No keyfile specified - generate an ephemeral keypair for this encryption
-                    from .pqc import PQCipher, check_pqc_support
-
-                    # Map algorithm name to available algorithms
-                    pqc_algorithms = check_pqc_support(quiet=args.quiet)[2]
-                    kyber512_options = [
-                        alg
-                        for alg in pqc_algorithms
-                        if alg.lower().replace("-", "").replace("_", "") in ["kyber512", "mlkem512"]
-                    ]
-                    kyber768_options = [
-                        alg
-                        for alg in pqc_algorithms
-                        if alg.lower().replace("-", "").replace("_", "") in ["kyber768", "mlkem768"]
-                    ]
-                    kyber1024_options = [
-                        alg
-                        for alg in pqc_algorithms
-                        if alg.lower().replace("-", "").replace("_", "")
-                        in ["kyber1024", "mlkem1024"]
-                    ]
-                    hqc128_options = [
-                        alg
-                        for alg in pqc_algorithms
-                        if alg.lower().replace("-", "").replace("_", "") in ["hqc128"]
-                    ]
-                    hqc192_options = [
-                        alg
-                        for alg in pqc_algorithms
-                        if alg.lower().replace("-", "").replace("_", "") in ["hqc192"]
-                    ]
-                    hqc256_options = [
-                        alg
-                        for alg in pqc_algorithms
-                        if alg.lower().replace("-", "").replace("_", "") in ["hqc256"]
-                    ]
-
-                    # Choose first available algorithm
-                    algo_map = {
-                        "kyber512-hybrid": (
-                            kyber512_options[0] if kyber512_options else "Kyber512"
-                        ),
-                        "kyber768-hybrid": (
-                            kyber768_options[0] if kyber768_options else "Kyber768"
-                        ),
-                        "kyber1024-hybrid": (
-                            kyber1024_options[0] if kyber1024_options else "Kyber1024"
-                        ),
-                        "hqc-128-hybrid": (hqc128_options[0] if hqc128_options else "HQC-128"),
-                        "hqc-192-hybrid": (hqc192_options[0] if hqc192_options else "HQC-192"),
-                        "hqc-256-hybrid": (hqc256_options[0] if hqc256_options else "HQC-256"),
-                        "ml-kem-512-hybrid": (
-                            kyber512_options[0] if kyber512_options else "Kyber512"
-                        ),
-                        "ml-kem-768-hybrid": (
-                            kyber768_options[0] if kyber768_options else "Kyber768"
-                        ),
-                        "ml-kem-1024-hybrid": (
-                            kyber1024_options[0] if kyber1024_options else "Kyber1024"
-                        ),
-                        "ml-kem-512-chacha20": (
-                            kyber512_options[0] if kyber512_options else "Kyber512"
-                        ),
-                        "ml-kem-768-chacha20": (
-                            kyber768_options[0] if kyber768_options else "Kyber768"
-                        ),
-                        "ml-kem-1024-chacha20": (
-                            kyber1024_options[0] if kyber1024_options else "Kyber1024"
-                        ),
-                    }
-
-                    # Generate a new ephemeral keypair
-                    if not args.quiet:
-                        eprint(f"Generating ephemeral post-quantum key pair for {args.algorithm}")
-                        if args.pqc_store_key:
-                            # Only log this message with INFO level so it only appears in verbose mode
-                            logger.info(
-                                "Private key will be stored in the encrypted file for self-decryption"
-                            )
-                        else:
-                            # Keep this as a print since it's a warning
-                            eprint(
-                                "WARNING: Private key will NOT be stored - you must use a key file for decryption"
-                            )
-
-                    cipher = PQCipher(algo_map[args.algorithm], quiet=args.quiet)
-                    public_key, private_key = cipher.generate_keypair()
-                    pqc_keypair = (public_key, private_key)
 
             # Direct encryption to output file (when not overwriting)
             if not args.overwrite:
