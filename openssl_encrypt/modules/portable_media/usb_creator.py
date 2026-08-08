@@ -24,6 +24,7 @@ import os
 import platform
 import secrets
 import shutil
+import stat
 import tempfile
 import time
 from enum import Enum
@@ -740,20 +741,56 @@ fi
         return raw
 
     def _sha256_file(self, path: Path) -> str:
-        """SHA-256 of a file, streamed in fixed-size chunks and hard-bounded so a
-        very large attacker-supplied file (or a FIFO/symlink to an unbounded
-        stream) cannot exhaust memory or loop forever on the untrusted-drive
-        verify path (gitlab#132 hardening)."""
-        h = hashlib.sha256()
-        remaining = self._MAX_HASH_BYTES
-        with open(path, "rb") as f:
-            while remaining > 0:
-                chunk = f.read(min(1024 * 1024, remaining))
-                if not chunk:
-                    break
-                h.update(chunk)
-                remaining -= len(chunk)
-        return h.hexdigest()
+        """SHA-256 of a regular file on a drive we do not trust.
+
+        Streamed in fixed-size chunks and hard-bounded so a very large
+        attacker-supplied file cannot exhaust memory (gitlab#132), and opened
+        so that a substituted non-regular file cannot hang or redirect the
+        read (gitlab#202).
+
+        The byte bound alone did NOT deliver what its previous docstring
+        claimed: `open(path, "rb")` on a FIFO blocks inside open() itself,
+        before a single byte is read, so a manifest-listed file replaced by a
+        named pipe hung verify-usb forever -- on the exact path whose job is
+        to report tampering. O_NONBLOCK makes that open return instead, and
+        the S_ISREG check turns the substitution into a refusal.
+
+        O_NOFOLLOW likewise refuses a listed name replaced by a symlink,
+        which would otherwise read a file from outside the drive entirely.
+
+        Raises:
+            OSError: If the path is not a regular file, or is a symlink. The
+                callers treat that as tampering, which is the correct
+                verdict: a real manifest lists regular files, so anything
+                else at that path is a substitution.
+        """
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+        fd = os.open(path, flags)
+        try:
+            mode = os.fstat(fd).st_mode
+            if not stat.S_ISREG(mode):
+                raise OSError(f"Not a regular file: {path}")
+            # Clear O_NONBLOCK now that we know it is a regular file, so the
+            # reads below behave normally.
+            if hasattr(os, "O_NONBLOCK"):
+                import fcntl
+
+                fcntl.fcntl(fd, fcntl.F_SETFL, fcntl.fcntl(fd, fcntl.F_GETFL) & ~os.O_NONBLOCK)
+
+            h = hashlib.sha256()
+            remaining = self._MAX_HASH_BYTES
+            with os.fdopen(fd, "rb") as f:
+                fd = None  # fdopen owns it now
+                while remaining > 0:
+                    chunk = f.read(min(1024 * 1024, remaining))
+                    if not chunk:
+                        break
+                    h.update(chunk)
+                    remaining -= len(chunk)
+            return h.hexdigest()
+        finally:
+            if fd is not None:
+                os.close(fd)
 
     def _integrity_excluded(self, rel: str) -> bool:
         """True if the ``portable_root``-relative path is excluded from integrity
@@ -893,7 +930,15 @@ fi
                     verification_results["missing_file_list"].append(file_path)
                     continue
 
-                current_hash = self._sha256_file(full_path)
+                try:
+                    current_hash = self._sha256_file(full_path)
+                except OSError:
+                    # A listed name that is no longer a regular file -- a
+                    # planted FIFO, a directory, a symlink out of the drive --
+                    # is a substitution, so it IS tampering (gitlab#202).
+                    verification_results["failed_files"] += 1
+                    verification_results["tampered_files"].append(file_path)
+                    continue
 
                 if current_hash == expected_hash:
                     verification_results["verified_files"] += 1
@@ -910,7 +955,11 @@ fi
                         verification_results["missing_files"] += 1
                         verification_results["missing_file_list"].append(name)
                         continue
-                    if self._sha256_file(autorun_path) == expected_hash:
+                    try:
+                        autorun_hash = self._sha256_file(autorun_path)
+                    except OSError:
+                        autorun_hash = None
+                    if autorun_hash == expected_hash:
                         verification_results["verified_files"] += 1
                     else:
                         verification_results["failed_files"] += 1
