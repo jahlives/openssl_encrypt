@@ -717,6 +717,12 @@ def setup_encrypt_parser(subparser):
         "--identity-store",
         dest="identity_store",
         metavar="PATH",
+        # default=SUPPRESS, not None: argparse copies a subcommand's
+        # whole namespace back over the parent's, so a default here
+        # overwrote a --identity-store given BEFORE the command --
+        # silently using the default store (gitlab#210). Same
+        # dest-clobber as --quiet (gitlab#171) and --yes (gitlab#176).
+        default=argparse.SUPPRESS,
         help="Path to identity store directory (overrides global --identity-store)",
     )
     asymmetric_group.add_argument(
@@ -970,6 +976,12 @@ def setup_decrypt_parser(subparser):
         "--identity-store",
         dest="identity_store",
         metavar="PATH",
+        # default=SUPPRESS, not None: argparse copies a subcommand's
+        # whole namespace back over the parent's, so a default here
+        # overwrote a --identity-store given BEFORE the command --
+        # silently using the default store (gitlab#210). Same
+        # dest-clobber as --quiet (gitlab#171) and --yes (gitlab#176).
+        default=argparse.SUPPRESS,
         help="Path to identity store directory (overrides global --identity-store)",
     )
 
@@ -1900,6 +1912,12 @@ def setup_sign_parser(subparser):
         "--identity-store",
         dest="identity_store",
         metavar="PATH",
+        # default=SUPPRESS, not None: argparse copies a subcommand's
+        # whole namespace back over the parent's, so a default here
+        # overwrote a --identity-store given BEFORE the command --
+        # silently using the default store (gitlab#210). Same
+        # dest-clobber as --quiet (gitlab#171) and --yes (gitlab#176).
+        default=argparse.SUPPRESS,
         help="Path to identity store directory (overrides global --identity-store)",
     )
 
@@ -1928,6 +1946,12 @@ def setup_verify_signature_parser(subparser):
         "--identity-store",
         dest="identity_store",
         metavar="PATH",
+        # default=SUPPRESS, not None: argparse copies a subcommand's
+        # whole namespace back over the parent's, so a default here
+        # overwrote a --identity-store given BEFORE the command --
+        # silently using the default store (gitlab#210). Same
+        # dest-clobber as --quiet (gitlab#171) and --yes (gitlab#176).
+        default=argparse.SUPPRESS,
         help="Path to identity store directory (overrides global --identity-store)",
     )
     subparser.add_argument(
@@ -2172,6 +2196,12 @@ def setup_identity_parser(subparser):
         "--identity-store",
         dest="identity_store",
         metavar="PATH",
+        # default=SUPPRESS, not None: argparse copies a subcommand's
+        # whole namespace back over the parent's, so a default here
+        # overwrote a --identity-store given BEFORE the command --
+        # silently using the default store (gitlab#210). Same
+        # dest-clobber as --quiet (gitlab#171) and --yes (gitlab#176).
+        default=argparse.SUPPRESS,
         help="Path to identity store directory (default: ~/.openssl_encrypt/identities/)",
     )
 

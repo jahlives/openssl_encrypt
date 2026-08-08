@@ -374,6 +374,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`--identity-store` given before the command was silently ignored**
+  (gitlab#210): the flag is declared on the top-level parser *and* on five
+  subcommands, and argparse copies a subcommand's whole namespace back over
+  the parent's — so the subcommand's `default=None` overwrote the global
+  value. `crypt --identity-store <store> identity list` therefore listed the
+  **default** store and reported "No identities found."
+
+  `identity list` merely shows nothing, but the same flag is on the
+  destructive commands: someone running `identity delete` with
+  `--identity-store` pointed at one store, believing they were working
+  there, was working on the default store instead — removing an identity
+  and its private keys from somewhere they did not intend, with no error to
+  signal it.
+
+  This is the third instance of the same dest-clobber; `--quiet`
+  (gitlab#171) and `--yes` (gitlab#176) were fixed the same way, with
+  `default=argparse.SUPPRESS`, and pinned by the same shape of test.
+
 - **`verify-signature --json` went silent on the outcomes that matter, and
   exposed only the unauthenticated algorithm labels** (gitlab#160). A
   pinned-signer mismatch, an unknown pinned identity, an unknown signer, a
