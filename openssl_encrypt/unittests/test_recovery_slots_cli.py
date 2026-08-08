@@ -91,10 +91,17 @@ class TestListRecoverCli(RecoveryCliBase):
 class TestAddRemoveCli(RecoveryCliBase):
     def test_add_passphrase_then_recover(self):
         self._encrypt()  # plain envelope, no recovery yet
-        with mock.patch("getpass.getpass", return_value="my recovery phrase"):
-            add_recovery_cli(_ns(input=self.enc, output=self.enc, password=PASSWORD, add_passphrase=True))
+        # Policy-passing: add-recovery holds a NEW passphrase to the same
+        # standard as a password, because a recovery slot is another wrapping
+        # of the same file key (gitlab#149). This test is about the
+        # add-then-recover mechanism, not password strength.
+        phrase = "My-Rec0very-Phrase-With-Entropy!"
+        with mock.patch("getpass.getpass", return_value=phrase):
+            add_recovery_cli(
+                _ns(input=self.enc, output=self.enc, password=PASSWORD, add_passphrase=True)
+            )
         # recover with that passphrase
-        with mock.patch("getpass.getpass", return_value="my recovery phrase"):
+        with mock.patch("getpass.getpass", return_value=phrase):
             recover_cli(_ns(input=self.enc, output=self.out, recovery_passphrase=True))
         with open(self.out, "rb") as f:
             self.assertEqual(f.read(), PLAINTEXT)
@@ -111,7 +118,9 @@ class TestAddRemoveCli(RecoveryCliBase):
             )
         )
         shares = sorted(
-            os.path.join(self.tmp, f) for f in os.listdir(self.tmp) if f.startswith("recovery_share_")
+            os.path.join(self.tmp, f)
+            for f in os.listdir(self.tmp)
+            if f.startswith("recovery_share_")
         )
         self.assertEqual(len(shares), 3)
         recover_cli(_ns(input=self.enc, output=self.out, recovery_share=shares[:2]))

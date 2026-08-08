@@ -374,6 +374,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Recovery passphrases are held to the password policy** (gitlab#149):
+  `add-recovery` accepted a one-character recovery passphrase — the check
+  added under gitlab#144 rejected only blank and whitespace-only values —
+  while the primary password from `OPENSSL_ENCRYPT_PASSWORD` was policy-
+  checked. A recovery slot is an *additional wrapping of the same file key*,
+  so a file's confidentiality is that of its weakest slot, and Argon2id at
+  t=3/64 MiB does not rescue a three-character secret. The weaker credential
+  on the same key was getting the weaker check.
+
+  Both channels — `$OPENSSL_ENCRYPT_ADD_RECOVERY_PASSPHRASE` and the
+  interactive prompt — now go through the same policy as a password, with
+  `--force-password` to override and `--password-policy` to choose the level,
+  matching the flags the rest of the tool uses. The desktop GUI can pass
+  `--force-password` too; without that, its users would have been told to use
+  a flag the app had no way to send.
+
+  The refusal lists the actual reasons — too short, no uppercase, no digit —
+  on stderr, unconditionally, because `ValidationError` is a `SecureError`
+  whose message is otherwise replaced by a generic string. A first version
+  printed a strength verdict instead and managed to say **STRONG** directly
+  above the refusal, because that figure is raw search space while the gate
+  is character classes; a refusal the user cannot understand is one they will
+  bypass. The entropy number is gone entirely: it inverts to the exact
+  distinct-character count and class set of a credential that unwraps the
+  file key, on a stream that reaches scrollback and the GUI's debug log.
+
+  `--password-policy none` is deliberately not offered on this subcommand. It
+  would be a second, silent bypass beside `--force-password`, and because
+  `main_with_args` back-fills that exact value for namespaces lacking the
+  attribute, honouring it would turn the check into a no-op the day the flag
+  is renamed — a fix that fails open with nothing to notice.
+
+  **Unlocking is deliberately not policy-checked.** Enforcing there would
+  refuse a passphrase the user already holds, on a file whose primary
+  password is usually already gone — turning a weak-credential warning into
+  permanent data loss. Slots created before this change, or with
+  `--force-password`, still open; only creating a new one is gated. Blank
+  stays refused on both paths, and `--force-password` does not reach it: a
+  blank-passphrase slot is equivalent to publishing the file.
+
+  Six existing tests used weak literals and now fail the policy; they were
+  testing the add/recover mechanism, the environment channel and the
+  variable-consumption rule, not password strength, so they use
+  policy-passing values. The one that guards against silent normalisation
+  keeps its surrounding whitespace — that padding *is* the property under
+  test, and the policy does not touch it.
+
+  On this line the interactive path had **no check at all** — not even for
+  blank — so two Enter presses wrapped the file key under an empty
+  passphrase, which anyone can unwrap. There is no environment channel here
+  (gitlab#144 is 1.4.x only), so only the prompt is gated.
+
 - **`rekey`/`decrypt` with `-o` equal to `-i` truncated the input**
   (gitlab#195 / github#112): the residual gitlab#148 left behind. That issue
   fixed the envelope header writer, but the slow paths still decided
