@@ -5695,9 +5695,35 @@ def main_with_args(args=None):
 
             # Create USB
             security_profile = getattr(args, "security_profile", "standard")
+            # The interactive gate lives here, not in the library: a
+            # function that prompts is unusable from a script (gitlab#207).
+            # _is_removable_drive only ever logged a warning, so a mistyped
+            # path went ahead and wrote a drive into e.g. the home directory.
+            from .portable_media.usb_creator import USBDriveCreator as _USBDriveCreator
+
+            forced = bool(getattr(args, "yes", False))
+            # args.usb_path, not Path(args.usb_path): `Path` is imported
+            # function-locally further down main_with_args, which makes the
+            # name function-local for the WHOLE function -- using it here
+            # raises UnboundLocalError. _is_removable_drive only does
+            # str(path) anyway.
+            if not forced and not _USBDriveCreator()._is_removable_drive(args.usb_path):
+                eprint(f"Warning: {args.usb_path} does not look like a removable drive.")
+                eprint("  Creating a portable installation there will write into that")
+                eprint("  directory and replace any autorun files it already contains.")
+                if not sys.stdin.isatty():
+                    eprint("Refusing to continue without --yes.")
+                    return 1
+                answer = input("Continue? [y/N]: ").strip().lower()
+                if answer not in ("y", "yes"):
+                    eprint("Aborted.")
+                    return 1
+                forced = True
+
             result = create_portable_usb(
                 usb_path=args.usb_path,
                 password=args.password,
+                force=forced,
                 security_profile=security_profile,
                 executable_path=getattr(args, "executable_path", None),
                 keystore_path=getattr(args, "keystore_to_include", None),
