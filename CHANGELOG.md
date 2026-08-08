@@ -332,6 +332,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **argv lint: a declared flag is not necessarily a correct flag**
+  (gitlab#190): the lint checked that every flag the GUI sends exists on the
+  target subcommand, but not that it can take the value placed after it.
+  That is how gitlab#190 survived it — the GUI sends `-a <algorithm>`, and
+  `-a` does exist, as the short form of `--armor`, a `store_true`. argparse
+  sets `armor=True` and leaves the algorithm as an unrecognised positional,
+  so the command exits 2 while every flag in it is "declared", and the
+  user's cipher choice would silently have become "ASCII armor" had it
+  parsed.
+
+  The lint now checks arity too. Doing so required reading argv *elements*
+  rather than string literals: the offending value is a Dart variable, not a
+  quoted string, so a literal-only reader saw nothing after the flag at all
+  and could not have found this no matter how the check was worded. The GUI
+  call is corrected to `--algorithm`, so steganographic encryption works from
+  the GUI for the first time.
+
+  Commands that declare a positional are exempt, because a stray value is
+  absorbed by it rather than rejected — `generate-password` is the live case,
+  and it is also where this lint's flattening of `if`/`else` branches into one
+  argv would otherwise have produced a false positive.
 - **GUI command previews were not covered by the argv lint** (gitlab#191):
   the lint anchored on `_runCLICommand*(` call sites, so it checked every
   argv the GUI *executes* but neither of the two builders that construct a

@@ -2033,7 +2033,13 @@ class CLIService {
       '-i', inputPath,
       '--stego-hide', coverImagePath,
       '-o', outputPath,
-      '-a', algorithm,
+      // --algorithm, NOT -a: `-a` is the short form of --armor, a
+      // store_true, so `-a aes-gcm` set armor=True and left the algorithm as
+      // an unrecognised positional -- encrypt declares none, so the command
+      // died with exit 2 and steganographic encryption never worked from the
+      // GUI. Had it parsed, the user's cipher choice would silently have
+      // become "ASCII armor" (gitlab#190).
+      '--algorithm', algorithm,
       '--stego-method', stegoMethod,
       '--stego-bits-per-channel', bitsPerChannel.toString(),
     ];
