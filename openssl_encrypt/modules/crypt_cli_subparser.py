@@ -114,11 +114,11 @@ def _add_keyring_arguments(subparser):
         metavar="LABEL",
         help="Load password from the OS keyring by LABEL instead of prompting",
     )
-    keyring_group.add_argument(
-        "--keyring-remove",
-        metavar="LABEL",
-        help="Remove a stored password from the OS keyring and exit",
-    )
+    # --keyring-remove is deliberately NOT declared here. It is handled by a
+    # raw-argv pre-scan in main() before any parsing, and nothing ever reads
+    # args.keyring_remove -- so declaring it on a subcommand advertised a
+    # credential-removal control in `encrypt --help` that did nothing at all
+    # (follow-up review of gitlab#177). It remains a top-level option.
 
 
 def _add_hash_kdf_arguments(subparser):

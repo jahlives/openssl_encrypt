@@ -583,6 +583,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`--keyring-remove` deleted from the wrong position, was a no-op in two
+  spellings, and reported failure as success** (follow-up security review of
+  gitlab#177). Three defects in one credential-removal control:
+
+  Its pre-scan did not skip an option's *value*, so
+  `crypt --identity-store --keyring-remove encrypt -i f` — a "forgot the
+  path" typo — deleted the keyring entry named `encrypt` and exited 0, where
+  argparse would have failed outright and deleted nothing. The scan now
+  skips option values, takes the last occurrence as argparse does, and
+  refuses a label that looks like a flag or is empty.
+
+  Nothing anywhere reads `args.keyring_remove` — the option works only
+  through that pre-scan — so an abbreviation such as `--keyring-rem`, which
+  argparse binds happily, silently did nothing. Abbreviations are now
+  honoured. The option was also declared on `encrypt`, `decrypt` and two
+  other subcommands, where it appeared in `--help` and did nothing at all;
+  those dead declarations are removed.
+
+  A failed deletion was reported as "No password found" with exit 0, so a
+  script could not tell "removed" from "backend unavailable, still there".
+  A confirmed absence still exits 0; a backend error now says so and exits
+  1.
+
 - **Combined short options, abbreviated long options and a leading `--`
   broke command routing** (security review of gitlab#177). The command scan
   classified each leading option as boolean or value-taking by exact

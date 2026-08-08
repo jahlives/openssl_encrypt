@@ -126,6 +126,79 @@ class TestTheSeparatorBeforeTheCommand(_ScanTestCase):
         )
 
 
+class TestTheStripIsAPositionTest(unittest.TestCase):
+    """Whether to strip a leading `--` is a question about POSITION.
+
+    It was answered with a value test -- "is the command already in the
+    output list" -- so a token equal to the command name appearing earlier
+    as some option's value suppressed a strip that should have happened.
+    """
+
+    def test_an_earlier_token_equal_to_the_command_does_not_suppress_the_strip(self):
+        from openssl_encrypt.modules.crypt_cli import preprocess_global_args
+
+        self.assertEqual(
+            preprocess_global_args(
+                ["crypt", "--identity-store", "identity", "--", "identity", "list"]
+            ),
+            ["crypt", "--identity-store", "identity", "identity", "list"],
+        )
+
+    def test_a_separator_not_immediately_before_the_command_is_kept(self):
+        """`shred -- --quiet`: the command precedes the separator, so the
+        separator is protecting data and must survive."""
+        from openssl_encrypt.modules.crypt_cli import preprocess_global_args
+
+        argv = ["crypt", "shred", "--", "--quiet"]
+        self.assertEqual(preprocess_global_args(list(argv)), argv)
+
+
+class TestArgparseStillRejectsALeadingSeparator(unittest.TestCase):
+    """The strip exists only because argparse does NOT handle it.
+
+    Verified interactively when the fix was written, but argparse's `--`
+    handling has changed between supported interpreters (setup.py claims
+    3.11-3.14). If a future one strips the separator itself, the
+    unconditional strip becomes redundant at best -- this test is what
+    notices, instead of a user debugging a mis-parsed command line.
+    """
+
+    def test_argparse_does_not_strip_it_before_a_subparser(self):
+        import argparse
+
+        parser = argparse.ArgumentParser(prog="t")
+        sub = parser.add_subparsers(dest="command")
+        sub.add_parser("go")
+
+        with self.assertRaises(SystemExit):
+            parser.parse_args(["--", "go"])
+
+
+class TestTheBundleLettersAreBooleanInBothParsers(unittest.TestCase):
+    """_is_boolean_option can only be unsafe if a bundled letter takes a
+    value on the parser that ends up handling the line.
+
+    The classification is derived from the subparser's top level, but the
+    monolithic parser is the one a mis-scan routes to. Today every
+    single-char boolean there (-q, -y, -h) is store_true on both, which is
+    why no unsafe misclassification exists -- but that equality is
+    coincidental and nothing else pins it.
+    """
+
+    def test_the_single_char_booleans_are_the_expected_three(self):
+        from openssl_encrypt.modules.crypt_cli import _top_level_flags
+
+        _value_flags, boolean_flags = _top_level_flags()
+        singles = {flag for flag in boolean_flags if len(flag) == 2 and flag[0] == "-"}
+        self.assertEqual(
+            singles,
+            {"-q", "-y", "-h"},
+            "the single-char boolean set changed; confirm each new letter is "
+            "also boolean on the MONOLITHIC parser, or a bundle like -p<pw> "
+            "could be classified boolean and its value read as the command",
+        )
+
+
 class TestTheFallbackSetsAreConsistent(_ScanTestCase):
     """The hardcoded fallback fires only if the parser cannot be built.
 

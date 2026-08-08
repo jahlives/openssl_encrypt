@@ -1308,8 +1308,14 @@ def _top_level_flags():
     return _TOP_LEVEL_FLAGS
 
 
-def _first_command_token(argv):
-    """The command name in argv, or None.
+def _find_command(argv):
+    """(command, index) for the command in argv, or (None, None).
+
+    The INDEX matters to preprocess_global_args: whether to strip a leading
+    `--` is a question about position, and testing "is the command already
+    in the output list" stood in for it badly -- a token equal to the
+    command name appearing earlier as some option's value suppressed a strip
+    that should have happened (follow-up review of gitlab#177).
 
     Two rules the previous scans lacked (gitlab#177):
 
@@ -1345,15 +1351,20 @@ def _first_command_token(argv):
             # (security review of gitlab#177). Everything after is data, so
             # the search stops at that one token.
             following = argv[index + 1] if index + 1 < len(argv) else None
-            return following if following in commands else None
+            return (following, index + 1) if following in commands else (None, None)
         if token.startswith("-") and token != "-":
             # --flag=value is self-contained; it never consumes the next token.
             if "=" not in token and not _is_boolean_option(token, boolean_flags, value_flags):
                 index += 1  # its value, whether the flag is known or not
             index += 1
             continue
-        return token if token in commands else None
-    return None
+        return (token, index) if token in commands else (None, None)
+    return (None, None)
+
+
+def _first_command_token(argv):
+    """The command name in argv, or None. See _find_command for the rules."""
+    return _find_command(argv)[0]
 
 
 def _is_boolean_option(token, boolean_flags, value_flags):
@@ -1405,20 +1416,62 @@ def _keyring_remove_label(argv):
     Both spellings are recognised. The old scan matched only the separate
     form, so `--keyring-remove=LABEL` silently did nothing.
     """
+    _value_flags, boolean_flags = _top_level_flags()
     command = _first_command_token(argv)
-    for index in range(1, len(argv)):
+    found = None
+
+    index = 1
+    while index < len(argv):
         token = argv[index]
         if token == "--":
-            return None
+            break
         if command is not None and token == command:
-            return None
-        if token == "--keyring-remove":
-            if index + 1 < len(argv):
-                return argv[index + 1]
-            return None
+            break
+
         if token.startswith("--keyring-remove="):
-            return token.split("=", 1)[1]
-    return None
+            candidate = token.split("=", 1)[1]
+            # An empty label is a mistake, not a request to delete "".
+            found = candidate or None
+            index += 1
+            continue
+
+        if _is_keyring_remove_option(token):
+            candidate = argv[index + 1] if index + 1 < len(argv) else None
+            # A label that looks like a flag means the user forgot it.
+            found = candidate if candidate and not candidate.startswith("-") else None
+            index += 2
+            continue
+
+        if token.startswith("-") and token != "-":
+            # Skip this option's VALUE too. Without it, `--identity-store
+            # --keyring-remove encrypt` deleted the entry named "encrypt" --
+            # a "forgot the path" typo that argparse would have rejected
+            # outright (follow-up review of gitlab#177).
+            if "=" not in token and not _is_boolean_option(token, boolean_flags, _value_flags):
+                index += 1
+            index += 1
+            continue
+
+        index += 1
+
+    # Last occurrence wins, as argparse binds it.
+    return found
+
+
+def _is_keyring_remove_option(token):
+    """Whether this token names --keyring-remove, abbreviations included.
+
+    argparse accepts unambiguous prefixes, so `--keyring-rem` binds the
+    option -- and the exact-match scan ignored it, making the option a
+    silent no-op in that spelling (follow-up review of gitlab#177).
+    """
+    if token == "--keyring-remove":
+        return True
+    if not token.startswith("--") or len(token) <= 2 or "=" in token:
+        return False
+    _value_flags, boolean_flags = _top_level_flags()
+    candidates = {flag for flag in set(_value_flags) | set(boolean_flags) if flag.startswith(token)}
+    return candidates == {"--keyring-remove"}
 
 
 def preprocess_global_args(argv):
@@ -1431,7 +1484,7 @@ def preprocess_global_args(argv):
     # `create-usb` belongs to create-usb regardless of which parser handles
     # it. Shared with main()'s routing scan so the two cannot disagree
     # (gitlab#177).
-    command_token = _first_command_token(argv)
+    command_token, command_index = _find_command(argv)
     if command_token is None:
         return argv  # No command found, return as-is
 
@@ -1455,7 +1508,7 @@ def preprocess_global_args(argv):
             # makes a legitimate invocation fail (security review of
             # gitlab#177, whose premise that argparse strips it turned out
             # not to hold; verified directly against argparse).
-            if command_token is not None and command_token not in other_args:
+            if command_index == i + 1:
                 other_args.extend(argv[i + 1 :])
             else:
                 other_args.extend(argv[i:])
@@ -4149,14 +4202,25 @@ def main():
     if label is not None:
         try:
             import keyring as _keyring
-
-            _keyring.delete_password("openssl_encrypt", label)
-            eprint(f"Password removed from keyring: '{label}'")
         except ImportError:
             eprint("Error: keyring package not installed. Install with: pip install keyring")
             sys.exit(1)
-        except Exception:
+
+        # "Not found" and "the backend failed" are different answers, and a
+        # caller that cannot tell them apart may believe a credential is gone
+        # when it is still there -- the same reasoning the telemetry opt-out
+        # applies (follow-up review of gitlab#177). Exit 0 only on a
+        # confirmed deletion or a confirmed absence.
+        not_found = getattr(getattr(_keyring, "errors", None), "PasswordDeleteError", ())
+        try:
+            _keyring.delete_password("openssl_encrypt", label)
+            eprint(f"Password removed from keyring: '{label}'")
+        except not_found:
             eprint(f"No password found in keyring for label '{label}'")
+        except Exception as error:
+            eprint(f"Error: could not remove '{label}' from the keyring: {error}")
+            eprint("  The password may still be stored.")
+            sys.exit(1)
         sys.exit(0)
 
     sys.argv = preprocess_global_args(sys.argv)
