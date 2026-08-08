@@ -205,6 +205,87 @@ def _argv_literals(body):
     return literals
 
 
+def _split_top_level(text):
+    """Split a Dart list body on its top-level commas.
+
+    Elements, not literals: `'-a', algorithm` is a flag followed by a
+    VARIABLE, and reading only string literals makes that value invisible --
+    which is precisely why the flag-existence check could not see gitlab#190.
+    """
+    elements, depth, quote, start = [], 0, None, 0
+    for index, char in enumerate(text):
+        if quote:
+            if char == quote and text[index - 1] != "\\":
+                quote = None
+        elif char in "'\"":
+            quote = char
+        elif char in "([{":
+            depth += 1
+        elif char in ")]}":
+            depth -= 1
+        elif char == "," and depth == 0:
+            elements.append(text[start:index].strip())
+            start = index + 1
+    tail = text[start:].strip()
+    if tail:
+        elements.append(tail)
+    return [e for e in elements if e]
+
+
+def _argv_elements(body):
+    """Ordered argv ELEMENTS, each as its raw source text.
+
+    Parallel to _argv_literals, which drops everything that is not a quoted
+    string. Arity checking needs to know that something follows a flag even
+    when that something is a variable.
+    """
+    body = _COMMENT_RE.sub("", body)
+    elements = []
+
+    # The list initialiser and any inline list: the bracket is at the end of
+    # the match, so the scan starts there. Searching FORWARD for the next
+    # "[" instead would wander into unrelated code -- an earlier version did
+    # exactly that and read `data[key]` from a helper further down as argv.
+    for pattern in (_ARGV_INIT_RE, _ARGV_INLINE_RE):
+        for match in pattern.finditer(body):
+            depth, index, quote = 0, match.end() - 1, None
+            while index < len(body):
+                char = body[index]
+                if quote:
+                    if char == quote and body[index - 1] != "\\":
+                        quote = None
+                elif char in "'\"":
+                    quote = char
+                elif char == "[":
+                    depth += 1
+                elif char == "]":
+                    depth -= 1
+                    if depth == 0:
+                        break
+                index += 1
+            elements.extend(_split_top_level(body[match.end() : index]))
+
+    # args.add(x) / args.addAll([...]): the captured group IS the argument
+    # text, so no searching is needed.
+    for match in _ARGV_ADD_RE.finditer(body):
+        argument = match.group(1).strip()
+        if argument.startswith("["):
+            argument = argument[1:]
+            if argument.endswith("]"):
+                argument = argument[:-1]
+        elements.extend(_split_top_level(argument))
+
+    return elements
+
+
+def _quoted(element):
+    """The string a quoted element holds, or None if it is an expression."""
+    match = re.fullmatch(r"'([^'\n]*)'|\"([^\"\n]*)\"", element.strip())
+    if not match:
+        return None
+    return match.group(1) if match.group(1) is not None else match.group(2)
+
+
 def _cli_calling_methods():
     """Names of every GUI method that shells out to the CLI.
 
@@ -306,7 +387,7 @@ def _call_sites():
             else:
                 flags.append(literal)
 
-        yield name, path, flags, unresolved, unverified
+        yield name, path, flags, unresolved, unverified, _argv_elements(body)
 
 
 class TestGuiArgvMatchesCli(unittest.TestCase):
@@ -339,6 +420,24 @@ class TestGuiArgvMatchesCli(unittest.TestCase):
             return None
         return {opt for a in node._actions for opt in a.option_strings} | self.global_flags
 
+    def _zero_argument_options(self, path):
+        """Option strings on this command that consume NO value.
+
+        store_true/store_false/count/help/version all have nargs == 0.
+        Passing them a value does not error on the flag itself -- argparse
+        takes the value as a POSITIONAL, and most of these subcommands
+        declare none, so the whole command dies with "unrecognized
+        arguments" and the flag looks innocent (gitlab#190).
+        """
+        node = _resolve(self.parser, path)
+        if node is None:
+            return set()
+        options = set()
+        for action in node._actions:
+            if action.nargs == 0:
+                options.update(action.option_strings)
+        return options
+
     def _known_tokens(self, method):
         return {token for name, token, _ in KNOWN_BROKEN if name == method}
 
@@ -350,7 +449,7 @@ class TestGuiArgvMatchesCli(unittest.TestCase):
             "the set of GUI call sites changed; update EXPECTED_CALL_SITES "
             "deliberately, after checking the new ones are covered",
         )
-        seen = {path[0] for _n, path, _f, _u, _v in self.sites}
+        seen = {path[0] for _n, path, _f, _u, _v, _a in self.sites}
         for command in REQUIRED_COMMANDS:
             self.assertIn(command, seen, f"the lint no longer sees `{command}`")
 
@@ -374,7 +473,7 @@ class TestGuiArgvMatchesCli(unittest.TestCase):
 
     def test_every_command_the_gui_names_exists(self):
         problems = []
-        for name, path, _flags, unresolved, _unverified in self.sites:
+        for name, path, _flags, unresolved, _unverified, _argv in self.sites:
             if unresolved is None or unresolved in self._known_tokens(name):
                 continue
             problems.append(f"  {name}(): `{' '.join(path)}` has no subcommand {unresolved!r}")
@@ -389,7 +488,7 @@ class TestGuiArgvMatchesCli(unittest.TestCase):
 
     def test_every_flag_the_gui_sends_is_declared(self):
         problems = []
-        for name, path, flags, unresolved, _unverified in self.sites:
+        for name, path, flags, unresolved, _unverified, _argv in self.sites:
             known = self._known_tokens(name)
             # A path token that is itself known-broken means the whole
             # command does not exist, so there is no parser these flags
@@ -419,6 +518,52 @@ class TestGuiArgvMatchesCli(unittest.TestCase):
             "sending it.",
         )
 
+    def test_no_flag_is_given_a_value_it_cannot_take(self):
+        """A declared flag is not necessarily a CORRECT flag.
+
+        gitlab#190 survived the existence check above because the GUI sent
+        `-a <algorithm>` and `-a` does exist -- as the short form of
+        `--armor`, a store_true. argparse set armor=True and left the
+        algorithm as an unrecognised positional, so the command exited 2
+        while every flag in it was "declared". Checking existence without
+        checking arity is exactly the shape of bug this lint was built to
+        catch, so it checks both.
+        """
+        problems = []
+        for name, path, _flags, unresolved, _unverified, argv in self.sites:
+            known = self._known_tokens(name)
+            if unresolved is not None and unresolved in known:
+                continue
+            zero_arg = self._zero_argument_options(path)
+            for index, element in enumerate(argv):
+                flag = _quoted(element)
+                if flag is None or flag not in zero_arg or flag in known:
+                    continue
+                if index + 1 >= len(argv):
+                    continue
+                following = argv[index + 1]
+                # A following FLAG is fine; anything else -- a literal value
+                # or a variable -- is the value this option cannot take. The
+                # variable case is the one that matters: gitlab#190 was
+                # `'-a', algorithm`, and a literal-only reader saw nothing
+                # after the flag at all.
+                value = _quoted(following)
+                if value is not None and value.startswith("-") and value != "-":
+                    continue
+                shown = following if value is None else repr(value)
+                problems.append(
+                    f"  {name}(): `{' '.join(path)}` <- {flag} {shown} " f"({flag} takes no value)"
+                )
+
+        self.assertFalse(
+            problems,
+            "The GUI passes a value to a flag that accepts none:\n"
+            + "\n".join(problems)
+            + "\n\nargparse assigns the value to a positional instead, and "
+            "these subcommands declare none, so the command exits 2 with "
+            "'unrecognized arguments' while the flag itself looks fine.",
+        )
+
     def test_no_stale_known_broken_entries(self):
         """Every entry must still be broken.
 
@@ -433,7 +578,7 @@ class TestGuiArgvMatchesCli(unittest.TestCase):
             if method not in sites:
                 stale.append(f"  {method}(): no such call site any more ({issue})")
                 continue
-            _name, path, flags, unresolved, _unverified = sites[method]
+            _name, path, flags, unresolved, _unverified, _argv = sites[method]
             if token.startswith("--"):
                 if unresolved is not None and unresolved in self._known_tokens(method):
                     continue  # the command is broken; no parser to judge against
@@ -470,7 +615,7 @@ class TestGuiArgvMatchesCli(unittest.TestCase):
         """
         unverified = {
             (name, literal)
-            for name, _p, _f, _u, interpolated in self.sites
+            for name, _p, _f, _u, interpolated, _a in self.sites
             for literal in interpolated
         }
         self.assertEqual(
