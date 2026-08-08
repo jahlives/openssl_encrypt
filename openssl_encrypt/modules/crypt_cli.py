@@ -7402,14 +7402,20 @@ def main_with_args(args=None):
                     file=sys.stderr,
                 )
 
-            # Store password in keyring if requested (before secure_string wipes it)
-            if args.password and getattr(args, "keyring_store", None):
+            # The actual store happens AFTER the password is resolved (see
+            # below): it used to be gated on args.password, which only
+            # -p/--password sets. CRYPT_PASSWORD is consumed straight into
+            # the secure buffer and never assigned there, so for every
+            # caller using the environment -- the recommended way, and the
+            # only one the desktop GUI uses -- --keyring-store stored
+            # nothing AND printed nothing, because the confirmation lived
+            # inside the same `if` (gitlab#156).
+            #
+            # Reported here rather than later only when the package is
+            # missing, so the user learns before the operation runs.
+            if getattr(args, "keyring_store", None):
                 try:
-                    import keyring as _keyring
-
-                    _keyring.set_password("openssl_encrypt", args.keyring_store, args.password)
-                    if not args.quiet:
-                        eprint(f"Password stored in keyring as '{args.keyring_store}'")
+                    import keyring as _keyring  # noqa: F401
                 except ImportError:
                     if not args.quiet:
                         eprint("Warning: keyring package not installed, password not stored")
@@ -7794,6 +7800,26 @@ def main_with_args(args=None):
 
                 # Convert to bytes for the rest of the code
                 password = bytes(password_secure)
+
+                # Store in the keyring from the RESOLVED password, whatever
+                # source it came from -- command line, environment, file, fd
+                # or prompt (gitlab#156). A user who believes the password is
+                # now recoverable from the keyring may discard their only
+                # copy of it, so this must never fail silently.
+                if getattr(args, "keyring_store", None) and password:
+                    try:
+                        import keyring as _keyring
+
+                        _keyring.set_password(
+                            "openssl_encrypt", args.keyring_store, password.decode("utf-8")
+                        )
+                        if not args.quiet:
+                            eprint(f"Password stored in keyring as '{args.keyring_store}'")
+                    except ImportError:
+                        pass  # already reported above
+                    except Exception as error:
+                        eprint(f"Error: could not store the password in the keyring: {error}")
+                        eprint("  Do not discard your only copy of it.")
 
             # Handle rekey password (new password for re-encryption)
             if args.action == "rekey":

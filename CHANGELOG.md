@@ -583,6 +583,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`--keyring-store` silently stored nothing when the password came from
+  the environment** (gitlab#156): the store was gated on `args.password`,
+  which only `-p/--password` sets. `CRYPT_PASSWORD` is consumed straight
+  into the secure buffer and never assigned there, so for every caller
+  using the environment — the recommended way, and the only one the desktop
+  GUI uses — the flag did nothing.
+
+  The silence is what made it dangerous rather than merely broken: the
+  confirmation lived inside the same `if`, so there was no error *and* no
+  confirmation. A user who believed the password was now recoverable from
+  the keyring could discard their only copy of it and lose the data.
+
+  The store now runs after the password is resolved, from whatever source —
+  command line, environment, file, fd or prompt. A missing keyring package
+  is reported up front, before the operation runs, and a backend failure
+  now says so and tells the user not to discard their copy.
+
 - **Confirmation questions were invisible when stdout was redirected**
   (gitlab#174): `eprint` writes to stderr, but `input("...")` writes its
   prompt to *stdout*. Every security confirmation mixed the two — the
