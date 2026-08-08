@@ -365,6 +365,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Reachable only from 1.4.9 (gitlab#179), so no released version is
   affected and no advisory is warranted.
 
+- **The helper written onto the drive could not run** (gitlab#206):
+  `create-usb` writes a standalone `crypt.py` to the drive, chmods it 0755,
+  and points the workspace README and the Windows batch files at it — and
+  its template carried a package-relative import (`from ..crypt_utils
+  import eprint`), which in a standalone script fails immediately with
+  `ImportError: attempted relative import with no known parent package`. It
+  now has a local `eprint` and runs.
+
+  Two more defects from the same generator: the Windows batch files were
+  written from a non-raw string containing `\n`, so each was a single
+  unusable line with a literal escape; and the generated help told users to
+  pass the master password as `--password mypass`, putting it in the
+  process list and shell history. The batch files no longer take a password
+  argument at all, and the help now points at the prompt or
+  `CRYPT_PASSWORD`, with the reason stated. Guidance written *by* the
+  security tool onto the medium carries more weight than a user's own
+  habit, which is why this counted as more than a docs nit.
+
+  Finally, `--executable-path` and `--keystore-to-include` silently skipped
+  a path that did not exist, recording `included: False` while the CLI
+  summary just omitted the line — so a typo left the user believing their
+  keystore was on the drive. Both are now checked up front and refused.
+
 - **A new USB drive got the weakest key derivation in the tool, and
   `--pbkdf2-iterations` was silently ignored** (gitlab#205): every round
   option defaults to 0, so a plain `create-usb --usb-path X` passed no

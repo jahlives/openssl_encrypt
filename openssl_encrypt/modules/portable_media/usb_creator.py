@@ -200,6 +200,18 @@ class USBDriveCreator:
             if not self._is_removable_drive(usb_path):
                 logger.warning(f"Path {usb_path} may not be a removable drive")
 
+            # A supplied path that does not exist is a typo, not a choice
+            # (gitlab#206). Both options used to take a silent else branch
+            # that recorded `included: False`, and the CLI summary simply
+            # omitted the line -- so the user believed their keystore was on
+            # the drive. Checked up front, before anything is written.
+            for option, candidate in (
+                ("--executable-path", executable_path),
+                ("--keystore-to-include", keystore_path),
+            ):
+                if candidate and not os.path.exists(candidate):
+                    raise USBCreationError(f"{option} does not exist: {candidate}")
+
             # Create secure password key
             secure_password = SecureBytes(password.encode("utf-8"))
 
@@ -1172,7 +1184,15 @@ import os
 import subprocess
 import tempfile
 from pathlib import Path
-from ..crypt_utils import eprint
+
+
+def eprint(*args, **kwargs):
+    """Local, not imported: this file runs as a standalone script on the
+    drive, so `from ..crypt_utils import eprint` raised ImportError on the
+    first run (gitlab#206)."""
+    kwargs.setdefault("file", sys.stderr)
+    print(*args, **kwargs)
+
 
 def show_help():
     eprint("Usage: python crypt.py <encrypt|decrypt> [options...]")
@@ -1181,22 +1201,27 @@ def show_help():
     eprint("Supports all OpenSSL Encrypt CLI arguments")
     eprint("")
     eprint("ENCRYPT:")
-    eprint("  python crypt.py encrypt -i <file> --password <pass> [options...]")
+    eprint("  python crypt.py encrypt -i <file> [options...]")
     eprint("  → Automatically saves to USB workspace as <file>.enc")
     eprint("")
     eprint("DECRYPT:")
-    eprint("  python crypt.py decrypt -i <file> --password <pass> [options...]")
+    eprint("  python crypt.py decrypt -i <file> [options...]")
     eprint("  → Smart workspace file resolution, outputs to stdout by default")
     eprint("  → Use -o <file> to save to data/decrypted/ (relative paths)")
     eprint("  → Use -o /absolute/path to save anywhere")
     eprint("")
+    eprint("PASSWORD:")
+    eprint("  You will be prompted, or set CRYPT_PASSWORD in the environment.")
+    eprint("  Do NOT pass it as an argument: every other user on the machine")
+    eprint("  can read the command line, and your shell records it in history.")
+    eprint("")
     eprint("Examples:")
-    eprint("  python crypt.py encrypt -i document.pdf --password mypass")
-    eprint("  python crypt.py encrypt -i document.pdf --password mypass --algorithm aes-gcm-siv")
-    eprint("  python crypt.py decrypt -i document.pdf.enc --password mypass")
-    eprint("  python crypt.py decrypt -i document.pdf.enc --password mypass -o recovered.pdf")
+    eprint("  python crypt.py encrypt -i document.pdf")
+    eprint("  python crypt.py encrypt -i document.pdf --algorithm aes-gcm-siv")
+    eprint("  python crypt.py decrypt -i document.pdf.enc")
+    eprint("  python crypt.py decrypt -i document.pdf.enc -o recovered.pdf")
     eprint("    → Saves to: data/decrypted/recovered.pdf")
-    eprint("  python crypt.py decrypt -i document.pdf.enc --password mypass --verbose")
+    eprint("  python crypt.py decrypt -i document.pdf.enc --verbose")
 
 def main():
     if len(sys.argv) < 2 or sys.argv[1] not in ['encrypt', 'decrypt']:
@@ -1374,15 +1399,18 @@ if __name__ == "__main__":
                 encrypt_bat = portable_root / "encrypt_file.bat"
                 decrypt_bat = portable_root / "decrypt_file.bat"
 
-                with open(encrypt_bat, "w", encoding="utf-8") as f:
-                    f.write(
-                        "@echo off\\npython crypt.py encrypt -i %1 --password %2 %3 %4 %5 %6 %7 %8 %9\\npause\\n"
-                    )
-
-                with open(decrypt_bat, "w", encoding="utf-8") as f:
-                    f.write(
-                        "@echo off\\npython crypt.py decrypt -i %1 --password %2 %3 %4 %5 %6 %7 %8 %9\\npause\\n"
-                    )
+                # Real newlines: these were written from a non-raw string
+                # containing a literal backslash-n, so each file was one
+                # unusable line (gitlab#206). The password is no longer taken
+                # as an argument -- %2 put the master password in the process
+                # list and the command history.
+                for bat_path, action in ((encrypt_bat, "encrypt"), (decrypt_bat, "decrypt")):
+                    with open(bat_path, "w", encoding="utf-8") as f:
+                        f.write(
+                            "@echo off\r\n"
+                            f"python crypt.py {action} -i %1 %2 %3 %4 %5 %6 %7 %8 %9\r\n"
+                            "pause\r\n"
+                        )
 
             logger.debug("Created transparent encryption helper scripts")
 
