@@ -1154,6 +1154,23 @@ inflated KDF metadata parameters, not cosmetic output.
 
 ### Security
 
+- **A planted named pipe hung `verify-usb` forever** (gitlab#202):
+  `_sha256_file` claimed in its own docstring that its byte bound stopped "a
+  FIFO / symlink to an unbounded stream ... from looping forever". It did
+  not — the bound applies to the read, but `open()` on a FIFO blocks inside
+  `open()` itself, before a byte is read. The added-file and autorun scans
+  guarded with `is_file()`; the main manifest loop guarded with `exists()`,
+  which is true for a FIFO. So replacing any manifest-listed file with a
+  named pipe hung verification indefinitely — on the exact command whose
+  job is to tell you the drive was tampered with.
+
+  Files are now opened `O_NOFOLLOW | O_NONBLOCK` and required to be regular,
+  and a listed name that is no longer a regular file is reported as
+  **tampering** rather than hashed. That is the correct verdict: a real
+  manifest lists regular files, so anything else at that path is a
+  substitution. `O_NOFOLLOW` also stops a listed name replaced by a symlink
+  from causing a file outside the drive to be read.
+
 - **The portable-USB drive key was never actually wiped** (gitlab#201):
   every `secure_memzero` call on that path was a no-op whose return value
   was discarded. `PBKDF2HMAC.derive()`, `multi_hash_password` and the
