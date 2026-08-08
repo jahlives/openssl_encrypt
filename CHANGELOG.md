@@ -365,6 +365,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Reachable only from 1.4.9 (gitlab#179), so no released version is
   affected and no advisory is warranted.
 
+- **`create-usb` copied private keys onto the drive** (gitlab#203): the
+  project copy used `shutil.copytree` with no filter and the default
+  `symlinks=False`, so run from a source checkout — which the project-root
+  walk explicitly targets — it copied the whole tree. Against this checkout
+  that was **4 test identity private keys** (`*_private.pem` under
+  `unittests/testfiles/`) and 23 MB, landing unencrypted on a drive that is
+  by design carried around, typically on FAT32 where the preserved mode
+  bits mean nothing. They are test fixtures rather than production secrets,
+  but the same path would copy a real key a user had placed in the tree.
+
+  Key material (`*.pem`, `*.key`, `*.pqc`), the test tree and build caches
+  are now excluded, matched by name at every depth — a key does not become
+  safe to ship by sitting a directory deeper — and symlinks are copied as
+  links instead of being dereferenced, which was a second way for content
+  outside the copied subtree to end up on the drive. The copy is 5 MB and
+  the tool itself is unchanged.
+
 - **A planted named pipe hung `verify-usb` forever** (gitlab#202):
   `_sha256_file` claimed in its own docstring that its byte bound stopped "a
   FIFO / symlink to an unbounded stream ... from looping forever". It did

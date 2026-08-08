@@ -1626,8 +1626,44 @@ If any verification step fails, assume the USB has been compromised!
             logger.error(f"Failed to create hash manifest: {e}")
             return {"created": False, "error": str(e)}
 
+    # Never copied onto a drive that is carried around (gitlab#203). The
+    # copy previously had no filter at all, so a source checkout put the
+    # unittests tree -- including four test identity private keys -- onto
+    # removable media unencrypted, typically FAT32 where the mode bits
+    # copy2 preserves mean nothing.
+    _PROJECT_COPY_EXCLUDE_NAMES = frozenset({"unittests", "__pycache__", ".git", ".pytest_cache"})
+    _PROJECT_COPY_EXCLUDE_SUFFIXES = (
+        ".pem",
+        ".key",
+        ".pqc",
+        ".pyc",
+        ".pyo",
+    )
+
+    @classmethod
+    def _project_copy_ignore(cls, directory, names):
+        """shutil.copytree ignore callback: key material and build junk.
+
+        Deliberately name-based rather than path-based so it applies at
+        every depth -- a key does not become safe to ship by sitting one
+        directory further down.
+        """
+        ignored = set()
+        for name in names:
+            if name in cls._PROJECT_COPY_EXCLUDE_NAMES:
+                ignored.add(name)
+            elif name.endswith(cls._PROJECT_COPY_EXCLUDE_SUFFIXES):
+                ignored.add(name)
+        return ignored
+
     def _copy_openssl_encrypt_project(self, portable_root: Path) -> None:
-        """Copy the entire openssl_encrypt project to USB for full CLI compatibility"""
+        """Copy the openssl_encrypt project to USB for full CLI compatibility.
+
+        Key material, the test tree and build caches are excluded
+        (gitlab#203), and symlinks are copied as links rather than
+        dereferenced -- dereferencing pulls a target's contents in from
+        outside the copied subtree.
+        """
         try:
             import inspect
             import shutil
@@ -1665,8 +1701,14 @@ If any verification step fails, assume the USB has been compromised!
                 if usb_project_dir.exists():
                     shutil.rmtree(usb_project_dir)
 
-                # Copy the entire openssl_encrypt directory
-                shutil.copytree(openssl_encrypt_src, usb_project_dir / "openssl_encrypt")
+                # Filtered copy: no key material, no test tree, no caches,
+                # and symlinks stay symlinks (gitlab#203).
+                shutil.copytree(
+                    openssl_encrypt_src,
+                    usb_project_dir / "openssl_encrypt",
+                    ignore=self._project_copy_ignore,
+                    symlinks=True,
+                )
 
                 # Copy essential project files
                 essential_files = [
