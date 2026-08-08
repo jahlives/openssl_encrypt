@@ -174,6 +174,7 @@ class USBDriveCreator:
         manifest_password: Optional[str] = None,
         manifest_security_profile: Optional[str] = None,
         manifest_hash_config: Optional[Dict] = None,
+        force: bool = False,
     ) -> Dict[str, any]:
         """
         Create encrypted portable USB drive
@@ -198,6 +199,19 @@ class USBDriveCreator:
 
             if not self._is_removable_drive(usb_path):
                 logger.warning(f"Path {usb_path} may not be a removable drive")
+
+            # Refuse to clobber a root autorun file the user already has
+            # (gitlab#207). These are written unconditionally at the USB
+            # ROOT, above the portable directory, so a mistyped --usb-path --
+            # which only produced a log warning -- silently replaced them.
+            if not force:
+                clashes = [name for name in self._ROOT_AUTORUN_NAMES if (usb_path / name).exists()]
+                if clashes:
+                    raise USBCreationError(
+                        f"{usb_path} already contains {', '.join(clashes)}. "
+                        "Creating a drive here would overwrite them. Re-run with "
+                        "--yes if this is the drive you meant."
+                    )
 
             # A supplied path that does not exist is a typo, not a choice
             # (gitlab#206). Both options used to take a silent else branch
@@ -242,6 +256,7 @@ class USBDriveCreator:
 
             with open(config_path, "w") as f:
                 json.dump(config, f, indent=2)
+            self._restrict_to_owner(config_path)
 
             # Copy executable if provided
             executable_info = {}
@@ -415,6 +430,7 @@ class USBDriveCreator:
             salt = secrets.token_bytes(self.SALT_LENGTH)
             salt_path.parent.mkdir(parents=True, exist_ok=True)
             salt_path.write_bytes(salt)
+            self._restrict_to_owner(salt_path)
             return salt
 
         # Pre-fix drive without a salt file: use the legacy fixed salt for compat.
@@ -880,6 +896,7 @@ fi
             integrity_path = portable_root / self.INTEGRITY_FILE
             with open(integrity_path, "wb") as f:
                 f.write(nonce + encrypted_integrity)
+            self._restrict_to_owner(integrity_path)
 
             return {"created": True, "files_verified": len(checksums), "path": self.INTEGRITY_FILE}
 
@@ -1662,6 +1679,26 @@ If any verification step fails, assume the USB has been compromised!
         ".pyc",
         ".pyo",
     )
+
+    @staticmethod
+    def _restrict_to_owner(path) -> None:
+        """Make a drive artifact owner-only where the filesystem allows it.
+
+        Nothing on this path was chmod'd except the three files deliberately
+        made 0755, so the salt, the integrity manifest, the portable config
+        and the encrypted keystore were created at the process umask --
+        typically 0644 (gitlab#207). That is meaningless on FAT32, which is
+        the common case, and exposed the moment the target is a real
+        filesystem, which create-usb permits.
+
+        Best effort by design: a chmod on a filesystem without POSIX modes
+        raises, and failing the whole drive creation over it would be worse
+        than the exposure it prevents.
+        """
+        try:
+            os.chmod(path, 0o600)
+        except OSError as error:
+            logger.debug(f"Could not restrict permissions on {path}: {error}")
 
     @classmethod
     def _project_copy_ignore(cls, directory, names):

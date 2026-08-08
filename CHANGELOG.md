@@ -1154,6 +1154,24 @@ inflated KDF metadata parameters, not cosmetic output.
 
 ### Security
 
+- **`create-usb` overwrote root autorun files and wrote drive secrets at
+  the default umask** (gitlab#207): `_is_removable_drive` only ever logged a
+  warning, so a mistyped `--usb-path` went ahead — creating a portable
+  installation in, say, the home directory and **overwriting** any
+  `autorun.inf`, `autorun.sh` or `.autorun` already there, with no existence
+  check at all. Those are now refused unless `--yes` is given, and a target
+  that does not look removable requires confirmation (or `--yes`
+  non-interactively) before anything is written.
+
+  Nothing on this path was `chmod`'d except the three files deliberately
+  made 0755, so the per-drive salt, the integrity manifest and the portable
+  config were created at the process umask — typically 0644. They are now
+  owner-only where the filesystem supports it, best-effort so that a FAT32
+  target (where modes are meaningless) does not fail the whole operation.
+
+  The confirmation lives at the CLI layer rather than in the library
+  function: one that prompts is unusable from a script.
+
 - **The helper written onto the drive could not run** (gitlab#206):
   `create-usb` writes a standalone `crypt.py` to the drive, chmods it 0755,
   and points the workspace README and the Windows batch files at it — and
