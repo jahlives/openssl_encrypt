@@ -376,6 +376,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+
+
 - **`--identity-store` given before the command was silently ignored**
   (gitlab#210): the flag is declared on the top-level parser *and* on five
   subcommands, and argparse copies a subcommand's whole namespace back over

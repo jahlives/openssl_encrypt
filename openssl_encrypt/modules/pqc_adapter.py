@@ -356,7 +356,16 @@ class ExtendedPQCipher(PQCipher):
             nonce = secrets.token_bytes(12)  # 96 bits for AES-GCM
 
             # Encrypt data
-            encrypted_data = cipher.encrypt(nonce, data, aad)
+            # Same two-argument API on the way in (gitlab#120): without this
+            # the adapter could decrypt an aes-siv file written natively but
+            # not write one itself.
+            if self.encryption_data == "aes-siv":
+                aad_list = [nonce]
+                if aad:
+                    aad_list.append(aad)
+                encrypted_data = cipher.encrypt(data, aad_list)
+            else:
+                encrypted_data = cipher.encrypt(nonce, data, aad)
 
             # Format: encapsulated_key + nonce + ciphertext
             result = ciphertext + nonce + encrypted_data
@@ -524,8 +533,19 @@ class ExtendedPQCipher(PQCipher):
                     # Decrypt data using secure memory
                     with SecureBytes() as secure_plaintext:
                         try:
-                            # Decrypt directly into secure memory
-                            decrypted = cipher.decrypt(nonce, ciphertext, aad)
+                            # AES-SIV has a different API: decrypt(data,
+                            # [associated_data]). The native path in pqc.py
+                            # special-cases it; this loop called every cipher
+                            # the same way, so an aes-siv file reaching the
+                            # adapter (liboqs-KEM) path raised TypeError
+                            # instead of decrypting (gitlab#120).
+                            if self.encryption_data == "aes-siv":
+                                aad_list = [nonce]
+                                if aad:
+                                    aad_list.append(aad)
+                                decrypted = cipher.decrypt(ciphertext, aad_list)
+                            else:
+                                decrypted = cipher.decrypt(nonce, ciphertext, aad)
                         except (InvalidTag, AuthenticationError) as auth_error:
                             # gitlab#116 [LOW-4]: the custom XChaCha20Poly1305
                             # wrapper converts InvalidTag into the project's
