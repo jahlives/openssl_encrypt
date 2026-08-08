@@ -118,6 +118,17 @@ STDOUT_WHITELIST = [
         1,
         "verify-signature JSON result",
     ),
+    # The same channel for the refusal outcomes (gitlab#160). A --json
+    # consumer used to get an empty stdout and a bare exit code for exactly
+    # the cases meaning "not from who you said"; the verdict is data, so it
+    # belongs on stdout with the rest. Two sites: before the sidecar parses,
+    # and after.
+    (
+        "modules/file_signature.py",
+        "print(refusal_json)",
+        2,
+        "verify-signature JSON refusal verdict",
+    ),
     # crypt_cli.py — generate-password --json result (gitlab#187). The
     # password IS the payload here; the human display path is skipped in
     # this mode, so it never also reaches stderr. Two call sites, one
