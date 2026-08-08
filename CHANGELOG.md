@@ -374,6 +374,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Seven documented commands could not be run** (gitlab#179 / github#94):
+  `create-usb`, `verify-usb`, `list-plugins`, `plugin-info`,
+  `enable-plugin`, `disable-plugin` and `reload-plugin` were listed in
+  `--help`, documented, declared by the parser and backed by working
+  handlers — and every one of them exited 2 with
+  `argument command: invalid choice`. They were named in the list that
+  decides which commands go to the subparser, no subparser had ever been
+  registered for them, and nothing connected those two claims. The
+  plugin-management surface was unreachable from the CLI as a result.
+
+  The list answered two different questions at once: "is this token the
+  command, so the flags after it belong to it" (true of every command,
+  whichever parser handles it) and "which parser handles it" (true only of
+  the 35 with a registered subparser). Those are now separate:
+  `KNOWN_COMMANDS` keeps the first, and the routing set is read off the
+  built subparser rather than maintained beside it, so a command with no
+  subparser falls through to the monolithic parser that declares it. A
+  routed-but-unregistered command is no longer representable, which is the
+  point — the same drift produced gitlab#171 in the same file.
+
+  Verified equivalent for everything that already worked: the derived set
+  differs from the old list by exactly these seven and nothing else, and
+  all 42 known commands now dispatch. `SUBPARSER_COMMANDS` remains as an
+  alias.
+
 - **A lint for GUI service surface with no caller** (gitlab#198 /
   github#116): the argv lint reads the argv `cli_service.dart` *builds* and
   checks it against the real argparse tree, catching a flag the GUI sends

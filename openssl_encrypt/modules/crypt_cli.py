@@ -854,6 +854,43 @@ TRULY_GLOBAL_FLAGS = {
 }
 
 
+_SUBPARSER_CHOICES = None
+
+
+def _subparser_choices():
+    """The commands the subparser actually registers (gitlab#179).
+
+    Read off the built parser rather than kept as a list beside it: a
+    hand-maintained copy is what drifted and left seven commands routed to a
+    parser that had never heard of them.
+
+    Returns a frozenset, not the mutable cache -- handing out the live set
+    lets any in-process caller re-create the bug at runtime, and immutability
+    makes the unsynchronised check-then-set provably harmless.
+
+    A build failure degrades to "nothing is routed" rather than propagating:
+    this now runs on every invocation, including the monolithic ones, where
+    before crypt_cli_subparser was imported only for commands about to use
+    it. Falling back to the monolithic parser, which declares every command,
+    is the safe direction.
+    """
+    global _SUBPARSER_CHOICES
+    if _SUBPARSER_CHOICES is None:
+        import argparse as _argparse
+
+        choices = set()
+        try:
+            from .crypt_cli_subparser import build_subparser
+
+            for action in build_subparser()._actions:
+                if isinstance(action, _argparse._SubParsersAction):
+                    choices |= set(action.choices)
+        except Exception:  # noqa: BLE001 - routing must not be fatal
+            choices = set()
+        _SUBPARSER_CHOICES = frozenset(choices)
+    return _SUBPARSER_CHOICES
+
+
 def preprocess_global_args(argv):
     """Preprocess sys.argv to move truly global flags to the front for subparser compatibility.
 
@@ -2405,7 +2442,9 @@ def main():
     # Check if position 1 is a subcommand to decide which parser to use.
     # This allows backward compatibility: when global flags are BEFORE the command,
     # the monolithic parser is used (which has all arguments).
-    subparser_commands = [
+    # Every command name the CLI knows. Membership here answers "is this
+    # token the command", which is true whichever parser ends up handling it.
+    known_commands = [
         "encrypt",
         "decrypt",
         "rekey",
@@ -2443,6 +2482,22 @@ def main():
         "add-recovery",
         "remove-recovery",
     ]
+
+    # Which parser handles it is a DIFFERENT question, and conflating the two
+    # is what broke seven commands (gitlab#179): create-usb, verify-usb and
+    # the five *-plugin commands were listed here, no subparser had ever been
+    # registered for them, and nothing connected those two claims -- so each
+    # exited 2 with `invalid choice` while the monolithic parser declared it
+    # and its handler sat there unreachable.
+    #
+    # Read off the built subparser rather than maintained beside it, so
+    # "routed but unregistered" is not representable. Intersected with the
+    # list above rather than used raw: on this branch the subparser also
+    # registers combine-secrets, split-secret and verify, which are NOT in
+    # that list and today are handled by the monolithic parser. Routing them
+    # somewhere new is a behaviour change this fix has no business making;
+    # the intersection removes the seven and adds nothing.
+    subparser_commands = [c for c in known_commands if c in _subparser_choices()]
 
     # Use subparser only if a subcommand is present
     # (after global flags have been moved to the front by preprocess_global_args)

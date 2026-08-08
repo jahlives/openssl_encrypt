@@ -712,7 +712,6 @@ fi
         except Exception as e:
             raise USBCreationError(f"Failed to create autorun files: {e}")
 
-
     # config/hash_config.json is plaintext, unauthenticated, and sits on the
     # drive being verified, yet its contents set the KDF work factor before
     # any integrity check runs (gitlab#200). It is a handful of small
