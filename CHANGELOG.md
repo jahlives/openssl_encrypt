@@ -332,6 +332,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **The file password was printed in cleartext by the `--debug` argv dump
+  for bundled and abbreviated option spellings** (gitlab#209, ADVISORY
+  2026-17). Under `--debug` the tool prints its own argv, routing
+  secret-valued options through the redaction chokepoint first — but it
+  selected what to redact by *exact string membership*, plus `--option=value`
+  and a rule matching a token literally starting with `-p`. argparse accepts
+  two further spellings that neither covers.
+
+  `encrypt` declares `-a/--armor`, `-f/--overwrite` and `-s/--shred` as
+  booleans on the same parser as the value-taking `-p/--password`, so
+  argparse resolves `-apHunter2` to `-a` plus `-p=Hunter2` — a token that
+  does not start with `-p`. And no parser sets `allow_abbrev=False`, so
+  `--manifest-p` binds `--manifest-password` while matching no set member.
+
+  This one **does** affect released versions: the v1.4.8 sanitizer was
+  lifted from the tag and executed, and both `-apHunter2` and `-ap Hunter2`
+  printed the password. Rotate any password used with `--debug` and a
+  bundled or abbreviated spelling. The documented `-p PASSWORD` and
+  `-pPASSWORD` forms were always redacted and are unaffected.
+
+  Each token is now resolved the way argparse resolves it before the
+  redaction decision. Ambiguity fails **closed** — an unresolvable option
+  that could name a secret is redacted, which is deliberately the opposite
+  of the command scan's default, because printing a password is worse than
+  redacting a filename.
+
 - **`--` defeated the keyserver-credential redaction, and could trigger a
   keyring deletion** (security review of gitlab#177). gitlab#177 made `--`
   a working spelling in the argv layer; two argv scanners had not learned

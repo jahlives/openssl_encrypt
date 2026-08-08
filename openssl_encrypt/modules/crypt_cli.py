@@ -973,6 +973,50 @@ def _display_generated_password(password):
     )
 
 
+# Short options that take a value and whose value is a secret. Derived from
+# SECRET_VALUE_CLI_OPTIONS so the two cannot drift.
+_SECRET_SHORT_OPTIONS = frozenset(
+    opt for opt in SECRET_VALUE_CLI_OPTIONS if len(opt) == 2 and opt[0] == "-" and opt[1] != "-"
+)
+
+
+def _resolve_secret_long_option(token):
+    """Whether a ``--`` token names a secret-valued option (gitlab#209).
+
+    argparse accepts unambiguous prefixes -- no parser here sets
+    ``allow_abbrev=False`` -- so ``--manifest-p`` binds
+    ``--manifest-password`` and the exact-membership test missed it.
+
+    Fails CLOSED, which is the opposite of _is_boolean_option's default: an
+    ambiguous prefix that could name a secret option is redacted, because
+    printing a password is worse than redacting a filename.
+    """
+    if token in SECRET_VALUE_CLI_OPTIONS:
+        return True
+    if not token.startswith("--") or len(token) <= 2:
+        return False
+    return any(opt.startswith(token) for opt in SECRET_VALUE_CLI_OPTIONS if opt.startswith("--"))
+
+
+def _split_secret_short_bundle(token):
+    """Split ``-apSECRET``/``-ap`` into (prefix, attached_value_or_None).
+
+    argparse resolves a bundle of short options, so ``-ap<value>`` is ``-a``
+    plus ``-p <value>`` -- and the previous ``startswith("-p")`` rule saw
+    neither (gitlab#209). Returns (None, None) when the token contains no
+    secret-valued short option.
+
+    A returned attached value of None means the SECRET IS THE NEXT TOKEN.
+    """
+    if not token.startswith("-") or token.startswith("--") or len(token) < 2:
+        return (None, None)
+    for position, letter in enumerate(token[1:], start=1):
+        if f"-{letter}" in _SECRET_SHORT_OPTIONS:
+            attached = token[position + 1 :]
+            return (token[: position + 1], attached if attached else None)
+    return (None, None)
+
+
 def sanitize_argv_for_debug(argv: list) -> list:
     """
     Return a copy of argv with secret option values redacted for debug output.
@@ -1002,7 +1046,7 @@ def sanitize_argv_for_debug(argv: list) -> list:
                 continue
             sanitized[i] = debug_secret("", arg)
             redact_next = False
-        elif arg in SECRET_VALUE_CLI_OPTIONS:
+        elif _resolve_secret_long_option(arg) or arg in SECRET_VALUE_CLI_OPTIONS:
             redact_next = True
         elif arg in SECRET_POSITIONAL_SUBCOMMANDS:
             # These subcommands take a credential as a POSITIONAL argument, so
@@ -1016,11 +1060,21 @@ def sanitize_argv_for_debug(argv: list) -> list:
             # reachable here only with gitlab#171 -- before that, argparse
             # rejected `--debug` after `keyserver` and this dump never ran.
             redact_next = True
-        elif "=" in arg and arg.split("=", 1)[0] in SECRET_VALUE_CLI_OPTIONS:
+        elif "=" in arg and _resolve_secret_long_option(arg.split("=", 1)[0]):
             opt, value = arg.split("=", 1)
             sanitized[i] = f"{opt}={debug_secret('', value)}"
-        elif arg.startswith("-p") and not arg.startswith("--") and len(arg) > 2:
-            sanitized[i] = f"-p{debug_secret('', arg[2:])}"
+        else:
+            # Short-option bundles: argparse reads -apSECRET as -a plus
+            # -p SECRET, and -ap SECRET as the same with the value in the
+            # next token. The old rule only matched a token literally
+            # starting with "-p", so both spellings printed the password
+            # (gitlab#209).
+            prefix, attached = _split_secret_short_bundle(arg)
+            if prefix is not None:
+                if attached is not None:
+                    sanitized[i] = f"{prefix}{debug_secret('', attached)}"
+                else:
+                    redact_next = True
     return sanitized
 
 
