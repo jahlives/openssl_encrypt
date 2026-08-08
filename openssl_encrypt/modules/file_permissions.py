@@ -382,7 +382,9 @@ def create_secure_directory(path, level: PermissionLevel = PermissionLevel.OWNER
     return path
 
 
-def create_secure_file(path, level: PermissionLevel = PermissionLevel.OWNER_ONLY) -> int:
+def create_secure_file(
+    path, level: PermissionLevel = PermissionLevel.OWNER_ONLY, exclusive: bool = False
+) -> int:
     """
     Open/create a file with secure permissions, returning a file descriptor.
 
@@ -393,18 +395,23 @@ def create_secure_file(path, level: PermissionLevel = PermissionLevel.OWNER_ONLY
     Args:
         path: File path to create (str or Path).
         level: Permission level (default: OWNER_ONLY / 0o600).
+        exclusive: Fail with FileExistsError if the path already exists (O_EXCL)
+            instead of truncating it. Use for a destination that must never
+            silently clobber, e.g. a written-out credential.
 
     Returns:
         File descriptor (int) for the opened file.
 
     Raises:
+        FileExistsError: If exclusive is set and the path exists.
         OSError: If file creation or permission setting fails.
     """
     path_str = str(path)
     posix_mode = _POSIX_MODES[level]
+    create_flag = os.O_EXCL if exclusive else os.O_TRUNC
 
     if sys.platform == "win32":
-        fd = os.open(path_str, os.O_CREAT | os.O_WRONLY | os.O_TRUNC, posix_mode)
+        fd = os.open(path_str, os.O_CREAT | os.O_WRONLY | create_flag, posix_mode)
         if _HAS_WIN32:
             try:
                 dacl = _build_dacl(level)
@@ -415,7 +422,7 @@ def create_secure_file(path, level: PermissionLevel = PermissionLevel.OWNER_ONLY
     else:
         # O_NOFOLLOW rejects a symlink at the final path component, so a planted
         # symlink cannot redirect the truncate+write to an arbitrary file (#58).
-        flags = os.O_CREAT | os.O_WRONLY | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
+        flags = os.O_CREAT | os.O_WRONLY | create_flag | getattr(os, "O_NOFOLLOW", 0)
         # Do not touch the process-global os.umask (it is process-wide and races
         # other threads creating files, #74). os.open()'s mode is masked by any
         # ambient umask, but the file can never be created MORE permissive than

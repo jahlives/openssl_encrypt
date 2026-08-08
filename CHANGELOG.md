@@ -374,6 +374,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`--pqc-keyfile`: a second implementation wrote the post-quantum private
+  key in the clear, and the flag could never save** (gitlab#157):
+  `crypt_cli.py` carried two independent copies of the keyfile save/load
+  logic. `320305ee` added password-wrapping to the copy that existed then;
+  `c41a3a1cb` ("fix for claude code massive deletions") reconstructed the
+  file and reintroduced the pre-fix plaintext pattern as a second copy; and
+  `aef4ab42` (gitlab#131/F16) later upgraded the wrapping to Argon2id, its
+  own message describing "the one write site". The duplicate wrote
+  `private_key` as bare base64 with no `key_encrypted` marker, and its loader
+  read `private_key` unconditionally — so handed a properly wrapped keyfile
+  it would have base64-decoded the AES-GCM ciphertext and used it as the key.
+  The duplicate is deleted.
+
+  Separately, `--pqc-keyfile` could not save through the documented
+  `encrypt` subcommand: the save branch is gated on `--pqc-gen-key`, which was
+  declared only on a vestigial monolithic parser inside `main_with_args`, so
+  `encrypt --pqc-gen-key` exited 2 with `unrecognized arguments`. Naming a
+  path that did not exist matched neither branch and raised nothing — the user
+  got an ephemeral key, no file, and no way to open the ciphertext with the
+  keyfile they believed they had made. (The legacy argument ordering, with an
+  option before the subcommand, *did* reach the monolithic parser and save;
+  that is how the cleartext writer above was reachable at all.)
+  `--pqc-gen-key` is now declared on the `encrypt` subparser, naming a
+  non-existent keyfile without it is refused with an instruction instead of
+  ignored, and `--pqc-gen-key` without `--pqc-keyfile` — the mirror image, and
+  newly reachable now that the flag exists — is refused too.
+
+  The keyfile is also resolved **once**, before the overwrite branch, so both
+  output paths use the same keypair. Deleting the duplicate without moving
+  this left `--overwrite` with no keyfile handling at all: it encrypted with
+  an ephemeral key and only reached the keyfile code afterwards, so an
+  unreadable or missing keyfile was reported *after* the input had already
+  been replaced. Caught in review; the input is now left untouched when the
+  keyfile cannot be used.
+
+  The keyfile is written through `create_secure_file(..., exclusive=True)`,
+  so it is created 0600 rather than at the umask (typically 0644), a
+  pre-planted symlink or FIFO at that path is refused rather than followed,
+  and an existing file is never silently clobbered.
 - **argv lint: a declared flag is not necessarily a correct flag**
   (gitlab#190): the lint checked that every flag the GUI sends exists on the
   target subcommand, but not that it can take the value placed after it.

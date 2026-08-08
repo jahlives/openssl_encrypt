@@ -677,11 +677,21 @@ def setup_encrypt_parser(subparser):
 
     # PQC options for encryption
     pqc_group = subparser.add_argument_group("Post-Quantum Cryptography options")
-    pqc_group.add_argument("--pqc-keyfile", help="Path to save/load the PQC key file")
+    pqc_group.add_argument(
+        "--pqc-keyfile",
+        help="Path to save (with --pqc-gen-key) or load a post-quantum key file",
+    )
+    pqc_group.add_argument(
+        "--pqc-gen-key",
+        action="store_true",
+        help="Generate a new post-quantum key pair and save it to --pqc-keyfile "
+        "(the file is created 0600 and never overwritten)",
+    )
     pqc_group.add_argument(
         "--pqc-store-key",
         action="store_true",
-        help="Store the PQC private key in the encrypted file",
+        help="Store the PQC private key in the encrypted file (anyone with the "
+        "file password can then recover it)",
     )
 
     # Asymmetric encryption options

@@ -228,6 +228,69 @@ relevant.
 
 ## Security Advisories
 
+### ADVISORY 2026-16: Post-Quantum Keyfile Written Without Encryption by a Duplicate Code Path — Resolved
+
+**Severity:** Medium · **CWE-312** (Cleartext Storage of Sensitive Information) / **CWE-1041** (Redundant Code)
+**Affected versions:** all releases up to and including **1.4.8**. **Fixed in 1.4.9 (1.4.x line) and 1.5.0 (1.5.x line).**
+
+**Summary:** `crypt_cli.py` carried two independent implementations of the
+`--pqc-keyfile` save/load logic. Commit `320305ee` added password-wrapping to
+the copy that existed at the time; `c41a3a1cb` ("fix for claude code massive
+deletions") reconstructed the file and reintroduced the pre-fix plaintext
+pattern as a *second* copy; and `aef4ab42` (gitlab#131 / F16,
+GHSA-fmjx-p826-6fvr) later upgraded the wrapping to Argon2id, its own commit
+message describing "the one write site". The duplicate wrote `private_key` as
+bare base64 with no `key_encrypted` marker, and its loader read `private_key`
+unconditionally, so a properly wrapped keyfile would have had its AES-GCM
+ciphertext base64-decoded and used as if it were the key.
+
+**Impact:** a `.pqc` keyfile written by the duplicate path holds the long-lived
+post-quantum private key with **no wrapping at all** — anyone who obtains the
+file has the key outright, with no password to brute-force first, which is the
+weakness GHSA-fmjx-p826-6fvr was raised to remove. The keyfile was also created
+through a bare `open(path, "w")`, so its mode came from the umask (typically
+0644) rather than 0600.
+
+**Reachability in a released version — measured, not assumed:** `--pqc-gen-key`
+is not accepted by the documented `encrypt` subcommand: `openssl-encrypt
+encrypt --pqc-gen-key …` exits 2 with `unrecognized arguments`. But `main()`
+selects the subparser route only when the first non-flag token is a subcommand
+name, so putting an option *before* the subcommand — `openssl-encrypt -i
+file.txt encrypt --overwrite --pqc-gen-key --pqc-keyfile k.pqc --algorithm
+ml-kem-768-hybrid` — makes `file.txt` the apparent command, falls through to the
+monolithic parser, and **does** run the save path. Verified against the
+pre-fix code: exit 0, keyfile written.
+
+What that run produces is a keyfile that is ultimately **wrapped**, at mode
+**0644**. Both copies execute in the same invocation: the cleartext writer runs
+first inside the `--overwrite` branch, and the Argon2id writer then runs and
+overwrites the same path. So the unwrapped private key is written to disk and
+replaced moments later, rather than persisting — the exposure is to anyone able
+to read the file inside that window, or to recover the freed blocks afterwards,
+not to anyone who finds the keyfile later. The 0644 mode, by contrast,
+persisted.
+
+A second consequence of the two writers running in sequence: the key saved to
+the keyfile is not the key used for the encryption, so a keyfile produced this
+way does not correspond to the file produced alongside it. No data is lost —
+the file password recovers the plaintext — but the keyfile is useless.
+
+**Fixed in 1.4.9 / 1.5.0:** the duplicate is deleted. `--pqc-gen-key` is now
+declared on the real `encrypt` subparser, so the wrapped save path is reachable
+as documented; a `--pqc-keyfile` naming a non-existent path without it is
+refused with an instruction rather than silently ignored; and the keyfile is
+written through `create_secure_file(..., exclusive=True)`, so it is created
+0600, a pre-planted symlink or FIFO at that path is refused rather than
+followed, and an existing file is never silently clobbered.
+
+**Mitigation for existing keyfiles:** inspect any `.pqc` keyfile you hold. If
+it lacks a `key_encrypted` field, the private key inside it is stored in the
+clear — treat it as compromised, regenerate the key pair, and re-encrypt
+anything protected by it.
+
+**Credit:** found during the source review of gitlab#153 and confirmed by
+tracing CLI reachability.
+
 ### ADVISORY 2026-15: Contact Stored Under an Own Identity's Name Silently Substitutes Its Keys on Deletion — Resolved
 
 **Severity:** High · **CWE-706** (Use of Incorrectly-Resolved Name or Reference) / **CWE-345**
