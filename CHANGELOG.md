@@ -374,6 +374,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The metadata validator's fallback path was unreachable, and unbounded**
+  (gitlab#118): `StdinMetadataExtractor._parse_metadata` imports the JSON
+  validator *inside* the `try` that uses it, with
+  `except (JSONSecurityError, JSONValidationError)` as the first handler —
+  and evaluating that tuple needs names the failed import never bound, so it
+  raised `UnboundLocalError` before `except ImportError` was ever
+  considered. The reported crash could not happen because the fallback never
+  ran at all. The import is now resolved first, and the fallback bounds
+  `format_version` to an `int` (not a `bool`) in range, matching the
+  equivalent site in `crypt_core.py`.
+
+- **AES-SIV was called with the wrong API on the adapter path**
+  (gitlab#120): pyca's `AESSIV` takes `(data, associated_data_list)` with no
+  separate nonce, which the native path special-cases; the liboqs-KEM
+  adapter called every cipher the same way, so an aes-siv file reaching it
+  raised `TypeError` instead of decrypting. Fixed on both encrypt and
+  decrypt — otherwise the adapter could read a format it could not write.
+  Fail-closed, so no security impact.
+
+- **The legacy-KDF retry discarded its cause** (gitlab#119): the double
+  failure re-raised a static `ValueError` without `from e`, so the only
+  diagnostic was lost. The user-facing message is unchanged, so this adds
+  no oracle — the cause appears only in a traceback.
+
 
 
 
