@@ -408,28 +408,58 @@ class StdinMetadataExtractor:
         try:
             # Decode base64 metadata
             metadata_json = base64.b64decode(metadata_b64).decode("utf-8")
-            # MED-8 Security fix: Use secure JSON validation for metadata parsing
+            # MED-8 Security fix: Use secure JSON validation for metadata parsing.
+            #
+            # The import is resolved BEFORE the try that uses it (gitlab#118).
+            # It used to sit inside that try, with `except (JSONSecurityError,
+            # JSONValidationError)` as the first handler -- and evaluating
+            # that tuple needs names the failed import never bound, so it
+            # raised UnboundLocalError before `except ImportError` was ever
+            # considered. The fallback was unreachable.
             try:
                 from .json_validator import (
                     JSONSecurityError,
                     JSONValidationError,
                     secure_metadata_loads,
                 )
-
-                metadata = secure_metadata_loads(metadata_json)
-            except (JSONSecurityError, JSONValidationError) as e:
-                eprint(f"Error: Invalid metadata JSON: {e}")
-                return None
             except ImportError:
-                # Fallback to basic JSON loading if validator not available
+                secure_metadata_loads = None
+                # Empty tuples never match, so the handler below is inert on
+                # this path rather than referencing unbound names.
+                JSONSecurityError = JSONValidationError = ()
+
+            if secure_metadata_loads is not None:
+                try:
+                    metadata = secure_metadata_loads(metadata_json)
+                except (JSONSecurityError, JSONValidationError) as e:
+                    eprint(f"Error: Invalid metadata JSON: {e}")
+                    return None
+            else:
+                # Fallback: basic JSON loading, with the bounds the validator
+                # would otherwise have applied.
                 try:
                     metadata = json.loads(metadata_json)
                 except json.JSONDecodeError as e:
                     eprint(f"Error: Invalid JSON in metadata: {e}")
                     return None
+                if not isinstance(metadata, dict):
+                    eprint("Error: Invalid metadata JSON: not an object")
+                    return None
 
-            # Extract algorithm info based on format version
+            # Extract algorithm info based on format version.
+            #
+            # Bounded rather than taken as-is: a crafted file must not decide
+            # this field's type. bool is an int subclass and `True >= 4` would
+            # silently select the legacy branch, so it is rejected explicitly
+            # -- the same guard crypt_core.py's equivalent site already has
+            # (gitlab#118).
             format_version = metadata.get("format_version", 1)
+            if isinstance(format_version, bool) or not isinstance(format_version, int):
+                eprint(f"Error: Invalid metadata format version: {format_version!r}")
+                return None
+            if not (1 <= format_version <= LATEST_STABLE_FORMAT_VERSION):
+                eprint(f"Error: Unsupported metadata format version: {format_version}")
+                return None
 
             if format_version >= 4:  # v4+ hierarchical metadata (see crypt_core gate fix)
                 encryption = metadata.get("encryption", {})
