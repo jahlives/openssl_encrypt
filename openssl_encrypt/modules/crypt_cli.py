@@ -1017,20 +1017,24 @@ def sanitize_argv_for_debug(argv: list) -> list:
     return sanitized
 
 
-# The list of subcommand names recognised on the command line, used both by
-# preprocess_global_args (to find where the command starts) and by main() (to
-# decide whether to use the subparser). It is ONE list on purpose: these were
-# previously two hand-maintained copies, and the preprocessor's had drifted to
-# less than half the real set, so global flags placed after `identity`,
-# `keyserver`, `telemetry`, `plugin`, `hsm`, `test` and 11 others were never
-# relocated and argparse rejected them (gitlab#171).
+# Every command name recognised on the command line, used by
+# preprocess_global_args to find where the command starts. It is ONE list on
+# purpose: this was previously two hand-maintained copies, and the
+# preprocessor's had drifted to less than half the real set, so global flags
+# placed after `identity`, `keyserver`, `telemetry`, `plugin`, `hsm`, `test`
+# and 11 others were never relocated and argparse rejected them (gitlab#171).
 #
-# NOT a guarantee that each entry has a registered subparser: create-usb,
-# verify-usb and the five *-plugin commands are listed here (and were listed
-# in main()'s copy long before gitlab#171) but have no subparser, so routing
-# on them reaches `invalid choice`. That breakage is pre-existing and tracked
-# in gitlab#179 -- do not read this list as "these all work".
-SUBPARSER_COMMANDS = (
+# This is deliberately NOT the routing set. Membership here says "this token
+# is a command, so the flags after it belong to it" -- which is true of every
+# command whichever parser ends up handling it. Which parser that is comes
+# from _subparser_choices() below, read off the real subparser.
+#
+# Those two questions were one list until gitlab#179, and that conflation is
+# what broke seven commands: create-usb, verify-usb and the five *-plugin
+# commands were listed, had no subparser registered, and so routed to a
+# parser that rejected them with `invalid choice` even though the monolithic
+# parser declared them and their handlers existed.
+KNOWN_COMMANDS = (
     "encrypt",
     "decrypt",
     "rekey",
@@ -1075,6 +1079,57 @@ SUBPARSER_COMMANDS = (
     "remove-recovery",
 )
 
+# Back-compatible alias. The old name described what the list was used for
+# rather than what it contains, which is how it came to answer two different
+# questions (gitlab#179).
+SUBPARSER_COMMANDS = KNOWN_COMMANDS
+
+_SUBPARSER_CHOICES = None
+
+
+def _subparser_choices():
+    """The commands the subparser actually registers.
+
+    Read off the built parser rather than kept as a list beside it: a
+    hand-maintained copy is exactly what drifted in gitlab#171 and again in
+    gitlab#179. A command with no subparser must fall through to the
+    monolithic parser, which declares it and has its handler -- routing it to
+    a parser that has never heard of it is a dead command, not a fallback.
+
+    Cached because build_subparser() costs a few milliseconds and the answer
+    cannot change within a process.
+
+    Returns a frozenset, not the mutable cache: handing out the live set lets
+    any in-process caller re-create gitlab#179 at runtime -- .clear() sends
+    every command to the monolithic parser, and .add("x") routes x to a
+    subparser that will reject it with `invalid choice`. Immutability also
+    makes the unsynchronised check-then-set below provably harmless: two
+    threads would build equivalent values and neither can observe a
+    half-built one.
+
+    A failure to build degrades to "nothing is routed" rather than taking the
+    whole CLI down. This is now on the unconditional path -- every
+    invocation, including the monolithic ones -- where before, importing
+    crypt_cli_subparser only happened for commands that were about to use it.
+    Falling back to the monolithic parser, which declares every command, is
+    the safe direction.
+    """
+    global _SUBPARSER_CHOICES
+    if _SUBPARSER_CHOICES is None:
+        import argparse as _argparse
+
+        choices = set()
+        try:
+            from .crypt_cli_subparser import build_subparser
+
+            for action in build_subparser()._actions:
+                if isinstance(action, _argparse._SubParsersAction):
+                    choices |= set(action.choices)
+        except Exception:  # noqa: BLE001 - routing must not be fatal
+            choices = set()
+        _SUBPARSER_CHOICES = frozenset(choices)
+    return _SUBPARSER_CHOICES
+
 
 # Flags that are truly global and can appear anywhere on the command line.
 #
@@ -1111,7 +1166,9 @@ def preprocess_global_args(argv):
     anywhere in the command line, maintaining backward compatibility with v1.2.1 behavior.
     """
     # Find the command position
-    commands = set(SUBPARSER_COMMANDS)
+    # Every command, not just the routed ones: a flag written after
+    # `create-usb` belongs to create-usb regardless of which parser handles it.
+    commands = set(KNOWN_COMMANDS)
 
     command_pos = None
     for i, arg in enumerate(argv[1:], 1):  # Skip argv[0] (script name)
@@ -2794,7 +2851,9 @@ def _handle_template_analyze(template_mgr: TemplateManager, args):
                 priority_icon = (
                     "🚨"
                     if rec["priority"] == "critical"
-                    else "⚠️" if rec["priority"] == "high" else "💡"
+                    else "⚠️"
+                    if rec["priority"] == "high"
+                    else "💡"
                 )
                 eprint(f"   {i}. {priority_icon} {rec['title']}")
                 eprint(f"      {rec['description']}")
@@ -3827,8 +3886,13 @@ def main():
     # Check if position 1 is a subcommand to decide which parser to use.
     # This allows backward compatibility: when global flags are BEFORE the command,
     # the monolithic parser is used (which has all arguments).
-    # Single source of truth, shared with preprocess_global_args (gitlab#171).
-    subparser_commands = SUBPARSER_COMMANDS
+    # Read off the real subparser, not a list beside it (gitlab#179): a name
+    # that has no subparser registered must fall through to the monolithic
+    # parser below, which declares every command and holds their handlers.
+    # Routing it to the subparser turns a working command into `invalid
+    # choice`, which is how create-usb, verify-usb and the five *-plugin
+    # commands were unreachable while still being listed in --help.
+    subparser_commands = _subparser_choices()
 
     # Use subparser only if a subcommand is present
     # (after global flags have been moved to the front by preprocess_global_args)
@@ -7301,9 +7365,9 @@ def main_with_args(args=None):
                                             policy_params["check_common_passwords"] = False
 
                                         if args.custom_password_list:
-                                            policy_params["common_passwords_path"] = (
-                                                args.custom_password_list
-                                            )
+                                            policy_params[
+                                                "common_passwords_path"
+                                            ] = args.custom_password_list
 
                                         # Create policy and validate password
                                         policy = PasswordPolicy(
