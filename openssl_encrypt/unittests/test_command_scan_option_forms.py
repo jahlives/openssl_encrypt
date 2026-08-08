@@ -141,6 +141,9 @@ class TestTheFallbackSetsAreConsistent(_ScanTestCase):
         original = crypt_cli._TOP_LEVEL_FLAGS
         self.addCleanup(setattr, crypt_cli, "_TOP_LEVEL_FLAGS", original)
         crypt_cli._TOP_LEVEL_FLAGS = None
+        original_parser = crypt_cli._BUILT_SUBPARSER
+        self.addCleanup(setattr, crypt_cli, "_BUILT_SUBPARSER", original_parser)
+        crypt_cli._BUILT_SUBPARSER = None
 
         import openssl_encrypt.modules.crypt_cli_subparser as subparser_module
         from unittest import mock
@@ -168,6 +171,9 @@ class TestTheFallbackSetsAreConsistent(_ScanTestCase):
         original = crypt_cli._TOP_LEVEL_FLAGS
         self.addCleanup(setattr, crypt_cli, "_TOP_LEVEL_FLAGS", original)
         crypt_cli._TOP_LEVEL_FLAGS = None
+        original_parser = crypt_cli._BUILT_SUBPARSER
+        self.addCleanup(setattr, crypt_cli, "_BUILT_SUBPARSER", original_parser)
+        crypt_cli._BUILT_SUBPARSER = None
 
         def explode():
             raise RuntimeError("parser construction failed")

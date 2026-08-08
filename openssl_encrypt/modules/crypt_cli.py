@@ -1096,6 +1096,29 @@ KNOWN_COMMANDS = (
 # questions (gitlab#179).
 SUBPARSER_COMMANDS = KNOWN_COMMANDS
 
+_BUILT_SUBPARSER = None
+
+
+def _shared_subparser():
+    """One built subparser, shared by the two caches below.
+
+    Both _subparser_choices() and _top_level_flags() run on every
+    invocation, and each used to build its own -- double the few
+    milliseconds the caches were budgeted for (security review of
+    gitlab#177). Returns None if it cannot be built; each caller has its own
+    fallback for that.
+    """
+    global _BUILT_SUBPARSER
+    if _BUILT_SUBPARSER is None:
+        try:
+            from .crypt_cli_subparser import build_subparser
+
+            _BUILT_SUBPARSER = (build_subparser(),)
+        except Exception:  # noqa: BLE001 - routing must not be fatal
+            _BUILT_SUBPARSER = (None,)
+    return _BUILT_SUBPARSER[0]
+
+
 _SUBPARSER_CHOICES = None
 
 
@@ -1131,14 +1154,11 @@ def _subparser_choices():
         import argparse as _argparse
 
         choices = set()
-        try:
-            from .crypt_cli_subparser import build_subparser
-
-            for action in build_subparser()._actions:
+        parser = _shared_subparser()
+        if parser is not None:
+            for action in parser._actions:
                 if isinstance(action, _argparse._SubParsersAction):
                     choices |= set(action.choices)
-        except Exception:  # noqa: BLE001 - routing must not be fatal
-            choices = set()
         _SUBPARSER_CHOICES = frozenset(choices)
     return _SUBPARSER_CHOICES
 
@@ -1199,10 +1219,11 @@ def _top_level_flags():
         import argparse as _argparse
 
         value_flags, boolean_flags = set(), set()
+        parser = _shared_subparser()
         try:
-            from .crypt_cli_subparser import build_subparser
-
-            for action in build_subparser()._actions:
+            if parser is None:
+                raise RuntimeError("subparser unavailable")
+            for action in parser._actions:
                 if not action.option_strings:
                     continue
                 boolean = (

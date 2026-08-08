@@ -150,6 +150,11 @@ class TestTheRoutingSetIsRobust(unittest.TestCase):
         original = crypt_cli._SUBPARSER_CHOICES
         self.addCleanup(setattr, crypt_cli, "_SUBPARSER_CHOICES", original)
         crypt_cli._SUBPARSER_CHOICES = None
+        # The built parser is shared between the two caches, so it has to be
+        # cleared as well or this reads a parser built before the patch.
+        original_parser = crypt_cli._BUILT_SUBPARSER
+        self.addCleanup(setattr, crypt_cli, "_BUILT_SUBPARSER", original_parser)
+        crypt_cli._BUILT_SUBPARSER = None
 
         import openssl_encrypt.modules.crypt_cli_subparser as subparser_module
 
