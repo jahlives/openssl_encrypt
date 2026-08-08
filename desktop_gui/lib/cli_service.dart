@@ -3425,15 +3425,25 @@ class CLIService {
   }
 
   /// Add a recovery passphrase slot to [inputPath].
+  ///
+  /// [forcePassword] accepts a passphrase that fails the CLI's password
+  /// policy. A recovery slot is another wrapping of the same file key, so the
+  /// file is only as strong as its weakest slot, which is why the CLI gates
+  /// this at all (gitlab#149) -- but the flag has to be reachable, or the
+  /// error text tells the user to pass something the app cannot pass.
   static Future<void> addRecoveryPassphrase({
     required String inputPath,
     required String outputPath,
     required String newPassphrase,
     String? password,
     String? recoveryCode,
+    bool forcePassword = false,
   }) async {
     final result = await _runCLICommand(
-      ['add-recovery', '-i', inputPath, '-o', outputPath, '--add-passphrase', '--json'],
+      [
+        'add-recovery', '-i', inputPath, '-o', outputPath, '--add-passphrase', '--json',
+        if (forcePassword) '--force-password',
+      ],
       environment: _recoveryEnv(
         password: password,
         recoveryCode: recoveryCode,

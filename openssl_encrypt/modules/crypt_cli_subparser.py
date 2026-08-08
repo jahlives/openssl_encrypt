@@ -2092,6 +2092,23 @@ def setup_recover_parser(subparser):
 
 def setup_add_recovery_parser(subparser):
     """Set up arguments for the add-recovery command."""
+    # A recovery slot is another wrapping of the same file key, so the file is
+    # only as strong as its weakest slot. The passphrase is policy-checked
+    # like a password, with the same escape hatch (gitlab#149).
+    subparser.add_argument(
+        "--force-password",
+        action="store_true",
+        help="Add a recovery passphrase that fails the password policy (not recommended)",
+    )
+    subparser.add_argument(
+        "--password-policy",
+        # "none" is deliberately absent: it would be a second, silent bypass
+        # alongside --force-password, which the refusal message actually names.
+        # One documented, auditable override is enough (gitlab#149 review).
+        choices=["minimal", "basic", "standard", "paranoid"],
+        default="standard",
+        help="Policy level the new recovery passphrase must meet (default: standard)",
+    )
     subparser.add_argument("--input", "-i", required=True, help="Existing envelope file")
     subparser.add_argument("--output", "-o", required=True, help="Output file with the new slot")
     subparser.add_argument("-p", "--password", help="Password to unlock the file")

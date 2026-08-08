@@ -812,6 +812,109 @@ def _validated_passphrase(value, source):
     return value
 
 
+def _policy_checked_passphrase(value, source, args=None):
+    """Blank check plus the password policy, for a passphrase being CREATED.
+
+    A recovery slot is an additional wrapping of the same DEK, so a file's
+    confidentiality is that of its weakest slot -- and the primary password
+    was already policy-checked while this one was not, which put the weaker
+    check on the weaker credential (gitlab#149).
+
+    Deliberately NOT used when unlocking -- that is `recover` only, via
+    `_read_recovery_passphrase`; `add-recovery` and `remove-recovery` cannot
+    unlock with a passphrase at all. Two reasons, and the second is the
+    stronger one:
+
+    * Enforcing a policy against a passphrase the user already holds would
+      refuse an existing slot on a file whose primary password is typically
+      already gone, turning a weak-choice warning into permanent data loss.
+    * It would also run a credential-dependent, non-constant-time computation
+      BEFORE the Argon2id unwrap, and split the failure into "wrong
+      passphrase" versus "weak passphrase" -- a distinguisher on the
+      verification path where none exists today.
+
+    `--force-password` overrides, as it does for the primary password: a
+    passphrase the user cannot change is better used than refused. It does
+    NOT override the blank check -- a blank slot is equivalent to publishing
+    the file.
+
+    Args:
+        value: The candidate passphrase.
+        source: Human-readable origin, used in messages.
+        args: Parsed CLI namespace, for `force_password` and
+            `password_policy`. None means "no policy context available", in
+            which case only the blank check applies.
+
+    Returns:
+        The passphrase, unmodified.
+
+    Raises:
+        ValueError: If it is empty or whitespace-only.
+        ValidationError: If it fails the policy and --force-password is not set.
+    """
+    value = _validated_passphrase(value, source)
+
+    if args is None or getattr(args, "force_password", False):
+        return value
+
+    from .password_policy import validate_password
+
+    level = getattr(args, "password_policy", None) or "standard"
+    # "none" is treated as "standard", not as an escape hatch. main_with_args
+    # back-fills password_policy="none" for namespaces that lack the
+    # attribute, so honouring it would make this check a silent no-op the day
+    # --password-policy is renamed or dropped from the subparser -- a fix that
+    # fails OPEN with nothing to notice (gitlab#149 review). --force-password
+    # is the one documented override.
+    if level == "none":
+        level = "standard"
+
+    # The NON-raising API: validate_password_or_raise hides the reasons behind
+    # SecureError's generic message, and reconstructing a number with
+    # get_password_strength printed "STRONG" next to a refusal, because that
+    # figure is raw search space while the gate is character classes. Telling
+    # someone their passphrase is strong and refusing it in the same breath
+    # points them straight at --force-password.
+    valid, messages = validate_password(value, policy_level=level, quiet=True)
+    if valid:
+        return value
+
+    from .crypt_errors import ValidationError
+
+    # Unconditional, including under --quiet: a refusal the user cannot see
+    # the reason for is a refusal they will bypass. The messages are canned
+    # policy strings and constants -- none embeds the passphrase. The entropy
+    # figure is deliberately NOT printed: it inverts to the exact distinct
+    # character count and class set of a credential that unwraps the file key,
+    # on a stream that reaches scrollback and the GUI's debug log.
+    eprint(f"Recovery passphrase ({source}) does not meet the {level} password policy:")
+    for message in messages:
+        eprint(f"  - {message}")
+    eprint(
+        "  A recovery slot is another wrapping of the same file key, so the "
+        "file is only as strong as its weakest slot."
+    )
+    eprint("  Use --force-password to add it anyway (not recommended).")
+    raise ValidationError(f"Recovery passphrase does not meet the {level} password policy")
+
+    try:
+        validate_password_or_raise(value, policy_level=level, quiet=getattr(args, "quiet", False))
+    except Exception:
+        # eprint before re-raising: ValidationError is a SecureError, which
+        # replaces the message it is given with a generic string unless
+        # DEBUG=1 is set, so the reason would otherwise reach nobody.
+        entropy, strength = get_password_strength(value)
+        eprint(f"\nRecovery passphrase strength: {strength} (entropy: {entropy:.1f} bits)")
+        eprint(f"Recovery passphrase ({source}) does not meet the {level} password policy.")
+        eprint(
+            "  A recovery slot is another wrapping of the same file key, so the "
+            "file is only as strong as its weakest slot."
+        )
+        eprint("  Use --force-password to add it anyway (not recommended).")
+        raise
+    return value
+
+
 def _recover_kwargs_from_args(args):
     """Build decrypt/unlock recovery kwargs from CLI args (one credential).
 
@@ -978,7 +1081,7 @@ def add_recovery_cli(args) -> None:
         if env_phrase is not None:
             # Supplied non-interactively; there is no second channel to confirm
             # against, so the caller owns the typo risk.
-            phrase = _validated_passphrase(env_phrase, f"${ADD_RECOVERY_PASSPHRASE_ENV}")
+            phrase = _policy_checked_passphrase(env_phrase, f"${ADD_RECOVERY_PASSPHRASE_ENV}", args)
             slot_source = f"passphrase from ${ADD_RECOVERY_PASSPHRASE_ENV}"
         else:
             p1 = getpass.getpass("New recovery passphrase: ")
@@ -987,7 +1090,7 @@ def add_recovery_cli(args) -> None:
                 raise ValueError("Recovery passphrases do not match")
             # Same validation as the env path: two Enter presses would otherwise
             # wrap the DEK under an empty passphrase, which anyone can unwrap.
-            phrase = _validated_passphrase(p1, "interactive prompt")
+            phrase = _policy_checked_passphrase(p1, "interactive prompt", args)
             slot_source = "interactively entered passphrase"
         creds.append({"type": "passphrase", "passphrase": phrase})
 

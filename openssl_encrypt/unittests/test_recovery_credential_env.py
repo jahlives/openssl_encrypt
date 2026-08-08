@@ -152,9 +152,7 @@ class TestEnvCannotSelectCredentialPath(RecoveryEnvBase):
 
     def test_env_passphrase_alone_does_not_add_a_slot(self):
         self._encrypt()
-        with mock.patch.dict(
-            os.environ, {ADD_RECOVERY_PASSPHRASE_ENV: "planted backdoor phrase"}
-        ):
+        with mock.patch.dict(os.environ, {ADD_RECOVERY_PASSPHRASE_ENV: "planted backdoor phrase"}):
             with self.assertRaises(ValueError):
                 add_recovery_cli(_ns(input=self.enc, output=self.enc, password=PASSWORD))
 
@@ -197,9 +195,7 @@ class TestBlankEnvCredentials(RecoveryEnvBase):
         with mock.patch("getpass.getpass") as gp:
             with mock.patch.dict(os.environ, {RECOVERY_PASSPHRASE_ENV: "   "}):
                 with self.assertRaises(ValueError):
-                    recover_cli(
-                        _ns(input=self.enc, output=self.out, recovery_passphrase=True)
-                    )
+                    recover_cli(_ns(input=self.enc, output=self.out, recovery_passphrase=True))
             gp.assert_not_called()
 
     def test_truly_empty_add_passphrase_env_raises_without_prompting(self):
@@ -223,9 +219,7 @@ class TestBlankEnvCredentials(RecoveryEnvBase):
         with mock.patch("getpass.getpass") as gp:
             with mock.patch.dict(os.environ, {RECOVERY_PASSPHRASE_ENV: ""}):
                 with self.assertRaises(ValueError):
-                    recover_cli(
-                        _ns(input=self.enc, output=self.out, recovery_passphrase=True)
-                    )
+                    recover_cli(_ns(input=self.enc, output=self.out, recovery_passphrase=True))
             gp.assert_not_called()
 
     def test_blank_recovery_code_env_does_not_prompt_on_add(self):
@@ -238,9 +232,7 @@ class TestBlankEnvCredentials(RecoveryEnvBase):
         with mock.patch("getpass.getpass") as gp:
             with mock.patch.dict(os.environ, {RECOVERY_CODE_ENV: ""}):
                 with self.assertRaises(ValueError):
-                    add_recovery_cli(
-                        _ns(input=self.enc, output=self.enc, add_code=True)
-                    )
+                    add_recovery_cli(_ns(input=self.enc, output=self.enc, add_code=True))
             gp.assert_not_called()
 
     def test_blank_recovery_code_env_does_not_prompt_on_remove(self):
@@ -252,9 +244,7 @@ class TestBlankEnvCredentials(RecoveryEnvBase):
         with mock.patch("getpass.getpass") as gp:
             with mock.patch.dict(os.environ, {RECOVERY_CODE_ENV: ""}):
                 with self.assertRaises(ValueError):
-                    remove_recovery_cli(
-                        _ns(input=self.enc, output=self.enc, slot_id=slot_id)
-                    )
+                    remove_recovery_cli(_ns(input=self.enc, output=self.enc, slot_id=slot_id))
             gp.assert_not_called()
 
     def test_early_error_still_consumes_every_credential(self):
@@ -304,7 +294,7 @@ class TestBlankEnvCredentials(RecoveryEnvBase):
 class TestPassphraseFromEnv(RecoveryEnvBase):
     def test_add_passphrase_from_env_without_prompting(self):
         self._encrypt()
-        phrase = "env supplied recovery phrase"
+        phrase = "Env-Supplied-Rec0very-Phrase!"
 
         with mock.patch("getpass.getpass") as gp:
             with mock.patch.dict(os.environ, {ADD_RECOVERY_PASSPHRASE_ENV: phrase}):
@@ -318,7 +308,7 @@ class TestPassphraseFromEnv(RecoveryEnvBase):
 
     def test_recover_passphrase_from_env_without_prompting(self):
         self._encrypt()
-        phrase = "env supplied recovery phrase"
+        phrase = "Env-Supplied-Rec0very-Phrase!"
 
         with mock.patch.dict(os.environ, {ADD_RECOVERY_PASSPHRASE_ENV: phrase}):
             add_recovery_cli(
@@ -327,9 +317,7 @@ class TestPassphraseFromEnv(RecoveryEnvBase):
 
         with mock.patch("getpass.getpass") as gp:
             with mock.patch.dict(os.environ, {RECOVERY_PASSPHRASE_ENV: phrase}):
-                recover_cli(
-                    _ns(input=self.enc, output=self.out, recovery_passphrase=True)
-                )
+                recover_cli(_ns(input=self.enc, output=self.out, recovery_passphrase=True))
                 self.assertNotIn(RECOVERY_PASSPHRASE_ENV, os.environ)
             gp.assert_not_called()
 
@@ -380,7 +368,11 @@ class TestInteractivePassphraseValidation(RecoveryEnvBase):
         permanently unopenable through the other one.
         """
         self._encrypt()
-        padded = "  pass phrase  "
+        # The padding is the point -- it must survive both channels. The core
+        # is policy-passing because add-recovery now holds a new passphrase to
+        # the same standard as a password (gitlab#149); the whitespace itself
+        # is untouched by that check.
+        padded = "  P4ss-Phrase-With-Entropy!  "
 
         with mock.patch("getpass.getpass", return_value=padded):
             add_recovery_cli(
@@ -410,12 +402,8 @@ class TestUnusedCredentialsAreConsumed(RecoveryEnvBase):
 
     def test_unused_add_passphrase_env_consumed_when_add_code_used(self):
         self._encrypt()
-        with mock.patch.dict(
-            os.environ, {ADD_RECOVERY_PASSPHRASE_ENV: "unused phrase"}
-        ):
-            add_recovery_cli(
-                _ns(input=self.enc, output=self.enc, password=PASSWORD, add_code=True)
-            )
+        with mock.patch.dict(os.environ, {ADD_RECOVERY_PASSPHRASE_ENV: "unused phrase"}):
+            add_recovery_cli(_ns(input=self.enc, output=self.enc, password=PASSWORD, add_code=True))
             self.assertNotIn(ADD_RECOVERY_PASSPHRASE_ENV, os.environ)
 
     def test_recover_consumes_credentials_it_never_uses(self):

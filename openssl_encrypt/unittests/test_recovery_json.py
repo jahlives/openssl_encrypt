@@ -268,7 +268,7 @@ class TestAddRecoveryJson(RecoveryJsonBase):
         self._encrypt()
         with mock.patch.dict(
             os.environ,
-            {"OPENSSL_ENCRYPT_ADD_RECOVERY_PASSPHRASE": "planted phrase"},
+            {"OPENSSL_ENCRYPT_ADD_RECOVERY_PASSPHRASE": "Planted-Phrase-With-Entropy!1"},
         ):
             doc = self._run_json(
                 add_recovery_cli,
@@ -284,7 +284,10 @@ class TestAddRecoveryJson(RecoveryJsonBase):
 
     def test_passphrase_slot_reports_no_code(self):
         self._encrypt()
-        with mock.patch("getpass.getpass", return_value="a recovery phrase"):
+        # Policy-passing: add-recovery holds the passphrase to the same
+        # standard as a password now, because a recovery slot is another
+        # wrapping of the same file key (gitlab#149).
+        with mock.patch("getpass.getpass", return_value="A-Rec0very-Phrase-With-Entropy!"):
             doc = self._run_json(
                 add_recovery_cli,
                 _ns(

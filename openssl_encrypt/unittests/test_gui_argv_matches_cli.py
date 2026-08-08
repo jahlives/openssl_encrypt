@@ -279,8 +279,21 @@ def _argv_elements(body):
     return elements
 
 
+# Dart's collection-if: `if (cond) '--flag'` is ONE list element that
+# contributes the literal when cond holds. Without this the element reads as
+# an opaque expression, and an arity check sees it as a value handed to the
+# preceding flag -- which is exactly what it reported for
+# addRecoveryPassphrase's `if (forcePassword) '--force-password'`.
+_COLLECTION_IF_RE = re.compile(r"^if\s*\([^)]*\)\s*", re.S)
+
+
 def _quoted(element):
-    """The string a quoted element holds, or None if it is an expression."""
+    """The string a quoted element holds, or None if it is an expression.
+
+    A leading collection-`if` is stripped first, so a conditionally included
+    literal is classified by the literal it contributes.
+    """
+    element = _COLLECTION_IF_RE.sub("", element.strip())
     match = re.fullmatch(r"'([^'\n]*)'|\"([^\"\n]*)\"", element.strip())
     if not match:
         return None
