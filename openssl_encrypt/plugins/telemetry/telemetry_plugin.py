@@ -196,8 +196,23 @@ class OpenSSLEncryptTelemetryPlugin(TelemetryPlugin):
         Returns:
             dict: Status information
         """
+        # The REAL setting, not a constant (gitlab#166). This returned a
+        # hardcoded True, so the one command a user runs to check whether
+        # telemetry is on answered "yes" regardless -- including right after
+        # `telemetry opt-out`, and on an install where it was never enabled
+        # (it is opt-in, default off).
+        #
+        # Fails closed: if the setting cannot be resolved, the honest answer
+        # for a privacy control is "not on".
+        try:
+            from ...modules.crypt_core import _is_telemetry_enabled
+
+            enabled = bool(_is_telemetry_enabled())
+        except Exception:  # noqa: BLE001 - report disabled rather than guess
+            enabled = False
+
         return {
-            "enabled": True,
+            "enabled": enabled,
             "pending_events": self.buffer.get_pending_count(),
             "server_url": self.telemetry_config.server_url,
             "has_api_key": self.key_manager.has_valid_key(),

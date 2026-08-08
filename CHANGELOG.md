@@ -583,6 +583,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`telemetry status` reported a constant, not the real setting**
+  (gitlab#166): `get_status()` returned a hardcoded `"enabled": True`, so
+  the one command a user runs to check whether telemetry is on answered
+  "yes" regardless — including immediately after `telemetry opt-out`, and on
+  an install where it had never been enabled (it is opt-in, default off). It
+  now reports what `_is_telemetry_enabled()` resolves, and fails closed: if
+  the setting cannot be read, the honest answer for a privacy control is
+  "not on".
+
 - **The metadata validator's fallback path was unreachable, and unbounded**
   (gitlab#118): `StdinMetadataExtractor._parse_metadata` imports the JSON
   validator *inside* the `try` that uses it, with
