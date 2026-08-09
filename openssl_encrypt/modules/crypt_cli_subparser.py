@@ -2404,6 +2404,11 @@ def setup_analyze_config_parser(subparser):
 
     subparser.add_argument(
         "--compliance-frameworks",
+        # extend (not the default store): the GUI emits one flag per selection,
+        # and a bare store kept only the last -- silently dropping frameworks
+        # (gitlab#166 part 4). extend accumulates across repeats AND keeps the
+        # space-separated form; each value is still choices-validated.
+        action="extend",
         nargs="*",
         choices=["fips_140_2", "common_criteria", "nist_guidelines"],
         help="Check compliance with specific frameworks:\n"

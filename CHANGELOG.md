@@ -672,6 +672,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (defense-in-depth against a future `eprint(config)`; no current path printed
   it). 1.4.x only — the analyze-config cluster was removed on 1.5.x.
 
+- **`analyze-config --compliance-frameworks` is now repeatable** (gitlab#166
+  part 4): the flag used the default `store` action, so a caller emitting one
+  flag per selection (`--compliance-frameworks fips_140_2
+  --compliance-frameworks nist_guidelines` — exactly what a GUI does) kept only
+  the last and silently dropped the rest. It now uses `action="extend"`, which
+  accumulates across repeats and still accepts the space-separated form
+  (`--compliance-frameworks a b`); each value remains choices-validated. 1.4.x
+  only — the analyze-config cluster was removed on 1.5.x.
+
 - **Desktop GUI: the stdin subprocess helper drains output before closing
   stdin** (gitlab#175): `_runCLICommandWithStdin` wrote, flushed and closed
   stdin before it began reading stdout/stderr. Two latent consequences on the

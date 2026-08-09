@@ -130,5 +130,38 @@ class TestNamespaceIsNotMutatedOrLeaked(unittest.TestCase):
         self.assertEqual(config.get("pbkdf2_iterations"), 600000)
 
 
+class TestComplianceFrameworksAreRepeatable(unittest.TestCase):
+    """gitlab#166 part 4: one flag per selection must accumulate, not overwrite."""
+
+    def _parse(self, *argv):
+        from openssl_encrypt.modules.crypt_cli_subparser import setup_analyze_config_parser
+
+        parser = argparse.ArgumentParser()
+        setup_analyze_config_parser(parser)
+        return parser.parse_args(list(argv))
+
+    def test_repeated_flags_accumulate(self):
+        # The GUI emits one --compliance-frameworks per selection; with the old
+        # store action the second occurrence overwrote the first.
+        ns = self._parse(
+            "--compliance-frameworks",
+            "fips_140_2",
+            "--compliance-frameworks",
+            "nist_guidelines",
+        )
+        self.assertEqual(set(ns.compliance_frameworks), {"fips_140_2", "nist_guidelines"})
+
+    def test_space_separated_form_still_works(self):
+        ns = self._parse("--compliance-frameworks", "fips_140_2", "common_criteria")
+        self.assertEqual(set(ns.compliance_frameworks), {"fips_140_2", "common_criteria"})
+
+    def test_absent_is_none(self):
+        self.assertIsNone(self._parse().compliance_frameworks)
+
+    def test_invalid_choice_is_still_rejected(self):
+        with self.assertRaises(SystemExit):
+            self._parse("--compliance-frameworks", "not_a_framework")
+
+
 if __name__ == "__main__":
     unittest.main()
