@@ -68,6 +68,12 @@ class _IdentityManagementScreenState extends State<IdentityManagementScreen>
     String sigAlgorithm = 'ML-DSA-65';
     String hsmType = 'none';
     int? hsmSlot;
+    // Touch-reminder preference. Maps to --no-touch when turned off. Defaults
+    // ON to match the CLI. NB (gitlab#218): on identity create this flag only
+    // controls whether the tool prints a "touch your key" reminder — it does
+    // NOT configure whether the key itself demands a button press (that is a
+    // hardware slot setting, e.g. `ykman`). The copy stays honest about that.
+    bool requireTouch = true;
 
     final result = await showDialog<bool>(
       context: context,
@@ -183,6 +189,25 @@ class _IdentityManagementScreenState extends State<IdentityManagementScreen>
                       setDialogState(() => hsmSlot = value);
                     },
                   ),
+                  const SizedBox(height: 8),
+                  SwitchListTile(
+                    title: const Text(
+                        'Show a touch reminder when this identity is used'),
+                    subtitle: const Text(
+                      'Records a preference on the identity so the tool prints '
+                      'a "touch your key" reminder. It does NOT change whether '
+                      'the key itself requires a physical button press — that '
+                      'is configured on the key (e.g. with ykman). Set once, '
+                      'at creation.',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                    value: requireTouch,
+                    onChanged: (value) {
+                      setDialogState(() => requireTouch = value);
+                    },
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                  ),
                 ],
               ],
             ),
@@ -222,6 +247,11 @@ class _IdentityManagementScreenState extends State<IdentityManagementScreen>
                     sigAlgorithm: sigAlgorithm,
                     hsmType: hsmType != 'none' ? hsmType : null,
                     hsmSlot: hsmSlot,
+                    // --no-touch only when the user turned off the reminder
+                    // AND an HSM is selected (the flag is meaningless without
+                    // one). It suppresses the touch reminder, not any
+                    // hardware press requirement (gitlab#218).
+                    noTouch: hsmType != 'none' && !requireTouch,
                   );
                   if (context.mounted) {
                     Navigator.of(context).pop(true);
@@ -312,6 +342,98 @@ class _IdentityManagementScreenState extends State<IdentityManagementScreen>
     }
   }
 
+  /// The pinned key for a contact differs from the imported one. This is the
+  /// exact move in a key-substitution / MITM attack, so the confirmation shows
+  /// both fingerprints and states plainly what accepting means; it never reads
+  /// as a routine "retry?" (gitlab#161).
+  Future<bool?> _confirmKeyChange(
+    BuildContext context,
+    IdentityKeyChangedError keyChange,
+  ) {
+    Widget fingerprintRow(String label, String value, Color color) => Padding(
+          padding: const EdgeInsets.symmetric(vertical: 2),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                width: 130,
+                child: Text(label, style: const TextStyle(fontSize: 12)),
+              ),
+              Expanded(
+                child: SelectableText(
+                  value,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontFamily: 'monospace',
+                    color: color,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+
+    return showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.warning_amber, color: Colors.red.shade700),
+            const SizedBox(width: 8),
+            // Sanitize even here: this is the most trust-sensitive widget in
+            // the app, and it must not be the one that skips the display
+            // chokepoint (bidi / U+2028-2029 the Python side does not cover).
+            Expanded(
+              child: Text(
+                'The key for "${InputValidator.sanitizeForDisplay(keyChange.name)}" '
+                'has changed',
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'A changed key can mean the contact re-keyed — or that this '
+              'bundle is forged / a man-in-the-middle. Replacing the pinned '
+              'key removes the protection that detects impersonation.',
+              style: TextStyle(fontSize: 13),
+            ),
+            const SizedBox(height: 12),
+            fingerprintRow(
+                'Stored (pinned):',
+                InputValidator.sanitizeForDisplay(keyChange.oldFingerprint),
+                Colors.green.shade800),
+            fingerprintRow(
+                'Imported:',
+                InputValidator.sanitizeForDisplay(keyChange.newFingerprint),
+                Colors.red.shade800),
+            const SizedBox(height: 12),
+            const Text(
+              'Only replace it if you have verified the new fingerprint with '
+              'the contact through a separate, trusted channel.',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Keep the pinned key'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Replace the pinned key'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _importContact() async {
     final publicKeyController = TextEditingController();
     final aliasController = TextEditingController();
@@ -369,10 +491,12 @@ class _IdentityManagementScreenState extends State<IdentityManagementScreen>
                 return;
               }
 
+              final alias =
+                  aliasController.text.isEmpty ? null : aliasController.text;
               try {
                 await CLIService.importContact(
                   publicKeyController.text,
-                  alias: aliasController.text.isEmpty ? null : aliasController.text,
+                  alias: alias,
                 );
                 if (context.mounted) {
                   Navigator.of(context).pop(true);
@@ -383,10 +507,47 @@ class _IdentityManagementScreenState extends State<IdentityManagementScreen>
                     ),
                   );
                 }
+              } on IdentityKeyChangedError catch (keyChange) {
+                // TOFU key change: never retry silently. Show the old and new
+                // fingerprints and the MITM framing, and only replace the
+                // pinned key on an explicit, out-of-band-verified confirmation
+                // (gitlab#161).
+                if (!context.mounted) return;
+                final confirmed =
+                    await _confirmKeyChange(context, keyChange) ?? false;
+                if (!confirmed) return;
+                try {
+                  await CLIService.importContact(
+                    publicKeyController.text,
+                    alias: alias,
+                    allowKeyChange: true,
+                  );
+                  if (context.mounted) {
+                    Navigator.of(context).pop(true);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Contact key replaced.'),
+                        backgroundColor: Colors.orange,
+                      ),
+                    );
+                  }
+                } catch (e) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(InputValidator.sanitizeForDisplay(
+                            'Failed to replace key: $e')),
+                      ),
+                    );
+                  }
+                }
               } catch (e) {
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Failed to import contact: $e')),
+                    SnackBar(
+                      content: Text(InputValidator.sanitizeForDisplay(
+                          'Failed to import contact: $e')),
+                    ),
                   );
                 }
               }

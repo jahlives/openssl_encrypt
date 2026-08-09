@@ -2742,6 +2742,7 @@ class CLIService {
     String sigAlgorithm = 'ML-DSA-65',
     String? hsmType,
     int? hsmSlot,
+    bool noTouch = false,
   }) async {
     final args = [
       'identity',
@@ -2759,6 +2760,14 @@ class CLIService {
       args.addAll(['--hsm', hsmType]);
       if (hsmSlot != null) {
         args.addAll(['--hsm-slot', hsmSlot.toString()]);
+      }
+      // --no-touch only has meaning with an HSM, and even then it only
+      // suppresses the tool's "touch your key" REMINDER (identity_protection
+      // .py) — it does NOT change whether the key demands a physical press,
+      // which is a hardware slot setting (gitlab#218). Never emitted without
+      // an HSM, and never by default.
+      if (noTouch) {
+        args.add('--no-touch');
       }
     }
 
@@ -2803,26 +2812,48 @@ class CLIService {
   }
 
   /// Import a contact's public key
-  static Future<void> importContact(String publicKeyData, {String? alias}) async {
-    try {
-      // The document goes over stdin, never argv: /proc/PID/cmdline is
-      // world-readable, so an argv channel would publish the contact's
-      // metadata to every local process -- and this field is a free-text
-      // paste box, so a mis-pasted private key or passphrase would be leaked
-      // at execve, before the CLI could reject it (gitlab#164).
-      final args = ['identity', 'import', '--data-stdin'];
+  static Future<void> importContact(
+    String publicKeyData, {
+    String? alias,
+    bool allowKeyChange = false,
+  }) async {
+    // The document goes over stdin, never argv: /proc/PID/cmdline is
+    // world-readable, so an argv channel would publish the contact's
+    // metadata to every local process -- and this field is a free-text
+    // paste box, so a mis-pasted private key or passphrase would be leaked
+    // at execve, before the CLI could reject it (gitlab#164).
+    final args = ['identity', 'import', '--data-stdin'];
 
-      if (alias != null && alias.isNotEmpty) {
-        args.addAll(['--alias', alias]);
+    if (alias != null && alias.isNotEmpty) {
+      args.addAll(['--alias', alias]);
+    }
+
+    // --allow-key-change replaces a pinned key. The CLI refuses a
+    // stdin-sourced key change non-interactively (identity_cli.py), so the
+    // GUI must catch IdentityKeyChangedError, show the fingerprints, and only
+    // then re-call with allowKeyChange:true. Never set silently.
+    //
+    // --overwrite is required IN ADDITION: --allow-key-change only passes the
+    // TOFU gate, but Identity.save still refuses to overwrite the existing
+    // contact directory without --overwrite (identity.py:616), so the replace
+    // fails without it. The CLI's own interactive branch passes both
+    // (identity_cli.py). Both stay gated behind allowKeyChange so the
+    // unconfirmed first attempt can never overwrite.
+    if (allowKeyChange) {
+      args.addAll(['--allow-key-change', '--overwrite']);
+    }
+
+    final result = await _runCLICommandWithStdin(args, publicKeyData);
+
+    if (result.exitCode != 0) {
+      final stderr = result.stderr.toString();
+      // Distinguish the TOFU key-change refusal from an ordinary failure:
+      // it is the one error whose remedy is a security decision, not a retry.
+      final keyChanged = IdentityKeyChangedError.tryParse(stderr);
+      if (keyChanged != null) {
+        throw keyChanged;
       }
-
-      final result = await _runCLICommandWithStdin(args, publicKeyData);
-
-      if (result.exitCode != 0) {
-        throw Exception('Failed to import contact: ${result.stderr}');
-      }
-    } catch (e) {
-      throw Exception('Error importing contact: $e');
+      throw Exception('Failed to import contact: $stderr');
     }
   }
 
@@ -3614,6 +3645,75 @@ class RecoveryCodeException implements Exception {
 
   @override
   String toString() => message;
+}
+
+/// A contact import was refused because the imported key differs from the one
+/// already pinned for that identity (TOFU key-substitution).
+///
+/// This is the exact step an attacker needs in a key-substitution / MITM
+/// attack, so it is a typed error rather than a generic failure: the GUI must
+/// show the user the old and new fingerprints and get an explicit,
+/// out-of-band-verified confirmation before retrying with allowKeyChange:true.
+/// Never auto-retry.
+class IdentityKeyChangedError implements Exception {
+  final String name;
+  final String oldFingerprint;
+  final String newFingerprint;
+
+  const IdentityKeyChangedError({
+    required this.name,
+    required this.oldFingerprint,
+    required this.newFingerprint,
+  });
+
+  /// Parse the refusal from the CLI's stderr, or null if this is not a
+  /// key-change refusal. Keyed on the CLI's stable labels
+  /// (identity_cli.py: "Identity:", "Stored (pinned):", "Imported:").
+  ///
+  /// The `name` comes from the untrusted imported document. The CLI escapes
+  /// control characters before printing (sanitize_for_display, gitlab#172),
+  /// so a name cannot inject a real newline to forge a "Stored (pinned):"
+  /// line — but the fingerprint fields are additionally constrained to
+  /// colon-hex here, so even if that sanitization regressed, a crafted name
+  /// could never be mistaken for a fingerprint and mislead the confirmation.
+  static IdentityKeyChangedError? tryParse(String stderr) {
+    if (!stderr.contains('the key for this contact has CHANGED')) {
+      return null;
+    }
+    String? field(String label, String valuePattern) {
+      final match = RegExp('^\\s*$label\\s+($valuePattern)\\s*\$', multiLine: true)
+          .firstMatch(stderr);
+      return match?.group(1);
+    }
+
+    // SSH-style colon-separated hex (pqc_signing.calculate_fingerprint), and
+    // the identity-name charset (identity.py:124). Constraining both means a
+    // rewrite of the human-readable stderr, a localization, or a regressed
+    // upstream sanitizer cannot put arbitrary text into the trust dialog.
+    const fingerprint = r'[0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2})+';
+    const identityName = r'[A-Za-z0-9][A-Za-z0-9._-]*';
+    final name = field('Identity:', identityName);
+    final oldFp = field(r'Stored \(pinned\):', fingerprint);
+    final newFp = field('Imported:', fingerprint);
+    if (name == null || oldFp == null || newFp == null) {
+      return null;
+    }
+    // Identical fingerprints are not a key change: treat as a parse failure
+    // so the dialog never asks the user to "verify" a change that isn't one.
+    if (oldFp.toLowerCase() == newFp.toLowerCase()) {
+      return null;
+    }
+    return IdentityKeyChangedError(
+      name: name,
+      oldFingerprint: oldFp,
+      newFingerprint: newFp,
+    );
+  }
+
+  @override
+  String toString() =>
+      'The key for "$name" has changed (pinned $oldFingerprint, imported '
+      '$newFingerprint).';
 }
 
 /// One algorithm's contribution to a signature verification.

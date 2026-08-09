@@ -9,6 +9,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Desktop GUI: identity HSM touch and contact key-change controls**
+  (gitlab#161 / github#77): the Create-identity dialog gains a "Show a touch
+  reminder when this identity is used" switch (shown only when an HSM is
+  selected, on by default), which maps to `identity create --no-touch` when
+  turned off. The copy states plainly what the flag does and does not do —
+  it records a reminder preference on the identity, but does not itself
+  configure whether the key requires a physical button press (that is a
+  hardware setting, e.g. `ykman`); the CLI help overstates this and the
+  discrepancy is tracked in gitlab#218.
+
+  The Import-contact flow now handles a TOFU key change safely: when the
+  imported key differs from the pinned one, the CLI's non-interactive
+  refusal is surfaced as a typed `IdentityKeyChangedError` (fingerprints
+  parsed from stderr, constrained to colon-hex and the name to the identity
+  charset, with equal fingerprints rejected, so a crafted contact name
+  cannot forge the trust dialog). A two-phase confirmation shows the stored
+  and imported fingerprints side by side with the man-in-the-middle framing
+  before anything is replaced — only an explicit "Replace the pinned key"
+  re-runs the import, and only then with `--allow-key-change --overwrite`
+  together (the CLI needs both: the first passes the TOFU gate, the second
+  the overwrite check). The displayed fingerprints/name and the error
+  messages route through the GUI's display sanitizer. `--hsm-piv-slot` was
+  evaluated and deliberately not wired: it is dead surface on `identity
+  create` (argparse rejects `--hsm piv` there and the handler never reads
+  it — gitlab#218).
+
 - **`generate-password --json`** (gitlab#187 / github#104): the desktop GUI
   has always appended `--json` and parsed stdout as a JSON object, but the
   flag existed on no branch or release tag and the handler had no JSON path
