@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:path/path.dart' as path;
 import '../cli_service.dart';
 import '../file_manager.dart';
 import '../widgets/crypto_widgets.dart';

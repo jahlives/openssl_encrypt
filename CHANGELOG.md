@@ -2362,6 +2362,13 @@ the 1.5 branch:
 
 ### Internal
 
+- **Desktop GUI: `flutter analyze` warnings fixed** (gitlab#214 / github#125):
+  removed the unused `_isPostQuantumAlgorithm`/`_getNonPostQuantumAlgorithms`
+  duplicates from `_SettingsScreenWrapperState` — copy-paste leftovers of the
+  pair that lives (and is used) in `_BatchOperationsTabState`; the settings
+  wrapper has no algorithm UI, so no wiring was missing — and the unused
+  `package:path` import from `lib/tabs/encrypt_tab.dart`.
+
 - **The combined-pepper concatenation is now documented as an accepted
   residual** (gitlab#117): `_combine_peppers` joins the HSM and remote
   peppers and the result enters the v14 seed encoder as one length-prefixed
