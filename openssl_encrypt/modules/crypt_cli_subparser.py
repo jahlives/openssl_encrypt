@@ -2727,6 +2727,28 @@ def setup_plugin_parser(subparser):
         help="Grace period in days after the deadline",
     )
 
+    # ---- plugin integrity ... (gitlab#194) ----
+    integrity_p = plugin_subparsers.add_parser(
+        "integrity", help="Remote file-integrity service (test/stats/verify)"
+    )
+    integrity_sub = integrity_p.add_subparsers(dest="integrity_action", metavar="operation")
+    _add_mtls_args(
+        integrity_sub.add_parser("test", help="Test connectivity/mTLS to an integrity server")
+    )
+    integrity_sub.add_parser("stats", help="Show verification statistics (JSON)")
+    integrity_verify_p = integrity_sub.add_parser(
+        "verify", help="Verify a file's stored hash (JSON)"
+    )
+    integrity_verify_p.add_argument(
+        "--file-id", dest="file_id", required=True, help="File identifier"
+    )
+    integrity_verify_p.add_argument(
+        "--metadata-hash",
+        dest="metadata_hash",
+        required=True,
+        help="Current SHA-256 metadata hash (64 hex)",
+    )
+
 
 def setup_identity_parser(subparser):
     """Set up arguments for the identity command."""
