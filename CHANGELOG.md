@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`telemetry status --json`** (gitlab#162): `telemetry status` gains a
+  `--json` flag that emits the status document (enabled state, pending events,
+  server URL, key presence, upload interval/thread) as JSON on stdout, keeping
+  the human report on stderr — so a GUI opt-out toggle can read the *current*
+  telemetry state instead of scraping the unversioned human text (a scraped
+  toggle can silently show the wrong state). Matches the convention
+  `analyze-config`/`check-password`/`telemetry show-pending` already use. On
+  this line `analyze-security`/`smart-recommendations` do not exist, so their
+  `--output-format` half of gitlab#162 is 1.4.x-only.
+
 - **`plugin pepper` management CLI** (gitlab#193): a subcommand group driving
   the existing remote-pepper plugin — `list` (stored peppers as JSON), `test`
   (mTLS connectivity probe from ad-hoc `--url`/cert flags), `setup-totp` /

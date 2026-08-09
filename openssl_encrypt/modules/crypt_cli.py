@@ -3002,17 +3002,26 @@ def handle_telemetry_command(args):
     if action == "status":
         # Show telemetry status
         status = plugin.get_status()
-        eprint("\nTELEMETRY STATUS")
-        eprint("=" * 60)
-        eprint(f"Enabled: {'Yes' if status['enabled'] else 'No'}")
-        eprint(f"Pending Events: {status['pending_events']}")
-        eprint(f"Server URL: {status['server_url']}")
-        eprint(f"API Key: {'Present' if status['has_api_key'] else 'Not registered'}")
-        eprint(
-            f"Upload Interval: {status['upload_interval']} seconds ({status['upload_interval'] // 3600} hours)"
-        )
-        eprint(f"Background Upload: {'Running' if status['upload_thread_alive'] else 'Stopped'}")
-        eprint("=" * 60)
+        if getattr(args, "json", False):
+            # Machine-readable document on stdout so a GUI reads the real state
+            # instead of scraping the unversioned human report (gitlab#162).
+            import json
+
+            print(json.dumps(status, indent=2))
+        else:
+            eprint("\nTELEMETRY STATUS")
+            eprint("=" * 60)
+            eprint(f"Enabled: {'Yes' if status['enabled'] else 'No'}")
+            eprint(f"Pending Events: {status['pending_events']}")
+            eprint(f"Server URL: {status['server_url']}")
+            eprint(f"API Key: {'Present' if status['has_api_key'] else 'Not registered'}")
+            eprint(
+                f"Upload Interval: {status['upload_interval']} seconds ({status['upload_interval'] // 3600} hours)"
+            )
+            eprint(
+                f"Background Upload: {'Running' if status['upload_thread_alive'] else 'Stopped'}"
+            )
+            eprint("=" * 60)
 
     elif action == "show-pending":
         # Show pending events (transparency)

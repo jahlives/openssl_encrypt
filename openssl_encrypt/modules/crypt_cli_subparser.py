@@ -2636,7 +2636,14 @@ def setup_telemetry_parser(subparser):
     )
 
     # Status subcommand
-    telemetry_subparsers.add_parser("status", help="Show telemetry status and statistics")
+    telemetry_status_parser = telemetry_subparsers.add_parser(
+        "status", help="Show telemetry status and statistics"
+    )
+    telemetry_status_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit the status as JSON on stdout (human report stays on stderr)",
+    )
 
     # Show pending events subcommand
     show_pending_parser = telemetry_subparsers.add_parser(
