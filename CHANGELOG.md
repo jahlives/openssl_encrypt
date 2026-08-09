@@ -1856,6 +1856,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   where the migrated `RadioGroup` / `initialValue` / `onReorderItem` APIs
   exist. All 61 widget tests pass.
 
+  Parity follow-up from the 1.5.x review round (gitlab#215 item 8):
+  Decrypt/Encrypt tab failure results are sanitized
+  (`InputValidator.sanitizeForDisplay`) before rendering — the exception
+  embeds raw CLI stderr, which on the asymmetric path can carry
+  attacker-influenced signer text; the Decrypt tab loads identities only
+  in Pro mode (Simple mode never renders the asymmetric section, so it no
+  longer shells out for data it never shows); and
+  `decrypt_tab_asym_test.dart` installs the gitlab#211 fake-CLI seam
+  instead of spawning the real CLI inside the test binding, with both new
+  test files resetting via `CLIService.resetForTesting`.
+
 - **The combined-pepper concatenation is now documented as an accepted
   residual** (gitlab#117): `_combine_peppers` joins the HSM and remote
   peppers and the result enters the v14 seed encoder as one length-prefixed

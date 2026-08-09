@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../cli_service.dart';
+import '../input_validation.dart';
 import '../file_manager.dart';
 import '../widgets/crypto_widgets.dart';
 
@@ -47,7 +48,15 @@ class _DecryptTabState extends State<DecryptTab> {
   @override
   void initState() {
     super.initState();
-    _loadIdentities();
+    // The asymmetric section only renders in Pro mode; don't shell out to
+    // the CLI (and read the identity store) for data Simple mode never shows.
+    if (widget.isProMode) _loadIdentities();
+  }
+
+  @override
+  void didUpdateWidget(DecryptTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isProMode && !oldWidget.isProMode) _loadIdentities();
   }
 
   @override
@@ -149,7 +158,9 @@ class _DecryptTabState extends State<DecryptTab> {
       });
     } catch (e) {
       setState(() {
-        result = 'Decryption failed: $e';
+        // Sanitize: the exception embeds raw CLI stderr, which on the
+        // asymmetric path can carry attacker-influenced signer text.
+        result = InputValidator.sanitizeForDisplay('Decryption failed: $e');
         _isLoading = false;
       });
     }
@@ -222,7 +233,7 @@ class _DecryptTabState extends State<DecryptTab> {
       });
     } catch (e) {
       setState(() {
-        result = 'File decryption failed: $e';
+        result = InputValidator.sanitizeForDisplay('File decryption failed: $e');
         _isLoading = false;
       });
     }

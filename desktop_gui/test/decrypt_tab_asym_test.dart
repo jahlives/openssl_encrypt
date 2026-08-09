@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:openssl_encrypt_desktop/tabs/decrypt_tab.dart';
+import 'package:openssl_encrypt_desktop/cli_service.dart';
 import 'package:openssl_encrypt_desktop/file_manager.dart';
+
+import 'support/fake_cli.dart';
 
 // Regression tests for GitLab #137 / GitHub #55:
 // the Decrypt tab's asymmetric-decryption fields (_decryptionIdentity /
@@ -10,11 +13,17 @@ import 'package:openssl_encrypt_desktop/file_manager.dart';
 // --no-verify) used to be declared and passed to CLIService but were never
 // settable from any widget. These tests assert the controls now exist.
 //
-// NOTE: DecryptTab.initState() calls CLIService.listIdentities(), which shells
-// out to the CLI. In a bare test environment that returns empty lists (handled
-// gracefully), so these assertions intentionally depend only on static labels,
-// not on any loaded identity data.
+// DecryptTab.initState() calls CLIService.listIdentities() in Pro mode, so
+// the fake CLI seam must be installed (gitlab#211) — a real subprocess inside
+// the test binding leaves a pending timer that fails at teardown. The fake
+// serves empty identity lists; the assertions depend only on static labels.
 void main() {
+  setUp(() {
+    CLIService.commandRunnerOverride = fakeCliRunner;
+  });
+
+  tearDown(CLIService.resetForTesting);
+
   Widget wrap(Widget child) =>
       MaterialApp(home: Scaffold(body: child));
 

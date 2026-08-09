@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as path;
 import '../cli_service.dart';
+import '../input_validation.dart';
 import '../file_manager.dart';
 import '../widgets/crypto_widgets.dart';
 import '../widgets/password_strength_meter.dart';
@@ -398,7 +399,8 @@ class _EncryptTabState extends State<EncryptTab> {
       });
     } catch (e) {
       setState(() {
-        result = 'Encryption failed: $e';
+        // Sanitize: the exception embeds raw CLI stderr.
+        result = InputValidator.sanitizeForDisplay('Encryption failed: $e');
         _isLoading = false;
       });
     }
@@ -671,7 +673,7 @@ class _EncryptTabState extends State<EncryptTab> {
       }
     } catch (e) {
       setState(() {
-        result = 'File encryption failed: $e';
+        result = InputValidator.sanitizeForDisplay('File encryption failed: $e');
         _isLoading = false;
       });
     }

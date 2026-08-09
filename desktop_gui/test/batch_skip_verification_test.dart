@@ -31,9 +31,9 @@ void main() {
     CLIService.commandRunnerOverride = _fakeCliWithIdentities;
   });
 
-  tearDown(() {
-    CLIService.commandRunnerOverride = null;
-  });
+  // resetForTesting also clears the availability cache, so nothing leaks
+  // into other test files.
+  tearDown(CLIService.resetForTesting);
 
   Future<void> useTallSurface(WidgetTester tester) async {
     tester.view.physicalSize = const Size(1400, 3000);
