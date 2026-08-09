@@ -583,6 +583,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Desktop GUI: the draggable debug window is reachable again** (gitlab#213 /
+  github#124): `_toggleDebugWindow()` — the only way to show the draggable
+  live-debug-log overlay, and the GUI's only live log viewer — lost its one
+  caller when the old `TextCryptoTab` wiring was dropped in the GUI
+  restructure, leaving the whole window unreachable (and
+  `flutter analyze` flagging the method as unused). The toggle is now wired
+  to a 'Debug Window' item in the Help menu. Covered by widget tests for
+  opening/closing via the menu, the window's own close button, and safe
+  main-screen teardown while the overlay is shown.
+
 - **Desktop GUI widget tests spawned the real Python CLI** (gitlab#211 /
   github#122): `_EncryptTabState.initState` (and the decrypt tab's identity
   load) call `CLIService` while the widget tree is being built, so

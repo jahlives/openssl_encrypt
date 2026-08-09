@@ -605,6 +605,11 @@ class _MainScreenState extends State<MainScreen> {
                     child: const Text('CLI Documentation'),
                     onPressed: () => _showCLIDocs(context),
                   ),
+                  const Divider(),
+                  MenuItemButton(
+                    child: const Text('Debug Window'),
+                    onPressed: () => _toggleDebugWindow(),
+                  ),
                 ],
                 child: const Text('Help'),
               ),
