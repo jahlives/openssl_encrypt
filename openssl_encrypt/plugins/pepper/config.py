@@ -126,6 +126,17 @@ class PepperConfig:
                     f"CA certificate not found: {self.ca_cert} (server cert verification may fail)"
                 )
 
+    @staticmethod
+    def get_default_config_path() -> Path:
+        """Return the default pepper config file path.
+
+        Public accessor for the module-level ``_get_default_config_path``. The
+        CLI and core error paths reference ``PepperConfig.get_default_config_path()``
+        (to point the user at the config file); the classmethod did not exist, so
+        those paths raised ``AttributeError`` when hit (gitlab#221).
+        """
+        return _get_default_config_path()
+
     @classmethod
     def from_file(cls, config_path: Optional[Path] = None) -> "PepperConfig":
         """

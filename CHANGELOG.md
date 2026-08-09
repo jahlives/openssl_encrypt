@@ -772,6 +772,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`PepperConfig.get_default_config_path()` did not exist** (gitlab#221):
+  three error paths in `crypt_cli.py` and `crypt_core.py` call
+  `PepperConfig.get_default_config_path()` to point the user at the pepper
+  config file, but only the module-level `_get_default_config_path()` existed —
+  so any path that reached those sites raised `AttributeError` instead of the
+  intended "Configure at: …" message. Added the missing static accessor.
+
 - **`telemetry opt-out` now persists** (gitlab#166 part 5): `opt_out()` stopped
   uploads, cleared the buffer and deleted the API key, but wrote no persistent
   disable — so a stale `OPENSSL_ENCRYPT_TELEMETRY=1` in the environment silently
