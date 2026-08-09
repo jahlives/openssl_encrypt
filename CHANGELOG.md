@@ -609,6 +609,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Desktop GUI: the stdin subprocess helper drains output before closing
+  stdin** (gitlab#175): `_runCLICommandWithStdin` wrote, flushed and closed
+  stdin before it began reading stdout/stderr. Two latent consequences on the
+  path that now carries pasted contact documents (arbitrary size), not just
+  short passphrases: a child that exits early — e.g. a stale CLI bundle that
+  does not know `--data-stdin` — made the `flush`/`close` raise a broken-pipe
+  `SocketException` that masked the child's real argparse error; and a child
+  that emitted more than a pipe buffer (~64 KiB) before reading stdin could
+  deadlock against a large payload. The write/drain logic is extracted into
+  `pumpStdinAndCollect`, which starts draining stdout/stderr concurrently
+  before writing stdin and swallows a write-side broken pipe so the child's
+  real exit code and stderr surface instead. Covered by tests that spawn real
+  short-lived processes for the early-exit, large-payload-no-deadlock and
+  normal round-trip cases.
+
 - **Desktop GUI: the batch tab's "Skip signature verification" checkbox is
   reachable again — with the Decrypt tab's guard set** (gitlab#214 /
   github#125): the checkbox — whose value is passed to the CLI on every

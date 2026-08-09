@@ -1161,20 +1161,55 @@ class CLIService {
         includeParentEnvironment: false);
     }
 
-    // Send stdin input
-    process.stdin.write(stdinInput);
-    if (!stdinInput.endsWith('\n')) {
-      process.stdin.write('\n');
+    final result = await pumpStdinAndCollect(process, stdinInput);
+    _outputDebugLog('CLI with stdin exit code: ${result.exitCode}');
+    return result;
+  }
+
+  /// Write [stdinInput] to [process] and collect its output, draining
+  /// stdout/stderr CONCURRENTLY with the write (gitlab#175).
+  ///
+  /// Two properties this ordering guarantees, which a write-then-drain order
+  /// does not:
+  ///  - No deadlock: a child that emits more than a pipe buffer (~64 KiB)
+  ///    before it reads stdin cannot wedge against a larger payload, because
+  ///    we are already reading its output while we write.
+  ///  - No masking: if the child exits before reading stdin, the
+  ///    `write`/`flush`/`close` raises a broken-pipe `SocketException`; we
+  ///    swallow it so the child's real exit code and stderr are what the
+  ///    caller sees, not the write failure (which hid the true argparse error
+  ///    from a stale CLI bundle).
+  ///
+  /// Public as a test seam: the commandRunnerOverride injection short-circuits
+  /// the real process path, so this is the only way to exercise the actual
+  /// pipe behaviour.
+  static Future<ProcessResult> pumpStdinAndCollect(
+    Process process,
+    String stdinInput,
+  ) async {
+    // Start draining before writing stdin.
+    final stdoutFuture = process.stdout.transform(utf8.decoder).join();
+    final stderrFuture = process.stderr.transform(utf8.decoder).join();
+
+    try {
+      process.stdin.write(stdinInput);
+      if (!stdinInput.endsWith('\n')) {
+        process.stdin.write('\n');
+      }
+      await process.stdin.flush();
+      await process.stdin.close();
+    } on IOException {
+      // The child closed stdin early (e.g. exited before reading it, or does
+      // not accept --data-stdin). Its exit code and stderr below carry the
+      // real reason; do not let the write failure mask them. Caught as the
+      // IOException supertype, not just SocketException: a broken child pipe
+      // surfaces as SocketException on POSIX but can be a different IOException
+      // subtype elsewhere, and the guarantee should not be platform-specific.
     }
-    await process.stdin.flush();
-    await process.stdin.close();
 
-    // Collect output
-    final stdout = await process.stdout.transform(utf8.decoder).join();
-    final stderr = await process.stderr.transform(utf8.decoder).join();
+    final stdout = await stdoutFuture;
+    final stderr = await stderrFuture;
     final exitCode = await process.exitCode;
-
-    _outputDebugLog('CLI with stdin exit code: $exitCode');
 
     return ProcessResult(process.pid, exitCode, stdout, stderr);
   }
