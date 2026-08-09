@@ -177,6 +177,10 @@ def cmd_create(args) -> int:
             protection_level=protection_level,
             hsm_slot=hsm_slot_arg,
             require_touch=require_touch,
+            # Bind the identity to the device the user selected. Without this,
+            # `--hsm onlykey` was silently recorded and unlocked as yubikey
+            # (gitlab#218); hsm_type is otherwise the "yubikey" default.
+            hsm_type=hsm_type,
         )
 
         # Save to store. This is the user's OWN identity being generated

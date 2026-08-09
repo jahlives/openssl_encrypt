@@ -228,6 +228,53 @@ relevant.
 
 ## Security Advisories
 
+### ADVISORY 2026-18: `identity create --hsm onlykey` Silently Binds the Identity to the YubiKey — Resolved
+
+**Severity:** Medium · **CWE-440** (Expected Behavior Violation) / **CWE-636** (Not Failing Securely)
+**Affected versions:** all releases with OnlyKey identity protection, up to and including **1.4.8**. **Fixed in 1.4.9 (1.4.x line) and 1.5.0 (1.5.x line).**
+
+**Summary:** `identity create --hsm onlykey` computed the correct HSM type
+(`onlykey`) and used it only for a pre-flight availability check;
+`Identity.generate()` had no `hsm_type` parameter and constructed the key
+protection service with the `"yubikey"` default. Worse, the identity's recorded
+`hsm_config.hsm_type` was never consulted for plugin selection anywhere — both
+the private-key encryption (`_encrypt_private_key`) and decryption
+(`_decrypt_private_key`) paths also built the service with the bare `"yubikey"`
+default. So an OnlyKey selection was silently dropped: plugin selection was
+`"yubikey"` at every real key-derivation site.
+
+**Impact:** the identity is bound to a **different hardware trust anchor than
+the user selected**. With only an OnlyKey present, creation fails with a
+misleading `no Yubikey available` error despite the pre-flight passing. With
+both a YubiKey and an OnlyKey present, creation succeeds and the identity is
+silently **YubiKey-bound** — recorded, encrypted and decrypted with the YubiKey
+plugin — and can never be opened with the OnlyKey the user chose. This is a
+wrong-device-binding correctness bug with an availability/data-loss angle: a
+user who believes the OnlyKey gates the identity, and later retires or loses the
+YubiKey, is locked out. It is not remotely exploitable — there is no adversary,
+no key disclosure, and the identity remains protected by a real password + HSM —
+so no GHSA/CVE is assigned; it is recorded here for the wrong-trust-anchor and
+lockout risk.
+
+**Fixed in 1.4.9 / 1.5.0:** `Identity.generate()` takes an `hsm_type` parameter
+(default `"yubikey"` for backward compatibility) and threads it into the
+protection service; `identity create` passes the selected device through; and
+`_encrypt_private_key` / `_decrypt_private_key` build the service from the
+identity's recorded `hsm_config.hsm_type`, so an OnlyKey identity uses the
+OnlyKey plugin end to end. The device names in the HSM error messages now
+reflect the configured device instead of hardcoding "Yubikey". Existing YubiKey
+identities are unaffected: the `"yubikey"` default and the legacy
+`hsm_type`-absent fallback both keep selecting the YubiKey plugin.
+
+**Mitigation for existing identities:** if you ran `identity create --hsm
+onlykey` (or `onlykey-only`) on an affected release with both a YubiKey and an
+OnlyKey attached, the resulting identity is gated by the YubiKey, not the
+OnlyKey. Confirm which device unlocks it, and re-create the identity on a fixed
+release to bind it to the OnlyKey.
+
+**Credit:** found tracing gitlab#161 during desktop-GUI work; confirmed by a
+crypto-lens review (gitlab#218 finding 3).
+
 ### ADVISORY 2026-17: File Password Printed in Cleartext by the `--debug` argv Dump for Bundled and Abbreviated Option Spellings — Resolved
 
 **Severity:** Medium · **CWE-532** (Insertion of Sensitive Information into Log File) / **CWE-215** (Insertion of Sensitive Information Into Debugging Code)
