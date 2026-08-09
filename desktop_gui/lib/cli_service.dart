@@ -85,7 +85,25 @@ class CLIService {
 
   // Cache for algorithm availability info (fetched once at startup)
   static AvailabilityInfo? _availabilityCache;
-  static bool _availabilityLoading = false;
+  static Future<AvailabilityInfo?>? _availabilityFuture;
+
+  /// When set, every CLI invocation is answered by this function instead of
+  /// spawning a subprocess. Production code must never set it: it exists so
+  /// widget tests can supply canned CLI output — a real subprocess spawned
+  /// inside the test binding leaves a pending timer that fails the test at
+  /// teardown (gitlab#211).
+  @visibleForTesting
+  static Future<ProcessResult> Function(List<String> args,
+      {String? stdinInput})? commandRunnerOverride;
+
+  /// Clears the runner override and the availability cache so state cannot
+  /// leak from one test into the next.
+  @visibleForTesting
+  static void resetForTesting() {
+    commandRunnerOverride = null;
+    _availabilityCache = null;
+    _availabilityFuture = null;
+  }
 
   /// Initialize CLI service and verify CLI is available
   static Future<bool> initialize() async {
@@ -136,17 +154,16 @@ class CLIService {
   }
 
   /// Get algorithm availability info (cached at startup)
-  static Future<AvailabilityInfo?> getAvailabilityInfo() async {
-    if (_availabilityCache != null) return _availabilityCache;
-    if (_availabilityLoading) {
-      // Wait for loading to complete
-      while (_availabilityLoading) {
-        await Future.delayed(const Duration(milliseconds: 50));
-      }
-      return _availabilityCache;
-    }
+  ///
+  /// Concurrent callers share a single in-flight fetch instead of polling
+  /// with timers, which would trip the test binding's pending-timer check
+  /// (gitlab#211).
+  static Future<AvailabilityInfo?> getAvailabilityInfo() {
+    if (_availabilityCache != null) return Future.value(_availabilityCache);
+    return _availabilityFuture ??= _fetchAvailabilityInfo();
+  }
 
-    _availabilityLoading = true;
+  static Future<AvailabilityInfo?> _fetchAvailabilityInfo() async {
     try {
       final result = await _runCLICommand(['list-available-algorithms']);
       if (result.exitCode == 0) {
@@ -156,7 +173,10 @@ class CLIService {
     } catch (e) {
       _outputDebugLog('Error fetching availability info: $e');
     } finally {
-      _availabilityLoading = false;
+      if (_availabilityCache == null) {
+        // Failed fetch: drop the shared future so a later call can retry.
+        _availabilityFuture = null;
+      }
     }
     return _availabilityCache;
   }
@@ -1029,6 +1049,9 @@ class CLIService {
   /// so it is not inherited further.
   static Future<ProcessResult> _runCLICommand(List<String> args,
       {bool logStdout = false, Map<String, String>? environment}) async {
+    final override = commandRunnerOverride;
+    if (override != null) return override(args);
+
     // Strip inherited credential variables before applying ours. If this
     // process itself inherited e.g. OPENSSL_ENCRYPT_RECOVERY_CODE, the CLI
     // would use it to unlock INSTEAD of the password the user typed, silently.
@@ -1105,6 +1128,9 @@ class CLIService {
   /// Run CLI command with stdin input (for passphrases, etc.)
   static Future<ProcessResult> _runCLICommandWithStdin(List<String> args, String stdinInput,
       {Map<String, String>? environment}) async {
+    final override = commandRunnerOverride;
+    if (override != null) return override(args, stdinInput: stdinInput);
+
     Process process;
 
     // When running inside Flatpak, use direct CLI path
@@ -1155,6 +1181,9 @@ class CLIService {
     List<String> args,
     {Map<String, String>? environment, Function(String)? onStdout, Function(String)? onStderr, Function(String)? onProgress, Function(String)? onStatus, String? commandForStatus, bool hsmDetectionEnabled = false}
   ) async {
+    final override = commandRunnerOverride;
+    if (override != null) return override(args);
+
     Process process;
 
     // Merge environment variables for secure password passing.

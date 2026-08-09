@@ -583,6 +583,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Desktop GUI widget tests spawned the real Python CLI** (gitlab#211 /
+  github#122): `_EncryptTabState.initState` (and the decrypt tab's identity
+  load) call `CLIService` while the widget tree is being built, so
+  `flutter test` ran `Process.run` inside the test binding — the process
+  timer was still pending at teardown and failed four `widget_test.dart`
+  tests with `!timersPending`, racily, wherever the CLI didn't resolve in
+  time. `CLIService` now exposes a `@visibleForTesting`
+  `commandRunnerOverride` seam at the process boundary (plus
+  `resetForTesting`), and the widget tests inject a fake runner with canned
+  `list-available-algorithms` / `identity list` JSON — no subprocess, no
+  timers, deterministic tests that no longer need a working Python CLI.
+  `getAvailabilityInfo` also stops polling with 50 ms timers when a fetch
+  is already in flight: concurrent callers now share one single-flight
+  future (same retry-on-failure behaviour), removing the other timer
+  source.
+
 - **`generate-password` still claimed to have cleared the screen**
   (gitlab#182): gitlab#152 removed that claim from `encrypt --random`
   because it is false — the escape sequence repaints the visible screen and
