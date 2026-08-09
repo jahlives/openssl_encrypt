@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Desktop GUI: Encrypt-tab PQC-keyfile and legacy-KDF-composition controls**
+  (gitlab#153 / gitlab#198): the Advanced Options gain a field to load an
+  existing post-quantum key file (`--pqc-keyfile`) and an off-by-default switch
+  for the legacy sequential key derivation (`--use-xor-composition`, which pins
+  the older format v13 and is warned as weaker). The service validates
+  client-side before sending: the two compositions are mutually exclusive (the
+  CLI rejects the pair) and a security template already selects the
+  composition, so the two are never sent together. Deliberately not exposed:
+  `--keyring-store`/`-load` (the CLI reads the `-p` value but the GUI passes
+  the password via `CRYPT_PASSWORD`, so the store would never run — gitlab#156);
+  the explicit `--independent-xor` (already the default composition); and
+  `--parallel-kdf` — on this line it is inert, delegating back to sequential
+  derivation for every format the GUI can produce (v13/v14), so a control would
+  promise parallelism the core does not deliver (deferred, gitlab#220).
+
 - **Desktop GUI: live password-strength meter on the Encrypt tab**
   (gitlab#141 / github#59): a debounced meter under the Encrypt tab's
   password field shells out to `check-password --json --password-policy none`

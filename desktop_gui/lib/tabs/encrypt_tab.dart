@@ -38,6 +38,15 @@ class _EncryptTabState extends State<EncryptTab> {
   String _operationStatus = '';
   bool _showProgress = false;
 
+  // Encrypt-tab flag gaps (gitlab#153/#198). Default off/empty so behaviour is
+  // unchanged unless the user opts in. Keyring (--keyring-store/-load) is
+  // deliberately NOT exposed: the CLI reads the -p value, but the GUI passes
+  // the password via CRYPT_PASSWORD, so the store never runs (gitlab#156).
+  final TextEditingController _pqcKeyfileController = TextEditingController();
+  bool _useSequentialXor = false; // opt in to legacy sequential composition
+  // Parallel KDF (--parallel-kdf/--kdf-workers) is not exposed on this line:
+  // it is inert on every producible format (gitlab#220).
+
   // Hash configuration
   bool _showHashConfig = false;
   final Map<String, Map<String, dynamic>> _hashConfig = {};
@@ -126,6 +135,7 @@ class _EncryptTabState extends State<EncryptTab> {
   void dispose() {
     _textController.dispose();
     _passwordController.dispose();
+    _pqcKeyfileController.dispose();
     _recipientIdentityController.dispose();
     _identityStorePathController.dispose();
     _cascadeAlgorithmsTextController.dispose();
@@ -236,6 +246,10 @@ class _EncryptTabState extends State<EncryptTab> {
         enablePepper: _enablePepper,
         pepperName: _pepperMode == 'named' ? _pepperNameController.text : null,
         showProgress: _showProgress,
+        pqcKeyfile: _pqcKeyfileController.text.trim().isEmpty
+            ? null
+            : _pqcKeyfileController.text.trim(),
+        useXorComposition: _useSequentialXor,
         onProgress: (progress) {
           setState(() {
             _operationStatus = progress;
@@ -343,6 +357,10 @@ class _EncryptTabState extends State<EncryptTab> {
         enablePepper: _enablePepper,
         pepperName: _pepperMode == 'named' ? _pepperNameController.text : null,
         showProgress: _showProgress,
+        pqcKeyfile: _pqcKeyfileController.text.trim().isEmpty
+            ? null
+            : _pqcKeyfileController.text.trim(),
+        useXorComposition: _useSequentialXor,
         onProgress: (progress) {
           setState(() {
             _operationStatus = progress;
@@ -2047,6 +2065,54 @@ class _EncryptTabState extends State<EncryptTab> {
                   ),
                   const SizedBox(height: 12),
 
+                  // PQC keyfile / KDF composition (gitlab#153)
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(12.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          TextField(
+                            controller: _pqcKeyfileController,
+                            decoration: const InputDecoration(
+                              labelText: 'Load PQC key file',
+                              helperText:
+                                  'Optional path to an EXISTING post-quantum key '
+                                  'file to encrypt with. Generating one is not '
+                                  'available here.',
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                          const Divider(height: 24),
+                          Text('Key derivation',
+                              style: Theme.of(context).textTheme.titleSmall),
+                          const SizedBox(height: 8),
+                          SwitchListTile(
+                            title: const Text(
+                                'Use legacy sequential key derivation'),
+                            subtitle: const Text(
+                              'Writes the older format version 13 instead of the '
+                              'current default. The derived key is only as strong '
+                              'as the weakest step in the chain, wide-key ciphers '
+                              'are funnelled through a narrower intermediate, and '
+                              'the newer transcript binding is not applied. Leave '
+                              'off unless you need to interoperate with an older '
+                              'release.',
+                              style: TextStyle(color: Colors.orange),
+                            ),
+                            value: _useSequentialXor,
+                            onChanged: (v) =>
+                                setState(() => _useSequentialXor = v),
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                          // No parallel-KDF control: on this line the parallel
+                          // path delegates back to sequential for every format
+                          // the GUI can produce (v13/v14), so it would be a
+                          // no-op that promises parallelism (gitlab#220).
+                        ],
+                      ),
+                    ),
+                  ),
                   const SizedBox(height: 12),
 
                   // File-specific options

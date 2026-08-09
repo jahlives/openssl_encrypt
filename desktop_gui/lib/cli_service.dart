@@ -399,9 +399,37 @@ class CLIService {
      String? pepperName,                // Remote pepper: named pepper to use
      bool showProgress = false,         // CLI --progress flag
      String? template,                  // Security template: 'standard', 'quick', 'paranoid'
+     String? pqcKeyfile,                // Path to LOAD an existing PQC key file
+     bool independentXor = false,       // KDF composition: independent XOR (default)
+     bool useXorComposition = false,    // KDF composition: sequential XOR (v13-pinned)
+     bool parallelKdf = false,          // Parallel key derivation
+     int? kdfWorkers,                   // Worker count for parallel key derivation
      Function(String)? onProgress,
      Function(String)? onStatus}
   ) async {
+    // Asking for both compositions at once is what the CLI rejects
+    // ("Cannot use both --use-xor-composition and --independent-xor",
+    // crypt_cli.py); catch it here rather than as an opaque CLI failure.
+    if (independentXor && useXorComposition) {
+      throw ArgumentError(
+        'Choose either independent XOR or sequential XOR composition, not both.',
+      );
+    }
+    // A security template already selects the composition, and the CLI lets a
+    // composition flag silently override the template — so refuse to send both.
+    if (template != null && (useXorComposition || independentXor)) {
+      throw ArgumentError(
+        'A security template already selects the key-derivation composition; '
+        'do not override it.',
+      );
+    }
+    // Bound the worker count as hygiene: the CLI does not clamp it, and a
+    // zero/negative value raises in ProcessPoolExecutor. (On this line the
+    // value is not consumed anyway — parallel-kdf is inert, gitlab#220 — but
+    // the guard stays so it is safe once that lands.)
+    if (kdfWorkers != null && (kdfWorkers < 1 || kdfWorkers > 64)) {
+      throw ArgumentError('Key-derivation workers must be between 1 and 64.');
+    }
     Directory? tempDir;
     try {
       // Create temporary directory with restrictive permissions
@@ -638,6 +666,23 @@ class CLIService {
         if (strictDiversity) {
           args.add('--strict-diversity');
         }
+      }
+
+      // PQC keyfile and KDF-composition options (gitlab#153/#198).
+      if (pqcKeyfile != null && pqcKeyfile.isNotEmpty) {
+        args.addAll(['--pqc-keyfile', pqcKeyfile]);
+      }
+      if (independentXor) {
+        args.add('--independent-xor');
+      }
+      if (useXorComposition) {
+        args.add('--use-xor-composition');
+      }
+      if (parallelKdf) {
+        args.add('--parallel-kdf');
+      }
+      if (kdfWorkers != null) {
+        args.addAll(['--kdf-workers', '$kdfWorkers']);
       }
 
       if (debugEnabled) {
