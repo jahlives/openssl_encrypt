@@ -1826,6 +1826,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Internal
 
+- **The gitlab#198 has-a-caller lint had never scanned the widget
+  directories** (gitlab#198 follow-up, gitlab#217): its caller scan read
+  only top-level `lib/*.dart`, while every tab and shared widget lives in
+  `lib/tabs/`, `lib/widgets/` and `lib/screens/` — so 13 of the 14
+  `KNOWN_UNWIRED` exemptions described Encrypt-tab wiring that in fact
+  existed (gitlab#153's keyfile/composition/parallel-KDF controls among
+  them), and the registry hid the one real gap. The scan now recurses; the
+  registry is pruned to the verified truth: `decryptFromSteganography` has
+  no caller (the Decrypt tab has no steg-extraction UI — new gitlab#217),
+  `configurePepperDeadman` waits on the pepper CLI (gitlab#193),
+  `validateCascade(strict:)` has no control, and the explicit
+  `independentXor` flag is deliberately unexposed (it is already the CLI's
+  default composition). Also fixed: the extractor no longer misparses the
+  `commandRunnerOverride` function-typed field as a service method, and the
+  argv lint's pinned interpolated-flag set follows the gitlab#214
+  brace-free spelling (`--$hashName-rounds`, byte-identical argv).
+
 - **Desktop GUI: `flutter analyze` is clean — 77 issues to 0** (gitlab#214 /
   github#125). Warnings: removed the unused
   `_isPostQuantumAlgorithm`/`_getNonPostQuantumAlgorithms` duplicates from

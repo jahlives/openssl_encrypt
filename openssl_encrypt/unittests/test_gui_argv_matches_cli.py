@@ -65,7 +65,9 @@ REQUIRED_COMMANDS = {"encrypt", "decrypt", "shred", "rekey", "identity"}
 EXPECTED_INTERPOLATED = {
     ("encryptTextWithProgress", "--$template"),
     ("encryptTextWithProgress", "--cascade=$cascadePreset"),
-    ("encryptWithSteganography", "--${hashName}-rounds"),
+    # Brace-free spelling since the gitlab#214 dart-fix pass; `$hashName`
+    # terminates at the `-`, so the argv is byte-identical.
+    ("encryptWithSteganography", "--$hashName-rounds"),
     ("encryptWithSteganography", "--cascade=$cascadePreset"),
 }
 
