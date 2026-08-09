@@ -653,6 +653,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`analyze-config` no longer crashes on every invocation** (gitlab#219):
+  `main_with_args`'s subparser-args compatibility layer back-fills
+  `args.algorithm = None` for any command that does not define `--algorithm`,
+  and analyze-config defines only `--encryption-data-algorithm`. The old cipher
+  extraction read that back-filled `None` (the `config.get("algorithm",
+  "aes-gcm")` fallback never fired because the key was present), and the scorer
+  then did `"gcm" in None` → `TypeError`, so `analyze-config --output-format
+  json` printed nothing and exited 1 for every flag combination. The gitlab#168
+  whitelist fix reads `encryption_data_algorithm` instead of the back-filled
+  `algorithm`, so the command runs end-to-end again; a regression test now
+  drives the REAL `build_subparser()` → `main_with_args()` path (which every
+  prior analyze-config test bypassed). 1.4.x only — the analyze-config cluster
+  was removed on 1.5.x.
+
 - **`analyze-config` now scores the flags you pass, not argparse defaults**
   (gitlab#168, gitlab#166 part 2): `run_config_analyzer` fed `vars(args)`
   straight into the analyzer, but the analyzer reads different key names than
