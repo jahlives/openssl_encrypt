@@ -1676,6 +1676,21 @@ inflated KDF metadata parameters, not cosmetic output.
 
 ### Security
 
+- **A template file can no longer downgrade key derivation via `encrypt
+  --template`** (gitlab#169, ADVISORY 2026-19): a template's `hash_config` was
+  applied after only a structural check, with no floor on the KDF parameters —
+  so a `.json`/`.yaml` dropped into the template directory could set e.g.
+  `pbkdf2_iterations: 1` with Argon2 off (a downgrade), and the directory was
+  created group/other-writable (~0755), letting another local user plant one.
+  Applying a file template now **warns loudly** when its KDF params fall below a
+  floor (no memory-hard KDF at strength and pbkdf2 < 600 000), and the template
+  directory has its group/other write bits stripped on the `encrypt --template`
+  read path, closing the plant vector. Local attack only (requires template-dir
+  write); Medium. (The warning is advisory and goes to stderr; the directory
+  permissions are the load-bearing protection.) The related self-asserted-score
+  ranking issue is 1.4.x-only — the template-management subsystem does not exist
+  on 1.5.x.
+
 - **`identity create --hsm onlykey` no longer silently binds the identity to
   the YubiKey** (gitlab#218, ADVISORY 2026-18): `cmd_create` computed the
   correct `hsm_type` but used it only for a pre-flight check — `Identity.generate()`

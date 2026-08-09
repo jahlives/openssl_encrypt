@@ -228,6 +228,23 @@ relevant.
 
 ## Security Advisories
 
+### ADVISORY 2026-19: A Planted Template File Can Rank Itself First and Downgrade Key Derivation — Resolved
+
+**Severity:** Medium · **CWE-345** (Insufficient Verification of Data Authenticity) / **CWE-732** (Incorrect Permission Assignment for Critical Resource) / **CWE-757** (Selection of Less-Secure Algorithm)
+**Affected versions:** all releases with the template subsystem, up to and including **1.4.8** (1.4.x) / pre-**1.5.0** (1.5.x). **Fixed in 1.4.9 (1.4.x line) and 1.5.0 (1.5.x line).** Scope differs by line: the self-asserted-ranking issue (item 1) is **1.4.x only** — the template-management subsystem (`template list`/`compare`, `template_manager.py`) does not exist on 1.5.x — while the key-derivation downgrade and directory-permission issues (item 2) apply to **both lines** through the `encrypt --template` path.
+
+**Summary:** the template subsystem trusted a template file for two things it should not have. (1) The metadata-bearing format took `security_score`/`security_level` **verbatim from the file** with no recomputation, and `list_templates()` sorts by that score — so a file claiming `"security_score": 99.0` ranked first, ahead of the genuinely strong built-in templates (1.4.x only). (2) A template's `hash_config` was applied to an encryption after only a structural check, with **no floor** on the KDF parameters, so a template could set e.g. `pbkdf2_iterations: 1` with Argon2 disabled — a key-derivation downgrade delivered through the `encrypt --template` interface (both lines). Compounding both, the template directory was created without an explicit mode (typically **0755**, group/other-writable), so another local user could plant a template into it (both lines).
+
+**Impact:** a local user with write access to the template directory could plant a `.json`/`.yaml` template that (a) on 1.4.x advertises a top security rating and sorts to the front of `template list`, and (b) on either line applies weak key derivation to files encrypted with `--template` — making them far cheaper to brute-force. This is a local attack (write access to the template directory is required); it does not disclose keys or allow code execution, and after the fix the operation still proceeds. Rated Medium accordingly.
+
+**Fixed in 1.4.9 / 1.5.0:** on 1.4.x, the self-asserted rating is **recomputed from the actual config on load** (`_recompute_security_rating`), so a file's claimed score/level is always discarded and a config that cannot be analysed scores 0 (ranks last); built-in templates are trusted and analyzer-scored as before. On **both lines**, applying a file template now **warns loudly** when its KDF parameters fall below a floor (no memory-hard KDF — Argon2 ≥ 64 MiB, scrypt N ≥ 16384, or Balloon space_cost ≥ 65536 — and pbkdf2 below the 600 000 OWASP minimum), and the template directory has its group/other **write** bits stripped best-effort on both the template-management path (1.4.x) and the `encrypt --template` read path (both lines; read preserved for multi-user installs), closing the plant-a-template vector.
+
+**Caveat on the KDF warning:** the weak-template warning is **advisory only** — the encryption still proceeds (so a deliberately fast/test template is not blocked), and it is written to **stderr**, so in scripted or stderr-redirected use it may go unseen. The load-bearing protection against a *planted* template is therefore the directory-permission tightening; the warning is a second line of defence for a template the owner themselves configured weakly.
+
+**Mitigation for existing installs:** ensure the template directory (`<package>/templates`) is not group/other-writable (`chmod go-w`), and review any non-built-in template files you did not create — a file with weak `hash_config` (low `pbkdf2_iterations`, no Argon2/scrypt), and on 1.4.x one declaring a high `security_score`, is the pattern to remove.
+
+**Credit:** found during the security review of the gitlab#167 fix (gitlab#169).
+
 ### ADVISORY 2026-18: `identity create --hsm onlykey` Silently Binds the Identity to the YubiKey — Resolved
 
 **Severity:** Medium · **CWE-440** (Expected Behavior Violation) / **CWE-636** (Not Failing Securely)

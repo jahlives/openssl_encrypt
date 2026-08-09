@@ -489,3 +489,24 @@ def copy_permissions(source, target) -> None:
     else:
         mode = stat.S_IMODE(os.stat(source_str).st_mode)
         os.chmod(target_str, mode)
+
+
+def harden_directory_permissions(path) -> None:
+    """Best-effort: strip group/other WRITE bits from an existing directory.
+
+    A group/other-writable directory lets another local user plant files in it;
+    for the template directory that means an attacker-controlled template the
+    tool would then apply (gitlab#169). Read/execute are preserved so multi-user
+    READ still works, and a directory we cannot chmod (a read-only package dir,
+    a different owner) is simply left as-is -- this only ever tightens, never
+    loosens, and never raises. On Windows POSIX modes do not apply (no-op).
+    """
+    try:
+        path_str = str(path)
+        if os.name == "nt" or not os.path.isdir(path_str):
+            return
+        mode = stat.S_IMODE(os.stat(path_str).st_mode)
+        if mode & 0o022:
+            os.chmod(path_str, mode & ~0o022)
+    except OSError:
+        pass
