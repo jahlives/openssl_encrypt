@@ -184,8 +184,16 @@ class TemplateManager:
         else:
             self.template_dir = template_dir
 
-        # Ensure template directory exists
-        os.makedirs(self.template_dir, exist_ok=True)
+        # Ensure template directory exists, and is not writable by other local
+        # users -- a group/other-writable template dir lets another process
+        # plant a template that then ranks first and downgrades key derivation
+        # (gitlab#169). New dirs are created 0700; an existing dir has its
+        # group/other WRITE bits stripped (read is preserved for multi-user
+        # installs). Best-effort: a read-only package dir simply stays as-is.
+        os.makedirs(self.template_dir, mode=0o700, exist_ok=True)
+        from .file_permissions import harden_directory_permissions
+
+        harden_directory_permissions(self.template_dir)
 
         # Initialize built-in templates with analysis
         self._initialize_built_in_templates()
@@ -361,6 +369,26 @@ class TemplateManager:
 
         return None
 
+    def _recompute_security_rating(self, metadata, config) -> None:
+        """Overwrite a template's self-asserted security rating with values
+        computed from its actual config (gitlab#169).
+
+        The metadata-bearing format took ``security_score``/``security_level``
+        verbatim from the file, and ``list_templates()`` sorts by the score, so a
+        planted file could claim a top rating and rank first. A config that
+        cannot be analyzed scores 0 (ranks last) rather than keeping the claim.
+        """
+        metadata.security_score = 0.0
+        metadata.security_level = ""
+        try:
+            hash_config = config.get("hash_config") if isinstance(config, dict) else None
+            if hash_config:
+                analysis = self.analyzer.analyze_configuration(hash_config)
+                metadata.security_score = analysis.overall_score
+                metadata.security_level = analysis.security_level.name
+        except Exception:
+            pass
+
     def _load_template_file(self, filepath: str) -> EnhancedTemplate:
         """Load template from specific file path."""
         with open(filepath, "r") as f:
@@ -384,14 +412,12 @@ class TemplateManager:
             )
             config = data
 
-            # Try to analyze legacy template
-            try:
-                if "hash_config" in config:
-                    analysis = self.analyzer.analyze_configuration(config["hash_config"])
-                    metadata.security_score = analysis.overall_score
-                    metadata.security_level = analysis.security_level.name
-            except Exception:
-                pass
+        # SECURITY: a template file is untrusted -- any local process could drop
+        # one in. Its self-asserted security_score/security_level are recomputed
+        # from the actual config here, because list_templates() sorts by the
+        # score and a planted file claiming a top rating would otherwise rank
+        # first (gitlab#169).
+        self._recompute_security_rating(metadata, config)
 
         template = EnhancedTemplate(
             metadata=metadata, config=config, file_path=filepath, is_built_in=False

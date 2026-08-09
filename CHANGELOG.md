@@ -420,6 +420,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **A planted template file can no longer rank itself first or downgrade key
+  derivation** (gitlab#169, ADVISORY 2026-19): the template subsystem trusted a
+  template file for its self-asserted `security_score`/`security_level` (taken
+  verbatim, and used as the `template list` sort key), and applied a template's
+  `hash_config` with no KDF floor — so a `.json`/`.yaml` dropped into the
+  template directory could advertise a top rating, sort to the front, and set
+  e.g. `pbkdf2_iterations: 1` with Argon2 off (a downgrade). The directory was
+  also created group/other-writable (~0755), letting another local user plant
+  one. Now: the rating is **recomputed from the actual config on load** (a
+  file's claim is discarded; an unanalysable config sorts last); applying a file
+  template **warns loudly** when its KDF params fall below a floor (no memory-hard
+  KDF at strength and pbkdf2 < 600 000); and the template directory has its
+  group/other write bits stripped on both the management and the `encrypt
+  --template` read paths, closing the plant vector. Local attack only (requires
+  template-dir write); Medium. 1.4.x only — the template subsystem does not
+  exist on 1.5.x. (The warning is advisory and goes to stderr; the directory
+  permissions are the load-bearing protection against a planted template.)
+
 - **`identity create --hsm onlykey` no longer silently binds the identity to
   the YubiKey** (gitlab#218, ADVISORY 2026-18): `cmd_create` computed the
   correct `hsm_type` but used it only for a pre-flight check — `Identity.generate()`

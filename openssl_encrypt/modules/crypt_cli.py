@@ -645,6 +645,14 @@ def load_template_file(template_name: str) -> Optional[Dict[str, Any]]:
     # Templates are in project root
     template_dir = os.path.join(project_root, "templates")
 
+    # SECURITY: this is the path `encrypt --template` uses, and it never
+    # constructs a TemplateManager -- so harden the template directory HERE too,
+    # not only in TemplateManager.__init__. A group/other-writable dir lets
+    # another local user plant a template this path would then apply (gitlab#169).
+    from .file_permissions import harden_directory_permissions
+
+    harden_directory_permissions(template_dir)
+
     # Try different extensions
     for ext in [".json", ".yaml", ".yml"]:
         template_path = os.path.join(template_dir, safe_template_name + ext)
@@ -700,6 +708,56 @@ def load_template_file(template_name: str) -> Optional[Dict[str, Any]]:
 
     eprint(f"Template {safe_template_name} not found in {template_dir}")
     sys.exit(1)
+
+
+def _warn_if_weak_template_kdf(hash_config, source) -> None:
+    """Warn (loudly; does NOT block) when a template's applied KDF parameters
+    fall below a safe floor.
+
+    A template file dropped into the template directory could otherwise silently
+    downgrade key derivation -- e.g. ``pbkdf2_iterations: 1`` with Argon2
+    disabled -- delivered through the template interface (gitlab#169). This is
+    advisory: the encryption still runs (the user asked for this template), but
+    the weakness is surfaced instead of hidden. Only file templates pass through
+    here; the built-in --quick/--standard/--paranoid presets do not.
+    """
+    if not isinstance(hash_config, dict):
+        return
+
+    def _num(value):
+        return value if isinstance(value, (int, float)) and not isinstance(value, bool) else 0
+
+    def _kdf(name):
+        entry = hash_config.get(name)
+        return entry if isinstance(entry, dict) else {}
+
+    argon2, scrypt, balloon = _kdf("argon2"), _kdf("scrypt"), _kdf("balloon")
+    pbkdf2 = _num(hash_config.get("pbkdf2_iterations"))
+
+    # A memory-hard KDF at reasonable strength is the real protection; if one is
+    # present, the config is not "weak" regardless of pbkdf2. Each is gated on a
+    # strength floor, not merely "enabled" -- otherwise a planted
+    # balloon:{enabled:true, space_cost:1} (or similar) would evade the check.
+    strong_memory_hard = (
+        (argon2.get("enabled") and _num(argon2.get("memory_cost")) >= 65536)
+        or (scrypt.get("enabled") and _num(scrypt.get("n")) >= 16384)
+        or (balloon.get("enabled") and _num(balloon.get("space_cost")) >= 65536)
+    )
+    if strong_memory_hard:
+        return
+    # No strong memory-hard KDF -> PBKDF2 is the fallback and must clear a
+    # minimal iteration floor (600,000, current OWASP PBKDF2-HMAC-SHA256
+    # guidance).
+    if pbkdf2 >= 600000:
+        return
+
+    eprint(
+        f"⚠️  SECURITY WARNING: template '{source}' configures weak key "
+        "derivation -- no memory-hard KDF (Argon2/scrypt/Balloon) at strength "
+        f"and pbkdf2_iterations={pbkdf2} (below the 600,000 minimum, current "
+        "OWASP guidance). This is far easier to brute-force. Encryption will "
+        "proceed; consider a stronger template (e.g. --standard or --paranoid)."
+    )
 
 
 def get_template_config(template: str or SecurityTemplate) -> Dict[str, Any]:
@@ -808,6 +866,10 @@ def get_template_config(template: str or SecurityTemplate) -> Dict[str, Any]:
             if custom_template:
                 # Validate template structure
                 if "hash_config" in custom_template:
+                    # A template file is untrusted (any local process could drop
+                    # one in); surface a KDF downgrade instead of applying it
+                    # silently (gitlab#169).
+                    _warn_if_weak_template_kdf(custom_template["hash_config"], template)
                     return custom_template
                 else:
                     eprint("Invalid template format: missing 'hash_config' key")
