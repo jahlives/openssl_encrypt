@@ -374,6 +374,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Desktop GUI: main screen no longer asserts on teardown** (gitlab#143 /
+  github#61): `_MainScreenState.dispose()` cleaned up the debug overlay through
+  `_hideDebugWindow()`, which calls `setState()` — but by the time `dispose()`
+  runs the element is already defunct, so Flutter's
+  `_lifecycleState != _ElementLifecycle.defunct` assertion fired on every
+  shutdown of the main screen in debug builds (in release builds assertions are
+  compiled out, but marking a defunct element as needing rebuild is still
+  wrong). `dispose()` now detaches the overlay entry through a new
+  `_removeDebugOverlay()` helper that touches no widget state; the interactive
+  hide path keeps its `setState()`. Covered by a teardown regression test.
+  Ported to this line via gitlab#212, together with the widget-test refresh
+  the 1.4.x fix carried: the old assertions described a Text/File/Info
+  navigation rail and an 'Application Settings' heading the app no longer
+  renders (the rail is Encrypt/Decrypt/Settings in the default simple mode;
+  the settings heading is 'Settings & Preferences').
+
 - **Desktop GUI widget tests spawned the real Python CLI** (gitlab#211 /
   github#122): `_EncryptTabState.initState` (and the decrypt tab's identity
   load) call `CLIService` while the widget tree is being built, so
