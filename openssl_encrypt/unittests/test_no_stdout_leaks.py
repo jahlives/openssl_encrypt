@@ -77,6 +77,13 @@ STDOUT_WHITELIST = [
     ("modules/crypt_cli.py", "print(json.dumps(_report, indent=2))", 1, "report --json document"),
     (
         "modules/crypt_cli.py",
+        "print(json.dumps(status, indent=2))",
+        1,
+        "telemetry status --json document (gitlab#162): status fields only "
+        "(has_api_key is a boolean, not the key) -- no secret material",
+    ),
+    (
+        "modules/crypt_cli.py",
         'print(json.dumps({"error": f"Registry system not available: {e}"}))',
         1,
         "JSON-mode error document: the caller parses stdout, so the error has to "
