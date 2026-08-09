@@ -2412,6 +2412,87 @@ def run_config_wizard(args):
         return None
 
 
+def _build_analysis_config(args):
+    """Translate analyze-config argv into the dict the analyzer reads.
+
+    ``ConfigurationAnalyzer`` reads a different set of key names than the
+    analyze-config parser produces (``pbkdf2_iterations`` vs ``pbkdf2_rounds``,
+    ``argon2_memory`` vs ``argon2_memory_cost``, ``enable_scrypt`` /
+    ``enable_balloon`` / ``enable_hkdf`` which the parser never defines, and
+    ``algorithm`` vs ``encryption_data_algorithm``), so feeding it ``vars(args)``
+    scored the flags the user passed as absent (gitlab#168). This renames each
+    flag to the key the analyzer reads and derives the missing ``enable_*``
+    booleans from a positive cost, so a passed flag actually moves the score.
+
+    It is also a whitelist: only analysis inputs are copied, never the live
+    ``Namespace.__dict__`` (which the old ``vars(args)`` aliased and then
+    mutated, and which on the monolithic entry can carry secret-valued
+    attributes), so no secret can ride along into a future ``eprint(config)``.
+    Sub-parameters are only set when explicitly given, so the analyzer's own
+    defaults fire for the rest rather than being duplicated here.
+    """
+
+    def _int(name):
+        try:
+            return int(getattr(args, name, 0) or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    config = {}
+
+    # Hash rounds -- the analyzer reads "<name>_rounds" directly, same dests.
+    for name in ("sha256", "sha512", "blake2b", "blake3"):
+        config[f"{name}_rounds"] = _int(f"{name}_rounds")
+
+    # PBKDF2: parser dest pbkdf2_rounds -> analyzer key pbkdf2_iterations.
+    if _int("pbkdf2_rounds") > 0:
+        config["pbkdf2_iterations"] = _int("pbkdf2_rounds")
+
+    # Argon2: an explicit --enable-argon2 flag; *_cost dests -> *_memory/*_time.
+    if bool(getattr(args, "enable_argon2", False)):
+        config["enable_argon2"] = True
+        if _int("argon2_memory_cost") > 0:
+            config["argon2_memory"] = _int("argon2_memory_cost")
+        if _int("argon2_time_cost") > 0:
+            config["argon2_time"] = _int("argon2_time_cost")
+        if _int("argon2_parallelism") > 0:
+            config["argon2_parallelism"] = _int("argon2_parallelism")
+
+    # Scrypt/Balloon/HKDF have no --enable flag; a positive cost IS the signal.
+    if _int("scrypt_n") > 0:
+        config["enable_scrypt"] = True
+        config["scrypt_n"] = _int("scrypt_n")
+        if _int("scrypt_r") > 0:
+            config["scrypt_r"] = _int("scrypt_r")
+        if _int("scrypt_p") > 0:
+            config["scrypt_p"] = _int("scrypt_p")
+
+    balloon_space = _int("balloon_space_cost")
+    balloon_time = _int("balloon_time_cost")
+    if balloon_space > 0 or balloon_time > 0:
+        config["enable_balloon"] = True
+        if balloon_space > 0:
+            config["balloon_space_cost"] = balloon_space
+        if balloon_time > 0:
+            config["balloon_time_cost"] = balloon_time
+
+    if _int("hkdf_rounds") > 0:
+        config["enable_hkdf"] = True
+        config["hkdf_rounds"] = _int("hkdf_rounds")
+
+    # Cipher: parser dest encryption_data_algorithm -> analyzer key algorithm.
+    config["algorithm"] = getattr(args, "encryption_data_algorithm", None) or "aes-gcm"
+
+    # PQC: the analyzer reads pqc_algorithm directly (it already treats the
+    # argparse default "none" as absent, gitlab#166).
+    config["pqc_algorithm"] = getattr(args, "pqc_algorithm", None)
+
+    # Context for use-case-aware analysis.
+    config["use_case"] = getattr(args, "use_case", None)
+
+    return config
+
+
 def run_config_analyzer(args):
     """
     Run configuration analysis and display detailed results.
@@ -2429,8 +2510,9 @@ def run_config_analyzer(args):
             eprint("Analyzing Configuration...")
             eprint("Performing comprehensive security and performance analysis.\n")
 
-        # Convert args to configuration dictionary
-        config = vars(args)
+        # Translate argv into the analyzer's key names, as an explicit
+        # whitelisted copy (not the live namespace); see _build_analysis_config.
+        config = _build_analysis_config(args)
 
         # Add compliance requirements if specified
         if compliance_frameworks:

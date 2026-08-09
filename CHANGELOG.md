@@ -653,6 +653,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`analyze-config` now scores the flags you pass, not argparse defaults**
+  (gitlab#168, gitlab#166 part 2): `run_config_analyzer` fed `vars(args)`
+  straight into the analyzer, but the analyzer reads different key names than
+  the analyze-config parser produces — `pbkdf2_iterations` vs `pbkdf2_rounds`,
+  `argon2_memory` vs `argon2_memory_cost`, `enable_scrypt`/`enable_balloon`/
+  `enable_hkdf` (never defined on that parser at all), and `algorithm` vs
+  `encryption_data_algorithm`. So `analyze-config --pbkdf2-rounds 600000
+  --scrypt-n 1048576` scored PBKDF2 and scrypt as **absent** and
+  `--encryption-data-algorithm` was ignored in favour of a hardcoded
+  `aes-gcm`, making the report largely unrelated to the configuration. The
+  argv is now translated into the keys the analyzer reads (Balloon and HKDF
+  also appear in the summary's active KDFs), so a flag the user passes moves
+  the reported score. The translation is an explicit **whitelist**: only
+  analysis inputs are copied, so the analyzer never receives the live argparse
+  namespace — which the old `config = vars(args)` aliased and then mutated,
+  and which on the monolithic-parser entry can carry secret-valued attributes
+  (defense-in-depth against a future `eprint(config)`; no current path printed
+  it). 1.4.x only — the analyze-config cluster was removed on 1.5.x.
+
 - **Desktop GUI: the stdin subprocess helper drains output before closing
   stdin** (gitlab#175): `_runCLICommandWithStdin` wrote, flushed and closed
   stdin before it began reading stdout/stderr. Two latent consequences on the

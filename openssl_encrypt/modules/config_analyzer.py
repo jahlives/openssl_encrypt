@@ -999,6 +999,10 @@ class ConfigurationAnalyzer:
             active_kdfs.append("Argon2")
         if config.get("enable_scrypt", False):
             active_kdfs.append("Scrypt")
+        if config.get("enable_balloon", False):
+            active_kdfs.append("Balloon")
+        if config.get("enable_hkdf", False):
+            active_kdfs.append("HKDF")
 
         return {
             "algorithm": algorithm,
