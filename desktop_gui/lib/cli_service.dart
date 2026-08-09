@@ -780,11 +780,14 @@ class CLIService {
       // Add asymmetric decryption parameters if provided
       if (withKey != null && withKey.isNotEmpty) {
         args.addAll(['--with-key', withKey]);
-        if (verifyFrom != null && verifyFrom.isNotEmpty) {
-          args.addAll(['--verify-from', verifyFrom]);
-        }
+        // Never emit --verify-from together with --no-verify: the CLI
+        // silently prefers --no-verify, so the pair would claim an
+        // authenticity check that never happens. The tabs prevent the
+        // combination in the UI; this keeps every (future) caller honest.
         if (skipVerification) {
           args.add('--no-verify');
+        } else if (verifyFrom != null && verifyFrom.isNotEmpty) {
+          args.addAll(['--verify-from', verifyFrom]);
         }
       }
 

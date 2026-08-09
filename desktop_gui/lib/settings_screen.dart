@@ -1239,7 +1239,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 leading: const Icon(Icons.schedule, size: 20),
                 title: const Text('Cache TTL', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
                 subtitle: DropdownButtonFormField<int>(
-                  value: cacheTtl,
+                  initialValue: cacheTtl,
                   decoration: const InputDecoration(
                     border: OutlineInputBorder(),
                     contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
@@ -1676,7 +1676,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     clientKeyPath: certMode == 'file' ? SettingsService.getPepperClientKeyPath() : null,
                     caCertPath: certMode == 'file' ? SettingsService.getPepperCaCertPath() : null,
                   );
-                  if (context.mounted) {
+                  if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
                         content: Text(result['success']
@@ -1699,7 +1699,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: ElevatedButton.icon(
                 onPressed: () async {
                   final peppers = await CLIService.listPeppers();
-                  if (context.mounted) {
+                  if (mounted) {
                     showDialog(
                       context: context,
                       builder: (context) => AlertDialog(
@@ -2071,7 +2071,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     clientKeyPath: certMode == 'file' ? SettingsService.getIntegrityClientKeyPath() : null,
                     caCertPath: certMode == 'file' ? SettingsService.getIntegrityCaCertPath() : null,
                   );
-                  if (context.mounted) {
+                  if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
                         content: Text(result['success']
@@ -2094,7 +2094,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: ElevatedButton.icon(
                 onPressed: () async {
                   final stats = await CLIService.getIntegrityStats();
-                  if (context.mounted) {
+                  if (mounted) {
                     showDialog(
                       context: context,
                       builder: (context) => AlertDialog(

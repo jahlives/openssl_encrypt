@@ -374,6 +374,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Desktop GUI: single-file asymmetric decryption is reachable again**
+  (gitlab#216 / github#127): the Decrypt tab declared
+  `_decryptionIdentity`/`_verifyFrom`/`_skipVerification` and passed them to
+  `CLIService.decryptTextWithProgress`, but no widget ever set them and the
+  tab loaded no identities — `--with-key` was always omitted, so decrypting
+  a file encrypted to an identity was impossible from the single-file tab
+  on this line. The 1.4.x asymmetric-decrypt section (gitlab#137) is now
+  ported into the Pro-mode Advanced Options: identity loading, name-deduped
+  dropdowns, identity-gated signature sub-options, skip/verify-from mutual
+  exclusion with reset on identity change, and the armed-only warning
+  banner. Identities are loaded only in Pro mode, where the section
+  renders. Surfaced by `flutter analyze`'s `prefer_final_fields` on the
+  never-written `_skipVerification`.
+
+- **Desktop GUI: the batch tab's "Skip signature verification" checkbox is
+  reachable again — with the Decrypt tab's guard set** (gitlab#214 /
+  github#125): the checkbox — whose value is passed to the CLI on every
+  batch asymmetric decrypt — sat behind an `if (_showAdvanced)` gate, but
+  nothing in the widget ever set `_showAdvanced`, so the option could never
+  be enabled from the batch tab. Surfaced by `flutter analyze`'s
+  `prefer_final_fields` on the never-written flag.
+
+  Unhiding it naively would have armed states the guard set deliberately
+  prevents, so the batch tab mirrors the 1.4.x fix (security review, this
+  change): the signature sub-options only render once a decryption identity
+  is chosen (CLIService omits `--verify-from`/`--no-verify` otherwise, so
+  the UI never implies a setting it does not send); arming "skip" clears
+  and disables the "verify from" dropdown (the CLI silently discards
+  `--verify-from` when `--no-verify` is set); the skip choice is reset on
+  any change of identity, encryption mode, or operation; the controls are
+  inert while a batch is running, and the operation/mode/verification
+  settings are snapshotted before the loop so a mid-run edit cannot split a
+  batch into verified and unverified halves; the red warning banner renders
+  only while skipping is actually armed; and each batch result now records
+  — and the results list shows — when a file was decrypted with
+  verification skipped (amber `gpp_maybe` row, completion snackbar counts
+  unverified files). `CLIService` itself refuses to emit `--verify-from`
+  together with `--no-verify`, the batch identity/signer dropdowns carry
+  the `_dedupeByName` guard, and batch error rows sanitize CLI stderr /
+  drop raw `jsonDecode` excerpts before display. Pinned by the six
+  `batch_skip_verification_test.dart` widget tests plus the two ported
+  `decrypt_tab_asym_test.dart` tests. Remaining review residuals tracked
+  in gitlab#215 / github#126.
+
 - **Desktop GUI: the draggable debug window is reachable again** (gitlab#213 /
   github#124): `_toggleDebugWindow()` — the only way to show the draggable
   live-debug-log overlay, and the GUI's only live log viewer — lost its one
@@ -2362,12 +2406,29 @@ the 1.5 branch:
 
 ### Internal
 
-- **Desktop GUI: `flutter analyze` warnings fixed** (gitlab#214 / github#125):
-  removed the unused `_isPostQuantumAlgorithm`/`_getNonPostQuantumAlgorithms`
-  duplicates from `_SettingsScreenWrapperState` — copy-paste leftovers of the
-  pair that lives (and is used) in `_BatchOperationsTabState`; the settings
-  wrapper has no algorithm UI, so no wiring was missing — and the unused
-  `package:path` import from `lib/tabs/encrypt_tab.dart`.
+- **Desktop GUI: `flutter analyze` is clean — 41 issues to 0** (gitlab#214 /
+  github#125). Warnings: removed the unused
+  `_isPostQuantumAlgorithm`/`_getNonPostQuantumAlgorithms` duplicates from
+  `_SettingsScreenWrapperState` — copy-paste leftovers of the pair that lives
+  (and is used) in `_BatchOperationsTabState`; the settings wrapper has no
+  algorithm UI, so no wiring was missing — and the unused `package:path`
+  import from `lib/tabs/encrypt_tab.dart`. Deprecations (Flutter 3.44):
+  `Radio`/`RadioListTile` `groupValue`/`onChanged` migrated to `RadioGroup`
+  ancestors (per-tile disabling via `enabled: !_isLoading`);
+  `DropdownButtonFormField.value` renamed to `initialValue` at all sites
+  after verifying in the SDK that `didUpdateWidget` still syncs a changed
+  `initialValue` into the field state, so rebuild-driven updates behave as
+  before; `ReorderableListView.onReorder` moved to `onReorderItem`, which
+  takes over the manual `newIndex -= 1` adjustment; `withOpacity` replaced by
+  `withValues(alpha:)`. The four `use_build_context_synchronously` hits in
+  `_SettingsScreenState` now guard with the State's own `mounted` instead of
+  `context.mounted`. Decrypt/Encrypt tab failure results are sanitized
+  (`InputValidator.sanitizeForDisplay`) before rendering — the exception
+  embeds raw CLI stderr. Widget tests install the fake-CLI seam
+  (`commandRunnerOverride`, gitlab#211) and reset via
+  `CLIService.resetForTesting`. `pubspec.yaml`'s SDK floor raised to
+  `^3.10.0` (Flutter 3.44), which is where the migrated `RadioGroup` /
+  `initialValue` / `onReorderItem` APIs exist. All 27 widget tests pass.
 
 - **The combined-pepper concatenation is now documented as an accepted
   residual** (gitlab#117): `_combine_peppers` joins the HSM and remote

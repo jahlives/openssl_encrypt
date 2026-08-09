@@ -1376,21 +1376,23 @@ class _RecommendationWizardDialogState extends State<RecommendationWizardDialog>
   Step _buildUseCaseStep() {
     return Step(
       title: const Text('Use Case'),
-      content: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text('What will you primarily use this encryption for?'),
-          const SizedBox(height: 16),
-          ...UseCase.values.map((useCase) {
-            return RadioListTile<UseCase>(
-              title: Text(_getUseCaseTitle(useCase)),
-              subtitle: Text(_getUseCaseDescription(useCase)),
-              value: useCase,
-              groupValue: _selectedUseCase,
-              onChanged: (value) => setState(() => _selectedUseCase = value!),
-            );
-          }),
-        ],
+      content: RadioGroup<UseCase>(
+        groupValue: _selectedUseCase,
+        onChanged: (value) => setState(() => _selectedUseCase = value!),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('What will you primarily use this encryption for?'),
+            const SizedBox(height: 16),
+            ...UseCase.values.map((useCase) {
+              return RadioListTile<UseCase>(
+                title: Text(_getUseCaseTitle(useCase)),
+                subtitle: Text(_getUseCaseDescription(useCase)),
+                value: useCase,
+              );
+            }),
+          ],
+        ),
       ),
       isActive: _currentStep >= 0,
     );
@@ -1399,21 +1401,23 @@ class _RecommendationWizardDialogState extends State<RecommendationWizardDialog>
   Step _buildSecurityStep() {
     return Step(
       title: const Text('Security Level'),
-      content: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text('What level of security do you need?'),
-          const SizedBox(height: 16),
-          ...SecurityLevel.values.map((level) {
-            return RadioListTile<SecurityLevel>(
-              title: Text(_getSecurityLevelTitle(level)),
-              subtitle: Text(_getSecurityLevelDescription(level)),
-              value: level,
-              groupValue: _selectedSecurityLevel,
-              onChanged: (value) => setState(() => _selectedSecurityLevel = value!),
-            );
-          }),
-        ],
+      content: RadioGroup<SecurityLevel>(
+        groupValue: _selectedSecurityLevel,
+        onChanged: (value) => setState(() => _selectedSecurityLevel = value!),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('What level of security do you need?'),
+            const SizedBox(height: 16),
+            ...SecurityLevel.values.map((level) {
+              return RadioListTile<SecurityLevel>(
+                title: Text(_getSecurityLevelTitle(level)),
+                subtitle: Text(_getSecurityLevelDescription(level)),
+                value: level,
+              );
+            }),
+          ],
+        ),
       ),
       isActive: _currentStep >= 1,
     );
@@ -1422,21 +1426,23 @@ class _RecommendationWizardDialogState extends State<RecommendationWizardDialog>
   Step _buildPerformanceStep() {
     return Step(
       title: const Text('Performance Priority'),
-      content: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text('How important is processing speed?'),
-          const SizedBox(height: 16),
-          ...PerformanceLevel.values.map((level) {
-            return RadioListTile<PerformanceLevel>(
-              title: Text(_getPerformanceLevelTitle(level)),
-              subtitle: Text(_getPerformanceLevelDescription(level)),
-              value: level,
-              groupValue: _selectedPerformanceLevel,
-              onChanged: (value) => setState(() => _selectedPerformanceLevel = value!),
-            );
-          }),
-        ],
+      content: RadioGroup<PerformanceLevel>(
+        groupValue: _selectedPerformanceLevel,
+        onChanged: (value) => setState(() => _selectedPerformanceLevel = value!),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('How important is processing speed?'),
+            const SizedBox(height: 16),
+            ...PerformanceLevel.values.map((level) {
+              return RadioListTile<PerformanceLevel>(
+                title: Text(_getPerformanceLevelTitle(level)),
+                subtitle: Text(_getPerformanceLevelDescription(level)),
+                value: level,
+              );
+            }),
+          ],
+        ),
       ),
       isActive: _currentStep >= 2,
     );
@@ -2314,14 +2320,11 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
   bool _enableIntegrity = false;      // For encrypt mode: register hash
   bool _verifyIntegrity = false;      // For decrypt mode: verify before decrypt
 
-  // Advanced settings
-  bool _showAdvanced = false;
-
   // Encryption mode selection
   EncryptionMode _encryptionMode = EncryptionMode.symmetric;
 
   // Asymmetric encryption state
-  List<String> _selectedRecipients = [];
+  final List<String> _selectedRecipients = [];
   String? _signingIdentity;
   String? _decryptionIdentity;
   String? _verifyFrom;
@@ -2462,7 +2465,7 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
               const Text('Sign with (optional):', style: TextStyle(fontWeight: FontWeight.w500)),
               const SizedBox(height: 8),
               DropdownButtonFormField<String>(
-                value: _signingIdentity,
+                initialValue: _signingIdentity,
                 decoration: const InputDecoration(
                   border: OutlineInputBorder(),
                   hintText: 'Select signing identity',
@@ -2473,7 +2476,7 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
                     value: null,
                     child: Text('None (unsigned)'),
                   ),
-                  ..._ownIdentities.map((identity) => DropdownMenuItem<String>(
+                  ..._dedupeByName(_ownIdentities).map((identity) => DropdownMenuItem<String>(
                     value: identity['name'] as String,
                     child: Text(identity['name'] as String),
                   )),
@@ -2505,6 +2508,23 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
   }
 
   /// Build asymmetric decryption UI section (for decrypt mode)
+  /// The dropdowns use the identity name as their value; duplicate or null
+  /// values (including a null name colliding with a null sentinel item) make
+  /// DropdownButton assert and crash the tab. Names are unique in the
+  /// identity store, but a contact can share a name with an own identity in
+  /// the merged signer list, and imported contacts are untrusted input.
+  /// (Same guard as the 1.4.x Decrypt tab's _dedupeByName.)
+  List<Map<String, dynamic>> _dedupeByName(List<Map<String, dynamic>> ids) {
+    final seen = <String>{};
+    final out = <Map<String, dynamic>>[];
+    for (final id in ids) {
+      final name = id['name'] as String?;
+      if (name == null || name.isEmpty) continue;
+      if (seen.add(name)) out.add(id);
+    }
+    return out;
+  }
+
   Widget _buildAsymmetricDecryptSection() {
     return Card(
       child: Padding(
@@ -2563,74 +2583,118 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
               const Text('Decrypt with identity:', style: TextStyle(fontWeight: FontWeight.w500)),
               const SizedBox(height: 8),
               DropdownButtonFormField<String>(
-                value: _decryptionIdentity,
+                initialValue: _decryptionIdentity,
                 decoration: const InputDecoration(
                   border: OutlineInputBorder(),
                   hintText: 'Select decryption identity',
                   helperText: 'The identity that was specified as a recipient',
                 ),
-                items: _ownIdentities.map((identity) => DropdownMenuItem<String>(
+                items: _dedupeByName(_ownIdentities).map((identity) => DropdownMenuItem<String>(
                   value: identity['name'] as String,
                   child: Text(identity['name'] as String),
                 )).toList(),
-                onChanged: (value) {
-                  setState(() {
-                    _decryptionIdentity = value;
-                  });
-                },
+                onChanged: _isLoading
+                    ? null
+                    : (value) {
+                        setState(() {
+                          _decryptionIdentity = value;
+                          // Always re-derive the signature options for the
+                          // newly selected identity: never carry a "skip
+                          // verification" choice across a change of identity.
+                          _verifyFrom = null;
+                          _skipVerification = false;
+                        });
+                      },
               ),
-              const SizedBox(height: 16),
-              const Text('Verify signature from (optional):', style: TextStyle(fontWeight: FontWeight.w500)),
-              const SizedBox(height: 8),
-              DropdownButtonFormField<String>(
-                value: _verifyFrom,
-                decoration: const InputDecoration(
-                  border: OutlineInputBorder(),
-                  hintText: 'Select sender to verify',
-                  helperText: 'Verify the digital signature from the sender',
-                ),
-                items: [
-                  const DropdownMenuItem<String>(
-                    value: null,
-                    child: Text('Don\'t verify signature'),
+              // --verify-from / --no-verify are only sent by CLIService when a
+              // non-empty decryption identity is set, so gate them behind
+              // exactly that condition — otherwise the warning banner could
+              // imply verification is off while no flags are sent.
+              if (_decryptionIdentity != null && _decryptionIdentity!.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                const Text('Verify signature from (optional):', style: TextStyle(fontWeight: FontWeight.w500)),
+                const SizedBox(height: 8),
+                DropdownButtonFormField<String>(
+                  initialValue: _verifyFrom,
+                  decoration: const InputDecoration(
+                    border: OutlineInputBorder(),
+                    hintText: 'Select sender to verify',
+                    helperText: 'Verify the digital signature from the sender',
                   ),
-                  ..._ownIdentities.map((identity) => DropdownMenuItem<String>(
-                    value: identity['name'] as String,
-                    child: Text('${identity['name']} (own)'),
-                  )),
-                  ..._contacts.map((contact) => DropdownMenuItem<String>(
-                    value: contact['name'] as String,
-                    child: Text('${contact['name']} (contact)'),
-                  )),
-                ],
-                onChanged: (value) {
-                  setState(() {
-                    _verifyFrom = value;
-                  });
-                },
-              ),
-              if (_showAdvanced) ...[
+                  items: [
+                    const DropdownMenuItem<String>(
+                      value: null,
+                      child: Text('Don\'t verify signature'),
+                    ),
+                    // Dedupe across the merged list: own identities first, so
+                    // a contact shadowing an own name can never be the item
+                    // the dropdown resolves (and labels) for that name.
+                    ..._dedupeByName([
+                      for (final id in _ownIdentities) {...id, 'source': 'own'},
+                      for (final c in _contacts) {...c, 'source': 'contact'},
+                    ]).map((id) => DropdownMenuItem<String>(
+                      value: id['name'] as String,
+                      child: Text('${id['name']} (${id['source']})'),
+                    )),
+                  ],
+                  onChanged: (_isLoading || _skipVerification)
+                      ? null
+                      : (value) {
+                          setState(() {
+                            _verifyFrom = value;
+                          });
+                        },
+                ),
+                // Reachable again (gitlab#214): this block was gated behind a
+                // _showAdvanced flag that nothing ever set, so the checkbox --
+                // whose value IS sent to the CLI -- could never be shown. Same
+                // guard set as the 1.4.x fix: skip clears and disables the
+                // signer dropdown, nothing is editable mid-run, and the red
+                // banner appears only when skipping is actually armed.
                 const SizedBox(height: 12),
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.red.shade50,
-                    border: Border.all(color: Colors.red.shade200),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: CheckboxListTile(
-                    value: _skipVerification,
-                    onChanged: (value) {
-                      setState(() {
-                        _skipVerification = value ?? false;
-                      });
-                    },
-                    title: const Text('Skip signature verification (dangerous)', style: TextStyle(color: Colors.red)),
-                    subtitle: const Text('Only use if you understand the security implications', style: TextStyle(fontSize: 11)),
-                    contentPadding: EdgeInsets.zero,
-                    dense: true,
-                  ),
+                CheckboxListTile(
+                  value: _skipVerification,
+                  onChanged: _isLoading
+                      ? null
+                      : (value) {
+                          setState(() {
+                            _skipVerification = value ?? false;
+                            // Verifying a specific signer is meaningless if
+                            // verification is skipped entirely.
+                            if (_skipVerification) _verifyFrom = null;
+                          });
+                        },
+                  title: const Text('Skip signature verification (dangerous)', style: TextStyle(color: Colors.red)),
+                  subtitle: const Text('Only use if you understand the security implications', style: TextStyle(fontSize: 11)),
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
                 ),
+                if (_skipVerification)
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.red.shade50,
+                      border: Border.all(color: Colors.red.shade200),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.warning_amber, color: Colors.red, size: 20),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Signature verification disabled — the sender\'s '
+                            'authenticity will NOT be checked for any file in '
+                            'this batch.',
+                            style: TextStyle(
+                                color: Colors.red,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
               ],
             ],
           ],
@@ -2862,9 +2926,8 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
                         shrinkWrap: true,
                         physics: const NeverScrollableScrollPhysics(),
                         itemCount: _cascadeAlgorithms.length,
-                        onReorder: (oldIndex, newIndex) async {
+                        onReorderItem: (oldIndex, newIndex) async {
                           setState(() {
-                            if (newIndex > oldIndex) { newIndex -= 1; }
                             final item = _cascadeAlgorithms.removeAt(oldIndex);
                             _cascadeAlgorithms.insert(newIndex, item);
                           });
@@ -2911,7 +2974,7 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
             const Text('HKDF Hash Function:', style: TextStyle(fontWeight: FontWeight.w500)),
             const SizedBox(height: 8),
             DropdownButtonFormField<String>(
-              value: _cascadeHash,
+              initialValue: _cascadeHash,
               decoration: const InputDecoration(border: OutlineInputBorder(), helperText: 'Hash function for key derivation between layers'),
               items: const [
                 DropdownMenuItem(value: 'sha256', child: Text('SHA-256')),
@@ -3073,11 +3136,20 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
                   ),
                 ],
                 selected: {_encryptionMode},
-                onSelectionChanged: (Set<EncryptionMode> newSelection) {
-                  setState(() {
-                    _encryptionMode = newSelection.first;
-                  });
-                },
+                // Inert while a batch runs: _processFile branches on the
+                // mode, and the UI must not contradict an in-flight run.
+                onSelectionChanged: _isLoading
+                    ? null
+                    : (Set<EncryptionMode> newSelection) {
+                        setState(() {
+                          _encryptionMode = newSelection.first;
+                          // Signature options only apply to asymmetric
+                          // decrypt; never carry a "skip verification"
+                          // choice across a mode switch.
+                          _verifyFrom = null;
+                          _skipVerification = false;
+                        });
+                      },
               ),
             ),
             const SizedBox(height: 8),
@@ -3283,51 +3355,48 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
                     const SizedBox(height: 16),
 
                     // Operation Type
-                    Column(
-                      children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: RadioListTile<String>(
-                                title: const Text('Encrypt Files'),
-                                subtitle: const Text('Encrypt all selected files'),
-                                value: 'encrypt',
-                                groupValue: _selectedOperation,
-                                onChanged: _isLoading ? null : (value) {
-                                  setState(() {
-                                    _selectedOperation = value!;
-                                  });
-                                },
+                    RadioGroup<String>(
+                      groupValue: _selectedOperation,
+                      onChanged: (value) {
+                        setState(() {
+                          _selectedOperation = value!;
+                          // The skip choice must not survive an operation
+                          // change.
+                          _verifyFrom = null;
+                          _skipVerification = false;
+                        });
+                      },
+                      child: Column(
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: RadioListTile<String>(
+                                  title: const Text('Encrypt Files'),
+                                  subtitle: const Text('Encrypt all selected files'),
+                                  value: 'encrypt',
+                                  enabled: !_isLoading,
+                                ),
                               ),
-                            ),
-                            Expanded(
-                              child: RadioListTile<String>(
-                                title: const Text('Decrypt Files'),
-                                subtitle: const Text('Decrypt all selected files'),
-                                value: 'decrypt',
-                                groupValue: _selectedOperation,
-                                onChanged: _isLoading ? null : (value) {
-                                  setState(() {
-                                    _selectedOperation = value!;
-                                  });
-                                },
+                              Expanded(
+                                child: RadioListTile<String>(
+                                  title: const Text('Decrypt Files'),
+                                  subtitle: const Text('Decrypt all selected files'),
+                                  value: 'decrypt',
+                                  enabled: !_isLoading,
+                                ),
                               ),
-                            ),
-                          ],
-                        ),
-                        if (SettingsService.getIntegrityEnabled())
-                          RadioListTile<String>(
-                            title: const Text('Verify Integrity'),
-                            subtitle: const Text('Verify file integrity against server'),
-                            value: 'verify-integrity',
-                            groupValue: _selectedOperation,
-                            onChanged: _isLoading ? null : (value) {
-                              setState(() {
-                                _selectedOperation = value!;
-                              });
-                            },
+                            ],
                           ),
-                      ],
+                          if (SettingsService.getIntegrityEnabled())
+                            RadioListTile<String>(
+                              title: const Text('Verify Integrity'),
+                              subtitle: const Text('Verify file integrity against server'),
+                              value: 'verify-integrity',
+                              enabled: !_isLoading,
+                            ),
+                        ],
+                      ),
                     ),
 
                     const SizedBox(height: 16),
@@ -3663,11 +3732,16 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
                           ),
                           const Spacer(),
                           TextButton.icon(
-                            onPressed: () {
-                              setState(() {
-                                _results.clear();
-                              });
-                            },
+                            // Inert while a batch runs: clearing mid-run
+                            // would wipe the verification audit trail and
+                            // skew the completion summary counts.
+                            onPressed: _isLoading
+                                ? null
+                                : () {
+                                    setState(() {
+                                      _results.clear();
+                                    });
+                                  },
                             icon: const Icon(Icons.clear),
                             label: const Text('Clear'),
                           ),
@@ -3684,12 +3758,27 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
                             final result = _results[index];
                             return Card(
                               margin: const EdgeInsets.symmetric(vertical: 2),
-                              color: result.success ? Colors.green.withValues(alpha: 0.1) : Colors.red.withValues(alpha: 0.1),
+                              // Unverified successes are amber, not green: a
+                              // decrypt with --no-verify carries no
+                              // authenticity guarantee and must not blend in.
+                              color: result.success
+                                  ? (result.verificationSkipped
+                                      ? Colors.orange.withValues(alpha: 0.15)
+                                      : Colors.green.withValues(alpha: 0.1))
+                                  : Colors.red.withValues(alpha: 0.1),
                               child: ListTile(
                                 dense: true,
                                 leading: Icon(
-                                  result.success ? Icons.check_circle : Icons.error,
-                                  color: result.success ? Colors.green : Colors.red,
+                                  result.success
+                                      ? (result.verificationSkipped
+                                          ? Icons.gpp_maybe
+                                          : Icons.check_circle)
+                                      : Icons.error,
+                                  color: result.success
+                                      ? (result.verificationSkipped
+                                          ? Colors.orange
+                                          : Colors.green)
+                                      : Colors.red,
                                   size: 20,
                                 ),
                                 title: Text(
@@ -3697,10 +3786,18 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
                                   style: const TextStyle(fontSize: 13),
                                 ),
                                 subtitle: Text(
-                                  result.success ? 'Success' : (result.errorMessage ?? 'Unknown error'),
+                                  result.success
+                                      ? (result.verificationSkipped
+                                          ? 'Success — signature verification SKIPPED'
+                                          : 'Success')
+                                      : (result.errorMessage ?? 'Unknown error'),
                                   style: TextStyle(
                                     fontSize: 11,
-                                    color: result.success ? Colors.green.shade700 : Colors.red.shade700,
+                                    color: result.success
+                                        ? (result.verificationSkipped
+                                            ? Colors.orange.shade800
+                                            : Colors.green.shade700)
+                                        : Colors.red.shade700,
                                   ),
                                 ),
                                 trailing: result.success && result.outputPath != null
@@ -3835,14 +3932,32 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
       _results.clear();
     });
 
+    // Snapshot the branch-deciding and verification settings before the
+    // loop: every file in the batch must be processed under the settings
+    // that were armed at start, even if the widget state changes mid-run.
+    final operation = _selectedOperation;
+    final encryptionMode = _encryptionMode;
+    final withKey = _decryptionIdentity;
+    final verifyFrom = _verifyFrom;
+    final skipVerification = _skipVerification;
+
     try {
       for (int i = 0; i < _selectedFiles.length; i++) {
+        if (!mounted) return;
         setState(() {
           _currentFileIndex = i;
           _currentStatus = 'Processing ${_selectedFiles[i].name}...';
         });
 
-        final result = await _processFile(_selectedFiles[i]);
+        final result = await _processFile(
+          _selectedFiles[i],
+          operation: operation,
+          encryptionMode: encryptionMode,
+          withKey: withKey,
+          verifyFrom: verifyFrom,
+          skipVerification: skipVerification,
+        );
+        if (!mounted) return;
         setState(() {
           _results.add(result);
         });
@@ -3851,29 +3966,43 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
         await Future.delayed(const Duration(milliseconds: 100));
       }
     } finally {
-      setState(() {
-        _isLoading = false;
-        _currentStatus = 'Completed';
-      });
-
-      // Show summary
-      final successful = _results.where((r) => r.success).length;
-      final failed = _results.where((r) => !r.success).length;
-
       if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _currentStatus = 'Completed';
+        });
+
+        // Show summary. Unverified successes are called out separately: a
+        // fully unverified batch must not read as a clean green success.
+        final successful = _results.where((r) => r.success).length;
+        final failed = _results.where((r) => !r.success).length;
+        final unverified =
+            _results.where((r) => r.success && r.verificationSkipped).length;
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Batch operation completed: $successful successful, $failed failed'),
-            backgroundColor: failed > 0 ? Colors.orange : Colors.green,
+            content: Text(
+                'Batch operation completed: $successful successful, $failed failed'
+                '${unverified > 0 ? ', $unverified WITHOUT signature verification' : ''}'),
+            backgroundColor: (failed > 0 || unverified > 0)
+                ? Colors.orange
+                : Colors.green,
           ),
         );
       }
     }
   }
 
-  Future<BatchOperationResult> _processFile(FileInfo file) async {
+  Future<BatchOperationResult> _processFile(
+    FileInfo file, {
+    required String operation,
+    required EncryptionMode encryptionMode,
+    required String? withKey,
+    required String? verifyFrom,
+    required bool skipVerification,
+  }) async {
     try {
-      if (_selectedOperation == 'encrypt') {
+      if (operation == 'encrypt') {
         // Read file content
         final content = await widget.fileManager.readFileText(file.path);
         if (content == null) {
@@ -3886,7 +4015,7 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
 
         // Encrypt based on encryption mode
         String encrypted;
-        if (_encryptionMode == EncryptionMode.asymmetric) {
+        if (encryptionMode == EncryptionMode.asymmetric) {
           // Asymmetric encryption mode
           encrypted = await CLIService.encryptTextWithProgress(
             content,
@@ -3899,7 +4028,7 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
             useKeyserver: _useKeyserver,
             enableIntegrity: _enableIntegrity,
           );
-        } else if (_encryptionMode == EncryptionMode.cascade) {
+        } else if (encryptionMode == EncryptionMode.cascade) {
           // Cascade encryption mode
           encrypted = await CLIService.encryptTextWithProgress(
             content,
@@ -3942,7 +4071,7 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
             errorMessage: 'Could not write encrypted file',
           );
         }
-      } else if (_selectedOperation == 'decrypt') {
+      } else if (operation == 'decrypt') {
         // Decrypt operation
         final content = await widget.fileManager.readFileText(file.path);
         if (content == null) {
@@ -3955,14 +4084,14 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
 
         // Decrypt based on encryption mode
         String decrypted;
-        if (_encryptionMode == EncryptionMode.asymmetric) {
+        if (encryptionMode == EncryptionMode.asymmetric) {
           // Asymmetric decryption mode
           decrypted = await CLIService.decryptTextWithProgress(
             content,
             _password,
-            withKey: _decryptionIdentity,
-            verifyFrom: _verifyFrom,
-            skipVerification: _skipVerification,
+            withKey: withKey,
+            verifyFrom: verifyFrom,
+            skipVerification: skipVerification,
             verifyIntegrity: _verifyIntegrity,
           );
         } else {
@@ -3978,11 +4107,19 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
         final outputPath = widget.fileManager.getDecryptedFileName(file.path);
         final writeSuccess = await widget.fileManager.writeFileText(outputPath, decrypted);
 
+        // --no-verify only reaches the CLI in asymmetric mode with an
+        // identity set (CLIService omits both verify flags otherwise).
+        final skipped = encryptionMode == EncryptionMode.asymmetric &&
+            withKey != null &&
+            withKey.isNotEmpty &&
+            skipVerification;
+
         if (writeSuccess) {
           return BatchOperationResult(
             fileName: file.name,
             success: true,
             outputPath: outputPath,
+            verificationSkipped: skipped,
           );
         } else {
           return BatchOperationResult(
@@ -3991,7 +4128,7 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
             errorMessage: 'Could not write decrypted file',
           );
         }
-      } else if (_selectedOperation == 'verify-integrity') {
+      } else if (operation == 'verify-integrity') {
         // Verify integrity operation
         final content = await widget.fileManager.readFileText(file.path);
         if (content == null) {
@@ -4047,21 +4184,27 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
           return BatchOperationResult(
             fileName: file.name,
             success: false,
-            errorMessage: 'Invalid encrypted file format or not registered: $e',
+            // No '$e' here: a FormatException from jsonDecode embeds an
+            // excerpt of the (attacker-supplied) file bytes, which would be
+            // rendered verbatim into the results list.
+            errorMessage: 'Invalid encrypted file format or not registered',
           );
         }
       } else {
         return BatchOperationResult(
           fileName: file.name,
           success: false,
-          errorMessage: 'Unknown operation: $_selectedOperation',
+          errorMessage: 'Unknown operation: $operation',
         );
       }
     } catch (e) {
       return BatchOperationResult(
         fileName: file.name,
         success: false,
-        errorMessage: e.toString(),
+        // CLI failures embed raw stderr in the exception; strip control
+        // characters before the message reaches the results list (same
+        // treatment as the identity error path).
+        errorMessage: InputValidator.sanitizeForDisplay(e.toString()),
       );
     }
   }
@@ -4104,10 +4247,17 @@ class BatchOperationResult {
   final String? errorMessage;
   final String? outputPath;
 
+  /// True when the file was decrypted with signature verification skipped
+  /// (--no-verify): a "success" without any authenticity check. Kept on the
+  /// result so the results list can say so — otherwise a fully unverified
+  /// batch is indistinguishable from a verified one.
+  final bool verificationSkipped;
+
   BatchOperationResult({
     required this.fileName,
     required this.success,
     this.errorMessage,
     this.outputPath,
+    this.verificationSkipped = false,
   });
 }

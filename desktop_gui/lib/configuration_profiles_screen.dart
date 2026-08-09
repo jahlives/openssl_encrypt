@@ -1075,7 +1075,7 @@ class _CreateProfileDialogState extends State<CreateProfileDialog> {
             ),
             const SizedBox(height: 16),
             DropdownButtonFormField<String>(
-              value: _algorithm,
+              initialValue: _algorithm,
               decoration: const InputDecoration(
                 labelText: 'Algorithm',
                 border: OutlineInputBorder(),

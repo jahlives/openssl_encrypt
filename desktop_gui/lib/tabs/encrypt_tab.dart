@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../cli_service.dart';
+import '../input_validation.dart';
 import '../file_manager.dart';
 import '../widgets/crypto_widgets.dart';
 
@@ -38,12 +39,12 @@ class _EncryptTabState extends State<EncryptTab> {
 
   // Hash configuration
   bool _showHashConfig = false;
-  Map<String, Map<String, dynamic>> _hashConfig = {};
+  final Map<String, Map<String, dynamic>> _hashConfig = {};
   Map<String, List<String>> _hashAlgorithms = {};
 
   // KDF configuration
   bool _showKdfConfig = false;
-  Map<String, Map<String, dynamic>> _kdfConfig = {
+  final Map<String, Map<String, dynamic>> _kdfConfig = {
     'argon2': {'enabled': true, 'time_cost': 3, 'memory_cost': 65536, 'parallelism': 4, 'hash_len': 32, 'type': 2, 'rounds': 10},
     'scrypt': {'enabled': false, 'n': 16384, 'r': 8, 'p': 1, 'rounds': 10},
     'hkdf': {'enabled': false, 'rounds': 1, 'algorithm': 'sha256', 'info': 'openssl_encrypt_hkdf'},
@@ -263,7 +264,8 @@ class _EncryptTabState extends State<EncryptTab> {
       });
     } catch (e) {
       setState(() {
-        result = 'Encryption failed: $e';
+        // Sanitize: the exception embeds raw CLI stderr.
+        result = InputValidator.sanitizeForDisplay('Encryption failed: $e');
         _isLoading = false;
       });
     }
@@ -380,7 +382,7 @@ class _EncryptTabState extends State<EncryptTab> {
       }
     } catch (e) {
       setState(() {
-        result = 'File encryption failed: $e';
+        result = InputValidator.sanitizeForDisplay('File encryption failed: $e');
         _isLoading = false;
       });
     }
@@ -1316,8 +1318,8 @@ class _EncryptTabState extends State<EncryptTab> {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3),
-                  border: Border.all(color: Theme.of(context).colorScheme.primary.withOpacity(0.5)),
+                  color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.3),
+                  border: Border.all(color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.5)),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
@@ -1402,7 +1404,7 @@ class _EncryptTabState extends State<EncryptTab> {
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                                 decoration: BoxDecoration(
-                                  color: _getCascadeFamilyColor(algorithm).withOpacity(0.2),
+                                  color: _getCascadeFamilyColor(algorithm).withValues(alpha: 0.2),
                                   borderRadius: BorderRadius.circular(4),
                                 ),
                                 child: Text(
@@ -1465,7 +1467,7 @@ class _EncryptTabState extends State<EncryptTab> {
             const Text('HKDF Hash Function:', style: TextStyle(fontWeight: FontWeight.w500)),
             const SizedBox(height: 8),
             DropdownButtonFormField<String>(
-              value: _cascadeHash,
+              initialValue: _cascadeHash,
               decoration: const InputDecoration(
                 border: OutlineInputBorder(),
                 helperText: 'Hash function for key derivation between encryption layers',

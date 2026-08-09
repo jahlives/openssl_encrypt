@@ -544,7 +544,7 @@ class HsmConfigSection extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
-              value: hsmType,
+              initialValue: hsmType,
               decoration: const InputDecoration(
                 labelText: 'HSM Type',
                 border: OutlineInputBorder(),
@@ -716,7 +716,7 @@ class PepperConfigSection extends StatelessWidget {
             if (enablePepper) ...[
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
-                value: pepperMode,
+                initialValue: pepperMode,
                 decoration: const InputDecoration(
                   labelText: 'Pepper Mode',
                   border: OutlineInputBorder(),
