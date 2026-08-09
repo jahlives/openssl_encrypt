@@ -420,6 +420,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **`identity create --hsm onlykey` no longer silently binds the identity to
+  the YubiKey** (gitlab#218, ADVISORY 2026-18): `cmd_create` computed the
+  correct `hsm_type` but used it only for a pre-flight check — `Identity.generate()`
+  had no `hsm_type` parameter and built the protection service with the
+  `yubikey` default, and the recorded `hsm_config.hsm_type` was never consulted
+  for plugin selection (both `_encrypt_private_key` and `_decrypt_private_key`
+  also used the default). So an OnlyKey selection was dropped: with only an
+  OnlyKey present, creation failed with a misleading "no Yubikey available"
+  error; with both devices present, the identity was silently YubiKey-bound and
+  could never be opened with the OnlyKey. `generate()` now takes an `hsm_type`
+  (default `yubikey`, threaded from `identity create`), and the encrypt/decrypt
+  paths build the service from the identity's recorded `hsm_config.hsm_type`, so
+  an OnlyKey identity uses the OnlyKey plugin end to end; HSM error messages name
+  the configured device instead of hardcoding "Yubikey". Existing YubiKey
+  identities are unaffected (the `yubikey` default and the legacy fallback are
+  preserved). Not remotely exploitable (no adversary, no key disclosure); Medium
+  for the wrong-trust-anchor and lockout risk. Recreate any onlykey identity
+  made on an affected release with both devices attached.
+
 - **The file password was printed in cleartext by the `--debug` argv dump
   for bundled and abbreviated option spellings** (gitlab#209, ADVISORY
   2026-17). Under `--debug` the tool prints its own argv, routing

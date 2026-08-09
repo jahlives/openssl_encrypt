@@ -370,6 +370,7 @@ class Identity:
         protection_level: ProtectionLevel = ProtectionLevel.PASSWORD_ONLY,
         hsm_slot: Optional[int] = None,
         require_touch: bool = True,
+        hsm_type: str = "yubikey",
     ) -> "Identity":
         """
         Generate a new identity with fresh keypairs.
@@ -381,8 +382,12 @@ class Identity:
             kem_algorithm: KEM algorithm for encryption
             sig_algorithm: Signature algorithm
             protection_level: Protection level (PASSWORD_ONLY, PASSWORD_AND_HSM, or HSM_ONLY)
-            hsm_slot: Yubikey slot (1 or 2, None = auto-detect)
-            require_touch: Whether Yubikey touch is required
+            hsm_slot: HSM slot (None = auto-detect)
+            require_touch: Whether an HSM touch/button press is required
+            hsm_type: Which HSM the identity is bound to ("yubikey" default, or
+                "onlykey"). Threaded into the protection service so the recorded
+                config and the pepper derivation use the device the caller
+                selected, not the yubikey default (gitlab#218).
 
         Returns:
             New Identity instance
@@ -425,7 +430,7 @@ class Identity:
             # Create protection configuration
             protection = None
             if protection_level != ProtectionLevel.PASSWORD_ONLY:
-                protection_service = IdentityKeyProtectionService()
+                protection_service = IdentityKeyProtectionService(hsm_type=hsm_type)
                 protection = protection_service.create_protection_config(
                     level=protection_level,
                     hsm_slot=hsm_slot,
@@ -1278,9 +1283,14 @@ def _encrypt_private_key(
     if not ARGON2_AVAILABLE:
         raise RuntimeError("argon2-cffi required for private key encryption")
 
-    # Use HSM protection service if configured
+    # Use HSM protection service if configured. The service must be built for
+    # the device the identity is bound to (its recorded hsm_type), not the
+    # yubikey default -- otherwise an OnlyKey identity would derive its pepper
+    # from the YubiKey plugin (gitlab#218). Legacy configs without a type fall
+    # back to "yubikey" for backward compatibility.
     if protection and protection.level != ProtectionLevel.PASSWORD_ONLY:
-        protection_service = IdentityKeyProtectionService()
+        hsm_type = protection.hsm_config.hsm_type if protection.hsm_config else "yubikey"
+        protection_service = IdentityKeyProtectionService(hsm_type=hsm_type)
         return protection_service.encrypt_private_key(
             private_key_data=private_key,
             password=passphrase,
@@ -1354,9 +1364,14 @@ def _decrypt_private_key(
     if not ARGON2_AVAILABLE:
         raise RuntimeError("argon2-cffi required for private key decryption")
 
-    # Use HSM protection service if configured
+    # Use HSM protection service if configured, built for the device the
+    # identity is bound to (its recorded hsm_type), not the yubikey default --
+    # otherwise an OnlyKey identity would try to derive its pepper from the
+    # YubiKey plugin and never unlock (gitlab#218). Legacy configs without a
+    # type fall back to "yubikey".
     if protection and protection.level != ProtectionLevel.PASSWORD_ONLY:
-        protection_service = IdentityKeyProtectionService()
+        hsm_type = protection.hsm_config.hsm_type if protection.hsm_config else "yubikey"
+        protection_service = IdentityKeyProtectionService(hsm_type=hsm_type)
         try:
             private_key_bytes = protection_service.decrypt_private_key(
                 encrypted_data=encrypted_data,

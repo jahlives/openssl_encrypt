@@ -253,6 +253,15 @@ class IdentityKeyProtectionService:
         self._hsm_checked = False
         self._cached_pepper = None  # Cache pepper for single operation
 
+    @property
+    def _device_label(self) -> str:
+        """Human-readable name of the configured HSM device (gitlab#218).
+
+        The error messages below hardcoded "Yubikey", which misled OnlyKey
+        users into thinking the wrong device was expected.
+        """
+        return "OnlyKey" if self._hsm_type == "onlykey" else "Yubikey"
+
     def _get_hsm_plugin(self):
         """Lazy-load the HSM plugin according to self._hsm_type."""
         if self._hsm_plugin is not None:
@@ -336,13 +345,14 @@ class IdentityKeyProtectionService:
 
         plugin = self._get_hsm_plugin()
         if plugin is None:
-            raise HSMNotAvailableError("Yubikey plugin not available")
+            raise HSMNotAvailableError(f"{self._device_label} plugin not available")
 
-        # Check if Yubikey is available
+        # Check if the device is available
         init_result = plugin.initialize({})
         if not init_result.success:
             raise HSMNotAvailableError(
-                f"No Yubikey detected. Please insert your Yubikey. ({init_result.message})"
+                f"No {self._device_label} detected. Please insert your "
+                f"{self._device_label}. ({init_result.message})"
             )
 
         # Generate challenge
@@ -354,8 +364,9 @@ class IdentityKeyProtectionService:
             slot = self.detect_hsm_slot()
             if slot is None:
                 raise HSMNotAvailableError(
-                    "No Challenge-Response slot configured on Yubikey. "
-                    "Please configure slot 1 or 2 for HMAC-SHA1 Challenge-Response."
+                    f"No Challenge-Response slot configured on your "
+                    f"{self._device_label}. Please configure an HMAC-SHA1 "
+                    "Challenge-Response slot."
                 )
 
         # Write touch prompt directly to the terminal (bypasses stdout/stderr
@@ -641,7 +652,9 @@ class IdentityKeyProtectionService:
         hsm_config = None
         if level in (ProtectionLevel.PASSWORD_AND_HSM, ProtectionLevel.HSM_ONLY):
             if not self.is_hsm_available():
-                raise HSMNotAvailableError("HSM protection requested but no Yubikey available")
+                raise HSMNotAvailableError(
+                    f"HSM protection requested but no {self._device_label} available"
+                )
 
             hsm_config = HSMProtectionConfig(
                 hsm_type=self._hsm_type,
