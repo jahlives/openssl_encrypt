@@ -711,6 +711,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`telemetry opt-out` now persists** (gitlab#166 part 5): `opt_out()` stopped
+  uploads, cleared the buffer and deleted the API key, but wrote no persistent
+  disable — so a stale `OPENSSL_ENCRYPT_TELEMETRY=1` in the environment silently
+  re-enabled collection and registered a fresh key on the next run, defeating the
+  privacy control the user just invoked. `opt_out()` now writes a persistent
+  marker (`~/.openssl_encrypt/telemetry/opted_out`) that `_is_telemetry_enabled`
+  honours ahead of the env/config sources; removing the file (and unsetting the
+  env var) re-enables. This resolves the last part of gitlab#166.
+
 - **Template subsystem hygiene and hardening** (gitlab#169 parts 3/4/6): the
   `template create`/`analyze`/`delete` subcommands read `args.template_name`
   while the parser defines the positionals `name`/`template`, so each always

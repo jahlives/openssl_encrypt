@@ -152,6 +152,23 @@ def _is_telemetry_enabled() -> bool:
     if _telemetry_enabled:
         return True
 
+    # A persistent opt-out (written by `telemetry opt-out`) overrides the passive
+    # env/config sources below -- otherwise a stale OPENSSL_ENCRYPT_TELEMETRY=1
+    # (or config) silently re-enabled collection and registered a new key on the
+    # next run after the user explicitly opted out (gitlab#166 part 5).
+    #
+    # Fail safe: if the marker state cannot be determined (home unresolvable, a
+    # permission error on ~/.openssl_encrypt, etc.), treat telemetry as disabled
+    # rather than consulting the passive env/config sources -- for a privacy
+    # opt-out the safe default under uncertainty is "off".
+    try:
+        from pathlib import Path
+
+        if (Path.home() / ".openssl_encrypt" / "telemetry" / "opted_out").exists():
+            return False
+    except Exception:
+        return False  # indeterminate marker state -> stay opted out
+
     # Check environment variable
     if os.getenv("OPENSSL_ENCRYPT_TELEMETRY") == "1":
         return True

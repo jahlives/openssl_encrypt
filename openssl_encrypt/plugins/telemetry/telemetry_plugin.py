@@ -339,8 +339,42 @@ class OpenSSLEncryptTelemetryPlugin(TelemetryPlugin):
             # Delete API key
             self.key_manager.delete_key()
 
+            # Persist the opt-out so a stale OPENSSL_ENCRYPT_TELEMETRY=1 (or a
+            # config-enabled install) does not silently re-enable collection and
+            # register a new key on the next run (gitlab#166 part 5).
+            # _is_telemetry_enabled checks this marker before the env/config
+            # sources. Remove the file (and unset the env var) to re-enable.
+            marker = Path.home() / ".openssl_encrypt" / "telemetry" / "opted_out"
+            marker_written = False
+            try:
+                tele_dir = marker.parent
+                tele_dir.mkdir(parents=True, exist_ok=True)
+                # This tree also stores the telemetry API key; keep it private
+                # (a bare mkdir would leave it world-readable at the umask).
+                for d in (tele_dir, tele_dir.parent):
+                    try:
+                        os.chmod(d, 0o700)
+                    except OSError:
+                        pass  # best effort; not fatal to the opt-out
+                marker.write_text("opted out\n", encoding="utf-8")
+                marker_written = True
+            except Exception as e:  # pragma: no cover - best effort
+                logger.warning(f"Could not persist telemetry opt-out marker: {e}")
+
+            if marker_written:
+                return PluginResult.success_result(
+                    f"Opted out successfully. Deleted {deleted_count} events and the "
+                    "API key, and telemetry is now persistently disabled."
+                )
+            # The key and buffer are gone, but the persistent marker could not be
+            # written -- do NOT claim persistent disablement, since a stale
+            # OPENSSL_ENCRYPT_TELEMETRY=1 would re-enable collection on the next
+            # run. Tell the user exactly what to do to stay opted out.
             return PluginResult.success_result(
-                f"Opted out successfully. Deleted {deleted_count} events and API key."
+                f"Opted out: deleted {deleted_count} events and the API key. "
+                f"WARNING: could not write the persistent opt-out marker ({marker}), "
+                "so telemetry may re-enable if OPENSSL_ENCRYPT_TELEMETRY=1 remains "
+                "set. Unset that variable (and any telemetry config) to stay opted out."
             )
 
         except Exception as e:
