@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Desktop GUI: securely delete the source file after encrypting**
+  (gitlab#151 / github#69): the Encrypt tab's file options gain an
+  off-by-default switch to shred the original file once the encrypted copy is
+  written, with a 1/3/7-pass selector. Because the GUI encrypts file content
+  as text (the encrypt command's own `--shred` has no input file to wipe), the
+  source is shredded as a separate `shred` command, gated behind a per-run
+  confirmation that names the exact file and states the deletion is
+  irreversible. Two safety guards: the shred is skipped when force-overwrite
+  is on (the source was already replaced in place, so shredding would destroy
+  the ciphertext), and the path is glob-escaped before `-i` (the CLI globs its
+  input, so a literal name containing `*`/`?`/`[` — matching Python's
+  `glob.escape` — could otherwise expand to and delete siblings that were
+  never in the confirmation).
+
 - **Desktop GUI: Encrypt-tab PQC-keyfile and legacy-KDF-composition controls**
   (gitlab#153 / gitlab#198): the Advanced Options gain a field to load an
   existing post-quantum key file (`--pqc-keyfile`) and an off-by-default switch

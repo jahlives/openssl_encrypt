@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import '../cli_service.dart';
 import '../input_validation.dart';
@@ -46,6 +48,12 @@ class _EncryptTabState extends State<EncryptTab> {
   bool _useSequentialXor = false; // opt in to legacy sequential composition
   // Parallel KDF (--parallel-kdf/--kdf-workers) is not exposed on this line:
   // it is inert on every producible format (gitlab#220).
+
+  // Securely delete the source file after a successful encryption (gitlab#151).
+  // Off by default and gated on a per-run confirmation: it destroys the user's
+  // only plaintext copy.
+  bool _shredSourceAfterEncrypt = false;
+  int _shredPasses = 3;
 
   // Hash configuration
   bool _showHashConfig = false;
@@ -394,8 +402,12 @@ class _EncryptTabState extends State<EncryptTab> {
       if (success) {
         setState(() {
           result = 'File encrypted successfully!\n\nSaved to: $outputPath';
-          _isLoading = false;
         });
+        // Keep _isLoading true through the shred confirmation + subprocess so
+        // the Encrypt button cannot launch a second run while a destructive
+        // delete is pending.
+        await _maybeShredSource(outputPath);
+        if (mounted) setState(() => _isLoading = false);
       } else {
         throw Exception('Failed to save encrypted file');
       }
@@ -404,6 +416,113 @@ class _EncryptTabState extends State<EncryptTab> {
         result = InputValidator.sanitizeForDisplay('File encryption failed: $e');
         _isLoading = false;
       });
+    }
+  }
+
+  /// True if [a] and [b] are the same file, resolving symlinks and folding
+  /// case. Biased toward true: a false positive keeps the source (safe), a
+  /// false negative would shred the ciphertext (catastrophic), so on any
+  /// resolution error it falls back to a conservative case-folded compare.
+  bool _isSameFile(String a, String b) {
+    try {
+      final ra = File(a).resolveSymbolicLinksSync();
+      final rb = File(b).resolveSymbolicLinksSync();
+      return ra == rb || ra.toLowerCase() == rb.toLowerCase();
+    } catch (_) {
+      return a == b || a.toLowerCase() == b.toLowerCase();
+    }
+  }
+
+  /// Securely delete the source file after a successful encryption
+  /// (gitlab#151).
+  ///
+  /// The GUI encrypts file-mode input by reading its text through
+  /// encryptTextWithProgress, so the encrypt command's own --shred has no
+  /// input file to wipe. The source is shredded here as a separate `shred`
+  /// command, gated behind its own confirmation because it destroys the user's
+  /// only plaintext copy.
+  Future<void> _maybeShredSource(String outputPath) async {
+    if (!_shredSourceAfterEncrypt || _selectedFile == null) return;
+    final sourcePath = _selectedFile!.path;
+
+    // Never shred the file we just wrote the ciphertext into. Force-overwrite
+    // makes the output the source in place, but a plain string compare misses
+    // the case where two DIFFERENT strings are the SAME file — a case-only
+    // difference on a case-insensitive filesystem (getEncryptedFileName
+    // lowercases the .enc suffix), or a symlink/hardlink. Resolve identity
+    // and case-fold defensively: over-matching only KEEPS the source (safe);
+    // under-matching would destroy the ciphertext (catastrophic).
+    if (_isSameFile(sourcePath, outputPath)) return;
+
+    if (!mounted) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.warning_amber, color: Colors.red.shade700),
+            const SizedBox(width: 8),
+            const Expanded(child: Text('Securely delete the source file?')),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('This overwrites and deletes:\n\n$sourcePath'),
+            const SizedBox(height: 12),
+            Text(
+              'The encrypted file at $outputPath becomes the only copy. If its '
+              'password is lost, the data cannot be recovered. This cannot be '
+              'undone.',
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Keep the source file'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Shred it'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    // Flush the ciphertext to stable storage before destroying the plaintext,
+    // so a power/kernel failure in the write→shred window cannot lose both.
+    RandomAccessFile? out;
+    try {
+      out = await File(outputPath).open(mode: FileMode.append);
+      await out.flush();
+    } catch (_) {
+      // Best effort; a flush failure must not itself abort the (confirmed)
+      // shred, but it is why the source is destroyed only after this point.
+    } finally {
+      // Close in a finally so a flush() throw cannot leak the fd.
+      await out?.close();
+    }
+
+    try {
+      await CLIService.shred(sourcePath, passes: _shredPasses);
+      if (mounted) {
+        setState(() {
+          result = '$result\n\nSource file securely deleted: $sourcePath';
+          _selectedFile = null;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          result = InputValidator.sanitizeForDisplay(
+              '$result\n\nThe source file was NOT deleted: $e');
+        });
+      }
     }
   }
 
@@ -2120,12 +2239,54 @@ class _EncryptTabState extends State<EncryptTab> {
                     Card(
                       child: Padding(
                         padding: const EdgeInsets.all(12.0),
-                        child: CheckboxListTile(
-                          title: const Text('Force Overwrite'),
-                          subtitle: const Text('Replace source file with encrypted version'),
-                          value: _forceOverwrite,
-                          onChanged: (value) => setState(() => _forceOverwrite = value ?? false),
-                          contentPadding: EdgeInsets.zero,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            CheckboxListTile(
+                              title: const Text('Force Overwrite'),
+                              subtitle: const Text('Replace source file with encrypted version'),
+                              value: _forceOverwrite,
+                              onChanged: (value) => setState(() => _forceOverwrite = value ?? false),
+                              contentPadding: EdgeInsets.zero,
+                            ),
+                            const Divider(height: 24),
+                            SwitchListTile(
+                              title: const Text(
+                                  'Securely delete the source file after encrypting'),
+                              subtitle: const Text(
+                                'Overwrites and deletes the original once the '
+                                'encrypted copy is written. The encrypted file and '
+                                'its password then become the only way back to the '
+                                'data — if the password is lost it cannot be '
+                                'recovered. You are asked to confirm each time.',
+                              ),
+                              value: _shredSourceAfterEncrypt,
+                              onChanged: (value) =>
+                                  setState(() => _shredSourceAfterEncrypt = value),
+                              contentPadding: EdgeInsets.zero,
+                            ),
+                            if (_shredSourceAfterEncrypt)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 8),
+                                child: Row(
+                                  children: [
+                                    const Text('Overwrite passes:'),
+                                    const SizedBox(width: 12),
+                                    DropdownButton<int>(
+                                      value: _shredPasses,
+                                      items: const [1, 3, 7]
+                                          .map((n) => DropdownMenuItem(
+                                                value: n,
+                                                child: Text('$n'),
+                                              ))
+                                          .toList(),
+                                      onChanged: (v) =>
+                                          setState(() => _shredPasses = v ?? 3),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                          ],
                         ),
                       ),
                     ),

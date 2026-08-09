@@ -58,7 +58,8 @@ CLI_SERVICE = os.path.join(REPO_ROOT, "desktop_gui", "lib", "cli_service.dart")
 # +1 (23): telemetryOptOut -> `telemetry opt-out --force` (gitlab#165).
 # +1 (24): checkPassword -> `check-password --json --password-policy none`
 # (gitlab#141).
-EXPECTED_CALL_SITES = 24
+# +1 (25): shred -> `shred -i <path> --shred-passes N` (gitlab#151).
+EXPECTED_CALL_SITES = 25
 
 # Commands whose loss would gut the lint. Asserted present by name so an
 # extractor change cannot quietly drop the KDF/cascade flag surface.
