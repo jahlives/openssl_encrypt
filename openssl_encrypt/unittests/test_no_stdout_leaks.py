@@ -83,6 +83,15 @@ STDOUT_WHITELIST = [
         1,
         "template list JSON output",
     ),
+    # crypt_cli.py — template compare --format json (gitlab#167). Same as list:
+    # the payload is bounded template metadata + derived verdicts; the raw
+    # self-asserted security score is deliberately NOT published (gitlab#169).
+    (
+        "modules/crypt_cli.py",
+        "print(json.dumps(_template_compare_payload(comparison), indent=2))",
+        1,
+        "template compare JSON output",
+    ),
     # crypt_cli.py — decrypted plaintext outputs. One shape, four call sites
     # (asymmetric and asymmetric-path-2, each with a quiet variant): the calls
     # are textually identical, so one entry authorizes exactly that shape.

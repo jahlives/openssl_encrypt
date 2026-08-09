@@ -3153,6 +3153,57 @@ def _template_list_payload(templates):
     return payload
 
 
+def _template_compare_payload(comparison):
+    """Build the `template compare --format json` document.
+
+    Same file-origin discipline as `_template_list_payload`: every
+    template-declared string comes from a file any local process can drop in,
+    so each is coerced and bounded. The self-asserted `security_score` /
+    `security_level` and their raw difference are NOT published -- they are read
+    verbatim from the file, and handing an untrusted number to an automated
+    consumer as an authoritative rating is the wrong direction (gitlab#169). The
+    derived verdicts answer the comparison instead (the performance verdict is
+    analyzer-computed, not self-asserted).
+    """
+
+    def _text(value, limit=512):
+        return str(value)[:limit] if isinstance(value, (str, int, float)) else ""
+
+    def _texts(value, limit=32):
+        return [str(v)[:64] for v in value[:limit]] if isinstance(value, list) else []
+
+    comparison = comparison if isinstance(comparison, dict) else {}
+    templates = comparison.get("templates", {})
+    templates = templates if isinstance(templates, dict) else {}
+
+    def _tmpl(key):
+        entry = templates.get(key, {})
+        entry = entry if isinstance(entry, dict) else {}
+        return {"name": _text(entry.get("name"), 256), "use_cases": _texts(entry.get("use_cases"))}
+
+    sec = comparison.get("security_comparison", {})
+    sec = sec if isinstance(sec, dict) else {}
+    perf = comparison.get("performance_comparison", {})
+    perf = perf if isinstance(perf, dict) else {}
+    # Each verdict is labelled with its trust basis so a machine consumer can
+    # tell them apart: the security verdict is DERIVED from the templates'
+    # self-asserted (file-declared) scores -- no raw number is published, but
+    # the verdict must not read as an authoritative rating (gitlab#169) -- while
+    # the performance verdict is analyzer-computed.
+    return {
+        "template1": _tmpl("template1"),
+        "template2": _tmpl("template2"),
+        "security_comparison": {
+            "verdict": _text(sec.get("verdict")),
+            "basis": "template_declared",
+        },
+        "performance_comparison": {
+            "verdict": _text(perf.get("verdict")),
+            "basis": "analyzer_computed",
+        },
+    }
+
+
 def _handle_template_list(template_mgr: TemplateManager, args):
     """Handle template list command."""
     category = getattr(args, "category", None)
@@ -3339,6 +3390,17 @@ def _handle_template_compare(template_mgr: TemplateManager, args):
         sys.exit(1)
 
     comparison = template_mgr.compare_templates(template1, template2)
+
+    if getattr(args, "format", "table") == "json":
+        # --format was declared on this parser and never read, so a caller could
+        # ask for JSON, get exit 0, and receive nothing (gitlab#167). stdout
+        # carries the document; the human report stays on stderr.
+        print(json.dumps(_template_compare_payload(comparison), indent=2))
+        try:
+            sys.stdout.flush()
+        except BrokenPipeError:  # pragma: no cover - `| head` and friends
+            pass
+        return
 
     eprint("🔄 TEMPLATE COMPARISON")
     eprint("=" * 50)
