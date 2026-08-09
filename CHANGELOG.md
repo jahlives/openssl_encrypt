@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Desktop GUI: telemetry opt-out action in Settings** (gitlab#165 P34): a
+  "Privacy & Telemetry" section (visible in both Simple and Pro mode) with a
+  one-way "Disable telemetry and delete data" button. It is deliberately an
+  action, not a two-way toggle — `telemetry status` has no machine-readable
+  output (gitlab#162), so the GUI cannot reliably read the current state, and
+  a toggle that can render the wrong state is worse than a button. The GUI
+  shows its own confirmation enumerating what is destroyed (collection +
+  background uploads stopped, pending events deleted, API key deleted) and
+  that it is not a permanent setting, then invokes `telemetry opt-out
+  --force` (the CLI's own prompt cannot be answered by a subprocess). Only
+  exit 0 is success; a nonzero exit surfaces as an error rather than a false
+  "data deleted". The `analyze-config` screen (P31) is not built: that
+  command ignores most user-selected KDF/cipher parameters (gitlab#168) and
+  crashes end-to-end on this line's CLI too, so a screen would show
+  misleading data.
+
 - **`generate-password --json`** (gitlab#187 / github#104): the desktop GUI
   has always appended `--json` and parsed stdout as a JSON object, but the
   flag existed on no branch or release tag and the handler had no JSON path

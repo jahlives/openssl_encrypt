@@ -51,11 +51,12 @@ CLI_SERVICE = os.path.join(REPO_ROOT, "desktop_gui", "lib", "cli_service.dart")
 # seeing encrypt/decrypt/shred when its extractor regressed, and a loose ">"
 # assertion had the headroom to hide it.
 #
-# 20 methods that run the CLI, plus the 2 preview builders that construct an
+# 21 methods that run the CLI, plus the 2 preview builders that construct an
 # argv and show it to the user (gitlab#191). Widening the anchor to those two
 # immediately found --pbkdf2-iterations in the encrypt preview, a flag 1.5
 # removed, which would have failed at argparse if the user pasted it.
-EXPECTED_CALL_SITES = 22
+# +1 (23): telemetryOptOut -> `telemetry opt-out --force` (gitlab#165).
+EXPECTED_CALL_SITES = 23
 
 # Commands whose loss would gut the lint. Asserted present by name so an
 # extractor change cannot quietly drop the KDF/cascade flag surface.

@@ -2178,6 +2178,28 @@ class CLIService {
     }
   }
 
+  /// Disable telemetry and delete all collected data
+  /// (`telemetry opt-out --force`).
+  ///
+  /// `--force` skips the CLI's own interactive confirmation — which a
+  /// subprocess cannot answer — so the GUI is responsible for having shown
+  /// its own first. With `--force` the CLI's decline branch is unreachable,
+  /// so the only outcomes are exit 0 (the plugin reported the deletion
+  /// succeeded) and exit 1 (failure). The action is destructive, so a nonzero
+  /// exit is surfaced as an error: a caller must never report the data gone
+  /// when it is not. It is not a persistent setting — telemetry can be
+  /// re-enabled by `OPENSSL_ENCRYPT_TELEMETRY=1` or the `--telemetry` flag —
+  /// which the GUI confirmation states.
+  static Future<void> telemetryOptOut() async {
+    final result = await _runCLICommand(['telemetry', 'opt-out', '--force']);
+    if (result.exitCode != 0) {
+      final detail = result.stderr.toString().trim();
+      throw Exception(detail.isEmpty
+          ? 'Telemetry opt-out failed (exit ${result.exitCode})'
+          : detail);
+    }
+  }
+
   /// Validate cascade cipher chain and return diversity warnings
   static Future<List<Map<String, dynamic>>> validateCascade(
     List<String> algorithms, {

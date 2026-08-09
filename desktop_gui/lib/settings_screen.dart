@@ -127,6 +127,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       _buildThemeSelector(),
                     ],
                   ),
+                const SizedBox(height: 16),
+                // Always visible: a privacy action every user should reach,
+                // not a Pro-only setting (gitlab#165).
+                if (_matchesSearch('privacy telemetry opt-out analytics data'))
+                  _buildCategoryCard(
+                    'Privacy & Telemetry',
+                    Icons.privacy_tip,
+                    Colors.teal,
+                    [
+                      _buildTelemetryOptOut(),
+                    ],
+                  ),
                 if (SettingsService.isProMode()) ...[
                 const SizedBox(height: 16),
                 if (_matchesSearch('cryptographic defaults security algorithm'))
@@ -1153,6 +1165,98 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ],
       ),
     );
+  }
+
+  /// Telemetry opt-out action (gitlab#165 P34). Deliberately an irreversible
+  /// ACTION, not a two-way toggle: `telemetry status` has no machine-readable
+  /// output (gitlab#162), so the GUI cannot reliably read the current state,
+  /// and a toggle that can render the wrong state is worse than a one-way
+  /// button. The CLI's own confirmation is skipped with --force, so the GUI
+  /// takes responsibility for enumerating what is destroyed here.
+  Widget _buildTelemetryOptOut() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Disable telemetry collection and delete all data already '
+            'collected on this machine. This is an action, not a toggle: it '
+            'runs once and cannot be undone.',
+            style: TextStyle(fontSize: 13),
+          ),
+          const SizedBox(height: 8),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.teal.shade700,
+              foregroundColor: Colors.white,
+            ),
+            icon: const Icon(Icons.privacy_tip, size: 18),
+            label: const Text('Disable telemetry and delete data'),
+            onPressed: _confirmTelemetryOptOut,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _confirmTelemetryOptOut() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Disable telemetry?'),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('This will, on this machine:'),
+            SizedBox(height: 8),
+            Text('• Stop telemetry collection and background uploads'),
+            Text('• Delete all pending (unsent) telemetry events'),
+            Text('• Delete your telemetry API key'),
+            SizedBox(height: 12),
+            Text(
+              'This cannot be undone. It is not a permanent setting — telemetry '
+              'can be switched on again later by an environment variable or a '
+              'config file, which would register a new key.',
+              style: TextStyle(fontSize: 12),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.teal),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Disable telemetry'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      await CLIService.telemetryOptOut();
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Telemetry disabled and collected data deleted.'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(InputValidator.sanitizeForDisplay(
+              'Could not disable telemetry: $e')),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   Widget _buildKeyserverSection() {
