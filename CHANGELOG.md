@@ -433,6 +433,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Credential-channel follow-ups from the #154/#159 review** (gitlab#180),
+  three defense-in-depth/consistency fixes (no user-relevant vulnerability, so
+  no advisory):
+  - `$OPENSSL_ENCRYPT_SIGNER_PASSPHRASE` is now consumed up front on the
+    `encrypt --sign-with` path — right after argument handling, before the
+    plugin system, HSM/pepper plugins and keyserver connections come up — and
+    passed to the resolver as an already-read value, restoring the same
+    read-once-and-remove guarantee `sign` gets. Previously the variable stayed
+    live in `os.environ` through plugin import and network setup (no
+    full-environment child is spawned in that window, so this is hardening).
+  - `info` can now request the second password non-interactively: it reaches
+    the monolithic parser, which lacked `--hidden-header`, so
+    `$OPENSSL_ENCRYPT_SECOND_PASSWORD` was never read and the ignored-variable
+    warning told the user to pass a flag `info` could not accept — leaving only
+    the tty prompt the environment channel exists to replace for GUI/CI
+    callers. `info --hidden-header` now reads a keyed hidden file's metadata
+    through the env channel. The flag only *requests* the credential; a planted
+    variable still cannot enable keyed mode by itself.
+  - The `--second-password-fd` blank check now routes through the same
+    canonical rule (`credential_env.validated`) the flag and env channels use,
+    instead of a bytes-only `.strip()` that treated a Unicode-whitespace-only
+    value (e.g. U+00A0) as non-blank on the fd channel while `--second-password`
+    rejected it. The env channel now also rejects an embedded newline only when
+    encrypting, matching fd/flag, so a keyed hidden file stays readable through
+    every channel.
+
 - **A planted template file can no longer rank itself first or downgrade key
   derivation** (gitlab#169, ADVISORY 2026-19): the template subsystem trusted a
   template file for its self-asserted `security_score`/`security_level` (taken

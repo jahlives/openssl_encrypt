@@ -4753,6 +4753,37 @@ def _validate_generate_password_args(
         )
 
 
+def _consume_encrypt_signer_passphrase(args):
+    """Consume ``$OPENSSL_ENCRYPT_SIGNER_PASSPHRASE`` up front on the encrypt
+    ``--sign-with`` path.
+
+    ``sign`` consumes it as its very first statement so the value is gone from
+    ``os.environ`` before anything -- an identity-load path, a plugin -- can
+    spawn a child that would inherit it. The encrypt path reaches the same
+    signing code only after the plugin system, HSM/pepper plugins and keyserver
+    connections have come up, all with the variable still live. Consuming it
+    here, before that machinery runs, restores the read-once-and-remove
+    guarantee; the value is handed to :func:`resolve_credential` as ``explicit``
+    (gitlab#180).
+
+    A non-signing encrypt, or any other action, returns ``None`` and touches
+    nothing. When signing is requested the variable is consumed (removed)
+    whether or not it is ultimately needed -- an unneeded value not left in the
+    environment is the point.
+
+    Args:
+        args: Parsed command-line arguments.
+
+    Returns:
+        The consumed passphrase, or ``None``.
+    """
+    if getattr(args, "action", None) == "encrypt" and getattr(args, "sign_with", None):
+        from .file_signature import SIGNER_PASSPHRASE_ENV
+
+        return consume_env(SIGNER_PASSPHRASE_ENV)
+    return None
+
+
 def _resolve_second_password(args):
     """Resolve the optional second password (keyed hidden mode) to bytes or None.
 
@@ -4798,10 +4829,21 @@ def _resolve_second_password(args):
         # "keyless" -- silently giving a keyless header to a caller who asked
         # for a keyed one. That is exactly what `--second-password ""` now
         # errors on, so it errors here too.
-        if encrypting and not from_fd.strip():
-            raise CredentialError(
-                "--second-password-fd supplied no credential; "
-                "refusing to write a keyless header for a keyed request"
+        #
+        # Route through the same canonical rule the flag and env channels use
+        # (credential_env.validated) instead of a bytes-only `.strip()`, which
+        # strips ASCII whitespace only: a U+00A0-only credential was rejected
+        # via --second-password but accepted here, and a future change to the
+        # blank rule would silently not reach this channel (gitlab#180). The fd
+        # already stops at the first newline, so reject_newline is moot; match
+        # the flag's reject_newline=False. surrogateescape keeps arbitrary
+        # bytes round-trippable so binary credentials behave as before while
+        # Unicode whitespace is still recognised as blank.
+        if encrypting:
+            credential_validated(
+                from_fd.decode("utf-8", "surrogateescape"),
+                "--second-password-fd",
+                reject_newline=False,
             )
         return from_fd
     val = getattr(args, "second_password", None)
@@ -4829,7 +4871,16 @@ def _resolve_second_password(args):
             f"does not enable the mode."
         )
     if requested and env_value is not None:
-        return credential_validated(env_value, f"${SECOND_PASSWORD_ENV}").encode("utf-8")
+        # reject_newline only when ENCRYPTING, matching the fd and flag channels
+        # (gitlab#180): now that `info`/`decrypt` reach the env channel, a keyed
+        # hidden file written through fd/flag with a newline-bearing second
+        # password must stay readable through the environment too. On encrypt the
+        # new-channel strictness stays -- a GUI's trailing newline would derive an
+        # unreproducible key. (A blank value is still refused on every path, since
+        # a blank env variable is almost always an unset one.)
+        return credential_validated(
+            env_value, f"${SECOND_PASSWORD_ENV}", reject_newline=encrypting
+        ).encode("utf-8")
     if getattr(args, "second_password_prompt", False):
         import getpass
 
@@ -5295,6 +5346,22 @@ def main_with_args(args=None):
         "--no-second-password-prompt",
         action="store_true",
         help="Never prompt for a second password, even at an interactive terminal.",
+    )
+    # `info` reaches this monolithic parser (it has no dedicated subparser), and
+    # it passes the second password to print_file_info to read a keyed hidden
+    # file's metadata. Without this flag `requested` was always False for info,
+    # so $OPENSSL_ENCRYPT_SECOND_PASSWORD was never read and the ignored-variable
+    # warning told the user to pass --hidden-header -- a flag argparse then
+    # rejected on this route, leaving only the tty prompt that the env channel
+    # exists to replace for GUI/CI callers (gitlab#180). Same flag/semantics as
+    # the encrypt/decrypt subparsers' --hidden-header: it REQUESTS the second
+    # password so the environment value is read only when it is present.
+    parser.add_argument(
+        "--hidden-header",
+        action="store_true",
+        help="Expect the hidden (whitened) format and request the second password "
+        "for a keyed hidden file; $OPENSSL_ENCRYPT_SECOND_PASSWORD is read only "
+        "when this (or --second-password-prompt) is present.",
     )
     parser.add_argument(
         "--overwrite",
@@ -6112,6 +6179,16 @@ def main_with_args(args=None):
         # stderr, and SystemExit is sys.exit's underlying mechanism.
         eprint(f"ERROR: {e}")
         raise SystemExit(2)
+
+    # Consume $OPENSSL_ENCRYPT_SIGNER_PASSPHRASE here, right after argument
+    # handling and alongside the second-password consume above -- BEFORE the
+    # plugin system, HSM/pepper plugins and keyserver connections come up on the
+    # `encrypt --sign-with` path (gitlab#180). `sign` consumes it as its first
+    # statement for the same reason; consuming it this early (rather than just
+    # before the plugin block) keeps the read-once-and-remove guarantee robust
+    # against future code being added ahead of that block. Passed to
+    # resolve_credential below as explicit=.
+    _early_signer_passphrase = _consume_encrypt_signer_passphrase(args)
 
     # Store the original user-provided algorithm name from command line
     import sys
@@ -8968,10 +9045,17 @@ def main_with_args(args=None):
                     or sender_metadata.protection.level != ProtectionLevel.HSM_ONLY
                 )
                 try:
+                    # explicit=: the variable was consumed up front, before the
+                    # plugin/HSM/pepper/keyserver machinery ran, so it is no
+                    # longer live in os.environ here (gitlab#180). resolve_credential
+                    # still calls consume_env internally (a harmless no-op now)
+                    # and validates the explicit value like every other channel.
                     sender_passphrase = resolve_credential(
                         requested=_sender_needs_passphrase,
                         env_name=SIGNER_PASSPHRASE_ENV,
                         prompt=f"Passphrase for sender identity " f"'{args.sign_with}': ",
+                        explicit=_early_signer_passphrase,
+                        explicit_source=f"${SIGNER_PASSPHRASE_ENV}",
                     )
                 except CredentialError as e:
                     eprint(f"ERROR: {e} ❌")
