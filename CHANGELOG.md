@@ -451,6 +451,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Desktop GUI: Batch Operations tab hash/KDF/HSM parity with the Encrypt
+  tab** (gitlab#155): the batch tab passed `null` hash and KDF config at every
+  symmetric encrypt, so batching silently used the CLI's defaults while the
+  same files through the Encrypt tab used whatever the user had configured —
+  a difference invisible in the UI. The Encrypt tab's hash-chain + KDF-chain
+  configuration UI is extracted verbatim into a shared `HashKdfConfigSection`
+  (the parent owns the config maps; the section mutates them in place, so the
+  two tabs cannot drift), and the batch tab now hosts that section plus the
+  shared `HsmConfigSection` and passes the built config — with the same
+  defaults (argon2 enabled, sha3-512 seeded on load). Pepper stays unwired
+  (the pepper CLI does not exist on this line — gitlab#193). Pinned by
+  `batch_parity_test.dart`.
+
 - **Desktop GUI: contact import works on this line again** (gitlab#192): the
   GUI sent `identity import --data <document>` (+ optional `--alias`), but
   1.5.x's import parser accepts only `--file <path>` (plus `--overwrite` /

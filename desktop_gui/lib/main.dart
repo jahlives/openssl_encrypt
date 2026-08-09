@@ -8,6 +8,7 @@ import 'package:path/path.dart' as path;
 import 'cli_service.dart';
 import 'file_manager.dart';
 import 'settings_service.dart';
+import 'widgets/crypto_widgets.dart';
 import 'settings_screen.dart';
 import 'configuration_profiles_screen.dart';
 import 'identity_management_screen.dart';
@@ -2343,6 +2344,24 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
   String _cascadeHash = 'sha256';
   List<Map<String, dynamic>> _diversityWarnings = [];
 
+  // Hash/KDF configuration (gitlab#155): the batch tab shares the Encrypt
+  // tab's HashKdfConfigSection so batching applies the SAME hash/KDF settings
+  // instead of silently sending null and falling back to CLI defaults. Same
+  // default shape as the Encrypt tab.
+  final Map<String, Map<String, dynamic>> _hashConfig = {};
+  Map<String, List<String>> _hashAlgorithms = {};
+  final Map<String, Map<String, dynamic>> _kdfConfig = {
+    'argon2': {'enabled': true, 'time_cost': 3, 'memory_cost': 65536, 'parallelism': 4, 'hash_len': 32, 'type': 2, 'rounds': 10},
+    'scrypt': {'enabled': false, 'n': 16384, 'r': 8, 'p': 1, 'rounds': 10},
+    'hkdf': {'enabled': false, 'rounds': 1, 'algorithm': 'sha256', 'info': 'openssl_encrypt_hkdf'},
+    'balloon': {'enabled': false, 'time_cost': 3, 'space_cost': 65536, 'parallelism': 4, 'rounds': 2, 'hash_len': 32},
+    'randomx': {'enabled': false, 'mode': 'light', 'rounds': 1, 'height': 1, 'hash_len': 32},
+  };
+
+  // HSM settings (gitlab#155 P22): reuse the shared HsmConfigSection.
+  String _hsmType = 'none';
+  int _yubikeySlot = 1;
+
   // Cached dropdown items for algorithms (performance optimization)
   static final Map<String, List<DropdownMenuItem<String>>> _dropdownCache = {};
 
@@ -2350,6 +2369,43 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
   void initState() {
     super.initState();
     _loadIdentities();
+    _loadHashAlgorithms();
+  }
+
+  /// Load hash algorithms and seed the hash config, matching the Encrypt tab
+  /// (sha3-512 enabled by default) so batch defaults are identical to
+  /// single-file defaults.
+  Future<void> _loadHashAlgorithms() async {
+    try {
+      final algorithms = await CLIService.getHashAlgorithms();
+      if (!mounted) return;
+      setState(() {
+        _hashAlgorithms = algorithms;
+        for (final group in algorithms.values) {
+          for (final algo in group) {
+            _hashConfig[algo] = algo == 'sha3-512'
+                ? {'enabled': true, 'rounds': 100000}
+                : {'enabled': false, 'rounds': 1000};
+          }
+        }
+      });
+    } catch (e) {
+      CLIService.outputDebugLog('Failed to load hash algorithms (batch): $e');
+    }
+  }
+
+  /// Enabled hash entries for the CLI, or null when none are enabled.
+  Map<String, Map<String, dynamic>>? _buildHashConfigMap() {
+    final enabled = Map<String, Map<String, dynamic>>.fromEntries(
+        _hashConfig.entries.where((e) => e.value['enabled'] == true));
+    return enabled.isEmpty ? null : enabled;
+  }
+
+  /// Enabled KDF entries for the CLI, or null when none are enabled.
+  Map<String, Map<String, dynamic>>? _buildKdfConfigMap() {
+    final enabled = Map<String, Map<String, dynamic>>.fromEntries(
+        _kdfConfig.entries.where((e) => e.value['enabled'] == true));
+    return enabled.isEmpty ? null : enabled;
   }
 
   /// Load identities for asymmetric encryption
@@ -3459,6 +3515,23 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
                       ),
                       const SizedBox(height: 16),
 
+                      // Hash-chain + KDF configuration, shared with the Encrypt
+                      // tab (gitlab#155) so batching applies the same settings.
+                      HashKdfConfigSection(
+                        hashConfig: _hashConfig,
+                        hashAlgorithms: _hashAlgorithms,
+                        kdfConfig: _kdfConfig,
+                      ),
+                      const SizedBox(height: 12),
+                      // HSM / YubiKey configuration (gitlab#155 P22).
+                      HsmConfigSection(
+                        hsmType: _hsmType,
+                        yubikeySlot: _yubikeySlot,
+                        onHsmTypeChanged: (type) => setState(() => _hsmType = type),
+                        onYubikeySlotChanged: (slot) => setState(() => _yubikeySlot = slot),
+                      ),
+                      const SizedBox(height: 16),
+
                       // Private Key Encryption for Post-Quantum Algorithms
                       if (_isPostQuantumAlgorithm(_selectedAlgorithm)) ...[
                         Card(
@@ -4042,15 +4115,20 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
             enableIntegrity: _enableIntegrity,
           );
         } else {
-          // Symmetric encryption mode (default)
+          // Symmetric encryption mode (default). Pass the configured hash/KDF
+          // maps (gitlab#155) instead of null, so batching applies the same
+          // settings the Encrypt tab would — no silent fallback to CLI
+          // defaults.
           encrypted = await CLIService.encryptTextWithProgress(
             content,
             _password,
             _selectedAlgorithm,
-            null,
-            null,
+            _buildHashConfigMap(),
+            _buildKdfConfigMap(),
             encryptData: _isPostQuantumAlgorithm(_selectedAlgorithm) ? _selectedEncryptData : null,
             enableIntegrity: _enableIntegrity,
+            hsmPlugin: _hsmType != 'none' ? _hsmType : null,
+            hsmSlot: _hsmType == 'yubikey' ? _yubikeySlot : null,
           );
         }
 
