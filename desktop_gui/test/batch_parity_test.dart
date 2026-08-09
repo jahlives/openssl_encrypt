@@ -49,15 +49,6 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
   }
 
-  Future<void> openAdvanced(WidgetTester tester) async {
-    final header = find.textContaining('Advanced');
-    if (header.evaluate().isEmpty) return;
-    await tester.ensureVisible(header.first);
-    await tester.pump();
-    await tester.tap(header.first);
-    await tester.pump(const Duration(milliseconds: 400));
-  }
-
   testWidgets('batch tab exposes the HSM/YubiKey configuration',
       (WidgetTester tester) async {
     await useTallSurface(tester);

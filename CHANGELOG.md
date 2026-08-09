@@ -1785,6 +1785,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Internal
 
+- **Desktop GUI: `flutter analyze` warnings fixed** (gitlab#214 / github#125):
+  removed the unused `_isPostQuantumAlgorithm`/`_getNonPostQuantumAlgorithms`
+  duplicates from `_SettingsScreenWrapperState` — copy-paste leftovers of the
+  pair that lives (and is used) in `_BatchOperationsTabState`; the settings
+  wrapper has no algorithm UI, so no wiring was missing — and the never-called
+  `openAdvanced` helper from `test/batch_parity_test.dart`.
+
 - **The combined-pepper concatenation is now documented as an accepted
   residual** (gitlab#117): `_combine_peppers` joins the HSM and remote
   peppers and the result enters the v14 seed encoder as one length-prefixed

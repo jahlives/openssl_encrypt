@@ -2319,24 +2319,6 @@ class _SettingsScreenWrapperState extends State<SettingsScreenWrapper> {
       },
     );
   }
-
-  bool _isPostQuantumAlgorithm(String algorithm) {
-    return algorithm.contains('ml-kem') ||
-           algorithm.contains('kyber') ||
-           algorithm.contains('hqc') ||
-           algorithm.contains('mayo') ||
-           algorithm.contains('cross');
-  }
-
-  List<String> _getNonPostQuantumAlgorithms() {
-    return [
-      'aes-gcm',
-      'aes-gcm-siv',
-      'aes-siv',
-      'chacha20-poly1305',
-      'xchacha20-poly1305',
-    ];
-  }
 }
 
 /// Batch Operations tab for processing multiple files
