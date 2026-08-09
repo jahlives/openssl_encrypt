@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Desktop GUI: telemetry opt-out action in Settings** (gitlab#165 P34): a
+  "Privacy & Telemetry" section (visible in both Simple and Pro mode) with a
+  one-way "Disable telemetry and delete data" button. It is deliberately an
+  action, not a two-way toggle — `telemetry status` has no machine-readable
+  output (gitlab#162), so the GUI cannot reliably read the current state, and
+  a toggle that can render the wrong state is worse than a button. The GUI
+  shows its own confirmation enumerating what is destroyed (collection +
+  background uploads stopped, pending events deleted, API key deleted) and
+  that it is not a permanent setting, then invokes `telemetry opt-out
+  --force` (the CLI's own prompt cannot be answered by a subprocess). A
+  nonzero exit surfaces as an error rather than a false "data deleted".
+
+  The other half of gitlab#165 — an `analyze-config` screen (P31) — is
+  deliberately **not** built yet: `analyze-config` crashes on every
+  invocation via the real CLI (`args.algorithm` back-filled to `None` →
+  `TypeError`, gitlab#219) and, even once that is fixed, ignores most of the
+  KDF/cipher parameters the user selects (gitlab#168). A screen built on it
+  would show a crash or scores disconnected from the user's actual choices,
+  so P31 is held until both land.
+
 - **Desktop GUI: identity HSM touch and contact key-change controls**
   (gitlab#161 / github#77): the Create-identity dialog gains a "Show a touch
   reminder when this identity is used" switch (shown only when an HSM is

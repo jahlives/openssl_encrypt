@@ -50,11 +50,12 @@ CLI_SERVICE = os.path.join(REPO_ROOT, "desktop_gui", "lib", "cli_service.dart")
 # Exact, not a lower bound: the first version of this lint silently stopped
 # seeing encrypt/decrypt/shred when its extractor regressed, and a loose ">"
 # assertion had the headroom to hide it.
-# 32 methods that run the CLI, plus the 2 preview builders that construct an
+# 33 methods that run the CLI, plus the 2 preview builders that construct an
 # argv and show it to the user as a copy-pasteable line (gitlab#191). Those
 # carry the same defects as the executed calls -- --whirlpool-rounds was in
 # the encrypt preview -- so they are anchored too.
-EXPECTED_CALL_SITES = 34
+# +1 (35): telemetryOptOut -> `telemetry opt-out --force` (gitlab#165).
+EXPECTED_CALL_SITES = 35
 
 # Commands whose loss would gut the lint. Asserted present by name so an
 # extractor change cannot quietly drop the KDF/cascade flag surface.
