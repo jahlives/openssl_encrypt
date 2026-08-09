@@ -711,6 +711,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Template subsystem hygiene and hardening** (gitlab#169 parts 3/4/6): the
+  `template create`/`analyze`/`delete` subcommands read `args.template_name`
+  while the parser defines the positionals `name`/`template`, so each always
+  exited 1 — they read the right dest now; and `template list --use-case`
+  filtered on an undefined `args.category` (silently ignored), now filters by
+  the template's declared use-cases. Hardening: `create_template_from_args` no
+  longer copies `vars(args)` wholesale into the saved template (secret-named
+  keys are dropped — defense-in-depth, since a template's config is KDF
+  parameters, not credentials), `save_template` writes the file atomically at
+  `0600` instead of at the umask, and `TemplateManager.load_template` constrains
+  every candidate path to the template directory (`os.path.commonpath`) rather
+  than reading a raw caller-supplied absolute path first. 1.4.x only — the
+  template-management subsystem does not exist on 1.5.x.
+
 - **`identity`/PIV CLI hygiene** (gitlab#163): three misleading-or-dead
   bits of the identity/HSM surface. (1) `identity create` declared
   `--hsm-piv-slot`/`--hsm-pkcs11-lib`/`--hsm-biometric` but its `--hsm` choices

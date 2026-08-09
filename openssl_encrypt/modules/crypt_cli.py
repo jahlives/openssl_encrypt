@@ -3268,11 +3268,15 @@ def _template_compare_payload(comparison):
 
 def _handle_template_list(template_mgr: TemplateManager, args):
     """Handle template list command."""
-    category = getattr(args, "category", None)
-    if category:
-        category = TemplateCategory(category)
-
-    templates = template_mgr.list_templates(category)
+    # `template list` declares --use-case (personal/business/compliance/archival),
+    # not --category; the handler read a `category` attribute the parser never
+    # sets, so the filter was silently ignored (gitlab#169). Filter by the
+    # template's declared use-cases instead -- TemplateCategory is a disjoint
+    # domain (built_in/user_created/...), so it cannot be the filter here.
+    use_case = getattr(args, "use_case", None)
+    templates = template_mgr.list_templates()
+    if use_case:
+        templates = [t for t in templates if use_case in (t.metadata.use_cases or [])]
 
     if getattr(args, "format", "table") == "json":
         # --format was declared on this parser and never read, so a caller could
@@ -3330,7 +3334,9 @@ def _handle_template_list(template_mgr: TemplateManager, args):
 
 def _handle_template_create(template_mgr: TemplateManager, args):
     """Handle template creation from current configuration."""
-    name = getattr(args, "template_name", None)
+    # Parser dest is `name` (positional), not `template_name` -- reading the
+    # wrong attribute made `template create` always exit 1 (gitlab#169).
+    name = getattr(args, "name", None)
     if not name:
         eprint("Error: Template name is required for creation.")
         sys.exit(1)
@@ -3371,7 +3377,9 @@ def _handle_template_create(template_mgr: TemplateManager, args):
 
 def _handle_template_analyze(template_mgr: TemplateManager, args):
     """Handle template analysis command."""
-    template_name = getattr(args, "template_name", None)
+    # Parser dest is `template` (positional), not `template_name` -- reading the
+    # wrong attribute made this subcommand always exit 1 (gitlab#169).
+    template_name = getattr(args, "template", None)
     if not template_name:
         eprint("Error: Template name is required for analysis.")
         sys.exit(1)
@@ -3524,7 +3532,9 @@ def _handle_template_recommend(template_mgr: TemplateManager, args):
 
 def _handle_template_delete(template_mgr: TemplateManager, args):
     """Handle template deletion command."""
-    template_name = getattr(args, "template_name", None)
+    # Parser dest is `template` (positional), not `template_name` -- reading the
+    # wrong attribute made this subcommand always exit 1 (gitlab#169).
+    template_name = getattr(args, "template", None)
     if not template_name:
         eprint("Error: Template name is required for deletion.")
         sys.exit(1)
