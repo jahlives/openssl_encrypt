@@ -218,6 +218,29 @@ STDOUT_WHITELIST = [
         1,
         "verify-integrity JSON report",
     ),
+    # pepper_cli.py — plugin pepper machine-readable output (gitlab#193). The
+    # GUI consumes stdout as JSON, and the two secret payloads (the TOTP shared
+    # secret from setup-totp, the one-time backup codes from verify-totp) are
+    # deliberately delivered HERE on stdout only, never on stderr (which the
+    # GUI persists to its debug log); each is also registered with the redactor.
+    (
+        "modules/plugin_system/pepper_cli.py",
+        'print(json.dumps({"peppers": peppers}, ensure_ascii=True))',
+        1,
+        "pepper list JSON result",
+    ),
+    (
+        "modules/plugin_system/pepper_cli.py",
+        "print(json.dumps(document, ensure_ascii=True))",
+        1,
+        "pepper setup-totp JSON result (secret payload, stdout-only)",
+    ),
+    (
+        "modules/plugin_system/pepper_cli.py",
+        'print(json.dumps({"verified": True, "backup_codes": backup_codes}, ensure_ascii=True))',
+        1,
+        "pepper verify-totp JSON result (backup codes, stdout-only)",
+    ),
 ]
 
 

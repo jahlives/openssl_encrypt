@@ -841,6 +841,9 @@ SECRET_VALUE_CLI_OPTIONS = frozenset(
         "--rekey-password",
         "--recovery-code",
         "--encryption-data",
+        # The one-time TOTP code for `plugin pepper verify-totp` — ephemeral,
+        # but an auth credential that must not appear in a --debug argv dump.
+        "--code",
     }
 )
 

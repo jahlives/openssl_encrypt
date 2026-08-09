@@ -119,5 +119,12 @@ def main(args) -> int:
         return cmd_trust_key(args)
     if action == "list-keys":
         return cmd_list_keys(args)
-    eprint("❌ Unknown or missing plugin action. Use one of: sign, trust-key, list-keys")
+    if action == "pepper":
+        from . import pepper_cli
+
+        return pepper_cli.main(args)
+    eprint(
+        "❌ Unknown or missing plugin action. Use one of: sign, trust-key, "
+        "list-keys, pepper"
+    )
     return 2

@@ -2677,6 +2677,56 @@ def setup_plugin_parser(subparser):
     list_keys_p = plugin_subparsers.add_parser("list-keys", help="List enrolled trust anchors")
     _add_store_arg(list_keys_p)
 
+    # mTLS connection flags shared by the pepper/integrity `test` probes.
+    def _add_mtls_args(p):
+        p.add_argument("--url", required=True, help="Server base URL (https)")
+        p.add_argument(
+            "--client-cert",
+            dest="client_cert",
+            metavar="PATH",
+            help="mTLS client certificate (PEM)",
+        )
+        p.add_argument(
+            "--client-key", dest="client_key", metavar="PATH", help="mTLS client private key (PEM)"
+        )
+        p.add_argument(
+            "--ca-cert",
+            dest="ca_cert",
+            metavar="PATH",
+            help="CA certificate to verify the server (PEM)",
+        )
+
+    # ---- plugin pepper ... (gitlab#193) ----
+    pepper_p = plugin_subparsers.add_parser(
+        "pepper", help="Remote pepper management (list/test/TOTP/dead-man's switch)"
+    )
+    pepper_sub = pepper_p.add_subparsers(dest="pepper_action", metavar="operation")
+    _add_mtls_args(pepper_sub.add_parser("test", help="Test connectivity/mTLS to a pepper server"))
+    pepper_sub.add_parser("list", help="List stored peppers (JSON)")
+    pepper_sub.add_parser("setup-totp", help="Begin TOTP 2FA enrolment (returns the secret + QR)")
+    verify_totp_p = pepper_sub.add_parser(
+        "verify-totp", help="Confirm TOTP enrolment and receive backup codes"
+    )
+    verify_totp_p.add_argument("--code", required=True, help="6-digit TOTP code")
+    deadman_p = pepper_sub.add_parser(
+        "configure-deadman", help="Enable/disable the pepper dead-man's switch"
+    )
+    deadman_grp = deadman_p.add_mutually_exclusive_group(required=True)
+    deadman_grp.add_argument(
+        "--enable",
+        action="store_true",
+        help="Enable the switch (requires --interval/--grace-period)",
+    )
+    deadman_grp.add_argument("--disable", action="store_true", help="Disable the switch")
+    deadman_p.add_argument("--interval", type=int, metavar="DAYS", help="Check-in interval in days")
+    deadman_p.add_argument(
+        "--grace-period",
+        dest="grace_period",
+        type=int,
+        metavar="DAYS",
+        help="Grace period in days after the deadline",
+    )
+
 
 def setup_identity_parser(subparser):
     """Set up arguments for the identity command."""

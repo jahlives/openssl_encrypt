@@ -80,7 +80,12 @@ _REDACTED = "***REDACTED***"
 # another variable's still-live secret — eviction there would silently fail open,
 # since the entropy heuristic below does not catch short low-entropy passwords.
 _CONSUMED_SECRET_CAP_PER_NAME = 4
-_CONSUMED_SECRET_NAME_CAP = 8
+# Raised from 8 (gitlab#193): TOTP enrolment registers a batch of one-shot
+# backup codes under distinct per-code names, so the name table must hold that
+# batch alongside the handful of credential env-var names without evicting any.
+# A larger table only ever redacts MORE; memory stays bounded (names * per-name
+# ring * fingerprint size).
+_CONSUMED_SECRET_NAME_CAP = 32
 _consumed_secret_fingerprints = OrderedDict()
 _consumed_secret_lock = threading.Lock()
 
