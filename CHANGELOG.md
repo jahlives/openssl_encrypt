@@ -23,6 +23,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on a missed check-in, so a zero/negative deadline must not be armable); the
   destructive `panic` operation is deliberately not exposed.
 
+- **`plugin integrity` management CLI** (gitlab#194): `test` (mTLS probe),
+  `stats` (verification statistics as JSON), and `verify --file-id
+  --metadata-hash`. `verify` uses a deliberate four-outcome contract so a file
+  the service never registered, or an unreachable service, can never be
+  reported as a tamper alarm (the bug the removed GUI batch path had):
+  distinct exit codes — 0 match, 1 mismatch, 3 not-found, 4 unreachable — and
+  a JSON `outcome` field. Mismatch is keyed on the service's own violation
+  signal; the not-found path stays cautious rather than reassuring, because
+  the exact server response shape is a documented dependency (gitlab#194).
+
 - **Desktop GUI: securely delete the source file after encrypting**
   (gitlab#151 / github#69): the Encrypt tab's file options gain an
   off-by-default switch to shred the original file once the encrypted copy is

@@ -223,6 +223,21 @@ STDOUT_WHITELIST = [
         1,
         "pepper verify-totp JSON result (backup codes, stdout-only)",
     ),
+    # integrity_cli.py — plugin integrity machine-readable output (gitlab#194).
+    # No credential: stats are counters, and verify emits an outcome document
+    # the GUI reads. On stdout so a non-interactive caller can parse it.
+    (
+        "modules/plugin_system/integrity_cli.py",
+        "print(json.dumps(stats, ensure_ascii=True))",
+        1,
+        "integrity stats JSON result",
+    ),
+    (
+        "modules/plugin_system/integrity_cli.py",
+        "print(json.dumps(document, ensure_ascii=True))",
+        1,
+        "integrity verify outcome JSON result",
+    ),
 ]
 
 

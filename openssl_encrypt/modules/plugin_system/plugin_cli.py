@@ -123,5 +123,12 @@ def main(args) -> int:
         from . import pepper_cli
 
         return pepper_cli.main(args)
-    eprint("❌ Unknown or missing plugin action. Use one of: sign, trust-key, " "list-keys, pepper")
+    if action == "integrity":
+        from . import integrity_cli
+
+        return integrity_cli.main(args)
+    eprint(
+        "❌ Unknown or missing plugin action. Use one of: sign, trust-key, "
+        "list-keys, pepper, integrity"
+    )
     return 2
