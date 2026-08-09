@@ -54,14 +54,27 @@ def get_available_algorithms_1_0():
 
 
 def _piv_slot_arg(value):
-    """Parse a PIV slot given as hex (9a/0x9a) or as an int. Returns an int."""
+    """Parse a PIV slot given as hex (9a/0x9a) or as an int. Returns an int.
+
+    Slot 9c is rejected up front: signing on 9c requires per-signature
+    context-specific re-authentication (``CKA_ALWAYS_AUTHENTICATE``), which this
+    backend does not perform, so a 9c key fails at signing time with
+    ``CKR_USER_NOT_LOGGED_IN`` (see PIV_BACKEND.md). Rejecting it here turns that
+    confusing runtime failure into a clear message (gitlab#163).
+    """
     try:
         parsed = int(value, 16) if isinstance(value, str) else int(value)
     except (TypeError, ValueError):
-        raise argparse.ArgumentTypeError(f"invalid PIV slot: {value!r} (use 9a, 9c, 9d, or 9e)")
-    if parsed not in (0x9A, 0x9C, 0x9D, 0x9E):
+        raise argparse.ArgumentTypeError(f"invalid PIV slot: {value!r} (use 9a, 9d, or 9e)")
+    if parsed == 0x9C:
         raise argparse.ArgumentTypeError(
-            f"unsupported PIV slot {value!r}; choose one of 9a, 9c, 9d, 9e"
+            "PIV slot 9c is not supported by this backend: signing on 9c needs "
+            "per-signature re-authentication (CKA_ALWAYS_AUTHENTICATE) that this "
+            "backend does not perform. Use 9a, 9d, or 9e."
+        )
+    if parsed not in (0x9A, 0x9D, 0x9E):
+        raise argparse.ArgumentTypeError(
+            f"unsupported PIV slot {value!r}; choose one of 9a, 9d, 9e"
         )
     return parsed
 
@@ -84,8 +97,9 @@ def _add_piv_hsm_arguments(group):
         type=_piv_slot_arg,
         metavar="SLOT",
         default=0x9A,
-        help="PIV key slot to sign with: 9a (Authentication, default), 9c (Digital "
-        "Signature), 9d (Key Management), or 9e (Card Authentication).",
+        help="PIV key slot to sign with: 9a (Authentication, default), 9d (Key "
+        "Management), or 9e (Card Authentication). Slot 9c is not supported "
+        "(it requires per-signature re-authentication this backend does not do).",
     )
     group.add_argument(
         "--hsm-biometric",
@@ -2320,11 +2334,19 @@ def setup_identity_parser(subparser):
         help="HSM slot for Challenge-Response. "
         "YubiKey 1..2, OnlyKey 1..12. Default: auto-detect.",
     )
-    _add_piv_hsm_arguments(create_parser)
+    # NB: the PIV/PKCS#11 args (_add_piv_hsm_arguments) are deliberately NOT
+    # added here. `identity create` binds an identity to a Challenge-Response
+    # HSM (yubikey/onlykey); its --hsm choices exclude 'piv', and cmd_create
+    # never reads --hsm-piv-slot/--hsm-pkcs11-lib/--hsm-biometric, so declaring
+    # them only let a caller pass a value that was silently ignored (gitlab#163
+    # / gitlab#218 finding 1).
     create_parser.add_argument(
         "--no-touch",
         action="store_true",
-        help="Disable HSM touch / button-press requirement (less secure)",
+        help="Suppress the interactive 'touch your device' PROMPT during "
+        "Challenge-Response HSM operations. This does NOT change the device's "
+        "touch policy -- that is configured on the device itself (e.g. `ykman "
+        "otp chalresp --touch`); it only hides the reminder (gitlab#163).",
     )
 
     # List identities

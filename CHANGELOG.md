@@ -475,6 +475,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`identity`/PIV CLI hygiene** (gitlab#163): three misleading-or-dead
+  bits of the identity/HSM surface. (1) `identity create` declared
+  `--hsm-piv-slot`/`--hsm-pkcs11-lib`/`--hsm-biometric` but its `--hsm` choices
+  exclude `piv` and `cmd_create` never read them, so a caller could pass a PIV
+  slot and have it silently ignored — those flags are removed from `identity
+  create` (they remain on the commands that actually use the PIV backend). (2)
+  `--no-touch`'s help claimed to "Disable HSM touch / button-press requirement",
+  but it only suppresses the interactive "touch your device" prompt — the
+  device's touch policy is configured on the device itself; the help now says
+  so. (3) `--hsm-piv-slot` accepted slot `9c`, which this backend cannot use
+  (signing on 9c needs per-signature re-authentication and fails at runtime with
+  `CKR_USER_NOT_LOGGED_IN`); `9c` is now rejected at the argument parser with a
+  clear message pointing to 9a/9d/9e, instead of failing cryptically mid-operation.
+
 - **Desktop GUI: Batch Operations tab hash/KDF/HSM parity with the Encrypt
   tab** (gitlab#155): the batch tab passed `null` hash and KDF config at every
   symmetric encrypt, so batching silently used the CLI's defaults while the

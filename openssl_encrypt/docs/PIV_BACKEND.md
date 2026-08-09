@@ -255,7 +255,7 @@ openssl_encrypt decrypt -i secret.enc -o secret.txt \
 |---|---|
 | `--hsm piv` | select the PIV/PKCS#11 backend |
 | `--hsm-pkcs11-lib PATH` | path to the PKCS#11 module (**required** for PIV) |
-| `--hsm-piv-slot {9a,9c,9d,9e}` | PIV key slot (default `9a`; use 9a or 9d — **not 9c**, see "PIV slots") |
+| `--hsm-piv-slot {9a,9d,9e}` | PIV key slot (default `9a`; 9c is **rejected** — see "PIV slots") |
 | `--hsm-slot N` | PKCS#11 slot index when several tokens are present (default 0) |
 | `--hsm-biometric` | Bio keys: skip the PIN prompt, authenticate by touch (see caveat) |
 
