@@ -2,15 +2,24 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:openssl_encrypt_desktop/cli_service.dart';
 import 'package:openssl_encrypt_desktop/main.dart';
 import 'package:openssl_encrypt_desktop/settings_service.dart';
+
+import 'support/fake_cli.dart';
 
 void main() {
   setUp(() async {
     // Initialize SharedPreferences mock for tests
     SharedPreferences.setMockInitialValues({});
     await SettingsService.initialize();
+    // Tabs load hash algorithms / identities in initState; the fake runner
+    // answers those without spawning the real CLI, whose process timer
+    // would still be pending at teardown (gitlab#211).
+    CLIService.commandRunnerOverride = fakeCliRunner;
   });
+
+  tearDown(CLIService.resetForTesting);
 
   testWidgets('Desktop GUI smoke test', (WidgetTester tester) async {
     // Build our app and trigger a frame.
