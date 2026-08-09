@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Desktop GUI: identity HSM touch and contact key-change controls**
+  (gitlab#161 / github#77): the Create-identity dialog gains a "Show a touch
+  reminder when this identity is used" switch (shown only when an HSM is
+  selected, on by default), mapping to `identity create --no-touch` when
+  turned off. The copy states plainly it records a reminder preference and
+  does not configure the key's hardware button-press requirement (gitlab#218).
+  The Import-contact flow handles a TOFU key change safely: the CLI's
+  non-interactive refusal is surfaced as a typed `IdentityKeyChangedError`
+  (fingerprints parsed from stderr, constrained to colon-hex and the name to
+  the identity charset, equal fingerprints rejected, all display-sanitized),
+  and a two-phase confirmation shows the stored and imported fingerprints
+  with the man-in-the-middle framing before anything is replaced — only an
+  explicit "Replace the pinned key" re-runs the import, and only then with
+  `--allow-key-change --overwrite` together. On this line the document is
+  delivered via `--file` (gitlab#192), so the same private-key-refusal and
+  temp-file mitigations apply on the key-change path.
+
 - **Desktop GUI: telemetry opt-out action in Settings** (gitlab#165 P34): a
   "Privacy & Telemetry" section (visible in both Simple and Pro mode) with a
   one-way "Disable telemetry and delete data" button. It is deliberately an
