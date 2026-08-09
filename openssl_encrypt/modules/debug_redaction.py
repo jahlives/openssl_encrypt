@@ -103,7 +103,18 @@ def debug_secret(label: str, value: Union[bytes, bytearray, memoryview, str]) ->
         only when :func:`set_show_secrets` enabled it.
     """
     if isinstance(value, str):
-        raw = value.encode("utf-8")
+        # surrogateescape, not strict: this is the redaction chokepoint, reached
+        # from sanitize_argv_for_debug with unsanitized argv, and os.environ /
+        # argv decode with surrogateescape. A strict encode would raise
+        # UnicodeEncodeError, whose message embeds a byte of the value and its
+        # offset -- printed verbatim by the generic CLI handler, outside this
+        # chokepoint (gitlab#147). A lone HIGH surrogate is outside
+        # surrogateescape's round-trip range and still raises, so it is caught
+        # and rendered without the bytes rather than allowed to leak.
+        try:
+            raw = value.encode("utf-8", "surrogateescape")
+        except UnicodeEncodeError:
+            raw = None
         cleartext = value
     else:
         raw = bytes(value)
@@ -111,6 +122,8 @@ def debug_secret(label: str, value: Union[bytes, bytearray, memoryview, str]) ->
 
     if _show_secrets:
         rendered = cleartext
+    elif raw is None:
+        rendered = "<redacted: unencodable str>"
     else:
         rendered = f"<redacted: {len(raw)} bytes, sha256:{secret_fingerprint(raw)}>"
 

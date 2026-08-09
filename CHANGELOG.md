@@ -1695,6 +1695,27 @@ inflated KDF metadata parameters, not cosmetic output.
 
 ### Security
 
+- **Secret-redaction follow-ups from the #144 review** (gitlab#147), four
+  hardening fixes (no user-relevant vulnerability, so no advisory):
+  - Strict UTF-8 encodes on secret material could leak a byte through a
+    `UnicodeEncodeError` message (which embeds the offending character and its
+    offset), printed verbatim by the generic CLI handler outside the
+    `debug_secret()` chokepoint. The `debug_secret` chokepoint, the rekey
+    password encode, and the recovery `_passphrase_kek` / `_read_password`
+    encodes now use `surrogateescape` (round-tripping the non-UTF-8 bytes
+    `os.environ`/argv already decoded that way) and refuse the residual
+    lone-high-surrogate case with a value-free error instead of echoing bytes.
+  - `security_logger._value_looks_secret` could itself raise from inside log
+    scrubbing on a lone-surrogate value, propagating into the operation being
+    logged; it now fails closed (treats an unencodable value as secret).
+  - Secret environment variables (`CRYPT_PASSWORD`, `OPENSSL_ENCRYPT_PASSWORD`,
+    `OPENSSL_ENCRYPT_REKEY_PASSWORD`) were deleted without first registering
+    their fingerprint, so redaction went inert the moment the variable was
+    removed — a later `log_event` could then write the value unredacted. Every
+    such site now registers before deleting.
+  - `-p/--password` on the recovery commands now warns that it is visible in
+    the world-readable process list, matching `--rekey-password`.
+
 - **A template file can no longer downgrade key derivation via `encrypt
   --template`** (gitlab#169, ADVISORY 2026-19): a template's `hash_config` was
   applied after only a structural check, with no floor on the KDF parameters —

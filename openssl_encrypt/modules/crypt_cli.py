@@ -86,11 +86,16 @@ from .password_policy import PasswordPolicy, get_password_strength
 
 # Import security audit logger
 try:
-    from .security_logger import get_security_logger
+    from .security_logger import get_security_logger, register_consumed_secret
 
     security_logger = get_security_logger()
 except ImportError:
     security_logger = None
+
+    def register_consumed_secret(*_args, **_kwargs):  # pragma: no cover - logger absent
+        """No-op fallback when the security logger is unavailable."""
+        return None
+
 
 # Set up module-level logger
 logger = logging.getLogger(__name__)
@@ -484,6 +489,10 @@ def clear_password_environment():
     """Securely clear password from environment variables with multiple overwrites."""
     try:
         if "CRYPT_PASSWORD" in os.environ:
+            # Register the fingerprint before the overwrites destroy the value,
+            # so a later log_event still redacts it once the variable is gone
+            # (gitlab#147).
+            register_consumed_secret("CRYPT_PASSWORD", os.environ["CRYPT_PASSWORD"])
             # Get the original length to overwrite with same size
             original_length = len(os.environ["CRYPT_PASSWORD"])
 
@@ -5619,6 +5628,9 @@ def main_with_args(args=None):
                     sys.exit(1)
             elif env_pw:
                 args.password = env_pw
+                # Register before delete so redaction survives the variable's
+                # removal (gitlab#147).
+                register_consumed_secret("OPENSSL_ENCRYPT_PASSWORD", env_pw)
                 try:
                     del os.environ["OPENSSL_ENCRYPT_PASSWORD"]
                 except KeyError:
@@ -6089,6 +6101,9 @@ def main_with_args(args=None):
                         sys.exit(1)
                 elif env_pw:
                     args.password = env_pw
+                    # Register before delete so redaction survives the variable's
+                    # removal (gitlab#147).
+                    register_consumed_secret("OPENSSL_ENCRYPT_PASSWORD", env_pw)
                     try:
                         del os.environ["OPENSSL_ENCRYPT_PASSWORD"]
                     except KeyError:
@@ -6212,6 +6227,9 @@ def main_with_args(args=None):
                     # Get password from environment variable
                     env_password = os.environ.get("CRYPT_PASSWORD")
 
+                    # Register before delete so redaction survives the variable's
+                    # removal (gitlab#147).
+                    register_consumed_secret("CRYPT_PASSWORD", env_password)
                     # Immediately clear the environment variable for security
                     try:
                         del os.environ["CRYPT_PASSWORD"]
@@ -6485,6 +6503,10 @@ def main_with_args(args=None):
                         env_rekey_pw = os.environ.get("OPENSSL_ENCRYPT_REKEY_PASSWORD")
                         if env_rekey_pw:
                             rekey_pw_arg = env_rekey_pw
+                            # Register the fingerprint before deleting so a later
+                            # log_event still redacts it once the variable is gone
+                            # (gitlab#147).
+                            register_consumed_secret("OPENSSL_ENCRYPT_REKEY_PASSWORD", env_rekey_pw)
                             try:
                                 del os.environ["OPENSSL_ENCRYPT_REKEY_PASSWORD"]
                             except KeyError:
@@ -6498,7 +6520,19 @@ def main_with_args(args=None):
                             "Use --rekey-password-file or OPENSSL_ENCRYPT_REKEY_PASSWORD env var instead.",
                             file=sys.stderr,
                         )
-                    rekey_password = rekey_pw_arg.encode("utf-8")
+                    # surrogateescape round-trips bytes os.environ/argv decoded
+                    # the same way; a strict encode would raise UnicodeEncodeError,
+                    # whose message embeds a byte of the password and is printed
+                    # verbatim by the generic handler (gitlab#147). A lone HIGH
+                    # surrogate still raises and is refused without echoing bytes.
+                    try:
+                        rekey_password = rekey_pw_arg.encode("utf-8", "surrogateescape")
+                    except UnicodeEncodeError:
+                        eprint(
+                            "ERROR: rekey password could not be encoded "
+                            "(contains an unpaired surrogate)"
+                        )
+                        sys.exit(1)
                 else:
                     # Interactive double-prompt for new password
                     match = False

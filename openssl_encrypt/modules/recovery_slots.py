@@ -368,7 +368,18 @@ def _passphrase_kek(passphrase: bytes, salt: bytes, time_cost, memory_cost, para
 
     _validate_argon2_params(time_cost, memory_cost, parallelism)
     if isinstance(passphrase, str):
-        passphrase = passphrase.encode("utf-8")
+        # surrogateescape, not strict: a strict encode raises UnicodeEncodeError
+        # whose message embeds a byte of the passphrase and its offset, printed
+        # verbatim by the generic CLI handler -- outside debug_secret(). Identical
+        # bytes for any surrogate-free string, so no existing slot's KEK changes.
+        # A lone HIGH surrogate is still outside surrogateescape's range; re-raise
+        # carrying nothing value-derived rather than let it leak (gitlab#147).
+        try:
+            passphrase = passphrase.encode("utf-8", "surrogateescape")
+        except UnicodeEncodeError:
+            raise ValueError(
+                "recovery passphrase could not be encoded (contains an unpaired surrogate)"
+            ) from None
     return argon2.low_level.hash_secret_raw(
         secret=bytes(passphrase),
         salt=bytes(salt),
@@ -639,12 +650,30 @@ def _read_password(args, prompt="Password: "):
     import getpass
     import os
 
+    from .crypt_utils import eprint
+
     pw = getattr(args, "password", None)
+    if pw is not None:
+        # -p/--password is visible in the world-readable /proc/PID/cmdline;
+        # prefer $CRYPT_PASSWORD. Not silenced by --quiet, matching the
+        # --rekey-password warning (gitlab#147).
+        eprint(
+            "WARNING: --password is visible in process list. "
+            "Use the CRYPT_PASSWORD env var instead."
+        )
     if pw is None:
         pw = os.environ.get("CRYPT_PASSWORD")
     if pw is None:
         pw = getpass.getpass(prompt)
-    return pw.encode("utf-8") if isinstance(pw, str) else pw
+    if not isinstance(pw, str):
+        return pw
+    # surrogateescape round-trips bytes os.environ/argv decoded the same way; a
+    # strict encode would raise UnicodeEncodeError whose message embeds a byte of
+    # the password (gitlab#147). A lone HIGH surrogate is refused value-free.
+    try:
+        return pw.encode("utf-8", "surrogateescape")
+    except UnicodeEncodeError:
+        raise ValueError("password could not be encoded (contains an unpaired surrogate)") from None
 
 
 def _recover_kwargs_from_args(args):
