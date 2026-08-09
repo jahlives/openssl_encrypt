@@ -949,6 +949,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a destination that already exists; a destination this run creates is
   still covered by the path comparison and `O_EXCL`.
 
+- **The orphan generated-password NOTE missed the early-exit paths**
+  (gitlab#182): a `--random-password-out` file is written before the
+  ciphertext, so a later failure can leave a 0600 orphan that a retry then
+  refuses with `FileExistsError`. The NOTE warning about it lived only in the
+  top-level exception handler, so the failures that `return 1`/`sys.exit(1)`
+  instead of raising — a steganography failure (which happens *after* the
+  ciphertext is on disk, exactly the case the NOTE exists for), a
+  cascade-diversity abort, and the write-failure handler itself (where the
+  0600 file may have been created before `os.write`/`os.fsync` failed) — never
+  reached it. The NOTE is now a helper called from every such site.
+
 - **`telemetry status` reported a constant, not the real setting**
   (gitlab#166): `get_status()` returned a hardcoded `"enabled": True`, so
   the one command a user runs to check whether telemetry is on answered

@@ -967,6 +967,54 @@ def _write_generated_password_file(path, password):
         os.close(dir_fd)
 
 
+def _warn_orphan_random_password(args, ciphertext_maybe_written=True):
+    """Warn that a `--random-password-out` file was written and left in place.
+
+    The generated password is written before the ciphertext, so a later failure
+    can leave a 0600 orphan on disk. Deleting it automatically would be wrong
+    when a matching encrypted file might exist (the file is then its only
+    credential), but an unannounced orphan is its own hazard: the obvious retry
+    dies with FileExistsError, and a stale file beside a later run looks like a
+    live credential.
+
+    Every early-exit path that can fire after the password file exists must call
+    this, not only the top-level exception handler -- a `return 1` or
+    `sys.exit(1)` (steganography failure, cascade-diversity abort, the
+    write-failure handler) never reaches that handler (gitlab#182, gitlab#152,
+    mirroring gitlab#146).
+
+    Args:
+        args: Parsed CLI arguments.
+        ciphertext_maybe_written: True at the top-level handler, where the
+            failure could have struck after the encrypted file was written, so
+            the file may be a live credential and the user is told to check
+            decryptability before removing it. False at the sites that provably
+            fail before any usable encrypted file exists (a pre-encryption abort,
+            or the password write itself failing part-way) -- there the orphan
+            can simply be removed, and claiming otherwise would tell the user to
+            test a file that cannot exist.
+    """
+    orphan = getattr(args, "random_password_out", None)
+    if not (orphan and os.path.exists(orphan)):
+        return
+    if ciphertext_maybe_written:
+        eprint(
+            f"\nNOTE: a generated password was already written to {orphan}. "
+            f"It is NOT deleted, because this failure does not prove the "
+            f"encrypted file was not written. Check whether the output file "
+            f"exists and is decryptable with it before removing it; until you "
+            f"do, a retry with the same --random-password-out will refuse to "
+            f"overwrite it."
+        )
+    else:
+        eprint(
+            f"\nNOTE: a password file may remain at {orphan} (the encryption "
+            f"did not complete, so no usable encrypted file was written). You "
+            f"can remove it; until you do, a retry with the same "
+            f"--random-password-out will refuse to overwrite it."
+        )
+
+
 def _effective_encrypt_output(args):
     """The path the encrypt run will actually write its ciphertext to.
 
@@ -8005,6 +8053,11 @@ def main_with_args(args=None):
                                 f"ERROR: could not write the generated "
                                 f"password to {_random_out}: {_e}"
                             )
+                            # create_secure_file may have created the 0600 file
+                            # before os.write/os.fsync failed, leaving a partial
+                            # orphan a retry would refuse; no ciphertext exists
+                            # (gitlab#182).
+                            _warn_orphan_random_password(args, ciphertext_maybe_written=False)
                             raise SystemExit(1)
                         if not args.quiet:
                             eprint(
@@ -10249,6 +10302,12 @@ def main_with_args(args=None):
                                                 "Use --no-diversity-check to bypass.",
                                                 file=sys.stderr,
                                             )
+                                        # Pre-encryption abort: no ciphertext was
+                                        # written, and this return 1 bypasses the
+                                        # top-level orphan-password NOTE (gitlab#182).
+                                        _warn_orphan_random_password(
+                                            args, ciphertext_maybe_written=False
+                                        )
                                         return 1
 
                                 except ImportError:
@@ -10363,12 +10422,21 @@ def main_with_args(args=None):
                                             )
                                     else:
                                         eprint(f"Steganography error: {result.message}")
+                                        # Stego failed, so no usable encrypted
+                                        # output file survives; this return 1
+                                        # bypasses the top-level NOTE (gitlab#182).
+                                        _warn_orphan_random_password(
+                                            args, ciphertext_maybe_written=False
+                                        )
                                         return 1
                                 else:
                                     # Fallback to normal file output
                                     os.replace(temp_output, output_file)
                             except Exception as e:
                                 eprint(f"Steganography error: {e}")
+                                # Stego failed, so no usable encrypted output
+                                # file survives (gitlab#182).
+                                _warn_orphan_random_password(args, ciphertext_maybe_written=False)
                                 return 1
                         else:
                             # Normal file output
@@ -12393,23 +12461,9 @@ def main_with_args(args=None):
     except Exception as e:
         if not args.quiet:
             eprint(f"\nError: {e}")
-        # The generated password is written before the ciphertext, so a failure
-        # here can leave it on disk for a file that may or may not exist. It is
-        # deliberately NOT deleted: a raise does not prove the ciphertext was
-        # not written, and deleting would destroy the only credential for it.
-        # But an unannounced 0600 file is its own hazard -- the obvious retry
-        # dies with FileExistsError, and a stale file left beside a later run
-        # looks like a live credential (gitlab#152, mirroring gitlab#146).
-        _orphan = getattr(args, "random_password_out", None)
-        if _orphan and os.path.exists(_orphan):
-            eprint(
-                f"\nNOTE: a generated password was already written to "
-                f"{_orphan}. It is NOT deleted, because this failure does not "
-                f"prove the encrypted file was not written. Check whether the "
-                f"output file exists and is decryptable with it before "
-                f"removing it; until you do, a retry with the same "
-                f"--random-password-out will refuse to overwrite it."
-            )
+        # A generated password is written before the ciphertext, so a failure
+        # here can leave a 0600 file behind (gitlab#152, mirroring gitlab#146).
+        _warn_orphan_random_password(args)
         exit_code = 1
 
     # Exit with appropriate code
