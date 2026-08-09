@@ -1826,6 +1826,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Internal
 
+- **Batch tab: steganography (gitlab#155 P24) declined and pinned**: a
+  batch run would need a distinct cover file per input plus per-pair
+  capacity checks — a new design, not parity wiring — so single-file
+  steganography stays on the Encrypt tab and `batch_parity_test.dart` now
+  pins the absence as a decision. With P20–P23 long landed (shared
+  hash/KDF, HSM and pepper sections, all pinned), this closes gitlab#155.
+
 - **The gitlab#198 has-a-caller lint had never scanned the widget
   directories** (gitlab#198 follow-up, gitlab#217): its caller scan read
   only top-level `lib/*.dart`, while every tab and shared widget lives in

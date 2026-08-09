@@ -122,6 +122,23 @@ void main() {
     expect(['auto', 'named'], contains(pepper.pepperMode));
   });
 
+  testWidgets('steganography is deliberately absent from the batch tab',
+      (WidgetTester tester) async {
+    // P24 (gitlab#155) declined, recorded here so the absence is a pinned
+    // decision rather than an oversight: steganography embeds ONE payload
+    // into ONE chosen cover file, so a batch run would need a distinct
+    // cover per input plus per-pair capacity checks — a new design, not
+    // parity wiring. Single-file steganography lives on the Encrypt tab.
+    await useTallSurface(tester);
+    await tester.pumpWidget(wrap(batchTab()));
+    await tester.pump();
+    await selectFiles(tester);
+
+    expect(find.textContaining('Steganography'), findsNothing);
+    expect(find.textContaining('steganography'), findsNothing);
+    expect(find.textContaining('Cover media'), findsNothing);
+  });
+
   testWidgets('the hash/KDF panel is hidden outside symmetric mode',
       (WidgetTester tester) async {
     // Sending hash/KDF config takes the CLI out of the branch that applies its
