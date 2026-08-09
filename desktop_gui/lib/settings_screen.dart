@@ -891,19 +891,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           ElevatedButton(
             onPressed: () async {
+              // Resolve the messenger and close the dialog BEFORE the await:
+              // the State's `mounted` says nothing about this (shadowed)
+              // dialog context, and popping after the gap could pop the
+              // wrong route if the user dismissed the dialog via the
+              // barrier while the reset was running.
+              final messenger = ScaffoldMessenger.of(context);
+              Navigator.of(context).pop();
               await SettingsService.resetToDefaults();
-              setState(() {});
-              if (mounted) {
-                // ignore: use_build_context_synchronously
-                Navigator.of(context).pop();
-                // ignore: use_build_context_synchronously
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Settings reset to defaults'),
-                    backgroundColor: Colors.green,
-                  ),
-                );
-              }
+              if (mounted) setState(() {});
+              messenger.showSnackBar(
+                const SnackBar(
+                  content: Text('Settings reset to defaults'),
+                  backgroundColor: Colors.green,
+                ),
+              );
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: Theme.of(context).colorScheme.error,
@@ -1239,7 +1241,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 leading: const Icon(Icons.schedule, size: 20),
                 title: const Text('Cache TTL', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
                 subtitle: DropdownButtonFormField<int>(
-                  value: cacheTtl,
+                  initialValue: cacheTtl,
                   decoration: const InputDecoration(
                     border: OutlineInputBorder(),
                     contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
@@ -1613,10 +1615,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return Column(
       children: [
         // Client Cert + Key PEM
-        ListTile(
-          leading: const Icon(Icons.badge, size: 20),
-          title: const Text('Client Certificate + Key (PEM)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-          subtitle: const Text('Paste combined certificate and private key', style: TextStyle(fontSize: 10)),
+        const ListTile(
+          leading: Icon(Icons.badge, size: 20),
+          title: Text('Client Certificate + Key (PEM)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+          subtitle: Text('Paste combined certificate and private key', style: TextStyle(fontSize: 10)),
         ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -1637,10 +1639,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
         const SizedBox(height: 8),
 
         // CA Certificate PEM
-        ListTile(
-          leading: const Icon(Icons.verified_user, size: 20),
-          title: const Text('CA Certificate (PEM)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-          subtitle: const Text('Paste CA certificate', style: TextStyle(fontSize: 10)),
+        const ListTile(
+          leading: Icon(Icons.verified_user, size: 20),
+          title: Text('CA Certificate (PEM)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+          subtitle: Text('Paste CA certificate', style: TextStyle(fontSize: 10)),
         ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -1676,7 +1678,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     clientKeyPath: certMode == 'file' ? SettingsService.getPepperClientKeyPath() : null,
                     caCertPath: certMode == 'file' ? SettingsService.getPepperCaCertPath() : null,
                   );
-                  if (context.mounted) {
+                  if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
                         content: Text(result['success']
@@ -1699,7 +1701,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: ElevatedButton.icon(
                 onPressed: () async {
                   final peppers = await CLIService.listPeppers();
-                  if (context.mounted) {
+                  if (mounted) {
                     showDialog(
                       context: context,
                       builder: (context) => AlertDialog(
@@ -2008,10 +2010,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return Column(
       children: [
         // Client Cert + Key PEM
-        ListTile(
-          leading: const Icon(Icons.badge, size: 20),
-          title: const Text('Client Certificate + Key (PEM)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-          subtitle: const Text('Paste combined certificate and private key', style: TextStyle(fontSize: 10)),
+        const ListTile(
+          leading: Icon(Icons.badge, size: 20),
+          title: Text('Client Certificate + Key (PEM)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+          subtitle: Text('Paste combined certificate and private key', style: TextStyle(fontSize: 10)),
         ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -2032,10 +2034,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
         const SizedBox(height: 8),
 
         // CA Certificate PEM
-        ListTile(
-          leading: const Icon(Icons.verified_user, size: 20),
-          title: const Text('CA Certificate (PEM)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-          subtitle: const Text('Paste CA certificate', style: TextStyle(fontSize: 10)),
+        const ListTile(
+          leading: Icon(Icons.verified_user, size: 20),
+          title: Text('CA Certificate (PEM)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+          subtitle: Text('Paste CA certificate', style: TextStyle(fontSize: 10)),
         ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -2071,7 +2073,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     clientKeyPath: certMode == 'file' ? SettingsService.getIntegrityClientKeyPath() : null,
                     caCertPath: certMode == 'file' ? SettingsService.getIntegrityCaCertPath() : null,
                   );
-                  if (context.mounted) {
+                  if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
                         content: Text(result['success']
@@ -2094,7 +2096,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: ElevatedButton.icon(
                 onPressed: () async {
                   final stats = await CLIService.getIntegrityStats();
-                  if (context.mounted) {
+                  if (mounted) {
                     showDialog(
                       context: context,
                       builder: (context) => AlertDialog(

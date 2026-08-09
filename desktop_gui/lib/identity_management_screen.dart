@@ -127,7 +127,7 @@ class _IdentityManagementScreenState extends State<IdentityManagementScreen>
                 const Text('Key Encapsulation Algorithm:', style: TextStyle(fontWeight: FontWeight.w500)),
                 const SizedBox(height: 8),
                 DropdownButtonFormField<String>(
-                  value: kemAlgorithm,
+                  initialValue: kemAlgorithm,
                   decoration: const InputDecoration(border: OutlineInputBorder()),
                   items: const [
                     DropdownMenuItem(value: 'ML-KEM-512', child: Text('ML-KEM-512 (NIST Level 1)')),
@@ -142,7 +142,7 @@ class _IdentityManagementScreenState extends State<IdentityManagementScreen>
                 const Text('Signature Algorithm:', style: TextStyle(fontWeight: FontWeight.w500)),
                 const SizedBox(height: 8),
                 DropdownButtonFormField<String>(
-                  value: sigAlgorithm,
+                  initialValue: sigAlgorithm,
                   decoration: const InputDecoration(border: OutlineInputBorder()),
                   items: const [
                     DropdownMenuItem(value: 'ML-DSA-44', child: Text('ML-DSA-44 (NIST Level 2)')),
@@ -169,7 +169,7 @@ class _IdentityManagementScreenState extends State<IdentityManagementScreen>
                 if (hsmType != 'none') ...[
                   const SizedBox(height: 8),
                   DropdownButtonFormField<int?>(
-                    value: hsmSlot,
+                    initialValue: hsmSlot,
                     decoration: const InputDecoration(
                       labelText: 'YubiKey Slot',
                       border: OutlineInputBorder(),

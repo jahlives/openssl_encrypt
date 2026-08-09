@@ -489,21 +489,22 @@ class _ConfigurationProfilesScreenState extends State<ConfigurationProfilesScree
         initialName: initialName,
         initialProfile: initialProfile,
         onProfileCreated: (name, profile) async {
+          // Resolve against the dialog's context BEFORE the awaits: the
+          // State's `mounted` says nothing about this (shadowed) dialog
+          // context, so an of(context) lookup after the gap could hit a
+          // deactivated element.
+          final messenger = ScaffoldMessenger.of(context);
           final success = await ConfigurationProfilesService.saveProfile(name, profile);
           if (success) {
             await _loadProfiles();
-            if (mounted) {
-              // ignore: use_build_context_synchronously
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Profile created: $name'),
-                  backgroundColor: Colors.green,
-                ),
-              );
-            }
-          } else if (mounted) {
-            // ignore: use_build_context_synchronously
-            ScaffoldMessenger.of(context).showSnackBar(
+            messenger.showSnackBar(
+              SnackBar(
+                content: Text('Profile created: $name'),
+                backgroundColor: Colors.green,
+              ),
+            );
+          } else {
+            messenger.showSnackBar(
               const SnackBar(content: Text('Failed to create profile')),
             );
           }
@@ -1075,7 +1076,7 @@ class _CreateProfileDialogState extends State<CreateProfileDialog> {
             ),
             const SizedBox(height: 16),
             DropdownButtonFormField<String>(
-              value: _algorithm,
+              initialValue: _algorithm,
               decoration: const InputDecoration(
                 labelText: 'Algorithm',
                 border: OutlineInputBorder(),

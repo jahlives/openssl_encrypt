@@ -583,6 +583,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Desktop GUI: the batch tab's "Skip signature verification" checkbox is
+  reachable again — with the Decrypt tab's guard set** (gitlab#214 /
+  github#125): the checkbox — whose value is passed to the CLI on every
+  batch asymmetric decrypt — sat behind an `if (_showAdvanced)` gate, but
+  nothing in the widget ever set `_showAdvanced`, so the option could never
+  be enabled from the batch tab. Surfaced by `flutter analyze`'s
+  `prefer_final_fields` on the never-written flag.
+
+  Unhiding it naively would have armed states the single-file Decrypt tab
+  deliberately prevents, so the batch tab now mirrors those guards
+  (security review, this change): the signature sub-options only render
+  once a decryption identity is chosen (CLIService omits
+  `--verify-from`/`--no-verify` otherwise, so the UI never implies a
+  setting it does not send); arming "skip" clears and disables the
+  "verify from" dropdown (the CLI silently discards `--verify-from` when
+  `--no-verify` is set); the skip choice is reset on any change of
+  identity, encryption mode, or operation; the controls are inert while a
+  batch is running, and the verification settings are snapshotted before
+  the loop so a mid-run edit cannot split a batch into verified and
+  unverified halves; the red warning banner renders only while skipping is
+  actually armed; and each batch result now records — and the results list
+  shows — when a file was decrypted with verification skipped, so an
+  unverified batch is no longer indistinguishable from a verified one —
+  amber `gpp_maybe` row instead of a green check, and the completion
+  snackbar counts files decrypted without verification.
+
+  A second review round hardened the surroundings: the encryption-mode
+  selector and the results Clear button are inert while a batch runs (the
+  mode decides `_processFile`'s branch; clearing would wipe the
+  verification audit trail mid-run), the operation/mode are snapshotted
+  with the verification settings, `CLIService` itself now refuses to emit
+  `--verify-from` together with `--no-verify` at all three decrypt sites
+  (the CLI silently prefers `--no-verify`, so the pair would claim an
+  authenticity check that never happens), the batch identity/signer
+  dropdowns gained the Decrypt tab's `_dedupeByName` guard (a contact
+  shadowing an own identity could crash the tab or mislabel the trust
+  source — gitlab#173 territory), and batch error rows sanitize CLI
+  stderr / drop raw `jsonDecode` excerpts before display. Pinned by six
+  new widget tests (`batch_skip_verification_test.dart`). Remaining
+  review residuals tracked in gitlab#215 / github#126.
+
 - **Desktop GUI: the draggable debug window is reachable again** (gitlab#213 /
   github#124): `_toggleDebugWindow()` — the only way to show the draggable
   live-debug-log overlay, and the GUI's only live log viewer — lost its one
@@ -1785,12 +1826,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Internal
 
-- **Desktop GUI: `flutter analyze` warnings fixed** (gitlab#214 / github#125):
-  removed the unused `_isPostQuantumAlgorithm`/`_getNonPostQuantumAlgorithms`
-  duplicates from `_SettingsScreenWrapperState` — copy-paste leftovers of the
-  pair that lives (and is used) in `_BatchOperationsTabState`; the settings
-  wrapper has no algorithm UI, so no wiring was missing — and the never-called
-  `openAdvanced` helper from `test/batch_parity_test.dart`.
+- **Desktop GUI: `flutter analyze` is clean — 77 issues to 0** (gitlab#214 /
+  github#125). Warnings: removed the unused
+  `_isPostQuantumAlgorithm`/`_getNonPostQuantumAlgorithms` duplicates from
+  `_SettingsScreenWrapperState` — copy-paste leftovers of the pair that lives
+  (and is used) in `_BatchOperationsTabState`; the settings wrapper has no
+  algorithm UI, so no wiring was missing — and the never-called `openAdvanced`
+  helper from `test/batch_parity_test.dart`. Deprecations (Flutter 3.44):
+  `Radio`/`RadioListTile` `groupValue`/`onChanged` migrated to `RadioGroup`
+  ancestors (per-tile disabling via `enabled: !_isLoading`);
+  `DropdownButtonFormField.value` renamed to `initialValue` at all 17 sites
+  after verifying in the SDK that `didUpdateWidget` still syncs a changed
+  `initialValue` into the field state, so rebuild-driven updates behave as
+  before; `ReorderableListView.onReorder` moved to `onReorderItem`, which
+  takes over the manual `newIndex -= 1` adjustment; `withOpacity` replaced by
+  `withValues(alpha:)`. The four `use_build_context_synchronously` hits in
+  `_SettingsScreenState` now guard with the State's own `mounted` instead of
+  `context.mounted`. Remaining `prefer_const_*`/interpolation/conditional-
+  assignment lints auto-fixed via `dart fix --apply` (diff reviewed; the
+  `cli_service.dart` rewrites are argv- and semantics-identical). Two
+  pre-existing `// ignore: use_build_context_synchronously` suppressions
+  (settings reset dialog, profile-created snackbar) hid real
+  shadowed-dialog-context bugs — the State's `mounted` says nothing about
+  the dialog's context; the settings-reset dialog now pops before the
+  await (popping after the gap could pop the wrong route if the dialog
+  was barrier-dismissed mid-reset) and the profile-created snackbar
+  resolves its messenger before the await, no suppression needed.
+  `pubspec.yaml`'s SDK floor raised to `^3.10.0` (Flutter 3.44), which is
+  where the migrated `RadioGroup` / `initialValue` / `onReorderItem` APIs
+  exist. All 61 widget tests pass.
 
 - **The combined-pepper concatenation is now documented as an accepted
   residual** (gitlab#117): `_combine_peppers` joins the HSM and remote

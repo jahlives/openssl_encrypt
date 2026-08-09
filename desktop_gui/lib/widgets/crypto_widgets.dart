@@ -452,11 +452,11 @@ class AlgorithmSelector extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
+            const Row(
               children: [
-                const Icon(Icons.security),
-                const SizedBox(width: 8),
-                const Text('Encryption Algorithm', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                Icon(Icons.security),
+                SizedBox(width: 8),
+                Text('Encryption Algorithm', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
               ],
             ),
             const SizedBox(height: 12),
@@ -544,7 +544,7 @@ class HsmConfigSection extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
-              value: hsmType,
+              initialValue: hsmType,
               decoration: const InputDecoration(
                 labelText: 'HSM Type',
                 border: OutlineInputBorder(),
@@ -612,11 +612,11 @@ class IntegrityConfigSection extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
+            const Row(
               children: [
-                const Icon(Icons.verified_user),
-                const SizedBox(width: 8),
-                const Text('Integrity Verification', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                Icon(Icons.verified_user),
+                SizedBox(width: 8),
+                Text('Integrity Verification', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
               ],
             ),
             const SizedBox(height: 12),
@@ -716,7 +716,7 @@ class PepperConfigSection extends StatelessWidget {
             if (enablePepper) ...[
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
-                value: pepperMode,
+                initialValue: pepperMode,
                 decoration: const InputDecoration(
                   labelText: 'Pepper Mode',
                   border: OutlineInputBorder(),
@@ -821,11 +821,11 @@ class FilePickerWidget extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
+            const Row(
               children: [
-                const Icon(Icons.folder_open),
-                const SizedBox(width: 8),
-                const Text('File Selection', style: TextStyle(fontWeight: FontWeight.bold)),
+                Icon(Icons.folder_open),
+                SizedBox(width: 8),
+                Text('File Selection', style: TextStyle(fontWeight: FontWeight.bold)),
               ],
             ),
             const SizedBox(height: 12),

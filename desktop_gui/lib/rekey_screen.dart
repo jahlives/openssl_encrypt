@@ -145,8 +145,8 @@ class _RekeyScreenState extends State<RekeyScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Row(
-              children: const [
+            const Row(
+              children: [
                 Icon(Icons.autorenew),
                 SizedBox(width: 8),
                 Text('Rekey',
@@ -222,7 +222,7 @@ class _RekeyScreenState extends State<RekeyScreen> {
             const SizedBox(height: 16),
 
             DropdownButtonFormField<String?>(
-              value: _algorithm,
+              initialValue: _algorithm,
               decoration: const InputDecoration(
                 labelText: 'Algorithm',
                 border: OutlineInputBorder(),

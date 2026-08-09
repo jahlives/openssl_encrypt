@@ -60,11 +60,11 @@ class _EncryptTabState extends State<EncryptTab> {
   bool _showProgress = false;
 
   // Hash configuration
-  Map<String, Map<String, dynamic>> _hashConfig = {};
+  final Map<String, Map<String, dynamic>> _hashConfig = {};
   Map<String, List<String>> _hashAlgorithms = {};
 
   // KDF configuration
-  Map<String, Map<String, dynamic>> _kdfConfig = {
+  final Map<String, Map<String, dynamic>> _kdfConfig = {
     'argon2': {'enabled': true, 'time_cost': 3, 'memory_cost': 65536, 'parallelism': 4, 'hash_len': 32, 'type': 2, 'rounds': 10},
     'scrypt': {'enabled': false, 'n': 16384, 'r': 8, 'p': 1, 'rounds': 10},
     'hkdf': {'enabled': false, 'rounds': 1, 'algorithm': 'sha256', 'info': 'openssl_encrypt_hkdf'},
@@ -707,11 +707,11 @@ class _EncryptTabState extends State<EncryptTab> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
+            const Row(
               children: [
-                const Icon(Icons.people),
-                const SizedBox(width: 8),
-                const Text('Asymmetric Encryption Configuration',
+                Icon(Icons.people),
+                SizedBox(width: 8),
+                Text('Asymmetric Encryption Configuration',
                     style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
               ],
             ),
@@ -863,11 +863,11 @@ class _EncryptTabState extends State<EncryptTab> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Header
-            Row(
+            const Row(
               children: [
-                const Icon(Icons.layers),
-                const SizedBox(width: 8),
-                const Text('Cascade Encryption Configuration',
+                Icon(Icons.layers),
+                SizedBox(width: 8),
+                Text('Cascade Encryption Configuration',
                     style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
               ],
             ),
@@ -920,8 +920,8 @@ class _EncryptTabState extends State<EncryptTab> {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3),
-                  border: Border.all(color: Theme.of(context).colorScheme.primary.withOpacity(0.5)),
+                  color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.3),
+                  border: Border.all(color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.5)),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
@@ -1006,7 +1006,7 @@ class _EncryptTabState extends State<EncryptTab> {
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                                 decoration: BoxDecoration(
-                                  color: _getCascadeFamilyColor(algorithm).withOpacity(0.2),
+                                  color: _getCascadeFamilyColor(algorithm).withValues(alpha: 0.2),
                                   borderRadius: BorderRadius.circular(4),
                                 ),
                                 child: Text(
@@ -1069,7 +1069,7 @@ class _EncryptTabState extends State<EncryptTab> {
             const Text('HKDF Hash Function:', style: TextStyle(fontWeight: FontWeight.w500)),
             const SizedBox(height: 8),
             DropdownButtonFormField<String>(
-              value: _cascadeHash,
+              initialValue: _cascadeHash,
               decoration: const InputDecoration(
                 border: OutlineInputBorder(),
                 helperText: 'Hash function for key derivation between encryption layers',
@@ -1230,7 +1230,7 @@ class _EncryptTabState extends State<EncryptTab> {
 
                 // Method Dropdown
                 DropdownButtonFormField<String>(
-                  value: _stegoMethod,
+                  initialValue: _stegoMethod,
                   decoration: const InputDecoration(
                     labelText: 'Steganography Method',
                     border: OutlineInputBorder(),
@@ -1447,7 +1447,7 @@ class _EncryptTabState extends State<EncryptTab> {
 
                       // Bits per Coefficient
                       DropdownButtonFormField<int>(
-                        value: _videoBitsPerCoefficient,
+                        initialValue: _videoBitsPerCoefficient,
                         decoration: const InputDecoration(
                           labelText: 'Bits per DCT Coefficient',
                           border: OutlineInputBorder(),
@@ -2020,11 +2020,11 @@ class _EncryptTabState extends State<EncryptTab> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
+                      const Row(
                         children: [
-                          const Icon(Icons.vpn_key),
-                          const SizedBox(width: 8),
-                          const Text('Key Stretching', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                          Icon(Icons.vpn_key),
+                          SizedBox(width: 8),
+                          Text('Key Stretching', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                         ],
                       ),
                       const SizedBox(height: 12),
@@ -2272,7 +2272,7 @@ class _EncryptTabState extends State<EncryptTab> {
                         if (_operationStatus.contains('YubiKey'))
                           Icon(Icons.touch_app, color: Colors.amber.shade100)
                         else
-                          SizedBox(
+                          const SizedBox(
                             width: 16,
                             height: 16,
                             child: CircularProgressIndicator(

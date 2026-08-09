@@ -102,8 +102,8 @@ class _PasswordGeneratorScreenState extends State<PasswordGeneratorScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Row(
-              children: const [
+            const Row(
+              children: [
                 Icon(Icons.password),
                 SizedBox(width: 8),
                 Text('Password Generator',

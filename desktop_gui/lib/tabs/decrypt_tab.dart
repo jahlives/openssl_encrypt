@@ -211,7 +211,7 @@ class _DecryptTabState extends State<DecryptTab> {
       );
 
       // Store decrypted content
-      final preview = decrypted.length > 500 ? decrypted.substring(0, 500) + '...' : decrypted;
+      final preview = decrypted.length > 500 ? '${decrypted.substring(0, 500)}...' : decrypted;
       setState(() {
         _decryptedContent = decrypted;
         result = 'File decrypted successfully!\n\n'
@@ -401,7 +401,7 @@ class _DecryptTabState extends State<DecryptTab> {
           const Text('Decryption identity'),
           const SizedBox(height: 4),
           DropdownButtonFormField<String?>(
-            value: _decryptionIdentity,
+            initialValue: _decryptionIdentity,
             isExpanded: true,
             decoration: const InputDecoration(
               border: OutlineInputBorder(),
@@ -437,7 +437,7 @@ class _DecryptTabState extends State<DecryptTab> {
           if (_decryptionIdentity != null && _decryptionIdentity!.isNotEmpty) ...[
             const SizedBox(height: 16),
             DropdownButtonFormField<String?>(
-              value: _verifyFrom,
+              initialValue: _verifyFrom,
               isExpanded: true,
               decoration: const InputDecoration(
                 labelText: 'Verify signature from',
@@ -697,7 +697,7 @@ class _DecryptTabState extends State<DecryptTab> {
                         if (_operationStatus.contains('YubiKey'))
                           Icon(Icons.touch_app, color: Colors.amber.shade100)
                         else
-                          SizedBox(
+                          const SizedBox(
                             width: 16,
                             height: 16,
                             child: CircularProgressIndicator(

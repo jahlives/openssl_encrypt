@@ -887,11 +887,14 @@ class CLIService {
       // Add asymmetric decryption parameters if provided
       if (withKey != null && withKey.isNotEmpty) {
         args.addAll(['--with-key', withKey]);
-        if (verifyFrom != null && verifyFrom.isNotEmpty) {
-          args.addAll(['--verify-from', verifyFrom]);
-        }
+        // Never emit --verify-from together with --no-verify: the CLI
+        // silently prefers --no-verify, so the pair would claim an
+        // authenticity check that never happens. The tabs prevent the
+        // combination in the UI; this keeps every (future) caller honest.
         if (skipVerification) {
           args.add('--no-verify');
+        } else if (verifyFrom != null && verifyFrom.isNotEmpty) {
+          args.addAll(['--verify-from', verifyFrom]);
         }
       }
 
@@ -2120,7 +2123,7 @@ class CLIService {
         final hashName = entry.key;
         final config = entry.value;
         if (config['enabled'] == true && config['rounds'] != null && config['rounds'] > 0) {
-          args.addAll(['--${hashName}-rounds', config['rounds'].toString()]);
+          args.addAll(['--$hashName-rounds', config['rounds'].toString()]);
         }
       }
     }
@@ -2370,11 +2373,14 @@ class CLIService {
     // Add asymmetric decryption parameters if provided
     if (withKey != null && withKey.isNotEmpty) {
       args.addAll(['--with-key', withKey]);
-      if (verifyFrom != null && verifyFrom.isNotEmpty) {
-        args.addAll(['--verify-from', verifyFrom]);
-      }
+      // Never emit --verify-from together with --no-verify: the CLI
+      // silently prefers --no-verify, so the pair would claim an
+      // authenticity check that never happens. The tabs prevent the
+      // combination in the UI; this keeps every (future) caller honest.
       if (skipVerification) {
         args.add('--no-verify');
+      } else if (verifyFrom != null && verifyFrom.isNotEmpty) {
+        args.addAll(['--verify-from', verifyFrom]);
       }
     }
 
@@ -3387,8 +3393,8 @@ class CLIService {
         // Deliver first, shred second. If delivery throws, the file is left in
         // place rather than destroyed.
         await onCode(code, failure != null);
-      } else if (failure == null) {
-        failure = Exception(
+      } else {
+        failure ??= Exception(
           'The CLI reported success but wrote no recovery code',
         );
       }
