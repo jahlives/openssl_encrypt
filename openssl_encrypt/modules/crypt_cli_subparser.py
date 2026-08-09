@@ -2505,6 +2505,13 @@ def setup_smart_recommendations_parser(subparser):
         action="store_true",
         help="Analyze current configuration and provide improvement recommendations",
     )
+    get_parser.add_argument(
+        "--output-format",
+        choices=["text", "json"],
+        default="text",
+        help="Output format for the recommendations (default: text). "
+        "json emits the recommendation list on stdout for scripting/GUI use.",
+    )
 
     # Profile management
     profile_parser = recs_subparsers.add_parser(
@@ -2552,6 +2559,13 @@ def setup_smart_recommendations_parser(subparser):
         choices=["beginner", "intermediate", "advanced", "expert"],
         default="intermediate",
         help="Experience level (default: intermediate)",
+    )
+    quick_parser.add_argument(
+        "--output-format",
+        choices=["text", "json"],
+        default="text",
+        help="Output format for the recommendations (default: text). "
+        "json emits the recommendation list on stdout for scripting/GUI use.",
     )
 
 
@@ -3156,7 +3170,14 @@ def setup_telemetry_parser(subparser):
     )
 
     # Status subcommand
-    telemetry_subparsers.add_parser("status", help="Show telemetry status and statistics")
+    telemetry_status_parser = telemetry_subparsers.add_parser(
+        "status", help="Show telemetry status and statistics"
+    )
+    telemetry_status_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit the status as JSON on stdout (human report stays on stderr)",
+    )
 
     # Show pending events subcommand
     show_pending_parser = telemetry_subparsers.add_parser(
@@ -3443,6 +3464,17 @@ def build_subparser():
         formatter_class=argparse.RawTextHelpFormatter,
     )
     setup_analyze_security_parser(analyze_security_parser)
+    # analyze-config reuses setup_analyze_security_parser and adds its own
+    # --output-format, so this flag is registered on the analyze-security
+    # command directly (not in the shared setup) to avoid a duplicate option
+    # (gitlab#162).
+    analyze_security_parser.add_argument(
+        "--output-format",
+        choices=["text", "json"],
+        default="text",
+        help="Output format for the security analysis (default: text). "
+        "json emits the analysis document on stdout for scripting/GUI use.",
+    )
 
     config_wizard_parser = subparsers.add_parser(
         "config-wizard",

@@ -1664,8 +1664,10 @@ def analyze_current_security_configuration(args):
     Args:
         args: Parsed command line arguments containing security configuration
     """
-    eprint("\nSECURITY CONFIGURATION ANALYSIS")
-    eprint("===============================")
+    output_format = getattr(args, "output_format", "text")
+    if output_format != "json":
+        eprint("\nSECURITY CONFIGURATION ANALYSIS")
+        eprint("===============================")
 
     try:
         # Extract hash configuration
@@ -1756,6 +1758,19 @@ def analyze_current_security_configuration(args):
         scorer = SecurityScorer()
         analysis = scorer.score_configuration(hash_config, kdf_config, cipher_info, pqc_info)
 
+        # Machine-readable document on stdout so a GUI reads the real security
+        # analysis instead of scraping the unversioned human report (gitlab#162).
+        # A misparsed security readout is worse than none, so emit structured
+        # data. The only non-JSON-native value is the overall SecurityLevel enum.
+        if output_format == "json":
+            import json
+
+            result = dict(analysis)
+            result["overall"] = dict(analysis["overall"])
+            result["overall"]["level"] = analysis["overall"]["level"].name
+            print(json.dumps(result, indent=2, ensure_ascii=False, default=str))
+            return
+
         # Display analysis results
         eprint(f"\nOVERALL SECURITY SCORE: {analysis['overall']['score']}/10")
         eprint(f"Security Level: {analysis['overall']['level'].name}")
@@ -1804,6 +1819,15 @@ def analyze_current_security_configuration(args):
         eprint()
 
     except Exception as e:
+        # In json mode stdout must stay a reliable contract: a scoring failure
+        # emits a structured error document and exits non-zero, so a GUI/script
+        # can tell failure from an empty success instead of getting empty
+        # stdout + exit 0 (gitlab#162 security review).
+        if output_format == "json":
+            import json
+
+            print(json.dumps({"error": str(e)}))
+            sys.exit(1)
         eprint(f"Error analyzing security configuration: {e}")
         eprint("Please check your configuration parameters.")
 
@@ -2875,6 +2899,22 @@ def _handle_recommendations_get(engine, args):
     # Generate recommendations
     recommendations = engine.generate_recommendations(user_context, current_config)
 
+    # Machine-readable document on stdout so a GUI reads the recommendation
+    # list instead of scraping the unversioned human report (gitlab#162).
+    if getattr(args, "output_format", "text") == "json":
+        import json
+
+        print(
+            json.dumps(
+                {"recommendations": [_recommendation_to_dict(r) for r in recommendations]},
+                indent=2,
+                ensure_ascii=False,
+                default=str,
+            )
+        )
+        engine.save_user_context(user_id, user_context)
+        return
+
     # Display recommendations
     eprint("🧠 SMART RECOMMENDATIONS")
     eprint("=" * 50)
@@ -2981,12 +3021,48 @@ def _handle_recommendations_feedback(engine, args):
         eprint(f"Comment: {feedback_text}")
 
 
+def _recommendation_to_dict(rec):
+    """Convert a SmartRecommendation dataclass to a JSON-serialisable dict.
+
+    Its category/priority/confidence fields are enums; everything else is
+    already a primitive/list/dict (gitlab#162).
+    """
+    from dataclasses import asdict
+
+    d = asdict(rec)
+    for key in ("category", "priority", "confidence"):
+        value = d.get(key)
+        if hasattr(value, "value"):
+            d[key] = value.value
+        elif hasattr(value, "name"):
+            d[key] = value.name
+    return d
+
+
 def _handle_recommendations_quick(engine, args):
     """Handle quick recommendations command."""
     use_case = args.use_case
     experience_level = getattr(args, "experience_level", "intermediate")
 
     quick_recs = engine.get_quick_recommendations(use_case, experience_level)
+
+    # Machine-readable document on stdout so a GUI reads the recommendation
+    # list instead of scraping the unversioned human report (gitlab#162).
+    if getattr(args, "output_format", "text") == "json":
+        import json
+
+        print(
+            json.dumps(
+                {
+                    "use_case": use_case,
+                    "experience_level": experience_level,
+                    "recommendations": quick_recs,
+                },
+                indent=2,
+                ensure_ascii=False,
+            )
+        )
+        return
 
     eprint(f"⚡ QUICK RECOMMENDATIONS FOR {use_case.upper()}")
     eprint("=" * 50)
@@ -4300,17 +4376,26 @@ def handle_telemetry_command(args):
     if action == "status":
         # Show telemetry status
         status = plugin.get_status()
-        eprint("\nTELEMETRY STATUS")
-        eprint("=" * 60)
-        eprint(f"Enabled: {'Yes' if status['enabled'] else 'No'}")
-        eprint(f"Pending Events: {status['pending_events']}")
-        eprint(f"Server URL: {status['server_url']}")
-        eprint(f"API Key: {'Present' if status['has_api_key'] else 'Not registered'}")
-        eprint(
-            f"Upload Interval: {status['upload_interval']} seconds ({status['upload_interval'] // 3600} hours)"
-        )
-        eprint(f"Background Upload: {'Running' if status['upload_thread_alive'] else 'Stopped'}")
-        eprint("=" * 60)
+        if getattr(args, "json", False):
+            # Machine-readable document on stdout so a GUI reads the real state
+            # instead of scraping the unversioned human report (gitlab#162).
+            import json
+
+            print(json.dumps(status, indent=2))
+        else:
+            eprint("\nTELEMETRY STATUS")
+            eprint("=" * 60)
+            eprint(f"Enabled: {'Yes' if status['enabled'] else 'No'}")
+            eprint(f"Pending Events: {status['pending_events']}")
+            eprint(f"Server URL: {status['server_url']}")
+            eprint(f"API Key: {'Present' if status['has_api_key'] else 'Not registered'}")
+            eprint(
+                f"Upload Interval: {status['upload_interval']} seconds ({status['upload_interval'] // 3600} hours)"
+            )
+            eprint(
+                f"Background Upload: {'Running' if status['upload_thread_alive'] else 'Stopped'}"
+            )
+            eprint("=" * 60)
 
     elif action == "show-pending":
         # Show pending events (transparency)

@@ -74,6 +74,43 @@ STDOUT_WHITELIST = [
         1,
         "check-password JSON report",
     ),
+    # crypt_cli.py — analyze-security / smart-recommendations / telemetry status
+    # machine-readable output (gitlab#162). The human report stays on stderr; the
+    # JSON documents carry only algorithm/config metadata, scores and advice text
+    # (telemetry status exposes has_api_key as a boolean, not the key) — no
+    # credential or key material. Security-reviewed 2026-08-09.
+    (
+        "modules/crypt_cli.py",
+        "print(json.dumps(result, indent=2, ensure_ascii=False, default=str))",
+        1,
+        "analyze-security JSON analysis",
+    ),
+    (
+        "modules/crypt_cli.py",
+        'print(json.dumps({"error": str(e)}))',
+        1,
+        "analyze-security JSON error response",
+    ),
+    (
+        "modules/crypt_cli.py",
+        'print(json.dumps({"recommendations": [_recommendation_to_dict(r) for r in '
+        "recommendations]}, indent=2, ensure_ascii=False, default=str))",
+        1,
+        "smart-recommendations get JSON output",
+    ),
+    (
+        "modules/crypt_cli.py",
+        'print(json.dumps({"use_case": use_case, "experience_level": experience_level, '
+        '"recommendations": quick_recs}, indent=2, ensure_ascii=False))',
+        1,
+        "smart-recommendations quick JSON output",
+    ),
+    (
+        "modules/crypt_cli.py",
+        "print(json.dumps(status, indent=2))",
+        1,
+        "telemetry status JSON output",
+    ),
     # crypt_cli.py — template list --format json (gitlab#167). Machine-readable
     # output for a non-interactive caller; the human report stays on stderr.
     # Carries template metadata only: no credential, no key material.

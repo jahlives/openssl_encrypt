@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Machine-readable output for `analyze-security`, `smart-recommendations`
+  and `telemetry status`** (gitlab#162): a GUI that renders a *misparsed*
+  security readout is worse than one that renders none. `analyze-security`
+  and `smart-recommendations get`/`quick` gain `--output-format {text,json}`,
+  and `telemetry status` gains `--json`; each emits its document as JSON on
+  stdout while the human report stays on stderr, matching the convention
+  `analyze-config` / `check-password` / `telemetry show-pending` already use.
+  The JSON documents carry only algorithm/config metadata, scores and advice
+  text — no secrets (`telemetry status` exposes `has_api_key` as a boolean,
+  not the key). Unblocks the GUI's analyze-security (P30), smart-recommendations
+  (P33) and telemetry-state (P34) screens. `telemetry status --json` also lands
+  on 1.5.x; `analyze-security`/`smart-recommendations` do not exist there.
+
 - **`plugin pepper` management CLI** (gitlab#193): a subcommand group driving
   the existing remote-pepper plugin — `list` (stored peppers as JSON), `test`
   (mTLS connectivity probe from ad-hoc `--url`/cert flags), `setup-totp` /
