@@ -400,6 +400,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   warning; identity lists are de-duplicated and empty names skipped so a
   duplicate/blank identity name can no longer crash the tab.
 
+### Removed
+
+- **Dead video-steganography surface removed** (gitlab#170): the
+  `--video-temporal-spread` flag and the entire "Video steganography options
+  (MP4)" group on the `encrypt`/`decrypt` parsers had **no consumer anywhere**
+  — the options dict handed to the steganography transport is built from a
+  fixed key list, never `vars(args)`, so no video key ever reached the plugin —
+  and there is no MP4/video backend at all (`_detect_media_format` returns
+  UNKNOWN for video, raising `CoverMediaError`). MP4 was nonetheless advertised
+  in the `--stego-hide`/`--stego-method` help text, and the desktop GUI emitted
+  `--no-video-temporal-spread` (which argparse rejected, since the flag was
+  `store_true, default=True` and had no negated form), so unticking that box
+  failed the whole encrypt command. The flags, the MP4 help claims, and the
+  GUI's Video Steganography Options panel (encrypt tab) are all removed; the
+  argv lint's last `KNOWN_BROKEN` entry is now gone. Implementing real video
+  steganography (backend + a self-describing payload header) is left as future
+  work. 1.4.x only — steganography was removed wholesale on 1.5.x.
+
 ### Security
 
 - **The file password was printed in cleartext by the `--debug` argv dump

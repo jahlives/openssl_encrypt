@@ -118,14 +118,6 @@ class _EncryptTabState extends State<EncryptTab> {
   // JPEG-specific steganography
   int _jpegQuality = 85;
 
-  // Video-specific steganography (MP4)
-  double _videoQuantizationStep = 8.0;
-  double _videoAdaptationFactor = 1.2;
-  double _videoCompensationFactor = 0.5;
-  int _videoBitsPerCoefficient = 2;
-  bool _videoTemporalSpread = true;
-  int _videoQualityPreservation = 8;
-
   // Cascade presets
   static const Map<String, List<String>> _cascadePresets = {
     'standard': ['aes-256-gcm', 'chacha20-poly1305'],
@@ -311,12 +303,6 @@ class _EncryptTabState extends State<EncryptTab> {
           randomizePixels: _stegoRandomizePixels,
           addDecoyData: _stegoDecoyData,
           jpegQuality: _isCoverJpeg() ? _jpegQuality : null,
-          videoQuantizationStep: _isCoverVideo() ? _videoQuantizationStep : null,
-          videoAdaptationFactor: _isCoverVideo() ? _videoAdaptationFactor : null,
-          videoCompensationFactor: _isCoverVideo() ? _videoCompensationFactor : null,
-          videoBitsPerCoefficient: _isCoverVideo() ? _videoBitsPerCoefficient : null,
-          videoTemporalSpread: _isCoverVideo() ? _videoTemporalSpread : true,
-          videoQualityPreservation: _isCoverVideo() ? _videoQualityPreservation : null,
           hashConfig: _encryptionMode == EncryptionMode.symmetric ? _buildHashConfigMap() : null,
           kdfConfig: _encryptionMode == EncryptionMode.symmetric ? _buildKdfConfigMap() : null,
           hsmPlugin: _hsmType != 'none' ? _hsmType : null,
@@ -563,12 +549,6 @@ class _EncryptTabState extends State<EncryptTab> {
           randomizePixels: _stegoRandomizePixels,
           addDecoyData: _stegoDecoyData,
           jpegQuality: _isCoverJpeg() ? _jpegQuality : null,
-          videoQuantizationStep: _isCoverVideo() ? _videoQuantizationStep : null,
-          videoAdaptationFactor: _isCoverVideo() ? _videoAdaptationFactor : null,
-          videoCompensationFactor: _isCoverVideo() ? _videoCompensationFactor : null,
-          videoBitsPerCoefficient: _isCoverVideo() ? _videoBitsPerCoefficient : null,
-          videoTemporalSpread: _isCoverVideo() ? _videoTemporalSpread : true,
-          videoQualityPreservation: _isCoverVideo() ? _videoQualityPreservation : null,
           hashConfig: _encryptionMode == EncryptionMode.symmetric ? _buildHashConfigMap() : null,
           kdfConfig: _encryptionMode == EncryptionMode.symmetric ? _buildKdfConfigMap() : null,
           hsmPlugin: _hsmType != 'none' ? _hsmType : null,
@@ -1358,160 +1338,6 @@ class _EncryptTabState extends State<EncryptTab> {
                   ),
                 ],
 
-                // Video Options (if MP4)
-                if (_isCoverVideo()) ...[
-                  const SizedBox(height: 16),
-                  const Divider(),
-                  ExpansionTile(
-                    leading: const Icon(Icons.videocam),
-                    title: const Text('Video Steganography Options'),
-                    subtitle: const Text('DCT-based QIM embedding parameters'),
-                    children: [
-                      const SizedBox(height: 8),
-
-                      // Quantization Step
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text('Quantization Step: ${_videoQuantizationStep.toStringAsFixed(1)}'),
-                          ),
-                        ],
-                      ),
-                      Slider(
-                        value: _videoQuantizationStep,
-                        min: 1.0,
-                        max: 20.0,
-                        divisions: 38,
-                        label: _videoQuantizationStep.toStringAsFixed(1),
-                        onChanged: _isLoading ? null : (value) {
-                          setState(() {
-                            _videoQuantizationStep = value;
-                          });
-                        },
-                      ),
-                      const Text(
-                        'Lower = higher quality, less capacity',
-                        style: TextStyle(fontSize: 11, color: Colors.grey),
-                      ),
-                      const SizedBox(height: 12),
-
-                      // Adaptation Factor
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text('Adaptation Factor: ${_videoAdaptationFactor.toStringAsFixed(1)}'),
-                          ),
-                        ],
-                      ),
-                      Slider(
-                        value: _videoAdaptationFactor,
-                        min: 0.5,
-                        max: 3.0,
-                        divisions: 50,
-                        label: _videoAdaptationFactor.toStringAsFixed(1),
-                        onChanged: _isLoading ? null : (value) {
-                          setState(() {
-                            _videoAdaptationFactor = value;
-                          });
-                        },
-                      ),
-                      const Text(
-                        'For adaptive QIM algorithm (default: 1.2)',
-                        style: TextStyle(fontSize: 11, color: Colors.grey),
-                      ),
-                      const SizedBox(height: 12),
-
-                      // Compensation Factor
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text('Compensation Factor: ${_videoCompensationFactor.toStringAsFixed(1)}'),
-                          ),
-                        ],
-                      ),
-                      Slider(
-                        value: _videoCompensationFactor,
-                        min: 0.0,
-                        max: 1.0,
-                        divisions: 20,
-                        label: _videoCompensationFactor.toStringAsFixed(1),
-                        onChanged: _isLoading ? null : (value) {
-                          setState(() {
-                            _videoCompensationFactor = value;
-                          });
-                        },
-                      ),
-                      const Text(
-                        'For distortion-compensated QIM (default: 0.5)',
-                        style: TextStyle(fontSize: 11, color: Colors.grey),
-                      ),
-                      const SizedBox(height: 12),
-
-                      // Bits per Coefficient
-                      DropdownButtonFormField<int>(
-                        initialValue: _videoBitsPerCoefficient,
-                        decoration: const InputDecoration(
-                          labelText: 'Bits per DCT Coefficient',
-                          border: OutlineInputBorder(),
-                          helperText: 'For multi-level QIM algorithm',
-                        ),
-                        items: [1, 2, 3, 4].map((bits) {
-                          return DropdownMenuItem(
-                            value: bits,
-                            child: Text('$bits bit${bits > 1 ? "s" : ""}'),
-                          );
-                        }).toList(),
-                        onChanged: _isLoading ? null : (value) {
-                          setState(() {
-                            _videoBitsPerCoefficient = value ?? 2;
-                          });
-                        },
-                      ),
-                      const SizedBox(height: 12),
-
-                      // Temporal Spread Checkbox
-                      CheckboxListTile(
-                        title: const Text('Temporal spread'),
-                        subtitle: const Text('Spread data across frames for redundancy'),
-                        value: _videoTemporalSpread,
-                        onChanged: _isLoading ? null : (value) {
-                          setState(() {
-                            _videoTemporalSpread = value ?? true;
-                          });
-                        },
-                        contentPadding: EdgeInsets.zero,
-                        controlAffinity: ListTileControlAffinity.leading,
-                        dense: true,
-                      ),
-
-                      // Quality Preservation Slider
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text('Quality Preservation: $_videoQualityPreservation'),
-                          ),
-                        ],
-                      ),
-                      Slider(
-                        value: _videoQualityPreservation.toDouble(),
-                        min: 1,
-                        max: 10,
-                        divisions: 9,
-                        label: '$_videoQualityPreservation',
-                        onChanged: _isLoading ? null : (value) {
-                          setState(() {
-                            _videoQualityPreservation = value.toInt();
-                          });
-                        },
-                      ),
-                      const Text(
-                        '1 = max capacity, 10 = max quality (default: 8)',
-                        style: TextStyle(fontSize: 11, color: Colors.grey),
-                      ),
-                      const SizedBox(height: 8),
-                    ],
-                  ),
-                ],
               ],
             ],
           ],

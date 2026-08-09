@@ -76,15 +76,11 @@ EXPECTED_INTERPOLATED = {
 # bare command-path element. Each entry must name a real tracked bug -- this
 # is a list of known defects, not a place to silence the lint.
 KNOWN_BROKEN = [
-    # The pepper (gitlab#193) and integrity (gitlab#194) CLI surfaces now
-    # exist (`plugin pepper ...` / `plugin integrity ...`), so those GUI call
-    # sites parse against the real tree and their KNOWN_BROKEN entries were
-    # removed — the stale-entry test would fail if they were left here.
-    (
-        "encryptWithSteganography",
-        "--no-video-temporal-spread",
-        "gitlab#170: the CLI flag is --video-temporal-spread",
-    ),
+    # Empty: every GUI call site now parses against the real CLI tree. The
+    # pepper (gitlab#193) and integrity (gitlab#194) CLI surfaces were built,
+    # and the dead video-steganography surface the GUI emitted
+    # `--no-video-temporal-spread` into was removed on both sides (gitlab#170).
+    # The stale-entry companion test would fail if a fixed entry were left here.
 ]
 
 # A Dart method declaration at exactly two-space (class body) indentation.

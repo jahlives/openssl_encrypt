@@ -2073,13 +2073,6 @@ class CLIService {
     bool randomizePixels = false,
     bool addDecoyData = false,
     int? jpegQuality,                        // JPEG quality (70-100)
-    // Video steganography options
-    double? videoQuantizationStep,           // default 8.0
-    double? videoAdaptationFactor,           // default 1.2
-    double? videoCompensationFactor,         // default 0.5
-    int? videoBitsPerCoefficient,            // 1-4, default 2
-    bool videoTemporalSpread = true,         // default enabled
-    int? videoQualityPreservation,           // 1-10, default 8
     Map<String, Map<String, dynamic>>? hashConfig,
     Map<String, Map<String, dynamic>>? kdfConfig,
     String? hsmPlugin,
@@ -2129,27 +2122,6 @@ class CLIService {
     // Add JPEG quality if provided
     if (jpegQuality != null) {
       args.addAll(['--jpeg-quality', jpegQuality.toString()]);
-    }
-
-    // Add video steganography options if provided
-    if (videoQuantizationStep != null) {
-      args.addAll(['--video-quantization-step', videoQuantizationStep.toString()]);
-    }
-    if (videoAdaptationFactor != null) {
-      args.addAll(['--video-adaptation-factor', videoAdaptationFactor.toString()]);
-    }
-    if (videoCompensationFactor != null) {
-      args.addAll(['--video-compensation-factor', videoCompensationFactor.toString()]);
-    }
-    if (videoBitsPerCoefficient != null) {
-      args.addAll(['--video-bits-per-coefficient', videoBitsPerCoefficient.toString()]);
-    }
-    if (!videoTemporalSpread) {
-      // Only add flag if disabled (default is enabled)
-      args.add('--no-video-temporal-spread');
-    }
-    if (videoQualityPreservation != null) {
-      args.addAll(['--video-quality-preservation', videoQualityPreservation.toString()]);
     }
 
     // Add hash configuration if provided
@@ -2285,13 +2257,6 @@ class CLIService {
     bool randomizePixels = false,
     bool addDecoyData = false,
     int? jpegQuality,
-    // Video steganography options
-    double? videoQuantizationStep,
-    double? videoAdaptationFactor,
-    double? videoCompensationFactor,
-    int? videoBitsPerCoefficient,
-    bool videoTemporalSpread = true,
-    int? videoQualityPreservation,
     Map<String, Map<String, dynamic>>? hashConfig,
     Map<String, Map<String, dynamic>>? kdfConfig,
     String? hsmPlugin,
@@ -2326,12 +2291,6 @@ class CLIService {
         randomizePixels: randomizePixels,
         addDecoyData: addDecoyData,
         jpegQuality: jpegQuality,
-        videoQuantizationStep: videoQuantizationStep,
-        videoAdaptationFactor: videoAdaptationFactor,
-        videoCompensationFactor: videoCompensationFactor,
-        videoBitsPerCoefficient: videoBitsPerCoefficient,
-        videoTemporalSpread: videoTemporalSpread,
-        videoQualityPreservation: videoQualityPreservation,
         hashConfig: hashConfig,
         kdfConfig: kdfConfig,
         hsmPlugin: hsmPlugin,
