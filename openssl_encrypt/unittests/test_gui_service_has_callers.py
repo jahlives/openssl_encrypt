@@ -42,35 +42,32 @@ _COMMENT_RE = re.compile(r"//[^\n]*|/\*.*?\*/", re.S)
 _PARAM_RE = re.compile(r"(?:^|,)\s*(?:required\s+)?[\w<>,?\s]+?\s+(\w+)\s*(?:=[^,]*)?(?=,|\s*$)")
 
 # Accepted gaps. Format: (method, parameter, why / issue).
+#
+# Pruned 2026-08-09: the caller scan had never recursed into lib/tabs/,
+# lib/widgets/ or lib/screens/, so most entries here described wiring that
+# in fact existed. What remains is verified against the recursive scan.
 KNOWN_UNWIRED = [
     # gitlab#193: the pepper CLI surface does not exist yet, so the GUI
-    # cannot usefully drive these.
+    # cannot usefully drive this.
     ("configurePepperDeadman", None, "gitlab#193: pepper CLI not implemented yet"),
-    ("encryptTextWithProgress", "enablePepper", "gitlab#193: pepper CLI not implemented yet"),
-    ("encryptTextWithProgress", "pepperName", "gitlab#193: pepper CLI not implemented yet"),
-    # gitlab#198: declared and never passed. Listed per-parameter so wiring
-    # one at a time shrinks this list rather than clearing a whole method.
-    ("encryptTextWithProgress", "hsmPlugin", "gitlab#198: HSM control not wired on this line"),
-    ("decryptTextWithProgress", "hsmPlugin", "gitlab#198: HSM control not wired on this line"),
-    ("encryptTextWithProgress", "identityStore", "gitlab#198: --identity-store has no GUI control"),
-    ("encryptTextWithProgress", "noDiversityCheck", "gitlab#198: cascade diversity has no control"),
-    ("encryptTextWithProgress", "strictDiversity", "gitlab#198: cascade diversity has no control"),
-    ("encryptTextWithProgress", "forcePassword", "gitlab#198: no force-password control"),
-    ("decryptTextWithProgress", "forcePassword", "gitlab#198: no force-password control"),
-    ("encryptTextWithProgress", "template", "gitlab#198: template UI is gitlab#169/#167"),
-    ("encryptTextWithProgress", "showProgress", "gitlab#198: progress is driven by the runner"),
-    ("decryptTextWithProgress", "showProgress", "gitlab#198: progress is driven by the runner"),
-    ("validateCascade", "strict", "gitlab#198: cascade diversity has no control"),
+    # gitlab#198: cascade validation is only ever invoked in its advisory
+    # form; a strict-mode control is part of the cascade-diversity UI.
+    ("validateCascade", "strict", "gitlab#198: cascade strict mode has no control"),
 ]
 
 
 def _sources():
     service = _COMMENT_RE.sub("", open(SERVICE, encoding="utf-8").read())
     callers = []
-    for name in sorted(os.listdir(GUI_DIR)):
-        if name.endswith(".dart") and name != "cli_service.dart":
-            with open(os.path.join(GUI_DIR, name), encoding="utf-8") as handle:
-                callers.append(_COMMENT_RE.sub("", handle.read()))
+    # Recurse: the widgets live in lib/tabs/, lib/widgets/ and lib/screens/,
+    # not only at the top of lib/. A non-recursive scan here once reported
+    # already-wired Encrypt-tab parameters as gaps and kept the registry
+    # lying in both directions (gitlab#198 follow-up, 2026-08-09).
+    for root, _dirs, names in sorted(os.walk(GUI_DIR)):
+        for name in sorted(names):
+            if name.endswith(".dart") and name != "cli_service.dart":
+                with open(os.path.join(root, name), encoding="utf-8") as handle:
+                    callers.append(_COMMENT_RE.sub("", handle.read()))
     return service, "\n".join(callers)
 
 
@@ -93,7 +90,10 @@ def _declared():
     service, _ = _sources()
     for match in re.finditer(r"static\s+[\w<>,?\s]+?\s+(\w+)\(", service):
         name = match.group(1)
-        if name.startswith("_"):
+        # `Function` is a function-typed FIELD declaration (the test seam
+        # `commandRunnerOverride`), not a callable service method — its
+        # parameter names are part of a type, so "wiring" them is meaningless.
+        if name.startswith("_") or name == "Function":
             continue
         params = _parameter_list(service, match.end() - 1)
         if "{" not in params or "}" not in params:

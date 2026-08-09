@@ -2406,6 +2406,16 @@ the 1.5 branch:
 
 ### Internal
 
+- **The gitlab#198 has-a-caller lint now scans the widget directories**
+  (gitlab#198 follow-up): its caller scan read only top-level `lib/*.dart`,
+  while every tab and shared widget lives in `lib/tabs/`, `lib/widgets/` and
+  `lib/screens/` — so most `KNOWN_UNWIRED` exemptions described Encrypt-tab
+  wiring that in fact existed. The scan now recurses; the registry is pruned
+  to the verified truth on this line: `configurePepperDeadman` waits on the
+  pepper CLI (gitlab#193) and `validateCascade(strict:)` has no control. The
+  extractor also no longer misparses the `commandRunnerOverride`
+  function-typed field as a service method.
+
 - **Desktop GUI: `flutter analyze` is clean — 41 issues to 0** (gitlab#214 /
   github#125). Warnings: removed the unused
   `_isPostQuantumAlgorithm`/`_getNonPostQuantumAlgorithms` duplicates from
