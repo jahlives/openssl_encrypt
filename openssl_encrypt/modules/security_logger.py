@@ -30,9 +30,12 @@ import re
 import secrets
 import threading
 import time
+from collections import OrderedDict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
+
+from .debug_redaction import secret_fingerprint
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +49,62 @@ _SECRET_TOKEN_RE = re.compile(r"[A-Za-z0-9+_=]{32,}")
 _SECRET_ENV_VARS = ("CRYPT_PASSWORD", "OPENSSL_ENCRYPT_PASSWORD")
 
 _REDACTED = "***REDACTED***"
+
+# Secrets that a caller delivered to the user and wants redacted if they ever
+# reach a log, but that are NOT held in an environment variable
+# _value_looks_secret can resolve — the pepper CLI's one-shot TOTP secret and
+# backup codes (gitlab#193) are the first such producers on this line.
+#
+# The fingerprint is HMAC-keyed with debug_redaction's ephemeral per-process
+# key, NOT a plain digest: an unkeyed hash of a live secret, retained for the
+# process lifetime, would be an offline dictionary-confirmation oracle for
+# anyone who read the registry — exactly what debug_redaction's module
+# docstring forbids. Only intra-process equality is needed, so a keyed value is
+# equivalent. (The key is co-resident, so this does not defend against a full
+# core dump, which would yield the secret anyway; it defends against
+# registry-only disclosure.)
+#
+# Keyed by a caller-chosen name with a small ring per name, so a long-lived
+# process cannot grow the store without bound. Within a name, re-registering
+# evicts only that name's own ring, so one name's churn never drops another
+# name's still-live secret. ACROSS names it is the caller's contract to use a
+# bounded, stable set of names (<= _CONSUMED_SECRET_NAME_CAP): registering more
+# distinct names than the cap evicts the oldest whole name, and any short
+# low-entropy value it held then fails open, since the entropy heuristic below
+# does not catch it. The shipped producer (pepper_cli) uses a fixed ~11 stable
+# names, well under the cap, so it never triggers name eviction.
+_CONSUMED_SECRET_CAP_PER_NAME = 4
+# 32 rather than a handful: TOTP enrolment registers a batch of one-shot backup
+# codes under distinct per-code names, so the name table must hold that batch
+# without evicting any. A larger table only ever redacts MORE; memory stays
+# bounded (names * per-name ring * fingerprint size).
+_CONSUMED_SECRET_NAME_CAP = 32
+_consumed_secret_fingerprints = OrderedDict()
+_consumed_secret_lock = threading.Lock()
+
+
+def register_consumed_secret(name: str, value: str) -> None:
+    """Remember a delivered secret so logs still redact it by keyed fingerprint.
+
+    Args:
+        name: A label the value is grouped under, used to bound eviction per
+            producer (e.g. one name per backup code).
+        value: The secret value. Empty values are ignored.
+    """
+    if not value:
+        return
+    fp = secret_fingerprint(value.encode("utf-8", "surrogateescape"))
+    with _consumed_secret_lock:
+        ring = _consumed_secret_fingerprints.get(name)
+        if ring is None:
+            ring = OrderedDict()
+            _consumed_secret_fingerprints[name] = ring
+            while len(_consumed_secret_fingerprints) > _CONSUMED_SECRET_NAME_CAP:
+                _consumed_secret_fingerprints.popitem(last=False)
+        ring.pop(fp, None)
+        ring[fp] = True
+        while len(ring) > _CONSUMED_SECRET_CAP_PER_NAME:
+            ring.popitem(last=False)
 
 
 def _shannon_entropy(s: str) -> float:
@@ -65,6 +124,19 @@ def _value_looks_secret(value: str) -> bool:
         env_val = os.environ.get(var)
         if env_val and value == env_val:
             return True
+    # Secrets registered by a producer (register_consumed_secret) are matched by
+    # keyed fingerprint, since the env-var loop above cannot see them. The
+    # emptiness check short-circuits the HMAC and the lock on the common path,
+    # so routine logging does not serialize on it.
+    if value and _consumed_secret_fingerprints:
+        fp = secret_fingerprint(value.encode("utf-8", "surrogateescape"))
+        with _consumed_secret_lock:
+            for ring in _consumed_secret_fingerprints.values():
+                if fp in ring:
+                    # Refresh on match, making eviction LRU rather than FIFO so
+                    # a frequently redacted secret does not age out while live.
+                    ring.move_to_end(fp)
+                    return True
     # A long token-charset run is only treated as secret if it is actually
     # high-entropy, so long low-entropy values (e.g. "x" * 500) are truncated,
     # not redacted.

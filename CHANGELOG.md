@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`plugin pepper` management CLI** (gitlab#193): a subcommand group driving
+  the existing remote-pepper plugin — `list` (stored peppers as JSON), `test`
+  (mTLS connectivity probe from ad-hoc `--url`/cert flags), `setup-totp` /
+  `verify-totp` (TOTP 2FA enrolment), and `configure-deadman` (the pepper
+  dead-man's switch). This is the CLI surface the desktop GUI already called
+  but that never existed, so wiring it also un-breaks those GUI controls. The
+  TOTP shared secret and the one-time backup codes are the only secret
+  payloads: they are emitted on stdout only (never stderr, which the GUI
+  persists) and registered with the audit-log redactor, mirroring
+  `generate-password --json`. `configure-deadman --interval`/`--grace-period`
+  take whole days and are rejected below 1 (the switch auto-wipes all peppers
+  on a missed check-in, so a zero/negative deadline must not be armable); the
+  destructive `panic` operation is deliberately not exposed.
+
 - **Desktop GUI: securely delete the source file after encrypting**
   (gitlab#151 / github#69): the Encrypt tab's file options gain an
   off-by-default switch to shred the original file once the encrypted copy is

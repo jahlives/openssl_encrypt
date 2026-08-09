@@ -78,16 +78,13 @@ EXPECTED_INTERPOLATED = {
 # bare command-path element. Each entry must name a real tracked bug -- this
 # is a list of known defects, not a place to silence the lint.
 KNOWN_BROKEN = [
-    # The pepper and integrity controls are kept deliberately: the CLI
-    # surface for them is planned (gitlab#193, gitlab#194). Until it lands
-    # these calls fail at argparse, so they are declared here rather than
-    # silently tolerated -- and the stale-entry test will demand these
-    # entries be deleted the day the subcommands appear.
-    ("configurePepperDeadman", "pepper", "gitlab#193: pepper CLI not implemented yet"),
-    ("listPeppers", "pepper", "gitlab#193: pepper CLI not implemented yet"),
-    ("setupPepperTotp", "pepper", "gitlab#193: pepper CLI not implemented yet"),
-    ("verifyPepperTotp", "pepper", "gitlab#193: pepper CLI not implemented yet"),
-    ("testPepperConnection", "pepper", "gitlab#193: pepper CLI not implemented yet"),
+    # The pepper CLI (gitlab#193) now exists (`plugin pepper ...`), so those
+    # GUI call sites parse against the real tree and their KNOWN_BROKEN entries
+    # were removed -- the stale-entry test would fail if they were left here.
+    # The integrity controls remain deliberately: the CLI surface for them is
+    # planned (gitlab#194). Until it lands these calls fail at argparse, so they
+    # are declared here rather than silently tolerated -- and the stale-entry
+    # test will demand these entries be deleted the day the subcommands appear.
     ("testIntegrityConnection", "integrity", "gitlab#194: integrity CLI not implemented yet"),
     ("verifyFileIntegrity", "integrity", "gitlab#194: integrity CLI not implemented yet"),
     ("getIntegrityStats", "integrity", "gitlab#194: integrity CLI not implemented yet"),

@@ -835,6 +835,8 @@ SECRET_VALUE_CLI_OPTIONS = frozenset(
         "--rekey-password",
         "--recovery-code",
         "--encryption-data",
+        # gitlab#193: `plugin pepper verify-totp --code` carries a TOTP code.
+        "--code",
     }
 )
 
