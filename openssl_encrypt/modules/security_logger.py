@@ -136,7 +136,15 @@ def _value_looks_secret(value: str) -> bool:
     # check short-circuits the HMAC and the lock on the common path, so routine
     # logging does not serialize on it.
     if value and _consumed_secret_fingerprints:
-        fp = secret_fingerprint(value.encode("utf-8", "surrogateescape"))
+        try:
+            fp = secret_fingerprint(value.encode("utf-8", "surrogateescape"))
+        except UnicodeEncodeError:
+            # A lone HIGH surrogate is outside surrogateescape's round-trip range
+            # and raises here. _scrub is not wrapped, so this would propagate
+            # into whatever operation was being logged. Fail closed: an
+            # unencodable value is treated as secret rather than crashing the
+            # operation or reaching the log unredacted (gitlab#147).
+            return True
         with _consumed_secret_lock:
             for ring in _consumed_secret_fingerprints.values():
                 if fp in ring:

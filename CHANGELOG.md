@@ -433,6 +433,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Secret-redaction follow-ups from the #144 review** (gitlab#147), four
+  hardening fixes (no user-relevant vulnerability, so no advisory):
+  - Strict UTF-8 encodes on secret material could leak a byte through a
+    `UnicodeEncodeError` message (which embeds the offending character and its
+    offset), printed verbatim by the generic CLI handler outside the
+    `debug_secret()` chokepoint. The `debug_secret` chokepoint, the rekey
+    password encode, and the recovery `_passphrase_kek` encode now use
+    `surrogateescape` (round-tripping the non-UTF-8 bytes `os.environ`/argv
+    already decoded that way) and refuse the residual lone-high-surrogate case
+    with a value-free error instead of echoing bytes.
+  - `security_logger._value_looks_secret` could itself raise from inside log
+    scrubbing on a lone-surrogate value, propagating into the operation being
+    logged; it now fails closed (treats an unencodable value as secret).
+  - Secret environment variables (`CRYPT_PASSWORD`, `OPENSSL_ENCRYPT_PASSWORD`,
+    `OPENSSL_ENCRYPT_REKEY_PASSWORD`) were deleted without first registering
+    their fingerprint, so redaction went inert the moment the variable was
+    removed — a later `log_event` could then write the value unredacted. Every
+    such site now registers before deleting.
+  - `-p/--password` on `add-recovery`/`remove-recovery` now warns that it is
+    visible in the world-readable process list, matching `--recovery-code` and
+    `--rekey-password`.
+
 - **Credential-channel follow-ups from the #154/#159 review** (gitlab#180),
   three defense-in-depth/consistency fixes (no user-relevant vulnerability, so
   no advisory):

@@ -307,7 +307,15 @@ def _passphrase_kek(passphrase: bytes, salt: bytes, time_cost, memory_cost, para
         # message embeds one byte of the passphrase and its offset and is printed
         # verbatim by the generic CLI handler — outside debug_secret(). Identical
         # bytes for any surrogate-free string, so no existing slot's KEK changes.
-        passphrase = passphrase.encode("utf-8", "surrogateescape")
+        # A lone HIGH surrogate is outside surrogateescape's round-trip range and
+        # still raises; re-raise carrying nothing value-derived rather than let
+        # UnicodeEncodeError's char/offset reach the generic handler (gitlab#147).
+        try:
+            passphrase = passphrase.encode("utf-8", "surrogateescape")
+        except UnicodeEncodeError:
+            raise ValueError(
+                "recovery passphrase could not be encoded (contains an unpaired surrogate)"
+            ) from None
     return argon2.low_level.hash_secret_raw(
         secret=bytes(passphrase),
         salt=bytes(salt),
@@ -618,6 +626,15 @@ def _read_password(args, env_pw, prompt="Password: "):
     import getpass
 
     pw = getattr(args, "password", None)
+    if pw is not None:
+        # -p/--password is visible in the world-readable /proc/PID/cmdline, the
+        # same exposure --recovery-code and --rekey-password warn about; prefer
+        # $CRYPT_PASSWORD. Not silenced by --quiet, matching those warnings
+        # (gitlab#147).
+        eprint(
+            "WARNING: --password is visible in process list. "
+            "Use the CRYPT_PASSWORD env var instead."
+        )
     if pw is None and env_pw:
         # An empty CRYPT_PASSWORD keeps its long-standing meaning of "not
         # supplied" here; only the new recovery channels treat blank as an error.
@@ -626,7 +643,15 @@ def _read_password(args, env_pw, prompt="Password: "):
         pw = getpass.getpass(prompt)
     # surrogateescape round-trips bytes that os.environ decoded the same way, so
     # a non-UTF-8 password neither crashes nor echoes its bytes in the traceback.
-    return pw.encode("utf-8", "surrogateescape") if isinstance(pw, str) else pw
+    # A lone HIGH surrogate is still outside that range; refuse it value-free
+    # rather than let UnicodeEncodeError's char reach the handler (gitlab#147),
+    # mirroring _passphrase_kek.
+    if not isinstance(pw, str):
+        return pw
+    try:
+        return pw.encode("utf-8", "surrogateescape")
+    except UnicodeEncodeError:
+        raise ValueError("password could not be encoded (contains an unpaired surrogate)") from None
 
 
 def _read_recovery_code(args, env_code):
