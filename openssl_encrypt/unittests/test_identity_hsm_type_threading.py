@@ -11,16 +11,37 @@ the bare default. So an OnlyKey selection was silently dropped: with both
 devices present the identity was YubiKey-bound; with only an OnlyKey, creation
 failed with a misleading "no Yubikey available" error.
 
-HSM plugin modules are not present in this checkout, so these tests mock the
-availability/plugin layer and assert the `hsm_type` THREADING (which device the
-service is built for), not real pepper derivation.
+The HSM challenge-response plugin classes are present, but their hardware
+libraries (ykman/yubikit/hid) are not installed here, so these tests stub those
+libraries and assert plugin SELECTION -- that the recorded `hsm_type` resolves
+to the correct concrete plugin class, and which device the encrypt/decrypt
+paths build the service for -- not real pepper derivation on a device.
 """
 
+import sys
 import unittest
 from unittest import mock
 
-from openssl_encrypt.modules.identity import Identity
-from openssl_encrypt.modules.identity_protection import (
+# The HSM challenge-response plugin classes import the YubiKey hardware
+# libraries; stub them so plugin SELECTION (which concrete class an hsm_type
+# resolves to) is testable without real hardware, mirroring
+# test_onlykey_identity_protection.py.
+for _mod in (
+    "ykman",
+    "ykman.device",
+    "ykman.hid",
+    "ykman.hid.base",
+    "ykman.hid.linux",
+    "hid",
+    "yubikit",
+    "yubikit.core",
+    "yubikit.core.otp",
+    "yubikit.yubiotp",
+):
+    sys.modules.setdefault(_mod, mock.MagicMock())
+
+from openssl_encrypt.modules.identity import Identity  # noqa: E402
+from openssl_encrypt.modules.identity_protection import (  # noqa: E402
     HSMProtectionConfig,
     IdentityProtection,
     PasswordProtectionConfig,
@@ -132,6 +153,61 @@ class TestCmdCreateThreadsHsmType(unittest.TestCase):
                 pass
         self.assertTrue(gen.called, "Identity.generate was never called")
         self.assertEqual(gen.call_args.kwargs.get("hsm_type"), "onlykey")
+
+
+class TestRecordedDeviceResolvesToDistinctPlugin(unittest.TestCase):
+    """The recorded hsm_type must resolve to the DEVICE-SPECIFIC plugin, not a
+    shared/default one.
+
+    OnlyKey and YubiKey share the HMAC-SHA1 challenge-response *protocol* but
+    NOT the USB VID/PID: the YubiKey plugin enumerates only Yubico devices, and
+    ykman's PID enum rejects OnlyKey's real PID (see
+    test_onlykey_pid_masquerade), so the YubiKey plugin genuinely cannot reach
+    an OnlyKey -- they are not interchangeable. These pin the concrete classes
+    so a "just default to yubikey" refactor cannot silently reintroduce
+    gitlab#218.
+    """
+
+    def _plugin_for(self, hsm_type):
+        from openssl_encrypt.modules.identity_protection import IdentityKeyProtectionService
+
+        return IdentityKeyProtectionService(hsm_type=hsm_type)._get_hsm_plugin()
+
+    def test_onlykey_resolves_to_the_onlykey_plugin(self):
+        from openssl_encrypt.plugins.hsm.onlykey_challenge_response import OnlykeyHSMPlugin
+
+        self.assertIsInstance(self._plugin_for("onlykey"), OnlykeyHSMPlugin)
+
+    def test_yubikey_resolves_to_the_yubikey_plugin(self):
+        from openssl_encrypt.plugins.hsm.yubikey_challenge_response import YubikeyHSMPlugin
+
+        self.assertIsInstance(self._plugin_for("yubikey"), YubikeyHSMPlugin)
+
+    def test_default_resolves_to_the_yubikey_plugin(self):
+        from openssl_encrypt.modules.identity_protection import IdentityKeyProtectionService
+        from openssl_encrypt.plugins.hsm.yubikey_challenge_response import YubikeyHSMPlugin
+
+        self.assertIsInstance(IdentityKeyProtectionService()._get_hsm_plugin(), YubikeyHSMPlugin)
+
+    def test_the_two_plugins_are_not_interchangeable(self):
+        from openssl_encrypt.plugins.hsm.onlykey_challenge_response import OnlykeyHSMPlugin
+        from openssl_encrypt.plugins.hsm.yubikey_challenge_response import YubikeyHSMPlugin
+
+        self.assertIsNot(OnlykeyHSMPlugin, YubikeyHSMPlugin)
+        # OnlyKey's non-Yubico PID is exactly why the YubiKey plugin cannot
+        # reach it; pin it so the shared-protocol fact cannot be mistaken for
+        # device interchangeability.
+        self.assertEqual(OnlykeyHSMPlugin.ONLYKEY_PID, 0x60FC)
+
+    def test_a_recorded_onlykey_identity_selects_the_onlykey_plugin_end_to_end(self):
+        # The exact service the encrypt/decrypt paths build from a recorded
+        # config (IdentityKeyProtectionService(hsm_type=hsm_config.hsm_type))
+        # must resolve to the OnlyKey plugin, not the yubikey default.
+        from openssl_encrypt.plugins.hsm.onlykey_challenge_response import OnlykeyHSMPlugin
+
+        protection = _hsm_protection("onlykey")
+        plugin = self._plugin_for(protection.hsm_config.hsm_type)
+        self.assertIsInstance(plugin, OnlykeyHSMPlugin)
 
 
 if __name__ == "__main__":
