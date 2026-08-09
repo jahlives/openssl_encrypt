@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Desktop GUI: live password-strength meter on the Encrypt tab**
+  (gitlab#141 / github#59): a debounced meter under the Encrypt tab's
+  password field shells out to `check-password --json --password-policy none`
+  and shows the pattern-aware strength (bar, category, bits, warnings). The
+  password travels on stdin, never `-p` (which would land in
+  `/proc/PID/cmdline`), and `CRYPT_PASSWORD` is scrubbed from the child
+  environment so the CLI scores the TYPED password rather than a stale env
+  value — `check-password` reads `CRYPT_PASSWORD` before stdin, and this
+  branch previously had none of the env-scrub machinery, so an
+  `_inheritableEnvironment()` helper (parent env minus the credential
+  variables) and an authoritative-`environment` path on the stdin runner were
+  added alongside. Placed on the Encrypt tab only: the Decrypt tab enters an
+  existing password (strength is not meaningful there) and the Password
+  Generator already reports entropy.
+
 - **Desktop GUI: identity HSM touch and contact key-change controls**
   (gitlab#161 / github#77): the Create-identity dialog gains a "Show a touch
   reminder when this identity is used" switch (shown only when an HSM is

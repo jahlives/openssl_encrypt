@@ -3,6 +3,7 @@ import '../cli_service.dart';
 import '../input_validation.dart';
 import '../file_manager.dart';
 import '../widgets/crypto_widgets.dart';
+import '../widgets/password_strength_meter.dart';
 
 class EncryptTab extends StatefulWidget {
   final FileManager fileManager;
@@ -1899,6 +1900,11 @@ class _EncryptTabState extends State<EncryptTab> {
                       obscureText: true,
                       enabled: !_isLoading,
                     ),
+                    // Live strength meter (gitlab#141): a password is being
+                    // CHOSEN here, so pattern-aware scoring is meaningful (the
+                    // Decrypt tab enters an existing one; the Password
+                    // Generator already reports entropy).
+                    PasswordStrengthMeter(controller: _passwordController),
                     if (widget.isProMode) ...[
                       const SizedBox(height: 8),
                       CheckboxListTile(

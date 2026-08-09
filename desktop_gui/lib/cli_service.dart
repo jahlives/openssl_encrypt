@@ -6,6 +6,36 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
 
+/// A pattern-aware password-strength report from `check-password --json`.
+class PasswordStrength {
+  final int length;
+  final double bits; // pattern-aware estimate
+  final double rawBits; // raw search-space estimate
+  final String category; // e.g. "very weak" .. "strong"
+  final List<String> warnings;
+
+  PasswordStrength({
+    required this.length,
+    required this.bits,
+    required this.rawBits,
+    required this.category,
+    required this.warnings,
+  });
+
+  factory PasswordStrength.fromJson(Map<String, dynamic> json) {
+    return PasswordStrength(
+      length: (json['length'] as num?)?.toInt() ?? 0,
+      bits: (json['bits'] as num?)?.toDouble() ?? 0,
+      rawBits: (json['raw_bits'] as num?)?.toDouble() ?? 0,
+      category: (json['category'] as String?) ?? 'unknown',
+      warnings: (json['warnings'] as List<dynamic>?)
+              ?.map((w) => w.toString())
+              .toList() ??
+          const [],
+    );
+  }
+}
+
 /// Service layer for integrating with OpenSSL Encrypt CLI
 /// Replaces all pure Dart crypto implementations
 class CLIService {
@@ -977,8 +1007,69 @@ class CLIService {
     }
   }
 
+  // Credential-bearing environment variables the CLI reads and then removes.
+  // Kept in lockstep with security_logger._SECRET_ENV_VARS (plus the
+  // recovery/second-password vars the recovery commands use); never inherited
+  // into a child that must not see them.
+  static const List<String> _credentialEnvNames = [
+    'CRYPT_PASSWORD',
+    'OPENSSL_ENCRYPT_PASSWORD',
+    'OPENSSL_ENCRYPT_RECOVERY_CODE',
+    'OPENSSL_ENCRYPT_RECOVERY_PASSPHRASE',
+    'OPENSSL_ENCRYPT_ADD_RECOVERY_PASSPHRASE',
+    'OPENSSL_ENCRYPT_SECOND_PASSWORD',
+    'OPENSSL_ENCRYPT_SIGNER_PASSPHRASE',
+  ];
+
+  /// A copy of the parent environment with every credential variable removed.
+  /// Used where the child must score / act on a value supplied THIS call
+  /// (e.g. a password on stdin), not a stale one inherited from the shell that
+  /// launched the GUI — check-password reads CRYPT_PASSWORD before stdin.
+  static Map<String, String> _inheritableEnvironment() {
+    final env = Map<String, String>.from(Platform.environment);
+    for (final name in _credentialEnvNames) {
+      env.remove(name);
+    }
+    return env;
+  }
+
+  /// Score [password] with `check-password --json`, feeding it on stdin.
+  ///
+  /// Returns null for an empty password (nothing to score). The password
+  /// travels on stdin, never `-p` (which would land in /proc/PID/cmdline),
+  /// and CRYPT_PASSWORD is scrubbed from the child env so the CLI scores the
+  /// TYPED value rather than a stale env one (check-password reads
+  /// CRYPT_PASSWORD before stdin). `--password-policy none` makes this a
+  /// pure strength estimate, never a pass/fail policy verdict.
+  static Future<PasswordStrength?> checkPassword(String password) async {
+    if (password.isEmpty) return null;
+    final args = <String>[
+      'check-password',
+      '--json',
+      '--password-policy',
+      'none',
+    ];
+    final result = await _runCLICommandWithStdin(args, password,
+        environment: _inheritableEnvironment());
+    if (result.exitCode != 0) {
+      throw Exception(
+          'Strength check failed: ${(result.stderr as String).trim()}');
+    }
+    final data =
+        jsonDecode((result.stdout as String).trim()) as Map<String, dynamic>;
+    return PasswordStrength.fromJson(data);
+  }
+
   /// Run CLI command with stdin input (for passphrases, etc.)
-  static Future<ProcessResult> _runCLICommandWithStdin(List<String> args, String stdinInput) async {
+  ///
+  /// When [environment] is given it is authoritative (parent env NOT merged
+  /// back over it), used to remove variables like CRYPT_PASSWORD that would
+  /// otherwise override the stdin value.
+  static Future<ProcessResult> _runCLICommandWithStdin(
+    List<String> args,
+    String stdinInput, {
+    Map<String, String>? environment,
+  }) async {
     final override = commandRunnerOverride;
     if (override != null) return override(args, stdinInput: stdinInput);
 
@@ -987,16 +1078,23 @@ class CLIService {
     // When running inside Flatpak, use direct CLI path
     if (_isFlaspakVersion && await File(_cliPath).exists()) {
       _outputDebugLog('Using direct Flatpak CLI with stdin: $_cliPath ${args.join(' ')}');
-      process = await Process.start(_cliPath, args);
+      process = environment != null
+          ? await Process.start(_cliPath, args,
+              environment: environment, includeParentEnvironment: false)
+          : await Process.start(_cliPath, args);
     } else {
       // Development CLI
       final pythonArgs = ['-m', 'openssl_encrypt.cli', ...args];
       _outputDebugLog('Attempting development CLI with stdin: python ${pythonArgs.join(' ')}');
 
-      final env = Map<String, String>.from(Platform.environment);
+      // includeParentEnvironment is false when an explicit environment is
+      // given: with it true the parent env is merged back over `environment`,
+      // undoing the credential scrub.
+      final env = environment ?? Map<String, String>.from(Platform.environment);
       process = await Process.start('python', pythonArgs,
         workingDirectory: '/home/work/private/git/openssl_encrypt',
-        environment: env);
+        environment: env,
+        includeParentEnvironment: environment == null);
     }
 
     final result = await pumpStdinAndCollect(process, stdinInput);
