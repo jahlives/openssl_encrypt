@@ -128,7 +128,12 @@ class TestGuiServiceHasCallers(unittest.TestCase):
         seeing encrypt/decrypt/shred and the suite stayed green.
         """
         declared = list(_declared())
-        self.assertGreater(len(declared), 10, "the extractor found almost no methods")
+        # A floor just below the real count (10), not an exact pin: only
+        # methods with a `{named}` parameter block are counted, so a single
+        # method losing its named params (importContact -> --file, gitlab#192)
+        # legitimately shifts the count by one. The named-method assertions
+        # below are the real guard against the extractor regressing to zero.
+        self.assertGreater(len(declared), 9, "the extractor found almost no methods")
         names = {name for name, _ in declared}
         for expected in ("encryptTextWithProgress", "decryptTextWithProgress", "encryptText"):
             self.assertIn(expected, names, f"{expected} is not being read")

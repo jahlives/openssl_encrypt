@@ -1822,8 +1822,6 @@ class _EncryptTabState extends State<EncryptTab> {
     return descriptions[algorithm] ?? 'Symmetric cipher';
   }
 
-  /// Check if current cover file is MP4 video
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(

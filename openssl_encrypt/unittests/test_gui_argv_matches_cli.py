@@ -88,9 +88,6 @@ KNOWN_BROKEN = [
     ("testIntegrityConnection", "integrity", "gitlab#194: integrity CLI not implemented yet"),
     ("verifyFileIntegrity", "integrity", "gitlab#194: integrity CLI not implemented yet"),
     ("getIntegrityStats", "integrity", "gitlab#194: integrity CLI not implemented yet"),
-    # 1.5.x removed surface the GUI still calls (gitlab#192).
-    ("importContact", "--data", "gitlab#192: gitlab#164's import work is 1.4.x-only"),
-    ("importContact", "--alias", "gitlab#192: gitlab#164's import work is 1.4.x-only"),
 ]
 
 # A Dart method declaration at exactly two-space (class body) indentation.

@@ -390,6 +390,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Desktop GUI: contact import works on this line again** (gitlab#192): the
+  GUI sent `identity import --data <document>` (+ optional `--alias`), but
+  1.5.x's import parser accepts only `--file <path>` (plus `--overwrite` /
+  `--allow-key-change`) — so every contact import failed at argparse, and the
+  document rode on argv (world-readable `/proc/PID/cmdline`) besides.
+  `importContact` now writes the pasted document to a `0600` file under a
+  `mkdtemp` `0700` directory — preferring RAM-backed `/dev/shm` so it need not
+  touch persistent storage — passes `--file`, and overwrites-then-deletes the
+  temp directory in a `finally`. Because the paste box is free text and 1.5.x
+  (unlike 1.4.x's stdin path) forces the document onto disk, a mis-pasted
+  PRIVATE key is refused up front, before any write, keyed on PEM headers and
+  JSON private-field names (never on name/email values). The alias field is
+  dropped: 1.5.x has no `--alias` and no rename subcommand, so there was
+  nowhere for it to go. The import dialog's label/hint are corrected too
+  — the wire format is the JSON document from `identity export`, not a bare
+  base64 key. Steganography (already removed from this line's CLI and GUI in
+  an earlier commit) leaves only two stale text residues, also cleaned up;
+  the resolved `importContact` entries are removed from the argv lint's
+  `KNOWN_BROKEN`.
+
 - **Desktop GUI: the stdin subprocess helper drains output before closing
   stdin** (gitlab#175): `_runCLICommandWithStdin` wrote, flushed and closed
   stdin before it began reading stdout/stderr. Two latent consequences on the

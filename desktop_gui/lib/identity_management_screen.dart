@@ -314,7 +314,6 @@ class _IdentityManagementScreenState extends State<IdentityManagementScreen>
 
   Future<void> _importContact() async {
     final publicKeyController = TextEditingController();
-    final aliasController = TextEditingController();
 
     final result = await showDialog<bool>(
       context: context,
@@ -326,28 +325,22 @@ class _IdentityManagementScreenState extends State<IdentityManagementScreen>
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                'Import a contact\'s public key to encrypt messages for them.',
+                'Import a contact\'s public identity to encrypt messages for '
+                'them.',
                 style: TextStyle(fontSize: 14),
               ),
               const SizedBox(height: 16),
               TextField(
                 controller: publicKeyController,
                 decoration: const InputDecoration(
-                  labelText: 'Public Key *',
-                  hintText: 'Paste base64-encoded public key',
+                  labelText: 'Public Identity Document *',
+                  // The wire format is the JSON object written by
+                  // `identity export`, not a bare base64 key: cmd_import
+                  // json.loads the file and rejects anything else.
+                  hintText: 'Paste the JSON document from "identity export"',
                   border: OutlineInputBorder(),
                 ),
                 maxLines: 8,
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: aliasController,
-                decoration: const InputDecoration(
-                  labelText: 'Alias (optional)',
-                  hintText: 'Friendly name for this contact',
-                  border: OutlineInputBorder(),
-                ),
-                maxLength: 100,
               ),
             ],
           ),
@@ -361,16 +354,13 @@ class _IdentityManagementScreenState extends State<IdentityManagementScreen>
             onPressed: () async {
               if (publicKeyController.text.isEmpty) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Public key is required')),
+                  const SnackBar(content: Text('A public identity document is required')),
                 );
                 return;
               }
 
               try {
-                await CLIService.importContact(
-                  publicKeyController.text,
-                  alias: aliasController.text.isEmpty ? null : aliasController.text,
-                );
+                await CLIService.importContact(publicKeyController.text);
                 if (context.mounted) {
                   Navigator.of(context).pop(true);
                   ScaffoldMessenger.of(context).showSnackBar(
@@ -383,7 +373,10 @@ class _IdentityManagementScreenState extends State<IdentityManagementScreen>
               } catch (e) {
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Failed to import contact: $e')),
+                    SnackBar(
+                      content: Text(InputValidator.sanitizeForDisplay(
+                          'Failed to import contact: $e')),
+                    ),
                   );
                 }
               }

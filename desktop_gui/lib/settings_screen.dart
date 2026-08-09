@@ -449,7 +449,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: Text(
                 'Simple mode uses the standard security template for encryption. '
                 'Enable Pro mode to access algorithm selection, key stretching, '
-                'cascade encryption, steganography, and other advanced features.',
+                'cascade encryption, and other advanced features.',
                 style: TextStyle(
                   fontSize: 12,
                   color: Colors.grey.shade500,

@@ -2118,14 +2118,49 @@ class CLIService {
   }
 
   /// Import a contact's public key
-  static Future<void> importContact(String publicKeyData, {String? alias}) async {
+  static Future<void> importContact(String publicKeyData) async {
+    // 1.5.x's `identity import` reads the document from a file (`--file`),
+    // not from `--data` (which this line's CLI does not accept — gitlab#192)
+    // nor from stdin. 1.5.x has no `--alias`, so the GUI no longer collects
+    // one.
+    //
+    // Contact import takes only PUBLIC identity documents. The paste box is
+    // free text, so a user can mis-paste a private key — and unlike 1.4.x
+    // (which fed the document over stdin) this line's CLI forces the document
+    // onto disk. So refuse anything that looks like private-key material
+    // BEFORE writing anything: this is the exact input whose disk exposure we
+    // must avoid, and a public export never contains these markers
+    // (Identity.export_public emits only *_public_key fields).
+    if (_looksLikePrivateKey(publicKeyData)) {
+      throw Exception(
+        'This looks like a PRIVATE key. Import only the PUBLIC document from '
+        '"identity export" — never your private identity.',
+      );
+    }
+
+    Directory? tempDir;
     try {
-      final args = ['identity', 'import', '--data', publicKeyData];
-
-      if (alias != null && alias.isNotEmpty) {
-        args.addAll(['--alias', alias]);
+      // Prefer a RAM-backed dir (/dev/shm) so a public document — or a
+      // private key that slipped past the check above — does not reach
+      // persistent storage. Fall back to the system temp dir elsewhere.
+      final shm = Directory('/dev/shm');
+      final base = (!Platform.isWindows && await shm.exists()) ? shm : Directory.systemTemp;
+      tempDir = await base.createTemp('openssl_encrypt_import_');
+      // createTemp uses mkdtemp() on POSIX (atomic 0700, no race); the file
+      // itself is pinned to 0600 to match the encrypt/decrypt temp paths, so
+      // its permissions never depend on the umask.
+      final file = File('${tempDir.path}/contact.json');
+      if (!Platform.isWindows) {
+        try {
+          await Process.run('install', ['-m', '600', '/dev/null', file.path]);
+        } catch (e) {
+          _outputDebugLog(
+              'Warning: could not pre-create import temp file at 0600: $e');
+        }
       }
+      await file.writeAsString(publicKeyData);
 
+      final args = ['identity', 'import', '--file', file.path];
       if (debugEnabled) {
         args.add('--debug');
       }
@@ -2135,8 +2170,59 @@ class CLIService {
       if (result.exitCode != 0) {
         throw Exception('Failed to import contact: ${result.stderr}');
       }
-    } catch (e) {
-      throw Exception('Error importing contact: $e');
+    } finally {
+      if (tempDir != null) {
+        await _shredImportTemp(tempDir);
+      }
+    }
+  }
+
+  // A PEM private-key header, any flavour ("RSA PRIVATE KEY", "ENCRYPTED
+  // PRIVATE KEY", "OPENSSH PRIVATE KEY", ...).
+  static final RegExp _pemPrivateKey =
+      RegExp(r'-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----', caseSensitive: false);
+  // The private-material FIELD names in the on-disk identity blob, matched as
+  // JSON keys (name": followed by a colon), never as values — an identity
+  // NAME may legitimately contain `private_key` (underscores are allowed) and
+  // an EMAIL is free text, so a bare-substring check false-positives on real
+  // public exports.
+  static final RegExp _jsonPrivateField = RegExp(
+      r'"(?:encryption_private_key|signing_private_key|protection)"\s*:',
+      caseSensitive: false);
+
+  /// True if [text] carries private-key material a contact import must refuse.
+  /// A public identity export (Identity.export_public) contains only
+  /// `*_public_key` fields plus name/email/fingerprint/algorithms, so it
+  /// never matches.
+  static bool _looksLikePrivateKey(String text) {
+    return _pemPrivateKey.hasMatch(text) || _jsonPrivateField.hasMatch(text);
+  }
+
+  /// Best-effort shred of the import temp dir: overwrite the file with zeros
+  /// before unlinking, then remove the dir. Overwrite is unreliable on
+  /// CoW/journaled/SSD filesystems, but strictly better than a plain unlink
+  /// on in-place stores, and the /dev/shm preference means it is usually RAM.
+  static Future<void> _shredImportTemp(Directory tempDir) async {
+    try {
+      await for (final entity in tempDir.list()) {
+        if (entity is File) {
+          try {
+            final len = await entity.length();
+            if (len > 0) {
+              await entity.writeAsBytes(List<int>.filled(len, 0), flush: true);
+            }
+          } catch (_) {
+            // Overwrite is best-effort; fall through to delete.
+          }
+        }
+      }
+    } catch (_) {
+      // Listing failed; still attempt the delete below.
+    }
+    try {
+      await tempDir.delete(recursive: true);
+    } catch (_) {
+      // Best effort: the OS temp reaper will collect it.
     }
   }
 
