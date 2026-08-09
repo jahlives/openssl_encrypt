@@ -434,9 +434,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   KDF at strength and pbkdf2 < 600 000); and the template directory has its
   group/other write bits stripped on both the management and the `encrypt
   --template` read paths, closing the plant vector. Local attack only (requires
-  template-dir write); Medium. 1.4.x only — the template subsystem does not
-  exist on 1.5.x. (The warning is advisory and goes to stderr; the directory
-  permissions are the load-bearing protection against a planted template.)
+  template-dir write); Medium. The KDF-downgrade + directory-permission fixes
+  apply to **both** maintenance lines (the `encrypt --template` path exists on
+  1.5.x too — fixed there in 1.5.0); only the self-asserted-score ranking is
+  1.4.x-specific, since the template-management subsystem does not exist on
+  1.5.x. (The warning is advisory and goes to stderr; the directory permissions
+  are the load-bearing protection against a planted template.)
 
 - **`identity create --hsm onlykey` no longer silently binds the identity to
   the YubiKey** (gitlab#218, ADVISORY 2026-18): `cmd_create` computed the
