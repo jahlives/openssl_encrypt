@@ -16,9 +16,14 @@ from openssl_encrypt.modules.crypt_cli_subparser import (
 class TestPivSlotArg(unittest.TestCase):
     def test_parses_hex_without_prefix(self):
         self.assertEqual(_piv_slot_arg("9a"), 0x9A)
-        self.assertEqual(_piv_slot_arg("9c"), 0x9C)
         self.assertEqual(_piv_slot_arg("9d"), 0x9D)
         self.assertEqual(_piv_slot_arg("9e"), 0x9E)
+
+    def test_slot_9c_is_rejected(self):
+        # 9c signing fails at runtime (CKR_USER_NOT_LOGGED_IN); rejected up
+        # front now (gitlab#163).
+        with self.assertRaises(argparse.ArgumentTypeError):
+            _piv_slot_arg("9c")
 
     def test_parses_hex_with_prefix(self):
         self.assertEqual(_piv_slot_arg("0x9a"), 0x9A)
@@ -51,12 +56,12 @@ class TestPivArgumentGroup(unittest.TestCase):
                 "--hsm-pkcs11-lib",
                 "/usr/lib/opensc-pkcs11.so",
                 "--hsm-piv-slot",
-                "9c",
+                "9d",
                 "--hsm-biometric",
             ]
         )
         self.assertEqual(args.hsm_pkcs11_lib, "/usr/lib/opensc-pkcs11.so")
-        self.assertEqual(args.hsm_piv_slot, 0x9C)
+        self.assertEqual(args.hsm_piv_slot, 0x9D)
         self.assertTrue(args.hsm_biometric)
 
     def test_invalid_piv_slot_rejected_by_parser(self):
