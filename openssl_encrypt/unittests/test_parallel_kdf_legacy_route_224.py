@@ -186,7 +186,14 @@ class TestEmptyConfigGuard(unittest.TestCase):
             format_version=11,
             parallel=True,
         )
-        self.assertTrue(key)
+        seq_key, _, _ = generate_key_independent_xor(
+            PASSWORD,
+            SALT,
+            {"_is_from_decryption_metadata": True},
+            quiet=True,
+            format_version=11,
+        )
+        self.assertEqual(key, seq_key)
 
     def test_empty_decryption_metadata_still_derives(self):
         key, _, _ = generate_key_independent_xor(
@@ -200,9 +207,14 @@ class TestEmptyConfigGuard(unittest.TestCase):
 
 
 class TestLegacyFixtureParallelDecrypt(unittest.TestCase):
-    """End-to-end (re-review 10a): a real released-format fixture must decrypt
-    with parallel_kdf=True -- the concrete regression scenario the dispatcher
-    retirement is about, not just synthetic parallel==sequential configs."""
+    """End-to-end (re-review 10a): parallel_kdf=True against real files.
+
+    The released v11 fixture has a SINGLE XOR component (sha256 rounds only),
+    so its decrypt pins the routing (no retired dispatcher, no refusal by the
+    new ceiling block) but legitimately falls back to the sequential loop.
+    The multi-component roundtrip below therefore proves the pool branch is
+    really entered on a decrypt, via the warmup spy (the warmup runs only on
+    the parallel branch)."""
 
     def test_v11_fixture_decrypts_with_parallel_kdf(self):
         import os
@@ -223,6 +235,44 @@ class TestLegacyFixtureParallelDecrypt(unittest.TestCase):
             self.assertEqual(
                 fh.read(), b"openssl_encrypt format-version fixture corpus 2026-07-10\n"
             )
+
+    def test_multi_component_roundtrip_enters_the_pool(self):
+        import os
+        import tempfile
+
+        import openssl_encrypt.modules.crypt_core as cc
+        from openssl_encrypt.modules.crypt_core import decrypt_file, encrypt_file
+
+        tmp = tempfile.mkdtemp()
+        plain = os.path.join(tmp, "plain.txt")
+        enc = os.path.join(tmp, "roundtrip.enc")
+        dec = os.path.join(tmp, "roundtrip.out")
+        payload = b"multi-component parallel roundtrip (gitlab#224)\n"
+        with open(plain, "wb") as fh:
+            fh.write(payload)
+        cfg = {
+            "sha256": 50,
+            "argon2": {
+                "enabled": True,
+                "time_cost": 1,
+                "memory_cost": 512,
+                "parallelism": 1,
+                "rounds": 1,
+                "type": "id",
+            },
+            "scrypt": {"enabled": True, "n": 1024, "r": 8, "p": 1},
+        }
+        encrypt_file(
+            plain, enc, b"roundtrip-password", hash_config=cfg, quiet=True, parallel_kdf=True
+        )
+        with mock.patch.object(
+            cc, "_warm_component_imports", wraps=cc._warm_component_imports
+        ) as warm:
+            decrypt_file(enc, dec, b"roundtrip-password", quiet=True, parallel_kdf=True)
+        warm.assert_called_once()
+        self.assertIn("argon2", warm.call_args[0][0])
+        with open(dec, "rb") as fh:
+            self.assertEqual(fh.read(), payload)
 
 
 if __name__ == "__main__":
