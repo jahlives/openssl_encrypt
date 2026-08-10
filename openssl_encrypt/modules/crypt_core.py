@@ -2852,6 +2852,8 @@ def generate_key_independent_xor(
     pqc_keypair: tuple = None,
     hsm_pepper: bytes = None,
     format_version: int = 11,
+    parallel: bool = False,
+    max_workers: int = None,
 ) -> tuple:
     """
     Generate encryption key using Independent XOR composition.
@@ -2998,6 +3000,20 @@ def generate_key_independent_xor(
         # This ensures all algorithms work with normalized 256-bit input
         algorithm_input = SecureBytes(initial_hash)
 
+        # Independent-XOR components (gitlab#220): each enabled algorithm derives
+        # ONE component from the shared `algorithm_input` using a domain-separated
+        # per-component salt, and all components are combined with XOR. The
+        # components are mutually independent and XOR is commutative, so they may
+        # be computed sequentially or concurrently on a thread pool with a
+        # byte-identical result. We therefore build a list of (label, thunk)
+        # tasks here and execute them once, below, in whichever mode was
+        # requested. Each thunk returns the component bytes for its algorithm.
+        component_tasks = []
+        # A live progress bar interleaves unreadably across worker threads, so
+        # suppress per-component progress when parallelising. This is display
+        # only; it never affects the derived key.
+        _cprog = progress and not parallel
+
         # 1. Process each enabled hash algorithm
         hash_algorithms = [
             "sha256",
@@ -3013,47 +3029,22 @@ def generate_key_independent_xor(
         for algo in hash_algorithms:
             rounds = get_hash_rounds(hash_config, algo)
             if rounds > 0:
-                algo_display = algo.upper()
-
-                if not quiet and not progress:
-                    # Only print initial message if progress bars disabled
-                    eprint(
-                        f"Computing {algo_display} hash ({rounds} rounds)...",
-                        end=" ",
-                        flush=True,
+                component_tasks.append(
+                    (
+                        f"{algo.upper()} hash ({rounds} rounds)",
+                        functools.partial(
+                            compute_hash_independent,
+                            password=algorithm_input,  # Use initial hash, not raw password
+                            salt=_indep_xor_component_salt(salt, algo, format_version),
+                            algorithm=algo,
+                            rounds=rounds,
+                            key_length=key_length,
+                            quiet=quiet,
+                            progress=_cprog,
+                            debug=debug,
+                        ),
                     )
-                elif not quiet and progress:
-                    # Print header before progress bar
-                    algo_names = {
-                        "sha256": "SHA-256",
-                        "sha512": "SHA-512",
-                        "sha3_256": "SHA3-256",
-                        "sha3_512": "SHA3-512",
-                        "blake2b": "BLAKE2b",
-                        "blake3": "BLAKE3",
-                        "shake256": "SHAKE-256",
-                        "whirlpool": "Whirlpool",
-                    }
-                    algo_name = algo_names.get(algo, algo.upper())
-                    eprint(f"Applying {rounds} rounds of {algo_name}")
-
-                result = compute_hash_independent(
-                    password=algorithm_input,  # Use initial hash instead of raw password
-                    salt=_indep_xor_component_salt(salt, algo, format_version),
-                    algorithm=algo,
-                    rounds=rounds,
-                    key_length=key_length,
-                    quiet=quiet,
-                    progress=progress,
-                    debug=debug,
                 )
-                xor_components.append(result)
-
-                if not quiet and not progress:
-                    eprint("✅")
-
-                if debug:
-                    logger.debug(f"INDEPENDENT-XOR: Added {algo} component #{len(xor_components)}")
 
         # 2. Process each enabled KDF
         # Extract KDF config (handle both nested and flat formats)
@@ -3065,147 +3056,175 @@ def generate_key_independent_xor(
         # Check and process Argon2
         if kdf_config_section.get("argon2", {}).get("enabled", False):
             argon2_config = kdf_config_section["argon2"]
-
-            if not quiet and not progress:
-                eprint("Computing Argon2 KDF...", end=" ", flush=True)
-            elif not quiet and progress:
-                eprint("Using Argon2 for key derivation")
-
-            result = compute_kdf_independent(
-                password=algorithm_input,  # Use initial hash instead of raw password
-                salt=_indep_xor_component_salt(salt, "argon2", format_version),
-                kdf_type="argon2",
-                kdf_config=argon2_config,
-                key_length=key_length,
-                quiet=quiet,
-                progress=progress,
-                debug=debug,
+            component_tasks.append(
+                (
+                    "Argon2 KDF",
+                    functools.partial(
+                        compute_kdf_independent,
+                        password=algorithm_input,  # Use initial hash, not raw password
+                        salt=_indep_xor_component_salt(salt, "argon2", format_version),
+                        kdf_type="argon2",
+                        kdf_config=argon2_config,
+                        key_length=key_length,
+                        quiet=quiet,
+                        progress=_cprog,
+                        debug=debug,
+                    ),
+                )
             )
-            xor_components.append(result)
-
-            if not quiet and not progress:
-                eprint("✅")
-
-            if debug:
-                logger.debug(f"INDEPENDENT-XOR: Added Argon2 component #{len(xor_components)}")
 
         # Check and process Scrypt
         if kdf_config_section.get("scrypt", {}).get("enabled", False):
             scrypt_config = kdf_config_section["scrypt"]
-
-            if not quiet and not progress:
-                eprint("Computing Scrypt KDF...", end=" ", flush=True)
-            elif not quiet and progress:
-                eprint("Using Scrypt for key derivation")
-
-            result = compute_kdf_independent(
-                password=algorithm_input,  # Use initial hash instead of raw password
-                salt=_indep_xor_component_salt(salt, "scrypt", format_version),
-                kdf_type="scrypt",
-                kdf_config=scrypt_config,
-                key_length=key_length,
-                quiet=quiet,
-                progress=False,
-                debug=debug,
+            component_tasks.append(
+                (
+                    "Scrypt KDF",
+                    functools.partial(
+                        compute_kdf_independent,
+                        password=algorithm_input,  # Use initial hash, not raw password
+                        salt=_indep_xor_component_salt(salt, "scrypt", format_version),
+                        kdf_type="scrypt",
+                        kdf_config=scrypt_config,
+                        key_length=key_length,
+                        quiet=quiet,
+                        progress=False,
+                        debug=debug,
+                    ),
+                )
             )
-            xor_components.append(result)
-
-            if not quiet and not progress:
-                eprint("✅")
-
-            if debug:
-                logger.debug(f"INDEPENDENT-XOR: Added Scrypt component #{len(xor_components)}")
 
         # Check and process Balloon
         if kdf_config_section.get("balloon", {}).get("enabled", False):
             balloon_config = kdf_config_section["balloon"]
-
-            if not quiet and not progress:
-                eprint("Computing Balloon KDF...", end=" ", flush=True)
-            elif not quiet and progress:
-                eprint("Using Balloon-Hashing for key derivation")
-
-            result = compute_kdf_independent(
-                password=algorithm_input,  # Use initial hash instead of raw password
-                salt=_indep_xor_component_salt(salt, "balloon", format_version),
-                kdf_type="balloon",
-                kdf_config=balloon_config,
-                key_length=key_length,
-                quiet=quiet,
-                progress=False,
-                debug=debug,
-                format_version=format_version,
+            component_tasks.append(
+                (
+                    "Balloon KDF",
+                    functools.partial(
+                        compute_kdf_independent,
+                        password=algorithm_input,  # Use initial hash, not raw password
+                        salt=_indep_xor_component_salt(salt, "balloon", format_version),
+                        kdf_type="balloon",
+                        kdf_config=balloon_config,
+                        key_length=key_length,
+                        quiet=quiet,
+                        progress=False,
+                        debug=debug,
+                        format_version=format_version,
+                    ),
+                )
             )
-            xor_components.append(result)
-
-            if not quiet and not progress:
-                eprint("✅")
-
-            if debug:
-                logger.debug(f"INDEPENDENT-XOR: Added Balloon component #{len(xor_components)}")
 
         # Check and process HKDF
         if kdf_config_section.get("hkdf", {}).get("enabled", False):
-            if not quiet and not progress:
-                eprint("Computing HKDF...", end=" ")
-
             hkdf_config = kdf_config_section["hkdf"]
-            result = compute_kdf_independent(
-                password=algorithm_input,  # Use initial hash instead of raw password
-                salt=_indep_xor_component_salt(salt, "hkdf", format_version),
-                kdf_type="hkdf",
-                kdf_config=hkdf_config,
-                key_length=key_length,
-                quiet=quiet,
-                progress=progress,
-                debug=debug,
+            component_tasks.append(
+                (
+                    "HKDF",
+                    functools.partial(
+                        compute_kdf_independent,
+                        password=algorithm_input,  # Use initial hash, not raw password
+                        salt=_indep_xor_component_salt(salt, "hkdf", format_version),
+                        kdf_type="hkdf",
+                        kdf_config=hkdf_config,
+                        key_length=key_length,
+                        quiet=quiet,
+                        progress=_cprog,
+                        debug=debug,
+                    ),
+                )
             )
-            xor_components.append(result)
-
-            if not quiet and not progress:
-                eprint("✅")
-
-            if debug:
-                logger.debug(f"INDEPENDENT-XOR: Added HKDF component #{len(xor_components)}")
 
         # Check and process RandomX
         if kdf_config_section.get("randomx", {}).get("enabled", False):
             randomx_config = kdf_config_section["randomx"]
 
-            try:
-                if not quiet and not progress:
-                    eprint("Computing RandomX KDF...", end=" ", flush=True)
-                elif not quiet and progress:
-                    eprint("Using RandomX for key derivation")
+            def _randomx_component(_cfg=randomx_config):
+                try:
+                    return compute_kdf_independent(
+                        password=algorithm_input,
+                        salt=_indep_xor_component_salt(salt, "randomx", format_version),
+                        kdf_type="randomx",
+                        kdf_config=_cfg,
+                        key_length=key_length,
+                        quiet=quiet,
+                        progress=_cprog,
+                        debug=debug,
+                    )
+                except (ImportError, OSError) as e:
+                    # SECURITY (#71): RandomX is explicitly enabled, so a failure
+                    # must NOT be silently skipped -- dropping it can collapse the
+                    # derived key to a single un-stretched sha256(password+salt).
+                    # Fail closed, like every other KDF in this path (which let
+                    # errors propagate). In the parallel executor this exception
+                    # re-raises out of future.result(), preserving fail-closed.
+                    logger.warning(f"RandomX KDF enabled but unavailable: {e}")
+                    raise ValidationError(
+                        "RandomX KDF is enabled but unavailable; refusing to derive a "
+                        "weaker key. Install RandomX support or disable RandomX in the "
+                        f"KDF configuration. ({e})"
+                    ) from e
 
-                result = compute_kdf_independent(
-                    password=algorithm_input,
-                    salt=_indep_xor_component_salt(salt, "randomx", format_version),
-                    kdf_type="randomx",
-                    kdf_config=randomx_config,
-                    key_length=key_length,
-                    quiet=quiet,
-                    progress=progress,
-                    debug=debug,
+            component_tasks.append(("RandomX KDF", _randomx_component))
+
+        # Execute the collected component tasks and gather their outputs into
+        # xor_components (gitlab#220). Sequential mode reproduces the historical
+        # one-at-a-time behavior; parallel mode runs the mutually-independent
+        # components concurrently on a thread pool. Results are collected in
+        # submission order so debug output is deterministic; the XOR below is
+        # commutative, so ordering never affects the derived key. Any exception
+        # from a thunk (e.g. the RandomX fail-closed ValidationError) propagates
+        # unchanged -- future.result() re-raises it in the parallel path.
+        if parallel and len(component_tasks) > 1:
+            from concurrent.futures import ThreadPoolExecutor
+
+            workers = max_workers if (max_workers and max_workers > 0) else len(component_tasks)
+            workers = min(workers, len(component_tasks))
+            if not quiet:
+                eprint(
+                    f"Deriving {len(component_tasks)} independent KDF components "
+                    f"in parallel ({workers} workers)..."
                 )
-                xor_components.append(result)
-
+            with ThreadPoolExecutor(max_workers=workers) as executor:
+                futures = [executor.submit(thunk) for _label, thunk in component_tasks]
+                # Drain EVERY future before acting on the outcome. If a component
+                # fails (e.g. RandomX fail-closed, #71), the other workers may
+                # already have produced SecureBytes results that are held only by
+                # this futures list -- outside xor_components and therefore missed
+                # by the finally-wipe below. Collect them all, and on any failure
+                # zeroize the already-computed results before re-raising, so no
+                # derived key material lingers on the error path (#220 review).
+                results = []
+                first_error = None
+                for future in futures:
+                    try:
+                        results.append(future.result())
+                    except BaseException as exc:  # noqa: BLE001 - re-raised below
+                        if first_error is None:
+                            first_error = exc
+                if first_error is not None:
+                    for _r in results:
+                        try:
+                            secure_memzero(_r)
+                        except Exception:
+                            pass  # Best effort cleanup
+                    raise first_error
+                for (label, _thunk), _r in zip(component_tasks, results):
+                    xor_components.append(_r)
+                    if debug:
+                        logger.debug(
+                            f"INDEPENDENT-XOR: Added {label} component #{len(xor_components)}"
+                        )
+            if not quiet:
+                eprint(f"✅ Derived {len(xor_components)} components in parallel")
+        else:
+            for label, thunk in component_tasks:
+                if not quiet and not progress:
+                    eprint(f"Computing {label}...", end=" ", flush=True)
+                xor_components.append(thunk())
                 if not quiet and not progress:
                     eprint("✅")
-
                 if debug:
-                    logger.debug(f"INDEPENDENT-XOR: Added RandomX component #{len(xor_components)}")
-            except (ImportError, OSError) as e:
-                # SECURITY (#71): RandomX is explicitly enabled, so a failure must
-                # NOT be silently skipped -- dropping it can collapse the derived
-                # key to a single un-stretched sha256(password+salt). Fail closed,
-                # like every other KDF in this path (which let errors propagate).
-                logger.warning(f"RandomX KDF enabled but unavailable: {e}")
-                raise ValidationError(
-                    "RandomX KDF is enabled but unavailable; refusing to derive a "
-                    "weaker key. Install RandomX support or disable RandomX in the "
-                    f"KDF configuration. ({e})"
-                ) from e
+                    logger.debug(f"INDEPENDENT-XOR: Added {label} component #{len(xor_components)}")
 
         # NOTE: PBKDF2 is deprecated and NOT used for v11 encryption
         # It's only supported for decryption of legacy files (v1-v9)

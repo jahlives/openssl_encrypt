@@ -790,6 +790,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`--parallel-kdf` now actually parallelizes v13/v14 files** (gitlab#220):
+  the only formats this line can produce are v14 (the default) and v13, both of
+  which use the Independent-XOR key derivation. `--parallel-kdf` routed those
+  straight back to the sequential derivation (printing "Parallel KDF not
+  supported for v13"), so the flag was a no-op for every file a user could make.
+  The Independent-XOR components are mutually independent — each derives from the
+  same normalized input with a domain-separated per-component salt — and are
+  combined with (commutative) XOR, so they can be computed concurrently with a
+  **byte-identical** result. `generate_key_independent_xor` now builds the
+  per-component work as a task list and runs it either sequentially or on a
+  `ThreadPoolExecutor` (`--kdf-workers`, capped at the component count), and the
+  parallel entry point dispatches v13/v14 there instead of downgrading. A file
+  encrypted with `--parallel-kdf` decrypts without it and vice-versa. The
+  RandomX fail-closed guard (an enabled-but-unavailable RandomX aborts rather
+  than silently dropping a component, gitlab#71) is preserved in both modes, and
+  on the decrypt path the existing memory ceiling is already enforced against
+  the *summed* (concurrent) KDF memory when `--parallel-kdf` is set, so a crafted
+  file cannot amplify peak memory past the guard. Intermediate component buffers
+  are deterministically zeroized on the parallel error path.
+
 - **`PepperConfig.get_default_config_path()` did not exist** (gitlab#221):
   three error paths in `crypt_cli.py` and `crypt_core.py` call
   `PepperConfig.get_default_config_path()` to point the user at the pepper

@@ -557,13 +557,15 @@ def generate_key_independent_xor_parallel(
     from .secure_memory import SecureBytes, secure_memzero
 
     # format_version >= 13 (Independent XOR with per-component domain-separated
-    # salts) is implemented only in the sequential path. Delegate so encrypt and
-    # decrypt always derive the same key regardless of how this was dispatched.
+    # salts) lives in crypt_core.generate_key_independent_xor, which itself
+    # supports concurrent component derivation via parallel=True (gitlab#220).
+    # The components are mutually independent and combined with (commutative)
+    # XOR, so parallel derivation is byte-identical to sequential -- encrypt and
+    # decrypt derive the same key regardless of how this was dispatched. Route
+    # v13/v14 there with parallel=True instead of falling back to sequential.
     if format_version is not None and format_version >= 13:
         from .crypt_core import generate_key_independent_xor
 
-        if not quiet:
-            eprint("ℹ️ Parallel KDF not supported for v13; using sequential derivation.")
         return generate_key_independent_xor(
             password,
             salt,
@@ -575,6 +577,8 @@ def generate_key_independent_xor_parallel(
             pqc_keypair=pqc_keypair,
             hsm_pepper=hsm_pepper,
             format_version=format_version,
+            parallel=True,
+            max_workers=max_workers,
         )
 
     if debug:
