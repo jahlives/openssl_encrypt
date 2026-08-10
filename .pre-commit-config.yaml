@@ -19,6 +19,10 @@ repos:
       - id: debug-statements
       - id: detect-private-key
         exclude: '^(tests/|tools/|openssl_encrypt/unittests/testfiles/)'
+      - id: trailing-whitespace
+        exclude: '^openssl_encrypt/unittests/testfiles/'
+      - id: end-of-file-fixer
+        exclude: '^openssl_encrypt/unittests/testfiles/'
 
   # Python code formatting
   - repo: https://github.com/psf/black
