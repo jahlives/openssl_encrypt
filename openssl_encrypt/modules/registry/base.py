@@ -272,9 +272,7 @@ class RegistryBase(Generic[T]):
         """
         if self._frozen:
             info = algorithm_class.info()
-            raise RuntimeError(
-                f"Cannot register algorithm '{info.name}': registry is frozen"
-            )
+            raise RuntimeError(f"Cannot register algorithm '{info.name}': registry is frozen")
 
         info = algorithm_class.info()
 

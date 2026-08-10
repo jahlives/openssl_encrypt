@@ -14,7 +14,10 @@ import shutil
 
 from openssl_encrypt.modules.plugin_system.plugin_manager import PluginManager
 from openssl_encrypt.modules.plugin_system.plugin_config import PluginConfigManager
-from openssl_encrypt.modules.plugin_system.plugin_base import PluginSecurityContext, PluginCapability
+from openssl_encrypt.modules.plugin_system.plugin_base import (
+    PluginSecurityContext,
+    PluginCapability,
+)
 
 
 class TestSymlinkAttacks:
@@ -24,8 +27,7 @@ class TestSymlinkAttacks:
         """Set up test environment"""
         self.config_manager = PluginConfigManager()
         self.plugin_manager = PluginManager(
-            config_manager=self.config_manager,
-            strict_security_mode=False
+            config_manager=self.config_manager, strict_security_mode=False
         )
         self.temp_dir = tempfile.mkdtemp()
         self.plugin_data_dir = os.path.join(self.temp_dir, "plugin_data")
@@ -63,16 +65,18 @@ class TestPlugin(PreProcessorPlugin):
             return PluginResult.error_result(str(e))
 """
         plugin_path = os.path.join(self.temp_dir, f"{plugin_id}.py")
-        with open(plugin_path, 'w', encoding="utf-8") as f:
+        with open(plugin_path, "w", encoding="utf-8") as f:
             f.write(plugin_content)
         return plugin_path
 
-    @pytest.mark.skipif(sys.platform == "win32", reason="Symlink creation requires privileges on Windows")
+    @pytest.mark.skipif(
+        sys.platform == "win32", reason="Symlink creation requires privileges on Windows"
+    )
     def test_symlink_attack_blocked(self):
         """Symlink pointing outside plugin directory should be blocked"""
         # Create a sensitive file outside plugin directory
         sensitive_file = os.path.join(self.temp_dir, "sensitive_data.txt")
-        with open(sensitive_file, 'w', encoding="utf-8") as f:
+        with open(sensitive_file, "w", encoding="utf-8") as f:
             f.write("SECRET DATA")
 
         # Create symlink in plugin data dir pointing to sensitive file
@@ -80,11 +84,11 @@ class TestPlugin(PreProcessorPlugin):
         os.symlink(sensitive_file, symlink_path)
 
         # Plugin attempts to read via symlink
-        file_operation = f'''
+        file_operation = f"""
             target_file = os.path.join(context.plugin_file_directory, "symlink_to_sensitive")
             with open(target_file, 'r', encoding="utf-8") as f:
                 content = f.read()
-        '''
+        """
 
         plugin_path = self._create_plugin_with_file_access("test_symlink", file_operation)
         load_result = self.plugin_manager.load_plugin(plugin_path)
@@ -94,7 +98,7 @@ class TestPlugin(PreProcessorPlugin):
             return
 
         # Try execution - should be blocked by sandbox
-        test_file = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt')
+        test_file = tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".txt")
         test_file.write("test")
         test_file.close()
 
@@ -102,14 +106,12 @@ class TestPlugin(PreProcessorPlugin):
             context = PluginSecurityContext(
                 "test_symlink",
                 {PluginCapability.READ_FILES, PluginCapability.WRITE_FILES},
-                plugin_file_directory=self.plugin_data_dir
+                plugin_file_directory=self.plugin_data_dir,
             )
             context.file_paths = [test_file.name]
 
             result = self.plugin_manager.execute_plugin(
-                "test_symlink",
-                context,
-                use_process_isolation=False
+                "test_symlink", context, use_process_isolation=False
             )
 
             # Should fail due to symlink blocking
@@ -137,7 +139,7 @@ class TestPlugin(PreProcessorPlugin):
         assert os.path.islink(symlink_path)
 
         # Plugin attempts to read via symlink
-        file_operation = f'''
+        file_operation = f"""
             target_file = os.path.join(context.plugin_file_directory, "passwd_link")
 
             # Check if file is symlink (should be detected)
@@ -148,7 +150,7 @@ class TestPlugin(PreProcessorPlugin):
                 content = f.read()
                 if "root:" in content:
                     raise ValueError("Read /etc/passwd - SECURITY VIOLATION")
-        '''
+        """
 
         plugin_path = self._create_plugin_with_file_access("test_passwd_link", file_operation)
         load_result = self.plugin_manager.load_plugin(plugin_path)
@@ -156,7 +158,7 @@ class TestPlugin(PreProcessorPlugin):
         if not load_result.success:
             return
 
-        test_file = tempfile.NamedTemporaryFile(mode='w', delete=False)
+        test_file = tempfile.NamedTemporaryFile(mode="w", delete=False)
         test_file.write("test")
         test_file.close()
 
@@ -164,14 +166,12 @@ class TestPlugin(PreProcessorPlugin):
             context = PluginSecurityContext(
                 "test_passwd_link",
                 {PluginCapability.READ_FILES, PluginCapability.WRITE_FILES},
-                plugin_file_directory=self.plugin_data_dir
+                plugin_file_directory=self.plugin_data_dir,
             )
             context.file_paths = [test_file.name]
 
             result = self.plugin_manager.execute_plugin(
-                "test_passwd_link",
-                context,
-                use_process_isolation=False
+                "test_passwd_link", context, use_process_isolation=False
             )
 
             # Should either fail or not contain passwd content
@@ -181,12 +181,14 @@ class TestPlugin(PreProcessorPlugin):
         finally:
             os.unlink(test_file.name)
 
-    @pytest.mark.skipif(sys.platform == "win32", reason="Symlink creation requires privileges on Windows")
+    @pytest.mark.skipif(
+        sys.platform == "win32", reason="Symlink creation requires privileges on Windows"
+    )
     def test_double_symlink_chain_blocked(self):
         """Chain of symlinks should be resolved and blocked"""
         # Create target file outside plugin dir
         target_file = os.path.join(self.temp_dir, "target.txt")
-        with open(target_file, 'w', encoding="utf-8") as f:
+        with open(target_file, "w", encoding="utf-8") as f:
             f.write("TARGET DATA")
 
         # Create symlink chain: link1 -> link2 -> target
@@ -201,7 +203,7 @@ class TestPlugin(PreProcessorPlugin):
         assert os.path.islink(link2)
 
         # Plugin attempts to read via chain
-        file_operation = '''
+        file_operation = """
             import os
             target_file = os.path.join(context.plugin_file_directory, "link1")
 
@@ -210,7 +212,7 @@ class TestPlugin(PreProcessorPlugin):
 
             with open(target_file, 'r', encoding="utf-8") as f:
                 content = f.read()
-        '''
+        """
 
         plugin_path = self._create_plugin_with_file_access("test_chain", file_operation)
         load_result = self.plugin_manager.load_plugin(plugin_path)
@@ -218,7 +220,7 @@ class TestPlugin(PreProcessorPlugin):
         if not load_result.success:
             return
 
-        test_file = tempfile.NamedTemporaryFile(mode='w', delete=False)
+        test_file = tempfile.NamedTemporaryFile(mode="w", delete=False)
         test_file.write("test")
         test_file.close()
 
@@ -226,14 +228,12 @@ class TestPlugin(PreProcessorPlugin):
             context = PluginSecurityContext(
                 "test_chain",
                 {PluginCapability.READ_FILES, PluginCapability.WRITE_FILES},
-                plugin_file_directory=self.plugin_data_dir
+                plugin_file_directory=self.plugin_data_dir,
             )
             context.file_paths = [test_file.name]
 
             result = self.plugin_manager.execute_plugin(
-                "test_chain",
-                context,
-                use_process_isolation=False
+                "test_chain", context, use_process_isolation=False
             )
 
             # Should be blocked or not contain target data
@@ -249,8 +249,7 @@ class TestPathTraversal:
     def setup_method(self):
         self.config_manager = PluginConfigManager()
         self.plugin_manager = PluginManager(
-            config_manager=self.config_manager,
-            strict_security_mode=False
+            config_manager=self.config_manager, strict_security_mode=False
         )
         self.temp_dir = tempfile.mkdtemp()
         self.plugin_data_dir = os.path.join(self.temp_dir, "plugin_data")
@@ -286,7 +285,7 @@ class TestPlugin(PreProcessorPlugin):
             return PluginResult.error_result(str(e))
 """
         plugin_path = os.path.join(self.temp_dir, f"{plugin_id}.py")
-        with open(plugin_path, 'w', encoding="utf-8") as f:
+        with open(plugin_path, "w", encoding="utf-8") as f:
             f.write(plugin_content)
         return plugin_path
 
@@ -294,11 +293,11 @@ class TestPlugin(PreProcessorPlugin):
         """Path traversal with ../ should be resolved and blocked"""
         # Create sensitive file outside plugin dir
         sensitive_file = os.path.join(self.temp_dir, "secret.txt")
-        with open(sensitive_file, 'w', encoding="utf-8") as f:
+        with open(sensitive_file, "w", encoding="utf-8") as f:
             f.write("SECRET")
 
         # Plugin attempts path traversal
-        file_operation = '''
+        file_operation = """
             # Try to escape plugin directory
             traversal_path = os.path.join(context.plugin_file_directory, "..", "secret.txt")
 
@@ -308,7 +307,7 @@ class TestPlugin(PreProcessorPlugin):
             # This should be blocked by sandbox
             with open(traversal_path, 'r', encoding="utf-8") as f:
                 content = f.read()
-        '''
+        """
 
         plugin_path = self._create_plugin_with_file_access("test_traversal", file_operation)
         load_result = self.plugin_manager.load_plugin(plugin_path)
@@ -316,7 +315,7 @@ class TestPlugin(PreProcessorPlugin):
         if not load_result.success:
             return
 
-        test_file = tempfile.NamedTemporaryFile(mode='w', delete=False)
+        test_file = tempfile.NamedTemporaryFile(mode="w", delete=False)
         test_file.write("test")
         test_file.close()
 
@@ -324,14 +323,12 @@ class TestPlugin(PreProcessorPlugin):
             context = PluginSecurityContext(
                 "test_traversal",
                 {PluginCapability.READ_FILES, PluginCapability.WRITE_FILES},
-                plugin_file_directory=self.plugin_data_dir
+                plugin_file_directory=self.plugin_data_dir,
             )
             context.file_paths = [test_file.name]
 
             result = self.plugin_manager.execute_plugin(
-                "test_traversal",
-                context,
-                use_process_isolation=False
+                "test_traversal", context, use_process_isolation=False
             )
 
             # Should be blocked or not contain secret
@@ -343,19 +340,19 @@ class TestPlugin(PreProcessorPlugin):
     def test_absolute_path_outside_plugin_dir_blocked(self):
         """Absolute path outside plugin directory should be blocked"""
         # Create file in /tmp
-        tmp_file = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt', dir='/tmp')
+        tmp_file = tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".txt", dir="/tmp")
         tmp_file.write("TMPDATA")
         tmp_file.close()
         tmp_path = tmp_file.name
 
         try:
             # Plugin attempts to access absolute path
-            file_operation = f'''
+            file_operation = f"""
                 # Try to access file via absolute path
                 target = "{tmp_path}"
                 with open(target, 'r', encoding="utf-8") as f:
                     content = f.read()
-            '''
+            """
 
             plugin_path = self._create_plugin_with_file_access("test_absolute", file_operation)
             load_result = self.plugin_manager.load_plugin(plugin_path)
@@ -363,7 +360,7 @@ class TestPlugin(PreProcessorPlugin):
             if not load_result.success:
                 return
 
-            test_file = tempfile.NamedTemporaryFile(mode='w', delete=False)
+            test_file = tempfile.NamedTemporaryFile(mode="w", delete=False)
             test_file.write("test")
             test_file.close()
 
@@ -371,14 +368,12 @@ class TestPlugin(PreProcessorPlugin):
                 context = PluginSecurityContext(
                     "test_absolute",
                     {PluginCapability.READ_FILES, PluginCapability.WRITE_FILES},
-                    plugin_file_directory=self.plugin_data_dir
+                    plugin_file_directory=self.plugin_data_dir,
                 )
                 context.file_paths = [test_file.name]
 
                 result = self.plugin_manager.execute_plugin(
-                    "test_absolute",
-                    context,
-                    use_process_isolation=False
+                    "test_absolute", context, use_process_isolation=False
                 )
 
                 # Should be blocked or not contain tmp data
@@ -396,8 +391,7 @@ class TestLegitimateAccess:
     def setup_method(self):
         self.config_manager = PluginConfigManager()
         self.plugin_manager = PluginManager(
-            config_manager=self.config_manager,
-            strict_security_mode=False
+            config_manager=self.config_manager, strict_security_mode=False
         )
         self.temp_dir = tempfile.mkdtemp()
         self.plugin_data_dir = os.path.join(self.temp_dir, "plugin_data")
@@ -433,19 +427,19 @@ class TestPlugin(PreProcessorPlugin):
             return PluginResult.error_result(str(e))
 """
         plugin_path = os.path.join(self.temp_dir, f"{plugin_id}.py")
-        with open(plugin_path, 'w', encoding="utf-8") as f:
+        with open(plugin_path, "w", encoding="utf-8") as f:
             f.write(plugin_content)
         return plugin_path
 
     def test_legitimate_file_access_still_works(self):
         """Normal file access via context.file_paths should work"""
         # Create legitimate file
-        test_file = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt')
+        test_file = tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".txt")
         test_file.write("LEGITIMATE DATA")
         test_file.close()
 
         # Plugin accesses file from context (not direct file operations)
-        file_operation = '''
+        file_operation = """
             # Access file provided in context - this is the safe way
             if context.file_paths:
                 target_file = context.file_paths[0]
@@ -454,7 +448,7 @@ class TestPlugin(PreProcessorPlugin):
                 return PluginResult.success_result(f"Received file: {target_file}")
             else:
                 return PluginResult.error_result("No files in context")
-        '''
+        """
 
         plugin_path = self._create_plugin_with_file_access("test_legitimate", file_operation)
         load_result = self.plugin_manager.load_plugin(plugin_path)
@@ -468,14 +462,12 @@ class TestPlugin(PreProcessorPlugin):
             context = PluginSecurityContext(
                 "test_legitimate",
                 {PluginCapability.READ_FILES, PluginCapability.WRITE_FILES},
-                plugin_file_directory=self.plugin_data_dir
+                plugin_file_directory=self.plugin_data_dir,
             )
             context.file_paths = [test_file.name]
 
             result = self.plugin_manager.execute_plugin(
-                "test_legitimate",
-                context,
-                use_process_isolation=False
+                "test_legitimate", context, use_process_isolation=False
             )
 
             # Should succeed - file access via context is allowed
@@ -491,11 +483,11 @@ class TestPlugin(PreProcessorPlugin):
         os.makedirs(subdir, exist_ok=True)
 
         subdir_file = os.path.join(subdir, "nested.txt")
-        with open(subdir_file, 'w', encoding="utf-8") as f:
+        with open(subdir_file, "w", encoding="utf-8") as f:
             f.write("NESTED DATA")
 
         # Plugin accesses file via context
-        file_operation = '''
+        file_operation = """
             # Context provides file paths - plugin accesses via context
             if context.file_paths and len(context.file_paths) > 0:
                 file_path = context.file_paths[0]
@@ -503,7 +495,7 @@ class TestPlugin(PreProcessorPlugin):
                 return PluginResult.success_result(f"File path: {file_path}")
             else:
                 return PluginResult.error_result("No files")
-        '''
+        """
 
         plugin_path = self._create_plugin_with_file_access("test_subdir", file_operation)
         load_result = self.plugin_manager.load_plugin(plugin_path)
@@ -511,7 +503,7 @@ class TestPlugin(PreProcessorPlugin):
         if not load_result.success:
             pytest.skip("Plugin blocked by AST analysis")
 
-        test_file = tempfile.NamedTemporaryFile(mode='w', delete=False)
+        test_file = tempfile.NamedTemporaryFile(mode="w", delete=False)
         test_file.write("test")
         test_file.close()
 
@@ -519,15 +511,13 @@ class TestPlugin(PreProcessorPlugin):
             context = PluginSecurityContext(
                 "test_subdir",
                 {PluginCapability.READ_FILES, PluginCapability.WRITE_FILES},
-                plugin_file_directory=self.plugin_data_dir
+                plugin_file_directory=self.plugin_data_dir,
             )
             # Provide the subdirectory file via context
             context.file_paths = [subdir_file]
 
             result = self.plugin_manager.execute_plugin(
-                "test_subdir",
-                context,
-                use_process_isolation=False
+                "test_subdir", context, use_process_isolation=False
             )
 
             # Should succeed - context-provided paths work
@@ -543,8 +533,7 @@ class TestHardlinkAttacks:
     def setup_method(self):
         self.config_manager = PluginConfigManager()
         self.plugin_manager = PluginManager(
-            config_manager=self.config_manager,
-            strict_security_mode=False
+            config_manager=self.config_manager, strict_security_mode=False
         )
         self.temp_dir = tempfile.mkdtemp()
         self.plugin_data_dir = os.path.join(self.temp_dir, "plugin_data")
@@ -580,7 +569,7 @@ class TestPlugin(PreProcessorPlugin):
             return PluginResult.error_result(str(e))
 """
         plugin_path = os.path.join(self.temp_dir, f"{plugin_id}.py")
-        with open(plugin_path, 'w', encoding="utf-8") as f:
+        with open(plugin_path, "w", encoding="utf-8") as f:
             f.write(plugin_content)
         return plugin_path
 
@@ -588,7 +577,7 @@ class TestPlugin(PreProcessorPlugin):
         """Hardlink to file outside plugin dir should be limited by inode checks"""
         # Create sensitive file outside plugin dir
         sensitive_file = os.path.join(self.temp_dir, "sensitive.txt")
-        with open(sensitive_file, 'w', encoding="utf-8") as f:
+        with open(sensitive_file, "w", encoding="utf-8") as f:
             f.write("SENSITIVE")
 
         # Create hardlink in plugin dir
@@ -606,7 +595,7 @@ class TestPlugin(PreProcessorPlugin):
         # Note: Hardlinks are harder to detect than symlinks
         # They point to same inode but have different paths
         # Our security relies on path-based restrictions primarily
-        file_operation = '''
+        file_operation = """
             import os
             target = os.path.join(context.plugin_file_directory, "hardlink")
 
@@ -616,7 +605,7 @@ class TestPlugin(PreProcessorPlugin):
             # But both paths point to same inode
             with open(target, 'r', encoding="utf-8") as f:
                 content = f.read()
-        '''
+        """
 
         plugin_path = self._create_plugin_with_file_access("test_hardlink", file_operation)
         load_result = self.plugin_manager.load_plugin(plugin_path)
@@ -624,7 +613,7 @@ class TestPlugin(PreProcessorPlugin):
         if not load_result.success:
             return
 
-        test_file = tempfile.NamedTemporaryFile(mode='w', delete=False)
+        test_file = tempfile.NamedTemporaryFile(mode="w", delete=False)
         test_file.write("test")
         test_file.close()
 
@@ -632,14 +621,12 @@ class TestPlugin(PreProcessorPlugin):
             context = PluginSecurityContext(
                 "test_hardlink",
                 {PluginCapability.READ_FILES, PluginCapability.WRITE_FILES},
-                plugin_file_directory=self.plugin_data_dir
+                plugin_file_directory=self.plugin_data_dir,
             )
             context.file_paths = [test_file.name]
 
             result = self.plugin_manager.execute_plugin(
-                "test_hardlink",
-                context,
-                use_process_isolation=False
+                "test_hardlink", context, use_process_isolation=False
             )
 
             # Hardlinks are within the allowed directory (by path)

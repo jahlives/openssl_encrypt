@@ -643,7 +643,7 @@ class TestRekeyWithHashConfig(unittest.TestCase):
             ],
             capture_output=True,
             text=True,
-            encoding='utf-8',
+            encoding="utf-8",
         )
 
         # Rekey with --standard template plus extra sha512-rounds
@@ -670,7 +670,7 @@ class TestRekeyWithHashConfig(unittest.TestCase):
             ],
             capture_output=True,
             text=True,
-            encoding='utf-8',
+            encoding="utf-8",
             timeout=120,
         )
         self.assertEqual(result.returncode, 0, f"Rekey failed: {result.stderr}")
@@ -693,7 +693,7 @@ class TestRekeyWithHashConfig(unittest.TestCase):
             ],
             capture_output=True,
             text=True,
-            encoding='utf-8',
+            encoding="utf-8",
         )
         self.assertEqual(result.returncode, 0, f"Decrypt failed: {result.stderr}")
 
@@ -724,7 +724,7 @@ class TestRekeyWithHashConfig(unittest.TestCase):
             ],
             capture_output=True,
             text=True,
-            encoding='utf-8',
+            encoding="utf-8",
         )
 
         # Rekey with --paranoid
@@ -748,7 +748,7 @@ class TestRekeyWithHashConfig(unittest.TestCase):
             ],
             capture_output=True,
             text=True,
-            encoding='utf-8',
+            encoding="utf-8",
             timeout=120,
         )
         self.assertEqual(result.returncode, 0, f"Rekey failed: {result.stderr}")
@@ -771,7 +771,7 @@ class TestRekeyWithHashConfig(unittest.TestCase):
             ],
             capture_output=True,
             text=True,
-            encoding='utf-8',
+            encoding="utf-8",
         )
         self.assertEqual(result.returncode, 0, f"Decrypt failed: {result.stderr}")
 
@@ -818,7 +818,7 @@ class TestRekeyCLI(unittest.TestCase):
             ],
             capture_output=True,
             text=True,
-            encoding='utf-8',
+            encoding="utf-8",
         )
         self.assertEqual(result.returncode, 0, f"Encrypt failed: {result.stderr}")
 
@@ -842,7 +842,7 @@ class TestRekeyCLI(unittest.TestCase):
             ],
             capture_output=True,
             text=True,
-            encoding='utf-8',
+            encoding="utf-8",
         )
         self.assertEqual(result.returncode, 0, f"Rekey failed: {result.stderr}")
 
@@ -864,7 +864,7 @@ class TestRekeyCLI(unittest.TestCase):
             ],
             capture_output=True,
             text=True,
-            encoding='utf-8',
+            encoding="utf-8",
         )
         self.assertEqual(result.returncode, 0, f"Decrypt failed: {result.stderr}")
 
@@ -894,7 +894,7 @@ class TestRekeyCLI(unittest.TestCase):
             ],
             capture_output=True,
             text=True,
-            encoding='utf-8',
+            encoding="utf-8",
         )
         self.assertEqual(result.returncode, 0, f"Encrypt failed: {result.stderr}")
 
@@ -916,7 +916,7 @@ class TestRekeyCLI(unittest.TestCase):
             ],
             capture_output=True,
             text=True,
-            encoding='utf-8',
+            encoding="utf-8",
         )
         self.assertEqual(result.returncode, 0, f"Rekey failed: {result.stderr}")
 
@@ -938,7 +938,7 @@ class TestRekeyCLI(unittest.TestCase):
             ],
             capture_output=True,
             text=True,
-            encoding='utf-8',
+            encoding="utf-8",
         )
         self.assertEqual(result.returncode, 0, f"Decrypt failed: {result.stderr}")
 
@@ -973,7 +973,7 @@ class TestRekeyCLI(unittest.TestCase):
             ],
             capture_output=True,
             text=True,
-            encoding='utf-8',
+            encoding="utf-8",
         )
         self.assertEqual(result.returncode, 0, f"Encrypt failed: {result.stderr}")
 
@@ -1001,7 +1001,7 @@ class TestRekeyCLI(unittest.TestCase):
             ],
             capture_output=True,
             text=True,
-            encoding='utf-8',
+            encoding="utf-8",
         )
         self.assertEqual(result.returncode, 0, f"Rekey failed: {result.stderr}")
 
@@ -1027,7 +1027,7 @@ class TestRekeyCLI(unittest.TestCase):
             ],
             capture_output=True,
             text=True,
-            encoding='utf-8',
+            encoding="utf-8",
         )
         self.assertEqual(result.returncode, 0, f"Decrypt failed: {result.stderr}")
 
@@ -1056,7 +1056,7 @@ class TestRekeyCLI(unittest.TestCase):
             ],
             capture_output=True,
             text=True,
-            encoding='utf-8',
+            encoding="utf-8",
         )
 
         # Rekey with wrong password
@@ -1079,7 +1079,7 @@ class TestRekeyCLI(unittest.TestCase):
             ],
             capture_output=True,
             text=True,
-            encoding='utf-8',
+            encoding="utf-8",
         )
         self.assertNotEqual(result.returncode, 0)
 
@@ -1107,7 +1107,7 @@ class TestRekeyCLI(unittest.TestCase):
             ],
             capture_output=True,
             text=True,
-            encoding='utf-8',
+            encoding="utf-8",
         )
 
         # Rekey using env vars
@@ -1129,7 +1129,7 @@ class TestRekeyCLI(unittest.TestCase):
             ],
             capture_output=True,
             text=True,
-            encoding='utf-8',
+            encoding="utf-8",
             env=env,
         )
         self.assertEqual(result.returncode, 0, f"Rekey failed: {result.stderr}")
@@ -1152,7 +1152,7 @@ class TestRekeyCLI(unittest.TestCase):
             ],
             capture_output=True,
             text=True,
-            encoding='utf-8',
+            encoding="utf-8",
         )
         self.assertEqual(result.returncode, 0, f"Decrypt failed: {result.stderr}")
 
@@ -1190,7 +1190,7 @@ class TestRekeyCLI(unittest.TestCase):
             ],
             capture_output=True,
             text=True,
-            encoding='utf-8',
+            encoding="utf-8",
         )
 
         # Rekey using password files
@@ -1213,7 +1213,7 @@ class TestRekeyCLI(unittest.TestCase):
             ],
             capture_output=True,
             text=True,
-            encoding='utf-8',
+            encoding="utf-8",
         )
         self.assertEqual(result.returncode, 0, f"Rekey failed: {result.stderr}")
 
@@ -1235,7 +1235,7 @@ class TestRekeyCLI(unittest.TestCase):
             ],
             capture_output=True,
             text=True,
-            encoding='utf-8',
+            encoding="utf-8",
         )
         self.assertEqual(result.returncode, 0, f"Decrypt failed: {result.stderr}")
 

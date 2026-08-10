@@ -20,15 +20,21 @@ class TestCertPinningAdapter:
         """Adapter should store normalized fingerprints"""
         fingerprints = [
             "AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99",
-            "11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00"
+            "11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00",
         ]
 
         adapter = CertPinningAdapter(fingerprints)
 
         # Should normalize (lowercase, remove colons)
         assert len(adapter.expected_fingerprints) == 2
-        assert "aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899" in adapter.expected_fingerprints
-        assert "112233445566778899aabbccddeeff00112233445566778899aabbccddeeff00" in adapter.expected_fingerprints
+        assert (
+            "aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899"
+            in adapter.expected_fingerprints
+        )
+        assert (
+            "112233445566778899aabbccddeeff00112233445566778899aabbccddeeff00"
+            in adapter.expected_fingerprints
+        )
 
     def test_adapter_initialization_empty_list(self):
         """Adapter should handle empty fingerprint list"""
@@ -41,16 +47,19 @@ class TestCertPinningAdapter:
 
         # Mock the parent init_poolmanager and capture kwargs
         captured_kwargs = {}
+
         def capture_init(*args, **kwargs):
             captured_kwargs.update(kwargs)
             return None
 
-        with patch.object(adapter.__class__.__bases__[0], 'init_poolmanager', side_effect=capture_init):
+        with patch.object(
+            adapter.__class__.__bases__[0], "init_poolmanager", side_effect=capture_init
+        ):
             adapter.init_poolmanager(connections=10)
 
             # Should set SSL verification parameters
-            assert captured_kwargs.get('assert_hostname') == True
-            assert captured_kwargs.get('cert_reqs') == ssl.CERT_REQUIRED
+            assert captured_kwargs.get("assert_hostname") == True
+            assert captured_kwargs.get("cert_reqs") == ssl.CERT_REQUIRED
 
     def test_cert_verify_no_fingerprints_configured(self):
         """Should skip pinning if no fingerprints configured"""
@@ -61,7 +70,7 @@ class TestCertPinningAdapter:
         conn.sock = None
 
         # Should not raise (no fingerprints = no pinning)
-        with patch.object(adapter.__class__.__bases__[0], 'cert_verify'):
+        with patch.object(adapter.__class__.__bases__[0], "cert_verify"):
             adapter.cert_verify(conn, "https://example.com", True, None)
 
     def test_cert_verify_valid_fingerprint(self):
@@ -79,7 +88,7 @@ class TestCertPinningAdapter:
         conn.sock = sock
 
         # Mock parent cert_verify
-        with patch.object(adapter.__class__.__bases__[0], 'cert_verify'):
+        with patch.object(adapter.__class__.__bases__[0], "cert_verify"):
             # Should not raise
             adapter.cert_verify(conn, "https://example.com", True, None)
 
@@ -100,7 +109,7 @@ class TestCertPinningAdapter:
         conn.sock = sock
 
         # Mock parent cert_verify
-        with patch.object(adapter.__class__.__bases__[0], 'cert_verify'):
+        with patch.object(adapter.__class__.__bases__[0], "cert_verify"):
             with pytest.raises(ssl.SSLError) as exc_info:
                 adapter.cert_verify(conn, "https://example.com", True, None)
 
@@ -115,7 +124,7 @@ class TestCertPinningAdapter:
         conn = Mock()
         conn.sock = None
 
-        with patch.object(adapter.__class__.__bases__[0], 'cert_verify'):
+        with patch.object(adapter.__class__.__bases__[0], "cert_verify"):
             with pytest.raises(ssl.SSLError) as exc_info:
                 adapter.cert_verify(conn, "https://example.com", True, None)
 
@@ -131,7 +140,7 @@ class TestCertPinningAdapter:
         sock.getpeercert.return_value = None
         conn.sock = sock
 
-        with patch.object(adapter.__class__.__bases__[0], 'cert_verify'):
+        with patch.object(adapter.__class__.__bases__[0], "cert_verify"):
             with pytest.raises(ssl.SSLError) as exc_info:
                 adapter.cert_verify(conn, "https://example.com", True, None)
 
@@ -143,11 +152,7 @@ class TestCertPinningAdapter:
         actual_fingerprint = hashlib.sha256(cert_der).hexdigest()
 
         # Configure multiple fingerprints, one matches
-        fingerprints = [
-            "00" * 32,  # Wrong
-            actual_fingerprint,  # Correct
-            "ff" * 32   # Wrong
-        ]
+        fingerprints = ["00" * 32, actual_fingerprint, "ff" * 32]  # Wrong  # Correct  # Wrong
         adapter = CertPinningAdapter(fingerprints)
 
         # Mock connection with certificate
@@ -157,7 +162,7 @@ class TestCertPinningAdapter:
         conn.sock = sock
 
         # Mock parent cert_verify
-        with patch.object(adapter.__class__.__bases__[0], 'cert_verify'):
+        with patch.object(adapter.__class__.__bases__[0], "cert_verify"):
             # Should not raise
             adapter.cert_verify(conn, "https://example.com", True, None)
 
@@ -171,7 +176,7 @@ class TestCertPinningAdapter:
         sock.getpeercert.side_effect = RuntimeError("Connection error")
         conn.sock = sock
 
-        with patch.object(adapter.__class__.__bases__[0], 'cert_verify'):
+        with patch.object(adapter.__class__.__bases__[0], "cert_verify"):
             with pytest.raises(ssl.SSLError) as exc_info:
                 adapter.cert_verify(conn, "https://example.com", True, None)
 
@@ -187,9 +192,7 @@ class TestKeyserverPluginWithPinning:
         from openssl_encrypt.plugins.keyserver.keyserver_plugin import KeyserverPlugin
 
         config = KeyserverConfig(
-            enabled=True,
-            enable_cert_pinning=True,
-            cert_fingerprints=["aa" * 32, "bb" * 32]
+            enabled=True, enable_cert_pinning=True, cert_fingerprints=["aa" * 32, "bb" * 32]
         )
 
         plugin = KeyserverPlugin(config)
@@ -205,11 +208,7 @@ class TestKeyserverPluginWithPinning:
         from openssl_encrypt.plugins.keyserver.config import KeyserverConfig
         from openssl_encrypt.plugins.keyserver.keyserver_plugin import KeyserverPlugin
 
-        config = KeyserverConfig(
-            enabled=True,
-            enable_cert_pinning=False,
-            cert_fingerprints=None
-        )
+        config = KeyserverConfig(enabled=True, enable_cert_pinning=False, cert_fingerprints=None)
 
         plugin = KeyserverPlugin(config)
 
@@ -221,10 +220,7 @@ class TestKeyserverPluginWithPinning:
         from openssl_encrypt.plugins.keyserver.config import KeyserverConfig
         from openssl_encrypt.plugins.keyserver.keyserver_plugin import KeyserverPlugin
 
-        config = KeyserverConfig(
-            enabled=True,
-            servers=["https://test.example.com"]
-        )
+        config = KeyserverConfig(enabled=True, servers=["https://test.example.com"])
 
         plugin = KeyserverPlugin(config)
 

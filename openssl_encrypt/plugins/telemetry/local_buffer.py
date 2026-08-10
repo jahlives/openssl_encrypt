@@ -60,8 +60,7 @@ class LocalBuffer:
             cursor = conn.cursor()
 
             # Create events table
-            cursor.execute(
-                """
+            cursor.execute("""
                 CREATE TABLE IF NOT EXISTS events (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     timestamp TEXT NOT NULL,
@@ -83,16 +82,13 @@ class LocalBuffer:
                     uploaded INTEGER NOT NULL DEFAULT 0,
                     retry_count INTEGER NOT NULL DEFAULT 0
                 )
-            """
-            )
+            """)
 
             # Create index for efficient queries
-            cursor.execute(
-                """
+            cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_uploaded
                 ON events(uploaded, created_at)
-            """
-            )
+            """)
 
             conn.commit()
 
@@ -211,9 +207,9 @@ class LocalBuffer:
                     "format_version": row["format_version"],
                     "hash_algorithms": json.loads(row["hash_algorithms"]),
                     "kdf_algorithms": json.loads(row["kdf_algorithms"]),
-                    "kdf_parameters": json.loads(row["kdf_parameters"])
-                    if row["kdf_parameters"]
-                    else {},
+                    "kdf_parameters": (
+                        json.loads(row["kdf_parameters"]) if row["kdf_parameters"] else {}
+                    ),
                     "encryption_algorithm": row["encryption_algorithm"],
                     "cascade_enabled": bool(row["cascade_enabled"]),
                     "cascade_cipher_count": row["cascade_cipher_count"],
@@ -331,9 +327,9 @@ class LocalBuffer:
                     "format_version": row["format_version"],
                     "hash_algorithms": json.loads(row["hash_algorithms"]),
                     "kdf_algorithms": json.loads(row["kdf_algorithms"]),
-                    "kdf_parameters": json.loads(row["kdf_parameters"])
-                    if row["kdf_parameters"]
-                    else {},
+                    "kdf_parameters": (
+                        json.loads(row["kdf_parameters"]) if row["kdf_parameters"] else {}
+                    ),
                     "encryption_algorithm": row["encryption_algorithm"],
                     "cascade_enabled": bool(row["cascade_enabled"]),
                     "cascade_cipher_count": row["cascade_cipher_count"],

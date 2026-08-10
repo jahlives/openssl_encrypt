@@ -186,14 +186,10 @@ def ensure_plugin_data_dir(plugin_id: str, subdir: str = "") -> Optional[Path]:
                 logger.info(f"Fixed permissions on {data_dir} to OWNER_FULL")
 
                 if not check_permissions(data_dir, PermissionLevel.OWNER_FULL):
-                    logger.warning(
-                        f"Failed to fix permissions on {data_dir}"
-                    )
+                    logger.warning(f"Failed to fix permissions on {data_dir}")
                     return None
             except (OSError, PermissionError) as e:
-                logger.warning(
-                    f"Could not fix permissions on {data_dir}: {e}"
-                )
+                logger.warning(f"Could not fix permissions on {data_dir}: {e}")
                 return None
 
         # Also ensure parent is secured if we created a subdirectory
@@ -233,9 +229,7 @@ class PluginConfigManager:
 
         # Verify permissions were set correctly (defense in depth)
         if not check_permissions(self.config_dir, PermissionLevel.OWNER_FULL):
-            logger.warning(
-                f"Failed to set secure permissions (OWNER_FULL) on {self.config_dir}"
-            )
+            logger.warning(f"Failed to set secure permissions (OWNER_FULL) on {self.config_dir}")
 
         # Load existing configurations
         self._load_all_configs()
@@ -404,7 +398,7 @@ class PluginConfigManager:
 
         for plugin_dir in entries:
             try:
-                if not plugin_dir.is_dir() or plugin_dir.name.startswith('.'):
+                if not plugin_dir.is_dir() or plugin_dir.name.startswith("."):
                     continue
 
                 config_file = plugin_dir / "config.json"
@@ -459,7 +453,7 @@ class PluginConfigManager:
 
             try:
                 # Write config via file descriptor
-                os.write(fd, config_json.encode('utf-8'))
+                os.write(fd, config_json.encode("utf-8"))
             finally:
                 os.close(fd)
 

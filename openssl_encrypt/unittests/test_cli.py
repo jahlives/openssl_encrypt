@@ -511,7 +511,9 @@ class TestCLIEncryptDecrypt(CLITestBase):
         # Verify decrypted file and content
         self.assertTrue(os.path.exists(decrypted_file))
 
-        with open(self.test_file, "r", encoding="utf-8") as original, open(decrypted_file, "r", encoding="utf-8") as decrypted:
+        with open(self.test_file, "r", encoding="utf-8") as original, open(
+            decrypted_file, "r", encoding="utf-8"
+        ) as decrypted:
             self.assertEqual(original.read(), decrypted.read())
 
 
@@ -865,7 +867,9 @@ class TestCLIAdvancedOperations(CLITestBase):
 
             # Check that the process succeeded
             self.assertEqual(
-                process.returncode, 0, f"Stdin decryption failed. stderr: {stderr.decode('utf-8', errors='replace')}"
+                process.returncode,
+                0,
+                f"Stdin decryption failed. stderr: {stderr.decode('utf-8', errors='replace')}",
             )
 
             # Verify we got some decrypted output

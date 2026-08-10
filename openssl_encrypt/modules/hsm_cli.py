@@ -214,9 +214,9 @@ def fido2_test(rp_id: Optional[str]):
 
     # Create dummy security context
     from ..modules.plugin_system.plugin_base import PluginCapability, PluginSecurityContext
+
     context = PluginSecurityContext(
-        plugin_id=plugin.plugin_id,
-        capabilities=plugin.get_required_capabilities()
+        plugin_id=plugin.plugin_id, capabilities=plugin.get_required_capabilities()
     )
 
     # Test pepper derivation

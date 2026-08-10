@@ -96,7 +96,7 @@ def main():
 
         # Save QR code to file
         with open("totp_qr.svg", "w") as f:
-            f.write(totp_setup['qr_svg'])
+            f.write(totp_setup["qr_svg"])
 
         print("\nAfter scanning, verify with: plugin.verify_totp('123456')")
 
@@ -123,7 +123,7 @@ def main():
         result = plugin.store_pepper(
             name="example-pepper",
             pepper_encrypted=pepper_data,
-            description="Example pepper for demonstration"
+            description="Example pepper for demonstration",
         )
         print(f"✓ Pepper stored: {result['name']}")
         print(f"  Created: {result['created_at']}")
@@ -171,7 +171,7 @@ def main():
         deadman = plugin.configure_deadman(
             interval="7d",  # Check in every 7 days
             grace_period="24h",  # 24 hour grace period
-            enabled=True
+            enabled=True,
         )
         print("✓ Dead man's switch configured")
         print(f"  Enabled: {deadman['enabled']}")

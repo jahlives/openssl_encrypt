@@ -25,6 +25,7 @@ from openssl_encrypt.plugins.keyserver.config import KeyserverConfig
 def config(tmp_path):
     """Create a minimal keyserver config."""
     from pathlib import Path
+
     return KeyserverConfig(
         enabled=True,
         servers=["https://keys.example.com"],

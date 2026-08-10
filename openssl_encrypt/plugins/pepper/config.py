@@ -119,7 +119,9 @@ class PepperConfig:
 
             # Warn if CA cert specified but doesn't exist
             if self.ca_cert and not self.ca_cert.exists():
-                logger.warning(f"CA certificate not found: {self.ca_cert} (server cert verification may fail)")
+                logger.warning(
+                    f"CA certificate not found: {self.ca_cert} (server cert verification may fail)"
+                )
 
     @staticmethod
     def get_default_config_path() -> Path:

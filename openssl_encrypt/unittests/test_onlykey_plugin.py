@@ -140,9 +140,7 @@ class TestOnlykeyDeviceEnumeration(unittest.TestCase):
             ("/dev/hidraw2", plugin.ONLYKEY_VID, plugin.ONLYKEY_PID),
             ("/dev/hidraw3", plugin.ONLYKEY_VID, plugin.ONLYKEY_PID),
         ]
-        with patch.object(
-            plugin, "_enumerate_hidraw", return_value=synthetic
-        ), patch.object(
+        with patch.object(plugin, "_enumerate_hidraw", return_value=synthetic), patch.object(
             plugin, "_make_otp_device", side_effect=lambda path, pid: (path, pid)
         ):
             devices = plugin._list_onlykey_devices()
@@ -170,9 +168,9 @@ class TestCalculateChallengeResponse(unittest.TestCase):
         mock_session = MagicMock()
         mock_session.calculate_hmac_sha1.return_value = expected
 
-        with patch.object(
-            plugin, "_list_onlykey_devices", return_value=[device]
-        ), patch("yubikit.yubiotp.YubiOtpSession", return_value=mock_session):
+        with patch.object(plugin, "_list_onlykey_devices", return_value=[device]), patch(
+            "yubikit.yubiotp.YubiOtpSession", return_value=mock_session
+        ):
             result = plugin._calculate_challenge_response(b"\x00" * 16, slot=1)
 
         self.assertEqual(result, expected)
@@ -189,13 +187,11 @@ class TestCalculateChallengeResponse(unittest.TestCase):
         plugin = OnlykeyHSMPlugin()
         device = _make_mock_device()
         mock_session = MagicMock()
-        mock_session.calculate_hmac_sha1.side_effect = RuntimeError(
-            "device timeout"
-        )
+        mock_session.calculate_hmac_sha1.side_effect = RuntimeError("device timeout")
 
-        with patch.object(
-            plugin, "_list_onlykey_devices", return_value=[device]
-        ), patch("yubikit.yubiotp.YubiOtpSession", return_value=mock_session):
+        with patch.object(plugin, "_list_onlykey_devices", return_value=[device]), patch(
+            "yubikit.yubiotp.YubiOtpSession", return_value=mock_session
+        ):
             with self.assertRaises(RuntimeError) as cm:
                 plugin._calculate_challenge_response(b"\x00" * 16, slot=1)
         self.assertIn("OnlyKey Challenge-Response failed", str(cm.exception))
@@ -206,9 +202,9 @@ class TestCalculateChallengeResponse(unittest.TestCase):
         mock_session = MagicMock()
         mock_session.calculate_hmac_sha1.return_value = b"\xcc" * 20
 
-        with patch.object(
-            plugin, "_list_onlykey_devices", return_value=[d1, d2, d3]
-        ), patch("yubikit.yubiotp.YubiOtpSession", return_value=mock_session):
+        with patch.object(plugin, "_list_onlykey_devices", return_value=[d1, d2, d3]), patch(
+            "yubikit.yubiotp.YubiOtpSession", return_value=mock_session
+        ):
             plugin._calculate_challenge_response(b"\x00" * 16, slot=2)
 
         # Only the first device should be opened
@@ -230,14 +226,14 @@ class TestFindChallengeResponseSlot(unittest.TestCase):
         device = _make_mock_device()
         mock_session = MagicMock()
         # Only slot 1 returns; all others raise
-        mock_session.calculate_hmac_sha1.side_effect = (
-            lambda slot, challenge: b"\x00" * 20
+        mock_session.calculate_hmac_sha1.side_effect = lambda slot, challenge: (
+            b"\x00" * 20
             if slot == 1
             else (_ for _ in ()).throw(RuntimeError("slot not configured"))
         )
-        with patch.object(
-            plugin, "_list_onlykey_devices", return_value=[device]
-        ), patch("yubikit.yubiotp.YubiOtpSession", return_value=mock_session):
+        with patch.object(plugin, "_list_onlykey_devices", return_value=[device]), patch(
+            "yubikit.yubiotp.YubiOtpSession", return_value=mock_session
+        ):
             self.assertEqual(plugin._find_challenge_response_slot(), 1)
 
     def test_slot_5_only_returns_5(self):
@@ -245,26 +241,22 @@ class TestFindChallengeResponseSlot(unittest.TestCase):
         plugin = OnlykeyHSMPlugin()
         device = _make_mock_device()
         mock_session = MagicMock()
-        mock_session.calculate_hmac_sha1.side_effect = (
-            lambda slot, challenge: b"\x55" * 20
-            if slot == 5
-            else (_ for _ in ()).throw(RuntimeError("not configured"))
+        mock_session.calculate_hmac_sha1.side_effect = lambda slot, challenge: (
+            b"\x55" * 20 if slot == 5 else (_ for _ in ()).throw(RuntimeError("not configured"))
         )
-        with patch.object(
-            plugin, "_list_onlykey_devices", return_value=[device]
-        ), patch("yubikit.yubiotp.YubiOtpSession", return_value=mock_session):
+        with patch.object(plugin, "_list_onlykey_devices", return_value=[device]), patch(
+            "yubikit.yubiotp.YubiOtpSession", return_value=mock_session
+        ):
             self.assertEqual(plugin._find_challenge_response_slot(), 5)
 
     def test_no_slot_configured_returns_none(self):
         plugin = OnlykeyHSMPlugin()
         device = _make_mock_device()
         mock_session = MagicMock()
-        mock_session.calculate_hmac_sha1.side_effect = RuntimeError(
-            "slot not configured"
-        )
-        with patch.object(
-            plugin, "_list_onlykey_devices", return_value=[device]
-        ), patch("yubikit.yubiotp.YubiOtpSession", return_value=mock_session):
+        mock_session.calculate_hmac_sha1.side_effect = RuntimeError("slot not configured")
+        with patch.object(plugin, "_list_onlykey_devices", return_value=[device]), patch(
+            "yubikit.yubiotp.YubiOtpSession", return_value=mock_session
+        ):
             self.assertIsNone(plugin._find_challenge_response_slot())
 
     def test_button_press_required_recognised_as_configured(self):
@@ -272,16 +264,14 @@ class TestFindChallengeResponseSlot(unittest.TestCase):
         plugin = OnlykeyHSMPlugin()
         device = _make_mock_device()
         mock_session = MagicMock()
-        mock_session.calculate_hmac_sha1.side_effect = (
-            lambda slot, challenge: (_ for _ in ()).throw(
-                RuntimeError("timeout waiting for button press")
-            )
+        mock_session.calculate_hmac_sha1.side_effect = lambda slot, challenge: (
+            (_ for _ in ()).throw(RuntimeError("timeout waiting for button press"))
             if slot == 3
             else (_ for _ in ()).throw(RuntimeError("not configured"))
         )
-        with patch.object(
-            plugin, "_list_onlykey_devices", return_value=[device]
-        ), patch("yubikit.yubiotp.YubiOtpSession", return_value=mock_session):
+        with patch.object(plugin, "_list_onlykey_devices", return_value=[device]), patch(
+            "yubikit.yubiotp.YubiOtpSession", return_value=mock_session
+        ):
             self.assertEqual(plugin._find_challenge_response_slot(), 3)
 
     def test_enumeration_exception_returns_none(self):
@@ -318,9 +308,7 @@ class TestGetHsmPepper(unittest.TestCase):
         expected = b"\x77" * 20
         ctx = _make_context(plugin, slot=10)
 
-        with patch.object(
-            plugin, "_calculate_challenge_response", return_value=expected
-        ):
+        with patch.object(plugin, "_calculate_challenge_response", return_value=expected):
             result = plugin.get_hsm_pepper(b"\x00" * 16, ctx)
 
         self.assertTrue(result.success)
@@ -395,6 +383,7 @@ class TestGetHsmPepper(unittest.TestCase):
     def test_auto_detect_failure_returns_error(self):
         plugin = OnlykeyHSMPlugin()
         ctx = _make_context(plugin)
+
         def reject_all(salt, slot):
             raise RuntimeError(f"OnlyKey rejected the challenge on slot {slot}. No data.")
 
@@ -438,9 +427,7 @@ class TestGetHsmPepper(unittest.TestCase):
         expected = b"\x55" * 20
         ctx = _make_context(plugin)  # no slot
 
-        with patch.object(
-            plugin, "_find_challenge_response_slot"
-        ) as find, patch.object(
+        with patch.object(plugin, "_find_challenge_response_slot") as find, patch.object(
             plugin, "_calculate_challenge_response", return_value=expected
         ):
             result = plugin.get_hsm_pepper(b"\x00" * 16, ctx)
@@ -473,9 +460,9 @@ class TestEdgeCaseLockedDevice(unittest.TestCase):
         )
 
         ctx = _make_context(plugin, slot=1)
-        with patch.object(
-            plugin, "_list_onlykey_devices", return_value=[device]
-        ), patch("yubikit.yubiotp.YubiOtpSession", return_value=mock_session):
+        with patch.object(plugin, "_list_onlykey_devices", return_value=[device]), patch(
+            "yubikit.yubiotp.YubiOtpSession", return_value=mock_session
+        ):
             result = plugin.get_hsm_pepper(b"\x00" * 16, ctx)
 
         self.assertFalse(result.success)
@@ -500,9 +487,9 @@ class TestEdgeCaseChallengeSizes(unittest.TestCase):
         mock_session = MagicMock()
         mock_session.calculate_hmac_sha1.return_value = b"\x11" * 20
 
-        with patch.object(
-            plugin, "_list_onlykey_devices", return_value=[device]
-        ), patch("yubikit.yubiotp.YubiOtpSession", return_value=mock_session):
+        with patch.object(plugin, "_list_onlykey_devices", return_value=[device]), patch(
+            "yubikit.yubiotp.YubiOtpSession", return_value=mock_session
+        ):
             response = plugin._calculate_challenge_response(b"", slot=1)
 
         self.assertEqual(response, b"\x11" * 20)
@@ -516,9 +503,9 @@ class TestEdgeCaseChallengeSizes(unittest.TestCase):
         mock_session.calculate_hmac_sha1.return_value = expected
         challenge = bytes(range(64))
 
-        with patch.object(
-            plugin, "_list_onlykey_devices", return_value=[device]
-        ), patch("yubikit.yubiotp.YubiOtpSession", return_value=mock_session):
+        with patch.object(plugin, "_list_onlykey_devices", return_value=[device]), patch(
+            "yubikit.yubiotp.YubiOtpSession", return_value=mock_session
+        ):
             response = plugin._calculate_challenge_response(challenge, slot=2)
 
         self.assertEqual(response, expected)
@@ -531,9 +518,9 @@ class TestEdgeCaseChallengeSizes(unittest.TestCase):
         mock_session.calculate_hmac_sha1.return_value = b"\x33" * 20
         challenge = b"\x00" * 8 + b"abcd" + b"\x00" * 4  # embedded nulls
 
-        with patch.object(
-            plugin, "_list_onlykey_devices", return_value=[device]
-        ), patch("yubikit.yubiotp.YubiOtpSession", return_value=mock_session):
+        with patch.object(plugin, "_list_onlykey_devices", return_value=[device]), patch(
+            "yubikit.yubiotp.YubiOtpSession", return_value=mock_session
+        ):
             response = plugin._calculate_challenge_response(challenge, slot=1)
 
         self.assertEqual(response, b"\x33" * 20)
@@ -548,9 +535,7 @@ class TestEdgeCaseDeviceDisconnect(unittest.TestCase):
         plugin = OnlykeyHSMPlugin()
         device = MagicMock()
         # open_connection raises (device gone between enumeration and open)
-        device.open_connection.side_effect = OSError(
-            "Errno 19: No such device"
-        )
+        device.open_connection.side_effect = OSError("Errno 19: No such device")
 
         ctx = _make_context(plugin, slot=1)
         with patch.object(plugin, "_list_onlykey_devices", return_value=[device]):
@@ -569,9 +554,9 @@ class TestEdgeCaseDeviceDisconnect(unittest.TestCase):
         )
 
         ctx = _make_context(plugin, slot=1)
-        with patch.object(
-            plugin, "_list_onlykey_devices", return_value=[device]
-        ), patch("yubikit.yubiotp.YubiOtpSession", return_value=mock_session):
+        with patch.object(plugin, "_list_onlykey_devices", return_value=[device]), patch(
+            "yubikit.yubiotp.YubiOtpSession", return_value=mock_session
+        ):
             result = plugin.get_hsm_pepper(b"\x00" * 16, ctx)
 
         self.assertFalse(result.success)

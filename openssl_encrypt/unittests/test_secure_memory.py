@@ -397,6 +397,7 @@ class TestCryptoSecureMemoryErrorHandling(unittest.TestCase):
             buffer.get_bytes()
         self.assertEqual(context.exception.category, ErrorCategory.MEMORY)
 
+
 class TestThreadedErrorHandling(unittest.TestCase):
     """Test error handling in multi-threaded environments."""
 

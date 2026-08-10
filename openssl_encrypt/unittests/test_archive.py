@@ -186,9 +186,11 @@ class TestTarExtraction(unittest.TestCase):
 
     def test_nested_extraction(self):
         """Nested files extract correctly."""
-        data = self._create_tar_bytes([
-            ("dir/file.txt", b"content"),
-        ])
+        data = self._create_tar_bytes(
+            [
+                ("dir/file.txt", b"content"),
+            ]
+        )
         secure_tar_extract(data, self.output_dir)
         self.assertTrue(os.path.isfile(os.path.join(self.output_dir, "dir", "file.txt")))
 
@@ -231,17 +233,13 @@ class TestTarExtraction(unittest.TestCase):
 
     def test_hardlink_escape_rejected(self):
         """Hardlink whose target escapes the output dir is rejected."""
-        data = self._create_tar_with_link(
-            "foo", "../../etc/passwd", tarfile.LNKTYPE
-        )
+        data = self._create_tar_with_link("foo", "../../etc/passwd", tarfile.LNKTYPE)
         with self.assertRaises(ValidationError):
             secure_tar_extract(data, self.output_dir)
 
     def test_hardlink_absolute_target_rejected(self):
         """Hardlink with an absolute target is rejected."""
-        data = self._create_tar_with_link(
-            "foo", "/etc/passwd", tarfile.LNKTYPE
-        )
+        data = self._create_tar_with_link("foo", "/etc/passwd", tarfile.LNKTYPE)
         with self.assertRaises(ValidationError):
             secure_tar_extract(data, self.output_dir)
 
@@ -264,9 +262,7 @@ class TestTarExtraction(unittest.TestCase):
 
     def test_symlink_escape_via_addfile_rejected(self):
         """Symlink escaping the output dir is rejected (parity with hardlink)."""
-        data = self._create_tar_with_link(
-            "foo", "../../etc/passwd", tarfile.SYMTYPE
-        )
+        data = self._create_tar_with_link("foo", "../../etc/passwd", tarfile.SYMTYPE)
         with self.assertRaises(ValidationError):
             secure_tar_extract(data, self.output_dir)
 
@@ -397,9 +393,7 @@ class TestDirectoryEncryptDecrypt(unittest.TestCase):
             quiet=True,
         )
 
-        self.assertTrue(
-            os.path.isfile(os.path.join(output_dir, "mydir", "file.txt"))
-        )
+        self.assertTrue(os.path.isfile(os.path.join(output_dir, "mydir", "file.txt")))
 
     def test_directory_encrypt_with_chacha20(self):
         """Directory encrypt works with ChaCha20-Poly1305."""
@@ -421,9 +415,7 @@ class TestDirectoryEncryptDecrypt(unittest.TestCase):
             quiet=True,
         )
 
-        self.assertTrue(
-            os.path.isfile(os.path.join(output_dir, "mydir", "file.txt"))
-        )
+        self.assertTrue(os.path.isfile(os.path.join(output_dir, "mydir", "file.txt")))
 
     def test_metadata_contains_archive_info(self):
         """Encrypted directory metadata contains archive field."""

@@ -35,7 +35,8 @@ def test_integrity_client():
     # Try to determine config path
     try:
         import os
-        home = os.environ.get('HOME') or os.environ.get('USERPROFILE')
+
+        home = os.environ.get("HOME") or os.environ.get("USERPROFILE")
         if home:
             config_path = Path(home) / ".openssl_encrypt" / "plugins" / "integrity.json"
         else:
@@ -139,7 +140,9 @@ def test_integrity_client():
         print(f"✓ Configuration loaded from {test_config_path}")
         print(f"  Server URL: {loaded_config.server_url}")
         print(f"  Enabled: {loaded_config.enabled}")
-        print(f"  Timeouts: {loaded_config.connect_timeout_seconds}s / {loaded_config.read_timeout_seconds}s")
+        print(
+            f"  Timeouts: {loaded_config.connect_timeout_seconds}s / {loaded_config.read_timeout_seconds}s"
+        )
         print()
         print(f"  Note: Standard config location is {config_path}")
         print()
@@ -152,9 +155,17 @@ def test_integrity_client():
     print("-" * 70)
     print("Available methods:")
     methods = [
-        "get_profile", "update_profile",
-        "store_hash", "get_hash", "list_hashes", "update_hash", "delete_hash", "delete_all_hashes",
-        "verify", "verify_batch", "get_stats"
+        "get_profile",
+        "update_profile",
+        "store_hash",
+        "get_hash",
+        "list_hashes",
+        "update_hash",
+        "delete_hash",
+        "delete_all_hashes",
+        "verify",
+        "verify_batch",
+        "get_stats",
     ]
     if plugin:
         for method in methods:

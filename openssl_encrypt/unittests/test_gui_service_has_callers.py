@@ -56,7 +56,11 @@ KNOWN_UNWIRED = [
     # gitlab#153: deliberate — independent XOR is already the CLI's default
     # composition, so an explicit control would be redundant surface. The
     # parameter stays for the sequential-vs-independent mutual-exclusion guard.
-    ("encryptTextWithProgress", "independentXor", "gitlab#153: redundant with the default composition"),
+    (
+        "encryptTextWithProgress",
+        "independentXor",
+        "gitlab#153: redundant with the default composition",
+    ),
 ]
 
 

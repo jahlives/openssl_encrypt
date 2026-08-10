@@ -55,16 +55,16 @@ def _slot(index: int, slot_type: str = "recovery_code") -> dict:
         "id": f"slot-{index}",
         "type": slot_type,
         "wrap": base64.b64encode(secrets.token_bytes(60)).decode("ascii"),
-        "params": {"salt": base64.b64encode(secrets.token_bytes(16)).decode("ascii"),
-                   "kdf": "argon2id"},
+        "params": {
+            "salt": base64.b64encode(secrets.token_bytes(16)).decode("ascii"),
+            "kdf": "argon2id",
+        },
     }
 
 
 class TestSlotTypes(unittest.TestCase):
     def test_known_slot_types(self):
-        self.assertEqual(
-            SLOT_TYPES, {"recovery_code", "passphrase", "shamir", "pqc"}
-        )
+        self.assertEqual(SLOT_TYPES, {"recovery_code", "passphrase", "shamir", "pqc"})
 
 
 class TestCanonicalSlots(unittest.TestCase):
@@ -145,9 +145,7 @@ class TestVerifySlotSetMac(unittest.TestCase):
         self.assertTrue(verify_slot_set_mac(self.dek, self.slots, self.mac))
 
     def test_rejects_wrong_dek(self):
-        self.assertFalse(
-            verify_slot_set_mac(secrets.token_bytes(32), self.slots, self.mac)
-        )
+        self.assertFalse(verify_slot_set_mac(secrets.token_bytes(32), self.slots, self.mac))
 
     def test_rejects_stripped_slot(self):
         self.assertFalse(verify_slot_set_mac(self.dek, self.slots[:-1], self.mac))
@@ -255,9 +253,7 @@ class TestShamirSlot(unittest.TestCase):
 
         for combo in itertools.combinations(shares, 2):
             recovered_secret = combine_shares(list(combo))
-            self.assertEqual(
-                bytes(unlock_shamir_slot(self.slot, recovered_secret)), self.dek
-            )
+            self.assertEqual(bytes(unlock_shamir_slot(self.slot, recovered_secret)), self.dek)
 
 
 @unittest.skipIf(not LIBOQS_AVAILABLE, "liboqs not available")
@@ -281,7 +277,9 @@ class TestPqcSlot(unittest.TestCase):
         self.assertEqual(self.slot["type"], "pqc")
         self.assertEqual(len(base64.b64decode(self.slot["wrap"])), 60)
         self.assertIn("salt", self.slot["params"])
-        self.assertEqual(self.slot["params"]["kem_algorithm"], self.recovery_id.encryption_algorithm)
+        self.assertEqual(
+            self.slot["params"]["kem_algorithm"], self.recovery_id.encryption_algorithm
+        )
         self.assertIn("encapsulated_key", self.slot["params"])
         self.assertEqual(self.slot["params"]["key_id"], self.recovery_id.fingerprint)
 
@@ -303,9 +301,7 @@ class TestPassphraseSlot(unittest.TestCase):
     def setUp(self):
         self.dek = secrets.token_bytes(32)
         self.passphrase = b"a memorable backup passphrase"
-        self.slot = build_passphrase_slot(
-            self.dek, self.passphrase, slot_id="pw1", **self.PARAMS
-        )
+        self.slot = build_passphrase_slot(self.dek, self.passphrase, slot_id="pw1", **self.PARAMS)
 
     def test_slot_shape(self):
         self.assertEqual(self.slot["type"], "passphrase")
@@ -380,9 +376,7 @@ class TestKeyHygiene(unittest.TestCase):
             build_call()
         self.assertIn("kek", captured)
         self.assertEqual(len(captured["kek"]), 32)
-        self.assertTrue(
-            all(b == 0 for b in captured["kek"]), "KEK was not zeroized after wrap"
-        )
+        self.assertTrue(all(b == 0 for b in captured["kek"]), "KEK was not zeroized after wrap")
 
     def test_recovery_code_kek_zeroized(self):
         dek = secrets.token_bytes(32)

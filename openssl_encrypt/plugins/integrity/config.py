@@ -121,7 +121,9 @@ class IntegrityConfig:
 
             # Warn if CA cert specified but doesn't exist
             if self.ca_cert and not self.ca_cert.exists():
-                logger.warning(f"CA certificate not found: {self.ca_cert} (server cert verification may fail)")
+                logger.warning(
+                    f"CA certificate not found: {self.ca_cert} (server cert verification may fail)"
+                )
 
     @classmethod
     def from_file(cls, config_path: Optional[Path] = None) -> "IntegrityConfig":

@@ -53,9 +53,7 @@ class TestGeneratePasswordDiceFlags(unittest.TestCase):
 
     def test_dice_sep_override(self):
         parser = self._make_parser()
-        args = parser.parse_args(
-            ["generate-password", "--dice", "--dice-sep", "-"]
-        )
+        args = parser.parse_args(["generate-password", "--dice", "--dice-sep", "-"])
         self.assertEqual(args.dice_sep, "-")
 
     def test_dice_list_default_none(self):
@@ -65,9 +63,7 @@ class TestGeneratePasswordDiceFlags(unittest.TestCase):
 
     def test_dice_list_override(self):
         parser = self._make_parser()
-        args = parser.parse_args(
-            ["generate-password", "--dice", "--dice-list", "/tmp/wl.txt"]
-        )
+        args = parser.parse_args(["generate-password", "--dice", "--dice-list", "/tmp/wl.txt"])
         self.assertEqual(args.dice_list, "/tmp/wl.txt")
 
     def test_force_wordlist_flag(self):
@@ -249,9 +245,7 @@ class TestRunDiceGeneration(unittest.TestCase):
         from openssl_encrypt.modules.diceware import load_wordlist
 
         bundled = set(load_wordlist())
-        phrase, bits = _run_dice_generation(
-            self._make_args(dice_count=10, dice_sep=" ")
-        )
+        phrase, bits = _run_dice_generation(self._make_args(dice_count=10, dice_sep=" "))
         for w in phrase.split(" "):
             self.assertIn(w, bundled)
         # 10 words × log2(7776) ≈ 129.2 bits
@@ -262,9 +256,7 @@ class TestRunDiceGeneration(unittest.TestCase):
 
         from openssl_encrypt.modules.crypt_cli import _run_dice_generation
 
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".txt", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
             for i in range(2000):
                 f.write(f"customword{i:04d}\n")
             tmp = f.name
@@ -276,9 +268,11 @@ class TestRunDiceGeneration(unittest.TestCase):
                 self.assertTrue(w.startswith("customword"))
             # Custom 2000-word list → 5 * log2(2000) ≈ 54.83 bits
             import math
+
             self.assertAlmostEqual(bits, 5 * math.log2(2000), places=3)
         finally:
             import os
+
             os.unlink(tmp)
 
     def test_force_wordlist_passed_to_loader(self):
@@ -287,9 +281,7 @@ class TestRunDiceGeneration(unittest.TestCase):
 
         from openssl_encrypt.modules.crypt_cli import _run_dice_generation
 
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".txt", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
             for i in range(100):
                 f.write(f"tiny{i:03d}\n")
             tmp = f.name
@@ -301,14 +293,13 @@ class TestRunDiceGeneration(unittest.TestCase):
             self.assertTrue(phrase.startswith("tiny"))
         finally:
             import os
+
             os.unlink(tmp)
 
     def test_dice_count_one_produces_one_word_no_separator(self):
         from openssl_encrypt.modules.crypt_cli import _run_dice_generation
 
-        phrase, _bits = _run_dice_generation(
-            self._make_args(dice_count=1, dice_sep="-")
-        )
+        phrase, _bits = _run_dice_generation(self._make_args(dice_count=1, dice_sep="-"))
         self.assertNotIn("-", phrase)
 
 
@@ -332,20 +323,15 @@ class TestGeneratePasswordDiceHandlerIntegration(unittest.TestCase):
         cmd = [
             sys.executable,
             "-c",
-            "from openssl_encrypt.modules.crypt_cli import main_with_args; "
-            "main_with_args()",
+            "from openssl_encrypt.modules.crypt_cli import main_with_args; " "main_with_args()",
             "generate-password",
         ] + argv_after_action
-        return subprocess.run(
-            cmd, env=env, capture_output=True, text=True, timeout=30
-        )
+        return subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=30)
 
     def test_dice_smoke_runs_and_prints_entropy(self):
         """--dice mode runs to completion and emits entropy line on stderr."""
         # Use 3 words with sep="-" so the output is easy to inspect.
-        result = self._run_main_with(
-            ["--dice", "--dice-count", "3", "--dice-sep", "-"]
-        )
+        result = self._run_main_with(["--dice", "--dice-count", "3", "--dice-sep", "-"])
         self.assertEqual(
             result.returncode,
             0,

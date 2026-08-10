@@ -6575,9 +6575,9 @@ def main_with_args(args=None):
                                             policy_params["check_common_passwords"] = False
 
                                         if args.custom_password_list:
-                                            policy_params[
-                                                "common_passwords_path"
-                                            ] = args.custom_password_list
+                                            policy_params["common_passwords_path"] = (
+                                                args.custom_password_list
+                                            )
 
                                         # Create policy and validate password
                                         policy = PasswordPolicy(

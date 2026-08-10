@@ -59,16 +59,12 @@ class TestSetAndCheckPermissions(unittest.TestCase):
     def test_owner_write_public_read(self):
         """OWNER_WRITE_PUBLIC_READ: set + check round-trip on file."""
         set_permissions(self.test_file, PermissionLevel.OWNER_WRITE_PUBLIC_READ)
-        self.assertTrue(
-            check_permissions(self.test_file, PermissionLevel.OWNER_WRITE_PUBLIC_READ)
-        )
+        self.assertTrue(check_permissions(self.test_file, PermissionLevel.OWNER_WRITE_PUBLIC_READ))
 
     def test_check_returns_false_for_wrong_level(self):
         """check_permissions returns False when level doesn't match."""
         set_permissions(self.test_file, PermissionLevel.OWNER_ONLY)
-        self.assertFalse(
-            check_permissions(self.test_file, PermissionLevel.OWNER_WRITE_PUBLIC_READ)
-        )
+        self.assertFalse(check_permissions(self.test_file, PermissionLevel.OWNER_WRITE_PUBLIC_READ))
 
     def test_nonexistent_path_raises(self):
         """set_permissions raises FileNotFoundError for nonexistent path."""
@@ -77,9 +73,7 @@ class TestSetAndCheckPermissions(unittest.TestCase):
 
     def test_check_nonexistent_returns_false(self):
         """check_permissions returns False for nonexistent path."""
-        self.assertFalse(
-            check_permissions("/nonexistent/path", PermissionLevel.OWNER_ONLY)
-        )
+        self.assertFalse(check_permissions("/nonexistent/path", PermissionLevel.OWNER_ONLY))
 
     def test_idempotent_set(self):
         """Setting the same permission level twice is a no-op."""
@@ -90,9 +84,7 @@ class TestSetAndCheckPermissions(unittest.TestCase):
     def test_path_object_accepted(self):
         """Path objects work as well as strings."""
         set_permissions(Path(self.test_file), PermissionLevel.OWNER_ONLY)
-        self.assertTrue(
-            check_permissions(Path(self.test_file), PermissionLevel.OWNER_ONLY)
-        )
+        self.assertTrue(check_permissions(Path(self.test_file), PermissionLevel.OWNER_ONLY))
 
 
 class TestGetPosixMode(unittest.TestCase):
@@ -242,9 +234,7 @@ class TestCopyPermissions(unittest.TestCase):
         """Copies OWNER_WRITE_PUBLIC_READ permissions."""
         set_permissions(self.source, PermissionLevel.OWNER_WRITE_PUBLIC_READ)
         copy_permissions(self.source, self.target)
-        self.assertTrue(
-            check_permissions(self.target, PermissionLevel.OWNER_WRITE_PUBLIC_READ)
-        )
+        self.assertTrue(check_permissions(self.target, PermissionLevel.OWNER_WRITE_PUBLIC_READ))
 
     def test_source_not_found(self):
         """Raises FileNotFoundError if source doesn't exist."""
@@ -351,9 +341,7 @@ class TestWindowsSpecific(unittest.TestCase):
 
         set_permissions(f, PermissionLevel.OWNER_ONLY)
 
-        sd = win32security.GetFileSecurity(
-            f, win32security.DACL_SECURITY_INFORMATION
-        )
+        sd = win32security.GetFileSecurity(f, win32security.DACL_SECURITY_INFORMATION)
         dacl = sd.GetSecurityDescriptorDacl()
 
         owner_sid = _get_windows_owner_sid()
@@ -380,9 +368,7 @@ class TestWindowsSpecific(unittest.TestCase):
 
         set_permissions(d, PermissionLevel.OWNER_FULL)
 
-        sd = win32security.GetFileSecurity(
-            d, win32security.DACL_SECURITY_INFORMATION
-        )
+        sd = win32security.GetFileSecurity(d, win32security.DACL_SECURITY_INFORMATION)
         dacl = sd.GetSecurityDescriptorDacl()
 
         owner_sid = _get_windows_owner_sid()
@@ -405,9 +391,7 @@ class TestWindowsSpecific(unittest.TestCase):
 
         set_permissions(f, PermissionLevel.OWNER_WRITE_PUBLIC_READ)
 
-        sd = win32security.GetFileSecurity(
-            f, win32security.DACL_SECURITY_INFORMATION
-        )
+        sd = win32security.GetFileSecurity(f, win32security.DACL_SECURITY_INFORMATION)
         dacl = sd.GetSecurityDescriptorDacl()
 
         everyone_sid = _get_everyone_sid()
@@ -431,9 +415,7 @@ class TestWindowsSpecific(unittest.TestCase):
 
         set_permissions(f, PermissionLevel.OWNER_ONLY)
 
-        sd = win32security.GetFileSecurity(
-            f, win32security.DACL_SECURITY_INFORMATION
-        )
+        sd = win32security.GetFileSecurity(f, win32security.DACL_SECURITY_INFORMATION)
         dacl = sd.GetSecurityDescriptorDacl()
 
         for i in range(dacl.GetAceCount()):
@@ -441,9 +423,7 @@ class TestWindowsSpecific(unittest.TestCase):
             # ace[0] is (ace_type, ace_flags)
             ace_flags = ace[0][1]
             # INHERITED_ACE = 0x10
-            self.assertFalse(
-                ace_flags & 0x10, "No ACEs should be inherited"
-            )
+            self.assertFalse(ace_flags & 0x10, "No ACEs should be inherited")
 
     def test_synthetic_posix_mode(self):
         """get_posix_mode returns synthetic modes on Windows."""

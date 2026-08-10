@@ -35,7 +35,8 @@ def test_pepper_client():
     # Try to determine config path
     try:
         import os
-        home = os.environ.get('HOME') or os.environ.get('USERPROFILE')
+
+        home = os.environ.get("HOME") or os.environ.get("USERPROFILE")
         if home:
             config_path = Path(home) / ".openssl_encrypt" / "plugins" / "pepper.json"
         else:
@@ -138,11 +139,10 @@ def test_pepper_client():
     print("-" * 70)
     print("Available methods:")
     methods = [
-        attr for attr in dir(plugin)
-        if not attr.startswith('_') and callable(getattr(plugin, attr))
+        attr for attr in dir(plugin) if not attr.startswith("_") and callable(getattr(plugin, attr))
     ]
     for method in sorted(methods):
-        if not method.startswith('get_'):  # Filter out base class methods
+        if not method.startswith("get_"):  # Filter out base class methods
             continue
         print(f"  - {method}()")
     print()

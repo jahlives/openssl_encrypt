@@ -169,9 +169,7 @@ class DirectoryArchiver:
                 if file_mtime:
                     from datetime import datetime, timezone
 
-                    entry["mtime"] = datetime.fromtimestamp(
-                        file_mtime, tz=timezone.utc
-                    ).isoformat()
+                    entry["mtime"] = datetime.fromtimestamp(file_mtime, tz=timezone.utc).isoformat()
                 file_list.append(entry)
 
             # Check dirs for symlinks too
@@ -227,24 +225,18 @@ def secure_tar_extract(tar_data_or_path, output_dir: str) -> None:
         for member in tar.getmembers():
             # Reject absolute paths
             if os.path.isabs(member.name):
-                raise ValidationError(
-                    f"Absolute path in archive: {member.name}"
-                )
+                raise ValidationError(f"Absolute path in archive: {member.name}")
 
             # Reject path traversal
             # Normalize and check for .. components
             normalized = os.path.normpath(member.name)
             if normalized.startswith("..") or "/../" in "/" + normalized + "/":
-                raise ValidationError(
-                    f"Path traversal in archive: {member.name}"
-                )
+                raise ValidationError(f"Path traversal in archive: {member.name}")
 
             # Check resolved path is within output_dir
             target_path = os.path.realpath(os.path.join(output_dir, member.name))
             if not target_path.startswith(abs_output + os.sep) and target_path != abs_output:
-                raise ValidationError(
-                    f"Path escapes output directory: {member.name}"
-                )
+                raise ValidationError(f"Path escapes output directory: {member.name}")
 
             # Reject symlinks and hardlinks pointing outside output_dir.
             # Both link types carry a linkname that is not covered by the

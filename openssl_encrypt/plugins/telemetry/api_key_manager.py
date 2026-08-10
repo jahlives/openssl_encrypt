@@ -58,6 +58,7 @@ class APIKeyManager:
         if self.key_file.exists():
             # Set permissions to 0600 (read/write for owner only)
             from openssl_encrypt.modules.file_permissions import PermissionLevel, set_permissions
+
             set_permissions(self.key_file, PermissionLevel.OWNER_ONLY)
 
     def _load_key_data(self) -> Optional[Dict]:

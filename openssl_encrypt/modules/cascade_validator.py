@@ -75,9 +75,11 @@ class CascadeDiversityValidator:
         if self.strict:
             warnings = [
                 DiversityWarning(
-                    level=DiversityWarningLevel.ERROR
-                    if w.level == DiversityWarningLevel.WARNING
-                    else w.level,
+                    level=(
+                        DiversityWarningLevel.ERROR
+                        if w.level == DiversityWarningLevel.WARNING
+                        else w.level
+                    ),
                     message=w.message,
                     ciphers_involved=w.ciphers_involved,
                     suggestion=w.suggestion,

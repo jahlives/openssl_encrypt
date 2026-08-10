@@ -117,7 +117,7 @@ def test_create_pepper(base_url: str, cert: tuple) -> Dict:
 
     # Create test pepper (encrypted blob)
     test_data = b"This is a test pepper value - keep it secret!"
-    encrypted_blob = base64.b64encode(test_data).decode('ascii')
+    encrypted_blob = base64.b64encode(test_data).decode("ascii")
 
     payload = {
         "name": "test-pepper",
@@ -163,9 +163,9 @@ def test_list_peppers(base_url: str, cert: tuple) -> Dict:
             print(f"✓ Peppers listed")
             print(f"  Total count: {data.get('total', 0)}")
 
-            if data.get('peppers'):
+            if data.get("peppers"):
                 print(f"  Peppers:")
-                for p in data['peppers'][:5]:  # Show first 5
+                for p in data["peppers"][:5]:  # Show first 5
                     print(f"    - {p['name']}: {p.get('description', 'No description')}")
 
             return data
@@ -217,12 +217,9 @@ def test_update_pepper(base_url: str, cert: tuple, name: str) -> Dict:
 
     # Update with new encrypted blob and description
     updated_data = b"This is an updated test pepper value!"
-    encrypted_blob = base64.b64encode(updated_data).decode('ascii')
+    encrypted_blob = base64.b64encode(updated_data).decode("ascii")
 
-    payload = {
-        "pepper_encrypted": encrypted_blob,
-        "description": "Updated test pepper description"
-    }
+    payload = {"pepper_encrypted": encrypted_blob, "description": "Updated test pepper description"}
 
     try:
         response = requests.put(url, json=payload, cert=cert, timeout=10)

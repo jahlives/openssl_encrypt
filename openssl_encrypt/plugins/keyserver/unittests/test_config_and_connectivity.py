@@ -29,10 +29,10 @@ from openssl_encrypt.plugins.keyserver.keyserver_plugin import (
     NetworkError,
 )
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def tmp_config_dir(tmp_path):
@@ -91,6 +91,7 @@ def plugin_with_mock_session(tmp_path):
 # Config Loading Tests
 # ===========================================================================
 
+
 class TestConfigFromFile:
     """Test configuration loading from JSON file."""
 
@@ -122,7 +123,9 @@ class TestConfigFromFile:
     def test_raises_on_unknown_fields(self, tmp_config_dir):
         """Raises ConfigError for unknown config keys."""
         bad_file = tmp_config_dir / "config.json"
-        bad_file.write_text(json.dumps({"enabled": True, "servers": ["https://x.com"], "bogus_field": 42}))
+        bad_file.write_text(
+            json.dumps({"enabled": True, "servers": ["https://x.com"], "bogus_field": 42})
+        )
         with pytest.raises((ConfigError, TypeError)):
             KeyserverConfig.from_file(bad_file)
 
@@ -182,6 +185,7 @@ class TestConfigValidation:
 # ===========================================================================
 # API Token Tests
 # ===========================================================================
+
 
 class TestApiToken:
     """Test API token loading and saving."""
@@ -246,6 +250,7 @@ class TestApiToken:
 # ===========================================================================
 # Refresh Token Tests
 # ===========================================================================
+
 
 class TestRefreshToken:
     """Test refresh token loading and saving."""
@@ -326,6 +331,7 @@ class TestRefreshToken:
 # Config Save/Load Roundtrip
 # ===========================================================================
 
+
 class TestConfigSaveLoad:
     """Test config serialization roundtrip."""
 
@@ -338,7 +344,7 @@ class TestConfigSaveLoad:
             cache_ttl_seconds=7200,
             cache_max_entries=200,
             connect_timeout_seconds=8,
-            read_timeout_seconds= 20,
+            read_timeout_seconds=20,
             upload_enabled=False,
             cache_path=tmp_path / "cache.db",
             api_token_file=tmp_path / "token",
@@ -372,6 +378,7 @@ class TestConfigSaveLoad:
 # Mocked Connectivity Tests
 # ===========================================================================
 
+
 class TestServerConnectivity:
     """Test plugin connectivity with mocked HTTP."""
 
@@ -398,16 +405,16 @@ class TestServerConnectivity:
 
     def test_search_handles_connection_error(self, plugin_with_mock_session):
         """Plugin handles connection failures gracefully."""
-        plugin_with_mock_session.session.get.side_effect = (
-            requests.exceptions.ConnectionError("Connection refused")
+        plugin_with_mock_session.session.get.side_effect = requests.exceptions.ConnectionError(
+            "Connection refused"
         )
         result = plugin_with_mock_session.fetch_key("test@example.com")
         assert result is None
 
     def test_search_handles_timeout(self, plugin_with_mock_session):
         """Plugin handles request timeouts gracefully."""
-        plugin_with_mock_session.session.get.side_effect = (
-            requests.exceptions.Timeout("Request timed out")
+        plugin_with_mock_session.session.get.side_effect = requests.exceptions.Timeout(
+            "Request timed out"
         )
         result = plugin_with_mock_session.fetch_key("test@example.com")
         assert result is None
@@ -429,6 +436,7 @@ class TestServerConnectivity:
 # ===========================================================================
 # Token Refresh Tests (mocked)
 # ===========================================================================
+
 
 class TestTokenRefresh:
     """Test automatic token refresh on 401."""
@@ -470,9 +478,9 @@ class TestTokenRefresh:
         }
 
         plugin_with_tokens.session.post.side_effect = [
-            response_401,      # initial authenticated request
+            response_401,  # initial authenticated request
             refresh_response,  # refresh call
-            response_200,      # retry after refresh
+            response_200,  # retry after refresh
         ]
 
         response = plugin_with_tokens._authenticated_request(
@@ -493,8 +501,8 @@ class TestTokenRefresh:
         refresh_fail.status_code = 401
 
         plugin_with_tokens.session.post.side_effect = [
-            response_401,   # initial request
-            refresh_fail,   # refresh fails
+            response_401,  # initial request
+            refresh_fail,  # refresh fails
         ]
 
         with pytest.raises(AuthenticationError):
@@ -559,6 +567,7 @@ class TestTokenRefresh:
 # ===========================================================================
 # Login Tests (mocked)
 # ===========================================================================
+
 
 class TestLogin:
     """Test login with client_id."""
@@ -656,6 +665,7 @@ class TestLogin:
 # ===========================================================================
 # Live Connectivity Tests (require --live-server)
 # ===========================================================================
+
 
 @pytest.mark.live
 class TestLiveConnectivity:

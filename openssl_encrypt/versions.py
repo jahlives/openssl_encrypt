@@ -21,7 +21,7 @@ def check_liboqs_version():
     import sys
 
     # On Windows, check for liboqs DLL directly (no pkg-config)
-    if sys.platform == 'win32':
+    if sys.platform == "win32":
         win_prefixes = [
             os.environ.get("LIBOQS_INSTALL_PREFIX", r"C:\liboqs"),
             r"C:\liboqs",
@@ -58,8 +58,11 @@ def check_liboqs_version():
                 if version == LIBOQS_VERSION:
                     return (True, version, f"✓ liboqs {version}")
                 elif version:
-                    return (False, version,
-                            f"✗ liboqs version mismatch: found {version}, need {LIBOQS_VERSION}")
+                    return (
+                        False,
+                        version,
+                        f"✗ liboqs version mismatch: found {version}, need {LIBOQS_VERSION}",
+                    )
                 else:
                     # DLL exists but can't determine version — assume OK
                     return (True, "unknown", f"✓ liboqs found at {prefix} (version unknown)")

@@ -71,7 +71,9 @@ class FileBackupPlugin(PreProcessorPlugin):
             self.backup_base_dir.mkdir(parents=True, exist_ok=True)
 
             # Set secure permissions
-            set_permissions(self.backup_base_dir, PermissionLevel.OWNER_FULL)  # Only owner can access
+            set_permissions(
+                self.backup_base_dir, PermissionLevel.OWNER_FULL
+            )  # Only owner can access
 
             return PluginResult.success_result(
                 f"Backup plugin initialized with directory: {self.backup_base_dir}"

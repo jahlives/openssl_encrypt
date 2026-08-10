@@ -1308,31 +1308,31 @@ class SettingsTab:
                 "★ (variable-length output)" if self.config["shake256"] > 0 else ""
             ),
             whirlpool=self.config["whirlpool"],
-            scrypt_enabled="Enabled"
-            if self.config.get("scrypt", {}).get("enabled", False)
-            else "Disabled",
+            scrypt_enabled=(
+                "Enabled" if self.config.get("scrypt", {}).get("enabled", False) else "Disabled"
+            ),
             scrypt_n=self.config.get("scrypt", {}).get("n", 16384),
             scrypt_r=self.config.get("scrypt", {}).get("r", 8),
             scrypt_p=self.config.get("scrypt", {}).get("p", 1),
             scrypt_rounds=self.config.get("scrypt", {}).get("rounds", 100),
-            argon2_enabled="Enabled"
-            if self.config.get("argon2", {}).get("enabled", False)
-            else "Disabled",
+            argon2_enabled=(
+                "Enabled" if self.config.get("argon2", {}).get("enabled", False) else "Disabled"
+            ),
             argon2_t=self.config.get("argon2", {}).get("time_cost", 3),
             argon2_m=self.config.get("argon2", {}).get("memory_cost", 65536),
             argon2_p=self.config.get("argon2", {}).get("parallelism", 4),
             argon2_rounds=self.config.get("argon2", {}).get("rounds", 100),
-            balloon_enabled="Enabled"
-            if self.config.get("balloon", {}).get("enabled", False)
-            else "Disabled",
+            balloon_enabled=(
+                "Enabled" if self.config.get("balloon", {}).get("enabled", False) else "Disabled"
+            ),
             balloon_s=self.config.get("balloon", {}).get("space_cost", 16),
             balloon_t=self.config.get("balloon", {}).get("time_cost", 20),
             balloon_d=self.config.get("balloon", {}).get("delta", 4),
             balloon_p=self.config.get("balloon", {}).get("parallel_cost", 4),
             balloon_rounds=self.config.get("balloon", {}).get("rounds", 1),
-            hkdf_enabled="Enabled"
-            if self.config.get("hkdf", {}).get("enabled", False)
-            else "Disabled",
+            hkdf_enabled=(
+                "Enabled" if self.config.get("hkdf", {}).get("enabled", False) else "Disabled"
+            ),
             hkdf_algorithm=self.config.get("hkdf", {}).get("algorithm", "sha256"),
             hkdf_rounds=self.config.get("hkdf", {}).get("rounds", 1),
             pbkdf2=self.config["pbkdf2_iterations"],

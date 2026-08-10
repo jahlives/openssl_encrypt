@@ -227,6 +227,7 @@ class Share:
         with open(filepath, "w") as f:
             f.write(self.to_json())
         from openssl_encrypt.modules.file_permissions import PermissionLevel, set_permissions
+
         set_permissions(filepath, PermissionLevel.OWNER_ONLY)
 
     @classmethod
@@ -353,9 +354,7 @@ def combine_shares(shares: List[Share]) -> bytes:
     indices = [s.metadata.share_index for s in shares]
     for idx in indices:
         if not isinstance(idx, int) or idx < 1 or idx > 255:
-            raise SecretSharingError(
-                f"Invalid share_index {idx}: must be an integer in [1, 255]"
-            )
+            raise SecretSharingError(f"Invalid share_index {idx}: must be an integer in [1, 255]")
 
     # Check for duplicate indices
     if len(set(indices)) != len(indices):

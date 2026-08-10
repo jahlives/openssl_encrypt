@@ -745,9 +745,9 @@ class PQCKeystore:
                 "purpose": key["purpose"],
                 "metadata": key["metadata"],
                 "is_default": key["key_id"] == self.keystore_data["default_key_id"],
-                "protection": "master_password"
-                if key.get("use_master_password", False)
-                else "key_password",
+                "protection": (
+                    "master_password" if key.get("use_master_password", False) else "key_password"
+                ),
             }
             result.append(key_info)
 

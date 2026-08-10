@@ -46,7 +46,6 @@ from openssl_encrypt.plugins.hsm.yubikey_challenge_response import (  # noqa: E4
     YubikeyHSMPlugin,
 )
 
-
 # RFC 2202 Section 3 — HMAC-SHA-1 test vectors that fit the YubiKey/OnlyKey
 # challenge-response constraints (20-byte secret, challenge ≤ 64 bytes).
 # A YubiKey/OnlyKey CR secret is always 20 bytes, so we skip RFC 2202 test 7
@@ -150,9 +149,9 @@ class TestCrossBackendHmacSha1Determinism(unittest.TestCase):
     def _onlykey_response(self, secret: bytes, challenge: bytes, slot: int = 1) -> bytes:
         plugin = OnlykeyHSMPlugin()
         device, session = _make_device_with_loaded_secret(secret)
-        with patch.object(
-            plugin, "_list_onlykey_devices", return_value=[device]
-        ), patch("yubikit.yubiotp.YubiOtpSession", return_value=session):
+        with patch.object(plugin, "_list_onlykey_devices", return_value=[device]), patch(
+            "yubikit.yubiotp.YubiOtpSession", return_value=session
+        ):
             return plugin._calculate_challenge_response(challenge, slot)
 
     def test_rfc_2202_vectors_match_canonical_expected(self):

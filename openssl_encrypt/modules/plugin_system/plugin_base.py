@@ -128,6 +128,7 @@ class PluginSecurityContext:
         temp_path = temp_file.name
         temp_file.close()
         from openssl_encrypt.modules.file_permissions import PermissionLevel, set_permissions
+
         set_permissions(temp_path, PermissionLevel.OWNER_ONLY)
         return temp_path
 

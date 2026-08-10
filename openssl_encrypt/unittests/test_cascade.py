@@ -1035,9 +1035,7 @@ class TestCascadeAllLayerAAD(unittest.TestCase):
 
         # With AAD on all layers, wrong AAD should fail at the outermost layer
         with self.assertRaises((AuthenticationError, CascadeError)):
-            cascade.decrypt(
-                ciphertext, self.master_key, self.salt, associated_data=b"wrong"
-            )
+            cascade.decrypt(ciphertext, self.master_key, self.salt, associated_data=b"wrong")
 
     def test_v12_ciphertext_differs_from_legacy_with_aad(self):
         """Test that v12+ AAD on all layers produces different ciphertext than legacy."""
@@ -1081,14 +1079,13 @@ class TestCascadeAllLayerAAD(unittest.TestCase):
             def wrapper(key, data, nonce=None, associated_data=None):
                 aad_calls.append((idx, associated_data))
                 return orig(key, data, nonce=nonce, associated_data=associated_data)
+
             return wrapper
 
         for i, cipher in enumerate(cascade.ciphers):
             cipher.encrypt = make_wrapper(original_encrypts[i], i)
 
-        cascade.encrypt(
-            self.plaintext, self.master_key, self.salt, associated_data=self.aad
-        )
+        cascade.encrypt(self.plaintext, self.master_key, self.salt, associated_data=self.aad)
 
         # Restore originals
         for i, cipher in enumerate(cascade.ciphers):
@@ -1109,14 +1106,13 @@ class TestCascadeAllLayerAAD(unittest.TestCase):
             def wrapper(key, data, nonce=None, associated_data=None):
                 aad_calls.append((idx, associated_data))
                 return orig(key, data, nonce=nonce, associated_data=associated_data)
+
             return wrapper
 
         for i, cipher in enumerate(cascade.ciphers):
             cipher.encrypt = make_wrapper(original_encrypts[i], i)
 
-        cascade.encrypt(
-            self.plaintext, self.master_key, self.salt, associated_data=self.aad
-        )
+        cascade.encrypt(self.plaintext, self.master_key, self.salt, associated_data=self.aad)
 
         for i, cipher in enumerate(cascade.ciphers):
             cipher.encrypt = original_encrypts[i]

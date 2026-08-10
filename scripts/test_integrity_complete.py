@@ -122,7 +122,7 @@ def test_store_hash(base_url: str, cert: tuple) -> Dict:
     payload = {
         "file_id": test_file_id,
         "metadata_hash": test_metadata_hash,
-        "description": "Test encrypted file for integration testing"
+        "description": "Test encrypted file for integration testing",
     }
 
     try:
@@ -163,10 +163,10 @@ def test_list_hashes(base_url: str, cert: tuple) -> Dict:
             print(f"✓ Hashes listed")
             print(f"  Total count: {data.get('total', 0)}")
 
-            if data.get('hashes'):
+            if data.get("hashes"):
                 print(f"  Hashes:")
-                for h in data['hashes'][:5]:  # Show first 5
-                    file_id_short = h['file_id'][:20] + "..."
+                for h in data["hashes"][:5]:  # Show first 5
+                    file_id_short = h["file_id"][:20] + "..."
                     print(f"    - {file_id_short}: {h.get('description', 'No description')}")
 
             return data
@@ -216,10 +216,7 @@ def test_verify_hash(base_url: str, cert: tuple, file_id: str, metadata_hash: st
     url = f"{base_url}/api/v1/integrity/verify"
     print(f"POST {url}")
 
-    payload = {
-        "file_id": file_id,
-        "metadata_hash": metadata_hash
-    }
+    payload = {"file_id": file_id, "metadata_hash": metadata_hash}
 
     try:
         response = requests.post(url, json=payload, cert=cert, timeout=10)
@@ -250,10 +247,7 @@ def test_update_hash(base_url: str, cert: tuple, file_id: str) -> Dict:
     # Generate new metadata hash
     new_metadata_hash = hashlib.sha256(b"updated-metadata-content").hexdigest()
 
-    payload = {
-        "metadata_hash": new_metadata_hash,
-        "description": "Updated test encrypted file"
-    }
+    payload = {"metadata_hash": new_metadata_hash, "description": "Updated test encrypted file"}
 
     try:
         response = requests.put(url, json=payload, cert=cert, timeout=10)

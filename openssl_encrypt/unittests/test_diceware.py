@@ -15,25 +15,19 @@ class TestEffWordlistBundled(unittest.TestCase):
     """The EFF Large Wordlist must be packaged at openssl_encrypt/data/eff_large_wordlist.txt."""
 
     def test_wordlist_file_is_present(self):
-        path = importlib.resources.files("openssl_encrypt").joinpath(
-            "data/eff_large_wordlist.txt"
-        )
+        path = importlib.resources.files("openssl_encrypt").joinpath("data/eff_large_wordlist.txt")
         self.assertTrue(path.is_file(), f"expected wordlist at {path}")
 
     def test_wordlist_has_7776_lines(self):
         """EFF Large Wordlist has exactly 7776 entries (6^5 = full 5-die mapping)."""
-        path = importlib.resources.files("openssl_encrypt").joinpath(
-            "data/eff_large_wordlist.txt"
-        )
+        path = importlib.resources.files("openssl_encrypt").joinpath("data/eff_large_wordlist.txt")
         with path.open("r", encoding="utf-8") as f:
             line_count = sum(1 for _ in f)
         self.assertEqual(line_count, 7776)
 
     def test_wordlist_lines_have_eff_format(self):
         """Each line is '<5-digit-dice><TAB><word>' (raw EFF format)."""
-        path = importlib.resources.files("openssl_encrypt").joinpath(
-            "data/eff_large_wordlist.txt"
-        )
+        path = importlib.resources.files("openssl_encrypt").joinpath("data/eff_large_wordlist.txt")
         with path.open("r", encoding="utf-8") as f:
             for i, line in enumerate(f):
                 line = line.rstrip("\n")
@@ -93,9 +87,7 @@ class TestLoadWordlist(unittest.TestCase):
 
         from openssl_encrypt.modules.diceware import load_wordlist
 
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".txt", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
             f.write("11111\talpha\n11112\tbravo\n11113\tcharlie\n")
             tmp = Path(f.name)
         try:
@@ -111,9 +103,7 @@ class TestLoadWordlist(unittest.TestCase):
 
         from openssl_encrypt.modules.diceware import load_wordlist
 
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".txt", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
             f.write("alpha\nbravo\ncharlie\n")
             tmp = Path(f.name)
         try:
@@ -129,9 +119,7 @@ class TestLoadWordlist(unittest.TestCase):
 
         from openssl_encrypt.modules.diceware import load_wordlist
 
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".txt", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
             f.write("\nalpha  \n\nbravo\n   \ncharlie\n\n")
             tmp = Path(f.name)
         try:
@@ -146,9 +134,7 @@ class TestLoadWordlist(unittest.TestCase):
 
         from openssl_encrypt.modules.diceware import load_wordlist
 
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".txt", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
             f.write("apple\nbanana\n")
             tmp_str = f.name
         try:
@@ -178,9 +164,7 @@ class TestWordlistValidation(unittest.TestCase):
         import tempfile
         from pathlib import Path
 
-        f = tempfile.NamedTemporaryFile(
-            mode="w", suffix=".txt", delete=False, encoding="utf-8"
-        )
+        f = tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False, encoding="utf-8")
         f.write(content)
         f.close()
         return Path(f.name)
@@ -265,9 +249,7 @@ class TestSmallWordlistThreshold(unittest.TestCase):
         import tempfile
         from pathlib import Path
 
-        f = tempfile.NamedTemporaryFile(
-            mode="w", suffix=".txt", delete=False, encoding="utf-8"
-        )
+        f = tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False, encoding="utf-8")
         for i in range(n_words):
             f.write(f"word{i:05d}\n")
         f.close()
@@ -303,9 +285,7 @@ class TestSmallWordlistThreshold(unittest.TestCase):
                 words = load_wordlist(tmp, force_small=True)
             self.assertEqual(len(words), 100)
             # Exactly one warning about the small list size.
-            small_warnings = [
-                w for w in caught if "small" in str(w.message).lower()
-            ]
+            small_warnings = [w for w in caught if "small" in str(w.message).lower()]
             self.assertEqual(len(small_warnings), 1)
         finally:
             tmp.unlink()

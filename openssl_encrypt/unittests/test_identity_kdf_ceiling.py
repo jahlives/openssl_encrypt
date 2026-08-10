@@ -39,12 +39,16 @@ class TestIdentityKdfCeiling(unittest.TestCase):
     def test_huge_memory_cost_refused_before_derivation(self):
         ip = IdentityKeyProtectionService()
         with self.assertRaises(ValidationError):
-            ip._derive_key(password="pw12345678", hsm_pepper=None, password_config=self._cfg(HUGE_MEMORY_KB))
+            ip._derive_key(
+                password="pw12345678", hsm_pepper=None, password_config=self._cfg(HUGE_MEMORY_KB)
+            )
 
     def test_huge_time_cost_refused(self):
         ip = IdentityKeyProtectionService()
         with self.assertRaises(ValidationError):
-            ip._derive_key(password="pw12345678", hsm_pepper=None, password_config=self._cfg(time_cost=10**6))
+            ip._derive_key(
+                password="pw12345678", hsm_pepper=None, password_config=self._cfg(time_cost=10**6)
+            )
 
     def test_default_config_still_derives(self):
         """Compat: the 64 MB identity default must derive a 32-byte key."""

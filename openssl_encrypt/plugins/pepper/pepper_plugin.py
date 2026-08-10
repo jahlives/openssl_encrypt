@@ -165,7 +165,9 @@ class PepperPlugin(BasePlugin):
             PepperError: If certificates not configured
         """
         if not self.config.client_cert or not self.config.client_key:
-            raise PepperError("Client certificate and key must be configured for mTLS authentication")
+            raise PepperError(
+                "Client certificate and key must be configured for mTLS authentication"
+            )
 
         session = requests.Session()
 
@@ -423,7 +425,9 @@ class PepperPlugin(BasePlugin):
         response = self._make_request("GET", "/peppers")
         return response["peppers"]
 
-    def update_pepper(self, name: str, pepper_encrypted: bytes, description: Optional[str] = None) -> Dict:
+    def update_pepper(
+        self, name: str, pepper_encrypted: bytes, description: Optional[str] = None
+    ) -> Dict:
         """
         Update existing pepper.
 

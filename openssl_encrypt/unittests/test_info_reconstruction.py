@@ -75,9 +75,7 @@ class TestReconstructCipher(unittest.TestCase):
             }
         }
         out = _reconstruct_cli_from_metadata(meta)
-        self.assertIn(
-            "--algorithm aes-256-gcm,chacha20-poly1305,threefish-512", out
-        )
+        self.assertIn("--algorithm aes-256-gcm,chacha20-poly1305,threefish-512", out)
 
     def test_missing_encryption_section_skipped(self):
         """No 'encryption' key in metadata → no algorithm/cascade in output."""
@@ -136,9 +134,7 @@ class TestReconstructPrimaryKdfs(unittest.TestCase):
     def test_argon2_disabled_skipped(self):
         from openssl_encrypt.modules.crypt_core import _reconstruct_cli_from_metadata
 
-        meta = self._meta_with_kdf(
-            "argon2", {"enabled": False, "time_cost": 3}
-        )
+        meta = self._meta_with_kdf("argon2", {"enabled": False, "time_cost": 3})
         out = _reconstruct_cli_from_metadata(meta)
         self.assertNotIn("--enable-argon2", out)
         self.assertNotIn("--argon2", out)
@@ -236,9 +232,7 @@ class TestReconstructSecondaryKdfs(unittest.TestCase):
     def test_hkdf_disabled_skipped(self):
         from openssl_encrypt.modules.crypt_core import _reconstruct_cli_from_metadata
 
-        out = _reconstruct_cli_from_metadata(
-            self._meta("hkdf", {"enabled": False, "rounds": 1})
-        )
+        out = _reconstruct_cli_from_metadata(self._meta("hkdf", {"enabled": False, "rounds": 1}))
         self.assertNotIn("--enable-hkdf", out)
 
     def test_randomx_enabled(self):
@@ -272,9 +266,7 @@ class TestReconstructSecondaryKdfs(unittest.TestCase):
     def test_randomx_disabled_skipped(self):
         from openssl_encrypt.modules.crypt_core import _reconstruct_cli_from_metadata
 
-        out = _reconstruct_cli_from_metadata(
-            self._meta("randomx", {"enabled": False, "rounds": 1})
-        )
+        out = _reconstruct_cli_from_metadata(self._meta("randomx", {"enabled": False, "rounds": 1}))
         self.assertNotIn("--enable-randomx", out)
 
 
@@ -287,17 +279,13 @@ class TestReconstructHashRounds(unittest.TestCase):
     def test_sha512_nonzero_rounds(self):
         from openssl_encrypt.modules.crypt_core import _reconstruct_cli_from_metadata
 
-        out = _reconstruct_cli_from_metadata(
-            self._meta({"sha512": {"rounds": 100000}})
-        )
+        out = _reconstruct_cli_from_metadata(self._meta({"sha512": {"rounds": 100000}}))
         self.assertIn("--sha512-rounds 100000", out)
 
     def test_sha512_zero_rounds_skipped(self):
         from openssl_encrypt.modules.crypt_core import _reconstruct_cli_from_metadata
 
-        out = _reconstruct_cli_from_metadata(
-            self._meta({"sha512": {"rounds": 0}})
-        )
+        out = _reconstruct_cli_from_metadata(self._meta({"sha512": {"rounds": 0}}))
         self.assertNotIn("--sha512-rounds", out)
 
     def test_sha256_scalar_form(self):
@@ -311,9 +299,7 @@ class TestReconstructHashRounds(unittest.TestCase):
         """Metadata key 'sha3_512' must become flag prefix 'sha3-512'."""
         from openssl_encrypt.modules.crypt_core import _reconstruct_cli_from_metadata
 
-        out = _reconstruct_cli_from_metadata(
-            self._meta({"sha3_512": {"rounds": 5}})
-        )
+        out = _reconstruct_cli_from_metadata(self._meta({"sha3_512": {"rounds": 5}}))
         self.assertIn("--sha3-512-rounds 5", out)
         self.assertNotIn("--sha3_512-rounds", out)
 
@@ -349,9 +335,7 @@ class TestReconstructHashRounds(unittest.TestCase):
         """Hash names not in the supported set are silently skipped."""
         from openssl_encrypt.modules.crypt_core import _reconstruct_cli_from_metadata
 
-        out = _reconstruct_cli_from_metadata(
-            self._meta({"some-future-hash": {"rounds": 100}})
-        )
+        out = _reconstruct_cli_from_metadata(self._meta({"some-future-hash": {"rounds": 100}}))
         # Should not appear in output (no flag for it).
         self.assertNotIn("--some-future-hash-rounds", out)
         self.assertNotIn("some-future-hash", out)
@@ -415,9 +399,7 @@ class TestReconstructHsmFlags(unittest.TestCase):
         """Future plugin like 'newhsm_hsm' → --hsm newhsm (suffix-stripped)."""
         from openssl_encrypt.modules.crypt_core import _reconstruct_cli_from_metadata
 
-        meta = {
-            "encryption": {"algorithm": "aes-gcm", "hsm_plugin": "newhsm_hsm"}
-        }
+        meta = {"encryption": {"algorithm": "aes-gcm", "hsm_plugin": "newhsm_hsm"}}
         out = _reconstruct_cli_from_metadata(meta)
         self.assertIn("--hsm newhsm", out)
 
@@ -454,9 +436,7 @@ class TestReconstructPepperFlags(unittest.TestCase):
     def test_no_pepper_in_metadata(self):
         from openssl_encrypt.modules.crypt_core import _reconstruct_cli_from_metadata
 
-        out = _reconstruct_cli_from_metadata(
-            {"encryption": {"algorithm": "aes-gcm"}}
-        )
+        out = _reconstruct_cli_from_metadata({"encryption": {"algorithm": "aes-gcm"}})
         self.assertNotIn("--pepper", out)
 
 
@@ -471,11 +451,7 @@ class TestReconstructRemovedAlgorithmsV15(unittest.TestCase):
     def test_pbkdf2_emitted_as_comment_with_migration_hint(self):
         from openssl_encrypt.modules.crypt_core import _reconstruct_cli_from_metadata
 
-        meta = {
-            "derivation_config": {
-                "kdf_config": {"pbkdf2": {"rounds": 100000}}
-            }
-        }
+        meta = {"derivation_config": {"kdf_config": {"pbkdf2": {"rounds": 100000}}}}
         out = _reconstruct_cli_from_metadata(meta)
         # Must NOT emit a live --pbkdf2-iterations flag (would error on v1.5).
         # The flag may appear in a comment; check for absence of a
@@ -483,9 +459,7 @@ class TestReconstructRemovedAlgorithmsV15(unittest.TestCase):
         for line in out.splitlines():
             stripped = line.strip()
             if stripped.startswith("--pbkdf2-iterations"):
-                self.fail(
-                    f"PBKDF2 should be commented out on v1.5, found live: {line!r}"
-                )
+                self.fail(f"PBKDF2 should be commented out on v1.5, found live: {line!r}")
         # Must include a comment with the original value AND the migration
         # hint ("removed in v1.5" + replacement suggestion).
         self.assertRegex(out, r"#\s*--pbkdf2-iterations 100000")
@@ -495,24 +469,16 @@ class TestReconstructRemovedAlgorithmsV15(unittest.TestCase):
     def test_whirlpool_emitted_as_comment_with_migration_hint(self):
         from openssl_encrypt.modules.crypt_core import _reconstruct_cli_from_metadata
 
-        meta = {
-            "derivation_config": {
-                "hash_config": {"whirlpool": {"rounds": 5000}}
-            }
-        }
+        meta = {"derivation_config": {"hash_config": {"whirlpool": {"rounds": 5000}}}}
         out = _reconstruct_cli_from_metadata(meta)
         for line in out.splitlines():
             stripped = line.strip()
             if stripped.startswith("--whirlpool-rounds"):
-                self.fail(
-                    f"Whirlpool should be commented out on v1.5, found live: {line!r}"
-                )
+                self.fail(f"Whirlpool should be commented out on v1.5, found live: {line!r}")
         self.assertRegex(out, r"#\s*--whirlpool-rounds 5000")
         self.assertIn("removed in v1.5", out)
         # Migration suggestion mentions a v1.5-supported hash.
-        self.assertTrue(
-            "SHA-512" in out or "BLAKE2b" in out or "BLAKE3" in out
-        )
+        self.assertTrue("SHA-512" in out or "BLAKE2b" in out or "BLAKE3" in out)
 
     def test_pbkdf2_zero_rounds_skipped_entirely(self):
         """No comment if the algorithm wasn't actually used."""
@@ -555,9 +521,7 @@ class TestReconstructionRoundTrip(unittest.TestCase):
             extract_file_metadata,
         )
 
-        with tempfile.NamedTemporaryFile(
-            mode="wb", delete=False, suffix=".txt"
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="wb", delete=False, suffix=".txt") as f:
             f.write(b"round-trip property test payload\n")
             in_path = f.name
         out_path = in_path + ".enc"
@@ -718,4 +682,5 @@ class TestPrintFileInfoIncludesReconstruction(unittest.TestCase):
 
 if __name__ == "__main__":
     import sys  # for sys.argv/stderr/stdout above
+
     unittest.main()

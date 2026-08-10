@@ -268,9 +268,7 @@ class FakeToken:
         # non-None user_pin MUST be a str. Passing bytes raises AttributeError
         # on real hardware -- reproduce that here so the bug can't slip through.
         if user_pin is not None and not isinstance(user_pin, str):
-            raise AttributeError(
-                f"'{type(user_pin).__name__}' object has no attribute 'encode'"
-            )
+            raise AttributeError(f"'{type(user_pin).__name__}' object has no attribute 'encode'")
         # Record exactly what the host sent (used to assert "" on biometric flow).
         self.open_calls.append({"rw": rw, "user_pin": user_pin})
         if self._open_error is not None:
