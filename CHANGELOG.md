@@ -1813,10 +1813,12 @@ inflated KDF metadata parameters, not cosmetic output.
   thread pool, byte-identical to sequential by construction), retiring
   `_hash_worker`/`_kdf_worker` and the progress-queue machinery outright, so
   the two paths can never drift again. Balloon works under `--parallel-kdf`,
-  and the all-empty-config refusal now lives in the shared path — scoped to
-  encryption, so any legacy file's recorded metadata still derives
-  (previously the check was unreachable and an all-empty config silently
-  derived an unstretched single hash as the key).
+  and the all-empty-config handling now lives in the shared path: a parallel
+  request is refused (the retired dispatcher's contract), the sequential
+  path keeps deriving for API compatibility but now warns that the key is a
+  single unstretched hash (previously the check was unreachable and it
+  proceeded silently), and decryption metadata is fully exempt so any legacy
+  file stays readable.
 
 - **Secret-redaction follow-ups from the #144 review** (gitlab#147), four
   hardening fixes (no user-relevant vulnerability, so no advisory):
