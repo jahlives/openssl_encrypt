@@ -3279,6 +3279,31 @@ def generate_key_independent_xor(
                     f"Deriving {len(component_tasks)} independent KDF components "
                     f"in parallel ({workers} workers)..."
                 )
+            # Resolve the components' heavy lazy imports on the main thread
+            # before any worker starts (gitlab#224 item 10). First-time module
+            # imports inside worker threads are safe (per-module import locks)
+            # but move real work off the main thread -- importing .randomx
+            # runs module-level subprocess availability probes -- and would
+            # deadlock if this function were ever reached during a caller's
+            # own module import. Failures are ignored here: the component
+            # thunk fails closed with its proper error (e.g. the RandomX
+            # ValidationError, #71). Labels are pinned by
+            # test_indep_xor_component_pins_224.py.
+            for _label, _thunk, _mem in component_tasks:
+                try:
+                    if _label.startswith("BLAKE3 "):
+                        import blake3  # noqa: F401
+                    elif _label.startswith("WHIRLPOOL "):
+                        import whirlpool  # noqa: F401
+                    elif _label == "Argon2 KDF":
+                        import argon2.low_level  # noqa: F401
+                    elif _label == "Balloon KDF":
+                        from . import balloon  # noqa: F401
+                    elif _label == "RandomX KDF":
+                        from . import randomx  # noqa: F401
+                except Exception:
+                    pass  # the thunk raises the authoritative error
+
             # No `with` block: its __exit__ is shutdown(wait=True), which would
             # re-block an abort (Ctrl-C) until every running component finishes.
             executor = ThreadPoolExecutor(max_workers=workers)

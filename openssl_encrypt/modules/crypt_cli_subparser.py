@@ -3343,16 +3343,19 @@ def build_subparser():
     parser.add_argument(
         "--parallel-kdf",
         action="store_true",
-        help="Use parallel processing for key derivation (v11 only, requires --independent-xor). "
-        "Speeds up encryption by running hash algorithms and KDFs concurrently. "
-        "Requires multiprocessing support.",
+        help="Derive the independent KDF components concurrently on a thread pool. "
+        "Applies to every producible format (the derived key is byte-identical, so "
+        "the flag is never needed to decrypt). Speeds up configs with several "
+        "memory-hard KDFs (Argon2, Scrypt); pure hash-round components gain "
+        "little (they serialize on the Python GIL).",
     )
     parser.add_argument(
         "--kdf-workers",
         type=int,
         default=None,
         metavar="N",
-        help="Number of parallel workers for KDF (default: auto-detect, max: CPU count). "
+        help="Number of parallel workers for KDF (default: auto-detect; capped at CPU "
+        "count, component count and a concurrent-memory safety ceiling). "
         "Only used with --parallel-kdf.",
     )
     parser.add_argument("--verbose", action="store_true", help="Show hash/kdf details")

@@ -842,6 +842,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Parallel-KDF truthfulness and pinning follow-ups** (gitlab#224 items
+  6/7/9/10): the `--parallel-kdf` help still described the retired
+  implementation ("v11 only, requires --independent-xor … Requires
+  multiprocessing support"); both parsers now state what the flag actually
+  does — thread-pool derivation for every producible format, byte-identical
+  key, never needed to decrypt — and set honest performance expectations
+  (measured: memory-hard KDF configs ~1.9× faster, pure hash-round configs
+  ~1.0× because the loops serialize on the GIL). The components' heavy lazy
+  imports (blake3, whirlpool, argon2, balloon, randomx — the last runs
+  subprocess availability probes at import) are resolved on the main thread
+  before workers start. New golden pins cover the component-salt names and a
+  one-of-each-component key for v13/v14 in both modes — previously only
+  sha256/argon2/scrypt had goldens, so a typo in any other component's
+  domain-separation name would have changed derived keys undetected. Stale
+  "parallel delegates to sequential" invariant wording in the balloon
+  fail-closed tests updated to describe the thread-pool reality.
+
 - **`--parallel-kdf` now actually parallelizes v13/v14 files** (gitlab#220):
   the only formats this line can produce are v14 (the default) and v13, both of
   which use the Independent-XOR key derivation. `--parallel-kdf` routed those

@@ -13,8 +13,10 @@ Decision (2026-07-13): version-gated fail-closed -
 - format_version >= 14 + balloon enabled + space_cost absent -> ValueError
 - v11-13 and version-less callers keep the 16 fallback (legacy compat)
 
-The parallel KDF path needs no gate of its own: for format_version >= 13 it
-delegates to the sequential path (parallel_kdf.py), an invariant guarded here.
+The parallel KDF path needs no gate of its own: every format delegates to the
+gated component functions (compute_kdf_independent), which since gitlab#220/#224
+run either inline or in worker threads whose exceptions re-raise through
+future.result() -- an invariant guarded here.
 """
 
 import os
@@ -106,9 +108,11 @@ class TestBalloonV14FailClosedIntegration(unittest.TestCase):
         self.assertTrue(len(bytes(key)) >= 32)
 
     def test_parallel_v14_delegates_to_sequential(self):
-        """Invariant that makes a parallel-side gate unnecessary: v13+ parallel
-        dispatch delegates to the sequential (gated) path before any worker
-        touches a balloon config."""
+        """Invariant that makes a parallel-side gate unnecessary: parallel
+        dispatch delegates to generate_key_independent_xor, whose gated
+        component functions run in the worker threads and re-raise through
+        future.result() (gitlab#224 rewording; the gate itself is exercised
+        by the tests above)."""
         from openssl_encrypt.modules.parallel_kdf import generate_key_independent_xor_parallel
 
         sentinel = (b"k" * 32, SALT, {})
