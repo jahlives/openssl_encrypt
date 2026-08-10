@@ -255,12 +255,9 @@ Cargo.lock
 # Local tool/test output artifacts
 output.txt
 precommit_output.txt
-after_*.txt
-baseline_*.txt
 
 # Local test/baseline logs
 test-logs/
 
 # unittest workflow logs (CLAUDE.md baseline/after comparison)
-test_baseline.log
-test_after.log
+test_*.log
