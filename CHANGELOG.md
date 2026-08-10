@@ -1760,6 +1760,28 @@ inflated KDF metadata parameters, not cosmetic output.
 
 ### Security
 
+- **Parallel-KDF thread-pool hardening** (gitlab#224, hardening — no
+  user-relevant vulnerability, so no advisory): the #220 pool defaulted to one
+  worker per component (up to 12 threads) regardless of cores; it now honors
+  the `--kdf-workers` contract ("max: CPU count") — capped at the CPU count,
+  the component count, **and** the largest count whose worst-case co-resident
+  memory-hard components stay within the 8 GiB decrypt safety ceiling
+  (concurrency turns peak KDF memory from max(components) into a sum, and the
+  encrypt path had no ceiling check of its own — a custom high-memory config
+  could previously be encrypted above the ceiling and then be refused by
+  `decrypt --parallel-kdf`'s summed-estimate enforcement). Per-component
+  memory comes from the same estimator the decrypt ceiling uses, so encrypt
+  and decrypt agree on what a config costs; an unparseable config estimates
+  as over-ceiling and degrades toward sequential execution. Abort handling:
+  Ctrl-C while deriving no longer gets captured as a component failure — it
+  previously made the pool drain **every** remaining component (minutes of
+  apparent hang for expensive configs, and a second Ctrl-C then bypassed the
+  error-path zeroization sweep); the abort now propagates immediately,
+  cancels unstarted components and deterministically wipes the already-
+  collected component buffers. When several components fail, the non-first
+  failures are now logged (labels and exception text only) instead of
+  silently vanishing behind the first.
+
 - **Legacy `--parallel-kdf` dispatcher retired; every format now derives
   through the single component implementation** (gitlab#224, hardening — no
   user-relevant vulnerability, so no advisory): the parallel entry point kept
