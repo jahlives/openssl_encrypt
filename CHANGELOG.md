@@ -477,6 +477,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - dev-only: `nltk` 3.9.4 → 3.10.0 — CVE-2026-12061 (ReDoS), 12072/12074
     (path traversal in corpus readers), 12075 (DNS-rebinding SSRF filter
     bypass); not imported by the shipped package.
+  - dev-only: `black` → 26.3.1 — CVE-2026-32274 (arbitrary file write via an
+    unsanitized cache filename); dev-time formatter, coordinated with the
+    `.pre-commit-config.yaml` rev (which had drifted to 23.12.1), and the
+    tree was reformatted to match.
   The flatpak build manifest's `cryptography`/`Pillow` pins were bumped in
   lockstep (enforced by `test_flatpak_pin_consistency`).
 

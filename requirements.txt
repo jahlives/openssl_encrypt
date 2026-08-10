@@ -32,5 +32,5 @@ requests>=2.31.0,<3.0.0
 # Development tools (commented out by default)
 pytest>=9.0.3,<10.0.0
 pytest-cov>=4.1.0,<5.0.0
-black==26.1.0  # keep in sync with the black rev pinned in .pre-commit-config.yaml
+black==26.3.1  # keep in sync with the black rev pinned in .pre-commit-config.yaml (CVE-2026-32274)
 pylint>=3.0.0,<4.0.0
