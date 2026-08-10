@@ -854,6 +854,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The orphan-password NOTE now fires on every incomplete encrypt exit,
+  with wording that tracks whether a usable ciphertext exists**
+  (gitlab#223): the `--random-password-out` file is written before the
+  ciphertext, and the NOTE announcing a leftover 0600 orphan was wired into
+  individually chosen early-exit sites — a set the #222 review found
+  incomplete (XOR mutual-exclusivity aborts, keystore-branch failures and
+  validation `sys.exit(1)` sites bypass the top-level `except Exception` by
+  language rule, leaving an unannounced orphan a retry then refuses with
+  `FileExistsError`). Coverage is now structural: the encrypt dispatch runs
+  under a `try/finally` tracking two facts — *a usable output exists on
+  disk* (set the moment the ciphertext is written, before stego/armor
+  post-processing) and *the run completed normally* (set last). Every
+  incomplete exit announces the orphan exactly once; the wording says
+  "verify before removing" whenever an output may exist (e.g. a
+  steganography or armor failure after the ciphertext was written — telling
+  the user "you can remove it" there would delete the only credential of a
+  live encrypted file) and "you can remove it" only when provably none
+  does; and a completed run stays silent. The same guarded NOTE now also
+  fires from the signal handler (Ctrl-C during a memory-hard KDF was the
+  most likely unannounced orphan of all — a signal death runs neither the
+  dispatch `finally` nor `atexit`). A pre-existing `--random-password-out`
+  destination is refused with its own message instead of the removable-
+  orphan NOTE (it may hold the password of an earlier, successful run), and
+  the NOTE sanitizes the echoed path like every other untrusted terminal
+  echo (#172 discipline).
+
 - **Parallel-KDF truthfulness and pinning follow-ups** (gitlab#224 items
   6/7/9/10): the `--parallel-kdf` help still described the retired
   implementation ("v11 only, requires --independent-xor … Requires

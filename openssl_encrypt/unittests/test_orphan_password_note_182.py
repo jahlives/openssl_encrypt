@@ -67,9 +67,41 @@ class TestOrphanNoteHelper(unittest.TestCase):
 
 
 class TestEarlyExitPathsCallTheHelper(unittest.TestCase):
-    """Guard the regression: the early-exit paths must keep calling the helper."""
+    """Guard the regression: since gitlab#223 the coverage is structural -- a
+    try/finally around the dispatch (which catches every SystemExit/return-1
+    site uniformly) plus the pre-dispatch write-failure site. Scattered
+    per-site calls are exactly what proved incomplete twice (#182, the #222
+    review), so this pins the finally-based shape instead of a site count."""
 
-    def test_main_with_args_calls_the_helper_at_multiple_sites(self):
+    def test_the_helper_is_called_from_a_finally_block(self):
+        from openssl_encrypt.modules import crypt_cli
+
+        tree = ast.parse(inspect.getsource(crypt_cli.main_with_args))
+
+        def _calls_helper(node):
+            return any(
+                isinstance(n, ast.Call)
+                and isinstance(n.func, ast.Name)
+                and n.func.id == "_warn_orphan_random_password"
+                for n in ast.walk(node)
+            )
+
+        finally_calls = [
+            t
+            for t in ast.walk(tree)
+            if isinstance(t, ast.Try) and any(_calls_helper(s) for s in t.finalbody)
+        ]
+        self.assertEqual(len(finally_calls), 1, "the dispatch finally must announce the orphan")
+        # The call must be guarded by the completion flag (an unconditional
+        # call would fire after every successful encrypt) and must pass the
+        # on-disk fact rather than a hardcoded literal (gitlab#223 review
+        # f1/f2: hardcoding False told users to delete the only credential
+        # of a live ciphertext after a post-processing failure).
+        finalbody_src = ast.unparse(ast.Module(body=finally_calls[0].finalbody, type_ignores=[]))
+        self.assertIn("if not _encrypt_completed", finalbody_src)
+        self.assertIn("ciphertext_maybe_written=_ciphertext_on_disk", finalbody_src)
+
+    def test_only_the_write_failure_site_remains_outside_the_finally(self):
         from openssl_encrypt.modules import crypt_cli
 
         tree = ast.parse(inspect.getsource(crypt_cli.main_with_args))
@@ -80,8 +112,10 @@ class TestEarlyExitPathsCallTheHelper(unittest.TestCase):
             and isinstance(node.func, ast.Name)
             and node.func.id == "_warn_orphan_random_password"
         ]
-        # top-level except + write-failure + cascade-diversity + two stego sites.
-        self.assertGreaterEqual(len(calls), 5)
+        # finally + the pre-dispatch password-write-failure handler + the
+        # signal handler (a signal death runs neither the finally nor
+        # atexit). More sites means scattered wiring is creeping back in.
+        self.assertEqual(len(calls), 3)
 
 
 if __name__ == "__main__":
