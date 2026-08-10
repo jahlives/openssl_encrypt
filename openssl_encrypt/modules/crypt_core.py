@@ -1893,6 +1893,8 @@ def _warm_component_imports(component_ids: list) -> None:
             if comp_id == "blake3":
                 import blake3  # noqa: F401
             elif comp_id == "whirlpool":
+                # Unreachable on 1.5.x (whirlpool removed) -- kept for
+                # cross-line code parity with 1.4.x.
                 import whirlpool  # noqa: F401
             elif comp_id == "argon2":
                 import argon2.low_level  # noqa: F401
@@ -2847,7 +2849,11 @@ def generate_key_independent_xor(
             futures = []
             results = []
             try:
-                futures = [executor.submit(thunk) for _c, _l, thunk, _m in component_tasks]
+                # Explicit append loop (not a comprehension): if a submit
+                # raises mid-way, the already-submitted futures stay
+                # reachable for the handler's wipe below (re-review rA).
+                for _c, _l, _thunk, _m in component_tasks:
+                    futures.append(executor.submit(_thunk))
                 # Drain EVERY future before acting on the outcome. If a component
                 # fails (e.g. RandomX fail-closed, #71), the other workers may
                 # already have produced SecureBytes results that are held only by
@@ -2884,30 +2890,41 @@ def generate_key_independent_xor(
                             f"INDEPENDENT-XOR: Added {label} component #{len(xor_components)}"
                         )
             except BaseException as _exc:
+                # Any unwind -- component failure (first_error re-raised
+                # above), an unexpected Exception (MemoryError, a logging
+                # failure), or a true abort -- must not leave collected
+                # component buffers waiting on GC (re-review rA).
+                for _r in results:
+                    try:
+                        secure_memzero(_r)
+                    except Exception:
+                        pass  # Best effort cleanup
                 if not isinstance(_exc, Exception):
                     # Abort (KeyboardInterrupt/SystemExit) anywhere in the
                     # submit/drain/collect window (gitlab#224 item 3 +
                     # re-review f2): do NOT treat it as a component failure
                     # and do NOT keep draining or re-joining the pool.
-                    # Unstarted components are cancelled; running ones finish
-                    # in their worker threads and their unreferenced
-                    # SecureBytes results are wiped by __del__.
+                    # Unstarted components are cancelled.
                     interrupted = True
                     executor.shutdown(wait=False, cancel_futures=True)
-                    for _r in results:
-                        try:
-                            secure_memzero(_r)
-                        except Exception:
-                            pass  # Best effort cleanup
+
                     # Completed-but-unretrieved futures still hold their
                     # component SecureBytes in future._result, reachable for
                     # as long as the propagating traceback keeps this frame
-                    # alive (re-review f3). Sweep them too; every call here
-                    # is non-blocking on a done future.
+                    # alive (re-review f3). A done-callback wipes each --
+                    # it fires inline for already-done futures and in the
+                    # worker thread for ones that finish after the abort
+                    # (re-review rB), so no result waits on frame lifetime.
+                    def _wipe_future_result(_fut):
+                        try:
+                            if not _fut.cancelled() and _fut.exception() is None:
+                                secure_memzero(_fut.result())
+                        except Exception:
+                            pass  # Best effort cleanup
+
                     for _fut in futures:
                         try:
-                            if _fut.done() and not _fut.cancelled() and _fut.exception() is None:
-                                secure_memzero(_fut.result())
+                            _fut.add_done_callback(_wipe_future_result)
                         except Exception:
                             pass  # Best effort cleanup
                 raise
@@ -10696,6 +10713,10 @@ def decrypt_file(
             # the sum of the `workers` largest component estimates. Using
             # total_memory_kb here refused legitimately-produced files with
             # more than two memory-hard components.
+            # Note: the breakdown may list operations the independent-XOR
+            # path never runs (e.g. a metadata-only pbkdf2 entry); phantom
+            # small entries are conservative and cannot weaken the guard --
+            # refusal is equivalent to a single component over the ceiling.
             _mems = sorted((m for _n, _t, m in _kdf_estimate.breakdown), reverse=True)
             _workers = _parallel_kdf_worker_limit(kdf_workers, _mems, quiet=True)
             _peak_kb = sum(_mems[:_workers])
