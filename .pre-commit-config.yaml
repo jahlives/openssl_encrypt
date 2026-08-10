@@ -8,7 +8,14 @@ repos:
     rev: v6.0.0
     hooks:
       - id: trailing-whitespace
+        # Never touch the test fixtures: many are raw binary (encrypted blobs,
+        # DER/raw keys) where an appended newline corrupts the AES-GCM tag or
+        # overruns a fixed-length key -- exactly what happened to the 1.4.x
+        # asymmetric_wrap fixtures (gitlab#227). Same exclude detect-private-key
+        # already has.
+        exclude: '^openssl_encrypt/unittests/testfiles/'
       - id: end-of-file-fixer
+        exclude: '^openssl_encrypt/unittests/testfiles/'
       - id: check-yaml
       - id: check-added-large-files
         args: ['--maxkb=500']
