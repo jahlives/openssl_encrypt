@@ -2234,14 +2234,24 @@ def setup_identity_parser(subparser):
     )
     create_parser.add_argument(
         "--hsm",
-        choices=["none", "yubikey", "yubikey-only", "onlykey", "onlykey-only"],
+        choices=[
+            "none",
+            "yubikey",
+            "yubikey-only",
+            "onlykey",
+            "onlykey-only",
+            "piv",
+            "piv-only",
+        ],
         default="none",
         help="HSM protection for private keys: "
         "'none' (default, password only), "
         "'yubikey' (password + Yubikey required, slots 1..2), "
         "'yubikey-only' (Yubikey only, no password), "
         "'onlykey' (password + OnlyKey required, slots 1..12), "
-        "'onlykey-only' (OnlyKey only, no password)",
+        "'onlykey-only' (OnlyKey only, no password), "
+        "'piv' (password + PIV/PKCS#11 token; needs --hsm-pkcs11-lib), "
+        "'piv-only' (PIV token only, no password)",
     )
     create_parser.add_argument(
         "--hsm-slot",
@@ -2249,12 +2259,10 @@ def setup_identity_parser(subparser):
         help="HSM slot for Challenge-Response. "
         "YubiKey 1..2, OnlyKey 1..12. Default: auto-detect.",
     )
-    # NB: the PIV/PKCS#11 args (_add_piv_hsm_arguments) are deliberately NOT
-    # added here. `identity create` binds an identity to a Challenge-Response
-    # HSM (yubikey/onlykey); its --hsm choices exclude 'piv', and cmd_create
-    # never reads --hsm-piv-slot/--hsm-pkcs11-lib/--hsm-biometric, so declaring
-    # them only let a caller pass a value that was silently ignored (gitlab#163
-    # / gitlab#218 finding 1).
+    # PIV/PKCS#11 args for --hsm piv / piv-only (gitlab#218). The PIV config
+    # (module path, key slot, biometric flag) is persisted with the identity so
+    # it can be unlocked later without re-supplying these flags.
+    _add_piv_hsm_arguments(create_parser)
     create_parser.add_argument(
         "--no-touch",
         action="store_true",

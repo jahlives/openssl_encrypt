@@ -110,38 +110,78 @@ def cmd_create(args) -> int:
         elif hsm_option == "onlykey-only":
             protection_level = ProtectionLevel.HSM_ONLY
             hsm_type = "onlykey"
+        elif hsm_option == "piv":
+            protection_level = ProtectionLevel.PASSWORD_AND_HSM
+            hsm_type = "piv"
+        elif hsm_option == "piv-only":
+            protection_level = ProtectionLevel.HSM_ONLY
+            hsm_type = "piv"
         else:
             print(f"ERROR: Unknown HSM option: {hsm_option}", file=sys.stderr)
             return 1
+
+        # PIV / PKCS#11 configuration (gitlab#218). Persisted with the identity
+        # by Identity.generate so unlock does not need it re-supplied.
+        piv_pkcs11_lib = getattr(args, "hsm_pkcs11_lib", None)
+        piv_slot = getattr(args, "hsm_piv_slot", None)
+        piv_biometric = bool(getattr(args, "hsm_biometric", False))
 
         # Check HSM availability if required
         if protection_level in (
             ProtectionLevel.PASSWORD_AND_HSM,
             ProtectionLevel.HSM_ONLY,
         ):
-            protection_service = IdentityKeyProtectionService(hsm_type=hsm_type)
-            device_label = "OnlyKey" if hsm_type == "onlykey" else "Yubikey"
-            if not protection_service.is_hsm_available():
-                eprint(
-                    f"ERROR: {device_label} not found. Please insert your {device_label}.",
-                    file=sys.stderr,
+            if hsm_type == "piv":
+                # PIV: addressed by a PKCS#11 module + PIV key slot, not an
+                # HMAC-SHA1 Challenge-Response slot (gitlab#218). Require the
+                # module path up front and probe the token with it.
+                if not piv_pkcs11_lib:
+                    eprint(
+                        "ERROR: --hsm piv requires --hsm-pkcs11-lib PATH "
+                        "(e.g. /usr/lib/opensc-pkcs11.so or the ykcs11 module).",
+                        file=sys.stderr,
+                    )
+                    return 1
+                protection_service = IdentityKeyProtectionService(
+                    hsm_type="piv",
+                    pkcs11_lib_path=piv_pkcs11_lib,
+                    piv_slot=piv_slot,
+                    biometric=piv_biometric,
                 )
-                return 1
+                if not protection_service.is_hsm_available():
+                    eprint(
+                        "ERROR: PIV token not available. Check that it is "
+                        "inserted and that --hsm-pkcs11-lib points at the right "
+                        "PKCS#11 module.",
+                        file=sys.stderr,
+                    )
+                    return 1
+                # No CR slot to auto-detect for PIV.
+                hsm_slot = None
+            else:
+                protection_service = IdentityKeyProtectionService(hsm_type=hsm_type)
+                device_label = "OnlyKey" if hsm_type == "onlykey" else "Yubikey"
+                if not protection_service.is_hsm_available():
+                    eprint(
+                        f"ERROR: {device_label} not found. Please insert your {device_label}.",
+                        file=sys.stderr,
+                    )
+                    return 1
 
-            detected_slot = protection_service.detect_hsm_slot()
-            if detected_slot is None:
-                slot_range = "1..12" if hsm_type == "onlykey" else "1 or 2"
-                eprint(
-                    f"ERROR: No Challenge-Response slot configured on {device_label}.\n"
-                    f"Please configure slot {slot_range} for HMAC-SHA1 Challenge-Response.",
-                    file=sys.stderr,
-                )
-                return 1
+                detected_slot = protection_service.detect_hsm_slot()
+                if detected_slot is None:
+                    slot_range = "1..12" if hsm_type == "onlykey" else "1 or 2"
+                    eprint(
+                        f"ERROR: No Challenge-Response slot configured on {device_label}.\n"
+                        f"Please configure slot {slot_range} for HMAC-SHA1 Challenge-Response.",
+                        file=sys.stderr,
+                    )
+                    return 1
 
-            hsm_slot = getattr(args, "hsm_slot", None)
-            if hsm_slot is None:
-                hsm_slot = detected_slot
-                eprint(f"Using {device_label} slot {hsm_slot} (auto-detected)")
+                hsm_slot = getattr(args, "hsm_slot", None)
+                if hsm_slot is None:
+                    hsm_slot = detected_slot
+                    eprint(f"Using {device_label} slot {hsm_slot} (auto-detected)")
 
         # Get passphrase (not required for HSM_ONLY)
         passphrase = None
@@ -163,7 +203,11 @@ def cmd_create(args) -> int:
         eprint(f"Generating identity for '{sanitize_for_display(args.name)}'...")
 
         if protection_level in (ProtectionLevel.PASSWORD_AND_HSM, ProtectionLevel.HSM_ONLY):
-            eprint("Touch your Yubikey to generate keys...")
+            if hsm_type == "piv":
+                eprint("Authenticate to your PIV token (PIN) to generate keys...")
+            else:
+                _dl = "OnlyKey" if hsm_type == "onlykey" else "Yubikey"
+                eprint(f"Touch your {_dl} to generate keys...")
 
         hsm_slot_arg = getattr(args, "hsm_slot", None)
         require_touch = not getattr(args, "no_touch", False)
@@ -181,6 +225,11 @@ def cmd_create(args) -> int:
             # `--hsm onlykey` was silently recorded and unlocked as yubikey
             # (gitlab#218); hsm_type is otherwise the "yubikey" default.
             hsm_type=hsm_type,
+            # PIV config, persisted so the identity unlocks later without it
+            # being re-supplied (gitlab#218). None for non-PIV identities.
+            pkcs11_lib_path=(piv_pkcs11_lib if hsm_type == "piv" else None),
+            piv_slot=(piv_slot if hsm_type == "piv" else None),
+            biometric=(piv_biometric if hsm_type == "piv" else False),
         )
 
         # Save to store. This is the user's OWN identity being generated
