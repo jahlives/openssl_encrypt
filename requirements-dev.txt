@@ -22,7 +22,7 @@ authlib==1.6.12
     # via safety
 bandit==1.7.10
     # via -r requirements-dev.in
-black==26.1.0
+black==26.3.1
     # via -r requirements-dev.in
 blake3==1.0.8
     # via -r requirements-prod.in
