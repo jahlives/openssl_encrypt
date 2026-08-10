@@ -163,15 +163,28 @@ class TestArgparseStillRejectsALeadingSeparator(unittest.TestCase):
     notices, instead of a user debugging a mis-parsed command line.
     """
 
-    def test_argparse_does_not_strip_it_before_a_subparser(self):
+    def test_argparse_separator_handling_matches_the_interpreter(self):
+        # Empirically pinned across supported interpreters (setup.py: 3.11-3.14):
+        # Python 3.11 rejects `-- <subcommand>` before a subparser with
+        # "invalid choice: '--'", which is why preprocess_global_args strips a
+        # leading separator. Python 3.12 changed argparse to accept it natively
+        # (verified: 3.11 -> SystemExit; 3.12/3.13/3.14 -> parses to the
+        # subcommand). The strip is therefore redundant-but-harmless on 3.12+
+        # and stays only for 3.11 support; drop both once 3.11 is gone. This
+        # canary fails if that boundary shifts again, so a human re-checks the
+        # workaround instead of a user debugging a mis-parsed command line.
         import argparse
+        import sys
 
         parser = argparse.ArgumentParser(prog="t")
         sub = parser.add_subparsers(dest="command")
         sub.add_parser("go")
 
-        with self.assertRaises(SystemExit):
-            parser.parse_args(["--", "go"])
+        if sys.version_info >= (3, 12):
+            self.assertEqual(parser.parse_args(["--", "go"]).command, "go")
+        else:
+            with self.assertRaises(SystemExit):
+                parser.parse_args(["--", "go"])
 
 
 class TestTheBundleLettersAreBooleanInBothParsers(unittest.TestCase):
