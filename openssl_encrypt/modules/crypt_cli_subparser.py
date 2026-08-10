@@ -1875,26 +1875,6 @@ def setup_armor_parser(subparser):
     )
 
 
-def setup_verify_parser(subparser):
-    """Set up arguments for the verify command."""
-    subparser.add_argument(
-        "--input",
-        "-i",
-        required=True,
-        help="Input encrypted file to verify",
-    )
-    subparser.add_argument(
-        "--json",
-        action="store_true",
-        help="Output results as JSON",
-    )
-    subparser.add_argument(
-        "--verbose",
-        action="store_true",
-        help="Show detailed check information",
-    )
-
-
 def setup_sign_parser(subparser):
     """Set up arguments for the sign command (detached file signature)."""
     subparser.add_argument(
@@ -1972,80 +1952,6 @@ def setup_verify_signature_parser(subparser):
         "--json",
         action="store_true",
         help="Output the verification result as JSON",
-    )
-
-
-def setup_split_secret_parser(subparser):
-    """Set up arguments for the split-secret command."""
-    subparser.add_argument(
-        "--input",
-        "-i",
-        required=True,
-        help="Input encrypted file whose key to split",
-    )
-    subparser.add_argument(
-        "--shares",
-        "-n",
-        type=int,
-        required=True,
-        help="Total number of shares to create",
-    )
-    subparser.add_argument(
-        "--threshold",
-        "-k",
-        type=int,
-        required=True,
-        help="Minimum shares needed to reconstruct the key",
-    )
-    subparser.add_argument(
-        "--output-dir",
-        "-d",
-        default=".",
-        help="Directory for share files (default: current directory)",
-    )
-    subparser.add_argument(
-        "-p",
-        "--password",
-        help="Password for the encrypted file",
-    )
-    subparser.add_argument(
-        "--force-password",
-        action="store_true",
-        help="Accept the password without strength check",
-    )
-    subparser.add_argument(
-        "--quiet",
-        "-q",
-        action="store_true",
-        help="Suppress output",
-    )
-
-
-def setup_combine_secrets_parser(subparser):
-    """Set up arguments for the combine-secrets command."""
-    subparser.add_argument(
-        "--input",
-        "-i",
-        required=True,
-        help="Input encrypted file to decrypt",
-    )
-    subparser.add_argument(
-        "--shares",
-        nargs="+",
-        required=True,
-        help="Paths to share files",
-    )
-    subparser.add_argument(
-        "--output",
-        "-o",
-        required=True,
-        help="Output file for decrypted data",
-    )
-    subparser.add_argument(
-        "--quiet",
-        "-q",
-        action="store_true",
-        help="Suppress output",
     )
 
 
@@ -2930,30 +2836,6 @@ def build_subparser():
         formatter_class=argparse.RawTextHelpFormatter,
     )
     setup_hsm_parser(hsm_parser)
-
-    # Verify command — structural integrity check without password
-    verify_parser = subparsers.add_parser(
-        "verify",
-        help="Verify encrypted file integrity without decryption",
-        formatter_class=argparse.RawTextHelpFormatter,
-    )
-    setup_verify_parser(verify_parser)
-
-    # Split-secret command — Shamir's Secret Sharing
-    split_secret_parser = subparsers.add_parser(
-        "split-secret",
-        help="Split encryption key into Shamir's Secret Sharing shares",
-        formatter_class=argparse.RawTextHelpFormatter,
-    )
-    setup_split_secret_parser(split_secret_parser)
-
-    # Combine-secrets command — reconstruct key and decrypt
-    combine_secrets_parser = subparsers.add_parser(
-        "combine-secrets",
-        help="Combine shares to reconstruct key and decrypt file",
-        formatter_class=argparse.RawTextHelpFormatter,
-    )
-    setup_combine_secrets_parser(combine_secrets_parser)
 
     # Recovery-slot management (envelope DEK recovery credentials)
     list_recovery_parser = subparsers.add_parser(

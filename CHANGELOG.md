@@ -2650,6 +2650,17 @@ the 1.5 branch:
 
 ### Internal
 
+- **Removed the dead `combine-secrets`/`split-secret`/`verify` subparsers**
+  (gitlab#208): each of the three had a registered subparser that nothing ever
+  routed to — they are handled by the monolithic parser — so there were two
+  argument definitions per command and only one was live, the exact drift that
+  produced gitlab#164/#183. Deleted the three `setup_*_parser` definitions and
+  their registrations (keeping the live monolithic surface unchanged) and
+  dropped the now-unnecessary `_SUBPARSER_REGISTERED_BUT_NOT_ROUTED` exception;
+  the routing set is now simply the subparsers actually registered. No
+  user-visible change — all three still dispatch through the monolithic parser.
+  1.5.x only (these commands do not exist on 1.4.x).
+
 - **The gitlab#198 has-a-caller lint now scans the widget directories**
   (gitlab#198 follow-up): its caller scan read only top-level `lib/*.dart`,
   while every tab and shared widget lives in `lib/tabs/`, `lib/widgets/` and

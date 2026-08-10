@@ -1248,14 +1248,6 @@ KNOWN_COMMANDS = (
 # Back-compatible alias, as on the 1.4.x line.
 SUBPARSER_COMMANDS = KNOWN_COMMANDS
 
-# Registered by the subparser but deliberately NOT routed to it (gitlab#208).
-# All three are declared by the monolithic parser and work through it today,
-# so routing them somewhere new is a behaviour change the gitlab#179 fix had
-# no business making. Explicit so the exception is visible and testable
-# rather than implied by an out-of-date list.
-_SUBPARSER_REGISTERED_BUT_NOT_ROUTED = frozenset({"combine-secrets", "split-secret", "verify"})
-
-
 TRULY_GLOBAL_FLAGS = {
     "--debug",
     "--unsafe-show-secrets",
@@ -3203,17 +3195,11 @@ def main():
     # and its handler sat there unreachable.
     #
     # Read off the built subparser rather than maintained beside it, so
-    # "routed but unregistered" is not representable. Intersected with the
-    # list above rather than used raw: on this branch the subparser also
-    # registers combine-secrets, split-secret and verify, which are NOT in
-    # that list and today are handled by the monolithic parser. Routing them
-    # somewhere new is a behaviour change this fix has no business making;
-    # the intersection removes the seven and adds nothing.
-    subparser_commands = [
-        c
-        for c in KNOWN_COMMANDS
-        if c in _subparser_choices() and c not in _SUBPARSER_REGISTERED_BUT_NOT_ROUTED
-    ]
+    # "routed but unregistered" is not representable. combine-secrets,
+    # split-secret and verify are handled by the monolithic parser and their
+    # dead subparser definitions were removed (gitlab#208), so they simply are
+    # not in _subparser_choices() and fall through to the monolithic path.
+    subparser_commands = [c for c in KNOWN_COMMANDS if c in _subparser_choices()]
 
     # Use subparser only if a subcommand is present
     # (after global flags have been moved to the front by preprocess_global_args)
