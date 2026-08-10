@@ -975,10 +975,17 @@ def _warn_orphan_random_password(args, ciphertext_maybe_written=True):
     dies with FileExistsError, and a stale file beside a later run looks like a
     live credential.
 
-    Every early-exit path that can fire after the password file exists must call
-    this, not only the top-level exception handler -- a `return 1` or
-    `sys.exit(1)` (a cascade-diversity abort, the write-failure handler) never
-    reaches that handler (gitlab#182, gitlab#152, mirroring gitlab#146).
+    Coverage is structural (gitlab#223): the encrypt dispatch is wrapped in a
+    try/finally that calls this on every incomplete exit -- including the
+    `return 1` / `sys.exit(1)` sites (cascade-diversity abort, XOR
+    mutual-exclusivity, keystore-branch failures) that the `except Exception`
+    handler cannot see (gitlab#182, gitlab#152, mirroring gitlab#146). The
+    finally passes ciphertext_maybe_written from the _ciphertext_on_disk
+    flag, so a post-processing failure after the output was written (armor
+    rewrite, shred) gets the verify-first wording. The only direct call
+    sites besides the finally are the password-write-failure handler (fires
+    before the dispatch try) and the signal handler (a signal death runs
+    neither the finally nor atexit).
 
     Args:
         args: Parsed CLI arguments.
@@ -994,6 +1001,9 @@ def _warn_orphan_random_password(args, ciphertext_maybe_written=True):
     orphan = getattr(args, "random_password_out", None)
     if not (orphan and os.path.exists(orphan)):
         return
+    # gitlab#172 discipline: the path is caller-supplied text echoed to the
+    # terminal -- strip ANSI/bidi controls like every other untrusted echo.
+    orphan = sanitize_for_display(orphan)
     if ciphertext_maybe_written:
         eprint(
             f"\nNOTE: a generated password was already written to {orphan}. "
@@ -3570,9 +3580,29 @@ def main_with_args(args=None):
     # Register cleanup function to run on normal exit
     atexit.register(cleanup_all)
 
+    # gitlab#223: orphan-password NOTE state, initialized before any code that
+    # could write the --random-password-out file so the signal handler and the
+    # dispatch finally can always read it. _ciphertext_on_disk: a usable (or
+    # possibly usable) encrypted output exists, so the password file is a live
+    # credential -- the NOTE must tell the user to verify, never "you can
+    # remove it". _encrypt_completed: the run reached its normal end -- no
+    # NOTE at all (delivery was announced at write time).
+    _ciphertext_on_disk = False
+    _encrypt_completed = False
+
     # Register signal handlers for common termination signals
     def signal_handler(signum, frame):
         cleanup_temp_files()
+        # gitlab#223 review f5: a signal death runs neither the dispatch
+        # finally nor atexit (SIG_DFL re-kill below), and Ctrl-C during a
+        # memory-hard KDF is the most likely incomplete encrypt exit. The
+        # NOTE is advisory: it must never change the outcome, so failures
+        # are swallowed.
+        try:
+            if not _encrypt_completed:
+                _warn_orphan_random_password(args, ciphertext_maybe_written=_ciphertext_on_disk)
+        except Exception:
+            pass
         # Re-raise the signal to allow the default handler to run
         signal.signal(signum, signal.SIG_DFL)
         os.kill(os.getpid(), signum)
@@ -6343,9 +6373,23 @@ def main_with_args(args=None):
                             _write_generated_password_file(_random_out, generated_password)
                         except Exception as _e:
                             # Never echo the password itself in the message.
+                            if isinstance(_e, FileExistsError):
+                                # gitlab#223 review f3: a pre-existing
+                                # destination is NOT this run's orphan -- it
+                                # may hold the password of an earlier,
+                                # successful encryption. The removable-orphan
+                                # NOTE would be dangerously wrong here.
+                                eprint(
+                                    f"ERROR: {sanitize_for_display(_random_out)} "
+                                    f"already exists; refusing to overwrite it. "
+                                    f"It may hold the password for an earlier "
+                                    f"encryption -- verify before removing it, "
+                                    f"or choose another path."
+                                )
+                                raise SystemExit(1)
                             eprint(
                                 f"ERROR: could not write the generated "
-                                f"password to {_random_out}: {_e}"
+                                f"password to {sanitize_for_display(_random_out)}: {_e}"
                             )
                             # create_secure_file may have created the 0600 file
                             # before os.write/os.fsync failed, leaving a partial
@@ -6354,7 +6398,10 @@ def main_with_args(args=None):
                             _warn_orphan_random_password(args, ciphertext_maybe_written=False)
                             raise SystemExit(1)
                         if not args.quiet:
-                            eprint(f"\nGenerated password written to {_random_out} (mode 0600).")
+                            eprint(
+                                f"\nGenerated password written to "
+                                f"{sanitize_for_display(_random_out)} (mode 0600)."
+                            )
                     else:
                         _display_generated_password(generated_password)
 
@@ -6525,9 +6572,9 @@ def main_with_args(args=None):
                                             policy_params["check_common_passwords"] = False
 
                                         if args.custom_password_list:
-                                            policy_params["common_passwords_path"] = (
-                                                args.custom_password_list
-                                            )
+                                            policy_params[
+                                                "common_passwords_path"
+                                            ] = args.custom_password_list
 
                                         # Create policy and validate password
                                         policy = PasswordPolicy(
@@ -7611,6 +7658,12 @@ def main_with_args(args=None):
 
                         shred_file(args.input, passes=args.shred_passes)
 
+                    # Defense-in-depth (gitlab#223 review f4): the guard that
+                    # refuses --random-password-out for asymmetric runs makes
+                    # this unreachable with an orphan today, but a relaxed
+                    # guard must not turn every successful asymmetric encrypt
+                    # into a false orphan NOTE.
+                    _encrypt_completed = True
                     sys.exit(0)
 
                 except Exception as e:
@@ -8519,11 +8572,8 @@ def main_with_args(args=None):
                                                 "Use --no-diversity-check to bypass.",
                                                 file=sys.stderr,
                                             )
-                                        # Pre-encryption abort: a --random-password-out file may
-                                        # already exist; this bypasses the top-level NOTE (gitlab#182).
-                                        _warn_orphan_random_password(
-                                            args, ciphertext_maybe_written=False
-                                        )
+                                        # Pre-encryption abort: the dispatch
+                                        # finally announces the orphan (gitlab#223).
                                         return 1
 
                                 except ImportError:
@@ -8597,6 +8647,7 @@ def main_with_args(args=None):
 
                         # Normal file output
                         os.replace(temp_output, output_file)
+                        _ciphertext_on_disk = True
 
                         # Successful operation means we don't need to clean up the temp file
                         temp_files_to_cleanup.remove(temp_output)
@@ -8757,9 +8808,8 @@ def main_with_args(args=None):
                                     "Use --no-diversity-check to bypass.",
                                     file=sys.stderr,
                                 )
-                                # Pre-encryption abort: a --random-password-out file may
-                                # already exist; this bypasses the top-level NOTE (gitlab#182).
-                                _warn_orphan_random_password(args, ciphertext_maybe_written=False)
+                                # Pre-encryption abort: the dispatch finally
+                                # announces the orphan (gitlab#223).
                                 sys.exit(1)
 
                         except ImportError:
@@ -8849,6 +8899,10 @@ def main_with_args(args=None):
 
                 # Skip the normal encryption logic
                 if success:
+                    # Delivered to stdout: the run is complete and the
+                    # password file is the live credential for output the
+                    # caller now holds (gitlab#223).
+                    _encrypt_completed = True
                     return
                 else:
                     sys.exit(1)
@@ -9110,11 +9164,8 @@ def main_with_args(args=None):
                                             "Use --no-diversity-check to bypass.",
                                             file=sys.stderr,
                                         )
-                                    # Pre-encryption abort: a --random-password-out file may
-                                    # already exist; this bypasses the top-level NOTE (gitlab#182).
-                                    _warn_orphan_random_password(
-                                        args, ciphertext_maybe_written=False
-                                    )
+                                    # Pre-encryption abort: the dispatch
+                                    # finally announces the orphan (gitlab#223).
                                     return 1
 
                             except ImportError:
@@ -9180,6 +9231,12 @@ def main_with_args(args=None):
                         second_password=_hidden_second_password,
                     )
 
+                if success:
+                    # A usable ciphertext already sits at output_file (the
+                    # non-overwrite branch writes it directly); an armor or
+                    # shred post-processing failure below must not claim
+                    # otherwise (gitlab#223 review f1).
+                    _ciphertext_on_disk = True
             if success:
                 # Feature #2: wrap the finished file in ASCII armor if requested.
                 # Done as post-processing so it composes with every encryption
@@ -9217,6 +9274,12 @@ def main_with_args(args=None):
                     if not args.quiet:
                         eprint("Shredding the original file as requested...")
                     secure_shred_file(args.input, args.shred_passes, args.quiet)
+
+                # Keep LAST in this block: post-processing above (armor
+                # rewrite, audit log, shred) can still fail, and those
+                # failures must reach the finally with completed unset so
+                # the check-decryptability NOTE fires (gitlab#223 review f2).
+                _encrypt_completed = True
 
         elif args.action == "info":
             # Display encrypted file metadata without decrypting
@@ -10529,10 +10592,35 @@ def main_with_args(args=None):
     except Exception as e:
         if not args.quiet:
             eprint(f"\nError: {e}")
-        # A --random-password-out file is written before the ciphertext, so a
-        # failure here can leave a 0600 orphan behind (gitlab#182, gitlab#152).
-        _warn_orphan_random_password(args)
+        # A --random-password-out orphan is announced by the finally below
+        # (gitlab#223), which also covers the SystemExit/return-1 sites this
+        # handler cannot see.
         exit_code = 1
+
+    finally:
+        # gitlab#223: the orphan-password NOTE must fire on EVERY incomplete
+        # encrypt exit. The sys.exit(1)/return-1 sites (XOR mutual-exclusivity,
+        # keystore-branch failures, validation aborts) bypass the `except
+        # Exception` above by language rule (SystemExit), and wiring each site
+        # individually proved incomplete twice (#182, the #222 review). The
+        # helper no-ops unless --random-password-out actually left a file; a
+        # completed run stays silent (its file is the live credential, already
+        # announced at write time); and _ciphertext_on_disk picks the accurate
+        # wording -- "verify before removing" when a usable output may exist,
+        # "you can remove it" only when provably none does. The NOTE is
+        # advisory and must never change the outcome (a raising eprint in a
+        # finally would replace the propagating SystemExit -- review f6).
+        # Known window: the password file exists from the write in the
+        # password-delivery block above, but this try starts a few hundred
+        # lines later; every exit in between is either pre-write or handled
+        # at the write site (verified in the #223 confirmation review). Any
+        # NEW sys.exit/raise added between the delivery block and this try
+        # must call the helper itself.
+        if not _encrypt_completed:
+            try:
+                _warn_orphan_random_password(args, ciphertext_maybe_written=_ciphertext_on_disk)
+            except Exception:
+                pass
 
     # Exit with appropriate code
     sys.exit(exit_code)
