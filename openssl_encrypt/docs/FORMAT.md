@@ -458,7 +458,8 @@ does not change the v11/v13 result. At **v11/v12** the components share `salt_0`
 so **duplicate identical stages would cancel to zero** (cancellation caveat,
 src: crypt_core.py:2085-2091) — this is retired at **v13** by the distinct
 per-component salts. Order matters for the sequential chain. Independent-XOR
-multi-round chaining uses `result[:32]` (src: crypt_core.py:1917,2059, parallel_kdf.py).
+multi-round chaining uses `result[:32]` (src: crypt_core.py, compute_kdf_independent —
+since gitlab#224 the single implementation for both sequential and parallel modes).
 
 **Mode routing (v13 holds both modes).** From v13, the on-disk `xor_mode` field —
 not the version — selects the derivation: a v13 file is **independent** iff

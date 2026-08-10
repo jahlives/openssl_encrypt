@@ -133,6 +133,21 @@ class TestEmptyConfigGuard(unittest.TestCase):
         with self.assertRaises(ValueError):
             generate_key_independent_xor_parallel(PASSWORD, SALT, {}, quiet=True, format_version=11)
 
+    def test_empty_decryption_metadata_parallel_still_derives(self):
+        # The security-relevant half of the exemption (re-review 10b): a
+        # parallel request with empty decryption metadata must derive, not
+        # hit the parallel refusal -- legacy files must stay readable no
+        # matter how the decrypt was dispatched.
+        key, _, _ = generate_key_independent_xor(
+            PASSWORD,
+            SALT,
+            {"_is_from_decryption_metadata": True},
+            quiet=True,
+            format_version=11,
+            parallel=True,
+        )
+        self.assertTrue(key)
+
     def test_empty_decryption_metadata_still_derives(self):
         key, _, _ = generate_key_independent_xor(
             PASSWORD,
@@ -142,6 +157,32 @@ class TestEmptyConfigGuard(unittest.TestCase):
             format_version=11,
         )
         self.assertTrue(key)
+
+
+class TestLegacyFixtureParallelDecrypt(unittest.TestCase):
+    """End-to-end (re-review 10a): a real released-format fixture must decrypt
+    with parallel_kdf=True -- the concrete regression scenario the dispatcher
+    retirement is about, not just synthetic parallel==sequential configs."""
+
+    def test_v11_fixture_decrypts_with_parallel_kdf(self):
+        import os
+        import tempfile
+
+        from openssl_encrypt.modules.crypt_core import decrypt_file
+
+        fixture_dir = os.path.join(os.path.dirname(__file__), "testfiles", "format_versions")
+        outfile = os.path.join(tempfile.mkdtemp(), "v11_parallel.out")
+        decrypt_file(
+            os.path.join(fixture_dir, "v11_independent.enc"),
+            outfile,
+            b"fixture-corpus-password-2026",
+            quiet=True,
+            parallel_kdf=True,
+        )
+        with open(outfile, "rb") as fh:
+            self.assertEqual(
+                fh.read(), b"openssl_encrypt format-version fixture corpus 2026-07-10\n"
+            )
 
 
 if __name__ == "__main__":

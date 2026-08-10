@@ -2,8 +2,9 @@
 """
 Unit tests for parallel KDF functionality in v11 Independent XOR.
 
-Tests parallel execution of hash algorithms and KDFs with multiprocessing,
-verifies key consistency with sequential mode, and validates progress reporting.
+Tests the parallel derivation entry point (since gitlab#224 a thread-pool run
+of the same shared component implementation as sequential mode) and verifies
+key consistency with sequential mode.
 """
 
 import os
@@ -314,7 +315,7 @@ class TestParallelKDF(unittest.TestCase):
 
     def test_parallel_all_hash_algorithms(self):
         """Test parallel mode with all supported hash algorithms."""
-        # Config with all hash algorithms
+        # Config with all hash algorithms supported on this line.
         full_hash_config = {
             "sha256": 10,
             "sha512": 10,
