@@ -392,6 +392,12 @@ test-fallback:
   script:
     - python3 -m pytest openssl_encrypt/unittests/ -n auto --dist=worksteal -v --durations=20 --cov=openssl_encrypt --cov-report=term --cov-report=html --cov-report=xml
   rules:
+    # Fallback for the manual feature-branch test above: build liboqs from
+    # scratch if the custom image is unavailable. Same non-blocking, on-demand
+    # behaviour (it only runs if the manually-triggered test failed).
+    - if: $CI_COMMIT_BRANCH =~ /^feature\/.*/ && $DOCS_ONLY != "true"
+      when: on_failure
+      allow_failure: true
     - if: $CI_COMMIT_BRANCH == "dev" && $DOCS_ONLY != "true"
       when: on_failure
     - if: $CI_COMMIT_BRANCH == "testing" && $DOCS_ONLY != "true"
