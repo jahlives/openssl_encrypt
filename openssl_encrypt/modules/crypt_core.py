@@ -604,6 +604,13 @@ try:
                             )
                             whirlpool = importlib.util.module_from_spec(spec)
                             spec.loader.exec_module(whirlpool)
+                            # gitlab#224: register the loaded extension so the
+                            # lazy `import whirlpool` inside
+                            # compute_hash_independent resolves to it --
+                            # binding only this module's global left
+                            # WHIRLPOOL_AVAILABLE True while that import
+                            # still raised ImportError.
+                            sys.modules["whirlpool"] = whirlpool
                             WHIRLPOOL_AVAILABLE = True
                             break
                 except ImportError:
@@ -3166,6 +3173,21 @@ def generate_key_independent_xor(
 
             component_tasks.append(("RandomX KDF", _randomx_component))
 
+        # Refuse an all-empty config at encrypt time (gitlab#224). The
+        # "no components" check further below is unreachable -- the
+        # initial-hash component is appended unconditionally -- so without
+        # this gate an empty config would silently derive an unstretched
+        # normalized SHA-256 of password+salt as the key. Decryption
+        # metadata is exempt so any legacy file written that way stays
+        # readable (the sequential path has always derived for them).
+        if not component_tasks and not (
+            hash_config and hash_config.get("_is_from_decryption_metadata", False)
+        ):
+            raise ValueError(
+                "No algorithms enabled for key derivation. "
+                "Enable at least one hash algorithm or KDF."
+            )
+
         # Execute the collected component tasks and gather their outputs into
         # xor_components (gitlab#220). Sequential mode reproduces the historical
         # one-at-a-time behavior; parallel mode runs the mutually-independent
@@ -3228,13 +3250,6 @@ def generate_key_independent_xor(
 
         # NOTE: PBKDF2 is deprecated and NOT used for v11 encryption
         # It's only supported for decryption of legacy files (v1-v9)
-
-        # Verify we have at least one component
-        if len(xor_components) == 0:
-            raise ValueError(
-                "No algorithms enabled for key derivation. "
-                "Enable at least one hash algorithm or KDF."
-            )
 
         if debug:
             logger.debug(
