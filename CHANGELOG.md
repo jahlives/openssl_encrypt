@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **PIV / PKCS#11 protection for `identity create`** (gitlab#218): `identity
+  create` declared `--hsm-piv-slot`/`--hsm-pkcs11-lib`/`--hsm-biometric` but its
+  `--hsm` choices excluded `piv` and the handler never read them — dead surface.
+  `identity create --hsm piv` (password + PIV token) and `--hsm piv-only` (token
+  only) now work: the PIV configuration (PKCS#11 module path, PIV key slot,
+  biometric flag — none of them secret) is persisted with the identity, so it
+  can be unlocked later without re-supplying the flags (no unlock subcommand
+  takes them). The HSM-pepper length check now accepts the exact length the
+  configured device returns (the PIV token's 32-byte HKDF pepper, the 20-byte
+  Yubikey/OnlyKey HMAC-SHA1 response), and the Challenge-Response slot detection
+  and touch prompt are correctly skipped for PIV (which authenticates with a
+  PIN). Because the persisted PKCS#11 module path is loaded as native code at
+  unlock, it is refused unless it resolves to a regular file in a standard
+  module directory (`/usr/lib`, `/usr/lib64`, `/usr/local/lib`, `/lib`, …) or
+  one listed in `OPENSSL_ENCRYPT_PKCS11_ALLOW` — so a tampered identity file
+  from an untrusted store cannot make the tool `dlopen` an attacker-planted
+  library. Existing Yubikey/OnlyKey identities are unaffected.
+
 - **Machine-readable output for `analyze-security`, `smart-recommendations`
   and `telemetry status`** (gitlab#162): a GUI that renders a *misparsed*
   security readout is worse than one that renders none. `analyze-security`

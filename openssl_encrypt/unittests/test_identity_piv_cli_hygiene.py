@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Identity/PIV CLI hygiene (gitlab#163 / gitlab#218 findings 1 & 2).
 
-1. `identity create` declared `--hsm-piv-slot`/`--hsm-pkcs11-lib`/`--hsm-biometric`
-   (via `_add_piv_hsm_arguments`) but its `--hsm` choices exclude `piv` and
-   `cmd_create` never reads them — dead surface a caller could pass and have
-   silently ignored.
+1. `identity create` now WIRES the PIV surface it declares (gitlab#218): its
+   `--hsm` choices include `piv`/`piv-only`, `_add_piv_hsm_arguments` is added,
+   and `cmd_create` reads `--hsm-piv-slot`/`--hsm-pkcs11-lib`/`--hsm-biometric`
+   and persists them so the identity can be unlocked later. (It was previously
+   dead surface, rejected on create — this test used to assert that.)
 2. `--no-touch`'s help claimed to "Disable HSM touch / button-press
    requirement", but `require_touch` only suppresses the interactive
    "touch your device" prompt; the device's touch policy is hardware-side.
@@ -30,25 +31,30 @@ def _identity_create_parser():
     raise AssertionError("identity create parser not found")
 
 
-class TestCreateHasNoDeadPivArgs(unittest.TestCase):
+class TestCreateWiresPivArgs(unittest.TestCase):
+    """gitlab#218: the PIV surface on `identity create` is now live, not dead."""
+
     def setUp(self):
         self.parser = _identity_create_parser()
 
-    def _rejects(self, *extra):
-        with self.assertRaises(SystemExit):
-            self.parser.parse_args(["--name", "alice", *extra])
+    def _accepts(self, *extra):
+        return self.parser.parse_args(["--name", "alice", *extra])
 
-    def test_hsm_piv_slot_is_rejected_on_create(self):
-        self._rejects("--hsm-piv-slot", "9a")
+    def test_piv_is_a_valid_hsm_choice(self):
+        self.assertEqual(self._accepts("--hsm", "piv").hsm, "piv")
+        self.assertEqual(self._accepts("--hsm", "piv-only").hsm, "piv-only")
 
-    def test_hsm_pkcs11_lib_is_rejected_on_create(self):
-        self._rejects("--hsm-pkcs11-lib", "/x.so")
+    def test_hsm_piv_slot_is_accepted_on_create(self):
+        self.assertEqual(self._accepts("--hsm-piv-slot", "9a").hsm_piv_slot, 0x9A)
 
-    def test_hsm_biometric_is_rejected_on_create(self):
-        self._rejects("--hsm-biometric")
+    def test_hsm_pkcs11_lib_is_accepted_on_create(self):
+        self.assertEqual(self._accepts("--hsm-pkcs11-lib", "/x.so").hsm_pkcs11_lib, "/x.so")
+
+    def test_hsm_biometric_is_accepted_on_create(self):
+        self.assertTrue(self._accepts("--hsm-biometric").hsm_biometric)
 
     def test_real_create_flags_still_accepted(self):
-        # Guard against over-removal: --hsm, --hsm-slot, --no-touch stay.
+        # Guard against regressions: --hsm, --hsm-slot, --no-touch stay.
         ns = self.parser.parse_args(
             ["--name", "alice", "--hsm", "onlykey", "--hsm-slot", "3", "--no-touch"]
         )

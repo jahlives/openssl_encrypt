@@ -371,6 +371,9 @@ class Identity:
         hsm_slot: Optional[int] = None,
         require_touch: bool = True,
         hsm_type: str = "yubikey",
+        pkcs11_lib_path: Optional[str] = None,
+        piv_slot: Optional[int] = None,
+        biometric: bool = False,
     ) -> "Identity":
         """
         Generate a new identity with fresh keypairs.
@@ -430,7 +433,15 @@ class Identity:
             # Create protection configuration
             protection = None
             if protection_level != ProtectionLevel.PASSWORD_ONLY:
-                protection_service = IdentityKeyProtectionService(hsm_type=hsm_type)
+                # PIV config is threaded into the service so create_protection_config
+                # records it in the persisted HSMProtectionConfig, letting the
+                # identity be unlocked later without re-supplying it (gitlab#218).
+                protection_service = IdentityKeyProtectionService(
+                    hsm_type=hsm_type,
+                    pkcs11_lib_path=pkcs11_lib_path,
+                    piv_slot=piv_slot,
+                    biometric=biometric,
+                )
                 protection = protection_service.create_protection_config(
                     level=protection_level,
                     hsm_slot=hsm_slot,
@@ -1289,8 +1300,16 @@ def _encrypt_private_key(
     # from the YubiKey plugin (gitlab#218). Legacy configs without a type fall
     # back to "yubikey" for backward compatibility.
     if protection and protection.level != ProtectionLevel.PASSWORD_ONLY:
-        hsm_type = protection.hsm_config.hsm_type if protection.hsm_config else "yubikey"
-        protection_service = IdentityKeyProtectionService(hsm_type=hsm_type)
+        _hc = protection.hsm_config
+        hsm_type = _hc.hsm_type if _hc else "yubikey"
+        # Rebuild with the PIV config persisted at create time, so a PIV
+        # identity unlocks without the flags being re-supplied (gitlab#218).
+        protection_service = IdentityKeyProtectionService(
+            hsm_type=hsm_type,
+            pkcs11_lib_path=(_hc.pkcs11_lib_path if _hc else None),
+            piv_slot=(_hc.piv_slot if _hc else None),
+            biometric=(_hc.biometric if _hc else False),
+        )
         return protection_service.encrypt_private_key(
             private_key_data=private_key,
             password=passphrase,
@@ -1370,8 +1389,16 @@ def _decrypt_private_key(
     # YubiKey plugin and never unlock (gitlab#218). Legacy configs without a
     # type fall back to "yubikey".
     if protection and protection.level != ProtectionLevel.PASSWORD_ONLY:
-        hsm_type = protection.hsm_config.hsm_type if protection.hsm_config else "yubikey"
-        protection_service = IdentityKeyProtectionService(hsm_type=hsm_type)
+        _hc = protection.hsm_config
+        hsm_type = _hc.hsm_type if _hc else "yubikey"
+        # Rebuild with the PIV config persisted at create time, so a PIV
+        # identity unlocks without the flags being re-supplied (gitlab#218).
+        protection_service = IdentityKeyProtectionService(
+            hsm_type=hsm_type,
+            pkcs11_lib_path=(_hc.pkcs11_lib_path if _hc else None),
+            piv_slot=(_hc.piv_slot if _hc else None),
+            biometric=(_hc.biometric if _hc else False),
+        )
         try:
             private_key_bytes = protection_service.decrypt_private_key(
                 encrypted_data=encrypted_data,
