@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Safe password delivery for `encrypt --random`** (gitlab#222, bringing
+  1.5.x to parity with the 1.4.x gitlab#152/#181/#182 work): on this line
+  `encrypt --random` crashed with `AttributeError` (the char-class flags it read
+  are not on the `encrypt` subparser), and where it ran at all it printed the
+  generated password *after* encryption, behind a 10-second countdown and a
+  `\033[2J` "Password has been cleared from screen" claim that was false — the
+  escape repaints the screen but removes nothing from scrollback, a pipe, a
+  transcript or a CI log. `encrypt --random` now generates the password with
+  `getattr`-guarded defaults (no crash) and delivers it **before** writing the
+  ciphertext, so a later failure can never seal a file under a password nobody
+  holds. A new `--random-password-out PATH` writes it to a 0600 file (refusing
+  to overwrite, and refusing a destination that collides with the input/output
+  so the ciphertext can't truncate it); without a destination it is shown once
+  via an honest banner that makes no erase claim, and the command refuses to
+  proceed when there is nowhere safe to deliver it (no terminal, or `--quiet`).
+  The flag is rejected for asymmetric (`--for-identity`) runs and without
+  `--random`, and an interrupted run leaves an announced orphan-file NOTE rather
+  than a silent stale credential. The generated password is registered for
+  audit-log redaction. 1.5.x only — 1.4.x already had this.
+
 - **`telemetry status --json`** (gitlab#162): `telemetry status` gains a
   `--json` flag that emits the status document (enabled state, pending events,
   server URL, key presence, upload interval/thread) as JSON on stdout, keeping

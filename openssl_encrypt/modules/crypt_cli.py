@@ -965,6 +965,53 @@ def _write_generated_password_file(path, password):
         os.close(dir_fd)
 
 
+def _warn_orphan_random_password(args, ciphertext_maybe_written=True):
+    """Warn that a `--random-password-out` file was written and left in place.
+
+    The generated password is written before the ciphertext, so a later failure
+    can leave a 0600 orphan on disk. Deleting it automatically would be wrong
+    when a matching encrypted file might exist (the file is then its only
+    credential), but an unannounced orphan is its own hazard: the obvious retry
+    dies with FileExistsError, and a stale file beside a later run looks like a
+    live credential.
+
+    Every early-exit path that can fire after the password file exists must call
+    this, not only the top-level exception handler -- a `return 1` or
+    `sys.exit(1)` (a cascade-diversity abort, the write-failure handler) never
+    reaches that handler (gitlab#182, gitlab#152, mirroring gitlab#146).
+
+    Args:
+        args: Parsed CLI arguments.
+        ciphertext_maybe_written: True at the top-level handler, where the
+            failure could have struck after the encrypted file was written, so
+            the file may be a live credential and the user is told to check
+            decryptability before removing it. False at the sites that provably
+            fail before any usable encrypted file exists (a pre-encryption abort,
+            or the password write itself failing part-way) -- there the orphan
+            can simply be removed, and claiming otherwise would tell the user to
+            test a file that cannot exist.
+    """
+    orphan = getattr(args, "random_password_out", None)
+    if not (orphan and os.path.exists(orphan)):
+        return
+    if ciphertext_maybe_written:
+        eprint(
+            f"\nNOTE: a generated password was already written to {orphan}. "
+            f"It is NOT deleted, because this failure does not prove the "
+            f"encrypted file was not written. Check whether the output file "
+            f"exists and is decryptable with it before removing it; until you "
+            f"do, a retry with the same --random-password-out will refuse to "
+            f"overwrite it."
+        )
+    else:
+        eprint(
+            f"\nNOTE: a password file may remain at {orphan} (the encryption "
+            f"did not complete, so no usable encrypted file was written). You "
+            f"can remove it; until you do, a retry with the same "
+            f"--random-password-out will refuse to overwrite it."
+        )
+
+
 def _effective_encrypt_output(args):
     """The path the encrypt run will actually write its ciphertext to.
 
@@ -6042,6 +6089,29 @@ def main_with_args(args=None):
         ):
             is_asymmetric_decrypt = True
 
+    # --random-password-out is meaningful only for `encrypt --random` with no
+    # explicit password. Validate it HERE, before the symmetric-only
+    # password-resolution block below skips asymmetric runs entirely -- a guard
+    # placed inside that block silently ignored the flag for --for-identity,
+    # the very "stale file read back as this run's password" hazard it exists to
+    # stop (gitlab#152, gitlab#222).
+    if getattr(args, "random_password_out", None):
+        if is_asymmetric_encrypt or is_asymmetric_decrypt:
+            eprint(
+                "ERROR: --random-password-out does not apply to asymmetric "
+                "encryption: --for-identity encrypts to a recipient's public "
+                "key, so no password is generated."
+            )
+            raise SystemExit(2)
+        if not (args.action == "encrypt" and args.random and not args.password):
+            eprint(
+                "ERROR: --random-password-out has no effect without --random "
+                "on an encrypt with no explicit password. Refusing rather "
+                "than leaving a stale file that looks like this run's "
+                "password."
+            )
+            raise SystemExit(2)
+
     # Validate algorithm availability before encryption/decryption
     if args.action in ["encrypt", "decrypt", "rekey"]:
         validation_warnings = validate_algorithm_availability(args)
@@ -6147,11 +6217,21 @@ def main_with_args(args=None):
             with secure_string() as password_secure:
                 # Handle random password generation for encryption
                 if args.action == "encrypt" and args.random and not args.password:
-                    # Determine character sets based on args or defaults
-                    use_lowercase = args.use_lowercase if args.use_lowercase is not None else True
-                    use_uppercase = args.use_uppercase if args.use_uppercase is not None else True
-                    use_digits = args.use_digits if args.use_digits is not None else True
-                    use_special = args.use_special if args.use_special is not None else True
+                    # Determine character sets based on args or defaults.
+                    # getattr, not attribute access: the character-class flags
+                    # are declared on `generate-password` but NOT on the
+                    # `encrypt` subparser, so `encrypt --random` raised
+                    # AttributeError and the feature was unusable on the only
+                    # route `encrypt` takes (gitlab#181, gitlab#222). All four
+                    # default to enabled, the strongest generation setting.
+                    def _charclass(name):
+                        value = getattr(args, name, None)
+                        return True if value is None else value
+
+                    use_lowercase = _charclass("use_lowercase")
+                    use_uppercase = _charclass("use_uppercase")
+                    use_digits = _charclass("use_digits")
+                    use_special = _charclass("use_special")
 
                     # Ensure length meets policy requirements
                     if args.password_policy != "none" and not args.force_password:
@@ -6205,6 +6285,76 @@ def main_with_args(args=None):
                                     eprint(f"\n{msg}")
 
                     password_secure.extend(generated_password.encode())
+
+                    # The generated password is not reliably caught by the audit
+                    # log's shape heuristic (_SECRET_TOKEN_RE needs a 32-char run
+                    # of [A-Za-z0-9+_=]), so register it explicitly so any path
+                    # that logs it redacts it (gitlab#222).
+                    register_consumed_secret("generated_random_password", generated_password)
+
+                    _random_out = getattr(args, "random_password_out", None)
+
+                    # A destination the run would then destroy is refused: equal
+                    # to --output it would be truncated by the ciphertext write
+                    # moments later, sealing the file under a password that no
+                    # longer exists anywhere. O_EXCL cannot catch it -- the
+                    # destination does not exist yet (gitlab#152).
+                    try:
+                        _check_random_password_destination(
+                            _random_out,
+                            args.input,
+                            _effective_encrypt_output(args),
+                        )
+                    except ValueError as _e:
+                        eprint(f"ERROR: {_e}")
+                        raise SystemExit(2)
+
+                    try:
+                        _stderr_isatty = sys.stderr.isatty()
+                    except (AttributeError, ValueError):
+                        # Replaced or closed stream: fail closed, so a
+                        # destination is required rather than assumed.
+                        _stderr_isatty = False
+                    if not _random_password_destination_ok(
+                        isatty=_stderr_isatty,
+                        out_path=_random_out,
+                        quiet=args.quiet,
+                    ):
+                        eprint(
+                            "ERROR: --random has nowhere to deliver the "
+                            "generated password: stderr is not a terminal, or "
+                            "--quiet suppresses the display. Encrypting anyway "
+                            "would seal the file under a password nobody "
+                            "holds. Name a destination with "
+                            "--random-password-out PATH."
+                        )
+                        raise SystemExit(2)
+
+                    # Deliver BEFORE encrypting (gitlab#152). Only one order is
+                    # safe: disclosing after the ciphertext is written means any
+                    # later failure leaves an encrypted file whose password was
+                    # never disclosed -- unrecoverable. Disclosing first costs at
+                    # worst over-disclosing a password for a file never created.
+                    if _random_out:
+                        try:
+                            _write_generated_password_file(_random_out, generated_password)
+                        except Exception as _e:
+                            # Never echo the password itself in the message.
+                            eprint(
+                                f"ERROR: could not write the generated "
+                                f"password to {_random_out}: {_e}"
+                            )
+                            # create_secure_file may have created the 0600 file
+                            # before os.write/os.fsync failed, leaving a partial
+                            # orphan a retry would refuse; no ciphertext exists
+                            # (gitlab#182).
+                            _warn_orphan_random_password(args, ciphertext_maybe_written=False)
+                            raise SystemExit(1)
+                        if not args.quiet:
+                            eprint(f"\nGenerated password written to {_random_out} (mode 0600).")
+                    else:
+                        _display_generated_password(generated_password)
+
                     if not args.quiet:
                         eprint("\nGenerated a random password for encryption.")
 
@@ -8366,6 +8516,11 @@ def main_with_args(args=None):
                                                 "Use --no-diversity-check to bypass.",
                                                 file=sys.stderr,
                                             )
+                                        # Pre-encryption abort: a --random-password-out file may
+                                        # already exist; this bypasses the top-level NOTE (gitlab#182).
+                                        _warn_orphan_random_password(
+                                            args, ciphertext_maybe_written=False
+                                        )
                                         return 1
 
                                 except ImportError:
@@ -8599,6 +8754,9 @@ def main_with_args(args=None):
                                     "Use --no-diversity-check to bypass.",
                                     file=sys.stderr,
                                 )
+                                # Pre-encryption abort: a --random-password-out file may
+                                # already exist; this bypasses the top-level NOTE (gitlab#182).
+                                _warn_orphan_random_password(args, ciphertext_maybe_written=False)
                                 sys.exit(1)
 
                         except ImportError:
@@ -8949,6 +9107,11 @@ def main_with_args(args=None):
                                             "Use --no-diversity-check to bypass.",
                                             file=sys.stderr,
                                         )
+                                    # Pre-encryption abort: a --random-password-out file may
+                                    # already exist; this bypasses the top-level NOTE (gitlab#182).
+                                    _warn_orphan_random_password(
+                                        args, ciphertext_maybe_written=False
+                                    )
                                     return 1
 
                             except ImportError:
@@ -9045,76 +9208,6 @@ def main_with_args(args=None):
                     # Skip leading newline for stdout/stderr to avoid blank line
                     prefix = "" if output_file in ("/dev/stdout", "/dev/stderr") else "\n"
                     eprint(f"{prefix}File encrypted successfully: {output_file}")
-
-                    # If we used a generated password, display it with a
-                    # warning
-                    if generated_password:
-                        # Store the original signal handler
-                        original_sigint = signal.getsignal(signal.SIGINT)
-
-                        # Flag to track if Ctrl+C was pressed
-                        interrupted = False
-
-                        # Custom signal handler for SIGINT
-                        def sigint_handler(signum, frame):
-                            nonlocal interrupted
-                            interrupted = True
-                            # Restore original handler immediately
-                            signal.signal(signal.SIGINT, original_sigint)
-
-                        try:
-                            # Set our custom handler
-                            signal.signal(signal.SIGINT, sigint_handler)
-
-                            eprint("\n" + "!" * 80)
-                            eprint("IMPORTANT: SAVE THIS PASSWORD NOW".center(80))
-                            eprint("!" * 80)
-                            eprint(f"\nGenerated Password: {generated_password}")
-                            eprint(
-                                "\nWARNING: This is the ONLY time this password will be displayed."
-                            )
-                            eprint("         If you lose it, your data CANNOT be recovered.")
-                            eprint(
-                                "         Please write it down or save it in a password manager now."
-                            )
-                            eprint("\nThis message will disappear in 10 seconds...")
-
-                            # Wait for 10 seconds or until keyboard interrupt
-                            for remaining in range(10, 0, -1):
-                                if interrupted:
-                                    break
-                                # Overwrite the line with updated countdown
-                                eprint(
-                                    f"\rTime remaining: {remaining} seconds...",
-                                    end="",
-                                    flush=True,
-                                )
-                                # Sleep in small increments to check for
-                                # interruption more frequently
-                                for _ in range(10):
-                                    if interrupted:
-                                        break
-                                    time.sleep(0.1)
-
-                        finally:
-                            # Restore original signal handler no matter what
-                            signal.signal(signal.SIGINT, original_sigint)
-
-                            # Give an indication that we're clearing the screen
-                            if interrupted:
-                                eprint("\n\nClearing password from screen (interrupted by user)...")
-                            else:
-                                eprint("\n\nClearing password from screen...")
-
-                            # Clear screen using ANSI escape sequences (safer than os.system)
-                            # \033[2J clears the entire screen, \033[H moves cursor to home position
-                            sys.stderr.write("\033[2J\033[H")
-                            sys.stderr.flush()
-
-                            eprint("Password has been cleared from screen.")
-                            eprint(
-                                "For additional security, consider clearing your terminal history."
-                            )
 
                 # If shredding was requested and encryption was successful
                 if args.shred and not args.overwrite:
@@ -10433,6 +10526,9 @@ def main_with_args(args=None):
     except Exception as e:
         if not args.quiet:
             eprint(f"\nError: {e}")
+        # A --random-password-out file is written before the ciphertext, so a
+        # failure here can leave a 0600 orphan behind (gitlab#182, gitlab#152).
+        _warn_orphan_random_password(args)
         exit_code = 1
 
     # Exit with appropriate code
