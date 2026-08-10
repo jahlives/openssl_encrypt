@@ -163,6 +163,26 @@ class TestPoolBehavior(unittest.TestCase):
             f"secondary failure not logged: {logs.output}",
         )
 
+    def test_warmup_receives_component_ids(self):
+        # The warmup is driven by the tasks' component ids (re-review f4) --
+        # the same strings the domain-separated salts use -- so a label
+        # rename can no longer silently disable it.
+        import openssl_encrypt.modules.crypt_core as cc
+
+        with mock.patch.object(cc, "_warm_component_imports") as warm:
+            generate_key_independent_xor(
+                PASSWORD, SALT, self._config(), quiet=True, format_version=14, parallel=True
+            )
+        warm.assert_called_once()
+        self.assertEqual(warm.call_args[0][0], ["sha256", "argon2", "scrypt"])
+
+    def test_warm_component_imports_is_total(self):
+        # Unknown ids are ignored and failures are swallowed -- warmup must
+        # never mask the thunk's authoritative error.
+        from openssl_encrypt.modules.crypt_core import _warm_component_imports
+
+        _warm_component_imports(["blake3", "argon2", "balloon", "randomx", "nonsense"])
+
     def test_worker_threads_are_used(self):
         # Sanity: with the cap in place the components still run off-main-thread.
         import openssl_encrypt.modules.crypt_core as cc

@@ -2324,11 +2324,41 @@ def _combine_peppers(hsm_pepper: bytes = None, remote_pepper: bytes = None) -> b
     return combined
 
 
+def _warm_component_imports(component_ids: list) -> None:
+    """Resolve heavy component imports on the main thread (gitlab#224 item 10).
+
+    First-time module imports inside worker threads are safe (per-module
+    import locks) but move real work off the main thread -- importing
+    ``.randomx`` runs module-level subprocess availability probes -- and
+    would deadlock if derivation were ever reached during a caller's own
+    module import. Failures are ignored: the component thunk fails closed
+    with the authoritative error (e.g. the RandomX ValidationError, #71).
+
+    Args:
+        component_ids: The task list's component ids (the same strings used
+            for the components' domain-separated salts, pinned by
+            test_indep_xor_component_pins_224.py).
+    """
+    for comp_id in component_ids:
+        try:
+            if comp_id == "blake3":
+                import blake3  # noqa: F401
+            elif comp_id == "whirlpool":
+                import whirlpool  # noqa: F401
+            elif comp_id == "argon2":
+                import argon2.low_level  # noqa: F401
+            elif comp_id == "balloon":
+                from . import balloon  # noqa: F401
+            elif comp_id == "randomx":
+                from . import randomx  # noqa: F401
+        except Exception:
+            pass  # the thunk raises the authoritative error
+
+
 def _parallel_kdf_worker_limit(requested: int, component_memory_kb: list, quiet: bool) -> int:
     """Worker count for the parallel Independent-XOR pool (gitlab#224 item 2).
 
-    Caps the pool at the CPU count (the ``--kdf-workers`` help contract:
-    "default: auto-detect, max: CPU count"), at the component count, and at
+    Caps the pool at the CPU count, at the component count, and at
     the largest count whose worst-case co-resident set of components stays
     within the decrypt safety ceiling. Concurrency turns peak KDF memory from
     max(components) into the sum of the co-running ones, and the encrypt path
@@ -2449,9 +2479,18 @@ def compute_hash_independent(
             elif algorithm == "shake256":
                 h = hashlib.shake_256(bytes(current)).digest(64)
             elif algorithm == "whirlpool":
-                import whirlpool
+                try:
+                    import whirlpool
 
-                h = whirlpool.new(bytes(current)).digest()
+                    h = whirlpool.new(bytes(current)).digest()
+                except ImportError:
+                    # pywhirlpool-only installs also set WHIRLPOOL_AVAILABLE,
+                    # and its interface differs (gitlab#224 re-review f5) --
+                    # mirror the legacy chain's fallback instead of failing
+                    # closed on a capability the probe reported as present.
+                    import pywhirlpool
+
+                    h = pywhirlpool.whirlpool(bytes(current)).digest()
             else:
                 raise ValueError(f"Unsupported hash algorithm: {algorithm}")
 
@@ -3103,6 +3142,7 @@ def generate_key_independent_xor(
             if rounds > 0:
                 component_tasks.append(
                     (
+                        algo,
                         f"{algo.upper()} hash ({rounds} rounds)",
                         functools.partial(
                             compute_hash_independent,
@@ -3131,6 +3171,7 @@ def generate_key_independent_xor(
             argon2_config = kdf_config_section["argon2"]
             component_tasks.append(
                 (
+                    "argon2",
                     "Argon2 KDF",
                     functools.partial(
                         compute_kdf_independent,
@@ -3152,6 +3193,7 @@ def generate_key_independent_xor(
             scrypt_config = kdf_config_section["scrypt"]
             component_tasks.append(
                 (
+                    "scrypt",
                     "Scrypt KDF",
                     functools.partial(
                         compute_kdf_independent,
@@ -3173,6 +3215,7 @@ def generate_key_independent_xor(
             balloon_config = kdf_config_section["balloon"]
             component_tasks.append(
                 (
+                    "balloon",
                     "Balloon KDF",
                     functools.partial(
                         compute_kdf_independent,
@@ -3195,6 +3238,7 @@ def generate_key_independent_xor(
             hkdf_config = kdf_config_section["hkdf"]
             component_tasks.append(
                 (
+                    "hkdf",
                     "HKDF",
                     functools.partial(
                         compute_kdf_independent,
@@ -3242,7 +3286,12 @@ def generate_key_independent_xor(
                     ) from e
 
             component_tasks.append(
-                ("RandomX KDF", _randomx_component, _mem_estimate(estimate_randomx, randomx_config))
+                (
+                    "randomx",
+                    "RandomX KDF",
+                    _randomx_component,
+                    _mem_estimate(estimate_randomx, randomx_config),
+                )
             )
 
         # All-empty config (gitlab#224): the "no components" check that used
@@ -3281,44 +3330,23 @@ def generate_key_independent_xor(
             from concurrent.futures import ThreadPoolExecutor
 
             workers = _parallel_kdf_worker_limit(
-                max_workers, [task_mem for _l, _t, task_mem in component_tasks], quiet
+                max_workers, [task_mem for _c, _l, _t, task_mem in component_tasks], quiet
             )
             if not quiet:
                 eprint(
                     f"Deriving {len(component_tasks)} independent KDF components "
                     f"in parallel ({workers} workers)..."
                 )
-            # Resolve the components' heavy lazy imports on the main thread
-            # before any worker starts (gitlab#224 item 10). First-time module
-            # imports inside worker threads are safe (per-module import locks)
-            # but move real work off the main thread -- importing .randomx
-            # runs module-level subprocess availability probes -- and would
-            # deadlock if this function were ever reached during a caller's
-            # own module import. Failures are ignored here: the component
-            # thunk fails closed with its proper error (e.g. the RandomX
-            # ValidationError, #71). Labels are pinned by
-            # test_indep_xor_component_pins_224.py.
-            for _label, _thunk, _mem in component_tasks:
-                try:
-                    if _label.startswith("BLAKE3 "):
-                        import blake3  # noqa: F401
-                    elif _label.startswith("WHIRLPOOL "):
-                        import whirlpool  # noqa: F401
-                    elif _label == "Argon2 KDF":
-                        import argon2.low_level  # noqa: F401
-                    elif _label == "Balloon KDF":
-                        from . import balloon  # noqa: F401
-                    elif _label == "RandomX KDF":
-                        from . import randomx  # noqa: F401
-                except Exception:
-                    pass  # the thunk raises the authoritative error
+            _warm_component_imports([comp_id for comp_id, _l, _t, _m in component_tasks])
 
             # No `with` block: its __exit__ is shutdown(wait=True), which would
             # re-block an abort (Ctrl-C) until every running component finishes.
             executor = ThreadPoolExecutor(max_workers=workers)
             interrupted = False
+            futures = []
+            results = []
             try:
-                futures = [executor.submit(thunk) for _label, thunk, _mem in component_tasks]
+                futures = [executor.submit(thunk) for _c, _l, thunk, _m in component_tasks]
                 # Drain EVERY future before acting on the outcome. If a component
                 # fails (e.g. RandomX fail-closed, #71), the other workers may
                 # already have produced SecureBytes results that are held only by
@@ -3326,39 +3354,21 @@ def generate_key_independent_xor(
                 # by the finally-wipe below. Collect them all, and on any failure
                 # zeroize the already-computed results before re-raising, so no
                 # derived key material lingers on the error path (#220 review).
-                results = []
                 first_error = None
-                try:
-                    for future in futures:
-                        try:
-                            results.append(future.result())
-                        except Exception as exc:  # component failures only
-                            if first_error is None:
-                                first_error = exc
-                            else:
-                                # gitlab#224 item 5: secondary failures must not
-                                # vanish behind the first one (labels/exception
-                                # text only -- no key material in these messages).
-                                logger.debug(
-                                    f"INDEPENDENT-XOR: additional component failure: "
-                                    f"{type(exc).__name__}: {exc}"
-                                )
-                except BaseException:
-                    # Abort (KeyboardInterrupt/SystemExit) while blocked in
-                    # future.result() (gitlab#224 item 3): do NOT treat it as a
-                    # component failure and do NOT keep draining the remaining
-                    # futures. Unstarted components are cancelled; running ones
-                    # finish in their worker threads and their unreferenced
-                    # SecureBytes results are wiped by __del__. Wipe what we
-                    # already collected, then unwind immediately.
-                    interrupted = True
-                    executor.shutdown(wait=False, cancel_futures=True)
-                    for _r in results:
-                        try:
-                            secure_memzero(_r)
-                        except Exception:
-                            pass  # Best effort cleanup
-                    raise
+                for future in futures:
+                    try:
+                        results.append(future.result())
+                    except Exception as exc:  # component failures only
+                        if first_error is None:
+                            first_error = exc
+                        else:
+                            # gitlab#224 item 5: secondary failures must not
+                            # vanish behind the first one (labels/exception
+                            # text only -- no key material in these messages).
+                            logger.debug(
+                                f"INDEPENDENT-XOR: additional component failure: "
+                                f"{type(exc).__name__}: {exc}"
+                            )
                 if first_error is not None:
                     for _r in results:
                         try:
@@ -3366,19 +3376,47 @@ def generate_key_independent_xor(
                         except Exception:
                             pass  # Best effort cleanup
                     raise first_error
-                for (label, _thunk, _mem), _r in zip(component_tasks, results):
+                for (_cid, label, _thunk, _mem), _r in zip(component_tasks, results):
                     xor_components.append(_r)
                     if debug:
                         logger.debug(
                             f"INDEPENDENT-XOR: Added {label} component #{len(xor_components)}"
                         )
+            except BaseException as _exc:
+                if not isinstance(_exc, Exception):
+                    # Abort (KeyboardInterrupt/SystemExit) anywhere in the
+                    # submit/drain/collect window (gitlab#224 item 3 +
+                    # re-review f2): do NOT treat it as a component failure
+                    # and do NOT keep draining or re-joining the pool.
+                    # Unstarted components are cancelled; running ones finish
+                    # in their worker threads and their unreferenced
+                    # SecureBytes results are wiped by __del__.
+                    interrupted = True
+                    executor.shutdown(wait=False, cancel_futures=True)
+                    for _r in results:
+                        try:
+                            secure_memzero(_r)
+                        except Exception:
+                            pass  # Best effort cleanup
+                    # Completed-but-unretrieved futures still hold their
+                    # component SecureBytes in future._result, reachable for
+                    # as long as the propagating traceback keeps this frame
+                    # alive (re-review f3). Sweep them too; every call here
+                    # is non-blocking on a done future.
+                    for _fut in futures:
+                        try:
+                            if _fut.done() and not _fut.cancelled() and _fut.exception() is None:
+                                secure_memzero(_fut.result())
+                        except Exception:
+                            pass  # Best effort cleanup
+                raise
             finally:
                 if not interrupted:
                     executor.shutdown(wait=True)
             if not quiet:
                 eprint(f"✅ Derived {len(xor_components)} components in parallel")
         else:
-            for label, thunk, _mem in component_tasks:
+            for _cid, label, thunk, _mem in component_tasks:
                 if not quiet and not progress:
                     eprint(f"Computing {label}...", end=" ", flush=True)
                 xor_components.append(thunk())
@@ -11342,9 +11380,20 @@ def decrypt_file(
         # through (still escapable via allow_high_kdf_cost).
         enforce_memory_ceiling(float("inf"), allow_high_kdf_cost=allow_high_kdf_cost)
     else:
-        # The parallel-KDF path runs components concurrently, so its real peak is
-        # the sum of their memory, not the max.
-        _peak_kb = _kdf_estimate.total_memory_kb if parallel_kdf else _kdf_estimate.peak_memory_kb
+        if parallel_kdf:
+            # The parallel-KDF path runs components concurrently, so its real
+            # peak is a sum -- but not the sum of ALL components: the pool is
+            # bounded by _parallel_kdf_worker_limit, so at most `workers`
+            # components are co-resident. Enforce the same worst-case bound
+            # the encrypt-side clamp guarantees (gitlab#224 re-review f1):
+            # the sum of the `workers` largest component estimates. Using
+            # total_memory_kb here refused legitimately-produced files with
+            # more than two memory-hard components.
+            _mems = sorted((m for _n, _t, m in _kdf_estimate.breakdown), reverse=True)
+            _workers = _parallel_kdf_worker_limit(kdf_workers, _mems, quiet=True)
+            _peak_kb = sum(_mems[:_workers])
+        else:
+            _peak_kb = _kdf_estimate.peak_memory_kb
         enforce_memory_ceiling(_peak_kb, allow_high_kdf_cost=allow_high_kdf_cost)
 
     # Display time/memory estimates for decryption

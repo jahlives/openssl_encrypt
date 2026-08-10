@@ -219,7 +219,9 @@ class TestEstimatorBypassRegressions(unittest.TestCase):
 
     def test_parallel_sum_exceeds_ceiling_while_peak_does_not(self):
         """Concurrent components: each under the ceiling, but their sum over it.
-        The parallel path must enforce against total_memory_kb."""
+        The estimator must expose both figures; since gitlab#224 the parallel
+        enforcement uses the worst-case co-resident sum for the bounded worker
+        pool (matching the encrypt-side clamp), not the raw total."""
         half = 5 * 1024 * 1024  # 5 GiB each; two of them = 10 GiB
         est = de.estimate_decryption_cost(
             self._meta(

@@ -501,9 +501,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   apparent hang for expensive configs, and a second Ctrl-C then bypassed the
   error-path zeroization sweep); the abort now propagates immediately,
   cancels unstarted components and deterministically wipes the already-
-  collected component buffers. When several components fail, the non-first
-  failures are now logged (labels and exception text only) instead of
-  silently vanishing behind the first.
+  collected component buffers — including results that finished but were
+  never retrieved. (Honesty note: a component already running in a worker
+  thread cannot be cancelled mid-KDF, so the *process* still waits for the
+  slowest in-flight component before exiting; its buffer is wiped when it
+  completes.) When several components fail, the non-first failures are now
+  logged (labels and exception text only) instead of silently vanishing
+  behind the first. The decrypt-side ceiling now enforces the same
+  worst-case *co-resident* sum the encrypt clamp guarantees (sum of the
+  worker-count largest components) instead of the sum of all components,
+  which refused legitimately-produced files with more than two memory-hard
+  components; and whirlpool derivation falls back to the `pywhirlpool`
+  interface when only that package is installed, matching the legacy chain
+  instead of failing closed on a capability the probe reported as present.
 
 - **Secret-redaction follow-ups from the #144 review** (gitlab#147), four
   hardening fixes (no user-relevant vulnerability, so no advisory):
