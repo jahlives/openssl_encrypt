@@ -352,11 +352,37 @@ class _DecryptTabState extends State<DecryptTab> {
   String _identityLabel(Map<String, dynamic> id) {
     final name = id['name'] as String? ?? 'Unknown';
     final email = id['email'] as String?;
-    final base = (email != null && email.isNotEmpty) ? '$name <$email>' : name;
-    // Merged lists carry a source tag so own/contact collisions stay
-    // distinguishable (gitlab#215 item 7).
+    return (email != null && email.isNotEmpty) ? '$name <$email>' : name;
+  }
+
+  /// Dropdown child for an identity: a leading structural source badge (own/
+  /// contact) that cannot be spoofed or clipped by the untrusted email field
+  /// (gitlab#215 item 7 / review F6 -- a suffix on '$name <$email>' could be
+  /// forged via a crafted email), then the ellipsized label.
+  Widget _identityMenuChild(Map<String, dynamic> id) {
     final source = id['_source'] as String?;
-    return source != null ? '$base ($source)' : base;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (source != null) ...[
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+            decoration: BoxDecoration(
+              color: source == 'own'
+                  ? Colors.blue.withValues(alpha: 0.15)
+                  : Colors.teal.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Text(source,
+                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+          ),
+          const SizedBox(width: 6),
+        ],
+        Flexible(
+          child: Text(_identityLabel(id), overflow: TextOverflow.ellipsis),
+        ),
+      ],
+    );
   }
 
   /// Drop entries with an empty/missing name and dedupe by name.
@@ -366,14 +392,29 @@ class _DecryptTabState extends State<DecryptTab> {
   /// make DropdownButton assert and crash the tab. Names are unique in the
   /// identity store, but a contact can share a name with an own identity in
   /// the merged signer list, and imported contacts are untrusted input.
+  // Count of signer entries dropped by the last _dedupeByName pass (empty
+  // name, or a name colliding with an already-kept entry). These vanish from
+  // the dropdowns silently, so the "not listed" banner adds them in (review
+  // F7) rather than reporting only the CLI-reported skipped count.
+  int _signerDedupeDrops = 0;
+
   List<Map<String, dynamic>> _dedupeByName(List<Map<String, dynamic>> ids) {
     final seen = <String>{};
     final out = <Map<String, dynamic>>[];
+    var drops = 0;
     for (final id in ids) {
       final name = id['name'] as String?;
-      if (name == null || name.isEmpty) continue;
-      if (seen.add(name)) out.add(id);
+      if (name == null || name.isEmpty) {
+        drops++;
+        continue;
+      }
+      if (seen.add(name)) {
+        out.add(id);
+      } else {
+        drops++;
+      }
     }
+    _signerDedupeDrops = drops;
     return out;
   }
 
@@ -412,7 +453,7 @@ class _DecryptTabState extends State<DecryptTab> {
       ),
       ...signerIds.map((id) => DropdownMenuItem<String?>(
             value: id['name'] as String,
-            child: Text(_identityLabel(id)),
+            child: _identityMenuChild(id),
           )),
     ];
 
@@ -474,15 +515,17 @@ class _DecryptTabState extends State<DecryptTab> {
               style: TextStyle(fontSize: 12, color: Colors.orange),
             ),
           ],
-          if (_skippedIdentities.isNotEmpty) ...[
+          if (_skippedIdentities.isNotEmpty || _signerDedupeDrops > 0) ...[
             const SizedBox(height: 6),
-            Text(
-              '${_skippedIdentities.length} identity store '
-              '${_skippedIdentities.length == 1 ? "entry" : "entries"} could '
-              'not be loaded and ${_skippedIdentities.length == 1 ? "is" : "are"} '
-              'not listed here.',
-              style: const TextStyle(fontSize: 12, color: Colors.orange),
-            ),
+            Builder(builder: (_) {
+              final n = _skippedIdentities.length + _signerDedupeDrops;
+              return Text(
+                'At least $n identity store ${n == 1 ? "entry" : "entries"} '
+                'could not be shown here (unreadable, unnamed, or a name '
+                'collision) and ${n == 1 ? "is" : "are"} not listed.',
+                style: const TextStyle(fontSize: 12, color: Colors.orange),
+              );
+            }),
           ],
           // --verify-from / --no-verify are only sent by CLIService when a
           // non-empty decryption identity is set, so gate them behind exactly

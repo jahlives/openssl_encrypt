@@ -702,7 +702,7 @@ class CLIService {
       final maskedCommand = _getMaskedCommand(args);
       _outputDebugLog('=== CLI ENCRYPT COMMAND ===');
       _outputDebugLog('Full command: $maskedCommand');
-      _outputDebugLog('Raw args: ${args.join(' ')}');
+      _outputDebugLog('Raw args (masked): ${_getMaskedCommand(args)}');
 
       final result = await _runCLICommandWithProgress(
         args,
@@ -883,7 +883,7 @@ class CLIService {
       final maskedCommand = _getMaskedCommand(args);
       _outputDebugLog('=== CLI DECRYPT COMMAND ===');
       _outputDebugLog('Full command: $maskedCommand');
-      _outputDebugLog('Raw args: ${args.join(' ')}');
+      _outputDebugLog('Raw args (masked): ${_getMaskedCommand(args)}');
 
       // Use interactive method if integrity verification with callback is enabled
       final ProcessResult result;
@@ -1017,7 +1017,7 @@ class CLIService {
     try {
       final pythonArgs = ['-m', 'openssl_encrypt.cli', ...args];
 
-      _outputDebugLog('Attempting development CLI: python ${pythonArgs.join(' ')}');
+      _outputDebugLog('Attempting development CLI: ${_getMaskedCommand(args)}');
       _outputDebugLog('Working directory: /home/work/private/git/openssl_encrypt');
 
       // Check if input file exists before calling CLI
@@ -1167,7 +1167,7 @@ class CLIService {
     } else {
       // Development CLI
       final pythonArgs = ['-m', 'openssl_encrypt.cli', ...args];
-      _outputDebugLog('Attempting development CLI with stdin: python ${pythonArgs.join(' ')}');
+      _outputDebugLog('Attempting development CLI with stdin: ${_getMaskedCommand(args)}');
 
       // includeParentEnvironment is false when an explicit environment is
       // given: with it true the parent env is merged back over `environment`,
@@ -1255,7 +1255,7 @@ class CLIService {
         environment: processEnv);
       _outputDebugLog('Using development CLI with progress (python module)');
     } catch (e) {
-      _outputDebugLog('Development CLI unavailable: $e, trying Flatpak CLI with progress');
+      _outputDebugLog('Development CLI unavailable: ${_safeProcessError(e)}, trying Flatpak CLI with progress');
       // Fallback to Flatpak CLI
       if (await File(_cliPath).exists()) {
         process = await Process.start(_cliPath, args, environment: processEnv);
@@ -1393,7 +1393,7 @@ class CLIService {
         environment: processEnv);
       _outputDebugLog('Using development CLI with interaction (python module)');
     } catch (e) {
-      _outputDebugLog('Development CLI unavailable: $e, trying Flatpak CLI with interaction');
+      _outputDebugLog('Development CLI unavailable: ${_safeProcessError(e)}, trying Flatpak CLI with interaction');
       // Fallback to Flatpak CLI
       if (await File(_cliPath).exists()) {
         process = await Process.start(_cliPath, args, environment: processEnv);
@@ -1549,6 +1549,13 @@ class CLIService {
         if (!await logDir.exists()) {
           await logDir.create(recursive: true);
         }
+        // gitlab#215 review F4: the log can contain sensitive operational
+        // detail; restrict the directory to the owner.
+        if (!Platform.isWindows) {
+          try {
+            await Process.run('chmod', ['700', logDir.path]);
+          } catch (_) {}
+        }
 
         final timestamp = DateTime.now().toIso8601String().replaceAll(':', '-').substring(0, 19);
         _debugLogFile = path.join(logDir.path, 'debug_$timestamp.log');
@@ -1559,12 +1566,21 @@ class CLIService {
           'Started: ${DateTime.now().toIso8601String()}',
           'Backend: ${_isFlaspakVersion ? 'Flatpak' : 'Development'}',
           'CLI Version: ${_cliVersion ?? 'Unknown'}',
+          'WARNING: this log may contain sensitive operational detail '
+              '(file paths, argv, error text). Secret VALUES are masked, but '
+              'treat this file as confidential and delete it when done.',
           '==========================================',
           ''
         ];
 
         final file = File(_debugLogFile!);
         await file.writeAsString(headerInfo.join('\n'));
+        // Owner-only: the log lands in ~/Documents (default 0644 umask).
+        if (!Platform.isWindows) {
+          try {
+            await Process.run('chmod', ['600', _debugLogFile!]);
+          } catch (_) {}
+        }
 
         outputDebugLog('Debug log file initialized: $_debugLogFile');
       } catch (e) {
@@ -2033,6 +2049,13 @@ class CLIService {
   }
 
   /// Generate copy-pasteable CLI command with masked password
+  /// Log-safe rendering of a process error: ProcessException.toString()
+  /// embeds the full argv -- including secret-valued flags -- so it must
+  /// never reach a log line verbatim (gitlab#215 review F1).
+  static String _safeProcessError(Object e) => e is ProcessException
+      ? 'ProcessException(${e.executable}): ${e.message} [${e.errorCode}]'
+      : e.toString();
+
   static String _getMaskedCommand(List<String> args) {
     // Determine command prefix
     String commandPrefix = '';
@@ -2043,9 +2066,8 @@ class CLIService {
     }
 
     // Create masked args by replacing secret values with asterisks.
-    // gitlab#215 item 5: --stego-password (and friends) were displayed
-    // verbatim; keep this set in sync with the CLI's
-    // SECRET_VALUE_CLI_OPTIONS.
+    // Keep this set in sync with the CLI's SECRET_VALUE_CLI_OPTIONS
+    // (gitlab#215 item 5 / review F2).
     const secretFlags = {
       '-p',
       '--password',
@@ -2054,7 +2076,7 @@ class CLIService {
       '--manifest-password',
       '--rekey-password',
       '--recovery-code',
-      '--stego-password',
+      '--encryption-data',
       '--code',
     };
     final maskedArgs = <String>[];

@@ -2396,16 +2396,28 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
 
   /// Enabled hash entries for the CLI, or null when none are enabled.
   Map<String, Map<String, dynamic>>? _buildHashConfigMap() {
-    final enabled = Map<String, Map<String, dynamic>>.fromEntries(
-        _hashConfig.entries.where((e) => e.value['enabled'] == true));
-    return enabled.isEmpty ? null : enabled;
+    return _frozenEnabledConfig(_hashConfig);
   }
 
   /// Enabled KDF entries for the CLI, or null when none are enabled.
   Map<String, Map<String, dynamic>>? _buildKdfConfigMap() {
-    final enabled = Map<String, Map<String, dynamic>>.fromEntries(
-        _kdfConfig.entries.where((e) => e.value['enabled'] == true));
-    return enabled.isEmpty ? null : enabled;
+    return _frozenEnabledConfig(_kdfConfig);
+  }
+
+  /// Deep-copy the enabled entries into a fully frozen map (review F3). The
+  /// config panel mutates the INNER per-algorithm maps in place and is not
+  /// _isLoading-gated, so a shallow copy left a batch run reading cost
+  /// parameters that a mid-run slider could still change for later files.
+  static Map<String, Map<String, dynamic>>? _frozenEnabledConfig(
+      Map<String, Map<String, dynamic>> config) {
+    final enabled = <String, Map<String, dynamic>>{};
+    for (final e in config.entries) {
+      if (e.value['enabled'] == true) {
+        enabled[e.key] = Map<String, dynamic>.unmodifiable(
+            Map<String, dynamic>.from(e.value));
+      }
+    }
+    return enabled.isEmpty ? null : Map.unmodifiable(enabled);
   }
 
   /// Load identities for asymmetric encryption
@@ -4017,16 +4029,20 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
       return;
     }
     _batchRunActive = true;
-    setState(() {
-      _isLoading = true;
-      _currentFileIndex = 0;
-      _results.clear();
-    });
+    // try starts immediately after the flag is set (review F8): a throw in
+    // the setState/snapshot below must still clear the static flag in the
+    // finally, or every later run would be refused for the process lifetime.
+    try {
+      setState(() {
+        _isLoading = true;
+        _currentFileIndex = 0;
+        _results.clear();
+      });
 
-    // Snapshot EVERY setting the run consumes before the loop (gitlab#215
-    // item 3): each file in the batch must be processed under the settings
-    // that were armed at start, even if the widget state changes mid-run.
-    final config = _BatchRunConfig(
+      // Snapshot EVERY setting the run consumes before the loop (gitlab#215
+      // item 3): each file in the batch must be processed under the settings
+      // that were armed at start, even if the widget state changes mid-run.
+      final config = _BatchRunConfig(
       operation: _selectedOperation,
       encryptionMode: _encryptionMode,
       withKey: _decryptionIdentity,
@@ -4047,9 +4063,8 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
       hsmType: _hsmType,
       yubikeySlot: _yubikeySlot,
       encryptData: _selectedEncryptData,
-    );
+      );
 
-    try {
       for (int i = 0; i < _selectedFiles.length; i++) {
         if (!mounted) return;
         setState(() {
