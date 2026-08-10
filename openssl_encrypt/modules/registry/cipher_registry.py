@@ -975,9 +975,7 @@ class Threefish512(CipherBase):
             aad_bytes = (
                 bytes(associated_data)
                 if isinstance(associated_data, bytearray)
-                else associated_data
-                if associated_data
-                else None
+                else associated_data if associated_data else None
             )
 
             encrypted = threefish_native.encrypt_512(
@@ -1035,9 +1033,7 @@ class Threefish512(CipherBase):
                 aad_bytes = (
                     bytes(associated_data)
                     if isinstance(associated_data, bytearray)
-                    else associated_data
-                    if associated_data
-                    else None
+                    else associated_data if associated_data else None
                 )
 
                 plaintext = threefish_native.decrypt_512(
@@ -1138,9 +1134,7 @@ class Threefish1024(CipherBase):
             aad_bytes = (
                 bytes(associated_data)
                 if isinstance(associated_data, bytearray)
-                else associated_data
-                if associated_data
-                else None
+                else associated_data if associated_data else None
             )
 
             encrypted = threefish_native.encrypt_1024(
@@ -1198,9 +1192,7 @@ class Threefish1024(CipherBase):
                 aad_bytes = (
                     bytes(associated_data)
                     if isinstance(associated_data, bytearray)
-                    else associated_data
-                    if associated_data
-                    else None
+                    else associated_data if associated_data else None
                 )
 
                 plaintext = threefish_native.decrypt_1024(

@@ -484,7 +484,9 @@ def verify_signature_cli(args) -> None:
         with open(sig_file, "rb") as f:
             sig = parse_signature(f.read())
     except FileNotFoundError:
-        _refuse_early(f"ERROR: Signature file '{sig_file}' not found ❌", "signature file not found")
+        _refuse_early(
+            f"ERROR: Signature file '{sig_file}' not found ❌", "signature file not found"
+        )
     except FileSignatureError as exc:
         # The message is the parser's own, not attacker text.
         _refuse_early(f"ERROR: {exc} ❌", str(exc))

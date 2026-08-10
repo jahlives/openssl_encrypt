@@ -84,7 +84,7 @@ class TestFlushFailureIsReported(TelemetryExitCodeBase):
 
 class TestCancellationIsDistinct(TelemetryExitCodeBase):
     def test_declining_the_prompt_is_neither_success_nor_failure(self):
-        """"No" must not read as a completed destructive action."""
+        """ "No" must not read as a completed destructive action."""
         plugin = mock.MagicMock()
         with mock.patch(
             "openssl_encrypt.plugins.telemetry.OpenSSLEncryptTelemetryPlugin",

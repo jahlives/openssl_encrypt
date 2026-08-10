@@ -68,7 +68,7 @@ class SteganographyTransport:
         """Detect media format from data (images and audio)"""
 
         # Image formats
-        if media_data.startswith(b"\xFF\xD8\xFF"):
+        if media_data.startswith(b"\xff\xd8\xff"):
             return "JPEG"
         elif media_data.startswith(b"\x89PNG"):
             return "PNG"

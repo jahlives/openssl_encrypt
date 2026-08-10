@@ -40,6 +40,7 @@ def _priv_bytes(identity):
     with identity.encryption_private_key as pk:
         return pk.get_bytes()
 
+
 PASSWORD = b"primary-password-correct-horse"
 PLAINTEXT = b"recovery-slot round-trip payload, several blocks long.\n" * 8
 
@@ -88,9 +89,7 @@ class TestRecoverySlotEncryptMetadata(unittest.TestCase):
     def test_recovery_credentials_imply_envelope(self):
         """Passing recovery credentials without envelope=True still wraps."""
         code = generate_recovery_code()
-        meta = _parse_meta(
-            _encrypt(recovery_credentials=[{"type": "recovery_code", "code": code}])
-        )
+        meta = _parse_meta(_encrypt(recovery_credentials=[{"type": "recovery_code", "code": code}]))
         self.assertIn("wrapped_dek", meta["encryption"])
         self.assertIn("dek_slots", meta["encryption"])
 
@@ -131,7 +130,6 @@ class TestRecoverySlotRoundTrip(unittest.TestCase):
         self.assertEqual(_decrypt(enc, password=PASSWORD), PLAINTEXT)
 
 
-
 class TestPassphraseRecoveryRoundTrip(unittest.TestCase):
     RECOVERY_PW = b"my offline backup passphrase"
     # small Argon2 params keep the test fast
@@ -139,9 +137,7 @@ class TestPassphraseRecoveryRoundTrip(unittest.TestCase):
 
     def _encrypt_with_passphrase(self):
         return _encrypt(
-            recovery_credentials=[
-                {"type": "passphrase", "passphrase": self.RECOVERY_PW, **self.A2}
-            ]
+            recovery_credentials=[{"type": "passphrase", "passphrase": self.RECOVERY_PW, **self.A2}]
         )
 
     def test_metadata_has_passphrase_slot(self):
@@ -187,9 +183,7 @@ class TestSlotSetAdversarial(unittest.TestCase):
         return new_b64 + b":" + payload
 
     def _assert_fails(self, file_bytes, **decrypt_kwargs):
-        with self.assertRaises(
-            (AuthenticationError, DecryptionError, ValidationError, ValueError)
-        ):
+        with self.assertRaises((AuthenticationError, DecryptionError, ValidationError, ValueError)):
             _decrypt(file_bytes, **decrypt_kwargs)
 
     def test_strip_slot_fails_password_path(self):
@@ -271,13 +265,13 @@ class TestPqcRecoveryRoundTrip(unittest.TestCase):
 
     def test_escrow_private_key_decrypts(self):
         enc = self._encrypt_with_pqc()
-        self.assertEqual(
-            _decrypt(enc, recovery_private_key=_priv_bytes(self.escrow)), PLAINTEXT
-        )
+        self.assertEqual(_decrypt(enc, recovery_private_key=_priv_bytes(self.escrow)), PLAINTEXT)
 
     def test_stranger_key_fails_closed(self):
         enc = self._encrypt_with_pqc()
-        with self.assertRaises((AuthenticationError, DecryptionError, ValidationError, ValueError, Exception)):
+        with self.assertRaises(
+            (AuthenticationError, DecryptionError, ValidationError, ValueError, Exception)
+        ):
             _decrypt(enc, recovery_private_key=_priv_bytes(self.stranger))
 
     def test_password_still_works_with_pqc_slot(self):
@@ -340,9 +334,7 @@ class TestSlotManagement(unittest.TestCase):
         out = self._write(b"")
         c2 = generate_recovery_code()
         try:
-            add_recovery_slots(
-                inp, out, [{"type": "recovery_code", "code": c2}], recovery_code=c1
-            )
+            add_recovery_slots(inp, out, [{"type": "recovery_code", "code": c2}], recovery_code=c1)
             with open(out, "rb") as f:
                 enc = f.read()
             self.assertEqual(_decrypt(enc, recovery_code=c2), PLAINTEXT)
@@ -368,7 +360,9 @@ class TestSlotManagement(unittest.TestCase):
             with open(out, "rb") as f:
                 enc = f.read()
             # removed code fails, remaining works, password works
-            with self.assertRaises((AuthenticationError, DecryptionError, ValidationError, ValueError)):
+            with self.assertRaises(
+                (AuthenticationError, DecryptionError, ValidationError, ValueError)
+            ):
                 _decrypt(enc, recovery_code=c1)
             self.assertEqual(_decrypt(enc, recovery_code=c2), PLAINTEXT)
             self.assertEqual(_decrypt(enc, password=PASSWORD), PLAINTEXT)

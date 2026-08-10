@@ -62,9 +62,7 @@ class TestImportParserAcceptsStdin(unittest.TestCase):
         """The real property: no import option accepts an inline document."""
         parser = argparse.ArgumentParser()
         setup_identity_parser(parser)
-        subparsers = [
-            a for a in parser._actions if isinstance(a, argparse._SubParsersAction)
-        ]
+        subparsers = [a for a in parser._actions if isinstance(a, argparse._SubParsersAction)]
         import_parser = subparsers[0].choices["import"]
         value_taking = [
             opt
@@ -112,8 +110,12 @@ class TestImportHandlerReadsStdin(unittest.TestCase):
 
     def _args(self, **kw):
         base = dict(
-            data_stdin=False, file=None, alias=None,
-            overwrite=False, allow_key_change=False, identity_store=None,
+            data_stdin=False,
+            file=None,
+            alias=None,
+            overwrite=False,
+            allow_key_change=False,
+            identity_store=None,
         )
         base.update(kw)
         return argparse.Namespace(**base)
@@ -127,9 +129,7 @@ class TestImportHandlerReadsStdin(unittest.TestCase):
         self.assertEqual(imported.call_args[0][0], self.document)
 
     def test_malformed_input_is_refused_rather_than_ignored(self):
-        status, imported, _i, _s = self._run(
-            self._args(data_stdin=True), stdin="{not json"
-        )
+        status, imported, _i, _s = self._run(self._args(data_stdin=True), stdin="{not json")
         self.assertNotEqual(status, 0)
         imported.assert_not_called()
 
@@ -137,9 +137,7 @@ class TestImportHandlerReadsStdin(unittest.TestCase):
         """json.loads returns lists and scalars too."""
         for raw in ('["a"]', '"alice"', "42", "null"):
             with self.subTest(raw=raw):
-                status, imported, _i, _s = self._run(
-                    self._args(data_stdin=True), stdin=raw
-                )
+                status, imported, _i, _s = self._run(self._args(data_stdin=True), stdin=raw)
                 self.assertNotEqual(status, 0)
                 imported.assert_not_called()
 
@@ -214,9 +212,7 @@ class TestImportHandlerReadsStdin(unittest.TestCase):
             path = os.path.join(tmp, "alice.json")
             with open(path, "w") as f:
                 json.dump(self.document, f)
-            status, imported, _identity, _store = self._run(
-                self._args(file=path)
-            )
+            status, imported, _identity, _store = self._run(self._args(file=path))
         self.assertEqual(status, 0)
         self.assertEqual(imported.call_args[0][0], self.document)
 
@@ -240,8 +236,12 @@ class TestAliasDoesNotEvadeKeyPinning(unittest.TestCase):
         from openssl_encrypt.modules.identity_cli import cmd_import
 
         args = argparse.Namespace(
-            data_stdin=True, file=None, alias=alias, overwrite=True,
-            allow_key_change=allow_key_change, identity_store=self.store_path,
+            data_stdin=True,
+            file=None,
+            alias=alias,
+            overwrite=True,
+            allow_key_change=allow_key_change,
+            identity_store=self.store_path,
         )
         # isatty is set on the STREAM, not patched onto the real sys.stdin:
         # sys.stdin is rebound wholesale below, so patching its attribute
@@ -257,9 +257,7 @@ class TestAliasDoesNotEvadeKeyPinning(unittest.TestCase):
     def _stored(self, name):
         from openssl_encrypt.modules.identity_cli import get_identity_store
 
-        return get_identity_store(self.store_path).get_by_name(
-            name, None, load_private_keys=False
-        )
+        return get_identity_store(self.store_path).get_by_name(name, None, load_private_keys=False)
 
     def test_a_substituted_key_under_the_same_alias_is_still_caught(self):
         alice = Identity.generate("alice", "alice@example.com", "pw")
@@ -322,9 +320,7 @@ class TestAliasDoesNotEvadeKeyPinning(unittest.TestCase):
         # isatty() True -- the pty case -- and input() would answer "yes" if
         # it were ever reached.
         with mock.patch("builtins.input", return_value="yes") as prompt:
-            status = self._import(
-                mallory.export_public(), alias="contact", isatty=True
-            )
+            status = self._import(mallory.export_public(), alias="contact", isatty=True)
 
         prompt.assert_not_called()
         self.assertNotEqual(status, 0)

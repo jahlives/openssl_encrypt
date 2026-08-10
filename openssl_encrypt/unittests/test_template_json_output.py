@@ -69,8 +69,8 @@ class TestTemplateListJson(unittest.TestCase):
         bad = mock.Mock()
         bad.metadata.name = "x" * 5000
         bad.metadata.description = "y" * 50000
-        bad.metadata.use_cases = "business"       # a string, not a list
-        bad.metadata.tags = 42                     # not a list at all
+        bad.metadata.use_cases = "business"  # a string, not a list
+        bad.metadata.tags = 42  # not a list at all
         bad.is_built_in = False
         with mock.patch.object(self.mgr, "list_templates", return_value=[bad]):
             entry = json.loads(self._run(_ns(format="json")))["templates"][0]

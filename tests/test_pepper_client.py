@@ -151,8 +151,7 @@ def test_pepper_client():
     print("=" * 70)
     print("Usage Example (with proper mTLS setup):")
     print("=" * 70)
-    print(
-        """
+    print("""
 # 1. Get profile (auto-registers)
 profile = plugin.get_profile()
 
@@ -178,8 +177,7 @@ plugin.configure_deadman(interval="7d", grace_period="24h")
 
 # 7. Check in
 plugin.checkin()
-"""
-    )
+""")
 
     return True
 

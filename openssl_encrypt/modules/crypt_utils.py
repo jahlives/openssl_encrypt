@@ -612,7 +612,7 @@ def secure_shred_file(file_path, passes=3, quiet=False, secure_mode=False):
                         # Second pattern: All ones (0xFF)
                         while bytes_written < file_size:
                             chunk_size = min(buffer_size, file_size - bytes_written)
-                            f.write(b"\xFF" * chunk_size)
+                            f.write(b"\xff" * chunk_size)
                             bytes_written += chunk_size
 
                     else:

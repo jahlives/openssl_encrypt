@@ -31,19 +31,35 @@ class TestRecoverySlotGoldenFixtures(unittest.TestCase):
 
     def test_recovery_code_fixture(self):
         self.assertEqual(
-            decrypt_file(input_file=str(_DIR / "recovery_code.enc"), output_file=None,
-                         recovery_code=CODE, quiet=True), PLAINTEXT)
+            decrypt_file(
+                input_file=str(_DIR / "recovery_code.enc"),
+                output_file=None,
+                recovery_code=CODE,
+                quiet=True,
+            ),
+            PLAINTEXT,
+        )
 
     def test_passphrase_fixture(self):
         self.assertEqual(
-            decrypt_file(input_file=str(_DIR / "passphrase.enc"), output_file=None,
-                         recovery_passphrase=PASSPHRASE, quiet=True), PLAINTEXT)
+            decrypt_file(
+                input_file=str(_DIR / "passphrase.enc"),
+                output_file=None,
+                recovery_passphrase=PASSPHRASE,
+                quiet=True,
+            ),
+            PLAINTEXT,
+        )
 
     def test_primary_password_still_works(self):
         for name in ("recovery_code.enc", "passphrase.enc"):
             self.assertEqual(
-                decrypt_file(input_file=str(_DIR / name), output_file=None,
-                             password=PASSWORD, quiet=True), PLAINTEXT, name)
+                decrypt_file(
+                    input_file=str(_DIR / name), output_file=None, password=PASSWORD, quiet=True
+                ),
+                PLAINTEXT,
+                name,
+            )
 
 
 if __name__ == "__main__":

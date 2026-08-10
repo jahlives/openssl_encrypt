@@ -40,10 +40,7 @@ def _restore_fingerprint_registry(test):
     # Deep-ish copy: the values are per-name ring OrderedDicts, so a
     # shallow copy would restore the SAME mutated ring and per-name
     # eviction would still leak across tests.
-    saved = {
-        k: v.copy()
-        for k, v in security_logger._consumed_secret_fingerprints.items()
-    }
+    saved = {k: v.copy() for k, v in security_logger._consumed_secret_fingerprints.items()}
 
     def restore():
         security_logger._consumed_secret_fingerprints.clear()
@@ -143,9 +140,7 @@ class TestValidated(unittest.TestCase):
         newline-bearing value must stay decryptable; only the new environment
         channel enforces the restriction.
         """
-        self.assertEqual(
-            validated("pw\n", "--second-password", reject_newline=False), "pw\n"
-        )
+        self.assertEqual(validated("pw\n", "--second-password", reject_newline=False), "pw\n")
 
     def test_the_error_names_the_channel(self):
         with self.assertRaises(CredentialError) as ctx:
@@ -215,9 +210,12 @@ class TestSecondPasswordUsesTheChannel(unittest.TestCase):
         import argparse
 
         base = dict(
-            second_password_fd=None, second_password=None,
-            second_password_prompt=False, hidden_header=False,
-            legacy_format=False, action="encrypt",
+            second_password_fd=None,
+            second_password=None,
+            second_password_prompt=False,
+            hidden_header=False,
+            legacy_format=False,
+            action="encrypt",
         )
         base.update(kw)
         return argparse.Namespace(**base)
@@ -340,8 +338,7 @@ class TestSecondPasswordUsesTheChannel(unittest.TestCase):
         must stay decryptable; the hard error belongs on encrypt, where
         wrapping under a guessable secret is the actual harm.
         """
-        self.assertEqual(self._resolve(second_password="   ", action="decrypt"),
-                         b"   ")
+        self.assertEqual(self._resolve(second_password="   ", action="decrypt"), b"   ")
 
     def test_an_empty_fd_is_refused_when_encrypting(self):
         """An empty fd used to yield a silently KEYLESS header.
@@ -378,24 +375,31 @@ class TestSecondPasswordUsesTheChannel(unittest.TestCase):
 
         tree = ast.parse(inspect.getsource(crypt_cli))
         func = next(
-            n for n in ast.walk(tree)
+            n
+            for n in ast.walk(tree)
             if isinstance(n, ast.FunctionDef) and n.name == "main_with_args"
         )
         local_import = min(
-            (n.lineno for n in ast.walk(func)
-             if isinstance(n, ast.Import)
-             for a in n.names if a.name == "sys"),
+            (
+                n.lineno
+                for n in ast.walk(func)
+                if isinstance(n, ast.Import)
+                for a in n.names
+                if a.name == "sys"
+            ),
             default=None,
         )
         if local_import is None:
             self.skipTest("main_with_args no longer imports sys locally")
 
         early = [
-            n.lineno for n in ast.walk(func)
+            n.lineno
+            for n in ast.walk(func)
             if isinstance(n, ast.Name) and n.id == "sys" and n.lineno < local_import
         ]
         self.assertEqual(
-            early, [],
+            early,
+            [],
             f"`sys` used at lines {early}, before the local `import sys` at "
             f"line {local_import} -- these raise UnboundLocalError",
         )
@@ -491,21 +495,23 @@ class TestSignerPassphraseUsesTheChannel(unittest.TestCase):
         from openssl_encrypt.modules import crypt_cli
 
         source = inspect.getsource(crypt_cli)
-        self.assertIn("SIGNER_PASSPHRASE_ENV", source,
-                      "the encrypt path no longer references the variable")
+        self.assertIn(
+            "SIGNER_PASSPHRASE_ENV", source, "the encrypt path no longer references the variable"
+        )
         # And that it goes through the shared resolver rather than a bare
         # prompt: a getpass here would reintroduce the /dev/tty dependency.
         tree = ast.parse(source)
         resolver_calls = [
-            n for n in ast.walk(tree)
-            if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+            n
+            for n in ast.walk(tree)
+            if isinstance(n, ast.Call)
+            and isinstance(n.func, ast.Name)
             and n.func.id == "resolve_credential"
         ]
         self.assertTrue(
             any(
                 any(
-                    isinstance(kw.value, ast.Name)
-                    and kw.value.id == "SIGNER_PASSPHRASE_ENV"
+                    isinstance(kw.value, ast.Name) and kw.value.id == "SIGNER_PASSPHRASE_ENV"
                     for kw in call.keywords
                 )
                 for call in resolver_calls

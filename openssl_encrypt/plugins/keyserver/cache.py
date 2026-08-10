@@ -90,8 +90,7 @@ class KeyserverCache:
             cursor = conn.cursor()
 
             # Create cache table
-            cursor.execute(
-                """
+            cursor.execute("""
                 CREATE TABLE IF NOT EXISTS cache (
                     fingerprint TEXT PRIMARY KEY,
                     name TEXT NOT NULL,
@@ -101,30 +100,23 @@ class KeyserverCache:
                     last_accessed INTEGER NOT NULL,
                     access_count INTEGER DEFAULT 1
                 )
-            """
-            )
+            """)
 
             # Create indices for efficient queries
-            cursor.execute(
-                """
+            cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_name
                 ON cache(name)
-            """
-            )
+            """)
 
-            cursor.execute(
-                """
+            cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_email
                 ON cache(email)
-            """
-            )
+            """)
 
-            cursor.execute(
-                """
+            cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_last_accessed
                 ON cache(last_accessed)
-            """
-            )
+            """)
 
             conn.commit()
 
@@ -351,13 +343,11 @@ class KeyserverCache:
             total_accesses = cursor.fetchone()[0] or 0
 
             # Most accessed entry
-            cursor.execute(
-                """
+            cursor.execute("""
                 SELECT name, access_count FROM cache
                 ORDER BY access_count DESC
                 LIMIT 1
-            """
-            )
+            """)
             most_accessed_row = cursor.fetchone()
             most_accessed = (
                 {"name": most_accessed_row[0], "count": most_accessed_row[1]}

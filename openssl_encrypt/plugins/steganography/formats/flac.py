@@ -571,7 +571,7 @@ class FLACSteganography(SteganographyBase):
             data_length = len(secret_data)
             length_bytes = struct.pack("<I", data_length)
             data_with_header = (
-                length_bytes + secret_data + b"\xFF\xFE"
+                length_bytes + secret_data + b"\xff\xfe"
             )  # Consistent 2-byte end marker
 
             # Convert data to binary
@@ -745,7 +745,7 @@ class FLACSteganography(SteganographyBase):
             # Verify end marker if we have enough bytes
             if len(extracted_bytes) >= 4 + data_length + 2:
                 end_marker = extracted_bytes[4 + data_length : 4 + data_length + 2]
-                if end_marker != b"\xFF\xFE":
+                if end_marker != b"\xff\xfe":
                     logger.warning(f"End marker mismatch: expected FF FE, got {end_marker.hex()}")
 
             logger.debug(f"Successfully extracted {len(payload)} bytes from FLAC")

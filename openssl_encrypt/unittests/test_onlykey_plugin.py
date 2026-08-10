@@ -224,8 +224,8 @@ class TestFindChallengeResponseSlot(unittest.TestCase):
         device = _make_mock_device()
         mock_session = MagicMock()
         # Only slot 1 returns; all others raise
-        mock_session.calculate_hmac_sha1.side_effect = (
-            lambda slot, challenge: b"\x00" * 20
+        mock_session.calculate_hmac_sha1.side_effect = lambda slot, challenge: (
+            b"\x00" * 20
             if slot == 1
             else (_ for _ in ()).throw(RuntimeError("slot not configured"))
         )
@@ -239,10 +239,8 @@ class TestFindChallengeResponseSlot(unittest.TestCase):
         plugin = OnlykeyHSMPlugin()
         device = _make_mock_device()
         mock_session = MagicMock()
-        mock_session.calculate_hmac_sha1.side_effect = (
-            lambda slot, challenge: b"\x55" * 20
-            if slot == 5
-            else (_ for _ in ()).throw(RuntimeError("not configured"))
+        mock_session.calculate_hmac_sha1.side_effect = lambda slot, challenge: (
+            b"\x55" * 20 if slot == 5 else (_ for _ in ()).throw(RuntimeError("not configured"))
         )
         with patch.object(plugin, "_list_onlykey_devices", return_value=[device]), patch(
             "yubikit.yubiotp.YubiOtpSession", return_value=mock_session
@@ -264,10 +262,8 @@ class TestFindChallengeResponseSlot(unittest.TestCase):
         plugin = OnlykeyHSMPlugin()
         device = _make_mock_device()
         mock_session = MagicMock()
-        mock_session.calculate_hmac_sha1.side_effect = (
-            lambda slot, challenge: (_ for _ in ()).throw(
-                RuntimeError("timeout waiting for button press")
-            )
+        mock_session.calculate_hmac_sha1.side_effect = lambda slot, challenge: (
+            (_ for _ in ()).throw(RuntimeError("timeout waiting for button press"))
             if slot == 3
             else (_ for _ in ()).throw(RuntimeError("not configured"))
         )

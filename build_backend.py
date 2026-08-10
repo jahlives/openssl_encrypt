@@ -1,4 +1,5 @@
 """Custom build backend that wraps setuptools to build liboqs dependencies."""
+
 import os
 import shutil
 import subprocess

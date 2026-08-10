@@ -559,8 +559,7 @@ def main():
 
     # Example encryption (would need actual files)
     eprint("\nExample usage:")
-    eprint(
-        """
+    eprint("""
     # Define progress callback
     def on_progress(op_id, percent, message):
         eprint(f"Progress: {percent:.1f}% - {message}")
@@ -579,8 +578,7 @@ def main():
         eprint(f"Encryption started: {op_id}")
     else:
         eprint(f"Encryption failed: {error}")
-    """
-    )
+    """)
 
 
 if __name__ == "__main__":

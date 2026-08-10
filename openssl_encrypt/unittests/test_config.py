@@ -670,8 +670,7 @@ class SimpleTestPlugin(PreProcessorPlugin):
 
             # Create a standalone slow plugin module in a temp file so the AST
             # analyzer only sees clean code (no blocked imports from test_config.py).
-            slow_plugin_source = textwrap.dedent(
-                """\
+            slow_plugin_source = textwrap.dedent("""\
                 import time
                 from openssl_encrypt.modules.plugin_system.plugin_base import (
                     PreProcessorPlugin,
@@ -696,8 +695,7 @@ class SimpleTestPlugin(PreProcessorPlugin):
                     def execute(self, context):
                         time.sleep(2)
                         return PluginResult.success_result("Should not reach here")
-            """
-            )
+            """)
 
             with tempfile.NamedTemporaryFile(
                 mode="w", suffix=".py", prefix="slow_plugin_", delete=False

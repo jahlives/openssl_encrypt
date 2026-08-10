@@ -505,7 +505,7 @@ def create_key_qr(
 
 
 def read_key_qr(
-    qr_images: Union[str, Image.Image, List[Union[str, Image.Image]]]
+    qr_images: Union[str, Image.Image, List[Union[str, Image.Image]]],
 ) -> Tuple[bytes, str]:
     """
     Read key data from QR code(s)

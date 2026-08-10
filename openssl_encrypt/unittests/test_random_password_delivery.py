@@ -101,9 +101,7 @@ class TestNonInteractiveDeliveryIsNotSilentlyLost(unittest.TestCase):
     def _requires(self, isatty, out, quiet=False):
         from openssl_encrypt.modules.crypt_cli import _random_password_destination_ok
 
-        return _random_password_destination_ok(
-            isatty=isatty, out_path=out, quiet=quiet
-        )
+        return _random_password_destination_ok(isatty=isatty, out_path=out, quiet=quiet)
 
     def test_a_destination_is_required_without_a_tty(self):
         self.assertFalse(self._requires(isatty=False, out=None))
@@ -148,10 +146,23 @@ class TestTheDisplayIsSkippedWhenWrittenToAFile(unittest.TestCase):
             out = os.path.join(tmp, "o.enc")
             pw = os.path.join(tmp, "pw.txt")
             r = subprocess.run(
-                [_sys.executable, "-m", "openssl_encrypt.crypt", "encrypt",
-                 "-i", plain, "-o", out, "--random", "24",
-                 "--random-password-out", pw],
-                capture_output=True, text=True, stdin=subprocess.DEVNULL,
+                [
+                    _sys.executable,
+                    "-m",
+                    "openssl_encrypt.crypt",
+                    "encrypt",
+                    "-i",
+                    plain,
+                    "-o",
+                    out,
+                    "--random",
+                    "24",
+                    "--random-password-out",
+                    pw,
+                ],
+                capture_output=True,
+                text=True,
+                stdin=subprocess.DEVNULL,
                 timeout=300,
             )
             self.assertEqual(r.returncode, 0, r.stderr)
@@ -197,7 +208,9 @@ class TestTheWiringEndToEnd(unittest.TestCase):
 
         return subprocess.run(
             [_sys.executable, "-m", "openssl_encrypt.crypt", *argv],
-            capture_output=True, text=True, stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            stdin=subprocess.DEVNULL,
             timeout=300,
         )
 
@@ -205,8 +218,9 @@ class TestTheWiringEndToEnd(unittest.TestCase):
         """gitlab#181: this raised AttributeError before reaching anything."""
         out = os.path.join(self.tmp.name, "out.enc")
         pw = os.path.join(self.tmp.name, "pw.txt")
-        r = self._run("encrypt", "-i", self.plain, "-o", out,
-                      "--random", "24", "--random-password-out", pw)
+        r = self._run(
+            "encrypt", "-i", self.plain, "-o", out, "--random", "24", "--random-password-out", pw
+        )
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertNotIn("AttributeError", r.stderr)
         self.assertTrue(os.path.exists(pw))
@@ -217,8 +231,17 @@ class TestTheWiringEndToEnd(unittest.TestCase):
         pw = os.path.join(self.tmp.name, "pw.txt")
         back = os.path.join(self.tmp.name, "back.txt")
         self.assertEqual(
-            self._run("encrypt", "-i", self.plain, "-o", out,
-                      "--random", "24", "--random-password-out", pw).returncode,
+            self._run(
+                "encrypt",
+                "-i",
+                self.plain,
+                "-o",
+                out,
+                "--random",
+                "24",
+                "--random-password-out",
+                pw,
+            ).returncode,
             0,
         )
         with open(pw) as f:
@@ -231,8 +254,9 @@ class TestTheWiringEndToEnd(unittest.TestCase):
     def test_the_password_never_appears_on_a_stream(self):
         out = os.path.join(self.tmp.name, "out.enc")
         pw = os.path.join(self.tmp.name, "pw.txt")
-        r = self._run("encrypt", "-i", self.plain, "-o", out,
-                      "--random", "24", "--random-password-out", pw)
+        r = self._run(
+            "encrypt", "-i", self.plain, "-o", out, "--random", "24", "--random-password-out", pw
+        )
         with open(pw) as f:
             password = f.read().rstrip("\n")
         self.assertNotIn(password, r.stdout)
@@ -246,8 +270,9 @@ class TestTheWiringEndToEnd(unittest.TestCase):
         file sealed under a password that no longer existed anywhere.
         """
         out = os.path.join(self.tmp.name, "collide.enc")
-        r = self._run("encrypt", "-i", self.plain, "-o", out,
-                      "--random", "24", "--random-password-out", out)
+        r = self._run(
+            "encrypt", "-i", self.plain, "-o", out, "--random", "24", "--random-password-out", out
+        )
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("must differ from", r.stderr)
 
@@ -259,16 +284,30 @@ class TestTheWiringEndToEnd(unittest.TestCase):
         which is None here, so it passed -- and the ciphertext then truncated
         the password file. Exit 0, "encrypted successfully", password gone.
         """
-        r = self._run("encrypt", "-i", self.plain,
-                      "--random", "24",
-                      "--random-password-out", self.plain + ".encrypted")
+        r = self._run(
+            "encrypt",
+            "-i",
+            self.plain,
+            "--random",
+            "24",
+            "--random-password-out",
+            self.plain + ".encrypted",
+        )
         self.assertNotEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("must differ from", r.stderr)
 
     def test_a_destination_equal_to_the_overwrite_target_is_refused(self):
         """--overwrite writes back over the input."""
-        r = self._run("encrypt", "-i", self.plain, "--overwrite",
-                      "--random", "24", "--random-password-out", self.plain)
+        r = self._run(
+            "encrypt",
+            "-i",
+            self.plain,
+            "--overwrite",
+            "--random",
+            "24",
+            "--random-password-out",
+            self.plain,
+        )
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("must differ from", r.stderr)
 
@@ -279,17 +318,35 @@ class TestTheWiringEndToEnd(unittest.TestCase):
         stale-file hazard the guard exists to prevent.
         """
         pw = os.path.join(self.tmp.name, "pw.txt")
-        r = self._run("encrypt", "-i", self.plain, "-o",
-                      os.path.join(self.tmp.name, "a.enc"),
-                      "--for-identity", "nobody",
-                      "--random", "24", "--random-password-out", pw)
+        r = self._run(
+            "encrypt",
+            "-i",
+            self.plain,
+            "-o",
+            os.path.join(self.tmp.name, "a.enc"),
+            "--for-identity",
+            "nobody",
+            "--random",
+            "24",
+            "--random-password-out",
+            pw,
+        )
         self.assertNotEqual(r.returncode, 0)
         self.assertFalse(os.path.exists(pw), "a stale password file was left")
 
     def test_a_destination_equal_to_the_input_is_refused(self):
         out = os.path.join(self.tmp.name, "out.enc")
-        r = self._run("encrypt", "-i", self.plain, "-o", out,
-                      "--random", "24", "--random-password-out", self.plain)
+        r = self._run(
+            "encrypt",
+            "-i",
+            self.plain,
+            "-o",
+            out,
+            "--random",
+            "24",
+            "--random-password-out",
+            self.plain,
+        )
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("must differ from", r.stderr)
         with open(self.plain) as f:
@@ -310,9 +367,22 @@ class TestTheWiringEndToEnd(unittest.TestCase):
         controller, worker = pty.openpty()
         try:
             proc = subprocess.run(
-                [_sys.executable, "-m", "openssl_encrypt.crypt", "encrypt",
-                 "-i", self.plain, "-o", out, "--random", "24", "--quiet"],
-                stdin=subprocess.DEVNULL, stdout=worker, stderr=worker,
+                [
+                    _sys.executable,
+                    "-m",
+                    "openssl_encrypt.crypt",
+                    "encrypt",
+                    "-i",
+                    self.plain,
+                    "-o",
+                    out,
+                    "--random",
+                    "24",
+                    "--quiet",
+                ],
+                stdin=subprocess.DEVNULL,
+                stdout=worker,
+                stderr=worker,
                 timeout=300,
             )
         finally:
@@ -334,8 +404,17 @@ class TestTheWiringEndToEnd(unittest.TestCase):
         """A stale file must not be read back as this run's password."""
         out = os.path.join(self.tmp.name, "nr.enc")
         pw = os.path.join(self.tmp.name, "pw.txt")
-        r = self._run("encrypt", "-i", self.plain, "-o", out,
-                      "--password", "pw12345678", "--random-password-out", pw)
+        r = self._run(
+            "encrypt",
+            "-i",
+            self.plain,
+            "-o",
+            out,
+            "--password",
+            "pw12345678",
+            "--random-password-out",
+            pw,
+        )
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("no effect without --random", r.stderr)
 

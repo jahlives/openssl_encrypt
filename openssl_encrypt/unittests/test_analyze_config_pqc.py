@@ -42,8 +42,9 @@ class TestTheCommandActuallyRuns(unittest.TestCase):
         from openssl_encrypt.modules.crypt_cli import run_config_analyzer
 
         args = self._args("--output-format", "json")
-        self.assertIsNone(getattr(args, "use_case", "unset"),
-                          "argparse is expected to leave use_case as None")
+        self.assertIsNone(
+            getattr(args, "use_case", "unset"), "argparse is expected to leave use_case as None"
+        )
         buf = io.StringIO()
         with redirect_stdout(buf):
             run_config_analyzer(args)
@@ -67,9 +68,7 @@ class TestReportDoesNotClaimQuantumResistance(unittest.TestCase):
     """
 
     def setUp(self):
-        self.analysis = ConfigurationAnalyzer().analyze_configuration(
-            {"pqc_algorithm": "none"}
-        )
+        self.analysis = ConfigurationAnalyzer().analyze_configuration({"pqc_algorithm": "none"})
 
     def test_summary_does_not_report_post_quantum_enabled(self):
         self.assertFalse(self.analysis.configuration_summary["post_quantum_enabled"])
@@ -102,9 +101,7 @@ class TestPqcNoneIsNotEnabled(unittest.TestCase):
         """argparse gives 'none', but a config file need not be so tidy."""
         for value in ("None", "NONE", " none ", ""):
             with self.subTest(value=value):
-                self.assertIsNone(
-                    self.analyzer._extract_pqc_info({"pqc_algorithm": value})
-                )
+                self.assertIsNone(self.analyzer._extract_pqc_info({"pqc_algorithm": value}))
 
     def test_a_real_algorithm_is_still_reported(self):
         info = self.analyzer._extract_pqc_info({"pqc_algorithm": "kyber768-hybrid"})

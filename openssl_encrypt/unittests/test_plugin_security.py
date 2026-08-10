@@ -789,8 +789,7 @@ class TestConfigDirectoryPermissions(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             with tempfile.TemporaryDirectory() as config_dir:
                 plugin_file = Path(temp_dir) / "test_plugin.py"
-                plugin_file.write_text(
-                    """
+                plugin_file.write_text("""
 from openssl_encrypt.modules.plugin_system import PreProcessorPlugin, PluginResult, PluginCapability
 
 class TestPlugin(PreProcessorPlugin):
@@ -805,8 +804,7 @@ class TestPlugin(PreProcessorPlugin):
 
     def process_file(self, file_path, context):
         return PluginResult.success_result("OK")
-"""
-                )
+""")
 
                 # Use temp config directory to avoid loading existing configs
                 config_manager = PluginConfigManager(config_dir)
@@ -865,8 +863,7 @@ class TestPackagePluginDiscovery(unittest.TestCase):
         pkg_dir = self.test_dir / "test_package_plugin"
         pkg_dir.mkdir()
         init_file = pkg_dir / "__init__.py"
-        init_file.write_text(
-            """
+        init_file.write_text("""
 from openssl_encrypt.modules.plugin_system import PreProcessorPlugin, PluginResult, PluginCapability
 
 class PackagePlugin(PreProcessorPlugin):
@@ -881,8 +878,7 @@ class PackagePlugin(PreProcessorPlugin):
 
     def process_file(self, file_path, context):
         return PluginResult.success_result("OK")
-"""
-        )
+""")
 
         # Discover plugins
         discovered = self.plugin_manager.discover_plugins()
@@ -897,8 +893,7 @@ class PackagePlugin(PreProcessorPlugin):
         """Verify both flat files and packages are discovered."""
         # Create a flat file plugin
         flat_file = self.test_dir / "flat_plugin.py"
-        flat_file.write_text(
-            """
+        flat_file.write_text("""
 from openssl_encrypt.modules.plugin_system import PreProcessorPlugin, PluginResult, PluginCapability
 
 class FlatPlugin(PreProcessorPlugin):
@@ -913,15 +908,13 @@ class FlatPlugin(PreProcessorPlugin):
 
     def process_file(self, file_path, context):
         return PluginResult.success_result("OK")
-"""
-        )
+""")
 
         # Create a package plugin
         pkg_dir = self.test_dir / "package_plugin"
         pkg_dir.mkdir()
         init_file = pkg_dir / "__init__.py"
-        init_file.write_text(
-            """
+        init_file.write_text("""
 from openssl_encrypt.modules.plugin_system import PreProcessorPlugin, PluginResult, PluginCapability
 
 class PackagePlugin(PreProcessorPlugin):
@@ -936,8 +929,7 @@ class PackagePlugin(PreProcessorPlugin):
 
     def process_file(self, file_path, context):
         return PluginResult.success_result("OK")
-"""
-        )
+""")
 
         # Discover plugins
         discovered = self.plugin_manager.discover_plugins()
@@ -952,8 +944,7 @@ class PackagePlugin(PreProcessorPlugin):
         pkg_dir = self.test_dir / "dir_test_plugin"
         pkg_dir.mkdir()
         init_file = pkg_dir / "__init__.py"
-        init_file.write_text(
-            """
+        init_file.write_text("""
 from openssl_encrypt.modules.plugin_system import PreProcessorPlugin, PluginResult, PluginCapability
 
 class DirTestPlugin(PreProcessorPlugin):
@@ -968,8 +959,7 @@ class DirTestPlugin(PreProcessorPlugin):
 
     def process_file(self, file_path, context):
         return PluginResult.success_result("OK")
-"""
-        )
+""")
 
         # Load the plugin
         result = self.plugin_manager.load_plugin(str(init_file))

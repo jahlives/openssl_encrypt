@@ -169,5 +169,4 @@ def resolve_credential(
     # Validated like every other channel: pressing Enter at the prompt
     # would otherwise proceed with "" while the env channel hard-errors
     # on the same value. reject_newline=False -- getpass cannot return one.
-    return validated(getpass.getpass(prompt), "interactive prompt",
-                     reject_newline=False)
+    return validated(getpass.getpass(prompt), "interactive prompt", reject_newline=False)
