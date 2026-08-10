@@ -8,22 +8,17 @@ encrypting with parallel + Argon2 rounds>1 and decrypting without it (or vice
 versa) derived a different key -> permanent silent failure to decrypt, and the
 parallel path did strictly less KDF work than the recorded config.
 
-This test pins that the two paths produce byte-identical Argon2 output for
-rounds > 1.
+The duplicated `_kdf_worker` was retired in gitlab#224 — the parallel entry
+point now routes every format through `compute_kdf_independent` itself, so the
+divergence class cannot recur by construction. This test keeps the M3
+invariant pinned at the component level: `rounds` genuinely changes the
+Argon2 output (salt-chaining is applied), and the full-path equivalence for
+rounds>1 is pinned end-to-end in test_parallel_kdf_legacy_route_224.py.
 """
 
 import unittest
 
 from openssl_encrypt.modules.crypt_core import compute_kdf_independent
-from openssl_encrypt.modules.parallel_kdf import _kdf_worker
-
-
-class _FakeQueue:
-    """Minimal stand-in for the worker's progress mp.Queue."""
-
-    def put(self, _msg):  # noqa: D401 - trivial sink
-        pass
-
 
 # Fast, deterministic Argon2 params (rounds > 1 is the point).
 _ARGON2_CONFIG = {
@@ -36,35 +31,38 @@ _ARGON2_CONFIG = {
 
 
 class TestParallelArgon2RoundsEquivalence(unittest.TestCase):
-    def _seq(self, password, salt, key_length):
-        return bytes(
-            compute_kdf_independent(password, salt, "argon2", dict(_ARGON2_CONFIG), key_length)
-        )
-
-    def _par(self, password, salt, key_length):
-        _, result = _kdf_worker(
-            "argon2", password, salt, "argon2", dict(_ARGON2_CONFIG), key_length, _FakeQueue()
-        )
-        return result
-
-    def test_parallel_matches_sequential_for_rounds_gt_1(self):
-        password = b"\x11" * 32  # stand-in for the initial SHA-256 hash
-        salt = b"\x22" * 16
-        key_length = 32
-        self.assertEqual(
-            self._par(password, salt, key_length), self._seq(password, salt, key_length)
-        )
-
     def test_rounds_actually_change_the_output(self):
         """A rounds=1 config must differ from rounds=3 (proves rounds are applied)."""
         password = b"\x33" * 32
         salt = b"\x44" * 16
-        one = dict(_ARGON2_CONFIG, rounds=1)
-        _, par_one = _kdf_worker("argon2", password, salt, "argon2", one, 32, _FakeQueue())
-        _, par_three = _kdf_worker(
-            "argon2", password, salt, "argon2", dict(_ARGON2_CONFIG), 32, _FakeQueue()
+        one = bytes(
+            compute_kdf_independent(password, salt, "argon2", dict(_ARGON2_CONFIG, rounds=1), 32)
         )
-        self.assertNotEqual(par_one, par_three)
+        three = bytes(compute_kdf_independent(password, salt, "argon2", dict(_ARGON2_CONFIG), 32))
+        self.assertNotEqual(one, three)
+
+    def test_rounds_use_salt_chaining(self):
+        """rounds=3 must equal manually chaining three rounds=1 calls with
+        round_salt = previous_result[:32] — the exact M3 construction."""
+        password = b"\x11" * 32
+        salt = b"\x22" * 16
+        chained_input = password
+        chained_salt = salt
+        result = None
+        for _ in range(3):
+            result = bytes(
+                compute_kdf_independent(
+                    chained_input,
+                    chained_salt,
+                    "argon2",
+                    dict(_ARGON2_CONFIG, rounds=1),
+                    32,
+                )
+            )
+            chained_input = result
+            chained_salt = result[:32]
+        direct = bytes(compute_kdf_independent(password, salt, "argon2", dict(_ARGON2_CONFIG), 32))
+        self.assertEqual(result, direct)
 
 
 if __name__ == "__main__":

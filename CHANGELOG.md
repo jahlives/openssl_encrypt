@@ -1760,6 +1760,24 @@ inflated KDF metadata parameters, not cosmetic output.
 
 ### Security
 
+- **Legacy `--parallel-kdf` dispatcher retired; every format now derives
+  through the single component implementation** (gitlab#224, hardening — no
+  user-relevant vulnerability, so no advisory): the parallel entry point kept
+  its own multiprocessing copy of every KDF/hash component for v11/v12 files,
+  and that duplication is where every parallel-vs-sequential divergence has
+  lived (the M3 Argon2 rounds bug, the RandomX silent drop #71). One live
+  defect remained on this line: its balloon branch imported a module that
+  never existed, so v11 balloon + `--parallel-kdf` always errored.
+  `generate_key_independent_xor_parallel` now routes **all** format versions
+  through `crypt_core.generate_key_independent_xor(parallel=True)` (the #220
+  thread pool, byte-identical to sequential by construction), retiring
+  `_hash_worker`/`_kdf_worker` and the progress-queue machinery outright, so
+  the two paths can never drift again. Balloon works under `--parallel-kdf`,
+  and the all-empty-config refusal now lives in the shared path — scoped to
+  encryption, so any legacy file's recorded metadata still derives
+  (previously the check was unreachable and an all-empty config silently
+  derived an unstretched single hash as the key).
+
 - **Secret-redaction follow-ups from the #144 review** (gitlab#147), four
   hardening fixes (no user-relevant vulnerability, so no advisory):
   - Strict UTF-8 encodes on secret material could leak a byte through a
