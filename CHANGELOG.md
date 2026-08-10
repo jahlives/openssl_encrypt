@@ -468,10 +468,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pool, byte-identical to sequential by construction), retiring
   `_hash_worker`/`_kdf_worker` and the progress-queue machinery outright, so
   the two paths can never drift again. Whirlpool participates in the pool,
-  balloon works under `--parallel-kdf`, and the all-empty-config refusal now
-  lives in the shared path — scoped to encryption, so any legacy file's
-  recorded metadata still derives (previously the check was unreachable and an
-  all-empty config silently derived an unstretched single hash as the key).
+  balloon works under `--parallel-kdf`, and the all-empty-config handling now
+  lives in the shared path: a parallel request is refused (the retired
+  dispatcher's contract), the sequential path keeps deriving for API
+  compatibility but now warns that the key is a single unstretched hash
+  (previously the check was unreachable and it proceeded silently), and
+  decryption metadata is fully exempt so any legacy file stays readable.
   The Python 3.13 whirlpool loader also registers the extension in
   `sys.modules`, so the component's lazy import agrees with
   `WHIRLPOOL_AVAILABLE` instead of failing after the capability check passed.

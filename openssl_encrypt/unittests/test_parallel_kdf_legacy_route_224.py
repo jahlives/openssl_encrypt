@@ -150,14 +150,24 @@ class TestBalloonParallelWorks(unittest.TestCase):
 
 
 class TestEmptyConfigGuard(unittest.TestCase):
-    """The all-empty-config refusal must survive the routing (it lived only in
-    the retired dispatcher; the sequential function's own check was
-    unreachable because the initial-hash component is always appended) and
-    must NOT fire for decryption metadata, so legacy files stay readable."""
+    """The all-empty-config refusal must survive the routing for parallel
+    requests (it lived only in the retired dispatcher; the sequential
+    function's own check was unreachable because the initial-hash component
+    is always appended). The sequential path keeps deriving -- fast-test API
+    callers rely on it -- but now warns instead of proceeding silently, and
+    decryption metadata is fully exempt so legacy files stay readable."""
 
-    def test_empty_config_raises_on_encrypt_sequential(self):
-        with self.assertRaises(ValueError):
-            generate_key_independent_xor(PASSWORD, SALT, {}, quiet=True, format_version=11)
+    def test_empty_config_sequential_derives_with_warning(self):
+        from contextlib import redirect_stderr
+        from io import StringIO
+
+        err = StringIO()
+        with redirect_stderr(err):
+            key, _, _ = generate_key_independent_xor(
+                PASSWORD, SALT, {}, quiet=False, format_version=11
+            )
+        self.assertTrue(key)
+        self.assertIn("unstretched", err.getvalue())
 
     def test_empty_config_raises_on_encrypt_parallel(self):
         with self.assertRaises(ValueError):

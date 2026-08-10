@@ -3245,20 +3245,29 @@ def generate_key_independent_xor(
                 ("RandomX KDF", _randomx_component, _mem_estimate(estimate_randomx, randomx_config))
             )
 
-        # Refuse an all-empty config at encrypt time (gitlab#224). The
-        # "no components" check further below is unreachable -- the
-        # initial-hash component is appended unconditionally -- so without
-        # this gate an empty config would silently derive an unstretched
-        # normalized SHA-256 of password+salt as the key. Decryption
-        # metadata is exempt so any legacy file written that way stays
-        # readable (the sequential path has always derived for them).
+        # All-empty config (gitlab#224): the "no components" check that used
+        # to sit below was unreachable -- the initial-hash component is
+        # appended unconditionally -- so an empty config silently derived an
+        # unstretched normalized SHA-256 of password+salt as the key. A
+        # parallel request keeps the retired dispatcher's contract and is
+        # refused outright. The sequential path has always derived for such
+        # configs and callers rely on it (fast-test API usage), so it warns
+        # instead of silently proceeding. Decryption metadata is fully
+        # exempt so any legacy file written that way stays readable.
         if not component_tasks and not (
             hash_config and hash_config.get("_is_from_decryption_metadata", False)
         ):
-            raise ValueError(
-                "No algorithms enabled for key derivation. "
-                "Enable at least one hash algorithm or KDF."
-            )
+            if parallel:
+                raise ValueError(
+                    "No algorithms enabled for key derivation. "
+                    "Enable at least one hash algorithm or KDF."
+                )
+            if not quiet:
+                eprint(
+                    "⚠️ No hash algorithms or KDFs enabled: the key is derived "
+                    "from a single unstretched hash of password+salt. Enable "
+                    "at least one hash algorithm or KDF for real key stretching."
+                )
 
         # Execute the collected component tasks and gather their outputs into
         # xor_components (gitlab#220). Sequential mode reproduces the historical
