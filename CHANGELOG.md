@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Desktop GUI: parallel key derivation control** (gitlab#225): the
+  Encrypt tab's advanced options gain a "Parallel key derivation" switch and
+  worker-count selector, wired to `--parallel-kdf`/`--kdf-workers` — the
+  control was deliberately withheld while the flag was inert on every
+  producible format (gitlab#220) and is unblocked now that the core really
+  parallelizes v13/v14 with a byte-identical key (#220/#224). It is disabled
+  while the legacy sequential composition is selected (that chain feeds each
+  step into the next and cannot parallelize) and describes the real
+  behaviour: same key with or without it, speedup on memory-hard KDF
+  configurations, worker count capped by CPU cores and the memory safety
+  ceiling.
+
 - **PIV / PKCS#11 protection for `identity create`** (gitlab#218): `identity
   create` declared `--hsm-piv-slot`/`--hsm-pkcs11-lib`/`--hsm-biometric` but its
   `--hsm` choices excluded `piv` and the handler never read them — dead surface.

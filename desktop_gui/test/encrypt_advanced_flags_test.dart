@@ -68,18 +68,49 @@ void main() {
     expect(find.textContaining('weakest step'), findsOneWidget);
   });
 
-  testWidgets('no parallel-KDF control is offered on 1.5.x',
+  testWidgets('parallel-KDF control is offered and gated by the sequential toggle',
       (WidgetTester tester) async {
-    // --parallel-kdf is inert on every format this line can produce (v13/v14
-    // both delegate to sequential derivation — gitlab#220), so the control is
-    // deliberately absent rather than shipped as a no-op that promises
-    // parallelism the core does not deliver.
+    // gitlab#225: the core now really parallelizes v13/v14 (gitlab#220/#224),
+    // so the control exists. It must be disabled while the legacy sequential
+    // composition is selected — the sequential chain feeds each step into the
+    // next and cannot parallelize — and turning sequential on must clear it.
     await tester
         .pumpWidget(wrap(EncryptTab(fileManager: FileManager(), isProMode: true)));
     await tester.pump();
     await openAdvanced(tester);
 
-    expect(find.text('Parallel key derivation'), findsNothing);
+    expect(find.text('Parallel key derivation'), findsOneWidget);
+    // Off by default, no worker dropdown until enabled.
+    expect(find.text('Worker threads:'), findsNothing);
+
+    SwitchListTile parallelTile() => tester.widget<SwitchListTile>(
+          find.ancestor(
+            of: find.text('Parallel key derivation'),
+            matching: find.byType(SwitchListTile),
+          ),
+        );
+    SwitchListTile sequentialTile() => tester.widget<SwitchListTile>(
+          find.ancestor(
+            of: find.text('Use legacy sequential key derivation'),
+            matching: find.byType(SwitchListTile),
+          ),
+        );
+    expect(parallelTile().value, isFalse);
+    expect(parallelTile().onChanged, isNotNull);
+
+    // Enable it (drive the handler directly -- the tile sits below the
+    // 600px test viewport and hit-testing a scrolled-in tile is flaky):
+    // the worker-count dropdown appears.
+    parallelTile().onChanged!(true);
+    await tester.pump();
+    expect(parallelTile().value, isTrue);
+    expect(find.text('Worker threads:'), findsOneWidget);
+
+    // Selecting the sequential composition clears and disables it.
+    sequentialTile().onChanged!(true);
+    await tester.pump();
+    expect(parallelTile().value, isFalse);
+    expect(parallelTile().onChanged, isNull);
     expect(find.text('Worker threads:'), findsNothing);
   });
 

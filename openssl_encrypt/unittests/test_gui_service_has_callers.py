@@ -57,11 +57,6 @@ KNOWN_UNWIRED = [
     # composition, so an explicit control would be redundant surface. The
     # parameter stays for the sequential-vs-independent mutual-exclusion guard.
     ("encryptTextWithProgress", "independentXor", "gitlab#153: redundant with the default composition"),
-    # gitlab#220: --parallel-kdf is inert on every format this line can
-    # produce (v13/v14 delegate to sequential), so the GUI control is deferred;
-    # the service params stay so they can be wired once the core parallelizes.
-    ("encryptTextWithProgress", "parallelKdf", "gitlab#220: parallel-kdf inert on producible formats"),
-    ("encryptTextWithProgress", "kdfWorkers", "gitlab#220: parallel-kdf inert on producible formats"),
 ]
 
 

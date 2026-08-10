@@ -423,10 +423,10 @@ class CLIService {
         'do not override it.',
       );
     }
-    // Bound the worker count as hygiene: the CLI does not clamp it, and a
-    // zero/negative value raises in ProcessPoolExecutor. (On this line the
-    // value is not consumed anyway — parallel-kdf is inert, gitlab#220 — but
-    // the guard stays so it is safe once that lands.)
+    // Bound the worker count as hygiene. Since gitlab#220/#224 the CLI
+    // itself clamps the pool (CPU count, component count and a
+    // concurrent-memory ceiling), so this is defense-in-depth against
+    // sending a nonsensical flag value.
     if (kdfWorkers != null && (kdfWorkers < 1 || kdfWorkers > 64)) {
       throw ArgumentError('Key-derivation workers must be between 1 and 64.');
     }

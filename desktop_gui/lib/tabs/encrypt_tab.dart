@@ -46,6 +46,8 @@ class _EncryptTabState extends State<EncryptTab> {
   // the password via CRYPT_PASSWORD, so the store never runs (gitlab#156).
   final TextEditingController _pqcKeyfileController = TextEditingController();
   bool _useSequentialXor = false; // opt in to legacy sequential composition
+  bool _parallelKdf = false; // derive KDF components on a thread pool (gitlab#225)
+  int _kdfWorkers = 4;
   // Parallel KDF (--parallel-kdf/--kdf-workers) is not exposed on this line:
   // it is inert on every producible format (gitlab#220).
 
@@ -256,6 +258,8 @@ class _EncryptTabState extends State<EncryptTab> {
             ? null
             : _pqcKeyfileController.text.trim(),
         useXorComposition: _useSequentialXor,
+        parallelKdf: _parallelKdf,
+        kdfWorkers: _parallelKdf ? _kdfWorkers : null,
         onProgress: (progress) {
           setState(() {
             _operationStatus = progress;
@@ -367,6 +371,8 @@ class _EncryptTabState extends State<EncryptTab> {
             ? null
             : _pqcKeyfileController.text.trim(),
         useXorComposition: _useSequentialXor,
+        parallelKdf: _parallelKdf,
+        kdfWorkers: _parallelKdf ? _kdfWorkers : null,
         onProgress: (progress) {
           setState(() {
             _operationStatus = progress;
@@ -1534,14 +1540,47 @@ class _EncryptTabState extends State<EncryptTab> {
                               style: TextStyle(color: Colors.orange),
                             ),
                             value: _useSequentialXor,
-                            onChanged: (v) =>
-                                setState(() => _useSequentialXor = v),
+                            onChanged: (v) => setState(() {
+                              _useSequentialXor = v;
+                              // Parallel derivation applies to the independent
+                              // composition only (the sequential chain feeds
+                              // each step into the next).
+                              if (v) _parallelKdf = false;
+                            }),
                             contentPadding: EdgeInsets.zero,
                           ),
-                          // No parallel-KDF control: on this line the parallel
-                          // path delegates back to sequential for every format
-                          // the GUI can produce (v13/v14), so it would be a
-                          // no-op that promises parallelism (gitlab#220).
+                          SwitchListTile(
+                            title: const Text('Parallel key derivation'),
+                            subtitle: const Text(
+                              'Derives the independent key components '
+                              'concurrently — same key, so files decrypt with '
+                              'or without it. Speeds up configurations with '
+                              'several memory-hard KDFs; the worker count is '
+                              'capped by CPU cores and a memory safety '
+                              'ceiling.',
+                            ),
+                            value: _parallelKdf,
+                            onChanged: _useSequentialXor
+                                ? null
+                                : (v) => setState(() => _parallelKdf = v),
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                          if (_parallelKdf)
+                            Row(
+                              children: [
+                                const Text('Worker threads:'),
+                                const SizedBox(width: 12),
+                                DropdownButton<int>(
+                                  value: _kdfWorkers,
+                                  items: const [2, 4, 8, 16]
+                                      .map((n) => DropdownMenuItem(
+                                          value: n, child: Text('$n')))
+                                      .toList(),
+                                  onChanged: (v) =>
+                                      setState(() => _kdfWorkers = v ?? 4),
+                                ),
+                              ],
+                            ),
                         ],
                       ),
                     ),
