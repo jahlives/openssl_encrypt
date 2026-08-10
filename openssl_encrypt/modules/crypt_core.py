@@ -7362,7 +7362,7 @@ def encrypt_file(
         if is_independent_xor:
             # Independent XOR mode - each algorithm processes original input
             if parallel_kdf:
-                # Parallel execution via multiprocessing
+                # Thread-pool component derivation (gitlab#220/#224)
                 from .parallel_kdf import generate_key_independent_xor_parallel
 
                 key, salt, _ = generate_key_independent_xor_parallel(
@@ -11755,7 +11755,7 @@ def decrypt_file(
             # by design (M2 decision), so route it here even if a hand-crafted
             # blob omits xor_mode — the v14 schema also requires xor_mode.
             if parallel_kdf:
-                # Parallel execution via multiprocessing
+                # Thread-pool component derivation (gitlab#220/#224)
                 from .parallel_kdf import generate_key_independent_xor_parallel
 
                 key, _, _ = generate_key_independent_xor_parallel(

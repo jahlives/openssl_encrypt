@@ -432,7 +432,7 @@ class CLIService {
      String? pqcKeyfile,                // Path to LOAD an existing PQC key file
      bool independentXor = false,       // KDF composition: independent XOR
      bool useXorComposition = false,    // KDF composition: sequential XOR (v13-pinned)
-     bool parallelKdf = false,          // Parallel key derivation (requires independentXor)
+     bool parallelKdf = false,          // Parallel key derivation (independent composition)
      int? kdfWorkers,                   // Worker count for parallel key derivation
      Function(String)? onProgress,
      Function(String)? onStatus}
@@ -457,8 +457,9 @@ class CLIService {
       );
     }
     if (kdfWorkers != null && (kdfWorkers < 1 || kdfWorkers > 64)) {
-      // Not clamped by the CLI: parallel_kdf.py uses an explicit value
-      // verbatim, and encrypt-side memory is the sum of component costs.
+      // Since gitlab#220/#224 the CLI itself clamps the pool (CPU count,
+      // component count and a concurrent-memory ceiling); this guard is
+      // defense-in-depth against sending a nonsensical flag value.
       throw ArgumentError('Key-derivation workers must be between 1 and 64.');
     }
     Directory? tempDir;

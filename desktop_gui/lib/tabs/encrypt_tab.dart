@@ -1959,9 +1959,12 @@ class _EncryptTabState extends State<EncryptTab> {
                           SwitchListTile(
                             title: const Text('Parallel key derivation'),
                             subtitle: const Text(
-                              'Derives the key chain in parallel. Uses more memory '
-                              'at once, since the cost of each step is incurred '
-                              'together rather than one after another.',
+                              'Derives the independent key components '
+                              'concurrently — same key, so files decrypt with '
+                              'or without it. Speeds up configurations with '
+                              'several memory-hard KDFs; the worker count is '
+                              'capped by CPU cores and a memory safety '
+                              'ceiling.',
                             ),
                             value: _parallelKdf,
                             onChanged: _useSequentialXor

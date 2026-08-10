@@ -854,6 +854,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Parallel-KDF GUI wording and stale comments refreshed** (gitlab#225):
+  the desktop Encrypt tab's existing "Parallel key derivation" control (this
+  line has had it since gitlab#153) now describes the post-#220/#224 reality
+  — same key with or without the flag, speedup on memory-hard KDF
+  configurations, worker count capped by CPU cores and the memory safety
+  ceiling — and the CLIService/core comments that still described the
+  retired unclamped multiprocessing implementation were corrected. (The
+  wiring itself was the 1.5.x half of this issue.)
+
 - **The orphan-password NOTE now fires on every incomplete encrypt exit,
   with wording that tracks whether a usable ciphertext exists**
   (gitlab#223): the `--random-password-out` file is written before the
