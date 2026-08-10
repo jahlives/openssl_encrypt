@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import '../cli_service.dart';
 import '../input_validation.dart';
@@ -24,6 +26,15 @@ class _DecryptTabState extends State<DecryptTab> {
 
   // File input
   FileInfo? _selectedFile;
+
+  // Steganography extraction (gitlab#217): the Encrypt tab can hide data in
+  // cover media, but round-tripping needed the CLI. Image/audio formats
+  // only -- the video flags are dead CLI surface until gitlab#170 is
+  // decided, so the picker must not advertise them.
+  bool _extractFromSteganography = false;
+  FileInfo? _stegoMediaFile;
+  final TextEditingController _stegoPasswordController = TextEditingController();
+  int _stegoBitsPerChannel = 1;
 
   // Loading state
   bool _isLoading = false;
@@ -68,6 +79,7 @@ class _DecryptTabState extends State<DecryptTab> {
   void dispose() {
     _textController.dispose();
     _passwordController.dispose();
+    _stegoPasswordController.dispose();
     super.dispose();
   }
 
@@ -182,6 +194,10 @@ class _DecryptTabState extends State<DecryptTab> {
   }
 
   Future<void> _decryptFile() async {
+    if (_extractFromSteganography) {
+      await _decryptFromStego();
+      return;
+    }
     if (_selectedFile == null || _passwordController.text.isEmpty) {
       setState(() {
         result = 'Please select an encrypted file and enter a password';
@@ -254,10 +270,182 @@ class _DecryptTabState extends State<DecryptTab> {
     }
   }
 
+  /// Extract + decrypt hidden data from cover media (gitlab#217).
+  Future<void> _decryptFromStego() async {
+    if (_stegoMediaFile == null || _passwordController.text.isEmpty) {
+      setState(() {
+        result = 'Please select the cover media file and enter a password';
+      });
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+      result = 'Extracting and decrypting hidden data...';
+      _operationStatus = '';
+    });
+
+    Directory? tempDir;
+    try {
+      tempDir = await Directory.systemTemp.createTemp('openssl_encrypt_stego_');
+      if (!Platform.isWindows) {
+        try {
+          await Process.run('chmod', ['700', tempDir.path]);
+        } catch (_) {}
+      }
+      final outputPath = '${tempDir.path}/extracted.txt';
+
+      final procResult = await CLIService.decryptFromSteganography(
+        stegoImagePath: _stegoMediaFile!.path,
+        outputPath: outputPath,
+        password: _passwordController.text,
+        stegoPassword: _stegoPasswordController.text.isEmpty
+            ? null
+            : _stegoPasswordController.text,
+        bitsPerChannel: _stegoBitsPerChannel,
+        verifyIntegrity: _verifyIntegrity,
+        withKey: _decryptionIdentity,
+        verifyFrom: _verifyFrom,
+        skipVerification: _skipVerification,
+      );
+
+      if (procResult.exitCode != 0) {
+        throw Exception(procResult.stderr.toString());
+      }
+
+      final decrypted = await File(outputPath).readAsString();
+      final preview =
+          decrypted.length > 500 ? '${decrypted.substring(0, 500)}...' : decrypted;
+      setState(() {
+        _decryptedContent = decrypted;
+        result = 'Hidden data extracted and decrypted successfully!\n\n'
+            'Cover media: ${_stegoMediaFile!.name}\n\n'
+            'Content Preview:\n$preview';
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        result =
+            InputValidator.sanitizeForDisplay('Steganography extraction failed: $e');
+        _isLoading = false;
+      });
+    } finally {
+      try {
+        tempDir?.delete(recursive: true);
+      } catch (_) {}
+    }
+  }
+
+  Widget _buildStegoExtractionCard() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.visibility_off),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    'Extract from steganography',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+                Switch(
+                  value: _extractFromSteganography,
+                  onChanged: _isLoading
+                      ? null
+                      : (value) => setState(() {
+                            _extractFromSteganography = value;
+                            _decryptedContent = null;
+                          }),
+                ),
+              ],
+            ),
+            if (_extractFromSteganography) ...[
+              const SizedBox(height: 8),
+              const Text(
+                'Recover data hidden in an image or audio file by the Encrypt '
+                'tab (LSB method).',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+              const SizedBox(height: 12),
+              if (_stegoMediaFile == null)
+                OutlinedButton.icon(
+                  onPressed: _isLoading
+                      ? null
+                      : () async {
+                          // Image/audio only: no video until gitlab#170.
+                          final file = await widget.fileManager.pickFile(
+                            allowedExtensions: [
+                              'png', 'bmp', 'tiff', 'tif', 'wav', 'flac',
+                            ],
+                          );
+                          if (file != null) {
+                            setState(() => _stegoMediaFile = file);
+                          }
+                        },
+                  icon: const Icon(Icons.image),
+                  label: const Text('Select cover media'),
+                )
+              else
+                ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.image),
+                  title: Text(_stegoMediaFile!.name),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.clear),
+                    onPressed: _isLoading
+                        ? null
+                        : () => setState(() => _stegoMediaFile = null),
+                  ),
+                ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _stegoPasswordController,
+                decoration: const InputDecoration(
+                  labelText: 'Steganography password (optional)',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                  prefixIcon: Icon(Icons.visibility_off),
+                ),
+                obscureText: true,
+                enabled: !_isLoading,
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  const Text('Bits per channel:'),
+                  const SizedBox(width: 12),
+                  DropdownButton<int>(
+                    value: _stegoBitsPerChannel,
+                    items: const [1, 2, 3]
+                        .map((n) =>
+                            DropdownMenuItem(value: n, child: Text('$n')))
+                        .toList(),
+                    onChanged: _isLoading
+                        ? null
+                        : (v) =>
+                            setState(() => _stegoBitsPerChannel = v ?? 1),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _saveDecryptedFile() async {
     if (_decryptedContent == null) return;
 
-    final outputPath = widget.fileManager.getDecryptedFileName(_selectedFile!.path);
+    final source = _selectedFile ?? _stegoMediaFile;
+    if (source == null) return;
+    final outputPath = widget.fileManager.getDecryptedFileName(source.path);
     final success = await widget.fileManager.writeFileText(outputPath, _decryptedContent!);
 
     if (success && mounted) {
@@ -628,15 +816,20 @@ class _DecryptTabState extends State<DecryptTab> {
                 ),
               ),
             ] else ...[
-              FilePickerWidget(
-                selectedFile: _selectedFile,
-                onPickFile: _pickFile,
-                onClearFile: () => setState(() {
-                  _selectedFile = null;
-                  _decryptedContent = null;
-                }),
-                enabled: !_isLoading,
-              ),
+              if (widget.isProMode) ...[
+                _buildStegoExtractionCard(),
+                const SizedBox(height: 16),
+              ],
+              if (!_extractFromSteganography)
+                FilePickerWidget(
+                  selectedFile: _selectedFile,
+                  onPickFile: _pickFile,
+                  onClearFile: () => setState(() {
+                    _selectedFile = null;
+                    _decryptedContent = null;
+                  }),
+                  enabled: !_isLoading,
+                ),
             ],
             const SizedBox(height: 16),
 

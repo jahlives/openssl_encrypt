@@ -47,10 +47,6 @@ _PARAM_RE = re.compile(r"(?:^|,)\s*(?:required\s+)?[\w<>,?\s]+?\s+(\w+)\s*(?:=[^
 # wiring that in fact existed. What remains is verified against the
 # recursive scan.
 KNOWN_UNWIRED = [
-    # gitlab#217: the Decrypt tab has no steganography-extraction UI, so
-    # the extract half of the steg surface is unreachable (the encrypt half
-    # is wired from the Encrypt tab).
-    ("decryptFromSteganography", None, "gitlab#217: no steg-extraction UI"),
     # gitlab#193: the pepper CLI surface does not exist yet, so the GUI
     # cannot usefully drive these.
     ("configurePepperDeadman", None, "gitlab#193: pepper CLI not implemented yet"),

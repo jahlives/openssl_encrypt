@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Desktop GUI: steganography extraction on the Decrypt tab**
+  (gitlab#217): the Encrypt tab could hide encrypted data in cover media,
+  but recovering it required the CLI — `decryptFromSteganography` had no
+  caller. Pro-mode file decryption gains an "Extract from steganography"
+  mode: cover-media picker (image/audio formats only — the video flags are
+  dead CLI surface until gitlab#170 is decided, so they are not
+  advertised), optional steganography password, bits-per-channel selector,
+  wired through the existing asymmetric/integrity options. The extracted
+  plaintext previews and saves like a normal decrypt.
+
 - **PIV / PKCS#11 protection for `identity create`** (gitlab#218): `identity
   create` declared `--hsm-piv-slot`/`--hsm-pkcs11-lib`/`--hsm-biometric` but its
   `--hsm` choices excluded `piv` and the handler never read them — dead surface.

@@ -30,6 +30,15 @@ void main() {
   testWidgets(
       'Pro mode: Advanced Options exposes a decryption-identity selector',
       (WidgetTester tester) async {
+    // Tall surface: the Pro file mode gained the steg-extraction card
+    // (gitlab#217), which pushes the advanced section below the default
+    // 600px viewport.
+    tester.view.physicalSize = const Size(1200, 2600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
     await tester.pumpWidget(
       wrap(DecryptTab(fileManager: FileManager(), isProMode: true)),
     );
