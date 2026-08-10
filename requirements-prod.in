@@ -1,6 +1,6 @@
 # Production dependencies for openssl_encrypt
 # Core dependencies
-cryptography>=48.0.1,<49.0.0
+cryptography>=50.0.0,<51.0.0  # Dependabot: CVE-2026-69247 (PKCS#7 EnvelopedData Bleichenbacher oracle); not exercised by this project (uses AEAD/KEM, not CMS), bumped as hygiene
 argon2-cffi>=23.1.0,<24.0.0
 PyYAML>=6.0.2,<7.0.0
 blake3>=1.0.0,<2.0.0
@@ -8,7 +8,7 @@ jsonschema>=4.0.0,<5.0.0
 requests>=2.31.0,<3.0.0
 
 # QR Code Key Distribution dependencies (v1.3.0)
-Pillow>=12.1.1,<13.0.0
+Pillow>=12.3.0,<13.0.0  # Dependabot: 13 image-parsing CVEs fixed in 12.3.0 (Pillow parses QR/portable-media images)
 qrcode[pil]>=7.0.0,<9.0.0
 pyzbar>=0.1.9,<1.0.0
 

@@ -1835,6 +1835,25 @@ inflated KDF metadata parameters, not cosmetic output.
 
 ### Security
 
+- **Dependency updates for published CVEs** (Dependabot; patched versions
+  smoke-tested against the crypto/PQC suites, 3028 tests green):
+  - `pillow` 12.2.0 → 12.3.0 — 13 image-parsing CVEs (heap OOB writes in
+    `RankFilter`/`paste`/`crop`/`ImageCmsTransform`, decompression-bomb DoS
+    in the PDF/font/BDF/PCF readers, an mmap OOB read, a TGA-encoder heap
+    disclosure, and a Windows-viewer command injection: CVE-2026-54058/
+    54059/54060, 55379/55380, 55798, 59197/59198/59199/59200/59203/59204/
+    59205). Pillow parses images in the portable-media/QR path on this line
+    (steganography was removed in 1.5).
+  - `cryptography` 48.0.1 → 50.0.0 — CVE-2026-69247 (Bleichenbacher oracle
+    in PKCS#7 EnvelopedData decryption). Not exercised by this project,
+    which uses its own AEAD/KEM stack and only PKCS#7 *block padding*, never
+    CMS EnvelopedData; bumped as hygiene.
+  - dev-only: `nltk` 3.9.4 → 3.10.0 — CVE-2026-12061 (ReDoS), 12072/12074
+    (path traversal in corpus readers), 12075 (DNS-rebinding SSRF filter
+    bypass); not imported by the shipped package.
+  The flatpak build manifest's `cryptography`/`Pillow` pins were bumped in
+  lockstep (enforced by `test_flatpak_pin_consistency`).
+
 - **Parallel-KDF thread-pool hardening** (gitlab#224, hardening — no
   user-relevant vulnerability, so no advisory): the #220 pool defaulted to one
   worker per component (up to 12 threads) regardless of cores; it now honors
