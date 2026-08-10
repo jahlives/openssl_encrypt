@@ -908,6 +908,9 @@ SECRET_VALUE_CLI_OPTIONS = frozenset(
         "--encryption-data",
         # gitlab#193: `plugin pepper verify-totp --code` carries a TOTP code.
         "--code",
+        # Steganographic security password (gitlab#215 item 5): a real
+        # secret, distinct from the encryption password.
+        "--stego-password",
     }
 )
 

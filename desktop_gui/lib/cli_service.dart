@@ -2042,13 +2042,27 @@ class CLIService {
       commandPrefix = 'python -m openssl_encrypt.cli';
     }
 
-    // Create masked args by replacing password values with asterisks
+    // Create masked args by replacing secret values with asterisks.
+    // gitlab#215 item 5: --stego-password (and friends) were displayed
+    // verbatim; keep this set in sync with the CLI's
+    // SECRET_VALUE_CLI_OPTIONS.
+    const secretFlags = {
+      '-p',
+      '--password',
+      '--second-password',
+      '--keystore-password',
+      '--manifest-password',
+      '--rekey-password',
+      '--recovery-code',
+      '--stego-password',
+      '--code',
+    };
     final maskedArgs = <String>[];
     for (int i = 0; i < args.length; i++) {
-      if (args[i] == '--password' && i + 1 < args.length) {
+      if (secretFlags.contains(args[i]) && i + 1 < args.length) {
         maskedArgs.add(args[i]);
         maskedArgs.add('****');
-        i++; // Skip the actual password value
+        i++; // Skip the actual secret value
       } else {
         maskedArgs.add(args[i]);
       }
