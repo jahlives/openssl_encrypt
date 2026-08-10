@@ -296,6 +296,107 @@ void main() {
     expect(tester.widget<CheckboxListTile>(checkboxFinder).value, isFalse);
     expect(find.textContaining(bannerFragment), findsNothing);
   });
+  testWidgets(
+      'an armed batch run keeps --no-verify in every decrypt argv and marks '
+      'each row verification SKIPPED (gitlab#215 item 4)',
+      (WidgetTester tester) async {
+    final captured = <List<String>>[];
+    final stub = _StubFileManager();
+    CLIService.commandRunnerOverride = (List<String> args, {String? stdinInput}) async {
+      captured.add(List.of(args));
+      if (args.length >= 2 && args[0] == 'identity' && args[1] == 'list') {
+        return _fakeCliWithIdentities(args, stdinInput: stdinInput);
+      }
+      if (args.isNotEmpty && args.first == 'list-available-algorithms') {
+        return _fakeCliWithIdentities(args, stdinInput: stdinInput);
+      }
+      if (args.isNotEmpty && args.first == 'decrypt') {
+        // The service reads the plaintext back from the -o file.
+        final o = args.indexOf('-o');
+        if (o >= 0 && o + 1 < args.length) {
+          File(args[o + 1]).writeAsStringSync('plaintext');
+        }
+        return ProcessResult(0, 0, '', '');
+      }
+      return ProcessResult(0, 1, '', 'no canned response for: ${args.join(' ')}');
+    };
+
+    await useTallSurface(tester);
+    await tester.pumpWidget(wrap(BatchOperationsTab(
+      fileManager: stub,
+      onDebugChanged: (_) {},
+    )));
+    await tester.pumpAndSettle();
+    await enterAsymmetricDecrypt(tester);
+    await chooseIdentity(tester, 'alice');
+
+    // Provide the password the start gate requires (a TextFormField).
+    // Entered BEFORE arming skip: the field's onChanged does not setState,
+    // so the start button only reflects the password after the next
+    // rebuild -- which the skip-checkbox tap below provides.
+    final pwField = find.widgetWithText(TextFormField, 'Decryption Password');
+    expect(pwField, findsOneWidget);
+    await tester.ensureVisible(pwField);
+    await tester.enterText(pwField, 'pw');
+    await tester.pump();
+
+    // Arm skip.
+    final checkboxFinder = find.ancestor(
+      of: find.text(skipLabel),
+      matching: find.byType(CheckboxListTile),
+    );
+    await tester.ensureVisible(checkboxFinder);
+    await tester.pump();
+    await tester.tap(checkboxFinder);
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // Start and let the whole 2-file run finish. Drive onPressed directly:
+    // the button sits at the bottom of a 3000px surface and hit-testing a
+    // scrolled-in target is flaky in widget tests.
+    final buttonFinder = find.ancestor(
+      of: find.textContaining('Decrypt 2 file(s)'),
+      matching: find.byType(ElevatedButton),
+    );
+    expect(buttonFinder, findsOneWidget);
+    final button = tester.widget<ElevatedButton>(buttonFinder);
+    expect(button.onPressed, isNotNull,
+        reason: 'start gate must be open (files + password present)');
+    // The service does real async I/O (temp dirs, chmod/install, file
+    // reads); inside testWidgets' fake-async zone those futures never
+    // complete, so the whole run must execute under runAsync.
+    await tester.runAsync(() async {
+      button.onPressed!();
+      final deadline = DateTime.now().add(const Duration(seconds: 15));
+      while (captured.where((a) => a.isNotEmpty && a.first == 'decrypt').length < 2 &&
+          DateTime.now().isBefore(deadline)) {
+        await Future.delayed(const Duration(milliseconds: 50));
+      }
+      // Let the loop's trailing delay and finally block run.
+      await Future.delayed(const Duration(milliseconds: 300));
+    });
+    // Bounded pumps to flush the resulting UI updates (the spinner and
+    // snackbar animate continuously, so pumpAndSettle would never settle).
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+
+    final decryptArgvs =
+        captured.where((a) => a.isNotEmpty && a.first == 'decrypt').toList();
+    expect(decryptArgvs.length, 2,
+        reason: 'both files must be decrypted: ${captured.map((a) => a.join(' '))}');
+    for (final argv in decryptArgvs) {
+      expect(argv, contains('--no-verify'));
+      expect(argv, isNot(contains('--verify-from')));
+      expect(argv, contains('--with-key'));
+    }
+
+    // Results list: every successful row carries the SKIPPED marker.
+    expect(
+        find.textContaining('Success — signature verification SKIPPED'),
+        findsNWidgets(2));
+    expect(stub.writtenFiles.length, 2);
+  });
+
 }
 
 /// Fake CLI runner serving two own identities, so the asymmetric-decrypt
@@ -334,8 +435,11 @@ Future<ProcessResult> _fakeCliWithIdentities(List<String> args,
       0, 1, '', 'no canned response for: ${args.join(' ')}');
 }
 
-/// Returns a fixed selection instead of opening a native file dialog.
+/// Returns a fixed selection instead of opening a native file dialog, and
+/// keeps batch-run I/O in memory so a full run can execute in a widget test.
 class _StubFileManager extends FileManager {
+  final writtenFiles = <String, String>{};
+
   @override
   Future<List<FileInfo>> pickMultipleFiles({List<String>? allowedExtensions}) async {
     return [
@@ -346,6 +450,22 @@ class _StubFileManager extends FileManager {
         extension: '.txt',
         lastModified: DateTime.fromMillisecondsSinceEpoch(0),
       ),
+      FileInfo(
+        name: 'b.txt',
+        path: '/tmp/b.txt',
+        size: 10,
+        extension: '.txt',
+        lastModified: DateTime.fromMillisecondsSinceEpoch(0),
+      ),
     ];
+  }
+
+  @override
+  Future<String?> readFileText(String filePath) async => 'ciphertext-of-\$filePath';
+
+  @override
+  Future<bool> writeFileText(String filePath, String content) async {
+    writtenFiles[filePath] = content;
+    return true;
   }
 }

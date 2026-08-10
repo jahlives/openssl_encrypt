@@ -44,6 +44,11 @@ class _DecryptTabState extends State<DecryptTab> {
   // Identities available for asymmetric decryption (--with-key / --verify-from)
   List<Map<String, dynamic>> _ownIdentities = [];
   List<Map<String, dynamic>> _contacts = [];
+  // gitlab#215 item 6: a load FAILURE is not an empty store. The error and
+  // the store entries the CLI reported as unreadable are kept so the UI can
+  // say what actually happened instead of "create one".
+  String? _identityLoadError;
+  List<Map<String, dynamic>> _skippedIdentities = [];
 
   @override
   void initState() {
@@ -74,13 +79,23 @@ class _DecryptTabState extends State<DecryptTab> {
       setState(() {
         _ownIdentities = (identities['own'] as List<Map<String, dynamic>>?) ?? [];
         _contacts = (identities['contacts'] as List<Map<String, dynamic>>?) ?? [];
+        // Entries the CLI could not load are surfaced, not dropped: an
+        // absent entry is not an absent identity (gitlab#215 item 6).
+        _skippedIdentities =
+            (identities['skipped'] as List<Map<String, dynamic>>?) ?? [];
+        _identityLoadError = null;
       });
     } catch (e) {
       CLIService.outputDebugLog('Failed to load identities: $e');
       if (!mounted) return;
       setState(() {
+        // Keep the failure distinct from an empty store: the "create one"
+        // hint over an unreachable CLI sends the user in exactly the wrong
+        // direction (gitlab#215 item 6).
         _ownIdentities = [];
         _contacts = [];
+        _skippedIdentities = [];
+        _identityLoadError = InputValidator.sanitizeForDisplay(e.toString());
       });
     }
   }
@@ -337,7 +352,11 @@ class _DecryptTabState extends State<DecryptTab> {
   String _identityLabel(Map<String, dynamic> id) {
     final name = id['name'] as String? ?? 'Unknown';
     final email = id['email'] as String?;
-    return (email != null && email.isNotEmpty) ? '$name <$email>' : name;
+    final base = (email != null && email.isNotEmpty) ? '$name <$email>' : name;
+    // Merged lists carry a source tag so own/contact collisions stay
+    // distinguishable (gitlab#215 item 7).
+    final source = id['_source'] as String?;
+    return source != null ? '$base ($source)' : base;
   }
 
   /// Drop entries with an empty/missing name and dedupe by name.
@@ -365,7 +384,13 @@ class _DecryptTabState extends State<DecryptTab> {
     // Only own identities hold the private key needed to decrypt.
     final ownIds = _dedupeByName(_ownIdentities);
     // A signature can be verified against any known identity or contact.
-    final signerIds = _dedupeByName([..._ownIdentities, ..._contacts]);
+    // gitlab#215 item 7: tag the merged signer entries with their source --
+    // an own/contact name collision is otherwise undetectable in the UI
+    // (gitlab#173 surface), and the dedupe silently keeps the own entry.
+    final signerIds = _dedupeByName([
+      ..._ownIdentities.map((i) => {...i, '_source': 'own'}),
+      ..._contacts.map((i) => {...i, '_source': 'contact'}),
+    ]);
 
     final identityItems = <DropdownMenuItem<String?>>[
       const DropdownMenuItem<String?>(
@@ -433,12 +458,28 @@ class _DecryptTabState extends State<DecryptTab> {
                     });
                   },
           ),
-          if (ownIds.isEmpty) ...[
+          if (_identityLoadError != null) ...[
+            const SizedBox(height: 6),
+            Text(
+              'Could not load identities: $_identityLoadError',
+              style: const TextStyle(fontSize: 12, color: Colors.red),
+            ),
+          ] else if (ownIds.isEmpty) ...[
             const SizedBox(height: 6),
             const Text(
               'No local identities found. Create one under Identity Management '
               'to decrypt asymmetric files.',
               style: TextStyle(fontSize: 12, color: Colors.orange),
+            ),
+          ],
+          if (_skippedIdentities.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              '${_skippedIdentities.length} identity store '
+              '${_skippedIdentities.length == 1 ? "entry" : "entries"} could '
+              'not be loaded and ${_skippedIdentities.length == 1 ? "is" : "are"} '
+              'not listed here.',
+              style: const TextStyle(fontSize: 12, color: Colors.orange),
             ),
           ],
           // --verify-from / --no-verify are only sent by CLIService when a

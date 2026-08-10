@@ -910,6 +910,9 @@ SECRET_VALUE_CLI_OPTIONS = frozenset(
         # The one-time TOTP code for `plugin pepper verify-totp` — ephemeral,
         # but an auth credential that must not appear in a --debug argv dump.
         "--code",
+        # Steganographic security password (gitlab#215 item 5): a real
+        # secret, distinct from the encryption password.
+        "--stego-password",
     }
 )
 

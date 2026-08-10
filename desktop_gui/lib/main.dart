@@ -4080,21 +4080,59 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
     return true;
   }
 
+  // Class-level (survives tab remounts): leaving the Batch tab disposes the
+  // State mid-run while the loop finishes its in-flight file; a fresh State
+  // (_isLoading=false) must not allow a second concurrent run over the same
+  // output paths (gitlab#215 item 2).
+  static bool _batchRunActive = false;
+
   Future<void> _startBatchOperation() async {
+    if (_batchRunActive) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+              'A batch run from this session is still finishing; wait for it '
+              'to complete before starting another.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+    _batchRunActive = true;
     setState(() {
       _isLoading = true;
       _currentFileIndex = 0;
       _results.clear();
     });
 
-    // Snapshot the branch-deciding and verification settings before the
-    // loop: every file in the batch must be processed under the settings
+    // Snapshot EVERY setting the run consumes before the loop (gitlab#215
+    // item 3): each file in the batch must be processed under the settings
     // that were armed at start, even if the widget state changes mid-run.
-    final operation = _selectedOperation;
-    final encryptionMode = _encryptionMode;
-    final withKey = _decryptionIdentity;
-    final verifyFrom = _verifyFrom;
-    final skipVerification = _skipVerification;
+    final config = _BatchRunConfig(
+      operation: _selectedOperation,
+      encryptionMode: _encryptionMode,
+      withKey: _decryptionIdentity,
+      verifyFrom: _verifyFrom,
+      skipVerification: _skipVerification,
+      password: _password,
+      algorithm: _selectedAlgorithm,
+      hashConfig: _buildHashConfigMap(),
+      kdfConfig: _buildKdfConfigMap(),
+      recipients: List.unmodifiable(_selectedRecipients),
+      signingIdentity: _signingIdentity,
+      useKeyserver: _useKeyserver,
+      enableIntegrity: _enableIntegrity,
+      verifyIntegrity: _verifyIntegrity,
+      cascadePreset: _cascadePreset,
+      cascadeAlgorithms: List.unmodifiable(_cascadeAlgorithms),
+      cascadeHash: _cascadeHash,
+      hsmType: _hsmType,
+      yubikeySlot: _yubikeySlot,
+      enablePepper: _enablePepper,
+      pepperMode: _pepperMode,
+      pepperName: _pepperNameController.text,
+      encryptData: _selectedEncryptData,
+    );
 
     try {
       for (int i = 0; i < _selectedFiles.length; i++) {
@@ -4104,14 +4142,7 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
           _currentStatus = 'Processing ${_selectedFiles[i].name}...';
         });
 
-        final result = await _processFile(
-          _selectedFiles[i],
-          operation: operation,
-          encryptionMode: encryptionMode,
-          withKey: withKey,
-          verifyFrom: verifyFrom,
-          skipVerification: skipVerification,
-        );
+        final result = await _processFile(_selectedFiles[i], config);
         if (!mounted) return;
         setState(() {
           _results.add(result);
@@ -4121,6 +4152,7 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
         await Future.delayed(const Duration(milliseconds: 100));
       }
     } finally {
+      _batchRunActive = false;
       if (mounted) {
         setState(() {
           _isLoading = false;
@@ -4149,15 +4181,9 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
   }
 
   Future<BatchOperationResult> _processFile(
-    FileInfo file, {
-    required String operation,
-    required EncryptionMode encryptionMode,
-    required String? withKey,
-    required String? verifyFrom,
-    required bool skipVerification,
-  }) async {
+      FileInfo file, _BatchRunConfig config) async {
     try {
-      if (operation == 'encrypt') {
+      if (config.operation == 'encrypt') {
         // Read file content
         final content = await widget.fileManager.readFileText(file.path);
         if (content == null) {
@@ -4170,54 +4196,54 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
 
         // Encrypt based on encryption mode
         String encrypted;
-        if (encryptionMode == EncryptionMode.asymmetric) {
+        if (config.encryptionMode == EncryptionMode.asymmetric) {
           // Asymmetric encryption mode
           encrypted = await CLIService.encryptTextWithProgress(
             content,
-            _password,
+            config.password,
             'aes-256-gcm',
-            encryptionMode == EncryptionMode.symmetric ? _buildHashConfigMap() : null,
-            encryptionMode == EncryptionMode.symmetric ? _buildKdfConfigMap() : null,
-            forIdentities: _selectedRecipients,
-            signWith: _signingIdentity,
-            useKeyserver: _useKeyserver,
-            enableIntegrity: _enableIntegrity,
-            hsmPlugin: _hsmType != 'none' ? _hsmType : null,
-            hsmSlot: _hsmType == 'yubikey' ? _yubikeySlot : null,
-            enablePepper: _enablePepper,
-            pepperName: _pepperMode == 'named' ? _pepperNameController.text : null,
+            config.encryptionMode == EncryptionMode.symmetric ? config.hashConfig : null,
+            config.encryptionMode == EncryptionMode.symmetric ? config.kdfConfig : null,
+            forIdentities: config.recipients,
+            signWith: config.signingIdentity,
+            useKeyserver: config.useKeyserver,
+            enableIntegrity: config.enableIntegrity,
+            hsmPlugin: config.hsmType != 'none' ? config.hsmType : null,
+            hsmSlot: config.hsmType == 'yubikey' ? config.yubikeySlot : null,
+            enablePepper: config.enablePepper,
+            pepperName: config.pepperMode == 'named' ? config.pepperName : null,
           );
-        } else if (encryptionMode == EncryptionMode.cascade) {
+        } else if (config.encryptionMode == EncryptionMode.cascade) {
           // Cascade encryption mode
           encrypted = await CLIService.encryptTextWithProgress(
             content,
-            _password,
+            config.password,
             'aes-256-gcm',
-            encryptionMode == EncryptionMode.symmetric ? _buildHashConfigMap() : null,
-            encryptionMode == EncryptionMode.symmetric ? _buildKdfConfigMap() : null,
-            cascadePreset: _cascadePreset != 'custom' ? _cascadePreset : null,
-            cascadeAlgorithms: _cascadePreset == 'custom' ? _cascadeAlgorithms : null,
-            cascadeHash: _cascadeHash,
-            enableIntegrity: _enableIntegrity,
-            hsmPlugin: _hsmType != 'none' ? _hsmType : null,
-            hsmSlot: _hsmType == 'yubikey' ? _yubikeySlot : null,
-            enablePepper: _enablePepper,
-            pepperName: _pepperMode == 'named' ? _pepperNameController.text : null,
+            config.encryptionMode == EncryptionMode.symmetric ? config.hashConfig : null,
+            config.encryptionMode == EncryptionMode.symmetric ? config.kdfConfig : null,
+            cascadePreset: config.cascadePreset != 'custom' ? config.cascadePreset : null,
+            cascadeAlgorithms: config.cascadePreset == 'custom' ? config.cascadeAlgorithms : null,
+            cascadeHash: config.cascadeHash,
+            enableIntegrity: config.enableIntegrity,
+            hsmPlugin: config.hsmType != 'none' ? config.hsmType : null,
+            hsmSlot: config.hsmType == 'yubikey' ? config.yubikeySlot : null,
+            enablePepper: config.enablePepper,
+            pepperName: config.pepperMode == 'named' ? config.pepperName : null,
           );
         } else {
           // Symmetric encryption mode (default)
           encrypted = await CLIService.encryptTextWithProgress(
             content,
-            _password,
-            _selectedAlgorithm,
-            encryptionMode == EncryptionMode.symmetric ? _buildHashConfigMap() : null,
-            encryptionMode == EncryptionMode.symmetric ? _buildKdfConfigMap() : null,
-            encryptData: _isPostQuantumAlgorithm(_selectedAlgorithm) ? _selectedEncryptData : null,
-            enableIntegrity: _enableIntegrity,
-                      hsmPlugin: _hsmType != 'none' ? _hsmType : null,
-            hsmSlot: _hsmType == 'yubikey' ? _yubikeySlot : null,
-            enablePepper: _enablePepper,
-            pepperName: _pepperMode == 'named' ? _pepperNameController.text : null,
+            config.password,
+            config.algorithm,
+            config.encryptionMode == EncryptionMode.symmetric ? config.hashConfig : null,
+            config.encryptionMode == EncryptionMode.symmetric ? config.kdfConfig : null,
+            encryptData: _isPostQuantumAlgorithm(config.algorithm) ? config.encryptData : null,
+            enableIntegrity: config.enableIntegrity,
+                      hsmPlugin: config.hsmType != 'none' ? config.hsmType : null,
+            hsmSlot: config.hsmType == 'yubikey' ? config.yubikeySlot : null,
+            enablePepper: config.enablePepper,
+            pepperName: config.pepperMode == 'named' ? config.pepperName : null,
           );
         }
 
@@ -4238,7 +4264,7 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
             errorMessage: 'Could not write encrypted file',
           );
         }
-      } else if (operation == 'decrypt') {
+      } else if (config.operation == 'decrypt') {
         // Decrypt operation
         final content = await widget.fileManager.readFileText(file.path);
         if (content == null) {
@@ -4251,22 +4277,22 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
 
         // Decrypt based on encryption mode
         String decrypted;
-        if (encryptionMode == EncryptionMode.asymmetric) {
+        if (config.encryptionMode == EncryptionMode.asymmetric) {
           // Asymmetric decryption mode
           decrypted = await CLIService.decryptTextWithProgress(
             content,
-            _password,
-            withKey: withKey,
-            verifyFrom: verifyFrom,
-            skipVerification: skipVerification,
-            verifyIntegrity: _verifyIntegrity,
+            config.password,
+            withKey: config.withKey,
+            verifyFrom: config.verifyFrom,
+            skipVerification: config.skipVerification,
+            verifyIntegrity: config.verifyIntegrity,
           );
         } else {
           // Symmetric/Cascade decryption mode (cascade is auto-detected from metadata)
           decrypted = await CLIService.decryptTextWithProgress(
             content,
-            _password,
-            verifyIntegrity: _verifyIntegrity,
+            config.password,
+            verifyIntegrity: config.verifyIntegrity,
           );
         }
 
@@ -4276,10 +4302,10 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
 
         // --no-verify only reaches the CLI in asymmetric mode with an
         // identity set (CLIService omits both verify flags otherwise).
-        final skipped = encryptionMode == EncryptionMode.asymmetric &&
-            withKey != null &&
-            withKey.isNotEmpty &&
-            skipVerification;
+        final skipped = config.encryptionMode == EncryptionMode.asymmetric &&
+            config.withKey != null &&
+            config.withKey!.isNotEmpty &&
+            config.skipVerification;
 
         if (writeSuccess) {
           return BatchOperationResult(
@@ -4295,7 +4321,7 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
             errorMessage: 'Could not write decrypted file',
           );
         }
-      } else if (operation == 'verify-integrity') {
+      } else if (config.operation == 'verify-integrity') {
         // Verify integrity operation
         final content = await widget.fileManager.readFileText(file.path);
         if (content == null) {
@@ -4361,7 +4387,7 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
         return BatchOperationResult(
           fileName: file.name,
           success: false,
-          errorMessage: 'Unknown operation: $operation',
+          errorMessage: 'Unknown operation: ${config.operation}',
         );
       }
     } catch (e) {
@@ -4408,6 +4434,63 @@ class _BatchOperationsTabState extends State<BatchOperationsTab> {
 }
 
 /// Result of a single file operation in batch processing
+class _BatchRunConfig {
+  // Immutable snapshot of every setting a batch run consumes (gitlab#215
+  // item 3): _processFile used to read half its inputs from live widget
+  // state, so editing a control mid-run silently changed how the REMAINING
+  // files were processed. Snapshot once at start; the whole batch runs
+  // under the settings that were armed.
+  final String operation;
+  final EncryptionMode encryptionMode;
+  final String? withKey;
+  final String? verifyFrom;
+  final bool skipVerification;
+  final String password;
+  final String algorithm;
+  final Map<String, Map<String, dynamic>>? hashConfig;
+  final Map<String, Map<String, dynamic>>? kdfConfig;
+  final List<String> recipients;
+  final String? signingIdentity;
+  final bool useKeyserver;
+  final bool enableIntegrity;
+  final bool verifyIntegrity;
+  final String cascadePreset;
+  final List<String> cascadeAlgorithms;
+  final String cascadeHash;
+  final String hsmType;
+  final int yubikeySlot;
+  final bool enablePepper;
+  final String pepperMode;
+  final String pepperName;
+  final String? encryptData;
+
+  const _BatchRunConfig({
+    required this.operation,
+    required this.encryptionMode,
+    required this.withKey,
+    required this.verifyFrom,
+    required this.skipVerification,
+    required this.password,
+    required this.algorithm,
+    required this.hashConfig,
+    required this.kdfConfig,
+    required this.recipients,
+    required this.signingIdentity,
+    required this.useKeyserver,
+    required this.enableIntegrity,
+    required this.verifyIntegrity,
+    required this.cascadePreset,
+    required this.cascadeAlgorithms,
+    required this.cascadeHash,
+    required this.hsmType,
+    required this.yubikeySlot,
+    required this.enablePepper,
+    required this.pepperMode,
+    required this.pepperName,
+    required this.encryptData,
+  });
+}
+
 class BatchOperationResult {
   final String fileName;
   final bool success;

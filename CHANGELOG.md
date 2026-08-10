@@ -854,6 +854,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Batch-tab hardening follow-ups from the #214 review** (gitlab#215):
+  `--verify-from` and `--no-verify` are now mutually exclusive at the CLI
+  parser boundary (the pair was accepted and `--no-verify` silently won —
+  claiming an authenticity check that never ran); the batch run snapshots
+  its **entire** configuration into a value object at start (password,
+  algorithm, hash/KDF config, recipients, signer, cascade, HSM/pepper,
+  integrity settings — previously half were read live mid-run, so editing a
+  control changed how the remaining files were processed); a class-level
+  run guard refuses a second concurrent batch after the tab was left and
+  re-entered mid-run (the fresh state's idle UI allowed one over the same
+  output paths); the Decrypt tab distinguishes an identity-store **load
+  failure** from an empty store (the "create one" hint over an unreachable
+  CLI sent users the wrong way) and surfaces store entries the CLI reported
+  as unreadable; merged signer dropdown entries carry their `(own)`/
+  `(contact)` source tag so a name collision stays visible (#173 surface);
+  the debug-window command mask covers every secret-valued flag
+  (`--stego-password`, keystore/rekey/second passwords, recovery code,
+  TOTP code) instead of only `--password`, and the CLI's `--debug` argv
+  dump now redacts `--stego-password`. A widget test drives a full 2-file
+  batch decrypt through the fake CLI seam and pins that every argv keeps
+  `--no-verify` (never `--verify-from`) and every results row carries the
+  "verification SKIPPED" marker.
+
 - **Parallel-KDF GUI wording and stale comments refreshed** (gitlab#225):
   the desktop Encrypt tab's existing "Parallel key derivation" control (this
   line has had it since gitlab#153) now describes the post-#220/#224 reality

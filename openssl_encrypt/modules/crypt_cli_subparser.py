@@ -1027,14 +1027,18 @@ def setup_decrypt_parser(subparser):
         metavar="IDENTITY",
         help="Decrypt using this identity's private key (for asymmetric mode)",
     )
-    asymmetric_group.add_argument(
+    # gitlab#215 item 1: naming a sender to verify AND skipping verification
+    # contradict each other; the CLI used to accept the pair and silently
+    # prefer --no-verify. Reject it structurally at the parser boundary.
+    verify_mutex = asymmetric_group.add_mutually_exclusive_group()
+    verify_mutex.add_argument(
         "--verify-from",
         dest="verify_from",
         metavar="IDENTITY",
         help="Verify signature from this sender identity. "
         "If not specified, will attempt to verify using sender info from metadata.",
     )
-    asymmetric_group.add_argument(
+    verify_mutex.add_argument(
         "--no-verify",
         dest="skip_verification",
         action="store_true",
