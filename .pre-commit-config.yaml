@@ -8,7 +8,14 @@ repos:
     rev: v4.5.0
     hooks:
       - id: trailing-whitespace
+        # Never touch the test fixtures: many are raw binary (encrypted blobs,
+        # DER/raw keys) where an appended newline corrupts the AES-GCM tag or
+        # overruns a fixed-length key. This hook did exactly that to the
+        # asymmetric_wrap identity fixtures (785a8ff4), silently breaking the
+        # password-wrap tests. Same exclude the detect-private-key hook already has.
+        exclude: '^openssl_encrypt/unittests/testfiles/'
       - id: end-of-file-fixer
+        exclude: '^openssl_encrypt/unittests/testfiles/'
       - id: check-yaml
       - id: check-added-large-files
         args: ['--maxkb=500']

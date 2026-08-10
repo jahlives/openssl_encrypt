@@ -887,6 +887,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Repaired newline-corrupted asymmetric-wrap identity test fixtures**
+  (gitlab#227): the `end-of-file-fixer`/`trailing-whitespace` pre-commit
+  hooks lacked a `testfiles/` exclude (which `detect-private-key` already
+  has), so a trailing newline had been appended to the raw-binary key
+  fixtures under `unittests/testfiles/asymmetric_wrap/` when they were last
+  regenerated. That extra byte lands in the AES-GCM tag of the encrypted
+  private-key blobs (→ `InvalidTag`) and overruns the fixed-length ML-KEM /
+  ML-DSA public keys (→ "byte string too long" / signature-verify failure),
+  so `test_password_wrap_ct_binding` failed deterministically on this line
+  (1.5.x was unaffected; it surfaced only now because feature-branch CI
+  never ran the suite before the manual test job was added). The spurious
+  byte was stripped from the eight affected key files (verification-driven —
+  the legitimately-`0x0a`-terminated encrypted-corpus fixtures are left as
+  they are), and both whitespace hooks now exclude `testfiles/` so binary
+  fixtures can no longer be mangled. Test-only; no product code changed.
+
 - **Batch-tab hardening follow-ups from the #214 review** (gitlab#215):
   `--verify-from` and `--no-verify` are now mutually exclusive at the CLI
   parser boundary (the pair was accepted and `--no-verify` silently won —
