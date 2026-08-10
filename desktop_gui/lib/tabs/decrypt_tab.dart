@@ -253,13 +253,13 @@ class _DecryptTabState extends State<DecryptTab> {
       );
 
       // Store decrypted content
-      final preview = decrypted.length > 500 ? '${decrypted.substring(0, 500)}...' : decrypted;
       setState(() {
         _decryptedContent = decrypted;
+        // Status only; the plaintext preview renders in its own widget so a
+        // crafted payload cannot forge status lines (review F11).
         result = 'File decrypted successfully!\n\n'
             'File: ${_selectedFile!.name}\n'
-            'Size: ${_selectedFile!.sizeFormatted}\n\n'
-            'Content Preview:\n$preview';
+            'Size: ${_selectedFile!.sizeFormatted}';
         _isLoading = false;
       });
     } catch (e) {
@@ -314,16 +314,19 @@ class _DecryptTabState extends State<DecryptTab> {
       }
 
       final decrypted = await File(outputPath).readAsString();
-      final preview =
-          decrypted.length > 500 ? '${decrypted.substring(0, 500)}...' : decrypted;
+      if (!mounted) return;
       setState(() {
         _decryptedContent = decrypted;
+        // Status only -- the extracted plaintext is untrusted data and must
+        // not be concatenated into the trust-relevant status string (a
+        // crafted payload can forge status lines via U+2028/bidi; review
+        // F11). It is shown in its own preview widget below.
         result = 'Hidden data extracted and decrypted successfully!\n\n'
-            'Cover media: ${_stegoMediaFile!.name}\n\n'
-            'Content Preview:\n$preview';
+            'Cover media: ${_stegoMediaFile!.name}';
         _isLoading = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         result =
             InputValidator.sanitizeForDisplay('Steganography extraction failed: $e');
@@ -331,7 +334,7 @@ class _DecryptTabState extends State<DecryptTab> {
       });
     } finally {
       try {
-        tempDir?.delete(recursive: true);
+        await tempDir?.delete(recursive: true);
       } catch (_) {}
     }
   }
@@ -540,11 +543,37 @@ class _DecryptTabState extends State<DecryptTab> {
   String _identityLabel(Map<String, dynamic> id) {
     final name = id['name'] as String? ?? 'Unknown';
     final email = id['email'] as String?;
-    final base = (email != null && email.isNotEmpty) ? '$name <$email>' : name;
-    // Merged lists carry a source tag so own/contact collisions stay
-    // distinguishable (gitlab#215 item 7).
+    return (email != null && email.isNotEmpty) ? '$name <$email>' : name;
+  }
+
+  /// Dropdown child for an identity: a leading structural source badge (own/
+  /// contact) that cannot be spoofed or clipped by the untrusted email field
+  /// (gitlab#215 item 7 / review F6 -- a suffix on '$name <$email>' could be
+  /// forged via a crafted email), then the ellipsized label.
+  Widget _identityMenuChild(Map<String, dynamic> id) {
     final source = id['_source'] as String?;
-    return source != null ? '$base ($source)' : base;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (source != null) ...[
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+            decoration: BoxDecoration(
+              color: source == 'own'
+                  ? Colors.blue.withValues(alpha: 0.15)
+                  : Colors.teal.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Text(source,
+                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+          ),
+          const SizedBox(width: 6),
+        ],
+        Flexible(
+          child: Text(_identityLabel(id), overflow: TextOverflow.ellipsis),
+        ),
+      ],
+    );
   }
 
   /// Drop entries with an empty/missing name and dedupe by name.
@@ -554,14 +583,29 @@ class _DecryptTabState extends State<DecryptTab> {
   /// make DropdownButton assert and crash the tab. Names are unique in the
   /// identity store, but a contact can share a name with an own identity in
   /// the merged signer list, and imported contacts are untrusted input.
+  // Count of signer entries dropped by the last _dedupeByName pass (empty
+  // name, or a name colliding with an already-kept entry). These vanish from
+  // the dropdowns silently, so the "not listed" banner adds them in (review
+  // F7) rather than reporting only the CLI-reported skipped count.
+  int _signerDedupeDrops = 0;
+
   List<Map<String, dynamic>> _dedupeByName(List<Map<String, dynamic>> ids) {
     final seen = <String>{};
     final out = <Map<String, dynamic>>[];
+    var drops = 0;
     for (final id in ids) {
       final name = id['name'] as String?;
-      if (name == null || name.isEmpty) continue;
-      if (seen.add(name)) out.add(id);
+      if (name == null || name.isEmpty) {
+        drops++;
+        continue;
+      }
+      if (seen.add(name)) {
+        out.add(id);
+      } else {
+        drops++;
+      }
     }
+    _signerDedupeDrops = drops;
     return out;
   }
 
@@ -598,7 +642,7 @@ class _DecryptTabState extends State<DecryptTab> {
       ),
       ...signerIds.map((id) => DropdownMenuItem<String?>(
             value: id['name'] as String,
-            child: Text(_identityLabel(id)),
+            child: _identityMenuChild(id),
           )),
     ];
 
@@ -660,15 +704,17 @@ class _DecryptTabState extends State<DecryptTab> {
               style: TextStyle(fontSize: 12, color: Colors.orange),
             ),
           ],
-          if (_skippedIdentities.isNotEmpty) ...[
+          if (_skippedIdentities.isNotEmpty || _signerDedupeDrops > 0) ...[
             const SizedBox(height: 6),
-            Text(
-              '${_skippedIdentities.length} identity store '
-              '${_skippedIdentities.length == 1 ? "entry" : "entries"} could '
-              'not be loaded and ${_skippedIdentities.length == 1 ? "is" : "are"} '
-              'not listed here.',
-              style: const TextStyle(fontSize: 12, color: Colors.orange),
-            ),
+            Builder(builder: (_) {
+              final n = _skippedIdentities.length + _signerDedupeDrops;
+              return Text(
+                'At least $n identity store ${n == 1 ? "entry" : "entries"} '
+                'could not be shown here (unreadable, unnamed, or a name '
+                'collision) and ${n == 1 ? "is" : "are"} not listed.',
+                style: const TextStyle(fontSize: 12, color: Colors.orange),
+              );
+            }),
           ],
           // --verify-from / --no-verify are only sent by CLIService when a
           // non-empty decryption identity is set (cli_service.dart:759-766),
@@ -977,6 +1023,39 @@ class _DecryptTabState extends State<DecryptTab> {
                 onPressed: _saveDecryptedFile,
                 icon: const Icon(Icons.save),
                 label: const Text('Save Decrypted Content to File'),
+              ),
+            ],
+
+            // Decrypted-content preview (file mode). Rendered in its own
+            // widget, never concatenated into the status string, so the
+            // untrusted plaintext cannot fabricate status lines (review F11).
+            if (_isFileMode && _decryptedContent != null) ...[
+              const SizedBox(height: 16),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Row(
+                        children: [
+                          Icon(Icons.description_outlined),
+                          SizedBox(width: 8),
+                          Text('Content Preview',
+                              style: TextStyle(
+                                  fontWeight: FontWeight.bold, fontSize: 16)),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      SelectableText(
+                        _decryptedContent!.length > 500
+                            ? '${_decryptedContent!.substring(0, 500)}...'
+                            : _decryptedContent!,
+                        style: const TextStyle(fontFamily: 'monospace'),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ],
 

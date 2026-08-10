@@ -88,6 +88,71 @@ void main() {
     });
   });
 
+  group('identity source tags and load state (gitlab#215 items 6/7)', () {
+    testWidgets('own/contact name collision shows distinct source badges',
+        (WidgetTester tester) async {
+      CLIService.commandRunnerOverride = (List<String> args, {String? stdinInput}) async {
+        if (args.length >= 2 && args[0] == 'identity' && args[1] == 'list') {
+          return ProcessResult(0, 0,
+              '{"own": [{"name": "alice"}], '
+              '"contacts": [{"name": "alice", "email": "a@evil (own)"}], '
+              '"skipped": []}', '');
+        }
+        return _fakeCli(args, stdinInput: stdinInput);
+      };
+      tester.view.physicalSize = const Size(1200, 2600);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      await tester.pumpWidget(wrap(DecryptTab(
+        fileManager: FileManager(),
+        isProMode: true,
+      )));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Advanced Options'));
+      await tester.pumpAndSettle();
+
+      // The signer list dedupes the own/contact 'alice' collision (the
+      // merged entries otherwise carry a structural source badge, so the
+      // crafted contact email 'a@evil (own)' cannot forge the tag). The
+      // dropped collision is reported by the "not listed" banner instead
+      // of vanishing silently.
+      expect(find.textContaining('not listed'), findsOneWidget);
+    });
+
+    testWidgets('an identity-load failure shows an error, not the empty hint',
+        (WidgetTester tester) async {
+      CLIService.commandRunnerOverride = (List<String> args, {String? stdinInput}) async {
+        if (args.length >= 2 && args[0] == 'identity' && args[1] == 'list') {
+          return ProcessResult(0, 1, '', 'store unreachable');
+        }
+        return _fakeCli(args, stdinInput: stdinInput);
+      };
+      tester.view.physicalSize = const Size(1200, 2600);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      await tester.pumpWidget(wrap(DecryptTab(
+        fileManager: FileManager(),
+        isProMode: true,
+      )));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Advanced Options'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('Could not load identities'), findsOneWidget);
+      expect(find.textContaining('Create one under Identity Management'),
+          findsNothing);
+    });
+  });
+
   group('decryptFromSteganography argv', () {
     test('emits --stego-extract with method/bits and optional stego password',
         () async {

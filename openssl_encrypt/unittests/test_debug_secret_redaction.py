@@ -263,6 +263,8 @@ class ArgvSanitizerTests(unittest.TestCase):
             "--rekey-password",
             "--recovery-code",
             "--encryption-data",
+            "--code",
+            "--stego-password",
         }
         self.assertTrue(
             expected <= set(SECRET_VALUE_CLI_OPTIONS),
