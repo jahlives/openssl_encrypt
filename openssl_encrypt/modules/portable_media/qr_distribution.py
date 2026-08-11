@@ -54,6 +54,15 @@ except ImportError:
 # Set up module logger
 logger = logging.getLogger(__name__)
 
+# Maximum number of QR parts a multi-QR key may span (gitlab#239, scan F24).
+# The creation path caps a split at this many chunks; the parse path validates
+# the untrusted `total`/`part` fields against the same bound so a crafted QR
+# payload cannot drive an unbounded set(range(1, total+1)) allocation.
+_MAX_QR_PARTS = 99
+# Hard ceiling on a decompressed QR-distributed key (gitlab#239 review). A real
+# key is a few KB; this bounds a zlib decompression bomb well above any real use.
+_MAX_DECOMPRESSED_KEY_BYTES = 10 * 1024 * 1024  # 10 MiB
+
 
 class QRKeyError(KeystoreError):
     """QR code key distribution specific errors"""
@@ -265,8 +274,10 @@ class QRKeyDistribution:
             ]
             total_chunks = len(chunks)
 
-            if total_chunks > 99:
-                raise QRKeyError(f"Key too large, would require {total_chunks} QR codes (max 99)")
+            if total_chunks > _MAX_QR_PARTS:
+                raise QRKeyError(
+                    f"Key too large, would require {total_chunks} QR codes (max {_MAX_QR_PARTS})"
+                )
 
             # Create overall checksum
             overall_checksum = hashlib.sha256(payload_data).hexdigest()[:16]
@@ -367,7 +378,18 @@ class QRKeyDistribution:
 
             # Decompress if needed
             if compressed:
-                key_data = zlib.decompress(key_content)
+                # Bound the decompression so a crafted highly-compressible QR
+                # payload cannot expand to an OOM before the size check below
+                # (gitlab#239 review, same CWE-789 class as F24). A QR-distributed
+                # key is small (a few KB); the ceiling is far above any real key.
+                _dobj = zlib.decompressobj()
+                key_data = _dobj.decompress(key_content, _MAX_DECOMPRESSED_KEY_BYTES)
+                if _dobj.unconsumed_tail:
+                    raise QRKeyError(
+                        "Compressed key exceeds the maximum decompressed size "
+                        f"({_MAX_DECOMPRESSED_KEY_BYTES} bytes)"
+                    )
+                key_data += _dobj.flush()
             else:
                 key_data = key_content
 
@@ -413,6 +435,24 @@ class QRKeyDistribution:
                 # Extract part info
                 part_num = part_data.get("part")
                 part_total = part_data.get("total")
+                # F24 (gitlab#239, CWE-789): part/total come verbatim from an
+                # untrusted QR payload and drive set(range(1, total+1)) /
+                # join(parts[i] for i in range(1, total+1)) below. Without a
+                # bound, total=10**12 allocates ~10^12 ints and OOMs the import.
+                # Validate against the same 99-chunk cap the creation path
+                # enforces, and require 1 <= part <= total.
+                if not isinstance(part_num, int) or isinstance(part_num, bool):
+                    raise QRKeyError("QR 'part' must be an integer")
+                if not isinstance(part_total, int) or isinstance(part_total, bool):
+                    raise QRKeyError("QR 'total' must be an integer")
+                if not (1 <= part_total <= _MAX_QR_PARTS):
+                    raise QRKeyError(
+                        f"QR 'total' out of range: {part_total} (must be 1..{_MAX_QR_PARTS})"
+                    )
+                if not (1 <= part_num <= part_total):
+                    raise QRKeyError(
+                        f"QR 'part' out of range: {part_num} (must be 1..{part_total})"
+                    )
                 part_key_name = part_data.get("key_name")
                 part_checksum = part_data.get("overall_checksum")
                 part_content = base64.b64decode(part_data.get("data", "").encode("ascii"))

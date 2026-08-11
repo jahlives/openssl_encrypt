@@ -228,6 +228,21 @@ relevant.
 
 ## Security Advisories
 
+### ADVISORY 2026-31: Multi-QR Key Import `total` Field Drove Unbounded Materialization — Resolved
+
+**Severity:** Medium · **CWE-789** (Memory Allocation with Excessive Size Value)
+**Affected versions:** all releases with QR key distribution, up to and including **1.4.8** (1.4.x) / pre-**1.5.0** (1.5.x). **Fixed in 1.4.9 (1.4.x line) and 1.5.0 (1.5.x line).**
+
+**Summary:** `_parse_multi_qr_data` took the `total` field verbatim from an untrusted QR JSON payload and never range-checked it before `set(range(1, total + 1))` and `b"".join(parts[i] for i in range(1, total + 1))`. Two attacker-supplied QR images declaring `total = 10**12` made `keystore-cli import-qr` allocate ~10¹² int objects, hanging the process until the OOM killer fired; the import never completed.
+
+**Impact:** unauthenticated memory-exhaustion DoS when importing attacker-supplied QR images. No key disclosure or code execution.
+
+**Fixed in 1.4.9 / 1.5.0:** `part` and `total` are validated as integers in 1..99 — the same cap the QR *creation* path enforces — immediately after parsing, before any range materialization; a value out of range is rejected. Regression-pinned by `test_qr_multi_part_bound_239.py`.
+
+**Mitigation for existing installs:** upgrade to 1.4.9 / 1.5.0; on earlier versions, do not import QR images from untrusted sources.
+
+**Disclosure:** tracked as gitlab#239 and GHSA-r23m-gf2m-8www (published with the release). **Credit:** found by the 1.4.9 pre-release security scan (finding F24).
+
 ### ADVISORY 2026-30: `verify-usb` Printed Attacker-Planted Filenames Without Escaping — Resolved
 
 **Severity:** Medium · **CWE-117** (Improper Output Neutralization for terminal)

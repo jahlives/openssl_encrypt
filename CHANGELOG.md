@@ -1835,6 +1835,15 @@ inflated KDF metadata parameters, not cosmetic output.
 
 ### Security
 
+- **Multi-QR key import bounds the untrusted `total` field** (gitlab#239,
+  MEDIUM / CWE-789, ADVISORY 2026-31): `_parse_multi_qr_data` took `total`
+  verbatim from a QR payload and drove `set(range(1, total+1))`; two QR images
+  declaring `total=10**12` hung `import-qr` until OOM. `part`/`total` are now
+  validated as ints in 1..99 (the 99-chunk creation cap) before any range
+  materialization, and the compressed single-QR path decompresses with a hard
+  10 MiB ceiling. Found by the 1.4.9 pre-release scan. (FLAC-steganography F14 /
+  ADVISORY 2026-32 is 1.4.x-only — the FLAC cover format was removed on 1.5.x.)
+
 - **`verify-usb` escapes attacker-planted filenames** (gitlab#238, MEDIUM /
   CWE-117, ADVISORY 2026-30): the tampered/missing/added file lists built from
   raw names scanned off the untrusted drive were printed under the FAILED banner
