@@ -6152,7 +6152,11 @@ def decrypt_file_asymmetric(
             # (DoS protection above), but the skip_verification / --no-verify
             # branch bypasses that, so a crafted recipient file's KDF cost would
             # otherwise run unchecked. This guard is the independent backstop.
-            from .decryption_estimator import enforce_memory_ceiling, estimate_decryption_cost
+            from .decryption_estimator import (
+                enforce_memory_ceiling,
+                enforce_time_ceiling,
+                estimate_decryption_cost,
+            )
 
             try:
                 _asym_estimate = estimate_decryption_cost(metadata)
@@ -6163,6 +6167,10 @@ def decrypt_file_asymmetric(
             else:
                 enforce_memory_ceiling(
                     _asym_estimate.peak_memory_kb, allow_high_kdf_cost=allow_high_kdf_cost
+                )
+                # F30 (gitlab#247): also refuse an over-ceiling estimated CPU time.
+                enforce_time_ceiling(
+                    _asym_estimate.total_time_seconds, allow_high_kdf_cost=allow_high_kdf_cost
                 )
 
             if not quiet:
@@ -9848,7 +9856,11 @@ def _rekey_envelope_fast(
     # fast-path derives from the file's own (attacker-controllable) KDF config
     # without ever reaching decrypt_file, so it must guard the ceiling itself or
     # a crafted envelope would OOM the host on `rekey`.
-    from .decryption_estimator import enforce_memory_ceiling, estimate_decryption_cost
+    from .decryption_estimator import (
+        enforce_memory_ceiling,
+        enforce_time_ceiling,
+        estimate_decryption_cost,
+    )
 
     try:
         _rk_estimate = estimate_decryption_cost(meta)
@@ -9858,6 +9870,10 @@ def _rekey_envelope_fast(
         enforce_memory_ceiling(float("inf"), allow_high_kdf_cost=allow_high_kdf_cost)
     else:
         enforce_memory_ceiling(_rk_estimate.peak_memory_kb, allow_high_kdf_cost=allow_high_kdf_cost)
+        # F30 (gitlab#247): also refuse an over-ceiling estimated CPU time.
+        enforce_time_ceiling(
+            _rk_estimate.total_time_seconds, allow_high_kdf_cost=allow_high_kdf_cost
+        )
 
     # Unwrap with the old KEK. A wrong password makes unwrap raise -- let it
     # propagate (do NOT fall back, or we'd silently full-re-encrypt on bad input).
@@ -9998,7 +10014,11 @@ def _recover_envelope_dek(
         # (attacker-controllable) config (gitlab#128). This runs before the
         # slot-set MAC is checked below, so a crafted envelope handed to
         # add-recovery/remove-recovery must be refused here or it OOMs the host.
-        from .decryption_estimator import enforce_memory_ceiling, estimate_decryption_cost
+        from .decryption_estimator import (
+            enforce_memory_ceiling,
+            enforce_time_ceiling,
+            estimate_decryption_cost,
+        )
 
         try:
             _rec_estimate = estimate_decryption_cost(meta)
@@ -10009,6 +10029,10 @@ def _recover_envelope_dek(
         else:
             enforce_memory_ceiling(
                 _rec_estimate.peak_memory_kb, allow_high_kdf_cost=allow_high_kdf_cost
+            )
+            # F30 (gitlab#247): also refuse an over-ceiling estimated CPU time.
+            enforce_time_ceiling(
+                _rec_estimate.total_time_seconds, allow_high_kdf_cost=allow_high_kdf_cost
             )
         kek = _derive_envelope_kek(
             password,
@@ -11567,7 +11591,11 @@ def decrypt_file(
     # unattended decrypt. It is still escapable (allow_high_kdf_cost, or an
     # interactive confirmation) so a user may choose an expensive config for
     # their own files.
-    from .decryption_estimator import enforce_memory_ceiling, estimate_decryption_cost
+    from .decryption_estimator import (
+        enforce_memory_ceiling,
+        enforce_time_ceiling,
+        estimate_decryption_cost,
+    )
 
     _kdf_estimate = None
     try:
@@ -11600,6 +11628,11 @@ def decrypt_file(
         else:
             _peak_kb = _kdf_estimate.peak_memory_kb
         enforce_memory_ceiling(_peak_kb, allow_high_kdf_cost=allow_high_kdf_cost)
+        # F30 (gitlab#247): a crafted file can pass the memory ceiling with tiny
+        # memory but huge iteration counts; also refuse an over-ceiling CPU time.
+        enforce_time_ceiling(
+            _kdf_estimate.total_time_seconds, allow_high_kdf_cost=allow_high_kdf_cost
+        )
 
     # Display time/memory estimates for decryption
     if not quiet and not no_estimate:

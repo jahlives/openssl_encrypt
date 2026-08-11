@@ -6,12 +6,14 @@ of decryption operations based on metadata configuration. This helps detect pote
 DoS attacks where malicious actors inflate metadata values to overwhelm the system.
 """
 
+import math
 import sys
 from typing import Dict, List, Tuple
 
 try:
     from .benchmark_constants import (
         HARD_MEMORY_CEILING_KB,
+        HARD_TIME_CEILING_SECONDS,
         HASH_BENCHMARK_DATA,
         KDF_BENCHMARK_DATA,
         WARNING_THRESHOLDS,
@@ -22,6 +24,7 @@ except ImportError:
     KDF_BENCHMARK_DATA = {}
     WARNING_THRESHOLDS = {"time_seconds": 10, "memory_kb": 1048576}
     HARD_MEMORY_CEILING_KB = 8 * 1024 * 1024  # 8 GiB
+    HARD_TIME_CEILING_SECONDS = 120.0
 
 
 class DecryptionEstimate:
@@ -143,8 +146,19 @@ def estimate_argon2(config: Dict) -> Tuple[float, int]:
     base_time = bench.get("base_time", 0.037)
     time_per_timecost = bench.get("time_per_timecost", 0.007)
 
-    # Time estimate: base time + additional time per time_cost unit above 3
-    time_per_round = base_time + max(0, time_cost - 3) * time_per_timecost
+    # Real Argon2 work is memory_cost x time_cost block computations, so runtime
+    # scales LINEARLY with memory_cost. The benchmark constants above were
+    # measured at the reference memory_cost of 65536 KB (64 MiB), so scale the
+    # per-round time by memory_cost / reference; without this the estimate is
+    # memory-blind and a crafted file with a large-but-under-the-8-GiB-ceiling
+    # memory_cost and a modest round count slips under both the memory and time
+    # ceilings while running for hours (gitlab#247, F30 review).
+    _ARGON2_BENCH_REF_MEMORY_KB = 65536.0
+    try:
+        mem_scale = max(1.0, float(memory_cost) / _ARGON2_BENCH_REF_MEMORY_KB)
+    except (TypeError, ValueError):
+        mem_scale = 1.0
+    time_per_round = (base_time + max(0, time_cost - 3) * time_per_timecost) * mem_scale
     time_seconds = rounds * time_per_round
 
     # Memory is directly the memory_cost parameter
@@ -173,15 +187,24 @@ def estimate_scrypt(config: Dict) -> Tuple[float, int]:
 
     bench = KDF_BENCHMARK_DATA.get("scrypt", {})
     time_n_16384 = bench.get("time_n_16384", 0.03)
-    time_multiplier = bench.get("time_multiplier_per_doubling", 2.0)
 
-    # Time scales exponentially with n (doubling n ~doubles time)
-    # Calculate how many doublings from base n=16384
     if n <= 0 or r <= 0 or p <= 0:
         return (0.0, 0)
 
-    doublings = max(0, (n // 16384).bit_length() - 1)
-    time_per_round = time_n_16384 * (time_multiplier**doublings)
+    # Real scrypt CPU work is proportional to N x r x p (the mix runs N sequential
+    # steps over a 128*r-byte block, p times), so time must scale with all three,
+    # not N alone. Estimating from N only left r/p as a memory-blind time axis: a
+    # crafted n=16384, r=256, p=16 config sits at exactly the 8 GiB memory ceiling
+    # yet does ~512x the reference work, pinning a core before authentication
+    # (gitlab#247, F30 review). This also removes the old power-of-2-only
+    # (doubling-count) precision loss. Reference is the benchmark point
+    # n=16384 / r=8 / p=1.
+    _SCRYPT_REF_WORK = 16384 * 8 * 1
+    try:
+        work_scale = max(1.0, (float(n) * float(r) * float(p)) / _SCRYPT_REF_WORK)
+    except (TypeError, ValueError):
+        work_scale = 1.0
+    time_per_round = time_n_16384 * work_scale
     time_seconds = rounds * time_per_round
 
     # Scrypt's core memory footprint is ~128 * N * r bytes (the benchmark's
@@ -504,6 +527,75 @@ def enforce_memory_ceiling(
             return
         raise ValidationError(
             "Decryption cancelled: key-derivation memory cost above the safety "
+            "ceiling. Re-run with --allow-high-kdf-cost to override."
+        )
+
+    raise ValidationError(detail + " If you trust this file, re-run with --allow-high-kdf-cost.")
+
+
+def enforce_time_ceiling(
+    total_time_seconds: float,
+    allow_high_kdf_cost: bool = False,
+    interactive: bool = None,
+) -> None:
+    """Refuse a decrypt whose estimated total KDF time exceeds the hard ceiling.
+
+    The CPU-time sibling of :func:`enforce_memory_ceiling` (gitlab#247, F30). A
+    crafted file can declare huge KDF iteration counts with tiny memory, slipping
+    under the memory ceiling while pinning a CPU core for an unbounded time before
+    the password is checked. This guard runs before any KDF executes.
+
+    Like the memory ceiling it is escapable (``allow_high_kdf_cost=True`` or an
+    interactive confirmation) so a user may choose an expensive config for their
+    own files, and its enforcement is independent of the estimate-display flags
+    (``quiet`` / ``no_estimate``) so unattended decrypts stay protected.
+
+    Args:
+        total_time_seconds: Estimated total time (s) from estimate_decryption_cost.
+        allow_high_kdf_cost: If True, proceed regardless (explicit override).
+        interactive: Whether to prompt. None resolves to sys.stdin.isatty().
+
+    Raises:
+        ValidationError: If over the ceiling and neither overridden nor confirmed.
+    """
+    from .crypt_errors import ValidationError
+
+    if allow_high_kdf_cost or total_time_seconds <= HARD_TIME_CEILING_SECONDS:
+        return
+
+    # total_time_seconds may be float('inf') as a fail-closed marker (the
+    # estimate could not be computed); format_time can't render that.
+    estimated = (
+        format_time(total_time_seconds)
+        if math.isfinite(total_time_seconds)
+        else "an unbounded time"
+    )
+    detail = (
+        f"This file's key-derivation parameters would take an estimated "
+        f"{estimated}, above the "
+        f"{format_time(HARD_TIME_CEILING_SECONDS)} safety ceiling. A crafted file "
+        f"can use this to pin the CPU before the password is even checked."
+    )
+
+    if interactive is None:
+        interactive = sys.stdin.isatty()
+
+    if interactive:
+        print("\n⚠️  WARNING: " + detail, file=sys.stderr)
+        print(
+            "Proceed anyway? This may hang your system. [y/N]: ",
+            end="",
+            file=sys.stderr,
+            flush=True,
+        )
+        try:
+            response = input().strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            response = ""
+        if response in ("y", "yes"):
+            return
+        raise ValidationError(
+            "Decryption cancelled: key-derivation time cost above the safety "
             "ceiling. Re-run with --allow-high-kdf-cost to override."
         )
 

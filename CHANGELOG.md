@@ -461,6 +461,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Decrypt enforces a hard KDF time ceiling, not just a memory ceiling**
+  (gitlab#247, MEDIUM / CWE-400, ADVISORY 2026-37): the pre-decryption cost
+  estimator refused configs over an 8 GiB memory ceiling but only *warned* on
+  time, so a crafted file with huge KDF iteration counts and tiny memory (e.g.
+  `argon2 time_cost=2**31, memory_cost=8`) pinned a CPU core before the password
+  was checked. A hard `HARD_TIME_CEILING_SECONDS` (120 s, ~30× the heaviest
+  preset) is now enforced alongside the memory ceiling at every decrypt
+  cost-gate via `enforce_time_ceiling()`, overridable with
+  `--allow-high-kdf-cost`/interactive confirmation and independent of the
+  `--quiet`/`--no-estimate` display flags. Found by the 1.4.9 pre-release scan.
+
 - **Plaintext-hash confirmation oracle removed from the file header**
   (gitlab#245, MEDIUM / CWE-311, ADVISORY 2026-36): every file stored
   `hashes.original_hash = sha256(plaintext)` in its cleartext header — an

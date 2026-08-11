@@ -226,6 +226,21 @@ relevant.
 
 ## Security Advisories
 
+### ADVISORY 2026-37: Decrypt Enforced a Memory Ceiling but No Time Ceiling — Crafted KDF Iteration Counts Pinned the CPU Pre-Authentication — Resolved
+
+**Severity:** Medium · **CWE-400** (Uncontrolled Resource Consumption)
+**Affected versions:** all releases with the pre-decryption KDF-cost estimator, up to and including **1.4.8**. **Fixed in 1.4.9** (both the 1.4.x and 1.5.x lines).
+
+**Summary:** the sibling of the pre-authentication memory-DoS fix (gitlab#128). Before deriving a key, decrypt estimates the KDF cost from the file's attacker-controlled metadata and refuses to proceed above an 8 GiB memory ceiling — but it enforced no ceiling on estimated **time**. A crafted file could declare huge KDF iteration counts with tiny memory — for example `argon2 time_cost/rounds = 2**31` with `memory_cost = 8`, or a hash round count of `2**31` — which passes the memory ceiling yet pins a CPU core for an unbounded time **before the password is checked** (estimated ~1600 s for the hash case and ~4×10¹⁶ s for the argon2 case, versus ~4 s for the heaviest shipped preset).
+
+**Impact:** an unauthenticated CPU-exhaustion DoS: a single crafted file makes `decrypt` burn a core for a very long time before any authentication, with no escape in unattended/batch mode and no notice under `--quiet`/`--no-estimate`.
+
+**Fixed in 1.4.9:** a hard time ceiling (`HARD_TIME_CEILING_SECONDS = 120 s`, ~30× the heaviest preset) is enforced alongside the memory ceiling at every decrypt cost-gate (main, asymmetric, and both recovery-slot paths), via a new `enforce_time_ceiling()` that mirrors `enforce_memory_ceiling` — refused unless explicitly overridden with `--allow-high-kdf-cost` or an interactive confirmation, and enforced independently of the `--quiet`/`--no-estimate` display flags so unattended decrypts stay protected. The pre-decryption cost estimator was also corrected to model the memory×time cross-term it previously ignored: Argon2 time now scales with `memory_cost` and scrypt time with the full `N·r·p` work product, closing crafted configs that sat just under the 8 GiB memory ceiling with a modest round count yet ran for hours. Combined with the existing 1,000,000 hash-round schema cap, this catches every iteration- and memory-driven config across all KDFs. Regression-pinned by `test_kdf_time_ceiling_247.py`.
+
+**Mitigation for existing installs:** upgrade to 1.4.9; on earlier versions, do not decrypt untrusted files unattended.
+
+**Disclosure:** tracked as gitlab#247 and GHSA-rv6w-7hq9-pr74 (published with the 1.4.9 release). **Credit:** found by the 1.4.9 pre-release security scan (finding F30).
+
 ### ADVISORY 2026-36: File Header Stored an Unkeyed SHA-256 of the Plaintext (Plaintext-Confirmation Oracle) — Resolved
 
 **Severity:** Medium · **CWE-311** (Missing Encryption / Cleartext Storage of Sensitive Information)
