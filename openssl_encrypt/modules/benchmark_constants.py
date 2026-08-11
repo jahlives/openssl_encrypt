@@ -96,3 +96,15 @@ WARNING_THRESHOLDS = {"time_seconds": 10, "memory_kb": 1048576}  # 1GB
 # the largest shipped preset (2 GiB, template_manager paranoid) so no legitimate
 # file is ever refused; this is distinct from the 1 GiB soft warning above.
 HARD_MEMORY_CEILING_KB = 8 * 1024 * 1024  # 8 GiB
+
+# Hard time ceiling for decryption (gitlab#247, F30). The sibling of the memory
+# ceiling: a crafted file can declare huge KDF ITERATION counts with tiny memory
+# (e.g. argon2 time_cost=2**31 / memory_cost=8, or a 2**31 hash-round count),
+# which slips under the memory ceiling but pins a CPU core for an unbounded time
+# BEFORE the password is checked. Above this estimated-total-time ceiling a
+# decrypt is refused unless explicitly overridden (--allow-high-kdf-cost /
+# interactive confirmation), enforced independently of the --quiet/--no-estimate
+# display flags. Set ~30x the heaviest shipped preset (paranoid estimates to a
+# few seconds) so no legitimate file is refused; distinct from the 10 s soft
+# warning above.
+HARD_TIME_CEILING_SECONDS = 120.0
