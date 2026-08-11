@@ -52,7 +52,7 @@ STDOUT_WHITELIST = [
     # --- machine-readable JSON channels (the consumer parses stdout) ---
     (
         "modules/crypt_core.py",
-        "print(json.dumps(metadata, indent=2, ensure_ascii=False))",
+        "print(json.dumps(metadata, indent=2, ensure_ascii=True))",
         1,
         "--info --json metadata document",
     ),
