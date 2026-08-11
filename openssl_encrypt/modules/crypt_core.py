@@ -22,6 +22,7 @@ import math
 import os
 import re
 import secrets
+import shlex
 import shutil
 import stat
 import sys
@@ -9238,6 +9239,14 @@ def print_file_info(input_file: str, json_output: bool = False, second_password=
     return metadata
 
 
+def _shq(value) -> str:
+    """Shell-quote an untrusted metadata value for the reconstructed-CLI block
+    (gitlab#234, scan F35, CWE-78). A crafted file may put shell metacharacters
+    in any field; quoting keeps each value a single shell token when the printed
+    command is pasted."""
+    return shlex.quote(str(value))
+
+
 def _reconstruct_cli_from_metadata(
     metadata: dict, hidden: bool = False, keyed: bool = False
 ) -> str:
@@ -9332,7 +9341,7 @@ def _append_hash_rounds_flags(lines: list, hash_config: dict) -> None:
         else:
             rounds = cfg
         if rounds and rounds > 0:
-            lines.append(f"  --{flag_prefix}-rounds {rounds}")
+            lines.append(f"  --{flag_prefix}-rounds {_shq(rounds)}")
 
 
 # Reverse map for argon2 type integers stored in metadata.
@@ -9345,20 +9354,20 @@ def _append_argon2_flags(lines: list, cfg: dict) -> None:
         return
     lines.append("  --enable-argon2")
     if "rounds" in cfg:
-        lines.append(f"  --argon2-rounds {cfg['rounds']}")
+        lines.append(f"  --argon2-rounds {_shq(cfg['rounds'])}")
     if "time_cost" in cfg:
-        lines.append(f"  --argon2-time {cfg['time_cost']}")
+        lines.append(f"  --argon2-time {_shq(cfg['time_cost'])}")
     if "memory_cost" in cfg:
-        lines.append(f"  --argon2-memory {cfg['memory_cost']}")
+        lines.append(f"  --argon2-memory {_shq(cfg['memory_cost'])}")
     if "parallelism" in cfg:
-        lines.append(f"  --argon2-parallelism {cfg['parallelism']}")
+        lines.append(f"  --argon2-parallelism {_shq(cfg['parallelism'])}")
     if "hash_len" in cfg:
-        lines.append(f"  --argon2-hash-len {cfg['hash_len']}")
+        lines.append(f"  --argon2-hash-len {_shq(cfg['hash_len'])}")
     if "type" in cfg:
         t = cfg["type"]
         # Metadata stores type as int (0,1,2). CLI expects "d","i","id".
         type_str = _ARGON2_INT_TO_STR.get(t, t) if isinstance(t, int) else t
-        lines.append(f"  --argon2-type {type_str}")
+        lines.append(f"  --argon2-type {_shq(type_str)}")
 
 
 def _append_scrypt_flags(lines: list, cfg: dict) -> None:
@@ -9367,13 +9376,13 @@ def _append_scrypt_flags(lines: list, cfg: dict) -> None:
         return
     lines.append("  --enable-scrypt")
     if "rounds" in cfg:
-        lines.append(f"  --scrypt-rounds {cfg['rounds']}")
+        lines.append(f"  --scrypt-rounds {_shq(cfg['rounds'])}")
     if "n" in cfg:
-        lines.append(f"  --scrypt-n {cfg['n']}")
+        lines.append(f"  --scrypt-n {_shq(cfg['n'])}")
     if "r" in cfg:
-        lines.append(f"  --scrypt-r {cfg['r']}")
+        lines.append(f"  --scrypt-r {_shq(cfg['r'])}")
     if "p" in cfg:
-        lines.append(f"  --scrypt-p {cfg['p']}")
+        lines.append(f"  --scrypt-p {_shq(cfg['p'])}")
 
 
 def _append_balloon_flags(lines: list, cfg: dict) -> None:
@@ -9382,13 +9391,13 @@ def _append_balloon_flags(lines: list, cfg: dict) -> None:
         return
     lines.append("  --enable-balloon")
     if "rounds" in cfg:
-        lines.append(f"  --balloon-rounds {cfg['rounds']}")
+        lines.append(f"  --balloon-rounds {_shq(cfg['rounds'])}")
     if "time_cost" in cfg:
-        lines.append(f"  --balloon-time-cost {cfg['time_cost']}")
+        lines.append(f"  --balloon-time-cost {_shq(cfg['time_cost'])}")
     if "space_cost" in cfg:
-        lines.append(f"  --balloon-space-cost {cfg['space_cost']}")
+        lines.append(f"  --balloon-space-cost {_shq(cfg['space_cost'])}")
     if "parallelism" in cfg:
-        lines.append(f"  --balloon-parallelism {cfg['parallelism']}")
+        lines.append(f"  --balloon-parallelism {_shq(cfg['parallelism'])}")
 
 
 def _append_hkdf_flags(lines: list, cfg: dict) -> None:
@@ -9397,11 +9406,11 @@ def _append_hkdf_flags(lines: list, cfg: dict) -> None:
         return
     lines.append("  --enable-hkdf")
     if "rounds" in cfg:
-        lines.append(f"  --hkdf-rounds {cfg['rounds']}")
+        lines.append(f"  --hkdf-rounds {_shq(cfg['rounds'])}")
     if "algorithm" in cfg:
-        lines.append(f"  --hkdf-algorithm {cfg['algorithm']}")
+        lines.append(f"  --hkdf-algorithm {_shq(cfg['algorithm'])}")
     if "info" in cfg:
-        lines.append(f"  --hkdf-info {cfg['info']}")
+        lines.append(f"  --hkdf-info {_shq(cfg['info'])}")
 
 
 def _append_pbkdf2_flags(lines: list, cfg: dict) -> None:
@@ -9421,7 +9430,7 @@ def _append_pbkdf2_flags(lines: list, cfg: dict) -> None:
     else:
         rounds = cfg
     if rounds and rounds > 0:
-        lines.append(f"  --pbkdf2-iterations {rounds}")
+        lines.append(f"  --pbkdf2-iterations {_shq(rounds)}")
 
 
 def _append_whirlpool_flags(lines: list, cfg) -> None:
@@ -9438,7 +9447,7 @@ def _append_whirlpool_flags(lines: list, cfg) -> None:
     else:
         rounds = cfg
     if rounds and rounds > 0:
-        lines.append(f"  --whirlpool-rounds {rounds}")
+        lines.append(f"  --whirlpool-rounds {_shq(rounds)}")
 
 
 def _append_randomx_flags(lines: list, cfg: dict) -> None:
@@ -9447,13 +9456,13 @@ def _append_randomx_flags(lines: list, cfg: dict) -> None:
         return
     lines.append("  --enable-randomx")
     if "rounds" in cfg:
-        lines.append(f"  --randomx-rounds {cfg['rounds']}")
+        lines.append(f"  --randomx-rounds {_shq(cfg['rounds'])}")
     if "mode" in cfg:
-        lines.append(f"  --randomx-mode {cfg['mode']}")
+        lines.append(f"  --randomx-mode {_shq(cfg['mode'])}")
     if "height" in cfg:
-        lines.append(f"  --randomx-height {cfg['height']}")
+        lines.append(f"  --randomx-height {_shq(cfg['height'])}")
     if "hash_len" in cfg:
-        lines.append(f"  --randomx-hash-len {cfg['hash_len']}")
+        lines.append(f"  --randomx-hash-len {_shq(cfg['hash_len'])}")
 
 
 def _append_pepper_flags(lines: list, encryption: dict) -> None:
@@ -9471,7 +9480,7 @@ def _append_pepper_flags(lines: list, encryption: dict) -> None:
     lines.append("  --pepper")
     pepper_name = encryption.get("pepper_name")
     if pepper_name:
-        lines.append(f"  --pepper-name {pepper_name}")
+        lines.append(f"  --pepper-name {_shq(pepper_name)}")
 
 
 def _append_hsm_flags(lines: list, encryption: dict) -> None:
@@ -9486,12 +9495,12 @@ def _append_hsm_flags(lines: list, encryption: dict) -> None:
     if not plugin:
         return
     short = plugin[:-4] if plugin.endswith("_hsm") else plugin
-    lines.append(f"  --hsm {short}")
+    lines.append(f"  --hsm {_shq(short)}")
 
     hsm_cfg = encryption.get("hsm_config") or {}
     slot = hsm_cfg.get("slot")
     if slot is not None:
-        lines.append(f"  --hsm-slot {slot}")
+        lines.append(f"  --hsm-slot {_shq(slot)}")
 
 
 def _append_cipher_flags(lines: list, encryption: dict) -> None:
@@ -9501,11 +9510,11 @@ def _append_cipher_flags(lines: list, encryption: dict) -> None:
         chain = encryption.get("cipher_chain") or []
         if chain:
             lines.append("  --cascade")
-            lines.append(f"  --algorithm {','.join(chain)}")
+            lines.append(f"  --algorithm {_shq(','.join(chain))}")
     else:
         algorithm = encryption.get("algorithm")
         if algorithm:
-            lines.append(f"  --algorithm {algorithm}")
+            lines.append(f"  --algorithm {_shq(algorithm)}")
 
 
 def _format_kdf_params(kdf_name: str, params: dict) -> str:

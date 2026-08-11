@@ -479,6 +479,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Re-encrypt any files produced through the 1.4.x D-Bus service after
   upgrading. Found by the 1.4.9 pre-release security scan.
 
+- **The `info` reconstructed-CLI block now shell-quotes untrusted metadata**
+  (gitlab#234, MEDIUM / CWE-78, ADVISORY 2026-26): the "Reconstructed CLI"
+  command that `info` prints interpolated attacker-controlled metadata fields
+  (`pepper_name`, `hsm_plugin`, `algorithm`, `cipher_chain`, `hkdf.info`,
+  `argon2.type`, `randomx.mode`, and numeric fields) into shell text with no
+  quoting, so a `pepper_name` such as `work; curl … | sh #` ran attacker code
+  when the user pasted the block. Every interpolated value now passes through
+  `shlex.quote()`, so a crafted value stays a single shell token. Found by the
+  1.4.9 pre-release security scan.
+
 - **Pre-authentication resource-exhaustion hardening** (gitlab#233, MEDIUM /
   CWE-770/405/1284, ADVISORY 2026-25): several paths let a crafted file drive
   unbounded KDF cost past the pre-auth memory ceiling (gitlab#128), OOM-killing
