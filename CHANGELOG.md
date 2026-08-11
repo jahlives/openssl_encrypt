@@ -1835,6 +1835,14 @@ inflated KDF metadata parameters, not cosmetic output.
 
 ### Security
 
+- **Keyserver login/registration reject non-HTTPS and unconfigured servers**
+  (gitlab#241, MEDIUM / CWE-319, ADVISORY 2026-33): `register()` enforced
+  `https://` but `login()`/`register_with_email()` did not, and cert pinning
+  only mounts for the https prefix, so an `http://` (or non-configured) server
+  URL leaked the `client_id`, a stored password, and returned JWTs in cleartext.
+  A shared validator now requires `https://` and membership of `config.servers`,
+  applied by all three before any request. Found by the 1.4.9 pre-release scan.
+
 - **Multi-QR key import bounds the untrusted `total` field** (gitlab#239,
   MEDIUM / CWE-789, ADVISORY 2026-31): `_parse_multi_qr_data` took `total`
   verbatim from a QR payload and drove `set(range(1, total+1))`; two QR images
