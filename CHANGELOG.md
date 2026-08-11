@@ -469,7 +469,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `U+2028`/`U+2029` (which Flutter treats as line breaks) to forge a line under
   the warning. `RecoverySlot.fromJson` now runs every displayed field through
   `InputValidator.sanitizeForDisplay`; the raw id is kept only for the
-  `--slot-id` removal argument. Found by the 1.4.9 pre-release scan.
+  `--slot-id` removal argument, and the removal dialog isolates and length-caps
+  the untrusted value so it cannot push the warning off-screen. 1.4.x only (the
+  1.5.x GUI does not ship the recovery-slot manager). Found by the 1.4.9
+  pre-release scan.
 
 - **liboqs / liboqs-python are built from pinned commit SHAs, not mutable tags**
   (gitlab#252, CWE-494): the PQC dependency build cloned liboqs from

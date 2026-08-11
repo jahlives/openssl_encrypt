@@ -229,13 +229,13 @@ relevant.
 ### ADVISORY 2026-39: Desktop GUI Rendered Unauthenticated Recovery-Slot Metadata Unescaped in the Removal Dialog — Resolved
 
 **Severity:** Medium · **CWE-116** (Improper Encoding or Escaping of Output)
-**Affected versions:** releases with the desktop GUI recovery-slot manager, up to and including **1.4.8**. **Fixed in 1.4.9** (both the 1.4.x and 1.5.x lines).
+**Affected versions:** 1.4.x releases with the desktop GUI recovery-slot manager, up to and including **1.4.8**. **Fixed in 1.4.9** (1.4.x line). The 1.5.x desktop GUI does not ship the recovery-slot manager and is not affected.
 
 **Summary:** the recovery-slot management screen rendered a slot's `id` and `type` — read from a file's `list-recovery --json` output — with bare `Text(...)` widgets, including inside the irreversible-removal confirmation dialog. The CLI JSON channel is deliberately unsanitized (machine-readable; the renderer owns display safety, per the gitlab#183 model), so a crafted encrypted file could carry a recovery-slot `id`/`type` containing bidi overrides or `U+2028`/`U+2029`. Flutter honours bidi in text and treats `U+2028`/`U+2029` as mandatory line breaks (UAX #14), so attacker-controlled slot metadata could start its own line inside the trust UI and forge text under the "this is irreversible" warning.
 
 **Impact:** UI spoofing in a destructive-action dialog — a crafted file could make the remove-recovery-slot confirmation display misleading text. No key disclosure; requires the victim to open the crafted file's recovery-slot screen.
 
-**Fixed in 1.4.9:** `RecoverySlot.fromJson` sanitizes every displayed field (`id`, `type`, `key_id`) through `InputValidator.sanitizeForDisplay`, which escapes (does not strip) C0/DEL/C1 controls, the Unicode bidi/format controls, `U+2028`/`U+2029`, the zero-width set and BOM at the JSON decode boundary. The raw id is retained separately and used only as the `--slot-id` argument to `remove-recovery` (the CLI must match the real id); every display path uses the sanitized value. Regression-pinned by `recovery_slot_sanitize_254_test.dart`.
+**Fixed in 1.4.9 (1.4.x line):** `RecoverySlot.fromJson` sanitizes every displayed field (`id`, `type`, `key_id`) through `InputValidator.sanitizeForDisplay`, which escapes (does not strip) C0/DEL/C1 controls, the Unicode bidi/format controls, `U+2028`/`U+2029`, the zero-width set and BOM at the JSON decode boundary. The raw id is retained separately and used only as the `--slot-id` argument to `remove-recovery` (the CLI must match the real id); every display path uses the sanitized value. The removal-confirmation dialog additionally keeps its warning as an always-visible widget and renders the (escaped) id length-capped and LTR-isolated so a crafted value cannot push the warning off-screen. Regression-pinned by `recovery_slot_sanitize_254_test.dart`.
 
 **Mitigation for existing installs:** upgrade to 1.4.9; on earlier versions, treat the recovery-slot dialog's displayed id/type as untrusted for files from others.
 
