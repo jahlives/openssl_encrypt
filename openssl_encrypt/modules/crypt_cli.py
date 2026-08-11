@@ -2297,6 +2297,16 @@ def output_available_algorithms_json(args):
     print(json.dumps(result, indent=2))
 
 
+# Immutable commit pins for the PQC upstreams (gitlab#252, F31/F33, CWE-494).
+# Git tags are mutable; a repointed tag would build/load arbitrary code as the
+# post-quantum crypto implementation. These are the commits the 0.12.0 tags
+# pointed to; the inline build verifies the checkout against LIBOQS_PINNED_COMMIT
+# and installs liboqs-python from LIBOQS_PYTHON_PINNED_COMMIT. Bump alongside the
+# version strings.
+LIBOQS_PINNED_COMMIT = "f4b96220e4bd208895172acc4fedb5a191d9f5b1"
+LIBOQS_PYTHON_PINNED_COMMIT = "7906e7879a099fa34217035957d977314f99757d"
+
+
 def install_optional_dependencies(args):
     """
     Install optional dependencies (liboqs, liboqs-python, threefish).
@@ -2417,6 +2427,21 @@ def install_optional_dependencies(args):
                     check=True,
                 )
 
+                # Verify the checkout against the pinned commit (gitlab#252, F31):
+                # a moved tag lands a different HEAD; fail closed rather than build
+                # untrusted post-quantum crypto code.
+                head = subprocess.run(
+                    ["git", "-C", liboqs_dir, "rev-parse", "HEAD"],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                ).stdout.strip()
+                if head != LIBOQS_PINNED_COMMIT:
+                    raise RuntimeError(
+                        f"liboqs checkout {head} does not match the pinned commit "
+                        f"{LIBOQS_PINNED_COMMIT}; refusing to build (possible tag tampering)"
+                    )
+
                 # Build
                 build_path = os.path.join(liboqs_dir, "build")
                 os.makedirs(build_path, exist_ok=True)
@@ -2472,7 +2497,9 @@ def install_optional_dependencies(args):
                     "-m",
                     "pip",
                     "install",
-                    "git+https://github.com/open-quantum-safe/liboqs-python.git@0.12.0",
+                    # Pin to the immutable commit, not the mutable tag (gitlab#252, F33).
+                    "git+https://github.com/open-quantum-safe/liboqs-python.git@"
+                    + LIBOQS_PYTHON_PINNED_COMMIT,
                 ],
                 check=True,
             )

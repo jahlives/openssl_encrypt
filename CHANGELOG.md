@@ -461,6 +461,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **liboqs / liboqs-python are built from pinned commit SHAs, not mutable tags**
+  (gitlab#252, CWE-494): the PQC dependency build cloned liboqs from
+  `--branch <tag>` and pip-installed liboqs-python from `@<tag>` with no
+  integrity check, so a repointed upstream tag could build and load arbitrary
+  post-quantum crypto code on the user's machine. All three build sites
+  (`build_local_deps.sh`, `build_local_deps.ps1`, and the `install-dependencies`
+  inline fallback in `crypt_cli.py`) now pin the exact commit — verifying the
+  clone's `git rev-parse HEAD` against the pinned SHA and failing closed on
+  mismatch, and installing liboqs-python from the commit SHA. Found by the 1.4.9
+  pre-release scan.
+
 - **D-Bus `Properties.Set` now authorizes the caller and validates the value**
   (gitlab#250, MEDIUM / CWE-862+CWE-20, ADVISORY 2026-38): every functional
   D-Bus method was polkit-gated, but `Properties.Set` was not and did no range

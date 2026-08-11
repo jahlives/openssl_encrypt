@@ -25,6 +25,13 @@ variables:
   # (RandomX/whirlpool) instead of musl source builds, matching dev/prod output.
   DOCKER_IMAGE: registry.rm-rf.ch/world/openssl_encrypt/python-liboqs:3.13-slim
   DOCS_ONLY: "false"
+  # Immutable commit pins for the PQC upstreams (gitlab#252, F31/F33, CWE-494).
+  # The liboqs clone below was floating on the upstream default branch; it now
+  # pins the tag AND verifies the checkout against this commit, and liboqs-python
+  # installs from its commit SHA. Bump both together.
+  LIBOQS_VERSION: "0.12.0"
+  LIBOQS_COMMIT: "f4b96220e4bd208895172acc4fedb5a191d9f5b1"
+  LIBOQS_PYTHON_COMMIT: "7906e7879a099fa34217035957d977314f99757d"
 
 
 sync-wiki:
@@ -373,8 +380,10 @@ test-fallback:
     # glibc base so pip uses manylinux wheels for RandomX/whirlpool (matching
     # dev/prod), keeping the fixture KDF output reproducible.
     - apt-get update && apt-get install -y --no-install-recommends git build-essential cmake ninja-build golang python3-dev libssl-dev pkg-config cargo patchelf
-    # Clone liboqs repository with submodules
-    - git clone --recurse-submodules https://github.com/open-quantum-safe/liboqs.git
+    # Clone liboqs at the pinned commit and verify it (gitlab#252, F31): the
+    # clone was previously floating on the upstream default branch.
+    - git clone --recurse-submodules --branch "$LIBOQS_VERSION" https://github.com/open-quantum-safe/liboqs.git
+    - test "$(git -C liboqs rev-parse HEAD)" = "$LIBOQS_COMMIT" || { echo "ERROR: liboqs HEAD does not match pinned $LIBOQS_COMMIT (possible tag tampering)"; exit 1; }
     # Build and install liboqs
     - cd liboqs
     - mkdir build && cd build
@@ -383,8 +392,8 @@ test-fallback:
     - ninja install
     # Return to project root directory
     - cd $CI_PROJECT_DIR
-    # Install liboqs Python bindings
-    - pip install --user git+https://github.com/open-quantum-safe/liboqs-python.git
+    # Install liboqs Python bindings from the pinned commit (gitlab#252, F33)
+    - pip install --user git+https://github.com/open-quantum-safe/liboqs-python.git@$LIBOQS_PYTHON_COMMIT
     # Build Threefish Rust extension
     - pip install maturin --break-system-packages
     - cd threefish_native && PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1 maturin build --release && cd ..
