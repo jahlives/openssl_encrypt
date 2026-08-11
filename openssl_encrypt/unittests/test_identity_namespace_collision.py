@@ -30,22 +30,38 @@ from openssl_encrypt.modules.identity import (
     IdentityNamespaceCollisionError,
     IdentityStore,
 )
+from openssl_encrypt.modules.pqc_signing import calculate_fingerprint_v2
 
 
-def _write_entry(path, name, fingerprint="aa:bb:cc:dd"):
+def _seeded_fingerprint(seed):
+    """The v2 fingerprint of the deterministic fake keys derived from `seed`."""
+    return calculate_fingerprint_v2(
+        "ML-KEM-768", b"ENC-" + seed.encode(), "ML-DSA-65", b"SIG-" + seed.encode()
+    )
+
+
+def _write_entry(path, name, seed="default"):
     """Write a store entry that Identity.load can read.
 
     Deliberately a real on-disk entry rather than a mock: the collision this
     file is about is a property of the DIRECTORY LAYOUT, so the tests have to
-    exercise the layout.
+    exercise the layout. `seed` is a key differentiator, NOT the stored
+    fingerprint: Identity.load now recomputes the fingerprint from the public
+    keys and fails closed on a mismatch (gitlab#230), so the entry must carry
+    keys whose recomputed fingerprint matches the stored one. Distinct seeds
+    give distinct, self-consistent entries. Returns the stored fingerprint so
+    tests can assert against it.
     """
+    enc_key = b"ENC-" + seed.encode()
+    sig_key = b"SIG-" + seed.encode()
+    real_fp = _seeded_fingerprint(seed)
     path.mkdir(parents=True, exist_ok=True)
     (path / "identity.json").write_text(
         json.dumps(
             {
                 "name": name,
                 "email": None,
-                "fingerprint": fingerprint,
+                "fingerprint": real_fp,
                 "created_at": "2026-01-01T00:00:00Z",
                 "encryption_algorithm": "ML-KEM-768",
                 "signing_algorithm": "ML-DSA-65",
@@ -53,18 +69,24 @@ def _write_entry(path, name, fingerprint="aa:bb:cc:dd"):
         ),
         encoding="utf-8",
     )
-    (path / "encryption_public.pem").write_bytes(b"ek")
-    (path / "signing_public.pem").write_bytes(b"sk")
+    (path / "encryption_public.pem").write_bytes(enc_key)
+    (path / "signing_public.pem").write_bytes(sig_key)
+    return real_fp
 
 
-def _identity(name, fingerprint, own):
-    """A save()-able stand-in that needs no post-quantum keypair."""
+def _identity(name, seed, own):
+    """A save()-able stand-in that needs no post-quantum keypair, kept
+    consistent with the gitlab#230 fingerprint gate: its advertised and
+    recomputed fingerprints agree (both derived from `seed`), and save() writes
+    a matching on-disk entry."""
+    real_fp = _seeded_fingerprint(seed)
     identity = mock.Mock(spec=Identity)
     identity.name = name
-    identity.fingerprint = fingerprint
+    identity.fingerprint = real_fp
     identity.is_own_identity = own
+    identity.calculate_fingerprint.return_value = real_fp
     identity.save.side_effect = lambda path, passphrase=None, overwrite=False: _write_entry(
-        path, name, fingerprint
+        path, name, seed
     )
     return identity
 
@@ -225,7 +247,7 @@ class TestNonDirectoryNodeDoesNotShadow(_StoreTestCase):
         _write_entry(Path(self.tmp) / "contacts" / "alice", "alice", "cc:dd")
         identity = self.store.get_by_name("alice")
         self.assertIsNotNone(identity)
-        self.assertEqual(identity.fingerprint, "cc:dd")
+        self.assertEqual(identity.fingerprint, _seeded_fingerprint("cc:dd"))
 
 
 class TestDeleteSelectsAKind(_StoreTestCase):
@@ -238,7 +260,10 @@ class TestDeleteSelectsAKind(_StoreTestCase):
         self._plant_shadow()
         entries = self.store.describe_name("alice")
         self.assertEqual([e["kind"] for e in entries], ["own", "contact"])
-        self.assertEqual([e["fingerprint"] for e in entries], ["aa:bb", "cc:dd"])
+        self.assertEqual(
+            [e["fingerprint"] for e in entries],
+            [_seeded_fingerprint("aa:bb"), _seeded_fingerprint("cc:dd")],
+        )
 
     def test_kind_own_keeps_the_contact(self):
         """The remediation the warning tells users to perform must exist:
@@ -286,8 +311,8 @@ class TestDeleteCliWarnsBeforeRemovingAShadow(_StoreTestCase):
 
         self.assertEqual(status, 0)
         self.assertIn("BOTH an own identity and a contact", out)
-        self.assertIn("aa:bb", out)
-        self.assertIn("cc:dd", out)
+        self.assertIn(_seeded_fingerprint("aa:bb"), out)
+        self.assertIn(_seeded_fingerprint("cc:dd"), out)
         self.assertIn("--kind own", out)
 
 
@@ -332,7 +357,7 @@ class TestDeleteKindGuard(_StoreTestCase):
         out = stderr.getvalue()
         self.assertEqual(status, 0)
         self.assertIn("now resolves to the contact entry", out)
-        self.assertIn("cc:dd", out)
+        self.assertIn(_seeded_fingerprint("cc:dd"), out)
 
 
 if __name__ == "__main__":
