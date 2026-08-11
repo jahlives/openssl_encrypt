@@ -227,7 +227,7 @@ STDOUT_WHITELIST = [
     # crypt_core.py — JSON data output
     (
         "modules/crypt_core.py",
-        "print(json.dumps(metadata, indent=2, ensure_ascii=False))",
+        "print(json.dumps(metadata, indent=2, ensure_ascii=True))",
         1,
         "print_file_info JSON output",
     ),

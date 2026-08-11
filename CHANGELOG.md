@@ -1077,6 +1077,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Synced the stdout-leak whitelist with `info --json`'s `ensure_ascii=True`**
+  (gitlab#246): `test_no_stdout_leaks` anchors each authorized `print` on its
+  exact source text, but the `print_file_info` JSON print was hardened to
+  `ensure_ascii=True` (terminal-escape neutralization) without updating the
+  anchor, so the whitelist test failed. Updated the anchor to match. Test-only.
+
 - **Repaired newline-corrupted asymmetric-wrap identity test fixtures**
   (gitlab#227): the `end-of-file-fixer`/`trailing-whitespace` pre-commit
   hooks lacked a `testfiles/` exclude (which `detect-private-key` already
