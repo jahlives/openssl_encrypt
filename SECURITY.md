@@ -226,6 +226,21 @@ relevant.
 
 ## Security Advisories
 
+### ADVISORY 2026-21: Crafted File With an Unencrypted Embedded Post-Quantum Private Key Decrypts Under Any Password — Resolved
+
+**Severity:** Medium · **CWE-287** (Improper Authentication)
+**Affected versions:** all releases whose format supports embedded post-quantum private keys, up to and including **1.4.8**. **Fixed in 1.4.9** (both the 1.4.x and 1.5.x lines).
+
+**Summary:** `decrypt_file` adopted a post-quantum private key embedded in a file's own metadata (`encryption.pqc_private_key`) verbatim whenever `pqc_key_encrypted` was false or absent — and it defaults to `False`. For `mayo-*`/`cross-*`/ML-KEM hybrid algorithms the bulk decryption key derives **only** from that embedded key, so the password-derived key is never consulted. An attacker could craft a self-contained file — a v5 header naming e.g. `mayo-1-hybrid`, an embedded raw private key, `aead_binding:false` and attacker-computed content hashes — that decrypts under **any** password the victim types, printing "integrity verified" and writing attacker-chosen plaintext. The mayo/cross variant needs no liboqs.
+
+**Impact:** an authentication bypass for crafted files: the tool presents attacker-chosen plaintext as an authenticated, password-verified decryption. A user checking whether their password still opens a backup gets a false positive. It does not affect files produced by the tool itself — every store-private-key path marks the embedded key `key_encrypted=True`, so a legitimate file never carries an unencrypted embedded key. Exploitation requires the victim to decrypt an attacker-supplied file.
+
+**Fixed in 1.4.9:** `decrypt_file` now default-denies any file whose metadata carries an embedded PQC private key that is not marked encrypted, enforced *before* any key derivation runs so no plaintext is produced and no password-independent key material is used. A trusted legacy file (should one exist) can still be read by explicitly passing `allow_unencrypted_pqc_key=True`. Regression-pinned by `test_pqc_unencrypted_key_deny_229.py`.
+
+**Mitigation for existing installs:** upgrade to 1.4.9; do not rely on a successful decryption of an untrusted file as proof of its authenticity on earlier versions.
+
+**Disclosure:** tracked as gitlab#229 and GHSA-qqfq-g2cv-j7v3 (published with the 1.4.9 release). **Credit:** found by the 1.4.9 pre-release security scan (finding F5).
+
 ### ADVISORY 2026-20: D-Bus `EncryptFile` Derived Keys Without Password Stretching — Resolved
 
 **Severity:** High · **CWE-916** (Use of Password Hash With Insufficient Computational Effort)

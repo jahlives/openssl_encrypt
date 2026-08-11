@@ -10881,6 +10881,7 @@ def decrypt_file(
     recovery_private_key=None,
     second_password=None,
     hidden_header=None,
+    allow_unencrypted_pqc_key=False,
 ):
     """
     Decrypt a file with a password.
@@ -11345,6 +11346,32 @@ def decrypt_file(
                     }
     else:
         raise ValueError(f"Unsupported file format version: {format_version}")
+
+    # Default-deny an embedded PQC private key that is NOT password-encrypted
+    # (gitlab#229, scan F5, CWE-287). pqc_key_encrypted defaults to False; when
+    # false/absent the file's own encryption.pqc_private_key would be adopted
+    # verbatim, and for mayo/cross/ML-KEM hybrids the bulk key derives ONLY from
+    # it -- so a crafted self-contained file decrypts under ANY password. The
+    # legitimate encryptor never emits an unencrypted embedded key (every store
+    # path sets key_encrypted=True), so refusing this breaks no real file. Only
+    # the embedded key is dangerous: an externally supplied pqc_private_key means
+    # the embedded one is ignored. This check is metadata-only, so it runs here --
+    # before the memory-ceiling estimate, any HSM/YubiKey touch, the remote-pepper
+    # round-trip, and all key derivation -- so a doomed file is rejected without any
+    # hardware/network work and no plaintext is ever produced; a trusted legacy file
+    # needs explicit opt-in.
+    if (
+        pqc_has_private_key
+        and not pqc_key_is_encrypted
+        and not pqc_private_key
+        and not allow_unencrypted_pqc_key
+    ):
+        raise DecryptionError(
+            "Refusing to decrypt: the file embeds an unencrypted post-quantum "
+            "private key (pqc_key_encrypted is not set), which would let it "
+            "decrypt under any password. Re-encrypt the file, or pass "
+            "allow_unencrypted_pqc_key=True to override for a trusted legacy file."
+        )
 
     print_hash_config(
         print_hash_config_metadata if format_version == 4 else hash_config,
