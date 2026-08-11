@@ -45,7 +45,12 @@ def _build_fake_dbus():
     dbus_mod = types.ModuleType("dbus")
 
     class DBusException(Exception):
-        pass
+        def __init__(self, *args, name=None, **kwargs):
+            super().__init__(*args)
+            self._dbus_error_name = name
+
+        def get_dbus_name(self):
+            return self._dbus_error_name
 
     class NameExistsException(DBusException):
         pass
@@ -413,8 +418,85 @@ class TestActionIdsMatchPolicyFile(unittest.TestCase):
             dbus_service.POLKIT_ACTION_KEYSTORE,
             dbus_service.POLKIT_ACTION_GENERATE_KEY,
             dbus_service.POLKIT_ACTION_DELETE_KEY,
+            dbus_service.POLKIT_ACTION_CONFIGURE,
         ):
             self.assertIn(f'id="{action}"', policy)
+
+
+class TestPropertiesSetAuthorization(unittest.TestCase):
+    """Properties.Set must authorize the caller (gitlab#250, F12)."""
+
+    def setUp(self):
+        self.service, self.bus = _make_service(system_bus=True)
+        self.iface = self.service.INTERFACE_NAME
+
+    def test_set_denied_when_unauthorized(self):
+        with mock.patch.object(self.service, "_authorize_caller", return_value=(False, "nope")):
+            before = self.service.max_concurrent_ops
+            with self.assertRaises(dbus_service.dbus.exceptions.DBusException) as ctx:
+                self.service.Set(self.iface, "MaxConcurrentOperations", 3, sender=":1.42")
+            self.assertEqual(
+                ctx.exception.get_dbus_name(), "org.freedesktop.DBus.Error.AccessDenied"
+            )
+            # value unchanged after a denied write
+            self.assertEqual(self.service.max_concurrent_ops, before)
+
+    def test_set_uses_configure_action(self):
+        with mock.patch.object(self.service, "_authorize_caller", return_value=(True, "")) as auth:
+            self.service.Set(self.iface, "MaxConcurrentOperations", 4, sender=":1.42")
+            auth.assert_called_once_with(":1.42", dbus_service.POLKIT_ACTION_CONFIGURE)
+            self.assertEqual(self.service.max_concurrent_ops, 4)
+
+
+class TestPropertiesSetValidation(unittest.TestCase):
+    """Properties.Set must reject out-of-range values (gitlab#250, F13)."""
+
+    def setUp(self):
+        self.service, self.bus = _make_service(system_bus=False)
+        self.iface = self.service.INTERFACE_NAME
+        # Authorize every call so the tests exercise the validation, not authz.
+        self._patch = mock.patch.object(self.service, "_authorize_caller", return_value=(True, ""))
+        self._patch.start()
+        self.addCleanup(self._patch.stop)
+
+    def _assert_rejected(self, prop, value):
+        before_moc = self.service.max_concurrent_ops
+        before_to = self.service.default_timeout
+        with self.assertRaises(dbus_service.dbus.exceptions.DBusException) as ctx:
+            self.service.Set(self.iface, prop, value, sender=":1.1")
+        self.assertEqual(ctx.exception.get_dbus_name(), "org.freedesktop.DBus.Error.InvalidArgs")
+        # nothing mutated on rejection
+        self.assertEqual(self.service.max_concurrent_ops, before_moc)
+        self.assertEqual(self.service.default_timeout, before_to)
+
+    def test_max_concurrent_zero_rejected(self):
+        self._assert_rejected("MaxConcurrentOperations", 0)
+
+    def test_max_concurrent_negative_rejected(self):
+        self._assert_rejected("MaxConcurrentOperations", -1)
+
+    def test_max_concurrent_huge_rejected(self):
+        self._assert_rejected("MaxConcurrentOperations", 10**9)
+
+    def test_default_timeout_zero_rejected(self):
+        self._assert_rejected("DefaultTimeout", 0)
+
+    def test_default_timeout_huge_rejected(self):
+        self._assert_rejected("DefaultTimeout", 10**9)
+
+    def test_non_integer_value_rejected(self):
+        self._assert_rejected("MaxConcurrentOperations", "not-a-number")
+
+    def test_infinite_value_rejected(self):
+        # int(float('inf')) raises OverflowError -> must surface as InvalidArgs,
+        # not an uncaught error (review Low finding).
+        self._assert_rejected("MaxConcurrentOperations", float("inf"))
+
+    def test_valid_values_accepted(self):
+        self.service.Set(self.iface, "MaxConcurrentOperations", 8, sender=":1.1")
+        self.assertEqual(self.service.max_concurrent_ops, 8)
+        self.service.Set(self.iface, "DefaultTimeout", 600, sender=":1.1")
+        self.assertEqual(self.service.default_timeout, 600)
 
 
 if __name__ == "__main__":

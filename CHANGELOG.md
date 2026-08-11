@@ -461,6 +461,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **D-Bus `Properties.Set` now authorizes the caller and validates the value**
+  (gitlab#250, MEDIUM / CWE-862+CWE-20, ADVISORY 2026-38): every functional
+  D-Bus method was polkit-gated, but `Properties.Set` was not and did no range
+  check, so any local UID could set `MaxConcurrentOperations` to 0/negative on
+  the system bus (wedging the concurrency gate into refusing every operation — a
+  persistent DoS of the root daemon) or to a huge value (removing the limit),
+  with no polkit prompt. `Set` now goes through the same fail-closed
+  `_authorize_caller` gate under a dedicated `ch.rmrf.openssl_encrypt.configure`
+  polkit action and rejects `MaxConcurrentOperations` outside `[1, 64]` and
+  `DefaultTimeout` outside `[1, 86400]` with `InvalidArgs`, mutating nothing
+  until every check passes. `Get`/`GetAll` stay unauthenticated (non-sensitive
+  counts). 1.4.x only (the D-Bus service is removed on 1.5.x). Found by the
+  1.4.9 pre-release scan.
+
 - **`tools/list_keystore_keys.py` no longer requires the keystore password on
   argv** (gitlab#249, CWE-214): the helper script forced the keystore master
   password onto the command line (visible in `ps` / `/proc/<pid>/cmdline` /

@@ -89,6 +89,17 @@ POLKIT_ACTION_SHRED = "ch.rmrf.openssl_encrypt.shred"
 POLKIT_ACTION_KEYSTORE = "ch.rmrf.openssl_encrypt.keystore"
 POLKIT_ACTION_GENERATE_KEY = "ch.rmrf.openssl_encrypt.generate_key"
 POLKIT_ACTION_DELETE_KEY = "ch.rmrf.openssl_encrypt.delete_key"
+# gitlab#250 (F12): mutating a service property via the D-Bus Properties.Set
+# method is an admin/configuration action and must be authorized like the rest.
+POLKIT_ACTION_CONFIGURE = "ch.rmrf.openssl_encrypt.configure"
+
+# gitlab#250 (F13): bounds for the writable properties. MaxConcurrentOperations
+# must stay >= 1 (0/negative makes the concurrency gate refuse every operation)
+# and below a sane ceiling (a huge value removes the limit); DefaultTimeout must
+# stay a positive, bounded number of seconds.
+_MAX_CONCURRENT_OPS_CEILING = 64
+_MIN_DEFAULT_TIMEOUT = 1
+_MAX_DEFAULT_TIMEOUT = 86400  # 24 h
 
 # CheckAuthorizationFlags.AllowUserInteraction - lets polkit prompt the
 # caller's authentication agent instead of silently denying
@@ -1200,19 +1211,55 @@ class CryptoService(dbus.service.Object):
                 name="org.freedesktop.DBus.Error.UnknownProperty",
             )
 
-    @dbus.service.method(dbus.PROPERTIES_IFACE, in_signature="ssv")
-    def Set(self, interface_name: str, property_name: str, value):
-        """Set property value"""
+    @dbus.service.method(dbus.PROPERTIES_IFACE, in_signature="ssv", sender_keyword="sender")
+    def Set(self, interface_name: str, property_name: str, value, sender=None):
+        """Set property value.
+
+        gitlab#250 (F12): mutating a property is authorized like every other
+        operation (polkit ``configure`` action / same-UID on the session bus),
+        failing closed. gitlab#250 (F13): the value is range-checked so a caller
+        cannot wedge the concurrency gate (0/negative) or remove the limit
+        (huge), nor set a degenerate timeout.
+        """
         if interface_name != self.INTERFACE_NAME:
             raise dbus.exceptions.DBusException(
                 f"Unknown interface: {interface_name}",
                 name="org.freedesktop.DBus.Error.UnknownInterface",
             )
 
+        authorized, auth_error = self._authorize_caller(sender, POLKIT_ACTION_CONFIGURE)
+        if not authorized:
+            raise dbus.exceptions.DBusException(
+                f"Access denied: {auth_error}",
+                name="org.freedesktop.DBus.Error.AccessDenied",
+            )
+
+        try:
+            int_value = int(value)
+        except (TypeError, ValueError, OverflowError):
+            # OverflowError covers a variant double of +/-inf; nan raises
+            # ValueError. Either way this is pre-mutation, so nothing changes.
+            raise dbus.exceptions.DBusException(
+                f"Property {property_name} requires an integer value",
+                name="org.freedesktop.DBus.Error.InvalidArgs",
+            )
+
         if property_name == "MaxConcurrentOperations":
-            self.max_concurrent_ops = int(value)
+            if not (1 <= int_value <= _MAX_CONCURRENT_OPS_CEILING):
+                raise dbus.exceptions.DBusException(
+                    f"MaxConcurrentOperations must be between 1 and "
+                    f"{_MAX_CONCURRENT_OPS_CEILING}",
+                    name="org.freedesktop.DBus.Error.InvalidArgs",
+                )
+            self.max_concurrent_ops = int_value
         elif property_name == "DefaultTimeout":
-            self.default_timeout = int(value)
+            if not (_MIN_DEFAULT_TIMEOUT <= int_value <= _MAX_DEFAULT_TIMEOUT):
+                raise dbus.exceptions.DBusException(
+                    f"DefaultTimeout must be between {_MIN_DEFAULT_TIMEOUT} and "
+                    f"{_MAX_DEFAULT_TIMEOUT} seconds",
+                    name="org.freedesktop.DBus.Error.InvalidArgs",
+                )
+            self.default_timeout = int_value
         else:
             raise dbus.exceptions.DBusException(
                 f"Property not writable: {property_name}",

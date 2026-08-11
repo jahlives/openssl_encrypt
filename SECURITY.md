@@ -226,6 +226,21 @@ relevant.
 
 ## Security Advisories
 
+### ADVISORY 2026-38: D-Bus `Properties.Set` Had No Caller Authorization and No Value Validation — Resolved
+
+**Severity:** Medium · **CWE-862** (Missing Authorization) + **CWE-20** (Improper Input Validation)
+**Affected versions:** releases with the optional D-Bus crypto service, up to and including **1.4.8** (the **1.4.x line only** — the D-Bus service was removed on the 1.5.x line). **Fixed in 1.4.9.**
+
+**Summary:** the D-Bus service authorizes every functional method (Encrypt/Decrypt/Shred/Keystore/GenerateKey/DeleteKey) through polkit, but the `org.freedesktop.DBus.Properties` `Set` method had neither a `sender_keyword` nor an authorization check, and did `self.max_concurrent_ops = int(value)` with no range validation. On the system bus any local UID could therefore call `Set` with no polkit prompt (CWE-862) and set `MaxConcurrentOperations` to `0` or a negative number — which makes the concurrency gate `active_ops >= self.max_concurrent_ops` refuse every subsequent operation, a persistent DoS of the root daemon — or to a huge value that removes the limit entirely (CWE-20). `DefaultTimeout` was likewise unbounded.
+
+**Impact:** an unprivileged local user could disable the system D-Bus crypto service for all users, or strip its concurrency limit, without any authentication. Preconditions: the opt-in service is running on the system bus.
+
+**Fixed in 1.4.9:** `Set` now requires the caller to pass the same fail-closed `_authorize_caller` gate as the functional methods, under a dedicated `ch.rmrf.openssl_encrypt.configure` polkit action (added to the shipped `.policy` with the standard `auth_admin` defaults), raising `org.freedesktop.DBus.Error.AccessDenied` on denial; and it validates the value, rejecting `MaxConcurrentOperations` outside `[1, 64]` and `DefaultTimeout` outside `[1, 86400]` with `org.freedesktop.DBus.Error.InvalidArgs`, mutating nothing until every check passes. `Get`/`GetAll` remain unauthenticated (they expose only non-sensitive operation counts) so legitimate clients can still read the properties. Regression-pinned by `test_dbus_authz.py`.
+
+**Mitigation for existing installs:** upgrade to 1.4.9; on earlier versions, do not run the D-Bus service on the system bus in a multi-user environment.
+
+**Disclosure:** tracked as gitlab#250 and GHSA-7fhx-8rmv-qjj3 (published with the 1.4.9 release). **Credit:** found by the 1.4.9 pre-release security scan (findings F12 + F13).
+
 ### ADVISORY 2026-37: Decrypt Enforced a Memory Ceiling but No Time Ceiling — Crafted KDF Iteration Counts Pinned the CPU Pre-Authentication — Resolved
 
 **Severity:** Medium · **CWE-400** (Uncontrolled Resource Consumption)
