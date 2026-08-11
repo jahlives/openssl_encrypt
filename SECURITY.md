@@ -228,6 +228,21 @@ relevant.
 
 ## Security Advisories
 
+### ADVISORY 2026-34: `verify-usb` Silently Skipped Everything Under a Planted Directory Symlink — Resolved
+
+**Severity:** Medium · **CWE-59** (Improper Link Resolution Before File Access / "Link Following")
+**Affected versions:** all releases with the portable-USB integrity feature, up to and including **1.4.8** (1.4.x) / pre-**1.5.0** (1.5.x). **Fixed in 1.4.9 (1.4.x line) and 1.5.0 (1.5.x line).**
+
+**Summary:** the `verify-usb` v2 added-file scan enumerated the drive with `Path.rglob("*")`, which in CPython never descends into a symlinked directory and treats the symlink itself as an ordinary directory entry; the hash side's `O_NOFOLLOW` binds only the final path component. An evil-maid attacker with write access to the drive could replace a tool-tree directory with a symlink to a copy holding byte-identical files plus a planted `__pycache__/*.pyc` (which CPython loads in preference to recompiling the clean `.py`). The manifest-listed files hashed clean through the symlink, the planted file was never enumerated, `added_files` stayed 0, and `verify-usb` reported **PASSED**.
+
+**Impact:** arbitrary code execution when the victim runs the portable install — a forged integrity PASS on a tampered drive. Preconditions: physical/write access to the portable media (the evil-maid threat the integrity feature exists to detect).
+
+**Fixed in 1.4.9 / 1.5.0:** both the create and verify scans now enumerate with `os.walk(..., followlinks=False)` and share one enumerator; verify flags **any** symlinked path component (directory or file) as an added/tampered entry, and create fails closed (`USBCreationError`) on any non-excluded symlink or non-regular file — so a created drive provably contains no symlinks and a symlink-shrouded planted tree fails verification. Because `integrity_ok` requires `added_files == 0`, a legitimate portable install (which contains no symlinks) is unaffected. Regression-pinned by `test_verify_usb_symlink_tamper_242.py`.
+
+**Mitigation for existing installs:** upgrade to 1.4.9 / 1.5.0; on earlier versions, do not trust a `verify-usb` PASS on media that left your physical control.
+
+**Disclosure:** tracked as gitlab#242 and GHSA-hw7h-wqf5-6crx (published with the release). **Credit:** found by the 1.4.9 pre-release security scan (finding F26).
+
 ### ADVISORY 2026-33: Keyserver Login/Registration Accepted Non-HTTPS and Unconfigured Server URLs — Resolved
 
 **Severity:** Medium · **CWE-319** (Cleartext Transmission of Sensitive Information)
