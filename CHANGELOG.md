@@ -1835,6 +1835,21 @@ inflated KDF metadata parameters, not cosmetic output.
 
 ### Security
 
+- **Signature verification now rejects revoked and expired GPG keys**
+  (gitlab#232, MEDIUM / CWE-347, ADVISORY 2026-24): `gpg_runner.verify_detached`
+  — the single primitive behind plugin signatures (ENFORCE by default), the
+  per-package `PLUGIN.manifest` and the source-integrity manifest — decided a
+  signature was good from a `VALIDSIG`/`GOODSIG` status line alone, never
+  inspecting the gpg exit status or the `REVKEYSIG`/`EXPKEYSIG`/`EXPSIG` lines.
+  GnuPG emits `VALIDSIG` *alongside* `REVKEYSIG` for a cryptographically valid
+  signature made by a revoked key, so a compromised-then-revoked signing key (or
+  the project key after expiry) still got plugins accepted and executed.
+  Verification now requires `GOODSIG` + `VALIDSIG`, fails closed on
+  `REVKEYSIG`/`EXPKEYSIG`/`EXPSIG`/`ERRSIG`/`BADSIG` and on a non-zero gpg exit,
+  and binds the expected-fingerprint check to `VALIDSIG`'s primary-key
+  fingerprint rather than the possibly-subkey signing fingerprint. Found by the
+  1.4.9 pre-release security scan.
+
 - **Built-in plugin trust is now an allowlist, not a denylist** (gitlab#231,
   MEDIUM / CWE-347, ADVISORY 2026-23): `_is_builtin_plugin` treated every file
   under the package `plugins/` directory as a trusted built-in (skipping

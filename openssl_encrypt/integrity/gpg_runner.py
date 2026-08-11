@@ -222,24 +222,58 @@ def verify_detached(
         )
         status = result.stdout.decode("utf-8", "replace")
 
-        fingerprint = None
-        good_sig = False
+        # F36 (gitlab#232, CWE-347): a VALIDSIG/GOODSIG line alone is NOT
+        # sufficient. GnuPG emits VALIDSIG for any cryptographically valid
+        # signature -- including one made by a REVOKED or EXPIRED key -- and
+        # signals the disqualifying condition on a separate status line
+        # (REVKEYSIG / EXPKEYSIG / EXPSIG) with a non-zero exit. Fail closed on
+        # any such marker, on a non-zero exit, and unless BOTH GOODSIG and
+        # VALIDSIG are present. Also bind to the PRIMARY key fingerprint (the
+        # last VALIDSIG field) rather than the possibly-subkey signing key.
+        primary_fpr = None  # VALIDSIG's primary-key fingerprint (for pinning)
+        sig_fpr = None  # signing-key fpr (may be a subkey); reporting fallback
+        have_goodsig = False
+        have_validsig = False
+        failure = None  # first disqualifying condition, if any
         for line in status.splitlines():
             if line.startswith("[GNUPG:] VALIDSIG"):
                 parts = line.split()
                 if len(parts) >= 3:
-                    fingerprint = parts[2]
-                good_sig = True
+                    sig_fpr = parts[2]
+                # VALIDSIG's 10th argument is the primary-key fingerprint. Very
+                # old gpg (pre-2.1) omits it; falling back to the signing fpr is
+                # fail-safe -- a subkey-signed sig then fails a primary-fpr pin
+                # (a false negative / availability issue), never a wrong-accept.
+                primary_fpr = parts[11] if len(parts) >= 12 else sig_fpr
+                have_validsig = True
             elif line.startswith("[GNUPG:] GOODSIG"):
-                good_sig = good_sig or True
+                have_goodsig = True
+            elif line.startswith("[GNUPG:] REVKEYSIG"):
+                failure = failure or "signing key has been revoked"
+            elif line.startswith("[GNUPG:] EXPKEYSIG"):
+                failure = failure or "signing key has expired"
+            elif line.startswith("[GNUPG:] EXPSIG"):
+                failure = failure or "signature has expired"
+            elif line.startswith("[GNUPG:] ERRSIG"):
+                failure = failure or "signature could not be verified (ERRSIG)"
+            elif line.startswith("[GNUPG:] BADSIG"):
+                failure = failure or "signature is invalid (BADSIG)"
 
-        if not good_sig:
-            return SignatureResult(False, fingerprint, "signature is not valid")
+        reported_fpr = primary_fpr or sig_fpr
+
+        if failure is not None:
+            return SignatureResult(False, reported_fpr, failure)
+        if result.returncode != 0:
+            return SignatureResult(
+                False, reported_fpr, f"gpg verification failed (exit {result.returncode})"
+            )
+        if not (have_goodsig and have_validsig):
+            return SignatureResult(False, reported_fpr, "signature is not valid")
 
         if expected_fingerprint is not None:
             exp = expected_fingerprint.replace(" ", "").upper()
-            got = (fingerprint or "").upper()
+            got = (primary_fpr or "").upper()
             if not (got == exp or got.endswith(exp) or exp.endswith(got)):
-                return SignatureResult(False, fingerprint, f"signing key {got} != expected {exp}")
+                return SignatureResult(False, primary_fpr, f"signing key {got} != expected {exp}")
 
-        return SignatureResult(True, fingerprint, "signature valid")
+        return SignatureResult(True, primary_fpr, "signature valid")
