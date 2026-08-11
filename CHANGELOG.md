@@ -461,6 +461,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Plaintext-hash confirmation oracle removed from the file header**
+  (gitlab#245, MEDIUM / CWE-311, ADVISORY 2026-36): every file stored
+  `hashes.original_hash = sha256(plaintext)` in its cleartext header — an
+  unkeyed value readable without the password that let anyone holding the file
+  confirm a guessed or brute-forced plaintext offline, and fingerprint identical
+  plaintexts across files. It was redundant to the cipher's own authentication
+  (AEAD tag / Fernet HMAC / Camellia encrypt-then-MAC / streaming trailer HMAC /
+  v7 signed header). It is no longer written on any path and the metadata schemas
+  no longer require it; decrypt stays tolerant of older files that still carry it
+  (presence-guarded). Re-encrypt existing sensitive files to strip the oracle
+  from their headers. Found by the 1.4.9 pre-release scan.
+
 - **Remote pepper sealed with a salted, memory-hard wrap key** (gitlab#244,
   MEDIUM / CWE-916, ADVISORY 2026-35): the keyserver-stored pepper was wrapped
   under `HKDF-SHA256(password, salt=None)` (bare `SHA-256(password)` pre-v12)

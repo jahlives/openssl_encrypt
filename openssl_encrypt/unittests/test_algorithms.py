@@ -1003,11 +1003,12 @@ class TestAEADBinding(unittest.TestCase):
             "AEAD file should not have encrypted_hash",
         )
 
-        # Check that original_hash IS present
-        self.assertIn(
+        # F8 (gitlab#245, CWE-311): original_hash (the plaintext-confirmation
+        # oracle) is no longer written.
+        self.assertNotIn(
             "original_hash",
             metadata.get("hashes", {}),
-            "AEAD file should have original_hash",
+            "AEAD file must not store the plaintext-confirmation oracle",
         )
 
     def test_non_aead_metadata_has_encrypted_hash(self):
@@ -1046,11 +1047,12 @@ class TestAEADBinding(unittest.TestCase):
             "Non-AEAD file should have encrypted_hash",
         )
 
-        # Check that original_hash IS present
-        self.assertIn(
+        # F8 (gitlab#245, CWE-311): original_hash is no longer written;
+        # encrypted_hash (over the already-public ciphertext) is retained.
+        self.assertNotIn(
             "original_hash",
             metadata.get("hashes", {}),
-            "Non-AEAD file should have original_hash",
+            "Non-AEAD file must not store the plaintext-confirmation oracle",
         )
 
     def test_aead_metadata_tampering_detected(self):

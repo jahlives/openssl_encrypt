@@ -226,6 +226,21 @@ relevant.
 
 ## Security Advisories
 
+### ADVISORY 2026-36: File Header Stored an Unkeyed SHA-256 of the Plaintext (Plaintext-Confirmation Oracle) — Resolved
+
+**Severity:** Medium · **CWE-311** (Missing Encryption / Cleartext Storage of Sensitive Information)
+**Affected versions:** all releases, up to and including **1.4.8**. **Fixed in 1.4.9** (both the 1.4.x and 1.5.x lines) for newly-written files.
+
+**Summary:** every encrypted file stored `hashes.original_hash = SHA-256(plaintext)` in its **cleartext** metadata header. The hash is unkeyed and readable by anyone who holds the file, without the password.
+
+**Impact:** a **plaintext-confirmation / brute-force oracle** — an attacker who suspects the plaintext, or is brute-forcing a low-entropy plaintext (a PIN, a short message, a file drawn from a known set), can hash their guess and compare it to `original_hash` to confirm a hit entirely offline, with no key. It also fingerprints identical plaintexts across separately-encrypted files. The value was cryptographically redundant: every reachable cipher path already authenticates the plaintext before releasing it (native AEAD tag, Fernet's AES-CBC+HMAC, Camellia's encrypt-then-MAC, the streaming trailer HMAC, or the v7 AES-256-GCM payload under an ML-DSA-65-signed header).
+
+**Fixed in 1.4.9:** the unkeyed plaintext hash is no longer written on any path (symmetric one-shot, streaming, and identity/asymmetric v7); the metadata schemas no longer require it. Decrypt stays tolerant of files written by earlier versions that still carry it — the checks are presence-guarded and simply skipped when it is absent. No keyed replacement was added because the cipher layer already provides plaintext integrity. `encrypted_hash` (a hash over the already-public ciphertext) is not a plaintext oracle and is retained. Regression-pinned by `test_original_hash_oracle_245.py`.
+
+**Mitigation for existing installs:** upgrade to 1.4.9 and **re-encrypt** any sensitive files that were written by an earlier version — the oracle lives in already-written files' headers and is only removed by re-encrypting under 1.4.9+.
+
+**Disclosure:** tracked as gitlab#245 and GHSA-7c3q-gp4v-q29q (published with the 1.4.9 release). **Credit:** found by the 1.4.9 pre-release security scan (finding F8).
+
 ### ADVISORY 2026-35: Remote Pepper Was Sealed Under an Unsalted, Non-Memory-Hard Key Derived From the Password — Resolved
 
 **Severity:** Medium · **CWE-916** (Use of Password Hash With Insufficient Computational Effort)
