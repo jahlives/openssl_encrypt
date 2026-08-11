@@ -1,8 +1,26 @@
+import 'dart:io';
+
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Service for managing application settings and preferences
 class SettingsService {
   static SharedPreferences? _prefs;
+
+  // F20 (gitlab#259, CWE-312): a private-key-bearing PEM (the mTLS client
+  // cert+key paste) must never sit in SharedPreferences, which is a
+  // world-readable 0644 file. It is written to a dedicated 0600 file under the
+  // app support dir and only the file PATH is kept in prefs; the content is
+  // cached in memory so the synchronous getters (used in widget build) still
+  // work. The CA cert PEM is public and stays in prefs.
+  static final Map<String, String> _securePemCache = {};
+
+  /// Test seam: base directory for the 0600 PEM files (defaults to the app
+  /// support dir). Set before initialize() in tests.
+  @visibleForTesting
+  static String? securePemBaseDirOverride;
 
   // Settings keys
   static const String _themeKey = 'theme_mode';
@@ -31,7 +49,10 @@ class SettingsService {
   static const String _pepperClientKeyPathKey = 'pepper_client_key_path';
   static const String _pepperCaCertPathKey = 'pepper_ca_cert_path';
   static const String _pepperClientCertPemKey = 'pepper_client_cert_pem';
-  static const String _pepperClientKeyPemKey = 'pepper_client_key_pem';
+  // F20 (gitlab#259): the *_client_key_pem keys are removed — a private key must
+  // not be stored in SharedPreferences. Their legacy values are scrubbed on
+  // startup (see _migrateSecurePems). The client cert+key PEM lives in a 0600
+  // file (see _securePemCache).
   static const String _pepperCaCertPemKey = 'pepper_ca_cert_pem';
   static const String _pepperCertModeKey = 'pepper_cert_mode'; // 'file' or 'pem'
 
@@ -42,7 +63,6 @@ class SettingsService {
   static const String _integrityClientKeyPathKey = 'integrity_client_key_path';
   static const String _integrityCaCertPathKey = 'integrity_ca_cert_path';
   static const String _integrityClientCertPemKey = 'integrity_client_cert_pem';
-  static const String _integrityClientKeyPemKey = 'integrity_client_key_pem';
   static const String _integrityCaCertPemKey = 'integrity_ca_cert_pem';
   static const String _integrityCertModeKey = 'integrity_cert_mode'; // 'file' or 'pem'
 
@@ -58,6 +78,107 @@ class SettingsService {
   /// Initialize the settings service
   static Future<void> initialize() async {
     _prefs = await SharedPreferences.getInstance();
+    _securePemCache.clear();
+    await _migrateSecurePems();
+  }
+
+  // --- F20 (gitlab#259): 0600-file storage for private-key-bearing PEMs ---
+
+  static const Map<String, String> _clientCertPemFiles = {
+    _pepperClientCertPemKey: 'pepper_client.pem',
+    _integrityClientCertPemKey: 'integrity_client.pem',
+  };
+
+  static Future<Directory> _securePemDir() async {
+    final basePath =
+        securePemBaseDirOverride ?? (await getApplicationSupportDirectory()).path;
+    final dir = Directory(p.join(basePath, 'mtls'));
+    if (!await dir.exists()) {
+      await dir.create(recursive: true);
+    }
+    await _chmodBestEffort(dir.path, '700');
+    return dir;
+  }
+
+  static Future<void> _chmodBestEffort(String path, String mode) async {
+    if (Platform.isWindows) return;
+    try {
+      await Process.run('chmod', [mode, path]);
+    } catch (_) {
+      // Verified by _isOwnerOnly after the file chmod; a failure there fails
+      // closed rather than persisting a world-readable key.
+    }
+  }
+
+  /// True if [path] is owner-only on POSIX (no group/other permission bits).
+  /// Windows uses a per-user app dir, so POSIX mode is not the protection model
+  /// there and this returns true.
+  static bool _isOwnerOnly(String path) {
+    if (Platform.isWindows) return true;
+    try {
+      final mode = File(path).statSync().mode & 0x1FF; // low 9 permission bits
+      return (mode & 0x3F) == 0; // no group (0o070) or other (0o007) bits set
+    } catch (_) {
+      return false; // cannot verify -> fail closed
+    }
+  }
+
+  /// Store a private-key-bearing PEM in a 0600 file, keeping only the path in
+  /// prefs and the content in the in-memory cache.
+  static Future<bool> _setSecurePem(String prefKey, String fileName, String? pem) async {
+    final dir = await _securePemDir();
+    final file = File(p.join(dir.path, fileName));
+    if (pem == null || pem.isEmpty) {
+      _securePemCache.remove(prefKey);
+      try {
+        if (await file.exists()) await file.delete();
+      } catch (_) {}
+      return prefs.remove(prefKey);
+    }
+    await file.writeAsString(pem);
+    await _chmodBestEffort(file.path, '600');
+    // F20 (gitlab#259) review: fail closed if the file could not be made
+    // owner-only — never persist a world/group-readable private key.
+    if (!_isOwnerOnly(file.path)) {
+      try {
+        await file.delete();
+      } catch (_) {}
+      _securePemCache.remove(prefKey);
+      await prefs.remove(prefKey);
+      return false;
+    }
+    _securePemCache[prefKey] = pem;
+    return prefs.setString(prefKey, file.path);
+  }
+
+  static String? _getSecurePem(String prefKey) => _securePemCache[prefKey];
+
+  /// Move any private-key PEM stored in cleartext by an earlier version out of
+  /// SharedPreferences into a 0600 file, and scrub the removed *_client_key_pem
+  /// keys. Runs once at startup.
+  static Future<void> _migrateSecurePems() async {
+    for (final legacyKeyPem in const [
+      'pepper_client_key_pem',
+      'integrity_client_key_pem',
+    ]) {
+      await prefs.remove(legacyKeyPem);
+    }
+    for (final entry in _clientCertPemFiles.entries) {
+      final stored = prefs.getString(entry.key);
+      if (stored == null) continue;
+      if (stored.contains('-----BEGIN')) {
+        // Legacy: the PEM itself was stored in cleartext. Relocate to 0600.
+        await _setSecurePem(entry.key, entry.value, stored);
+      } else {
+        // Already a path -> load its content into the cache.
+        try {
+          final f = File(stored);
+          if (await f.exists()) {
+            _securePemCache[entry.key] = await f.readAsString();
+          }
+        } catch (_) {}
+      }
+    }
   }
 
   /// Get SharedPreferences instance (ensure initialize() was called first)
@@ -380,31 +501,16 @@ class SettingsService {
     return prefs.setString(_pepperCaCertPathKey, path);
   }
 
-  /// Get pepper client certificate PEM content
-  static String? getPepperClientCertPem() {
-    return prefs.getString(_pepperClientCertPemKey);
-  }
+  /// Get pepper client certificate (+key) PEM content. Backed by a 0600 file,
+  /// not SharedPreferences (F20, gitlab#259).
+  static String? getPepperClientCertPem() => _getSecurePem(_pepperClientCertPemKey);
 
-  /// Set pepper client certificate PEM content
-  static Future<bool> setPepperClientCertPem(String? pem) {
-    if (pem == null) {
-      return prefs.remove(_pepperClientCertPemKey);
-    }
-    return prefs.setString(_pepperClientCertPemKey, pem);
-  }
+  /// Set pepper client certificate (+key) PEM content (written to a 0600 file).
+  static Future<bool> setPepperClientCertPem(String? pem) =>
+      _setSecurePem(_pepperClientCertPemKey, 'pepper_client.pem', pem);
 
-  /// Get pepper client key PEM content
-  static String? getPepperClientKeyPem() {
-    return prefs.getString(_pepperClientKeyPemKey);
-  }
-
-  /// Set pepper client key PEM content
-  static Future<bool> setPepperClientKeyPem(String? pem) {
-    if (pem == null) {
-      return prefs.remove(_pepperClientKeyPemKey);
-    }
-    return prefs.setString(_pepperClientKeyPemKey, pem);
-  }
+  // F20 (gitlab#259): the separate pepper client-key-PEM accessors are removed;
+  // they had no callers and would have stored a private key in cleartext.
 
   /// Get pepper CA certificate PEM content
   static String? getPepperCaCertPem() {
@@ -492,31 +598,16 @@ class SettingsService {
     return prefs.setString(_integrityCaCertPathKey, path);
   }
 
-  /// Get integrity client certificate PEM content
-  static String? getIntegrityClientCertPem() {
-    return prefs.getString(_integrityClientCertPemKey);
-  }
+  /// Get integrity client certificate (+key) PEM content. Backed by a 0600 file
+  /// (F20, gitlab#259).
+  static String? getIntegrityClientCertPem() =>
+      _getSecurePem(_integrityClientCertPemKey);
 
-  /// Set integrity client certificate PEM content
-  static Future<bool> setIntegrityClientCertPem(String? pem) {
-    if (pem == null) {
-      return prefs.remove(_integrityClientCertPemKey);
-    }
-    return prefs.setString(_integrityClientCertPemKey, pem);
-  }
+  /// Set integrity client certificate (+key) PEM content (written to a 0600 file).
+  static Future<bool> setIntegrityClientCertPem(String? pem) =>
+      _setSecurePem(_integrityClientCertPemKey, 'integrity_client.pem', pem);
 
-  /// Get integrity client key PEM content
-  static String? getIntegrityClientKeyPem() {
-    return prefs.getString(_integrityClientKeyPemKey);
-  }
-
-  /// Set integrity client key PEM content
-  static Future<bool> setIntegrityClientKeyPem(String? pem) {
-    if (pem == null) {
-      return prefs.remove(_integrityClientKeyPemKey);
-    }
-    return prefs.setString(_integrityClientKeyPemKey, pem);
-  }
+  // F20 (gitlab#259): the separate integrity client-key-PEM accessors are removed.
 
   /// Get integrity CA certificate PEM content
   static String? getIntegrityCaCertPem() {
@@ -581,7 +672,6 @@ class SettingsService {
         _pepperClientKeyPathKey,
         _pepperCaCertPathKey,
         _pepperClientCertPemKey,
-        _pepperClientKeyPemKey,
         _pepperCaCertPemKey,
         _pepperCertModeKey,
         _integrityEnabledKey,
@@ -590,7 +680,6 @@ class SettingsService {
         _integrityClientKeyPathKey,
         _integrityCaCertPathKey,
         _integrityClientCertPemKey,
-        _integrityClientKeyPemKey,
         _integrityCaCertPemKey,
         _integrityCertModeKey,
       };
@@ -599,6 +688,13 @@ class SettingsService {
       for (final entry in settings.entries) {
         final key = entry.key;
         final value = entry.value;
+
+        // F20 (gitlab#259): silently drop a private-key PEM from a settings blob
+        // written by an older version — it must never be stored, and rejecting
+        // it would break importing an otherwise-valid old export.
+        if (key == 'pepper_client_key_pem' || key == 'integrity_client_key_pem') {
+          continue;
+        }
 
         // Security: Only allow known configuration keys
         if (!allowedKeys.contains(key)) {
@@ -646,15 +742,27 @@ class SettingsService {
           } else {
             await prefs.setString(key, value);
           }
-        } else if ([_pepperClientCertPemKey, _pepperClientKeyPemKey, _pepperCaCertPemKey,
-                   _integrityClientCertPemKey, _integrityClientKeyPemKey, _integrityCaCertPemKey].contains(key)) {
+        } else if ([_pepperClientCertPemKey, _pepperCaCertPemKey,
+                   _integrityClientCertPemKey, _integrityCaCertPemKey].contains(key)) {
           if (value != null && (value is! String || value.length > 50000)) {
-            throw ArgumentError('Invalid PEM content for $key: $value');
+            // F20 (gitlab#259): NEVER interpolate the value here — for the client
+            // cert PEM it holds the private key, and this message reaches stdout.
+            final desc = value is String ? '${value.length} chars' : value.runtimeType;
+            throw ArgumentError('Invalid PEM content for $key ($desc)');
           }
-          if (value == null) {
+          // F20 (gitlab#259): the client cert PEM holds the private key, so PEM
+          // content goes to a 0600 file (path in prefs). A post-fix export stores
+          // the PATH here, so only treat a value that is actually PEM content
+          // (contains a BEGIN marker) as a PEM; a path is stored as-is (the CA
+          // cert is public and also stored directly).
+          final fileName = _clientCertPemFiles[key];
+          final str = value as String?;
+          if (fileName != null && str != null && str.contains('-----BEGIN')) {
+            await _setSecurePem(key, fileName, str);
+          } else if (str == null) {
             await prefs.remove(key);
           } else {
-            await prefs.setString(key, value);
+            await prefs.setString(key, str);
           }
         } else if (key == _pepperCertModeKey || key == _integrityCertModeKey) {
           if (value is! String || !['file', 'pem'].contains(value)) {

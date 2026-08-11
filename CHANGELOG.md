@@ -461,6 +461,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **mTLS client private key no longer stored in plaintext preferences**
+  (gitlab#259, MEDIUM / CWE-312, ADVISORY 2026-41): the GUI's "Client Cert + Key
+  PEM" setting wrote the pasted PEM — including the client private key — into the
+  world-readable (`0644`) `SharedPreferences` file in cleartext. The client
+  cert+key PEM is now written to a dedicated `0600` file (under a `0700` dir) and
+  only its path is stored in preferences; the dead `*ClientKeyPem` accessors and
+  import entries are removed, and a startup migration relocates any legacy
+  plaintext PEM and scrubs the removed keys. Rotate any key previously pasted
+  into the GUI. Found by the 1.4.9 pre-release scan.
+
 - **Steganography password no longer passed on the child command line**
   (gitlab#258, MEDIUM / CWE-214, ADVISORY 2026-40): the desktop GUI passed the
   stego password as `--stego-password` on the CLI's argv (visible in
