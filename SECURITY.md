@@ -239,7 +239,7 @@ relevant.
 
 **Mitigation for existing installs:** re-encrypt any files produced through the 1.4.x D-Bus service after upgrading to 1.4.9 (or via the CLI, which was never affected); treat their passwords as exposed to accelerated offline guessing.
 
-**Credit:** found by the 1.4.9 pre-release security scan (finding F1, gitlab#228).
+**Disclosure:** tracked as gitlab#228 and GHSA-v9r6-grch-fxw7 (published with the 1.4.9 release). **Credit:** found by the 1.4.9 pre-release security scan (finding F1).
 
 ### ADVISORY 2026-19: A Planted Template File Can Rank Itself First and Downgrade Key Derivation — Resolved
 
