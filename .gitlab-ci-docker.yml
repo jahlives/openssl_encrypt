@@ -9,6 +9,9 @@ variables:
   # Use hardcoded lowercase registry path to avoid case issues
   DOCKER_IMAGE: $CI_REGISTRY/world/openssl_encrypt/python-liboqs:3.13-alpine
   LIBOQS_VERSION: "0.12.0"
+  # Immutable commit pins (gitlab#252, F31/F33, CWE-494) — verified in the build.
+  LIBOQS_COMMIT: "f4b96220e4bd208895172acc4fedb5a191d9f5b1"
+  LIBOQS_PYTHON_COMMIT: "7906e7879a099fa34217035957d977314f99757d"
   PYTHON_VERSION: "3.13"
 
 # Build the python-liboqs base image for testing
@@ -40,7 +43,8 @@ docker-build-base:
 
       # Clone and build liboqs
       WORKDIR /build
-      RUN git clone --recurse-submodules --branch ${LIBOQS_VERSION} https://github.com/open-quantum-safe/liboqs.git
+      RUN git clone --recurse-submodules --branch ${LIBOQS_VERSION} https://github.com/open-quantum-safe/liboqs.git && \\
+          { [ "\$(git -C liboqs rev-parse HEAD)" = "${LIBOQS_COMMIT}" ] || { echo "ERROR: liboqs HEAD does not match pinned ${LIBOQS_COMMIT} (possible tag tampering)"; exit 1; }; }
       WORKDIR /build/liboqs
       RUN mkdir build && cd build && \\
           cmake -GNinja -DCMAKE_INSTALL_PREFIX=/usr/local .. && \\
@@ -48,7 +52,7 @@ docker-build-base:
           ninja install
 
       # Install Python liboqs bindings
-      RUN pip install --no-cache-dir git+https://github.com/open-quantum-safe/liboqs-python.git@${LIBOQS_VERSION}
+      RUN pip install --no-cache-dir git+https://github.com/open-quantum-safe/liboqs-python.git@${LIBOQS_PYTHON_COMMIT}
 
       # Clean up build artifacts but keep runtime libraries
       RUN apk del git gcc g++ cmake ninja make go && \\

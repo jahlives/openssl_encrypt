@@ -1841,6 +1841,19 @@ inflated KDF metadata parameters, not cosmetic output.
 
 ### Security
 
+- **liboqs / liboqs-python / RandomX are built from pinned commit SHAs, not
+  mutable tags** (gitlab#252, CWE-494): the PQC dependency build cloned liboqs
+  from `--branch <tag>` (and, in CI, from a floating default branch) and
+  pip-installed liboqs-python from `@<tag>` with no integrity check, so a
+  repointed upstream tag could build and load arbitrary post-quantum crypto code
+  on the user's machine and into the published base image. Every build site (the
+  installers `build_local_deps.sh`/`.ps1` and the `install-dependencies` inline
+  fallback, the published `docker/build-base-image.sh`, and both CI pipelines)
+  now pins the commit — verifying `git rev-parse HEAD` against the pinned SHA and
+  failing closed on mismatch — and installs liboqs-python from the commit SHA;
+  the RandomX MASM assembly download is likewise pinned to its commit. Found by
+  the 1.4.9 pre-release scan.
+
 - **`tools/list_keystore_keys.py` no longer requires the keystore password on
   argv** (gitlab#249, CWE-214): the helper script forced the keystore master
   password onto the command line (visible in `ps` / `/proc/<pid>/cmdline` /

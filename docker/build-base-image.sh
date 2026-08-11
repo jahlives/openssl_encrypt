@@ -10,6 +10,12 @@ cd "$SCRIPT_DIR/.."
 # Configuration
 PYTHON_VERSION="3.13"
 LIBOQS_VERSION="0.12.0"
+# Immutable commit pins (gitlab#252, F31/F33, CWE-494): git tags are mutable, so
+# a repointed tag would bake arbitrary post-quantum crypto code into the
+# published base image. The Dockerfile below verifies the clone against these and
+# fails the build on mismatch. Bump alongside LIBOQS_VERSION.
+LIBOQS_COMMIT="f4b96220e4bd208895172acc4fedb5a191d9f5b1"
+LIBOQS_PYTHON_COMMIT="7906e7879a099fa34217035957d977314f99757d"
 REGISTRY="registry.rm-rf.ch"
 PROJECT_PATH="world/openssl_encrypt"
 IMAGE_NAME="python-liboqs"
@@ -116,9 +122,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \\
     python3-dev libssl-dev pkg-config \\
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Clone and build liboqs ${LIBOQS_VERSION}
+# Clone and build liboqs ${LIBOQS_VERSION} (pinned commit; gitlab#252 F31)
 WORKDIR /build
-RUN git clone --recurse-submodules --branch ${LIBOQS_VERSION} https://github.com/open-quantum-safe/liboqs.git
+RUN git clone --recurse-submodules --branch ${LIBOQS_VERSION} https://github.com/open-quantum-safe/liboqs.git && \\
+    { [ "\$(git -C liboqs rev-parse HEAD)" = "${LIBOQS_COMMIT}" ] || { echo "ERROR: liboqs HEAD \$(git -C liboqs rev-parse HEAD) does not match pinned ${LIBOQS_COMMIT} (possible tag tampering)"; exit 1; }; }
 WORKDIR /build/liboqs
 RUN mkdir build && cd build && \\
     cmake -GNinja \\
@@ -133,7 +140,7 @@ RUN mkdir build && cd build && \\
 RUN export LD_LIBRARY_PATH="/usr/local/lib" && \\
     export PKG_CONFIG_PATH="/usr/local/lib/pkgconfig" && \\
     export OQS_INSTALL_PATH="/usr/local" && \\
-    pip install --no-cache-dir git+https://github.com/open-quantum-safe/liboqs-python.git@${LIBOQS_VERSION}
+    pip install --no-cache-dir git+https://github.com/open-quantum-safe/liboqs-python.git@${LIBOQS_PYTHON_COMMIT}
 
 # Copy and install project requirements in builder (with build tools available)
 COPY requirements.txt /tmp/requirements.txt

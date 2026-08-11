@@ -29,6 +29,12 @@ param(
     [string]$InstallPrefix = (Join-Path $env:USERPROFILE "_oqs"),
     [string]$LiboqsVersion = "0.12.0",
     [string]$LiboqsPythonVersion = "0.12.0",
+    # Immutable commit pins (gitlab#252, F31/F33, CWE-494): git tags are mutable,
+    # so a repointed tag could build/load arbitrary post-quantum crypto code. The
+    # clone is verified against $LiboqsCommit and liboqs-python is installed from
+    # $LiboqsPythonCommit. Bump alongside the version strings above.
+    [string]$LiboqsCommit = "f4b96220e4bd208895172acc4fedb5a191d9f5b1",
+    [string]$LiboqsPythonCommit = "7906e7879a099fa34217035957d977314f99757d",
     [switch]$SkipEnvSetup
 )
 
@@ -436,6 +442,14 @@ if (-not $liboqsOk) {
             exit 1
         }
 
+        # Verify the checkout against the pinned commit (gitlab#252, F31): a moved
+        # tag lands a different HEAD; fail closed rather than build untrusted code.
+        $liboqsHead = (& git -C $tempDir rev-parse HEAD).Trim()
+        if ($liboqsHead -ne $LiboqsCommit) {
+            Write-Fail "liboqs checkout $liboqsHead does not match the pinned commit $LiboqsCommit (possible tag tampering)"
+            exit 1
+        }
+
         $buildDir = Join-Path $tempDir "build"
         New-Item -ItemType Directory -Path $buildDir -Force | Out-Null
 
@@ -527,7 +541,7 @@ $env:LDFLAGS = "-L$InstallPrefix\lib"
 Write-Step "Installing liboqs-python from source..."
 & { $ErrorActionPreference = 'Continue'
     python -m pip install --no-cache-dir `
-        "git+https://github.com/open-quantum-safe/liboqs-python.git@$LiboqsPythonVersion" 2>&1 | Write-Host
+        "git+https://github.com/open-quantum-safe/liboqs-python.git@$LiboqsPythonCommit" 2>&1 | Write-Host
 }
 
 if ($LASTEXITCODE -ne 0) {
@@ -581,6 +595,11 @@ else {
 
 $RandomXVersion = "1.1.10.post3"
 $RandomXGitTag = "v1.1.10"
+# Immutable commit pin for the RandomX assembly download (gitlab#252, F31/F33,
+# CWE-494): raw.githubusercontent.com/refs/tags/<tag> is mutable, and these .asm
+# files are assembled and linked into the native randomx module. Pin the raw URL
+# to the tag's commit SHA. Bump alongside $RandomXGitTag.
+$RandomXCommit = "f9ae3f235183c452962edd2a15384bdc67f7a11e"
 
 # Check if randomx is already installed and working
 $randomxOk = $false
@@ -646,11 +665,12 @@ with tarfile.open(r'$($tarball.FullName)') as t:
         $asmSrcDir = Join-Path $srcRoot "RandomX\src"
 
         # Download MASM assembly files from upstream (matching version)
-        Write-Step "Downloading MASM assembly files (tag $RandomXGitTag)..."
+        Write-Step "Downloading MASM assembly files (RandomX $RandomXGitTag, commit $RandomXCommit)..."
         $asmDir = Join-Path $asmSrcDir "asm"
         New-Item -ItemType Directory -Path $asmDir -Force | Out-Null
 
-        $baseUrl = "https://raw.githubusercontent.com/tevador/RandomX/refs/tags/$RandomXGitTag/src"
+        # Pin the raw URL to the immutable commit, not the mutable tag (gitlab#252, F31/F33).
+        $baseUrl = "https://raw.githubusercontent.com/tevador/RandomX/$RandomXCommit/src"
 
         # Download main MASM file
         python -c "
