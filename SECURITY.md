@@ -226,6 +226,21 @@ relevant.
 
 ## Security Advisories
 
+### ADVISORY 2026-42: Desktop GUI Wrote Decrypted Output With World-Readable (0644) Permissions — Resolved
+
+**Severity:** Medium · **CWE-276** (Incorrect Default Permissions)
+**Affected versions:** releases with the desktop GUI, up to and including **1.4.8**. **Fixed in 1.4.9** (both the 1.4.x and 1.5.x lines).
+
+**Summary:** the GUI wrote its output — including recovered plaintext on the decrypt path — through `FileManager.writeFileText` / `writeFileBytes`, which use Dart's `writeAsString` / `writeAsBytes` and create the file at the process umask (typically `0644`, world-readable). The CLI, by contrast, writes decrypted output owner-only (`0600`).
+
+**Impact:** on a multi-user host, plaintext a user decrypted through the GUI was left readable by other local users. No remote exposure.
+
+**Fixed in 1.4.9:** the GUI creates the output file owner-only (`0600`) **before** writing its content (create + `chmod 600`, then write in place), so the plaintext never resides in a world-readable file even briefly — matching the CLI default. Best-effort on non-POSIX filesystems (Windows uses per-user ACLs; FAT/exFAT carry no modes). Regression-pinned by `output_permissions_260_test.dart`.
+
+**Mitigation for existing installs:** upgrade to 1.4.9; on earlier versions, `chmod 600` files decrypted through the GUI on a shared host.
+
+**Disclosure:** tracked as gitlab#260 and GHSA-7q4g-rrw4-rf2m (published with the 1.4.9 release). **Credit:** found by the 1.4.9 pre-release security scan (finding F23).
+
 ### ADVISORY 2026-41: Desktop GUI Stored an mTLS Client Private Key in Plaintext, World-Readable Preferences — Resolved
 
 **Severity:** Medium · **CWE-312** (Cleartext Storage of Sensitive Information)

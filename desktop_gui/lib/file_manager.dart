@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:convert';
+import 'dart:math';
 import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path/path.dart' as path;
@@ -300,28 +301,108 @@ class FileManager {
     return null;
   }
 
-  /// Write bytes to file
+  /// True if [path] is owner-only on POSIX (no group/other permission bits).
+  /// Windows uses per-user ACLs, so returns true there.
+  bool _isOwnerOnly(String targetPath) {
+    if (Platform.isWindows) return true;
+    try {
+      final m = File(targetPath).statSync().mode & 0x1FF;
+      return (m & 0x3F) == 0; // no group (0o070) / other (0o007) bits
+    } catch (_) {
+      return false; // cannot verify -> fail closed
+    }
+  }
+
+  /// Create [file] as a FRESH 0600 inode (POSIX), never reusing an existing one.
+  /// `install -m 600 /dev/null` (same primitive as cli_service) sets the mode at
+  /// creation, so there is no world-readable window and no pre-existing inode an
+  /// attacker could hold an open fd to.
+  Future<void> _create0600(File file) async {
+    if (!Platform.isWindows) {
+      try {
+        final r = await Process.run('install', ['-m', '600', '/dev/null', file.path]);
+        if (r.exitCode == 0) return;
+      } catch (_) {}
+    }
+    // Fallback (Windows / no `install`): create then best-effort chmod.
+    try {
+      if (await file.exists()) await file.delete();
+    } catch (_) {}
+    await file.create(recursive: true);
+    if (!Platform.isWindows) {
+      try {
+        await Process.run('chmod', ['600', file.path]);
+      } catch (_) {}
+    }
+  }
+
+  /// Write GUI output (notably decrypted plaintext) owner-only (0600), matching
+  /// the CLI (F23, gitlab#260, CWE-276). The content is written to a fresh 0600
+  /// temp in the destination directory, verified owner-only, and atomically
+  /// renamed over the target (rename replaces a symlink at the destination
+  /// rather than following it), so the plaintext never resides in a
+  /// world-readable file and a failed permission set fails closed.
+  Future<bool> _writeOwnerOnly(
+    String canonicalPath,
+    Future<void> Function(File tmp) writeBody,
+  ) async {
+    final target = File(canonicalPath);
+    // Unpredictable temp name (secure-random suffix) so an attacker with write
+    // access to the output dir cannot pre-plant a symlink at the temp path and
+    // redirect the write (the install/create step would otherwise follow it).
+    final rand = Random.secure();
+    final suffix = List.generate(16, (_) => rand.nextInt(16).toRadixString(16)).join();
+    final tmp = File(path.join(
+      target.parent.path,
+      '.${path.basename(canonicalPath)}.oe-$suffix.tmp',
+    ));
+    try {
+      await _create0600(tmp);
+      // Belt-and-suspenders against a symlink at the (already unpredictable)
+      // temp path: dart:io cannot request O_EXCL/O_NOFOLLOW, so if the temp
+      // resolved to a symlink, refuse rather than write plaintext through it.
+      if (!Platform.isWindows && FileSystemEntity.isLinkSync(tmp.path)) {
+        try {
+          await tmp.delete();
+        } catch (_) {}
+        return false;
+      }
+      await writeBody(tmp);
+      if (!_isOwnerOnly(tmp.path)) {
+        // Fail closed: never leave decrypted output world-readable.
+        try {
+          await tmp.delete();
+        } catch (_) {}
+        return false;
+      }
+      await tmp.rename(canonicalPath);
+      return true;
+    } catch (e) {
+      try {
+        if (await tmp.exists()) await tmp.delete();
+      } catch (_) {}
+      rethrow;
+    }
+  }
+
+  /// Write bytes to file (owner-only, 0600).
   Future<bool> writeFileBytes(String filePath, Uint8List data) async {
     try {
       // Security: Canonicalize path to prevent symlink attacks
       final canonicalPath = _canonicalizePath(filePath);
-      final file = File(canonicalPath);
-      await file.writeAsBytes(data);
-      return true;
+      return await _writeOwnerOnly(canonicalPath, (tmp) => tmp.writeAsBytes(data));
     } catch (e) {
       CLIService.outputDebugLog('Error writing file: $e');
       return false;
     }
   }
 
-  /// Write string to file
+  /// Write string to file (owner-only, 0600).
   Future<bool> writeFileText(String filePath, String content) async {
     try {
       // Security: Canonicalize path to prevent symlink attacks
       final canonicalPath = _canonicalizePath(filePath);
-      final file = File(canonicalPath);
-      await file.writeAsString(content);
-      return true;
+      return await _writeOwnerOnly(canonicalPath, (tmp) => tmp.writeAsString(content));
     } catch (e) {
       CLIService.outputDebugLog('Error writing text file: $e');
       return false;

@@ -461,6 +461,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **GUI writes decrypted output owner-only (0600), not world-readable 0644**
+  (gitlab#260, MEDIUM / CWE-276, ADVISORY 2026-42): `FileManager.writeFileText`
+  / `writeFileBytes` used Dart's `writeAsString`/`writeAsBytes`, creating the
+  output at the umask (typically `0644`); the GUI decrypt path writes recovered
+  plaintext through them, leaving it world-readable on a multi-user host (the CLI
+  uses `0600`). The output file is now created owner-only *before* its content is
+  written. Found by the 1.4.9 pre-release scan.
+
 - **mTLS client private key no longer stored in plaintext preferences**
   (gitlab#259, MEDIUM / CWE-312, ADVISORY 2026-41): the GUI's "Client Cert + Key
   PEM" setting wrote the pasted PEM — including the client private key — into the
