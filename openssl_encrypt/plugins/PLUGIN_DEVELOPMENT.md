@@ -129,11 +129,18 @@ class MyPlugin(PreProcessorPlugin):
 
 ### 2. Plugin Registration
 
-Place your plugin file in the `openssl_encrypt/plugins/` directory. The plugin manager will automatically discover it based on:
+Place your plugin file in the `openssl_encrypt/plugins/user/` directory. The plugin manager will automatically discover it based on:
 
-- File location: `openssl_encrypt/plugins/**/*.py`
+- File location: `openssl_encrypt/plugins/user/**/*.py`
 - Plugin class inheritance from base plugin classes
 - Proper `__init__` method signature
+
+> **Security:** only the packages that ship with the tool are trusted as
+> built-in. A third-party plugin **must** live under `plugins/user` (or
+> `plugins/community` / `plugins/official`) so it passes the signature + AST +
+> hash-pin gate — the ENFORCE-by-default signature policy. Do **not** drop a
+> plugin directly in `plugins/` or invent a new top-level directory: such a
+> plugin is treated as untrusted and will be rejected unless properly signed.
 
 ### 3. Testing Your Plugin
 

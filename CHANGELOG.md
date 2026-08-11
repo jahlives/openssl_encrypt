@@ -479,6 +479,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Re-encrypt any files produced through the 1.4.x D-Bus service after
   upgrading. Found by the 1.4.9 pre-release security scan.
 
+- **Built-in plugin trust is now an allowlist, not a denylist** (gitlab#231,
+  MEDIUM / CWE-347, ADVISORY 2026-23): `_is_builtin_plugin` treated every file
+  under the package `plugins/` directory as a trusted built-in (skipping
+  signature verification, the AST scan and the TOCTOU hash pin) *except* the
+  three `user`/`community`/`official` subdirs — so a plugin dropped directly in
+  `plugins/` (top-level `plugins/*.py`) or under any new/unknown subdirectory
+  was trusted and `exec()`'d in the CLI process. `PLUGIN_DEVELOPMENT.md`
+  directed third-party authors to `plugins/` (top-level), so following the docs
+  bypassed the ENFORCE-by-default signature policy (arbitrary code execution
+  from an unsigned plugin). Built-in trust is now an **allowlist** of the
+  shipped plugin packages; top-level `plugins/*.py` and every unknown
+  subdirectory go through the full signature + AST + hash-pin gate, and the docs
+  now direct third-party plugins to `plugins/user`. Found by the 1.4.9
+  pre-release security scan.
+
 - **Identity loading now re-derives the fingerprint from the keys and fails
   closed on a mismatch** (gitlab#230, MEDIUM / CWE-345, ADVISORY 2026-22):
   `Identity.load` copied the `fingerprint` field verbatim from an untrusted

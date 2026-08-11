@@ -36,7 +36,15 @@ class TestBuiltinTrustScope(unittest.TestCase):
         return os.path.realpath(path)
 
     def test_shipped_subdirs_are_builtin(self):
-        for sub in ("examples", "hsm", "keyserver", "integrity", "pepper", "telemetry"):
+        for sub in (
+            "examples",
+            "hsm",
+            "keyserver",
+            "integrity",
+            "pepper",
+            "steganography",
+            "telemetry",
+        ):
             self.assertTrue(
                 self.mgr._is_builtin_plugin(self._make(sub, "p.py")),
                 f"{sub} should be built-in",
@@ -61,8 +69,22 @@ class TestBuiltinTrustScope(unittest.TestCase):
     def test_nested_third_party_package_not_builtin(self):
         self.assertFalse(self.mgr._is_builtin_plugin(self._make("user", "pkg", "mod.py")))
 
-    def test_root_level_file_is_builtin(self):
-        self.assertTrue(self.mgr._is_builtin_plugin(self._make("toplevel.py")))
+    def test_root_level_file_is_not_builtin(self):
+        # gitlab#231 (scan F10): a file dropped directly in plugins/ (which the
+        # docs used to advertise for third-party plugins) must NOT be built-in;
+        # it has to pass the full signature + AST + hash-pin gate.
+        self.assertFalse(self.mgr._is_builtin_plugin(self._make("toplevel.py")))
+
+    def test_unknown_subdir_is_not_builtin(self):
+        # gitlab#231 (scan F10): only the shipped built-in packages are trusted.
+        # Any other subdirectory an attacker creates under the root must go
+        # through the full gate, not be trusted by a denylist that only knew the
+        # three advertised drop dirs.
+        for sub in ("dropped", "evil", "hsm_evil", "notaplugin"):
+            self.assertFalse(
+                self.mgr._is_builtin_plugin(self._make(sub, "p.py")),
+                f"{sub} must NOT be built-in (allowlist, gitlab#231)",
+            )
 
     def test_path_outside_root_not_builtin(self):
         other = tempfile.mkdtemp()

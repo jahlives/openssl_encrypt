@@ -45,19 +45,27 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-# Third-party plugin drop directories (gitlab#130 follow-up). These live UNDER
-# the built-in plugin root but are the locations the tool advertises for
-# user/community/official third-party plugins, so a plugin placed here must NOT
-# inherit the built-in trust shortcut — it has to pass the full signature + AST
-# + TOCTOU gate like any other untrusted plugin. Anything else under the root
-# ships with the package (examples/hsm/keyserver/…) and stays built-in.
-_UNTRUSTED_PLUGIN_SUBDIRS = ("user", "community", "official")
-# Case-folded for comparison: on case-insensitive filesystems (Windows, default
-# macOS) "plugins/User" is the same on-disk directory as "plugins/user", so the
-# exclusion must match case-insensitively or the drop dir would be misclassified
-# as built-in under a variant casing (gitlab#130 — fail-safe, no shipped subdir
-# collides with these names).
-_UNTRUSTED_PLUGIN_SUBDIRS_CF = frozenset(s.casefold() for s in _UNTRUSTED_PLUGIN_SUBDIRS)
+# The shipped built-in plugin packages. Built-in trust is an ALLOWLIST, not a
+# denylist (gitlab#231, scan F10; supersedes the gitlab#130 user/community/
+# official denylist): only a file inside one of these package directories is
+# trusted to skip the signature + AST + TOCTOU gate. A file dropped directly in
+# the plugin root (top-level plugins/*.py) or inside ANY other subdirectory —
+# the advertised user/community/official third-party drop dirs, or a brand-new
+# directory an attacker creates — must pass the full gate. Matching is
+# case-insensitive (see _BUILTIN_PLUGIN_PACKAGES_CF) so a variant casing
+# (plugins/HSM) resolves the same on a case-insensitive filesystem. A denylist
+# fails open the moment a shipped-looking name that is not on it appears; adding
+# a genuinely new built-in package is a deliberate code change here.
+_BUILTIN_PLUGIN_PACKAGES = (
+    "examples",
+    "hsm",
+    "integrity",
+    "keyserver",
+    "pepper",
+    "steganography",
+    "telemetry",
+)
+_BUILTIN_PLUGIN_PACKAGES_CF = frozenset(s.casefold() for s in _BUILTIN_PLUGIN_PACKAGES)
 
 
 class PluginRegistration:
@@ -1145,30 +1153,43 @@ class PluginManager:
         return True
 
     def _is_builtin_plugin(self, real_path: str) -> bool:
-        """True if ``real_path`` (already realpath-resolved) is under the
-        trusted built-in plugin root. Built-ins skip the AST/signature gate and
-        the TOCTOU hash pin (they are shipped, owner-only, and gated by the H8
+        """True if ``real_path`` (already realpath-resolved) is a shipped
+        built-in plugin. Built-ins skip the AST/signature gate and the TOCTOU
+        hash pin (they are shipped, owner-only, and gated by the H8
         writable-location check).
 
-        The third-party drop directories (``plugins/user``, ``plugins/community``,
-        ``plugins/official``) live under the root but are NOT treated as built-in
-        (gitlab#130 follow-up): a plugin placed there must pass the full
-        signature + AST + TOCTOU gate, otherwise the ENFORCE-by-default signature
-        policy would be bypassable simply by dropping an unsigned plugin into the
-        directory the tool advertises for third-party plugins.
+        Trust is an ALLOWLIST (gitlab#231, scan F10): only a file INSIDE one of
+        the shipped built-in package directories (``_BUILTIN_PLUGIN_PACKAGES``)
+        is built-in. Everything else under the root goes through the full
+        signature + AST + TOCTOU gate:
+
+        - a file dropped directly in the root (top-level ``plugins/*.py``) — the
+          location the docs used to advertise for third-party plugins, so
+          following them would otherwise bypass the ENFORCE-by-default signature
+          policy;
+        - the advertised drop directories ``plugins/user`` /
+          ``plugins/community`` / ``plugins/official`` (gitlab#130); and
+        - any other/unknown subdirectory an attacker creates under the root.
+
+        A denylist ("everything except user/community/official") failed open the
+        moment any other name appeared; the allowlist fails closed.
         """
         if not self.builtin_plugin_root:
             return False
         real_root = os.path.realpath(self.builtin_plugin_root)
         if real_path != real_root and not real_path.startswith(real_root + os.sep):
             return False
-        # Under the root, but reject the advertised third-party drop dirs.
-        # Case-insensitive so a variant casing (plugins/User) cannot slip past
-        # on a case-insensitive filesystem (gitlab#130).
         rel = os.path.relpath(real_path, real_root)
-        if rel != os.curdir and rel.split(os.sep, 1)[0].casefold() in _UNTRUSTED_PLUGIN_SUBDIRS_CF:
+        if rel == os.curdir:
+            # The root directory itself is not a plugin file.
             return False
-        return True
+        # A file directly in the root has no package component -> not built-in.
+        parts = rel.split(os.sep, 1)
+        if len(parts) < 2:
+            return False
+        # Trust ONLY the shipped built-in packages. Case-insensitive so a variant
+        # casing (plugins/HSM) resolves the same on a case-insensitive filesystem.
+        return parts[0].casefold() in _BUILTIN_PLUGIN_PACKAGES_CF
 
     def _validate_plugin_file(self, file_path: str) -> bool:
         """

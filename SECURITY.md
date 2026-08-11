@@ -226,6 +226,21 @@ relevant.
 
 ## Security Advisories
 
+### ADVISORY 2026-23: Built-In Plugin Trust Shortcut Executed Unsigned Third-Party Plugins — Resolved
+
+**Severity:** Medium · **CWE-347** (Improper Verification of Cryptographic Signature)
+**Affected versions:** all releases with the plugin signature policy, up to and including **1.4.8**. **Fixed in 1.4.9** (both the 1.4.x and 1.5.x lines).
+
+**Summary:** the plugin manager's built-in trust check (`_is_builtin_plugin`) used a denylist: it treated every file under the package `plugins/` directory as a trusted built-in — skipping signature verification, the AST scan and the TOCTOU hash pin — *except* the three `user`/`community`/`official` subdirectories. A plugin dropped directly in `plugins/` (top-level `plugins/*.py`) or under any new/unknown subdirectory was therefore trusted and `exec()`'d in the CLI process (which handles passwords, keys and plaintext) on the next `list-plugins`, `encrypt --hsm`, or decryption of a file whose metadata names an HSM plugin. `PLUGIN_DEVELOPMENT.md` directed third-party authors to place their plugin in exactly `openssl_encrypt/plugins/` (top-level), so following the documentation bypassed the ENFORCE-by-default signature policy.
+
+**Impact:** arbitrary code execution from an unsigned plugin under the tool's own trust policy. Preconditions: an attacker (or a well-meaning developer following the old docs) places a `.py` file directly in the package `plugins/` directory or a non-standard subdirectory of it; the H8 owner-only-writable-location check still applies, so the attacker needs write access to that location. The plugin then runs in-process at the next plugin discovery.
+
+**Fixed in 1.4.9:** built-in trust is now an **allowlist** — only the packages that ship with the tool (`examples`, `hsm`, `integrity`, `keyserver`, `pepper`, `steganography`, `telemetry`) are trusted to skip the gate. A file placed directly in the plugin root, in one of the advertised `user`/`community`/`official` drop directories, or in any other/unknown subdirectory now goes through the full signature + AST + hash-pin gate. `PLUGIN_DEVELOPMENT.md` now directs third-party plugins to `plugins/user`. A denylist failed open the moment a shipped-looking name that was not on it appeared; the allowlist fails closed. Regression-pinned by `test_plugin_builtin_trust_scope.py`.
+
+**Mitigation for existing installs:** upgrade to 1.4.9; on earlier versions, ensure the package `plugins/` directory contains only the shipped built-in packages and place any third-party plugin under `plugins/user` where it is signature-checked.
+
+**Disclosure:** tracked as gitlab#231 and GHSA-wxx9-p55f-wm34 (published with the 1.4.9 release). **Credit:** found by the 1.4.9 pre-release security scan (finding F10).
+
 ### ADVISORY 2026-22: Stored Identity Fingerprint Trusted Without Re-Deriving It From the Keys — Resolved
 
 **Severity:** Medium · **CWE-345** (Insufficient Verification of Data Authenticity)

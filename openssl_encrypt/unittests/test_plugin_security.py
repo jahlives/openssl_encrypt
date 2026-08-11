@@ -1002,15 +1002,22 @@ class TestBuiltinPluginTrust(unittest.TestCase):
                 shutil.rmtree(d)
 
     def test_builtin_plugin_with_blocked_import_passes_validation(self):
-        """A plugin under builtin_plugin_root that imports pathlib must pass validation."""
-        plugin_file = self.test_dir / "test_builtin.py"
+        """A plugin inside a shipped built-in package must pass validation.
+
+        gitlab#231 (scan F10): built-in trust is an allowlist of shipped package
+        directories, so the plugin has to live inside one (e.g. hsm/), not
+        directly in the root — a top-level file is no longer trusted.
+        """
+        builtin_pkg = self.test_dir / "hsm"
+        builtin_pkg.mkdir()
+        plugin_file = builtin_pkg / "test_builtin.py"
         plugin_file.write_text("from pathlib import Path\nimport io\ndef execute(): pass\n")
 
         # Without builtin trust, strict mode should block it
         self.plugin_manager.strict_security_mode = True
         self.assertFalse(self.plugin_manager._validate_plugin_file(str(plugin_file)))
 
-        # With builtin trust set to the plugin's directory, it should pass
+        # With builtin trust set to the root, a plugin inside a shipped package passes
         self.plugin_manager.builtin_plugin_root = str(self.test_dir)
         self.assertTrue(self.plugin_manager._validate_plugin_file(str(plugin_file)))
 
