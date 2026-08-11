@@ -1835,6 +1835,44 @@ inflated KDF metadata parameters, not cosmetic output.
 
 ### Security
 
+- **`verify-usb` escapes attacker-planted filenames** (gitlab#238, MEDIUM /
+  CWE-117, ADVISORY 2026-30): the tampered/missing/added file lists built from
+  raw names scanned off the untrusted drive were printed under the FAILED banner
+  with no `sanitize_for_display()`, so a planted filename could repaint a forged
+  PASSED verdict. Every drive-derived name, and the error-path exception, are now
+  escaped. Found by the 1.4.9 pre-release security scan.
+
+- **Decrypt auto-detection escapes and bounds the untrusted file header**
+  (gitlab#237, MEDIUM / CWE-117, ADVISORY 2026-29): `detect_encryption_type`
+  parsed the header with a bare `json.loads` and the "no matching identity" path
+  printed each `recipient key_id` unescaped (forged Fingerprint line). The
+  printed fingerprint is now escaped, the recipient list is capped, and the
+  header is parsed through a size/depth/control-char-bounded security scan before
+  `json.loads`. Found by the 1.4.9 pre-release security scan.
+
+- **`info` now escapes terminal control characters in untrusted metadata**
+  (gitlab#236, MEDIUM / CWE-117, ADVISORY 2026-28): `print_file_info` printed
+  metadata fields (and, for crafted legacy files, mode/xor_mode/encrypted_at) to
+  the terminal with no `sanitize_for_display()`, and `--json` emitted raw bytes
+  via `ensure_ascii=False`, so a crafted file's cursor-movement/erase/bidi bytes
+  could repaint the output. Every value is now escaped; `--json` uses
+  `ensure_ascii=True`. Found by the 1.4.9 pre-release security scan.
+
+- **Legacy GUI no longer reads KDF settings from a CWD-relative file**
+  (gitlab#235, MEDIUM / CWE-426, ADVISORY 2026-27): `crypt_settings.py`
+  reassigned `CONFIG_FILE` to a bare relative name, so the legacy Tk GUI
+  read/wrote whatever `crypt_settings.json` sat in the launch directory; a
+  planted config could silently downgrade the KDF. The reassignment is removed
+  and `load_settings` warns on a config with no effective key stretching. Found
+  by the 1.4.9 pre-release security scan.
+
+- **The `info` reconstructed-CLI block now shell-quotes untrusted metadata**
+  (gitlab#234, MEDIUM / CWE-78, ADVISORY 2026-26): the "Reconstructed CLI"
+  command `info` prints interpolated attacker-controlled metadata (`pepper_name`,
+  `algorithm`, `hkdf.info`, …) with no quoting, so a `pepper_name` such as
+  `work; curl … | sh #` ran attacker code when pasted. Every value now passes
+  through `shlex.quote()`. Found by the 1.4.9 pre-release security scan.
+
 - **Pre-authentication resource-exhaustion hardening** (gitlab#233, MEDIUM /
   CWE-770/405/1284, ADVISORY 2026-25): several paths let a crafted file drive
   unbounded KDF cost past the pre-auth memory ceiling (gitlab#128), OOM-killing

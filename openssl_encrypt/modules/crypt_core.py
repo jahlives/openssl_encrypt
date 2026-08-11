@@ -21,6 +21,7 @@ import math
 import os
 import re
 import secrets
+import shlex
 import shutil
 import stat
 import sys
@@ -8287,7 +8288,7 @@ def print_file_info(
     metadata = info["metadata"]
 
     if json_output:
-        print(json.dumps(metadata, indent=2, ensure_ascii=False))
+        print(json.dumps(metadata, indent=2, ensure_ascii=True))
         return metadata
 
     # Pretty-print metadata
@@ -8299,12 +8300,12 @@ def print_file_info(
 
     eprint("File Information:")
     eprint(f"  Format Version:    {format_version}")
-    eprint(f"  Mode:              {mode}")
+    eprint(f"  Mode:              {sanitize_for_display(mode)}")
     if xor_mode:
-        eprint(f"  XOR Mode:          {xor_mode}")
+        eprint(f"  XOR Mode:          {sanitize_for_display(xor_mode)}")
     eprint(f"  AEAD Binding:      {'yes' if aead_binding else 'no'}")
     if encrypted_at:
-        eprint(f"  Encrypted At:      {encrypted_at}")
+        eprint(f"  Encrypted At:      {sanitize_for_display(encrypted_at)}")
 
     # Encryption section
     encryption = metadata.get("encryption", {})
@@ -8314,26 +8315,30 @@ def print_file_info(
     eprint("  Encryption:")
     if is_cascade:
         cipher_chain = encryption.get("cipher_chain", [])
-        eprint(f"    Cipher Chain:    {' -> '.join(cipher_chain)}")
+        eprint(
+            f"    Cipher Chain:    {sanitize_for_display(' -> '.join(str(c) for c in cipher_chain))}"
+        )
         hkdf_hash = encryption.get("hkdf_hash")
         if hkdf_hash:
-            eprint(f"    HKDF Hash:       {hkdf_hash}")
+            eprint(f"    HKDF Hash:       {sanitize_for_display(hkdf_hash)}")
         layer_info = encryption.get("layer_info", [])
         if layer_info:
             eprint(f"    Layers:          {len(layer_info)}")
             for i, layer in enumerate(layer_info):
                 cipher = layer.get("cipher", "unknown")
                 key_size = layer.get("key_size", 0)
-                eprint(f"      Layer {i+1}:       {cipher} ({key_size * 8} bits)")
+                eprint(
+                    f"      Layer {i+1}:       {sanitize_for_display(cipher)} ({key_size * 8} bits)"
+                )
         total_overhead = encryption.get("total_overhead")
         if total_overhead:
             eprint(f"    Total Overhead:  {total_overhead} bytes")
     else:
         algorithm = encryption.get("algorithm", "unknown")
-        eprint(f"    Algorithm:       {algorithm}")
+        eprint(f"    Algorithm:       {sanitize_for_display(algorithm)}")
         encryption_data = encryption.get("encryption_data")
         if encryption_data:
-            eprint(f"    Encryption Data: {encryption_data}")
+            eprint(f"    Encryption Data: {sanitize_for_display(encryption_data)}")
         key_size = encryption.get("key_size")
         if key_size:
             eprint(f"    Key Size:        {key_size * 8} bits")
@@ -8351,7 +8356,7 @@ def print_file_info(
     eprint()
     eprint("  Key Derivation:")
     if salt:
-        eprint(f"    Salt:            {salt}")
+        eprint(f"    Salt:            {sanitize_for_display(salt)}")
 
     if hash_config:
         eprint("    Hash Functions:")
@@ -8361,7 +8366,7 @@ def print_file_info(
             else:
                 rounds = config
             if rounds > 0:
-                display_name = algo.upper().replace("_", "-")
+                display_name = sanitize_for_display(algo.upper().replace("_", "-"))
                 eprint(
                     f"      {display_name}:{' ' * max(1, 13 - len(display_name))}{rounds} rounds"
                 )
@@ -8370,8 +8375,8 @@ def print_file_info(
         eprint("    KDFs:")
         for kdf_name, kdf_params in kdf_config.items():
             if isinstance(kdf_params, dict) and kdf_params.get("enabled", True):
-                display_name = kdf_name.capitalize()
-                params_str = _format_kdf_params(kdf_name, kdf_params)
+                display_name = sanitize_for_display(kdf_name.capitalize())
+                params_str = sanitize_for_display(_format_kdf_params(kdf_name, kdf_params))
                 eprint(f"      {display_name}:{' ' * max(1, 13 - len(display_name))}{params_str}")
 
     # Integrity section
@@ -8380,10 +8385,10 @@ def print_file_info(
     if original_hash:
         eprint()
         eprint("  Integrity:")
-        eprint(f"    Original Hash:   {original_hash}")
+        eprint(f"    Original Hash:   {sanitize_for_display(original_hash)}")
         encrypted_hash = hashes.get("encrypted_hash")
         if encrypted_hash:
-            eprint(f"    Encrypted Hash:  {encrypted_hash}")
+            eprint(f"    Encrypted Hash:  {sanitize_for_display(encrypted_hash)}")
 
     # PQC info
     pqc = metadata.get("pqc")
@@ -8392,7 +8397,7 @@ def print_file_info(
         eprint("  Post-Quantum:")
         pub_key = pqc.get("public_key")
         if pub_key:
-            eprint(f"    Public Key:      {pub_key[:40]}...")
+            eprint(f"    Public Key:      {sanitize_for_display(pub_key[:40])}...")
 
     # HSM info
     hsm_config = encryption.get("hsm_config")
@@ -8401,7 +8406,7 @@ def print_file_info(
         eprint()
         eprint("  HSM:")
         if hsm_plugin:
-            eprint(f"    Plugin:          {hsm_plugin}")
+            eprint(f"    Plugin:          {sanitize_for_display(hsm_plugin)}")
         if hsm_config:
             slot = hsm_config.get("slot")
             if slot is not None:
@@ -8412,10 +8417,10 @@ def print_file_info(
     if pepper_plugin:
         eprint()
         eprint("  Pepper:")
-        eprint(f"    Plugin:          {pepper_plugin}")
+        eprint(f"    Plugin:          {sanitize_for_display(pepper_plugin)}")
         pepper_name = encryption.get("pepper_name")
         if pepper_name:
-            eprint(f"    Name:            {pepper_name}")
+            eprint(f"    Name:            {sanitize_for_display(pepper_name)}")
 
     # Archive info
     archive = metadata.get("archive")
@@ -8448,7 +8453,7 @@ def print_file_info(
         metadata, hidden=info.get("hidden", False), keyed=info.get("keyed", False)
     )
     for line in _recon.splitlines():
-        eprint(f"    {line}")
+        eprint(f"    {sanitize_for_display(line)}")
 
     return metadata
 
@@ -8463,6 +8468,14 @@ def _format_size(size_bytes: int) -> str:
         return f"{size_bytes / (1024 * 1024):.1f} MB"
     else:
         return f"{size_bytes / (1024 * 1024 * 1024):.1f} GB"
+
+
+def _shq(value) -> str:
+    """Shell-quote an untrusted metadata value for the reconstructed-CLI block
+    (gitlab#234, scan F35, CWE-78). A crafted file may put shell metacharacters
+    in any field; quoting keeps each value a single shell token when the printed
+    command is pasted."""
+    return shlex.quote(str(value))
 
 
 def _reconstruct_cli_from_metadata(
@@ -8559,7 +8572,7 @@ def _append_hash_rounds_flags(lines: list, hash_config: dict) -> None:
         else:
             rounds = cfg
         if rounds and rounds > 0:
-            lines.append(f"  --{flag_prefix}-rounds {rounds}")
+            lines.append(f"  --{flag_prefix}-rounds {_shq(rounds)}")
 
 
 # Reverse map for argon2 type integers stored in metadata.
@@ -8572,20 +8585,20 @@ def _append_argon2_flags(lines: list, cfg: dict) -> None:
         return
     lines.append("  --enable-argon2")
     if "rounds" in cfg:
-        lines.append(f"  --argon2-rounds {cfg['rounds']}")
+        lines.append(f"  --argon2-rounds {_shq(cfg['rounds'])}")
     if "time_cost" in cfg:
-        lines.append(f"  --argon2-time {cfg['time_cost']}")
+        lines.append(f"  --argon2-time {_shq(cfg['time_cost'])}")
     if "memory_cost" in cfg:
-        lines.append(f"  --argon2-memory {cfg['memory_cost']}")
+        lines.append(f"  --argon2-memory {_shq(cfg['memory_cost'])}")
     if "parallelism" in cfg:
-        lines.append(f"  --argon2-parallelism {cfg['parallelism']}")
+        lines.append(f"  --argon2-parallelism {_shq(cfg['parallelism'])}")
     if "hash_len" in cfg:
-        lines.append(f"  --argon2-hash-len {cfg['hash_len']}")
+        lines.append(f"  --argon2-hash-len {_shq(cfg['hash_len'])}")
     if "type" in cfg:
         t = cfg["type"]
         # Metadata stores type as int (0,1,2). CLI expects "d","i","id".
         type_str = _ARGON2_INT_TO_STR.get(t, t) if isinstance(t, int) else t
-        lines.append(f"  --argon2-type {type_str}")
+        lines.append(f"  --argon2-type {_shq(type_str)}")
 
 
 def _append_scrypt_flags(lines: list, cfg: dict) -> None:
@@ -8594,13 +8607,13 @@ def _append_scrypt_flags(lines: list, cfg: dict) -> None:
         return
     lines.append("  --enable-scrypt")
     if "rounds" in cfg:
-        lines.append(f"  --scrypt-rounds {cfg['rounds']}")
+        lines.append(f"  --scrypt-rounds {_shq(cfg['rounds'])}")
     if "n" in cfg:
-        lines.append(f"  --scrypt-n {cfg['n']}")
+        lines.append(f"  --scrypt-n {_shq(cfg['n'])}")
     if "r" in cfg:
-        lines.append(f"  --scrypt-r {cfg['r']}")
+        lines.append(f"  --scrypt-r {_shq(cfg['r'])}")
     if "p" in cfg:
-        lines.append(f"  --scrypt-p {cfg['p']}")
+        lines.append(f"  --scrypt-p {_shq(cfg['p'])}")
 
 
 def _append_balloon_flags(lines: list, cfg: dict) -> None:
@@ -8609,13 +8622,13 @@ def _append_balloon_flags(lines: list, cfg: dict) -> None:
         return
     lines.append("  --enable-balloon")
     if "rounds" in cfg:
-        lines.append(f"  --balloon-rounds {cfg['rounds']}")
+        lines.append(f"  --balloon-rounds {_shq(cfg['rounds'])}")
     if "time_cost" in cfg:
-        lines.append(f"  --balloon-time-cost {cfg['time_cost']}")
+        lines.append(f"  --balloon-time-cost {_shq(cfg['time_cost'])}")
     if "space_cost" in cfg:
-        lines.append(f"  --balloon-space-cost {cfg['space_cost']}")
+        lines.append(f"  --balloon-space-cost {_shq(cfg['space_cost'])}")
     if "parallelism" in cfg:
-        lines.append(f"  --balloon-parallelism {cfg['parallelism']}")
+        lines.append(f"  --balloon-parallelism {_shq(cfg['parallelism'])}")
 
 
 def _append_hkdf_flags(lines: list, cfg: dict) -> None:
@@ -8624,11 +8637,11 @@ def _append_hkdf_flags(lines: list, cfg: dict) -> None:
         return
     lines.append("  --enable-hkdf")
     if "rounds" in cfg:
-        lines.append(f"  --hkdf-rounds {cfg['rounds']}")
+        lines.append(f"  --hkdf-rounds {_shq(cfg['rounds'])}")
     if "algorithm" in cfg:
-        lines.append(f"  --hkdf-algorithm {cfg['algorithm']}")
+        lines.append(f"  --hkdf-algorithm {_shq(cfg['algorithm'])}")
     if "info" in cfg:
-        lines.append(f"  --hkdf-info {cfg['info']}")
+        lines.append(f"  --hkdf-info {_shq(cfg['info'])}")
 
 
 def _append_pbkdf2_removed_comment(lines: list, cfg: dict) -> None:
@@ -8688,13 +8701,13 @@ def _append_randomx_flags(lines: list, cfg: dict) -> None:
         return
     lines.append("  --enable-randomx")
     if "rounds" in cfg:
-        lines.append(f"  --randomx-rounds {cfg['rounds']}")
+        lines.append(f"  --randomx-rounds {_shq(cfg['rounds'])}")
     if "mode" in cfg:
-        lines.append(f"  --randomx-mode {cfg['mode']}")
+        lines.append(f"  --randomx-mode {_shq(cfg['mode'])}")
     if "height" in cfg:
-        lines.append(f"  --randomx-height {cfg['height']}")
+        lines.append(f"  --randomx-height {_shq(cfg['height'])}")
     if "hash_len" in cfg:
-        lines.append(f"  --randomx-hash-len {cfg['hash_len']}")
+        lines.append(f"  --randomx-hash-len {_shq(cfg['hash_len'])}")
 
 
 def _append_pepper_flags(lines: list, encryption: dict) -> None:
@@ -8712,7 +8725,7 @@ def _append_pepper_flags(lines: list, encryption: dict) -> None:
     lines.append("  --pepper")
     pepper_name = encryption.get("pepper_name")
     if pepper_name:
-        lines.append(f"  --pepper-name {pepper_name}")
+        lines.append(f"  --pepper-name {_shq(pepper_name)}")
 
 
 def _append_hsm_flags(lines: list, encryption: dict) -> None:
@@ -8727,12 +8740,12 @@ def _append_hsm_flags(lines: list, encryption: dict) -> None:
     if not plugin:
         return
     short = plugin[:-4] if plugin.endswith("_hsm") else plugin
-    lines.append(f"  --hsm {short}")
+    lines.append(f"  --hsm {_shq(short)}")
 
     hsm_cfg = encryption.get("hsm_config") or {}
     slot = hsm_cfg.get("slot")
     if slot is not None:
-        lines.append(f"  --hsm-slot {slot}")
+        lines.append(f"  --hsm-slot {_shq(slot)}")
 
 
 def _append_cipher_flags(lines: list, encryption: dict) -> None:
@@ -8742,11 +8755,11 @@ def _append_cipher_flags(lines: list, encryption: dict) -> None:
         chain = encryption.get("cipher_chain") or []
         if chain:
             lines.append("  --cascade")
-            lines.append(f"  --algorithm {','.join(chain)}")
+            lines.append(f"  --algorithm {_shq(','.join(chain))}")
     else:
         algorithm = encryption.get("algorithm")
         if algorithm:
-            lines.append(f"  --algorithm {algorithm}")
+            lines.append(f"  --algorithm {_shq(algorithm)}")
 
 
 def _format_kdf_params(kdf_name: str, params: dict) -> str:
