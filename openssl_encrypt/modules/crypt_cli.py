@@ -2306,6 +2306,28 @@ def output_available_algorithms_json(args):
 LIBOQS_PINNED_COMMIT = "f4b96220e4bd208895172acc4fedb5a191d9f5b1"
 LIBOQS_PYTHON_PINNED_COMMIT = "7906e7879a099fa34217035957d977314f99757d"
 
+# Environment channel for the steganography password (gitlab#258, F21/F22,
+# CWE-214). The desktop GUI used to pass --stego-password on the child argv,
+# where /proc/<pid>/cmdline leaks it to any local user; it now passes the value
+# here, mirroring the main password's CRYPT_PASSWORD channel.
+STEGO_PASSWORD_ENV = "CRYPT_STEGO_PASSWORD"
+
+
+def _resolve_stego_password_env(args):
+    """Consume the CRYPT_STEGO_PASSWORD environment variable into
+    ``args.stego_password`` when ``--stego-password`` was not given.
+
+    The variable is consumed (read and removed) unconditionally when present, so
+    a superseded or unused value is never left behind for a spawned child to
+    inherit. An explicit ``--stego-password`` still takes precedence.
+    """
+    from .credential_env import consume_env
+
+    env_value = consume_env(STEGO_PASSWORD_ENV)
+    if env_value and not getattr(args, "stego_password", None):
+        args.stego_password = env_value
+    return args
+
 
 def install_optional_dependencies(args):
     """
@@ -6307,6 +6329,10 @@ def main_with_args(args=None):
     for attr, default_val in default_attrs.items():
         if not hasattr(args, attr):
             setattr(args, attr, default_val)
+
+    # F21/F22 (gitlab#258): accept the steganography password via the
+    # CRYPT_STEGO_PASSWORD environment variable (out of the world-readable argv).
+    _resolve_stego_password_env(args)
 
     # Resolve the optional second password (hidden keyed mode) exactly once, so
     # an interactive prompt is shown at most a single time per invocation.

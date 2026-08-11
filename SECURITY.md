@@ -226,6 +226,21 @@ relevant.
 
 ## Security Advisories
 
+### ADVISORY 2026-40: Desktop GUI Passed the Steganography Password on the Child Process Command Line — Resolved
+
+**Severity:** Medium · **CWE-214** (Invocation of Process Using Visible Sensitive Information)
+**Affected versions:** 1.4.x releases with the desktop GUI steganography feature, up to and including **1.4.8**. **Fixed in 1.4.9** (1.4.x line). The 1.5.x desktop GUI does not ship steganography and is not affected; the 1.5.x CLI gains the same `CRYPT_STEGO_PASSWORD` channel for consistency.
+
+**Summary:** the desktop GUI passed the steganography password to the CLI as `--stego-password <value>` on the child process command line, on both the encrypt and decrypt paths — while the main password correctly used the `CRYPT_PASSWORD` environment variable. Any local user could read the steganography password from `/proc/<pid>/cmdline` (and it could reach `ps` output / shell history) for the lifetime of the encrypt/decrypt subprocess.
+
+**Impact:** local disclosure of the steganography password to other users on the same machine while a GUI-driven stego encrypt/decrypt runs. No remote exposure.
+
+**Fixed in 1.4.9 (1.4.x line):** a `CRYPT_STEGO_PASSWORD` environment channel mirrors the `CRYPT_PASSWORD` convention. The GUI passes the steganography password in the child's environment instead of on argv (and strips any inherited `CRYPT_STEGO_PASSWORD` so a value in the GUI's own environment cannot silently override the user's input). The CLI consumes `CRYPT_STEGO_PASSWORD` from the environment into `args.stego_password` when `--stego-password` was not supplied, reading and immediately deleting the variable (registered as a consumed secret so it is redacted in debug/error paths) so it is not inherited by any grandchild process; an explicit `--stego-password` still takes precedence. Regression-pinned by `test_stego_password_env_258.py` and `stego_password_env_258_test.dart`.
+
+**Mitigation for existing installs:** upgrade to 1.4.9; on earlier versions, avoid GUI-driven steganography on a multi-user host.
+
+**Disclosure:** tracked as gitlab#258 and GHSA-rx2c-m92f-qv6p (published with the 1.4.9 release). **Credit:** found by the 1.4.9 pre-release security scan (findings F21 + F22).
+
 ### ADVISORY 2026-39: Desktop GUI Rendered Unauthenticated Recovery-Slot Metadata Unescaped in the Removal Dialog — Resolved
 
 **Severity:** Medium · **CWE-116** (Improper Encoding or Escaping of Output)

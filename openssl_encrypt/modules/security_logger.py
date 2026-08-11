@@ -47,6 +47,7 @@ _SECRET_TOKEN_RE = re.compile(r"[A-Za-z0-9+_=]{32,}")
 # these is redacted even if it is short/low-entropy (e.g. a plain password).
 _SECRET_ENV_VARS = (
     "CRYPT_PASSWORD",
+    "CRYPT_STEGO_PASSWORD",  # gitlab#258 (F21/F22): stego password env channel
     "OPENSSL_ENCRYPT_PASSWORD",
     "OPENSSL_ENCRYPT_REKEY_PASSWORD",
     "OPENSSL_ENCRYPT_RECOVERY_CODE",

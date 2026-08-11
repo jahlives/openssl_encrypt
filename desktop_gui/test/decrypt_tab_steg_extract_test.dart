@@ -182,7 +182,12 @@ void main() {
       expect(argv, contains('--stego-extract'));
       expect(argv, containsAllInOrder(['--stego-method', 'lsb']));
       expect(argv, containsAllInOrder(['--stego-bits-per-channel', '2']));
-      expect(argv, containsAllInOrder(['--stego-password', 'stego-pw']));
+      // F21/F22 (gitlab#258): the stego password is NOT on argv; it travels via
+      // the CRYPT_STEGO_PASSWORD environment variable.
+      expect(argv, isNot(contains('--stego-password')));
+      expect(argv, isNot(contains('stego-pw')));
+      expect(CLIService.lastEnvironmentForTesting?['CRYPT_STEGO_PASSWORD'],
+          'stego-pw');
       // No verify flags without an identity, no video-related surface.
       expect(argv, isNot(contains('--verify-from')));
       expect(argv, isNot(contains('--no-verify')));

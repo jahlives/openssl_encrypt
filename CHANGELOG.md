@@ -461,6 +461,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Steganography password no longer passed on the child command line**
+  (gitlab#258, MEDIUM / CWE-214, ADVISORY 2026-40): the desktop GUI passed the
+  stego password as `--stego-password` on the CLI's argv (visible in
+  `/proc/<pid>/cmdline`) on both encrypt and decrypt, while the main password
+  used `CRYPT_PASSWORD`. A `CRYPT_STEGO_PASSWORD` environment channel now carries
+  it out of band: the GUI passes it in the child's environment (stripping any
+  inherited value) and the CLI consumes it into `args.stego_password` when
+  `--stego-password` is absent, reading and deleting the variable. 1.4.x GUI
+  only (1.5.x GUI has no steganography); the 1.5.x CLI gains the same channel for
+  consistency. Found by the 1.4.9 pre-release scan.
+
 - **Desktop GUI escapes recovery-slot id/type in the removal dialog**
   (gitlab#254, MEDIUM / CWE-116, ADVISORY 2026-39): the recovery-slot manager
   rendered a slot's `id`/`type` from the file's unauthenticated

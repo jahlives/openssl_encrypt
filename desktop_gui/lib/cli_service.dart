@@ -96,11 +96,18 @@ class CLIService {
   static Future<ProcessResult> Function(List<String> args,
       {String? stdinInput})? commandRunnerOverride;
 
+  /// The environment map the last run would have applied to the child. Captured
+  /// even when the override short-circuits exec, so a test can assert a secret
+  /// travels via the environment rather than argv (gitlab#258).
+  @visibleForTesting
+  static Map<String, String>? lastEnvironmentForTesting;
+
   /// Clears the runner override and the availability cache so state cannot
   /// leak from one test into the next.
   @visibleForTesting
   static void resetForTesting() {
     commandRunnerOverride = null;
+    lastEnvironmentForTesting = null;
     _availabilityCache = null;
     _availabilityFuture = null;
   }
@@ -1221,7 +1228,10 @@ class CLIService {
     {Map<String, String>? environment, Function(String)? onStdout, Function(String)? onStderr, Function(String)? onProgress, Function(String)? onStatus, String? commandForStatus, bool hsmDetectionEnabled = false}
   ) async {
     final override = commandRunnerOverride;
-    if (override != null) return override(args);
+    if (override != null) {
+      lastEnvironmentForTesting = environment;
+      return override(args);
+    }
 
     Process process;
 
@@ -2149,10 +2159,9 @@ class CLIService {
       '--stego-bits-per-channel', bitsPerChannel.toString(),
     ];
 
-    // Add steganography password if provided
-    if (stegoPassword != null && stegoPassword.isNotEmpty) {
-      args.addAll(['--stego-password', stegoPassword]);
-    }
+    // The steganography password is NOT put on argv (F21/F22, gitlab#258): it is
+    // passed via the CRYPT_STEGO_PASSWORD environment variable at the runner
+    // call below, out of the world-readable /proc/<pid>/cmdline.
 
     // Add pixel randomization if enabled and stego password is provided
     if (randomizePixels && stegoPassword != null && stegoPassword.isNotEmpty) {
@@ -2283,10 +2292,13 @@ class CLIService {
       }
     }
 
-    return await _runCLICommandWithProgress(
-      args,
-      environment: {'CRYPT_PASSWORD': password},
-    );
+    final env = {'CRYPT_PASSWORD': password};
+    // F21/F22 (gitlab#258): deliver the steganography password out of band of
+    // argv, mirroring CRYPT_PASSWORD; the CLI consumes CRYPT_STEGO_PASSWORD.
+    if (stegoPassword != null && stegoPassword.isNotEmpty) {
+      env['CRYPT_STEGO_PASSWORD'] = stegoPassword;
+    }
+    return await _runCLICommandWithProgress(args, environment: env);
   }
 
   /// Encrypt text and hide in steganographic cover media
@@ -2391,10 +2403,8 @@ class CLIService {
       '--stego-bits-per-channel', bitsPerChannel.toString(),
     ];
 
-    // Add steganography password if provided
-    if (stegoPassword != null && stegoPassword.isNotEmpty) {
-      args.addAll(['--stego-password', stegoPassword]);
-    }
+    // The steganography password is passed via CRYPT_STEGO_PASSWORD in the
+    // environment, not on argv (F21/F22, gitlab#258).
 
     // Add HSM arguments if specified
     if (hsmPlugin != null && hsmPlugin != 'none') {
@@ -2423,10 +2433,13 @@ class CLIService {
       }
     }
 
-    return await _runCLICommandWithProgress(
-      args,
-      environment: {'CRYPT_PASSWORD': password},
-    );
+    final env = {'CRYPT_PASSWORD': password};
+    // F21/F22 (gitlab#258): deliver the steganography password out of band of
+    // argv, mirroring CRYPT_PASSWORD; the CLI consumes CRYPT_STEGO_PASSWORD.
+    if (stegoPassword != null && stegoPassword.isNotEmpty) {
+      env['CRYPT_STEGO_PASSWORD'] = stegoPassword;
+    }
+    return await _runCLICommandWithProgress(args, environment: env);
   }
 
   /// Register a new FIDO2 credential
@@ -3647,6 +3660,7 @@ class CLIService {
 
   static const List<String> _credentialEnvNames = [
     'CRYPT_PASSWORD',
+    'CRYPT_STEGO_PASSWORD',
     'OPENSSL_ENCRYPT_PASSWORD',
     'OPENSSL_ENCRYPT_RECOVERY_CODE',
     'OPENSSL_ENCRYPT_RECOVERY_PASSPHRASE',
