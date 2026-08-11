@@ -228,6 +228,21 @@ relevant.
 
 ## Security Advisories
 
+### ADVISORY 2026-41: Desktop GUI Stored an mTLS Client Private Key in Plaintext, World-Readable Preferences — Resolved
+
+**Severity:** Medium · **CWE-312** (Cleartext Storage of Sensitive Information)
+**Affected versions:** releases with the desktop GUI network-plugin settings, up to and including **1.4.8** (1.4.x) / pre-**1.5.0** (1.5.x). **Fixed in 1.4.9 (1.4.x line) and 1.5.0 (1.5.x line).**
+
+**Summary:** the Settings screen's "Client Cert + Key PEM" field (for the pepper and integrity mTLS clients, labelled "Paste combined certificate and private key") wrote the pasted PEM — **including the client private key** — via `setPepperClientCertPem` / `setIntegrityClientCertPem` into the GUI's `SharedPreferences` store, which on disk is a world-readable (`0644`) JSON file, in cleartext. The value was additionally never used by the connection test (which only honours the file-path certificate mode), and separate unused `*ClientKeyPem` accessors and an import allowlist entry widened the same exposure.
+
+**Impact:** any local user could read an mTLS client private key from the GUI's preferences file. No remote exposure.
+
+**Fixed in 1.4.9 / 1.5.0:** a private-key-bearing PEM is never kept in `SharedPreferences`. The client cert+key PEM is written to a dedicated `0600` file under a `0700` directory in the app support dir, and only the file path is stored in preferences (the content is cached in memory so the synchronous accessors still work); the write fails closed if the file cannot be made owner-only. The dead `*ClientKeyPem` accessors and their preference keys are removed, the settings-import path drops any `*_client_key_pem` key and routes the client cert PEM through the protected-file store, and the import validation error no longer echoes the PEM value. A one-time startup migration moves any PEM an earlier version stored in cleartext into the `0600` file and scrubs the removed keys. Regression-pinned by `mtls_pem_secure_store_259_test.dart`.
+
+**Mitigation for existing installs:** upgrade (the migration relocates the key automatically); rotate any mTLS client key that was previously pasted into the GUI, since it may persist in a filesystem backup of the old preferences file.
+
+**Disclosure:** tracked as gitlab#259 and GHSA-r8gw-6hfj-98jw (published with the release). **Credit:** found by the 1.4.9 pre-release security scan (finding F20).
+
 ### ADVISORY 2026-37: Decrypt Enforced a Memory Ceiling but No Time Ceiling — Crafted KDF Iteration Counts Pinned the CPU Pre-Authentication — Resolved
 
 **Severity:** Medium · **CWE-400** (Uncontrolled Resource Consumption)

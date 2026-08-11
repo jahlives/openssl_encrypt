@@ -1889,6 +1889,16 @@ inflated KDF metadata parameters, not cosmetic output.
   Re-encrypt existing sensitive files to strip the oracle from their headers.
   Found by the 1.4.9 pre-release scan.
 
+- **mTLS client private key no longer stored in plaintext preferences**
+  (gitlab#259, MEDIUM / CWE-312, ADVISORY 2026-41): the GUI's "Client Cert + Key
+  PEM" setting wrote the pasted PEM — including the client private key — into the
+  world-readable (`0644`) `SharedPreferences` file in cleartext. The client
+  cert+key PEM is now written to a dedicated `0600` file (under a `0700` dir) and
+  only its path is stored in preferences; the dead `*ClientKeyPem` accessors and
+  import entries are removed, and a startup migration relocates any legacy
+  plaintext PEM and scrubs the removed keys. Rotate any key previously pasted
+  into the GUI. Found by the 1.4.9 pre-release scan.
+
 - **Remote pepper sealed with a salted, memory-hard wrap key** (gitlab#244,
   MEDIUM / CWE-916, ADVISORY 2026-35): the keyserver-stored pepper was wrapped
   under `HKDF-SHA256(password, salt=None)` (bare `SHA-256(password)` pre-v12)
