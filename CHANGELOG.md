@@ -461,6 +461,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **D-Bus `EncryptFile` no longer derives keys without password stretching**
+  (gitlab#228, HIGH / CWE-916, ADVISORY 2026-20 — **1.4.x only**, the D-Bus
+  service is removed on 1.5.x): the D-Bus handler hand-built a `hash_config`
+  with key names the key-derivation core does not read
+  (`sha512_iterations`, `argon2_time_cost`, `enable_hkdf`, …), so no KDF and
+  no hash rounds were ever enabled, and the always-non-empty dict also
+  defeated the encryptor's STANDARD-template default — every file encrypted
+  through the service was keyed by a single unstretched SHA-256 instead of
+  Argon2id (t=3, m=64 MiB, p=4), making offline password guessing ~6-7
+  orders of magnitude cheaper (silently, since `quiet=True` swallowed the
+  core's warning). The D-Bus key-derivation config now lives in a dedicated,
+  testable module that builds the structure the core actually consumes
+  (starting from the STANDARD template) and **fails closed** — the handler
+  refuses to encrypt when no hash rounds and no memory-hard/iterated KDF are
+  enabled, so no client option combination can produce an unstretched key.
+  Re-encrypt any files produced through the 1.4.x D-Bus service after
+  upgrading. Found by the 1.4.9 pre-release security scan.
+
 - **Dependency updates for published CVEs** (Dependabot; patched versions
   smoke-tested against the crypto/PQC/steganography suites, 794 tests green):
   - `pillow` 12.2.0 → 12.3.0 — 13 image-parsing CVEs (heap OOB writes in

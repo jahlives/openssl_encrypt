@@ -56,6 +56,7 @@ from .crypt_errors import (
     ValidationError,
 )
 from .crypt_utils import secure_shred_file
+from .dbus_kdf_config import build_encrypt_hash_config, config_provides_key_stretching
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -542,31 +543,32 @@ class CryptoService(dbus.service.Object):
                 operation.update_progress(0.0, "Starting encryption...")
                 self._emit_progress(operation_id, 0.0, "Starting encryption...")
 
-                # Build hash configuration from options
-                hash_config = {}
-                hash_option_map = {
-                    "sha256_rounds": "sha256_iterations",
-                    "sha512_rounds": "sha512_iterations",
-                    "sha3_256_rounds": "sha3_256_iterations",
-                    "sha3_512_rounds": "sha3_512_iterations",
-                    "blake2b_rounds": "blake2b_iterations",
-                    "blake3_rounds": "blake3_iterations",
-                    "balloon_rounds": "balloon_iterations",
-                    "enable_hkdf": "enable_hkdf",
-                    "argon2_mode": "argon2_mode",
-                }
-                for opt_key, config_key in hash_option_map.items():
-                    if opt_key in parsed_options:
-                        hash_config[config_key] = parsed_options[opt_key]
+                # Build the hash configuration in the structure crypt_core
+                # actually consumes (gitlab#228, security F1). The previous
+                # hand-built dict used key names crypt_core never reads
+                # (sha512_iterations, argon2_time_cost, enable_hkdf, ...), so no
+                # KDF/hash was ever enabled and the non-empty dict also defeated
+                # encrypt_file's STANDARD-template default -- collapsing every
+                # D-Bus-encrypted file's key to a single unstretched SHA-256.
+                hash_config = build_encrypt_hash_config(parsed_options)
 
-                # Enable Argon2 by default if not specified
-                # (pbkdf2_iterations=0 disables PBKDF2 and uses Argon2)
-                if "argon2_mode" not in hash_config and "argon2_time_cost" not in hash_config:
-                    # Set default Argon2 configuration
-                    hash_config["argon2_mode"] = "argon2id"
-                    hash_config["argon2_time_cost"] = 3
-                    hash_config["argon2_memory_cost"] = 65536  # 64 MB
-                    hash_config["argon2_parallelism"] = 4
+                # Fail closed: never derive a key without password stretching.
+                # A client cannot, through any option combination, coax this
+                # path into an unstretched single-hash key (CWE-916).
+                if not config_provides_key_stretching(hash_config):
+                    operation.complete(
+                        False, "Refusing to encrypt: no key-stretching KDF configured"
+                    )
+                    reply_handler(
+                        (
+                            False,
+                            "Refusing to encrypt: the requested options enable no "
+                            "key-stretching KDF (Argon2/scrypt/balloon) and no hash "
+                            "rounds",
+                            operation_id,
+                        )
+                    )
+                    return
 
                 # Map algorithm string to enum
                 algorithm_enum = self.ALGORITHM_MAP.get(algorithm.lower())
@@ -586,7 +588,7 @@ class CryptoService(dbus.service.Object):
                     input_file=input_path,
                     output_file=output_path,
                     password=password_bytes,
-                    hash_config=hash_config if hash_config else None,
+                    hash_config=hash_config,
                     pbkdf2_iterations=pbkdf2_iterations,
                     algorithm=algorithm_enum,
                     quiet=True,

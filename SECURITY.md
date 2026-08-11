@@ -226,6 +226,21 @@ relevant.
 
 ## Security Advisories
 
+### ADVISORY 2026-20: D-Bus `EncryptFile` Derived Keys Without Password Stretching — Resolved
+
+**Severity:** High · **CWE-916** (Use of Password Hash With Insufficient Computational Effort)
+**Affected versions:** all releases carrying the D-Bus service, up to and including **1.4.8**. **Fixed in 1.4.9.** **1.4.x only** — the D-Bus service was removed on the 1.5.x line.
+
+**Summary:** the D-Bus `CryptoService.EncryptFile` handler hand-built its `hash_config` using flat key names (`sha512_iterations`, `argon2_time_cost`/`argon2_memory_cost`/`argon2_parallelism`, `enable_hkdf`, `balloon_iterations`) that the key-derivation core does not read — it consumes flat hash-round integers (`hash_config['sha256']`) and nested KDF dicts (`hash_config['argon2'] = {'enabled': True, ...}`). As a result no KDF and no hash rounds were ever enabled, and because the dict was non-empty it also defeated the encryptor's "no config → apply the STANDARD template (Argon2id + RandomX + SHA3 rounds)" default. Every file encrypted through the D-Bus service was therefore keyed by a single **unstretched SHA-256** of the password/salt/pepper seed instead of Argon2id (t=3, m=64 MiB, p=4). `quiet=True` suppressed the core's only unstretched-key warning, so the downgrade was silent.
+
+**Impact:** offline password guessing against a file encrypted via the D-Bus service is roughly six to seven orders of magnitude cheaper than the tool's documented protection (~10^10 SHA-256/s on commodity GPUs versus ~10^3/s against Argon2id-64 MiB). Preconditions: the D-Bus service is installed and used to encrypt files (session or system bus), and an affected file reaches an attacker. It does not disclose keys directly or allow code execution; the file's own AEAD integrity is intact — only the work factor protecting the password is lost. Files encrypted through the normal CLI/GUI are unaffected.
+
+**Fixed in 1.4.9:** the key-derivation configuration for the D-Bus path was moved to a dedicated, dbus-free module (`dbus_kdf_config.py`) that builds the config in the exact structure the core consumes — starting from the STANDARD template (always Argon2id-stretched) and mapping D-Bus options to the correct keys. The handler now **fails closed**: it refuses the encryption if the resulting config enables no hash rounds and no memory-hard/iterated KDF (Argon2/scrypt/balloon/RandomX), so no client option combination can produce an unstretched key. Because that mapping newly activates the client's KDF-cost options (previously dead), each cost override is also bounded at the D-Bus boundary: it may only **raise** cost above the STANDARD baseline, up to a ceiling above PARANOID — so a client can neither downgrade the key below STANDARD nor request an unbounded work factor as a denial-of-service (relevant on the root-owned system bus). Regression-pinned by `test_dbus_kdf_stretching_228.py`.
+
+**Mitigation for existing installs:** re-encrypt any files produced through the 1.4.x D-Bus service after upgrading to 1.4.9 (or via the CLI, which was never affected); treat their passwords as exposed to accelerated offline guessing.
+
+**Credit:** found by the 1.4.9 pre-release security scan (finding F1, gitlab#228).
+
 ### ADVISORY 2026-19: A Planted Template File Can Rank Itself First and Downgrade Key Derivation — Resolved
 
 **Severity:** Medium · **CWE-345** (Insufficient Verification of Data Authenticity) / **CWE-732** (Incorrect Permission Assignment for Critical Resource) / **CWE-757** (Selection of Less-Secure Algorithm)
