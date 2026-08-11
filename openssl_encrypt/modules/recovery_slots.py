@@ -342,6 +342,14 @@ _PASSPHRASE_ARGON2_MAX_TIME = 64
 _PASSPHRASE_ARGON2_MAX_MEMORY = 2 * 1024 * 1024  # KiB (2 GiB)
 _PASSPHRASE_ARGON2_MAX_PARALLELISM = 16
 
+# The maximum number of recovery slots processed on any recovery-unlock path
+# before the slot-set MAC is verified (gitlab#233, scan F16). dek_slots is
+# attacker-controlled plaintext excluded from the bulk AAD, and each passphrase
+# slot triggers a full Argon2id run; a crafted file with hundreds of slots would
+# otherwise exhaust CPU before the tampered set is rejected. A legitimate
+# recovery-enabled file has a handful of slots, so this cap is generous headroom.
+MAX_DEK_SLOTS = 32
+
 
 def _validate_argon2_params(time_cost, memory_cost, parallelism) -> None:
     """Reject out-of-range Argon2 cost params from an untrusted slot (#73)."""

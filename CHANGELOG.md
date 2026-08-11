@@ -1835,6 +1835,18 @@ inflated KDF metadata parameters, not cosmetic output.
 
 ### Security
 
+- **Pre-authentication resource-exhaustion hardening** (gitlab#233, MEDIUM /
+  CWE-770/405/1284, ADVISORY 2026-25): several paths let a crafted file drive
+  unbounded KDF cost past the pre-auth memory ceiling (gitlab#128), OOM-killing
+  or wedging decrypt before the password is verified. Balloon `parallel_cost`
+  (taken verbatim from the file) is now hard-capped in `balloon_m` and modeled
+  by the decryption estimator (F9); the estimator now also folds in the
+  `kdf_config` the executor actually consumes when it is shadowed inside
+  `derivation_config.hash_config` (F28) or supplied via a legacy v1–v3
+  `hash_config` (F29), so the memory ceiling sees those costs; and both
+  recovery-unlock paths cap the number of slots processed before any KDF runs
+  (F16). Found by the 1.4.9 pre-release security scan.
+
 - **Signature verification now rejects revoked and expired GPG keys**
   (gitlab#232, MEDIUM / CWE-347, ADVISORY 2026-24): `gpg_runner.verify_detached`
   — the single primitive behind plugin signatures (ENFORCE by default), the

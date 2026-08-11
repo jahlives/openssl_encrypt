@@ -208,6 +208,15 @@ def estimate_balloon(config: Dict) -> Tuple[float, int]:
     rounds = config.get("rounds", 1)
     space_cost = config.get("space_cost", 16)
     time_cost = config.get("time_cost", 20)
+    # Balloon runs `parallelism` concurrent instances, each with its own
+    # space_cost buffer, so peak memory scales with it. Modeling it here lets the
+    # memory ceiling catch a crafted balloon.parallelism before any KDF work
+    # (gitlab#233, scan F9). balloon_m's own hard cap is the backstop.
+    parallelism = config.get("parallelism", config.get("parallel_cost", 1))
+    try:
+        parallelism = max(1, int(parallelism))
+    except (TypeError, ValueError):
+        parallelism = 1
 
     bench = KDF_BENCHMARK_DATA.get("balloon", {})
     base_time = bench.get("time_per_round", 0.045)
@@ -233,7 +242,11 @@ def estimate_balloon(config: Dict) -> Tuple[float, int]:
     # that is still ~250x tighter than the old 32-KB/block figure, which would
     # have refused legitimate high-space_cost files on unattended decrypts
     # (gitlab#128 review).
-    memory_kb = max(1, (space_cost * 128) // 1024)
+    # Each of `parallelism` concurrent instances holds its own buffer, plus a
+    # per-instance ThreadPoolExecutor Future/_WorkItem (~0.3 KB), so both scale
+    # with parallelism (gitlab#233, scan F9).
+    per_instance_kb = (space_cost * 128) // 1024 + 1  # +1 for the task overhead
+    memory_kb = max(1, parallelism * per_instance_kb)
 
     return (time_seconds, memory_kb)
 
@@ -317,7 +330,26 @@ def estimate_decryption_cost(metadata: Dict) -> DecryptionEstimate:
         # Modern format (v4, v5, v6)
         derivation_config = metadata.get("derivation_config", {})
         hash_config = derivation_config.get("hash_config", {})
-        kdf_config = derivation_config.get("kdf_config", {})
+        kdf_config = dict(derivation_config.get("kdf_config", {}))
+
+        # F28 (gitlab#233, CWE-770): the executor flattens derivation_config's
+        # hash_config into the dict it hands generate_key, and a nested
+        # "derivation_config"/"kdf_config" key inside hash_config is then honored
+        # by generate_key_independent_xor (which reads
+        # hash_config["derivation_config"]["kdf_config"]) -- an Argon2 memory_cost
+        # the estimator would otherwise never see. Fold any such shadowed KDF
+        # config into what we estimate so the memory ceiling accounts for it.
+        if isinstance(hash_config, dict):
+            _shadow = hash_config.get("derivation_config")
+            if isinstance(_shadow, dict) and isinstance(_shadow.get("kdf_config"), dict):
+                for _k, _v in _shadow["kdf_config"].items():
+                    # A shadowed KDF wins in the executor, so its (larger) cost
+                    # must be the one estimated; overwrite, never under-count.
+                    kdf_config[_k] = _v
+            _shadow_kdf = hash_config.get("kdf_config")
+            if isinstance(_shadow_kdf, dict):
+                for _k, _v in _shadow_kdf.items():
+                    kdf_config[_k] = _v
     else:
         # Legacy v3 format
         hash_config = metadata.get("hash_config", {})
@@ -327,6 +359,18 @@ def estimate_decryption_cost(metadata: Dict) -> DecryptionEstimate:
         pbkdf2_iterations = metadata.get("pbkdf2_iterations", 0)
         if pbkdf2_iterations > 0:
             kdf_config["pbkdf2"] = {"rounds": pbkdf2_iterations}
+
+        # F29 (gitlab#233, CWE-770): for v1-v3 the executor passes the raw flat
+        # hash_config straight to generate_key, which honors
+        # hash_config['argon2'|'scrypt'|'balloon'|'hkdf'|'randomx'] as nested
+        # dicts. The estimator used to hard-code kdf_config={}, so a v3 file with
+        # e.g. argon2.memory_cost=128 GiB estimated ~0 KB and slipped past the
+        # memory ceiling. Model the same memory-hard KDFs the executor runs.
+        if isinstance(hash_config, dict):
+            for _kdf in ("argon2", "scrypt", "balloon", "hkdf", "randomx"):
+                _cfg = hash_config.get(_kdf)
+                if isinstance(_cfg, dict):
+                    kdf_config[_kdf] = _cfg
 
     # Phase 1: Hash Chain Operations
     for algo_name, algo_config in hash_config.items():
