@@ -1889,6 +1889,15 @@ inflated KDF metadata parameters, not cosmetic output.
   Re-encrypt existing sensitive files to strip the oracle from their headers.
   Found by the 1.4.9 pre-release scan.
 
+- **GUI writes decrypted output owner-only (0600), not world-readable 0644**
+  (gitlab#260, MEDIUM / CWE-276, ADVISORY 2026-42): `FileManager.writeFileText`
+  / `writeFileBytes` used Dart's `writeAsString`/`writeAsBytes`, creating the
+  output at the umask (typically `0644`); the GUI decrypt path writes recovered
+  plaintext through them, leaving it world-readable on a multi-user host (the CLI
+  uses `0600`). Output is now written to a fresh `0600` file and atomically
+  renamed over the target, failing closed if it cannot be made owner-only. Found
+  by the 1.4.9 pre-release scan.
+
 - **mTLS client private key no longer stored in plaintext preferences**
   (gitlab#259, MEDIUM / CWE-312, ADVISORY 2026-41): the GUI's "Client Cert + Key
   PEM" setting wrote the pasted PEM — including the client private key — into the
