@@ -229,7 +229,7 @@ relevant.
 ### ADVISORY 2026-40: Desktop GUI Passed the Steganography Password on the Child Process Command Line — Resolved
 
 **Severity:** Medium · **CWE-214** (Invocation of Process Using Visible Sensitive Information)
-**Affected versions:** 1.4.x releases with the desktop GUI steganography feature, up to and including **1.4.8**. **Fixed in 1.4.9** (1.4.x line). The 1.5.x desktop GUI does not ship steganography and is not affected; the 1.5.x CLI gains the same `CRYPT_STEGO_PASSWORD` channel for consistency.
+**Affected versions:** 1.4.x releases with the desktop GUI steganography feature, up to and including **1.4.8**. **Fixed in 1.4.9** (1.4.x line only). The 1.5.x desktop GUI does not ship steganography, so 1.5.0 has no vulnerable caller and is not affected.
 
 **Summary:** the desktop GUI passed the steganography password to the CLI as `--stego-password <value>` on the child process command line, on both the encrypt and decrypt paths — while the main password correctly used the `CRYPT_PASSWORD` environment variable. Any local user could read the steganography password from `/proc/<pid>/cmdline` (and it could reach `ps` output / shell history) for the lifetime of the encrypt/decrypt subprocess.
 

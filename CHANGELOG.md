@@ -468,9 +468,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   used `CRYPT_PASSWORD`. A `CRYPT_STEGO_PASSWORD` environment channel now carries
   it out of band: the GUI passes it in the child's environment (stripping any
   inherited value) and the CLI consumes it into `args.stego_password` when
-  `--stego-password` is absent, reading and deleting the variable. 1.4.x GUI
-  only (1.5.x GUI has no steganography); the 1.5.x CLI gains the same channel for
-  consistency. Found by the 1.4.9 pre-release scan.
+  `--stego-password` is absent, reading and deleting the variable. 1.4.x only —
+  the 1.5.x desktop GUI ships no steganography, so 1.5.0 has no vulnerable
+  caller. Found by the 1.4.9 pre-release scan.
 
 - **Desktop GUI escapes recovery-slot id/type in the removal dialog**
   (gitlab#254, MEDIUM / CWE-116, ADVISORY 2026-39): the recovery-slot manager
