@@ -226,6 +226,21 @@ relevant.
 
 ## Security Advisories
 
+### ADVISORY 2026-33: Keyserver Login/Registration Accepted Non-HTTPS and Unconfigured Server URLs — Resolved
+
+**Severity:** Medium · **CWE-319** (Cleartext Transmission of Sensitive Information)
+**Affected versions:** all releases with the keyserver plugin, up to and including **1.4.8**. **Fixed in 1.4.9** (both the 1.4.x and 1.5.x lines).
+
+**Summary:** the keyserver plugin's `register()` enforced `https://`, but `login()` and `register_with_email()` did not, and certificate pinning is only mounted for the `https://` prefix. Setup instructions naming an `http://` URL therefore sent the `client_id` (which alone yields access + refresh tokens), any stored account password, and the returned JWTs in cleartext to an on-path attacker. A wrong-but-`https` host that was not among the configured servers would likewise receive the credentials, because the URL was never checked against `config.servers`.
+
+**Impact:** keyserver account takeover — an attacker who observes (or receives) the leaked `client_id`/tokens can upload or revoke public keys under the victim's identity. Preconditions: the victim uses an `http://` or attacker-chosen server URL (e.g. from malicious setup instructions).
+
+**Fixed in 1.4.9:** a single shared validator (`_validate_server_url`) requires `https://` and membership of `config.servers`, and is applied by `login`, `register`, and `register_with_email` before any request is built — so a failed check means no request is sent and no token is persisted. Regression-pinned by `test_keyserver_url_validation_241.py`.
+
+**Mitigation for existing installs:** upgrade to 1.4.9; on earlier versions, only ever configure and use `https://` keyserver URLs you control.
+
+**Disclosure:** tracked as gitlab#241 and GHSA-xr64-hcxg-4ghr (published with the 1.4.9 release). **Credit:** found by the 1.4.9 pre-release security scan (finding F15).
+
 ### ADVISORY 2026-32: FLAC Steganography `total_samples` Drove a Multi-Gigabyte Allocation — Resolved
 
 **Severity:** Medium · **CWE-789** (Memory Allocation with Excessive Size Value)

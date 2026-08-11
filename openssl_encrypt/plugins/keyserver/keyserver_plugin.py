@@ -599,6 +599,30 @@ class KeyserverPlugin(BasePlugin):
 
         return list(seen.values())
 
+    def _validate_server_url(self, server_url: str) -> None:
+        """Reject a keyserver URL that is not HTTPS or not a configured server
+        (gitlab#241, scan F15, CWE-319).
+
+        login/register/register_with_email send credentials or the
+        credential-yielding client_id; an ``http://`` URL leaks them in cleartext
+        to an on-path attacker (and bypasses the cert pinning, which is only
+        mounted for the https prefix), and an arbitrary https host that is not a
+        configured server would receive them too. These three entry points --
+        the only ones that accept a caller-supplied ``server_url`` -- go through
+        this check. The remaining request paths (upload/revoke/refresh, key
+        fetch/search) draw their URL from ``self.config.servers``, which
+        ``KeyserverConfig.__post_init__`` already forces to be https-only, so
+        they cannot target http:// or an unconfigured host.
+        """
+        if not isinstance(server_url, str) or not server_url.startswith("https://"):
+            raise ValueError(f"Invalid keyserver URL: {server_url!r}. Only HTTPS URLs are allowed.")
+        configured = {str(s).rstrip("/") for s in (self.config.servers or [])}
+        if server_url.rstrip("/") not in configured:
+            raise ValueError(
+                f"Refusing to use unconfigured keyserver URL: {server_url!r}. "
+                f"Add it to the configured servers first."
+            )
+
     def login(
         self,
         client_id: str,
@@ -637,6 +661,7 @@ class KeyserverPlugin(BasePlugin):
                 raise ValueError("No keyservers configured")
             server_url = self.config.servers[0]
 
+        self._validate_server_url(server_url)
         login_url = f"{server_url}/api/v1/keys/login"
 
         # Build request body
@@ -729,12 +754,7 @@ class KeyserverPlugin(BasePlugin):
                 raise ValueError("No keyservers configured")
             server_url = self.config.servers[0]
 
-        # Enforce HTTPS for all server URLs
-        if not server_url.startswith("https://"):
-            raise ValueError(
-                f"Invalid server URL: {server_url}. Only HTTPS URLs are allowed for security."
-            )
-
+        self._validate_server_url(server_url)
         register_url = f"{server_url}/api/v1/keys/register"
 
         try:
@@ -801,6 +821,7 @@ class KeyserverPlugin(BasePlugin):
                 raise ValueError("No keyservers configured")
             server_url = self.config.servers[0]
 
+        self._validate_server_url(server_url)
         # Step 1: POST email registration request
         register_url = f"{server_url}/api/v1/keys/register/email"
 

@@ -461,6 +461,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Keyserver login/registration reject non-HTTPS and unconfigured servers**
+  (gitlab#241, MEDIUM / CWE-319, ADVISORY 2026-33): `register()` enforced
+  `https://` but `login()` and `register_with_email()` did not, and cert pinning
+  only mounts for the https prefix, so an `http://` (or arbitrary non-configured)
+  server URL leaked the `client_id` (which alone yields tokens), a stored
+  password, and returned JWTs in cleartext. A shared validator now requires
+  `https://` and membership of `config.servers`, applied by all three entry
+  points before any request is built. Found by the 1.4.9 pre-release scan.
+
 - **FLAC steganography bounds the untrusted `total_samples` field** (gitlab#240,
   MEDIUM / CWE-789, ADVISORY 2026-32): the 36-bit STREAMINFO `total_samples`
   drove `np.random.randint(size=(total_samples, channels))`; the only guard
