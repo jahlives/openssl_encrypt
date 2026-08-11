@@ -226,6 +226,21 @@ relevant.
 
 ## Security Advisories
 
+### ADVISORY 2026-24: Signature Verification Accepted Revoked and Expired GPG Keys — Resolved
+
+**Severity:** Medium · **CWE-347** (Improper Verification of Cryptographic Signature)
+**Affected versions:** all releases using GPG signature verification, up to and including **1.4.8**. **Fixed in 1.4.9** (both the 1.4.x and 1.5.x lines).
+
+**Summary:** `gpg_runner.verify_detached` — the single primitive behind plugin signatures (ENFORCE by default), the per-package `PLUGIN.manifest`, and the source-integrity manifest — decided a signature was good from a `VALIDSIG`/`GOODSIG` status line alone, never inspecting the gpg exit status or the `REVKEYSIG`/`EXPKEYSIG`/`EXPSIG` status lines. GnuPG emits `VALIDSIG` *alongside* `REVKEYSIG` for a cryptographically valid signature made by a **revoked** key (and `EXPKEYSIG`/`EXPSIG` for an expired key or an expired signature). So an attacker holding a compromised-then-revoked signing key — or the project key after expiry — still got signatures accepted. The expected-fingerprint check also compared `VALIDSIG`'s signing fingerprint, which may be a subkey, rather than the primary-key fingerprint.
+
+**Impact:** the whole point of revoking a compromised signing key — telling verifiers to stop trusting it — was defeated: a plugin, package manifest, or source-integrity manifest signed by a revoked or expired key still verified, so an unsigned-in-practice plugin from a burned key could be `exec()`'d in the host process. Exploitation requires the attacker to have obtained a once-trusted signing key that has since been revoked or has expired.
+
+**Fixed in 1.4.9:** `verify_detached` now requires both `GOODSIG` and `VALIDSIG`, fails closed on any of `REVKEYSIG`/`EXPKEYSIG`/`EXPSIG`/`ERRSIG`/`BADSIG` and on a non-zero gpg exit status, and binds the expected-fingerprint comparison to `VALIDSIG`'s primary-key fingerprint rather than the possibly-subkey signing fingerprint. Regression-pinned by `test_gpg_verify_revoked_expired_232.py` (mock-based coverage of every status marker plus real-gpg integration tests).
+
+**Mitigation for existing installs:** upgrade to 1.4.9; on earlier versions, treat revocation/expiry of a plugin- or manifest-signing key as not enforced by the tool.
+
+**Disclosure:** tracked as gitlab#232 and GHSA-x38r-8wf3-q9hq (published with the 1.4.9 release). **Credit:** found by the 1.4.9 pre-release security scan (finding F36).
+
 ### ADVISORY 2026-23: Built-In Plugin Trust Shortcut Executed Unsigned Third-Party Plugins — Resolved
 
 **Severity:** Medium · **CWE-347** (Improper Verification of Cryptographic Signature)
