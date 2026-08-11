@@ -479,6 +479,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Re-encrypt any files produced through the 1.4.x D-Bus service after
   upgrading. Found by the 1.4.9 pre-release security scan.
 
+- **Legacy GUI no longer reads its KDF settings from a CWD-relative file**
+  (gitlab#235, MEDIUM / CWE-426, ADVISORY 2026-27): `crypt_settings.py` defined
+  `CONFIG_FILE` as `~/.crypt_settings.json` but then reassigned it to the bare
+  relative name `crypt_settings.json`, so the legacy Tk GUI read/wrote whatever
+  `crypt_settings.json` sat in the launch directory. A planted CWD config (all
+  memory-hard KDFs off, one hash round) silently downgraded every file encrypted
+  that session. The reassignment is removed (the config always resolves to the
+  absolute per-user path), and `load_settings` now warns when the loaded config
+  provides no memory-hard/iterated key stretching. Found by the 1.4.9
+  pre-release security scan.
+
 - **The `info` reconstructed-CLI block now shell-quotes untrusted metadata**
   (gitlab#234, MEDIUM / CWE-78, ADVISORY 2026-26): the "Reconstructed CLI"
   command that `info` prints interpolated attacker-controlled metadata fields

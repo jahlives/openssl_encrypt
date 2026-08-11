@@ -226,6 +226,21 @@ relevant.
 
 ## Security Advisories
 
+### ADVISORY 2026-27: Legacy GUI Loaded KDF Settings From a CWD-Relative File — Resolved
+
+**Severity:** Medium · **CWE-426** (Untrusted Search Path)
+**Affected versions:** all releases with the legacy Tk settings GUI, up to and including **1.4.8**. **Fixed in 1.4.9** (both the 1.4.x and 1.5.x lines).
+
+**Summary:** `crypt_settings.py` defined `CONFIG_FILE` as the absolute per-user path `~/.crypt_settings.json`, but reassigned it a few lines later to the bare relative name `crypt_settings.json`, shadowing it. The legacy Tk GUI's `SettingsTab.load_settings`/`save_settings` therefore read and wrote whatever `crypt_settings.json` file happened to sit in the process's launch directory. A `crypt_settings.json` planted in the working directory (e.g. `sha256: 1` with every memory-hard KDF disabled) silently reduced every file encrypted in that GUI session to roughly one hash round — the weak-KDF preflight did not fire because one hash iteration was present — after which an attacker could brute-force the ciphertext offline.
+
+**Impact:** a key-derivation downgrade to near-zero work factor, reachable by planting a file in a directory the victim launches the legacy GUI from. Confidentiality of everything encrypted that session is lost to offline guessing.
+
+**Fixed in 1.4.9:** the shadowing reassignment is removed, so the settings file always resolves to the absolute per-user path regardless of the working directory. `load_settings` additionally warns loudly when the loaded configuration provides no memory-hard/iterated key stretching (no Argon2/scrypt/balloon/RandomX and no significant hash rounds). Regression-pinned by `test_crypt_settings_config_path_235.py`.
+
+**Mitigation for existing installs:** upgrade to 1.4.9; on earlier versions, launch the GUI from a trusted directory and verify `~/.crypt_settings.json` is the config in effect.
+
+**Disclosure:** tracked as gitlab#235 and GHSA-7j2v-g84w-m75v (published with the 1.4.9 release). **Credit:** found by the 1.4.9 pre-release security scan (finding F34).
+
 ### ADVISORY 2026-26: `info` Reconstructed-CLI Block Interpolated Untrusted Metadata Unquoted — Resolved
 
 **Severity:** Medium · **CWE-78** (OS Command Injection via unsafe output)

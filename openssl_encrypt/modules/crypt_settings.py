@@ -81,7 +81,84 @@ DEFAULT_CONFIG = {
     "pbkdf2_iterations": 0,
 }
 
-CONFIG_FILE = "crypt_settings.json"
+# NOTE: CONFIG_FILE is defined above as the absolute per-user path
+# ~/.crypt_settings.json. It is deliberately NOT reassigned to a bare relative
+# name here: doing so (gitlab#235, scan F34, CWE-426) shadowed the home path and
+# made the legacy GUI read/write whatever crypt_settings.json sat in the launch
+# directory, so a planted CWD config (all KDFs off, one hash round) could
+# silently downgrade every file encrypted that session.
+
+# Memory-hard / iterated KDFs whose presence counts as key stretching. HKDF is
+# excluded: it is a fast extract-and-expand, not a password work factor.
+_STRETCHING_KDFS = ("argon2", "scrypt", "balloon", "randomx")
+_HASH_ALGOS = (
+    "sha512",
+    "sha384",
+    "sha256",
+    "sha224",
+    "sha3_512",
+    "sha3_384",
+    "sha3_256",
+    "sha3_224",
+    "blake2b",
+    "blake3",
+    "shake256",
+    "shake128",
+    "whirlpool",
+)
+# A single hash round does not stretch a password; require a real round count.
+_HASH_ROUND_FLOOR = 1000
+# Minimum cost for an ENABLED KDF to count as real stretching (gitlab#235 review
+# N2): a config enabling e.g. Argon2 with memory_cost=8 provides no work factor,
+# so the presence of the `enabled` flag alone is not sufficient. Floors sit far
+# below the shipped defaults (argon2 64 MiB, scrypt n=16384, balloon space 16).
+_ARGON2_MIN_MEMORY_KIB = 8192  # 8 MiB
+_SCRYPT_MIN_N = 4096
+_BALLOON_MIN_SPACE = 8
+
+
+def _as_int(value) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _kdf_is_effective(kdf: str, cfg) -> bool:
+    """True iff an enabled KDF's cost parameters provide real stretching."""
+    if not (isinstance(cfg, dict) and cfg.get("enabled")):
+        return False
+    if kdf == "argon2":
+        return _as_int(cfg.get("memory_cost")) >= _ARGON2_MIN_MEMORY_KIB
+    if kdf == "scrypt":
+        return _as_int(cfg.get("n")) >= _SCRYPT_MIN_N
+    if kdf == "balloon":
+        return _as_int(cfg.get("space_cost")) >= _BALLOON_MIN_SPACE
+    if kdf == "randomx":
+        return True  # memory-hard by construction (mode-dependent)
+    return False
+
+
+def config_provides_key_stretching(config: dict) -> bool:
+    """True iff the settings dict would stretch the password (gitlab#235, F34).
+
+    Returns True when at least one hash algorithm has >= _HASH_ROUND_FLOOR rounds
+    OR a memory-hard/iterated KDF (Argon2/scrypt/balloon/RandomX) is enabled WITH
+    effective cost parameters (an enabled-but-degenerate KDF does not count).
+    HKDF alone does NOT qualify. The legacy GUI warns when a loaded config fails
+    this check, so a planted all-KDFs-off / one-hash-round / degenerate-KDF
+    config is flagged instead of silently downgrading the session.
+    """
+    if not isinstance(config, dict):
+        return False
+    for algo in _HASH_ALGOS:
+        v = config.get(algo)
+        if isinstance(v, int) and not isinstance(v, bool) and v >= _HASH_ROUND_FLOOR:
+            return True
+    for kdf in _STRETCHING_KDFS:
+        if _kdf_is_effective(kdf, config.get(kdf)):
+            return True
+    return False
 
 
 # Settings class for the settings tab
@@ -1282,6 +1359,27 @@ class SettingsTab:
 
                 # Merge with default config to ensure all keys exist
                 self.merge_config(loaded_config)
+
+                # F34 (gitlab#235): warn loudly if the loaded config provides no
+                # key stretching. A planted config (all KDFs off, one hash round)
+                # would otherwise silently weaken every file encrypted this
+                # session; the per-round preflight does not fire on 1 iteration.
+                if not config_provides_key_stretching(self.config):
+                    _warn = (
+                        "The loaded encryption settings enable no memory-hard KDF "
+                        "(Argon2/scrypt/balloon/RandomX) and no significant hash "
+                        "rounds -- files encrypted with these settings would be "
+                        f"weakly protected. Check {CONFIG_FILE} or reset to "
+                        "defaults."
+                    )
+                    eprint(f"WARNING: {_warn}")
+                    # A windowed GUI discards stderr, so also surface it visibly
+                    # (guarded: load_settings runs in __init__; messagebox may not
+                    # be usable in headless/test contexts) -- gitlab#235 review N1.
+                    try:
+                        messagebox.showwarning("Weak encryption settings", _warn)
+                    except Exception:
+                        pass
 
                 # For debugging in tests
                 # print(f"Loaded config: {self.config}")
