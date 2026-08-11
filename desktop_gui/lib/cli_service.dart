@@ -2076,14 +2076,20 @@ class CLIService {
       '--encryption-data',
       '--code',
     };
+    // F19 review (gitlab#254): this is a DISPLAY formatter — its output reaches
+    // the terminal, the persistent debug-log file, and the in-app log viewer
+    // (rendered with a bare Text widget). Untrusted argv values (e.g. a
+    // crafted recovery-slot id passed as --slot-id) must be escaped here too, or
+    // a raw ESC/newline/bidi sequence forges log lines or a spoofed screen. This
+    // never touches the exec path (Process.run gets the raw List<String>).
     final maskedArgs = <String>[];
     for (int i = 0; i < args.length; i++) {
       if (secretFlags.contains(args[i]) && i + 1 < args.length) {
-        maskedArgs.add(args[i]);
+        maskedArgs.add(InputValidator.sanitizeForDisplay(args[i]));
         maskedArgs.add('****');
         i++; // Skip the actual secret value
       } else {
-        maskedArgs.add(args[i]);
+        maskedArgs.add(InputValidator.sanitizeForDisplay(args[i]));
       }
     }
 
@@ -3835,17 +3841,38 @@ class SignatureVerification {
 
 /// One recovery slot on an envelope file.
 class RecoverySlot {
+  /// Sanitized id, safe to render in the UI.
   final String id;
+
+  /// The raw, unsanitized id EXACTLY as the CLI reported it. Use this ONLY as
+  /// the `--slot-id` argument to remove-recovery (the CLI must match the real
+  /// id); never render it (F19, gitlab#254).
+  final String rawId;
   final String type;
   final String? keyId;
 
-  const RecoverySlot({required this.id, required this.type, this.keyId});
+  const RecoverySlot({
+    required this.id,
+    required this.rawId,
+    required this.type,
+    this.keyId,
+  });
 
-  factory RecoverySlot.fromJson(Map<String, dynamic> json) => RecoverySlot(
-        id: (json['id'] ?? '') as String,
-        type: (json['type'] ?? '') as String,
-        keyId: json['key_id'] as String?,
-      );
+  /// F19 (gitlab#254, CWE-116): id/type/key_id come from the file's
+  /// unauthenticated `list-recovery --json` output. Flutter honours bidi
+  /// overrides and treats U+2028/U+2029 as line breaks, so a crafted slot could
+  /// otherwise forge a line inside the irreversible-removal dialog. Sanitize
+  /// every DISPLAYED field at the decode boundary; keep the raw id for --slot-id.
+  factory RecoverySlot.fromJson(Map<String, dynamic> json) {
+    final rawId = (json['id'] ?? '') as String;
+    final keyId = json['key_id'] as String?;
+    return RecoverySlot(
+      id: InputValidator.sanitizeForDisplay(rawId),
+      rawId: rawId,
+      type: InputValidator.sanitizeForDisplay((json['type'] ?? '') as String),
+      keyId: keyId == null ? null : InputValidator.sanitizeForDisplay(keyId),
+    );
+  }
 
   /// Label for the slot type, for display.
   String get typeLabel {

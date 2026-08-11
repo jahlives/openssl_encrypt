@@ -8,6 +8,7 @@ import 'package:path/path.dart' as p;
 
 import 'cli_service.dart';
 import 'file_manager.dart';
+import 'input_validation.dart';
 
 /// Manage the recovery slots on an envelope file (gitlab#145 / github#63).
 ///
@@ -127,7 +128,12 @@ class _RecoverySlotsScreenState extends State<RecoverySlotsScreen> {
     try {
       await action();
     } catch (e) {
-      if (mounted) setState(() => _result = '$e');
+      // The CLI error can interpolate untrusted slot/file metadata, and the
+      // Python-side sanitizer deliberately excludes U+2028/U+2029/ZWSP/BOM;
+      // escape here for the same reason as the slot fields (F19 review).
+      if (mounted) {
+        setState(() => _result = InputValidator.sanitizeForDisplay('$e'));
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -247,7 +253,9 @@ class _RecoverySlotsScreenState extends State<RecoverySlotsScreen> {
       await CLIService.removeRecoverySlot(
         inputPath: _inputFile!.path,
         outputPath: _inputFile!.path,
-        slotId: slot.id,
+        // Raw id: the CLI must match the real slot id (F19, gitlab#254). Display
+        // sites below use the sanitized slot.id.
+        slotId: slot.rawId,
         password: _password.text,
       );
       _password.clear();
@@ -382,11 +390,17 @@ class _RecoverySlotsScreenState extends State<RecoverySlotsScreen> {
     });
   }
 
+  /// Cap an already-escaped slot id for display in the confirmation dialog so a
+  /// crafted, over-long id cannot dominate the layout (F19 review, gitlab#254).
+  static String _capForDialog(String s) =>
+      s.length <= 64 ? s : '${s.substring(0, 64)}…';
+
   Future<bool?> _confirmRemoval(RecoverySlot slot) {
     return showDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
+        scrollable: true,
         title: Row(
           children: [
             Icon(Icons.warning_amber, color: Colors.red.shade700),
@@ -394,10 +408,31 @@ class _RecoverySlotsScreenState extends State<RecoverySlotsScreen> {
             const Text('Remove recovery slot?'),
           ],
         ),
-        content: Text(
-          'This revokes ${slot.typeLabel.toLowerCase()} slot ${slot.id} on the '
-          'rewritten file. Anyone holding that credential loses access, and it '
-          'cannot be undone. Copies of the file made earlier are unaffected.',
+        // F19 review (gitlab#254): the untrusted slot id/type is kept OUT of the
+        // load-bearing warning sentence. The warning is its own widget (always
+        // fully visible); the already-escaped id/type is shown separately,
+        // length-capped and forced LTR so a long or RTL slot value cannot push
+        // "cannot be undone" off-screen or reorder the app's own text.
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'This revokes a recovery slot on the rewritten file. Anyone holding '
+              'that credential loses access, and it cannot be undone. Copies of '
+              'the file made earlier are unaffected.',
+            ),
+            const SizedBox(height: 12),
+            Directionality(
+              textDirection: TextDirection.ltr,
+              child: Text(
+                'Slot: ${slot.typeLabel} — ${_capForDialog(slot.id)}',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+              ),
+            ),
+          ],
         ),
         actions: [
           TextButton(
@@ -451,18 +486,39 @@ class _RecoverySlotsScreenState extends State<RecoverySlotsScreen> {
               )
             else
               ..._slots.map(
-                (s) => ListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.vpn_key_outlined),
-                  title: Text(s.typeLabel),
-                  subtitle: Text(s.id),
-                  trailing: IconButton(
-                    icon: const Icon(Icons.delete_outline),
-                    tooltip: 'Remove this slot',
-                    onPressed: _loading ? null : () => _removeSlot(s),
-                  ),
-                ),
+                (s) {
+                  // A malformed slot (null/non-string id) has no matchable id;
+                  // don't offer a Remove that can never succeed (F19 review F7).
+                  final hasId = s.rawId.isNotEmpty;
+                  return ListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.vpn_key_outlined),
+                    // Bound both untrusted fields to one line, LTR, so a long or
+                    // RTL slot value can't dominate or reorder the row layout.
+                    title: Text(
+                      s.typeLabel,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    subtitle: Directionality(
+                      textDirection: TextDirection.ltr,
+                      child: Text(
+                        hasId ? s.id : '(no id — malformed slot)',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.delete_outline),
+                      tooltip: hasId
+                          ? 'Remove this slot'
+                          : 'Slot has no id and cannot be removed',
+                      onPressed:
+                          (_loading || !hasId) ? null : () => _removeSlot(s),
+                    ),
+                  );
+                },
               ),
             const Divider(),
 

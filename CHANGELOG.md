@@ -461,6 +461,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Desktop GUI escapes recovery-slot id/type in the removal dialog**
+  (gitlab#254, MEDIUM / CWE-116, ADVISORY 2026-39): the recovery-slot manager
+  rendered a slot's `id`/`type` from the file's unauthenticated
+  `list-recovery --json` output with bare `Text(...)`, including in the
+  irreversible-removal confirmation. A crafted file could embed bidi overrides or
+  `U+2028`/`U+2029` (which Flutter treats as line breaks) to forge a line under
+  the warning. `RecoverySlot.fromJson` now runs every displayed field through
+  `InputValidator.sanitizeForDisplay`; the raw id is kept only for the
+  `--slot-id` removal argument. Found by the 1.4.9 pre-release scan.
+
 - **liboqs / liboqs-python are built from pinned commit SHAs, not mutable tags**
   (gitlab#252, CWE-494): the PQC dependency build cloned liboqs from
   `--branch <tag>` and pip-installed liboqs-python from `@<tag>` with no
