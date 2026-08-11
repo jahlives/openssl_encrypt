@@ -479,6 +479,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Re-encrypt any files produced through the 1.4.x D-Bus service after
   upgrading. Found by the 1.4.9 pre-release security scan.
 
+- **Decrypt auto-detection escapes and bounds the untrusted file header**
+  (gitlab#237, MEDIUM / CWE-117, ADVISORY 2026-29): `detect_encryption_type`
+  parsed the header with a bare `json.loads` and the "no matching identity"
+  path printed each `recipient key_id` unescaped, so a crafted `key_id` could
+  forge a Fingerprint line. The printed fingerprint is now escaped via
+  `sanitize_for_display()`, the recipient list read from the header is capped,
+  and the header is parsed through a size/depth/control-char-bounded security
+  scan before `json.loads`. Found by the 1.4.9 pre-release security scan.
+
+- **`verify-usb` escapes attacker-planted filenames** (gitlab#238, MEDIUM /
+  CWE-117, ADVISORY 2026-30): the tampered/missing/added file lists are built
+  from raw path names scanned off the untrusted drive (outside the authenticated
+  manifest) and were printed under the FAILED banner with no
+  `sanitize_for_display()`, so a planted filename could repaint a forged PASSED
+  verdict. Every drive-derived name, and the error-path exception, are now
+  escaped. Found by the 1.4.9 pre-release security scan.
+
 - **`info` now escapes terminal control characters in untrusted metadata**
   (gitlab#236, MEDIUM / CWE-117, ADVISORY 2026-28): `print_file_info` printed
   metadata fields (algorithm, cipher_chain, layer ciphers, hkdf_hash, salt, KDF

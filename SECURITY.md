@@ -226,6 +226,36 @@ relevant.
 
 ## Security Advisories
 
+### ADVISORY 2026-30: `verify-usb` Printed Attacker-Planted Filenames Without Escaping — Resolved
+
+**Severity:** Medium · **CWE-117** (Improper Output Neutralization for terminal)
+**Affected versions:** all releases with `verify-usb`, up to and including **1.4.8**. **Fixed in 1.4.9** (both the 1.4.x and 1.5.x lines).
+
+**Summary:** the `verify-usb` command's tampered / missing / added file lists are built from raw path names discovered by scanning the untrusted drive — data outside the AES-GCM authenticated manifest — and were echoed under the FAILED banner with no `sanitize_for_display()`. A planted filename containing cursor-movement / erase-line bytes could repaint a forged "PASSED" verdict on the very command whose job is to report tampering. The command's error path also printed the raw exception (which can embed the user-supplied `--usb-path`).
+
+**Impact:** terminal-output spoofing of the integrity verdict for an attacker-controlled drive. No code execution.
+
+**Fixed in 1.4.9:** every drive-derived filename, and the error-path exception message, are routed through `sanitize_for_display()`. Regression-pinned by `test_verify_usb_display_sanitization_238.py`.
+
+**Mitigation for existing installs:** upgrade to 1.4.9; on earlier versions, do not trust a `verify-usb` PASSED line without inspecting the raw output for embedded control sequences.
+
+**Disclosure:** tracked as gitlab#238 and GHSA-c793-rj9w-r3wg (published with the 1.4.9 release). **Credit:** found by the 1.4.9 pre-release security scan (finding F25).
+
+### ADVISORY 2026-29: Decrypt Auto-Detection Printed an Untrusted key_id Unescaped and Parsed the Header Unbounded — Resolved
+
+**Severity:** Medium · **CWE-117** (Improper Output Neutralization for terminal)
+**Affected versions:** all releases with asymmetric decrypt auto-detection, up to and including **1.4.8**. **Fixed in 1.4.9** (both the 1.4.x and 1.5.x lines).
+
+**Summary:** `detect_encryption_type` parsed an encrypted file's header with a bare `json.loads` and returned each `asymmetric.recipients[].key_id`; on the "no matching identity" decrypt path these were printed to stderr with no escaping. Literal cursor-movement / erase-line bytes in a crafted `key_id` could scroll back over the error and paint a forged `Fingerprint:` / verification block — the only out-of-band authenticity readout the design offers. The recipient list was also unbounded.
+
+**Impact:** terminal-output spoofing of the authenticity readout when attempting to decrypt an attacker-supplied asymmetric file, plus an unbounded-materialization/print risk from a crafted recipient list. No code execution.
+
+**Fixed in 1.4.9:** the printed fingerprint is routed through `sanitize_for_display()`; the recipient list read from the header is capped; and the header is parsed through a size/depth/control-character-bounded JSON security scan before `json.loads` (a rejection is treated as "not detected", a safe default). Regression-pinned by `test_detect_encryption_type_hardening_237.py`.
+
+**Mitigation for existing installs:** upgrade to 1.4.9.
+
+**Disclosure:** tracked as gitlab#237 and GHSA-jwfm-99h7-2w5x (published with the 1.4.9 release). **Credit:** found by the 1.4.9 pre-release security scan (finding F3).
+
 ### ADVISORY 2026-28: `info` Rendered Untrusted File Metadata Without Escaping Terminal Control Characters — Resolved
 
 **Severity:** Medium · **CWE-117** (Improper Output Neutralization for Logs / terminal)

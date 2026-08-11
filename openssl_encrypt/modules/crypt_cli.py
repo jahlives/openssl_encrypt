@@ -216,6 +216,35 @@ def resolve_identity_store_path(args):
     return None
 
 
+# Upper bound on recipient entries read/printed from an untrusted asymmetric file
+# header during decrypt auto-detection (gitlab#237, scan F3). A real file targets
+# a handful of recipients; the cap prevents a crafted list from driving a large
+# materialization or an unbounded print.
+_MAX_RECIPIENTS_SHOWN = 64
+
+
+def _detect_metadata_loads(metadata_json):
+    """Bounded parse of an untrusted header for decrypt auto-detection
+    (gitlab#237, scan F3). Runs the JSON security scan (1 MiB size cap, nesting
+    depth, control-character rejection) BEFORE json.loads, so a crafted header
+    cannot drive an unbounded parse or smuggle control characters -- without
+    coupling this lightweight peek to a specific metadata schema version. A
+    security-scan failure raises ValueError, which the caller treats as
+    'not detected' (a safe default)."""
+    if isinstance(metadata_json, (bytes, bytearray)):
+        # Decode strictly so a non-UTF-8 header is rejected, not silently mangled.
+        metadata_json = metadata_json.decode("utf-8", errors="strict")
+    try:
+        from .json_validator import get_json_validator
+
+        get_json_validator().validate_json_security(metadata_json)
+    except ImportError:
+        pass  # validator unavailable -> best-effort json.loads below
+    except Exception as exc:
+        raise ValueError(f"metadata rejected by security scan: {exc}")
+    return json.loads(metadata_json)
+
+
 def detect_encryption_type(input_file: str) -> dict:
     """
     Read file and detect encryption type from metadata.
@@ -247,7 +276,7 @@ def detect_encryption_type(input_file: str) -> dict:
             metadata_b64 = content[:colon_pos]
             try:
                 metadata_json = base64.b64decode(metadata_b64)
-                metadata = json.loads(metadata_json)
+                metadata = _detect_metadata_loads(metadata_json)
             except (ValueError, json.JSONDecodeError):
                 pass
 
@@ -256,8 +285,8 @@ def detect_encryption_type(input_file: str) -> dict:
             try:
                 content_str = content.decode("utf-8", errors="ignore")
                 metadata_str = content_str.split("---ENCRYPTED_DATA---")[0]
-                metadata = json.loads(metadata_str)
-            except (json.JSONDecodeError, UnicodeDecodeError, IndexError):
+                metadata = _detect_metadata_loads(metadata_str)
+            except (ValueError, json.JSONDecodeError, UnicodeDecodeError, IndexError):
                 pass
 
         # Check if asymmetric
@@ -271,8 +300,15 @@ def detect_encryption_type(input_file: str) -> dict:
                 recipients = asymmetric_data.get("recipients", [])
                 sender = asymmetric_data.get("sender", {})
 
-                recipient_fingerprints = [r.get("key_id", "") for r in recipients]
-                sender_fingerprint = sender.get("key_id", "")
+                # Bound the recipient list taken from the untrusted header so a
+                # crafted file cannot force a huge materialization/print
+                # (gitlab#237, scan F3). A real file has a handful of recipients.
+                if isinstance(recipients, list) and len(recipients) > _MAX_RECIPIENTS_SHOWN:
+                    recipients = recipients[:_MAX_RECIPIENTS_SHOWN]
+                recipient_fingerprints = [
+                    r.get("key_id", "") for r in recipients if isinstance(r, dict)
+                ]
+                sender_fingerprint = sender.get("key_id", "") if isinstance(sender, dict) else ""
 
                 return {
                     "type": "asymmetric",
@@ -6659,19 +6695,30 @@ def main_with_args(args=None):
                 eprint(f"  Missing files: {result['missing_files']}")
                 # gitlab#132 F13: report files added to the drive after creation.
                 eprint(f"  Added files: {result.get('added_files', 0)}")
+                # These lists hold path names discovered on the UNTRUSTED drive
+                # (outside the authenticated manifest), so a planted filename with
+                # cursor-movement/erase bytes could repaint a forged PASSED verdict
+                # under the FAILED banner (gitlab#238, scan F25, CWE-117). Escape
+                # each name before it reaches the terminal.
                 if result["tampered_files"]:
-                    eprint(f"  Tampered files: {', '.join(result['tampered_files'])}")
+                    _names = ", ".join(sanitize_for_display(n) for n in result["tampered_files"])
+                    eprint(f"  Tampered files: {_names}")
                 if result["missing_file_list"]:
-                    eprint(f"  Missing files: {', '.join(result['missing_file_list'])}")
+                    _names = ", ".join(sanitize_for_display(n) for n in result["missing_file_list"])
+                    eprint(f"  Missing files: {_names}")
                 if result.get("added_file_list"):
-                    eprint(f"  Added files: {', '.join(result['added_file_list'])}")
+                    _names = ", ".join(sanitize_for_display(n) for n in result["added_file_list"])
+                    eprint(f"  Added files: {_names}")
                 return 1
 
         except ImportError:
             eprint("Error: Portable media module not available")
             return 1
         except Exception as e:
-            eprint(f"Error verifying USB: {e}")
+            # The exception message can embed the user-supplied --usb-path or
+            # decrypted-manifest fragments; sanitize for consistency with the
+            # other error sinks (gitlab#238 review).
+            eprint(f"Error verifying USB: {sanitize_for_display(e)}")
             return 1
 
     # Handle scrypt_cost conversion to scrypt_n
@@ -7781,7 +7828,11 @@ def main_with_args(args=None):
                 )
                 eprint("\nFile was encrypted for:", file=sys.stderr)
                 for fp in encryption_info["recipient_fingerprints"]:
-                    eprint(f"  • {fp}", file=sys.stderr)
+                    # key_id comes verbatim from the untrusted file header; a
+                    # crafted value with cursor-movement/erase bytes could repaint
+                    # a forged "Fingerprint:" line here (gitlab#237, scan F3,
+                    # CWE-117). Escape it before it reaches the terminal.
+                    eprint(f"  • {sanitize_for_display(fp)}", file=sys.stderr)
                 eprint(
                     "\nTo decrypt, you need one of these identities in your keystore.",
                     file=sys.stderr,
