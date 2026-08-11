@@ -226,6 +226,21 @@ relevant.
 
 ## Security Advisories
 
+### ADVISORY 2026-28: `info` Rendered Untrusted File Metadata Without Escaping Terminal Control Characters — Resolved
+
+**Severity:** Medium · **CWE-117** (Improper Output Neutralization for Logs / terminal)
+**Affected versions:** all releases with the `info` command, up to and including **1.4.8**. **Fixed in 1.4.9** (both the 1.4.x and 1.5.x lines).
+
+**Summary:** `print_file_info` (the `info` command) printed metadata fields taken from an untrusted file — `algorithm`, `encryption_data`, `cipher_chain`, `layer_info[].cipher`, `hkdf_hash`, `salt`, the KDF display names and parameters, `original_hash`/`encrypted_hash`, the PQC public key, `hsm_plugin`, `pepper_plugin`, `pepper_name`, and (for crafted legacy v1/v2 files, which skip schema validation) `mode`/`xor_mode`/`encrypted_at` — to the terminal with no `sanitize_for_display()`. The `--json` output likewise used `ensure_ascii=False`. Because the JSON security scan rejects only C0 control bytes, a crafted file could carry C1 (e.g. 0x9B CSI), DEL, or bidi override characters that reached the terminal raw. Cursor-movement / erase-line / bidi bytes in a field let a hostile file repaint the info output — including forging the `Fingerprint:` / verification line — on the command whose purpose is to judge an untrusted file.
+
+**Impact:** terminal-output spoofing when running `info` on an attacker-supplied file: the attacker can rewrite what the tool appears to report about the file, including its authenticity readout. No code execution.
+
+**Fixed in 1.4.9:** every metadata-derived value printed by `print_file_info` (including the reconstructed-CLI lines, and the legacy top-level fields) is routed through `sanitize_for_display()`, which escapes C0/C1/DEL and bidi controls; the `--json` branch now uses `ensure_ascii=True`. Regression-pinned by `test_info_file_info_display_sanitization_236.py`.
+
+**Mitigation for existing installs:** upgrade to 1.4.9; on earlier versions, do not run `info` on untrusted files in a terminal you rely on for verification.
+
+**Disclosure:** tracked as gitlab#236 and GHSA-539p-fxf4-7fv8 (published with the 1.4.9 release). **Credit:** found by the 1.4.9 pre-release security scan (finding F4).
+
 ### ADVISORY 2026-27: Legacy GUI Loaded KDF Settings From a CWD-Relative File — Resolved
 
 **Severity:** Medium · **CWE-426** (Untrusted Search Path)

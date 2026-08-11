@@ -479,6 +479,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Re-encrypt any files produced through the 1.4.x D-Bus service after
   upgrading. Found by the 1.4.9 pre-release security scan.
 
+- **`info` now escapes terminal control characters in untrusted metadata**
+  (gitlab#236, MEDIUM / CWE-117, ADVISORY 2026-28): `print_file_info` printed
+  metadata fields (algorithm, cipher_chain, layer ciphers, hkdf_hash, salt, KDF
+  names/params, hashes, PQC public key, hsm_plugin, pepper_plugin/name, and —
+  for crafted legacy files that bypass schema validation — mode/xor_mode/
+  encrypted_at) to the terminal with no `sanitize_for_display()`, and `--json`
+  emitted raw bytes via `ensure_ascii=False`. A crafted file's cursor-movement /
+  erase-line / bidi bytes could repaint the info output, including forging a
+  Fingerprint line. Every metadata-derived value is now escaped and the JSON
+  output uses `ensure_ascii=True`. Found by the 1.4.9 pre-release security scan.
+
 - **Legacy GUI no longer reads its KDF settings from a CWD-relative file**
   (gitlab#235, MEDIUM / CWE-426, ADVISORY 2026-27): `crypt_settings.py` defined
   `CONFIG_FILE` as `~/.crypt_settings.json` but then reassigned it to the bare

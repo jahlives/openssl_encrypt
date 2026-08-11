@@ -9095,7 +9095,10 @@ def print_file_info(input_file: str, json_output: bool = False, second_password=
     metadata = info["metadata"]
 
     if json_output:
-        print(json.dumps(metadata, indent=2, ensure_ascii=False))
+        # ensure_ascii=True so a crafted legacy-format file's raw C1/DEL/bidi
+        # bytes are \uXXXX-escaped rather than emitted to the terminal (gitlab#236
+        # review). json.dumps only escapes C0 on its own.
+        print(json.dumps(metadata, indent=2, ensure_ascii=True))
         return metadata
 
     # Pretty-print metadata
@@ -9107,12 +9110,15 @@ def print_file_info(input_file: str, json_output: bool = False, second_password=
 
     eprint("File Information:")
     eprint(f"  Format Version:    {format_version}")
-    eprint(f"  Mode:              {mode}")
+    # mode / xor_mode / encrypted_at are enum/pattern-constrained by the schema
+    # only for v3+; a crafted legacy (v1/v2) file skips schema validation, so
+    # sanitize them too (gitlab#236 review -- same terminal-repaint sink).
+    eprint(f"  Mode:              {sanitize_for_display(mode)}")
     if xor_mode:
-        eprint(f"  XOR Mode:          {xor_mode}")
+        eprint(f"  XOR Mode:          {sanitize_for_display(xor_mode)}")
     eprint(f"  AEAD Binding:      {'yes' if aead_binding else 'no'}")
     if encrypted_at:
-        eprint(f"  Encrypted At:      {encrypted_at}")
+        eprint(f"  Encrypted At:      {sanitize_for_display(encrypted_at)}")
 
     # Encryption section
     encryption = metadata.get("encryption", {})
@@ -9122,26 +9128,30 @@ def print_file_info(input_file: str, json_output: bool = False, second_password=
     eprint("  Encryption:")
     if is_cascade:
         cipher_chain = encryption.get("cipher_chain", [])
-        eprint(f"    Cipher Chain:    {' -> '.join(cipher_chain)}")
+        eprint(
+            f"    Cipher Chain:    {sanitize_for_display(' -> '.join(str(c) for c in cipher_chain))}"
+        )
         hkdf_hash = encryption.get("hkdf_hash")
         if hkdf_hash:
-            eprint(f"    HKDF Hash:       {hkdf_hash}")
+            eprint(f"    HKDF Hash:       {sanitize_for_display(hkdf_hash)}")
         layer_info = encryption.get("layer_info", [])
         if layer_info:
             eprint(f"    Layers:          {len(layer_info)}")
             for i, layer in enumerate(layer_info):
                 cipher = layer.get("cipher", "unknown")
                 key_size = layer.get("key_size", 0)
-                eprint(f"      Layer {i+1}:       {cipher} ({key_size * 8} bits)")
+                eprint(
+                    f"      Layer {i+1}:       {sanitize_for_display(cipher)} ({key_size * 8} bits)"
+                )
         total_overhead = encryption.get("total_overhead")
         if total_overhead:
             eprint(f"    Total Overhead:  {total_overhead} bytes")
     else:
         algorithm = encryption.get("algorithm", "unknown")
-        eprint(f"    Algorithm:       {algorithm}")
+        eprint(f"    Algorithm:       {sanitize_for_display(algorithm)}")
         encryption_data = encryption.get("encryption_data")
         if encryption_data:
-            eprint(f"    Encryption Data: {encryption_data}")
+            eprint(f"    Encryption Data: {sanitize_for_display(encryption_data)}")
         key_size = encryption.get("key_size")
         if key_size:
             eprint(f"    Key Size:        {key_size * 8} bits")
@@ -9159,7 +9169,7 @@ def print_file_info(input_file: str, json_output: bool = False, second_password=
     eprint()
     eprint("  Key Derivation:")
     if salt:
-        eprint(f"    Salt:            {salt}")
+        eprint(f"    Salt:            {sanitize_for_display(salt)}")
 
     if hash_config:
         eprint("    Hash Functions:")
@@ -9169,7 +9179,7 @@ def print_file_info(input_file: str, json_output: bool = False, second_password=
             else:
                 rounds = config
             if rounds > 0:
-                display_name = algo.upper().replace("_", "-")
+                display_name = sanitize_for_display(algo.upper().replace("_", "-"))
                 eprint(
                     f"      {display_name}:{' ' * max(1, 13 - len(display_name))}{rounds} rounds"
                 )
@@ -9178,8 +9188,8 @@ def print_file_info(input_file: str, json_output: bool = False, second_password=
         eprint("    KDFs:")
         for kdf_name, kdf_params in kdf_config.items():
             if isinstance(kdf_params, dict) and kdf_params.get("enabled", True):
-                display_name = kdf_name.capitalize()
-                params_str = _format_kdf_params(kdf_name, kdf_params)
+                display_name = sanitize_for_display(kdf_name.capitalize())
+                params_str = sanitize_for_display(_format_kdf_params(kdf_name, kdf_params))
                 eprint(f"      {display_name}:{' ' * max(1, 13 - len(display_name))}{params_str}")
 
     # Integrity section
@@ -9188,10 +9198,10 @@ def print_file_info(input_file: str, json_output: bool = False, second_password=
     if original_hash:
         eprint()
         eprint("  Integrity:")
-        eprint(f"    Original Hash:   {original_hash}")
+        eprint(f"    Original Hash:   {sanitize_for_display(original_hash)}")
         encrypted_hash = hashes.get("encrypted_hash")
         if encrypted_hash:
-            eprint(f"    Encrypted Hash:  {encrypted_hash}")
+            eprint(f"    Encrypted Hash:  {sanitize_for_display(encrypted_hash)}")
 
     # PQC info
     pqc = metadata.get("pqc")
@@ -9200,7 +9210,7 @@ def print_file_info(input_file: str, json_output: bool = False, second_password=
         eprint("  Post-Quantum:")
         pub_key = pqc.get("public_key")
         if pub_key:
-            eprint(f"    Public Key:      {pub_key[:40]}...")
+            eprint(f"    Public Key:      {sanitize_for_display(pub_key[:40])}...")
 
     # HSM info
     hsm_config = encryption.get("hsm_config")
@@ -9209,7 +9219,7 @@ def print_file_info(input_file: str, json_output: bool = False, second_password=
         eprint()
         eprint("  HSM:")
         if hsm_plugin:
-            eprint(f"    Plugin:          {hsm_plugin}")
+            eprint(f"    Plugin:          {sanitize_for_display(hsm_plugin)}")
         if hsm_config:
             slot = hsm_config.get("slot")
             if slot is not None:
@@ -9220,10 +9230,10 @@ def print_file_info(input_file: str, json_output: bool = False, second_password=
     if pepper_plugin:
         eprint()
         eprint("  Pepper:")
-        eprint(f"    Plugin:          {pepper_plugin}")
+        eprint(f"    Plugin:          {sanitize_for_display(pepper_plugin)}")
         pepper_name = encryption.get("pepper_name")
         if pepper_name:
-            eprint(f"    Name:            {pepper_name}")
+            eprint(f"    Name:            {sanitize_for_display(pepper_name)}")
 
     # Reconstructed CLI — show users how they could re-encrypt with the
     # same settings on a fresh file. Salt and per-file random values are
@@ -9234,7 +9244,7 @@ def print_file_info(input_file: str, json_output: bool = False, second_password=
         metadata, hidden=info.get("hidden", False), keyed=info.get("keyed", False)
     )
     for line in _recon.splitlines():
-        eprint(f"    {line}")
+        eprint(f"    {sanitize_for_display(line)}")
 
     return metadata
 
