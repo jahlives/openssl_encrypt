@@ -876,14 +876,56 @@ fi
         try:
             # Allowlist: checksum EVERY file in the tool tree except the
             # user-mutable workspace/logs and the manifest artifacts.
+            #
+            # F26 (gitlab#242, CWE-59): enumerate with os.walk(followlinks=False)
+            # and REFUSE any non-excluded symlink, so a created drive provably
+            # contains no symlinks. The invariant is what lets verify treat a
+            # symlink as tampering (a symlinked directory otherwise shrouds a
+            # planted __pycache__/*.pyc from this allowlist). The copy step
+            # preserves source symlinks (symlinks=True, gitlab#203), so without
+            # this a source-tree symlink would yield either a manifest that omits
+            # a directory symlink (verify then false-flags it as "added") or an
+            # opaque OSError from _sha256_file's O_NOFOLLOW open on a file symlink.
+            # Fail closed here so create and verify agree that portable media
+            # contains no symlinks. The real source tree contains none, so this is
+            # a safety net, not a functional restriction.
             checksums = {}
-            for file_path in portable_root.rglob("*"):
-                if not file_path.is_file():
-                    continue
-                rel = str(file_path.relative_to(portable_root))
-                if self._integrity_excluded(rel):
-                    continue
-                checksums[rel] = self._sha256_file(file_path)
+            for dirpath, dirnames, filenames in os.walk(str(portable_root), followlinks=False):
+                for name in list(dirnames):
+                    full = os.path.join(dirpath, name)
+                    rel = os.path.relpath(full, str(portable_root))
+                    # islink BEFORE the exclusion prune: a symlink named like an
+                    # excluded tree (e.g. data/, logs/) must still be refused, so an
+                    # evil-maid cannot redirect the workspace via a symlinked data/.
+                    if os.path.islink(full):
+                        dirnames.remove(name)  # never descend a symlink
+                        raise USBCreationError(
+                            f"portable install contains a symlinked directory ({rel}); "
+                            f"symlinks are not permitted on portable media"
+                        )
+                    if self._integrity_excluded(rel):
+                        dirnames.remove(name)  # don't descend excluded trees
+                        continue
+                for name in filenames:
+                    full = os.path.join(dirpath, name)
+                    rel = os.path.relpath(full, str(portable_root))
+                    if os.path.islink(full):
+                        raise USBCreationError(
+                            f"portable install contains a symlinked file ({rel}); "
+                            f"symlinks are not permitted on portable media"
+                        )
+                    if self._integrity_excluded(rel):
+                        continue
+                    if os.path.isfile(full):
+                        checksums[rel] = self._sha256_file(Path(full))
+                    elif not os.path.isdir(full):
+                        # A special file (FIFO/socket/device) is neither a legit
+                        # tool file nor a directory; refuse rather than silently
+                        # omit it and let verify later false-flag it as "added".
+                        raise USBCreationError(
+                            f"portable install contains a non-regular file ({rel}); "
+                            f"only regular files are permitted on portable media"
+                        )
 
             # F13: hash the root-level autorun files (they live at the USB root,
             # above portable_root, and the OS auto-executes them on insert).
@@ -1030,19 +1072,54 @@ fi
             # creation, so a wrong file type cannot slip past a fixed extension
             # list.
             if scan_version >= 2:
-                for file_path in portable_root.rglob("*"):
-                    rel = str(file_path.relative_to(portable_root))
-                    if self._integrity_excluded(rel):
-                        continue
-                    if file_path.is_file():
-                        if rel not in stored_checksums:
+                # F26 (gitlab#242, CWE-59): enumerate with os.walk(followlinks=
+                # False), NOT rglob("*"). rglob silently does not descend a
+                # symlinked directory, so an evil-maid attacker could replace a
+                # tool-tree directory with a symlink to a copy holding the same
+                # files plus a planted __pycache__/*.pyc (which CPython loads in
+                # preference to the clean .py); the listed files hashed clean
+                # through the symlink, the planted file was never enumerated,
+                # added_files stayed 0, and verify reported PASSED. A legitimate
+                # portable install contains no symlinks, so ANY symlinked path
+                # component is treated as tampering here.
+                for dirpath, dirnames, filenames in os.walk(str(portable_root), followlinks=False):
+                    for name in list(dirnames):
+                        full = os.path.join(dirpath, name)
+                        rel = os.path.relpath(full, str(portable_root))
+                        # islink BEFORE the exclusion prune: a symlink named like
+                        # an excluded tree (e.g. data/, logs/) is still tampering
+                        # (an evil-maid redirecting the workspace), so flag it.
+                        if os.path.islink(full):
+                            # A symlinked directory: os.walk won't (and must not)
+                            # descend it; flag it and stop it being descended.
                             verification_results["added_files"] += 1
                             verification_results["added_file_list"].append(rel)
-                    elif not file_path.is_dir():
-                        # A special file (FIFO/socket/device) planted on the drive
-                        # is neither a legit tool file nor a directory — flag it.
-                        verification_results["added_files"] += 1
-                        verification_results["added_file_list"].append(rel)
+                            dirnames.remove(name)
+                            continue
+                        if self._integrity_excluded(rel):
+                            dirnames.remove(name)  # don't descend excluded trees
+                            continue
+                    for name in filenames:
+                        full = os.path.join(dirpath, name)
+                        rel = os.path.relpath(full, str(portable_root))
+                        if os.path.islink(full):
+                            # A symlinked file (its target is outside the manifest).
+                            verification_results["added_files"] += 1
+                            verification_results["added_file_list"].append(rel)
+                        elif self._integrity_excluded(rel):
+                            # Manifest artifacts / user-mutable workspace files:
+                            # excluded from the allowlist. Checked AFTER islink so a
+                            # symlink wearing an excluded name is still flagged.
+                            continue
+                        elif os.path.isfile(full):
+                            if rel not in stored_checksums:
+                                verification_results["added_files"] += 1
+                                verification_results["added_file_list"].append(rel)
+                        elif not os.path.isdir(full):
+                            # A special file (FIFO/socket/device) planted on the
+                            # drive is neither a legit tool file nor a directory.
+                            verification_results["added_files"] += 1
+                            verification_results["added_file_list"].append(rel)
 
             # Overall verification status
             verification_results["integrity_ok"] = (

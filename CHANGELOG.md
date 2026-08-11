@@ -461,6 +461,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **`verify-usb` flags symlinked path components as tampering** (gitlab#242,
+  MEDIUM / CWE-59, ADVISORY 2026-34): the v2 added-file scan enumerated the
+  drive with `Path.rglob("*")`, which never descends a symlinked directory and
+  treats it as an ordinary entry (the hash side's `O_NOFOLLOW` binds only the
+  final component). An evil-maid attacker could replace a tool-tree directory
+  with a symlink to a copy holding the same files plus a planted
+  `__pycache__/*.pyc`; the listed files hashed clean, the planted file was never
+  enumerated, `added_files` stayed 0, and verify reported PASSED — code
+  execution. The scan now uses `os.walk(..., followlinks=False)` and flags any
+  symlinked directory or file as added, so a symlink-shrouded planted tree fails
+  verification (legit installs contain no symlinks). Found by the 1.4.9
+  pre-release scan.
+
 - **Keyserver login/registration reject non-HTTPS and unconfigured servers**
   (gitlab#241, MEDIUM / CWE-319, ADVISORY 2026-33): `register()` enforced
   `https://` but `login()` and `register_with_email()` did not, and cert pinning
