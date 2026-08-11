@@ -226,6 +226,36 @@ relevant.
 
 ## Security Advisories
 
+### ADVISORY 2026-32: FLAC Steganography `total_samples` Drove a Multi-Gigabyte Allocation — Resolved
+
+**Severity:** Medium · **CWE-789** (Memory Allocation with Excessive Size Value)
+**Affected versions:** all releases with the FLAC steganography cover format, up to and including **1.4.8**. **Fixed in 1.4.9** (both the 1.4.x and 1.5.x lines).
+
+**Summary:** the 36-bit `total_samples` field from an attacker-supplied FLAC STREAMINFO block was fed into `np.random.randint(size=(total_samples, channels))` in `_decode_flac_samples`. The only guard re-estimated the count when it exceeded 100,000,000, so a value up to ~100M passed: a ~50-byte `fLaC` file declaring ~100M samples allocated a ~400–800 MB array (stereo int32), a same-size `.flatten()` copy, and a multi-gigabyte Python int list — an out-of-memory kill of `decrypt --stego-extract`, with ~10⁸ amplification by input file size.
+
+**Impact:** unauthenticated memory-exhaustion DoS when extracting from an attacker-supplied FLAC carrier. No key disclosure or code execution.
+
+**Fixed in 1.4.9:** `total_samples` is bounded by what the audio payload could actually contain (`audio_byte_count / (channels × bytes_per_sample)`); an out-of-range value is re-estimated from the file size and clamped to a sane range. Regression-pinned by `test_flac_total_samples_bound_240.py`.
+
+**Mitigation for existing installs:** upgrade to 1.4.9; on earlier versions, do not run `--stego-extract` on untrusted FLAC files.
+
+**Disclosure:** tracked as gitlab#240 and GHSA-wr9q-p3rj-vqq7 (published with the 1.4.9 release). **Credit:** found by the 1.4.9 pre-release security scan (finding F14).
+
+### ADVISORY 2026-31: Multi-QR Key Import `total` Field Drove Unbounded Materialization — Resolved
+
+**Severity:** Medium · **CWE-789** (Memory Allocation with Excessive Size Value)
+**Affected versions:** all releases with QR key distribution, up to and including **1.4.8**. **Fixed in 1.4.9** (both the 1.4.x and 1.5.x lines).
+
+**Summary:** `_parse_multi_qr_data` took the `total` field verbatim from an untrusted QR JSON payload and never range-checked it before `set(range(1, total + 1))` and `b"".join(parts[i] for i in range(1, total + 1))`. Two attacker-supplied QR images declaring `total = 10**12` made `keystore-cli import-qr` allocate ~10¹² int objects, hanging the process until the OOM killer fired; the import never completed.
+
+**Impact:** unauthenticated memory-exhaustion DoS when importing attacker-supplied QR images. No key disclosure or code execution.
+
+**Fixed in 1.4.9:** `part` and `total` are validated as integers in 1..99 — the same cap the QR *creation* path enforces — immediately after parsing, before any range materialization; a value out of range is rejected. Regression-pinned by `test_qr_multi_part_bound_239.py`.
+
+**Mitigation for existing installs:** upgrade to 1.4.9; on earlier versions, do not import QR images from untrusted sources.
+
+**Disclosure:** tracked as gitlab#239 and GHSA-r23m-gf2m-8www (published with the 1.4.9 release). **Credit:** found by the 1.4.9 pre-release security scan (finding F24).
+
 ### ADVISORY 2026-30: `verify-usb` Printed Attacker-Planted Filenames Without Escaping — Resolved
 
 **Severity:** Medium · **CWE-117** (Improper Output Neutralization for terminal)

@@ -476,13 +476,21 @@ class FLACSteganography(SteganographyBase):
                 logger.debug("Defaulting to stereo 16-bit for synthetic test data")
                 channels = 2  # Default to stereo
                 bits_per_sample = 16  # Default to 16-bit
-            if total_samples < 0 or total_samples > 100000000:  # Cap at ~37 minutes at 44.1kHz
-                # Estimate from file size
-                audio_size = max(0, len(flac_data) - flac_info.get("audio_offset", len(flac_data)))
-                # Conservative estimate: assume 30% compression ratio for safety
-                estimated_samples = (audio_size * 3) // (
-                    10 * channels * max(1, (bits_per_sample // 8))
-                )
+            # F14 (gitlab#240, CWE-789): total_samples comes from the untrusted
+            # 36-bit STREAMINFO field and drives np.random.randint(size=
+            # (total_samples, channels)). Bound it by what the file could
+            # actually contain -- a ~50-byte fLaC file cannot hold 100M samples --
+            # so a crafted value cannot inflate the allocation to gigabytes. The
+            # old `> 100000000` trigger let a ~100M-sample claim (≈800 MB stereo
+            # int32, plus a flatten() copy) through for a tiny file.
+            audio_size = max(0, len(flac_data) - flac_info.get("audio_offset", len(flac_data)))
+            bytes_per_sample = max(1, bits_per_sample // 8)
+            # Uncompressed upper bound on samples the audio payload could hold.
+            file_max_samples = audio_size // (channels * bytes_per_sample)
+            if total_samples < 0 or total_samples > file_max_samples:
+                # Estimate from file size (assume ~30% compression), clamped to a
+                # sane range so a small file still yields a usable synthetic array.
+                estimated_samples = (audio_size * 3) // (10 * channels * bytes_per_sample)
                 total_samples = min(
                     max(estimated_samples, 44100), 1000000
                 )  # Between 1s and ~22s at 44.1kHz

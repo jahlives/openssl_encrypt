@@ -461,6 +461,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **FLAC steganography bounds the untrusted `total_samples` field** (gitlab#240,
+  MEDIUM / CWE-789, ADVISORY 2026-32): the 36-bit STREAMINFO `total_samples`
+  drove `np.random.randint(size=(total_samples, channels))`; the only guard
+  re-estimated above 100M samples, so a ~50-byte file declaring ~100M samples
+  allocated ~800 MB plus a copy. `total_samples` is now bounded by what the
+  audio payload could actually contain. Found by the 1.4.9 pre-release scan.
+
+- **Multi-QR key import bounds the untrusted `total` field** (gitlab#239,
+  MEDIUM / CWE-789, ADVISORY 2026-31): `_parse_multi_qr_data` took `total`
+  verbatim from a QR payload and drove `set(range(1, total+1))`; two QR images
+  declaring `total=10**12` hung `import-qr` until OOM. `part`/`total` are now
+  validated as ints in 1..99 (the 99-chunk creation cap) before any range
+  materialization. Found by the 1.4.9 pre-release scan.
+
 - **D-Bus `EncryptFile` no longer derives keys without password stretching**
   (gitlab#228, HIGH / CWE-916, ADVISORY 2026-20 — **1.4.x only**, the D-Bus
   service is removed on 1.5.x): the D-Bus handler hand-built a `hash_config`
