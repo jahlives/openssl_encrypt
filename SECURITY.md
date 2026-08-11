@@ -226,6 +226,26 @@ relevant.
 
 ## Security Advisories
 
+### ADVISORY 2026-25: Pre-Authentication Resource Exhaustion via Unbounded KDF Cost in Crafted Files — Resolved
+
+**Severity:** Medium · **CWE-770** (Allocation of Resources Without Limits) / CWE-405 / CWE-1284
+**Affected versions:** all releases with the pre-auth memory ceiling, up to and including **1.4.8**. **Fixed in 1.4.9** (both the 1.4.x and 1.5.x lines).
+
+**Summary:** several code paths let a crafted file drive unbounded key-derivation cost past the pre-authentication memory ceiling (gitlab#128), OOM-killing or wedging the process before any password is verified:
+
+- **F9 (CWE-1284):** Balloon `parallel_cost` came verbatim from the file's `balloon.parallelism` and was submitted as that many `ThreadPoolExecutor` tasks; the estimator never modeled parallelism, so a value like 10⁸ allocated ~10⁸ `Future`/`_WorkItem` objects during key derivation.
+- **F28 (CWE-770):** the decryption-cost estimator modeled only `derivation_config.kdf_config`, but the executor also honors a `kdf_config` shadowed inside `derivation_config.hash_config` (its keys are flattened and `generate_key_independent_xor` reads `hash_config["derivation_config"]["kdf_config"]`); a crafted v14 file hid an Argon2 `memory_cost` of 1 TiB there and the ceiling saw ~0.
+- **F29 (CWE-770):** for legacy v1–v3 files the estimator hard-coded `kdf_config = {}` while the executor honors `hash_config['argon2'|'scrypt'|'balloon']`; a v3 file with `argon2.memory_cost = 128 GiB` estimated ~0.
+- **F16 (CWE-405):** the recovery path ran a full Argon2id unlock for every recovery slot (up to the array cap) before the slot-set MAC could reject a tampered set, so a crafted file with many expensive slots exhausted CPU/memory pre-authentication.
+
+**Impact:** unauthenticated denial of service — decrypting an attacker-supplied file (including in `--quiet`/unattended mode) could OOM-kill or hang the host before the password is ever checked. No key disclosure or code execution.
+
+**Fixed in 1.4.9:** Balloon `parallel_cost` is hard-capped in `balloon_m` (fail closed) and modeled in the estimator so the ceiling accounts for it; the estimator now folds in the shadowed (F28) and legacy (F29) KDF configs the executor actually consumes; and the recovery path caps the slot count before any KDF work, enforces the memory ceiling per slot, and lowers the per-slot Argon2 memory cap to 1 GiB (F16). Regression-pinned by `test_predecrypt_dos_cluster_233.py`.
+
+**Mitigation for existing installs:** upgrade to 1.4.9; on earlier versions, avoid decrypting untrusted files on memory-constrained or unattended hosts.
+
+**Disclosure:** tracked as gitlab#233 and GHSA-phmr-p567-q5g6 (published with the 1.4.9 release). **Credit:** found by the 1.4.9 pre-release security scan (findings F9, F16, F28, F29).
+
 ### ADVISORY 2026-24: Signature Verification Accepted Revoked and Expired GPG Keys — Resolved
 
 **Severity:** Medium · **CWE-347** (Improper Verification of Cryptographic Signature)

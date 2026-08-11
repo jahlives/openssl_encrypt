@@ -9817,6 +9817,7 @@ def _recover_envelope_dek(
     bytearray (caller must secure_memzero it)."""
     from .envelope import unwrap_dek, unwrap_dek_cascade
     from .recovery_slots import (
+        MAX_DEK_SLOTS,
         unlock_passphrase_slot,
         unlock_pqc_slot,
         unlock_recovery_code_slot,
@@ -9828,6 +9829,16 @@ def _recover_envelope_dek(
     if not wrapped_b64:
         raise ValidationError("File is not an envelope file (no wrapped_dek)")
     slots = enc.get("dek_slots") or []
+    # F16 (gitlab#233, CWE-405): dek_slots is attacker-controlled plaintext and
+    # the recovery-credential branch below runs a full Argon2id per passphrase
+    # slot before the slot-set MAC. add_recovery_slots/remove_recovery_slot pass
+    # a caller's recovery_passphrase straight here, so cap the slot count cheaply
+    # (matching the decrypt_file recovery path) before any KDF work.
+    if len(slots) > MAX_DEK_SLOTS:
+        raise ValidationError(
+            f"Refusing recovery: {len(slots)} recovery slots exceeds the "
+            f"maximum of {MAX_DEK_SLOTS} (possible tampering)"
+        )
     dek = None
 
     if password is not None:
@@ -11855,6 +11866,7 @@ def decrypt_file(
         from .crypt_errors import DecryptionError as _DecErr
         from .crypt_errors import ValidationError as _ValErr
         from .recovery_slots import (
+            MAX_DEK_SLOTS,
             unlock_passphrase_slot,
             unlock_pqc_slot,
             unlock_recovery_code_slot,
@@ -11862,6 +11874,16 @@ def decrypt_file(
         )
 
         _slots = _enc_meta.get("dek_slots") or []
+        # F16 (gitlab#233, CWE-405): dek_slots is attacker-controlled plaintext
+        # (excluded from the bulk AAD) and each passphrase slot below runs a full
+        # Argon2id BEFORE the slot-set MAC can reject a tampered set. Cap the slot
+        # count cheaply, before any KDF work, so a crafted file with hundreds of
+        # expensive slots cannot exhaust CPU/memory pre-authentication.
+        if len(_slots) > MAX_DEK_SLOTS:
+            raise _ValErr(
+                f"Refusing recovery: {len(_slots)} recovery slots exceeds the "
+                f"maximum of {MAX_DEK_SLOTS} (possible tampering)"
+            )
         _dek = None
         if recovery_code is not None:
             _want_type, _material = "recovery_code", recovery_code
