@@ -461,6 +461,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **`tools/list_keystore_keys.py` no longer requires the keystore password on
+  argv** (gitlab#249, CWE-214): the helper script forced the keystore master
+  password onto the command line (visible in `ps` / `/proc/<pid>/cmdline` /
+  shell history). `--password` is now optional; the password is resolved from
+  the flag (with a stderr exposure warning), then the `KEYSTORE_PASSWORD`
+  environment variable, then an interactive `getpass` prompt — matching the
+  keystore CLI convention. Dev-tool hardening (the script ships only in a source
+  checkout), so no advisory. Found by the 1.4.9 pre-release scan.
+
 - **Decrypt enforces a hard KDF time ceiling, not just a memory ceiling**
   (gitlab#247, MEDIUM / CWE-400, ADVISORY 2026-37): the pre-decryption cost
   estimator refused configs over an 8 GiB memory ceiling but only *warned* on
