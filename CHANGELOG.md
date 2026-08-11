@@ -1835,6 +1835,20 @@ inflated KDF metadata parameters, not cosmetic output.
 
 ### Security
 
+- **Decryption now refuses a file that embeds an unencrypted post-quantum
+  private key** (gitlab#229, MEDIUM / CWE-287, ADVISORY 2026-21): `decrypt_file`
+  adopted a PQC private key embedded in a file's own metadata verbatim whenever
+  `pqc_key_encrypted` was false or absent (it defaults to `False`), and for
+  mayo/cross/ML-KEM hybrids the bulk key derives *only* from that embedded key —
+  so a crafted self-contained file decrypted under **any** password, printing
+  "integrity verified" and writing attacker-chosen plaintext (the mayo/cross
+  variant needs no liboqs). `decrypt_file` now **default-denies** any file whose
+  metadata carries an embedded PQC private key that is not marked encrypted,
+  *before* any key derivation runs, so no plaintext is produced; the legitimate
+  encryptor never emits such a key, so no real file is affected. A trusted
+  legacy file can still be read by passing the new
+  `allow_unencrypted_pqc_key=True`. Found by the 1.4.9 pre-release security scan.
+
 - **Dependency updates for published CVEs** (Dependabot; patched versions
   smoke-tested against the crypto/PQC suites, 3028 tests green):
   - `pillow` 12.2.0 → 12.3.0 — 13 image-parsing CVEs (heap OOB writes in
