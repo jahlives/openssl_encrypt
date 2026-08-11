@@ -9,9 +9,11 @@ This module provides air-gapped portable security for scenarios where
 network connectivity is not available or desired.
 
 Security Features:
-- Encrypted workspace with AES-256-GCM
+- Sealed AES-256-GCM workspace vault (explicit seal/unlock; loose files in the
+  workspace are NOT encrypted until sealed -- there is no transparent/automatic
+  workspace encryption, and removal of unlocked plaintext is a plain delete, not
+  a secure wipe, which is unreliable on wear-levelled flash media)
 - Tamper detection and integrity verification
-- Secure file deletion on eject
 - Isolated portable environment
 - Pre-loaded encrypted keystores
 """
@@ -105,6 +107,8 @@ class USBDriveCreator:
     CONFIG_DIR = "config"
     DATA_DIR = "data"
     LOGS_DIR = "logs"
+    VAULT_FILENAME = "workspace.vault"  # AES-256-GCM sealed workspace (gitlab#263)
+    UNLOCKED_DIR = "unlocked"  # where 'unlock' extracts the vault, relative to data/
 
     # Security constants
     SALT_LENGTH = 32
@@ -542,8 +546,12 @@ class USBDriveCreator:
             "portable_mode": True,
             "version": self.VERSION,
             "security_profile": self.security_profile.value,
-            "auto_encrypt_workspace": True,
-            "secure_deletion_on_exit": True,
+            # Honest flags (gitlab#263): the workspace is protected only by the
+            # explicit seal/unlock vault -- there is no transparent auto-encryption
+            # and no secure-erase-on-eject implementation, so advertising either as
+            # true was a false security assurance (CWE-311).
+            "auto_encrypt_workspace": False,
+            "secure_deletion_on_exit": False,
             "network_disabled": True,  # Air-gapped mode
             "logging_enabled": include_logs,
             "workspace_path": "data/",
@@ -587,77 +595,230 @@ class USBDriveCreator:
         except Exception as e:
             raise USBCreationError(f"Failed to encrypt keystore: {e}")
 
-    def _create_encrypted_workspace(self, workspace_dir: Path, key: bytes) -> Dict:
-        """Create encrypted workspace directory"""
+    # Files that describe the workspace itself and must never be sealed into
+    # the vault (they live alongside it, not inside it).
+    _WORKSPACE_NON_VAULT_NAMES = frozenset({VAULT_FILENAME, ".workspace", "README.txt"})
+
+    def _seal_workspace_vault(self, source_dir: Path, vault_path: Path, key: bytes) -> int:
+        """Seal the workspace's regular files into an authenticated vault.
+
+        Every regular file under ``source_dir`` (except the workspace's own
+        metadata files -- the vault, marker and README) is packed into a tar
+        archive and encrypted with AES-256-GCM under ``key``. The output layout
+        is ``nonce + ciphertext``, identical to :meth:`_encrypt_keystore_to_usb`.
+        The vault is written to a temp file, restricted to the owner, then
+        atomically moved into place so a reader never sees a partial vault.
+
+        Symlinks are skipped rather than followed: a symlink in the workspace
+        must not pull its target's contents into the encrypted archive.
+
+        Args:
+            source_dir: The workspace directory whose files are sealed.
+            vault_path: Destination path for the encrypted vault.
+            key: The 32-byte AES-256 key derived from the master password.
+
+        Returns:
+            The number of files sealed into the vault.
+        """
+        import io
+        import tarfile
+
+        file_count = 0
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode="w") as tar:
+            for path in sorted(source_dir.rglob("*")):
+                if path.is_symlink() or not path.is_file():
+                    continue
+                rel = path.relative_to(source_dir)
+                if rel.parts and rel.parts[0] in self._WORKSPACE_NON_VAULT_NAMES:
+                    continue
+                # Build a minimal, deterministic tar entry -- do not leak the
+                # host's uid/gid/mtime, and pin owner-only mode inside the archive.
+                info = tarfile.TarInfo(name=rel.as_posix())
+                info.size = path.stat().st_size
+                info.mode = 0o600
+                info.mtime = 0
+                info.uid = info.gid = 0
+                info.uname = info.gname = ""
+                with open(path, "rb") as fh:
+                    tar.addfile(info, fh)
+                file_count += 1
+
+        # bytearray so the cleartext workspace copy can be wiped after sealing.
+        plaintext = bytearray(buf.getvalue())
+        buf.close()
+        nonce = os.urandom(self.NONCE_LENGTH)
         try:
-            # Create workspace metadata file
+            # Pass the bytearray directly (AESGCM accepts any bytes-like): a
+            # bytes() copy would be an immutable, unwipeable cleartext duplicate.
+            ciphertext = AESGCM(bytes(key)).encrypt(nonce, plaintext, None)
+        finally:
+            secure_memzero(plaintext)
+
+        # Create the temp vault with a random name and O_CREAT|O_EXCL|O_NOFOLLOW
+        # so a pre-planted symlink at a predictable name cannot redirect the
+        # write, and the file is owner-only from creation (no chmod race). This
+        # mirrors the manifest tempfile hardening (gitlab#204).
+        tmp_path = vault_path.with_name(f".{vault_path.name}.{secrets.token_hex(8)}.tmp")
+        flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, "O_NOFOLLOW", 0)
+        fd = os.open(tmp_path, flags, 0o600)
+        try:
+            with os.fdopen(fd, "wb") as f:
+                f.write(nonce + ciphertext)
+            os.replace(tmp_path, vault_path)
+        except Exception:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
+        self._restrict_to_owner(vault_path)
+        return file_count
+
+    def _unlock_workspace_vault(self, vault_path: Path, dest_dir: Path, key: bytes) -> int:
+        """Decrypt and extract a workspace vault into ``dest_dir``.
+
+        AES-256-GCM authenticates the whole archive, so a wrong key or any
+        tampering raises before a single byte is written. As defense in depth
+        against a forged archive, each member is resolved against ``dest_dir``
+        and any name that would escape it (``..`` traversal or an absolute
+        path) is refused; only regular files are extracted.
+
+        Args:
+            vault_path: The encrypted vault to open.
+            dest_dir: Directory to extract into (created if absent).
+            key: The 32-byte AES-256 key derived from the master password.
+
+        Returns:
+            The number of files extracted.
+
+        Raises:
+            USBCreationError: on a truncated vault or an unsafe member name.
+            cryptography.exceptions.InvalidTag: on wrong key / tampering.
+        """
+        import io
+        import tarfile
+
+        blob = vault_path.read_bytes()
+        if len(blob) <= self.NONCE_LENGTH:
+            raise USBCreationError("Workspace vault is truncated or corrupt")
+        nonce, ciphertext = blob[: self.NONCE_LENGTH], blob[self.NONCE_LENGTH :]
+        plaintext = AESGCM(bytes(key)).decrypt(nonce, ciphertext, None)
+
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        dest_root = dest_dir.resolve()
+        count = 0
+        with tarfile.open(fileobj=io.BytesIO(plaintext), mode="r") as tar:
+            for member in tar.getmembers():
+                if not member.isfile():
+                    # Only regular files are ever sealed; ignore anything else
+                    # (dirs are recreated implicitly, links are never trusted).
+                    continue
+                target = (dest_dir / member.name).resolve()
+                if target != dest_root and dest_root not in target.parents:
+                    raise USBCreationError(
+                        f"Refusing to extract vault member outside workspace: {member.name}"
+                    )
+                target.parent.mkdir(parents=True, exist_ok=True)
+                extracted = tar.extractfile(member)
+                if extracted is None:
+                    continue
+                with open(target, "wb") as fh:
+                    shutil.copyfileobj(extracted, fh)
+                self._restrict_to_owner(target)
+                count += 1
+        return count
+
+    def _create_encrypted_workspace(self, workspace_dir: Path, key: bytes) -> Dict:
+        """Create a genuinely encrypted workspace.
+
+        The workspace is protected by a real AES-256-GCM vault sealed with the
+        derived ``key`` (previously this method advertised encryption but never
+        used the key). An initial vault is sealed immediately so the workspace
+        is encrypted from creation, and the marker/README describe the vault
+        honestly: loose files placed in the directory are NOT encrypted until
+        they are sealed. See gitlab#263 (F27, CWE-311).
+        """
+        try:
+            vault_path = workspace_dir / self.VAULT_FILENAME
+            # Genuinely use the key: seal the (initially empty) workspace.
+            sealed_files = self._seal_workspace_vault(workspace_dir, vault_path, key)
+
             metadata = {
-                "encrypted": True,
+                "vault": self.VAULT_FILENAME,
+                "algorithm": "AES-256-GCM",
+                "sealed": True,
+                "sealed_files": sealed_files,
                 "created_at": time.time(),
                 "security_profile": self.security_profile.value,
+                "note": (
+                    "Workspace contents are protected only when sealed inside "
+                    f"{self.VAULT_FILENAME}. Files left loose in this directory "
+                    "are NOT encrypted until you run 'python ../crypt.py seal'."
+                ),
             }
 
             metadata_path = workspace_dir / ".workspace"
             with open(metadata_path, "w", encoding="utf-8") as f:
                 json.dump(metadata, f, indent=2)
+            self._restrict_to_owner(metadata_path)
 
-            # Create README for workspace
-            readme_content = """# 🔒 Encrypted USB Workspace
+            # Honest README: the directory is NOT transparently encrypted. Data
+            # at rest is protected only inside the sealed vault; the seal/unlock
+            # commands manage it, and per-file encrypt/decrypt is also available.
+            readme_content = f"""# USB Workspace (sealed vault)
 
-This directory contains encrypted files created by OpenSSL Encrypt Portable.
+Data at rest in this workspace is protected by an AES-256-GCM vault named
+"{self.VAULT_FILENAME}". IMPORTANT: files you drop loose into this directory
+are NOT encrypted until you seal them. Only the contents inside the vault are
+protected at rest.
 
-## 📁 File Encryption Workflow:
+## Sealed-workspace workflow
 
-### Encrypt a file:
+### Unlock the vault to work on your files
 ```bash
-python3 ../encrypt_file.py /path/to/file.txt PASSWORD
+python3 ../crypt.py unlock
+# → decrypts {self.VAULT_FILENAME} into data/unlocked/
 ```
 
-### Decrypt a file:
+### Seal the workspace again when you are done
 ```bash
-# View content directly (stdout - default)
-python3 ../decrypt_file.py filename.txt.enc PASSWORD
-
-# Save to specific file
-python3 ../decrypt_file.py filename.txt.enc PASSWORD output.txt
+python3 ../crypt.py seal
+# → re-encrypts the files under data/unlocked/ into {self.VAULT_FILENAME}
+#   and removes the loose plaintext copies
 ```
 
-### Examples:
+The password is read from the CRYPT_PASSWORD environment variable, or you are
+prompted. Never pass it on the command line: other users on the machine can
+read the process arguments and your shell records them in history.
+
+## Per-file encryption (alternative)
+
+To encrypt/decrypt individual files instead of the whole workspace:
 ```bash
-# Encrypt document.pdf to the USB workspace
-python3 ../encrypt_file.py /home/user/document.pdf mypassword
-
-# Quick view encrypted text file (prints to terminal)
-python3 ../decrypt_file.py secret.txt.enc mypassword
-
-# Save decrypted file to specific location
-python3 ../decrypt_file.py document.pdf.enc mypassword /home/user/recovered.pdf
-
-# Pipe content to other commands
-python3 ../decrypt_file.py data.txt.enc mypassword | grep "important"
+python3 ../crypt.py encrypt -i /path/to/file.txt   # → data/file.txt.enc
+python3 ../crypt.py decrypt -i file.txt.enc         # → stdout (or -o <file>)
 ```
 
-## 🔐 Security Features:
-- ✅ AES-256-GCM encryption
-- ✅ Complex hash chaining (same as main CLI)
-- ✅ Automatic workspace management
-- ✅ Tamper detection & integrity verification
-- ✅ Cross-platform compatibility
-
-## 💡 Tips:
-- Files are automatically named with .enc extension
-- Use the same password as your USB master password
-- Encrypted files are stored safely in this workspace directory
+## Security notes
+- AES-256-GCM (authenticated) with the same key derivation as the main CLI.
+- Tampering with {self.VAULT_FILENAME} or using the wrong password is detected
+  and refused on unlock.
+- After sealing, delete any leftover plaintext under data/unlocked/ that you no
+  longer need — only the vault is encrypted.
 """
 
             readme_path = workspace_dir / "README.txt"
             with open(readme_path, "w", encoding="utf-8") as f:
                 f.write(readme_content)
+            self._restrict_to_owner(readme_path)
 
             return {
                 "created": True,
                 "path": str(workspace_dir.name),
                 "encryption": "AES-256-GCM",
+                "vault": self.VAULT_FILENAME,
+                "sealed_files": sealed_files,
             }
 
         except Exception as e:
@@ -1288,8 +1449,125 @@ def eprint(*args, **kwargs):
     print(*args, **kwargs)
 
 
+def _load_workspace_key(script_dir):
+    """Re-derive the AES-256 workspace key from the master password plus the
+    drive's stored salt and hash_config, using the bundled library. The
+    password comes from CRYPT_PASSWORD or an interactive prompt -- never from
+    the command line, where it would be visible in the process list.
+
+    Returns (creator, key) where key is a bytearray the caller MUST wipe with
+    secure_memzero when done."""
+    import getpass
+    import json as _json
+
+    lib_dir = script_dir / "openssl_encrypt_lib"
+    if str(lib_dir) not in sys.path:
+        sys.path.insert(0, str(lib_dir))
+    from openssl_encrypt.modules.portable_media.usb_creator import (
+        USBDriveCreator,
+        USBSecurityProfile,
+    )
+    from openssl_encrypt.modules.secure_memory import SecureBytes, secure_memzero
+
+    password = os.environ.get("CRYPT_PASSWORD")
+    if not password:
+        password = getpass.getpass("USB master password: ")
+    if not password:
+        eprint("No password provided.")
+        sys.exit(1)
+
+    # Honor the drive's recorded security profile so a PBKDF2-fallback drive
+    # (hash_config absent) re-derives the same key it was sealed with.
+    profile = USBSecurityProfile.STANDARD
+    marker_path = script_dir / "data" / ".workspace"
+    try:
+        if marker_path.exists():
+            recorded = _json.loads(marker_path.read_text(encoding="utf-8")).get("security_profile")
+            if recorded:
+                profile = USBSecurityProfile(recorded)
+    except Exception:
+        profile = USBSecurityProfile.STANDARD
+    creator = USBDriveCreator(profile)
+
+    salt = creator._load_or_create_salt(script_dir, create=False)
+
+    # The drive is untrusted (evil-maid model): bound the read and validate the
+    # stored hash_config before it can drive KDF work, exactly as the integrity
+    # verifier does -- otherwise a tampered config/hash_config.json could OOM us
+    # or force attacker-chosen KDF cost on seal/unlock.
+    hash_config = None
+    hc_path = script_dir / "config" / "hash_config.json"
+    try:
+        if hc_path.exists():
+            with open(hc_path, "rb") as f:
+                blob = f.read(creator._MAX_HASH_CONFIG_BYTES + 1)
+            if len(blob) > creator._MAX_HASH_CONFIG_BYTES:
+                eprint("Refusing config/hash_config.json on the drive: too large.")
+                sys.exit(1)
+            hash_config = creator._validated_drive_hash_config(_json.loads(blob.decode("utf-8")))
+    except SystemExit:
+        raise
+    except Exception:
+        hash_config = None
+
+    secure_pw = SecureBytes(password.encode("utf-8"))
+    try:
+        key = creator._derive_encryption_key(secure_pw, hash_config, salt)
+    finally:
+        del secure_pw
+    return creator, key
+
+
+def run_unlock(script_dir, workspace_dir):
+    """Decrypt data/workspace.vault into data/unlocked/ for editing."""
+    creator, key = _load_workspace_key(script_dir)
+    from openssl_encrypt.modules.secure_memory import secure_memzero
+
+    try:
+        vault_path = workspace_dir / "workspace.vault"
+        if not vault_path.exists():
+            eprint("No workspace.vault found in data/. Nothing to unlock.")
+            sys.exit(1)
+        unlocked = workspace_dir / "unlocked"
+        n = creator._unlock_workspace_vault(vault_path, unlocked, key)
+        eprint("Unlocked %d file(s) into %s" % (n, unlocked))
+        eprint("Edit them, then run 'python crypt.py seal' to re-encrypt.")
+    finally:
+        try:
+            secure_memzero(key)
+        except Exception:
+            pass
+
+
+def run_seal(script_dir, workspace_dir):
+    """Re-encrypt data/unlocked/ into data/workspace.vault and drop plaintext.
+
+    Note: this is a plain delete of the loose plaintext, not a secure wipe;
+    on wear-levelled flash media a secure erase is not achievable from
+    userspace anyway."""
+    import shutil as _shutil
+
+    creator, key = _load_workspace_key(script_dir)
+    from openssl_encrypt.modules.secure_memory import secure_memzero
+
+    try:
+        vault_path = workspace_dir / "workspace.vault"
+        unlocked = workspace_dir / "unlocked"
+        if not unlocked.is_dir():
+            eprint("Nothing to seal: no data/unlocked/ directory. Run 'unlock' first.")
+            sys.exit(1)
+        n = creator._seal_workspace_vault(unlocked, vault_path, key)
+        _shutil.rmtree(unlocked, ignore_errors=True)
+        eprint("Sealed %d file(s) into %s and removed the loose plaintext." % (n, vault_path.name))
+    finally:
+        try:
+            secure_memzero(key)
+        except Exception:
+            pass
+
+
 def show_help():
-    eprint("Usage: python crypt.py <encrypt|decrypt> [options...]")
+    eprint("Usage: python crypt.py <encrypt|decrypt|seal|unlock> [options...]")
     eprint("")
     eprint("Unified crypto wrapper with automatic USB workspace handling")
     eprint("Supports all OpenSSL Encrypt CLI arguments")
@@ -1303,6 +1581,12 @@ def show_help():
     eprint("  → Smart workspace file resolution, outputs to stdout by default")
     eprint("  → Use -o <file> to save to data/decrypted/ (relative paths)")
     eprint("  → Use -o /absolute/path to save anywhere")
+    eprint("")
+    eprint("SEALED WORKSPACE (encrypt the whole data/ workspace at rest):")
+    eprint("  python crypt.py unlock   → decrypt data/workspace.vault to data/unlocked/")
+    eprint("  python crypt.py seal     → re-encrypt data/unlocked/ into the vault,")
+    eprint("                             then delete the loose plaintext")
+    eprint("  Loose files in data/ are NOT encrypted until you seal them.")
     eprint("")
     eprint("PASSWORD:")
     eprint("  You will be prompted, or set CRYPT_PASSWORD in the environment.")
@@ -1318,7 +1602,7 @@ def show_help():
     eprint("  python crypt.py decrypt -i document.pdf.enc --verbose")
 
 def main():
-    if len(sys.argv) < 2 or sys.argv[1] not in ['encrypt', 'decrypt']:
+    if len(sys.argv) < 2 or sys.argv[1] not in ['encrypt', 'decrypt', 'seal', 'unlock']:
         show_help()
         sys.exit(1)
 
@@ -1331,6 +1615,14 @@ def main():
         lib_dir = script_dir / "openssl_encrypt_lib"
         workspace_dir = script_dir / "data"
         workspace_dir.mkdir(exist_ok=True)
+
+        # Sealed-workspace commands operate on the vault directly (no CLI call).
+        if operation in ("seal", "unlock"):
+            if operation == "seal":
+                run_seal(script_dir, workspace_dir)
+            else:
+                run_unlock(script_dir, workspace_dir)
+            return
 
         # Build base CLI command
         cli_path = lib_dir / "openssl_encrypt" / "crypt.py"

@@ -461,6 +461,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Portable USB workspace is now genuinely encrypted (was a false claim)**
+  (gitlab#263, MEDIUM / CWE-311, ADVISORY 2026-43): the portable-USB creator
+  branded the workspace as an "Encrypted USB Workspace" with "AES-256-GCM
+  encryption", wrote a `.workspace` marker declaring `encrypted: true`, and set
+  `auto_encrypt_workspace`/`secure_deletion_on_exit` true in the portable config
+  — while `_create_encrypted_workspace` received the derived key and never used
+  it, leaving `data/` in cleartext (a user who trusted the branding left files
+  unencrypted on removable media). The derived key now seals the workspace into
+  a real authenticated AES-256-GCM vault (`data/workspace.vault`, `nonce + ct`),
+  created at USB-creation time; new `_seal_workspace_vault`/`_unlock_workspace_vault`
+  and `crypt.py seal`/`unlock` commands re-encrypt/decrypt it, re-deriving the key
+  on the target from the master password (via `CRYPT_PASSWORD`/prompt, never argv)
+  plus the drive's stored salt and a **bounded, validated** `hash_config.json`
+  (mirrors the integrity verifier — a tampered oversized/high-cost config is
+  refused, not fed to the KDF). The vault temp is created `O_CREAT|O_EXCL|O_NOFOLLOW`
+  `0600` with a random name and atomically renamed; the re-derived key and the
+  cleartext archive buffer are zeroized after use. The marker/README and the
+  `auto_encrypt_workspace`/`secure_deletion_on_exit` flags are now honest: loose
+  files in the workspace are NOT encrypted until sealed, and removing unlocked
+  plaintext is a plain delete (not a secure wipe, which is unreliable on flash).
+  1.4.x and 1.5.x.
 - **GUI writes decrypted output owner-only (0600), not world-readable 0644**
   (gitlab#260, MEDIUM / CWE-276, ADVISORY 2026-42): `FileManager.writeFileText`
   / `writeFileBytes` used Dart's `writeAsString`/`writeAsBytes`, creating the

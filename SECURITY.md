@@ -226,6 +226,21 @@ relevant.
 
 ## Security Advisories
 
+### ADVISORY 2026-43: Portable USB Workspace Advertised AES-256-GCM Encryption While Storing Files in Cleartext — Resolved
+
+**Severity:** Medium · **CWE-311** (Missing Encryption of Sensitive Data)
+**Affected versions:** releases with the portable-USB creator, up to and including **1.4.8**. **Fixed in 1.4.9** (both the 1.4.x and 1.5.x lines).
+
+**Summary:** the portable-USB creator branded its workspace as an "Encrypted USB Workspace" with "AES-256-GCM encryption", wrote a `.workspace` marker declaring `encrypted: true`, returned `{"encryption": "AES-256-GCM"}`, and set `auto_encrypt_workspace: true` / `secure_deletion_on_exit: true` in the portable config. But `_create_encrypted_workspace` received the derived encryption key and never used it: the `data/` workspace was an ordinary cleartext directory, and no auto-encryption or secure-erase was ever implemented.
+
+**Impact:** a user who trusted the "encrypted workspace" branding and placed a file into the workspace left it in cleartext on the removable media — which is by design carried around, often on FAT/exFAT where file modes are meaningless. A false security assurance, not a code-execution flaw; no remote exposure.
+
+**Fixed in 1.4.9:** the workspace is now genuinely encrypted at rest. The derived key seals the workspace's contents into an authenticated AES-256-GCM vault (`data/workspace.vault`, layout `nonce + ciphertext`), created at USB-creation time and managed by new `crypt.py seal` / `unlock` commands. The on-target key is re-derived from the master password (supplied via `CRYPT_PASSWORD` or an interactive prompt — never the command line) plus the drive's stored per-drive salt and a bounded, allowlist-validated `hash_config.json` (a tampered oversized or high-cost config is refused rather than driving the KDF). The vault is written to an `O_CREAT|O_EXCL|O_NOFOLLOW`, `0600`, random-named temp and atomically renamed; the re-derived key and the cleartext archive buffer are zeroized after use; vault extraction authenticates before writing and rejects any path-traversal member. The marker/README and the `auto_encrypt_workspace`/`secure_deletion_on_exit` flags are corrected to state the truth: loose files in the workspace are NOT encrypted until sealed, and removing unlocked plaintext is a plain delete — not a secure wipe, which is not achievable on wear-levelled flash media.
+
+**Mitigation for existing installs:** upgrade to 1.4.9 and re-create the portable drive; on earlier versions, do not rely on the workspace as encrypted storage — encrypt files explicitly (`crypt.py encrypt`) before placing them on the drive.
+
+**Disclosure:** tracked as gitlab#263 and GHSA-2jv6-qqfm-m46m (published with the 1.4.9 release). **Credit:** found by the 1.4.9 pre-release security scan (finding F27).
+
 ### ADVISORY 2026-42: Desktop GUI Wrote Decrypted Output With World-Readable (0644) Permissions — Resolved
 
 **Severity:** Medium · **CWE-276** (Incorrect Default Permissions)
