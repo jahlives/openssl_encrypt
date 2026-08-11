@@ -4374,8 +4374,11 @@ def convert_metadata_v4_to_v3(metadata):
         "format_version": 3,
         "salt": metadata["derivation_config"]["salt"],
         "hash_config": {},
-        "original_hash": metadata["hashes"]["original_hash"],
-        "encrypted_hash": metadata["hashes"]["encrypted_hash"],
+        # F8 (gitlab#245): original_hash is no longer written; guard the read so
+        # this legacy downgrade converter tolerates its absence (matches the
+        # guarded convert_metadata_v3_to_v4 sibling).
+        "original_hash": metadata.get("hashes", {}).get("original_hash", ""),
+        "encrypted_hash": metadata.get("hashes", {}).get("encrypted_hash", ""),
         "algorithm": metadata["encryption"]["algorithm"],
     }
 
@@ -4464,12 +4467,14 @@ def create_metadata_v5(
     # Encode salt to base64
     salt_b64 = base64.b64encode(salt).decode("utf-8")
 
-    # Create hashes dictionary based on AAD mode
+    # F8 (gitlab#245, CWE-311): the unkeyed sha256(plaintext) was a
+    # plaintext-confirmation oracle readable without the key, and redundant to
+    # the cipher's own authentication, so original_hash is no longer written.
+    # encrypted_hash (over the already-public ciphertext) is kept for non-AEAD
+    # integrity. Decrypt stays tolerant of old files that still carry either.
+    hashes_dict = {}
     if include_encrypted_hash and encrypted_hash is not None:
-        hashes_dict = {"original_hash": original_hash, "encrypted_hash": encrypted_hash}
-    else:
-        # AEAD mode: only include original_hash
-        hashes_dict = {"original_hash": original_hash}
+        hashes_dict["encrypted_hash"] = encrypted_hash
 
     # Create basic metadata
     metadata = {
@@ -4606,12 +4611,14 @@ def create_metadata_v6(
     # Encode salt to base64
     salt_b64 = base64.b64encode(salt).decode("utf-8")
 
-    # Create hashes dictionary based on AAD mode
+    # F8 (gitlab#245, CWE-311): the unkeyed sha256(plaintext) was a
+    # plaintext-confirmation oracle readable without the key, and redundant to
+    # the cipher's own authentication, so original_hash is no longer written.
+    # encrypted_hash (over the already-public ciphertext) is kept for non-AEAD
+    # integrity. Decrypt stays tolerant of old files that still carry either.
+    hashes_dict = {}
     if include_encrypted_hash and encrypted_hash is not None:
-        hashes_dict = {"original_hash": original_hash, "encrypted_hash": encrypted_hash}
-    else:
-        # AEAD mode: only include original_hash
-        hashes_dict = {"original_hash": original_hash}
+        hashes_dict["encrypted_hash"] = encrypted_hash
 
     # Create basic metadata
     metadata = {
@@ -4810,11 +4817,14 @@ def create_metadata_v8(
     # Encode salt to base64
     salt_b64 = base64.b64encode(salt).decode("utf-8")
 
-    # Create hashes dictionary
+    # F8 (gitlab#245, CWE-311): the unkeyed sha256(plaintext) was a
+    # plaintext-confirmation oracle readable without the key, and redundant to
+    # the cipher's own authentication, so original_hash is no longer written.
+    # encrypted_hash (over the already-public ciphertext) is kept for non-AEAD
+    # integrity. Decrypt stays tolerant of old files that still carry either.
+    hashes_dict = {}
     if include_encrypted_hash and encrypted_hash is not None:
-        hashes_dict = {"original_hash": original_hash, "encrypted_hash": encrypted_hash}
-    else:
-        hashes_dict = {"original_hash": original_hash}
+        hashes_dict["encrypted_hash"] = encrypted_hash
 
     # Create encryption metadata based on cascade mode
     if cascade and cipher_chain:
@@ -5021,11 +5031,14 @@ def create_metadata_v7(
     # Encode salt to base64
     salt_b64 = base64.b64encode(salt).decode("utf-8")
 
-    # Create hashes dictionary
+    # F8 (gitlab#245, CWE-311): the unkeyed sha256(plaintext) was a
+    # plaintext-confirmation oracle readable without the key, and redundant to
+    # the cipher's own authentication, so original_hash is no longer written.
+    # encrypted_hash (over the already-public ciphertext) is kept for non-AEAD
+    # integrity. Decrypt stays tolerant of old files that still carry either.
+    hashes_dict = {}
     if include_encrypted_hash and encrypted_hash is not None:
-        hashes_dict = {"original_hash": original_hash, "encrypted_hash": encrypted_hash}
-    else:
-        hashes_dict = {"original_hash": original_hash}
+        hashes_dict["encrypted_hash"] = encrypted_hash
 
     # Encode recipient data to base64
     recipients_encoded = []
@@ -5435,15 +5448,18 @@ def decrypt_file_asymmetric(
             aead = AESGCM(derived_key[:32])
             plaintext = aead.decrypt(nonce, ciphertext, None)
 
-            # Step 7: Verify hash
-            original_hash_computed = hashlib.sha256(plaintext).hexdigest()
-            original_hash_expected = metadata["hashes"]["original_hash"]
-
-            if original_hash_computed != original_hash_expected:
-                raise ValueError("Hash verification failed! File may be corrupted.")
-
-            if not quiet:
-                eprint("Hash verified ✅")
+            # Step 7: Verify hash (backward-compat only). The AES-256-GCM tag
+            # above already authenticated the plaintext and the metadata is
+            # ML-DSA-signed, so this is redundant. New files no longer carry
+            # original_hash (F8, gitlab#245); verify it only when an older file
+            # still provides it, and never require its presence.
+            original_hash_expected = metadata.get("hashes", {}).get("original_hash")
+            if original_hash_expected:
+                original_hash_computed = hashlib.sha256(plaintext).hexdigest()
+                if original_hash_computed != original_hash_expected:
+                    raise ValueError("Hash verification failed! File may be corrupted.")
+                if not quiet:
+                    eprint("Hash verified ✅")
 
             if output_file is None:
                 # Pre-change this reached open(None, "wb") and raised
@@ -5572,9 +5588,6 @@ def encrypt_file_asymmetric(
             # Generate salt
             salt = secrets.token_bytes(16)
 
-            # Calculate original hash
-            original_hash = hashlib.sha256(plaintext).hexdigest()
-
             # Derive encryption key using KDF chain
             derived_key, _, _ = generate_key(
                 password=bytes(secure_password),
@@ -5661,7 +5674,10 @@ def encrypt_file_asymmetric(
                     ],
                     "sender": {"key_id": sender.fingerprint, "sig_algorithm": "ML-DSA-65"},
                 },
-                "hashes": {"original_hash": original_hash, "encrypted_hash": encrypted_hash},
+                # F8 (gitlab#245, CWE-311): drop the unkeyed sha256(plaintext)
+                # oracle; the metadata is ML-DSA-signed and the payload is
+                # AES-256-GCM authenticated, so it was redundant.
+                "hashes": {"encrypted_hash": encrypted_hash},
                 "encryption": {"algorithm": algorithm, "encryption_data": encryption_data},
             }
 
@@ -6855,12 +6871,10 @@ def encrypt_file(
         if not quiet:
             eprint(f"Using streaming encryption (chunk size: {_streaming_chunk_size} bytes)")
 
-        # Pass 1: Calculate hash without loading entire file
-        if not quiet:
-            eprint("Calculating content hash (streaming)", end=" ")
-        original_hash = calculate_hash_streaming(input_file, _streaming_chunk_size)
-        if not quiet:
-            eprint("✅")
+        # F8 (gitlab#245, CWE-311): the plaintext-confirmation oracle is no longer
+        # written, so the pass-1 whole-file plaintext hash is dropped entirely
+        # (the streaming trailer HMAC already authenticates the content).
+        original_hash = ""
 
         # Prepare cascade encryptor if needed
         _cascade_enc_streaming = None
@@ -7045,13 +7059,11 @@ def encrypt_file(
         with safe_open_file(input_file, "rb", secure_mode=secure_mode) as file:
             data = file.read()
 
-    # Calculate hash of original data for integrity verification
-    if not quiet:
-        eprint("Calculating content hash", end=" ")
-
-    original_hash = calculate_hash(data)
-    if not quiet:
-        eprint("✅")
+    # F8 (gitlab#245, CWE-311): no longer compute or store sha256(plaintext) —
+    # it was a plaintext-confirmation oracle in the cleartext header and is
+    # redundant to the cipher's own authentication. The metadata builders ignore
+    # this value; kept empty only to satisfy their signatures.
+    original_hash = ""
 
     # Encrypt the data
     if not quiet:
