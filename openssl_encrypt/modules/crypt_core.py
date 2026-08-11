@@ -6540,6 +6540,13 @@ def _derive_pepper_key(password: bytes, format_version: int = None) -> bytearray
     For format_version >= 12, uses HKDF with domain separation.
     For legacy formats, uses bare SHA-256(password).
 
+    .. deprecated::
+        Retained ONLY to read pre-1.4.9 wrapped-pepper blobs. New peppers are
+        sealed by :func:`_wrap_remote_pepper` (v2, Argon2id + per-blob salt).
+        This derivation is unsalted (HKDF salt=None) and not memory-hard, so a
+        server holding the blobs could precompute a fleet-wide table and guess
+        the password cheaply (gitlab#244, F2, CWE-916).
+
     Args:
         password: Raw password bytes
         format_version: File format version. None or < 12 uses legacy SHA-256.
@@ -6561,6 +6568,130 @@ def _derive_pepper_key(password: bytes, format_version: int = None) -> bytearray
         )
     else:
         return bytearray(hashlib.sha256(password).digest())
+
+
+# --- Remote-pepper wrap format v2 (gitlab#244, F2, CWE-916) ---------------------
+#
+# The wrapped pepper is a server-side artifact (stored on the keyserver, opaque
+# base64), independent of the encrypted file's format_version, so its format is
+# self-describing via a magic prefix. v2 fixes the F2 weakness: the wrap key is
+# derived with Argon2id over the password and a FRESH per-blob random salt (so a
+# hostile server cannot precompute one fleet-wide table and the derivation is
+# memory-hard rather than ~2 SHA-256/guess), and the pepper name is bound as
+# AEAD AAD (so blobs cannot be swapped between names on the server undetected).
+#
+# Blob layout:  magic(8) || salt(16) || nonce(12) || AES-GCM(ct || tag)
+#
+# Argon2id parameters are FIXED by the magic version and are NOT stored in the
+# blob: reading cost parameters from an untrusted server blob would let an
+# attacker drive a decrypt-time memory-exhaustion DoS (cf. the KDF-cost ceiling
+# findings). A future parameter change bumps the magic to v3.
+_PEPPER_WRAP_V2_MAGIC = b"OEPPWRP2"
+_PEPPER_WRAP_V2_SALT_LEN = 16
+_PEPPER_WRAP_V2_NONCE_LEN = 12
+_PEPPER_WRAP_V2_TIME_COST = 3
+_PEPPER_WRAP_V2_MEMORY_COST = 65536  # KiB (64 MiB)
+_PEPPER_WRAP_V2_PARALLELISM = 4
+_PEPPER_WRAP_V2_AAD_PREFIX = b"openssl_encrypt-pepper-wrap-v2\x00"
+
+
+def _pepper_wrap_aad(pepper_name: str) -> bytes:
+    """AEAD associated data binding a wrapped pepper to its server-side name."""
+    name_bytes = pepper_name.encode("utf-8") if isinstance(pepper_name, str) else bytes(pepper_name)
+    return _PEPPER_WRAP_V2_AAD_PREFIX + name_bytes
+
+
+def _derive_pepper_wrap_key_v2(password: bytes, salt: bytes) -> bytearray:
+    """Argon2id wrap key for the v2 remote-pepper blob (memory-hard, salted)."""
+    if not ARGON2_AVAILABLE:
+        raise KeyDerivationError(
+            "Argon2 is required to seal or open a remote pepper (v2 wrap); "
+            "install the argon2-cffi dependency."
+        )
+    return bytearray(
+        hash_secret_raw(
+            secret=bytes(password),
+            salt=bytes(salt),
+            time_cost=_PEPPER_WRAP_V2_TIME_COST,
+            memory_cost=_PEPPER_WRAP_V2_MEMORY_COST,
+            parallelism=_PEPPER_WRAP_V2_PARALLELISM,
+            hash_len=32,
+            type=Type.ID,
+        )
+    )
+
+
+def _wrap_remote_pepper(password: bytes, pepper: bytes, pepper_name: str) -> bytes:
+    """Seal a remote pepper into a self-describing v2 blob (gitlab#244).
+
+    Args:
+        password: Raw password bytes.
+        pepper: Plaintext pepper bytes to seal.
+        pepper_name: The name/id under which the blob is stored on the server;
+            bound as AEAD AAD.
+
+    Returns:
+        ``magic || salt || nonce || AES-GCM(ct||tag)`` bytes.
+    """
+    salt = secrets.token_bytes(_PEPPER_WRAP_V2_SALT_LEN)
+    nonce = secrets.token_bytes(_PEPPER_WRAP_V2_NONCE_LEN)
+    wrap_key = _derive_pepper_wrap_key_v2(password, salt)
+    try:
+        ciphertext = AESGCM(bytes(wrap_key)).encrypt(
+            nonce, bytes(pepper), _pepper_wrap_aad(pepper_name)
+        )
+    finally:
+        secure_memzero(wrap_key)
+    return _PEPPER_WRAP_V2_MAGIC + salt + nonce + ciphertext
+
+
+def _unwrap_remote_pepper(
+    password: bytes, blob: bytes, pepper_name: str, format_version: int = None
+) -> bytearray:
+    """Open a wrapped remote pepper, auto-detecting v2 vs. legacy format.
+
+    v2 blobs (``magic`` prefix) are opened with Argon2id over the blob's own
+    salt and the ``pepper_name`` AAD. Legacy blobs (no magic) fall back to the
+    pre-1.4.9 unsalted :func:`_derive_pepper_key` path (read-only compatibility);
+    ``format_version`` selects HKDF (>= 12) vs. SHA-256 (< 12) there.
+
+    Returns:
+        The plaintext pepper in a wipeable ``bytearray`` (caller zeroizes).
+
+    Raises:
+        Exception: if authentication fails (wrong password, tampered blob, or a
+        name/AAD mismatch). The AEAD tag failure is surfaced unchanged so the
+        caller can report "wrong password or corrupted data" without an oracle.
+    """
+    if blob.startswith(_PEPPER_WRAP_V2_MAGIC):
+        off = len(_PEPPER_WRAP_V2_MAGIC)
+        salt = blob[off : off + _PEPPER_WRAP_V2_SALT_LEN]
+        off += _PEPPER_WRAP_V2_SALT_LEN
+        nonce = blob[off : off + _PEPPER_WRAP_V2_NONCE_LEN]
+        off += _PEPPER_WRAP_V2_NONCE_LEN
+        ciphertext_with_tag = blob[off:]
+        if len(salt) != _PEPPER_WRAP_V2_SALT_LEN or len(nonce) != _PEPPER_WRAP_V2_NONCE_LEN:
+            raise KeyDerivationError("Invalid v2 wrapped-pepper blob (truncated header)")
+        wrap_key = _derive_pepper_wrap_key_v2(password, salt)
+        try:
+            return bytearray(
+                AESGCM(bytes(wrap_key)).decrypt(
+                    nonce, ciphertext_with_tag, _pepper_wrap_aad(pepper_name)
+                )
+            )
+        finally:
+            secure_memzero(wrap_key)
+
+    # Legacy (pre-1.4.9) blob: nonce(12) || AES-GCM(ct||tag), no AAD.
+    if len(blob) < 28:  # 12 + 16 minimum
+        raise KeyDerivationError("Invalid encrypted pepper data format")
+    nonce = blob[:12]
+    ciphertext_with_tag = blob[12:]
+    pepper_key = _derive_pepper_key(password, format_version=format_version)
+    try:
+        return bytearray(AESGCM(pepper_key).decrypt(nonce, ciphertext_with_tag, None))
+    finally:
+        secure_memzero(pepper_key)
 
 
 def _derive_pqc_sig_key(
@@ -7140,29 +7271,24 @@ def encrypt_file(
                     except Exception as e:
                         raise KeyDerivationError(f"Failed to retrieve pepper '{pepper_name}': {e}")
 
-                    # Decrypt pepper with password
-                    # Format: nonce (12 bytes) + ciphertext + tag (16 bytes)
-                    if len(encrypted_pepper_data) < 28:  # 12 + 16 minimum
-                        raise KeyDerivationError("Invalid encrypted pepper data format")
-
-                    nonce = encrypted_pepper_data[:12]
-                    ciphertext_with_tag = encrypted_pepper_data[12:]
-
-                    # Derive decryption key from password
-                    pepper_key = _derive_pepper_key(password, format_version=format_version)
-
+                    # Decrypt pepper with password. _unwrap_remote_pepper
+                    # auto-detects the v2 (Argon2id + salt + name-AAD) blob and
+                    # falls back to the legacy unsalted format for old peppers
+                    # (gitlab#244, F2). gitlab#113 [LOW-1]: the pepper is returned
+                    # in a wipeable bytearray, zeroed in the outer finally.
                     try:
-                        aesgcm = AESGCM(pepper_key)
-                        # gitlab#113 [LOW-1]: hold the pepper in a wipeable buffer,
-                        # zeroed in the outer finally. AESGCM.decrypt's immutable
-                        # bytes transient cannot be wiped (M10 accepted residual).
-                        remote_pepper = bytearray(aesgcm.decrypt(nonce, ciphertext_with_tag, None))
+                        remote_pepper = _unwrap_remote_pepper(
+                            password,
+                            encrypted_pepper_data,
+                            pepper_name,
+                            format_version=format_version,
+                        )
+                    except KeyDerivationError:
+                        raise
                     except Exception:
                         raise KeyDerivationError(
                             "Failed to decrypt pepper - wrong password or corrupted data"
                         )
-                    finally:
-                        secure_memzero(pepper_key)
 
                     remote_pepper_name = pepper_name
 
@@ -7182,24 +7308,16 @@ def encrypt_file(
                     # accepted residual), zeroed in the outer finally.
                     remote_pepper = bytearray(secrets.token_bytes(32))
 
-                    # Derive encryption key from password
-                    pepper_key = _derive_pepper_key(password, format_version=format_version)
-
-                    # Encrypt pepper with AES-GCM
-                    try:
-                        nonce = secrets.token_bytes(12)
-                        aesgcm = AESGCM(pepper_key)
-                        ciphertext_with_tag = aesgcm.encrypt(nonce, remote_pepper, None)
-                    finally:
-                        secure_memzero(pepper_key)
-
-                    # Store encrypted pepper
-                    encrypted_pepper_data = nonce + ciphertext_with_tag
-
-                    # Generate file_id for pepper name
+                    # file_id is the server-side pepper name; compute it BEFORE
+                    # wrapping so it can be bound as AEAD AAD (gitlab#244, F2).
                     file_id = hashlib.sha256(
                         os.path.abspath(input_file).encode("utf-8")
                     ).hexdigest()[:32]
+
+                    # Seal with the v2 wrap (Argon2id + fresh per-blob salt +
+                    # name-AAD) so a hostile keyserver cannot precompute a
+                    # fleet-wide table or guess the password cheaply.
+                    encrypted_pepper_data = _wrap_remote_pepper(password, remote_pepper, file_id)
 
                     try:
                         pepper_plugin.store_pepper(
@@ -11742,33 +11860,37 @@ def decrypt_file(
                         f"Ensure you have network access and proper mTLS configuration. Error: {e}"
                     )
 
-                # Decrypt pepper with password
-                if len(encrypted_pepper_data) < 28:  # 12 + 16 minimum
-                    raise KeyDerivationError("Invalid encrypted pepper data format from server")
-
-                nonce = encrypted_pepper_data[:12]
-                ciphertext_with_tag = encrypted_pepper_data[12:]
-
-                # Derive decryption key from password
-                pepper_key = _derive_pepper_key(password, format_version=format_version)
-
+                # Decrypt pepper with password. _unwrap_remote_pepper auto-detects
+                # the v2 (Argon2id + salt + name-AAD) blob and falls back to the
+                # legacy unsalted format for peppers written before 1.4.9
+                # (gitlab#244, F2). gitlab#113 [LOW-1]: the pepper is returned in a
+                # wipeable bytearray, zeroed in the enclosing finally.
                 try:
-                    aesgcm = AESGCM(pepper_key)
-                    # gitlab#113 [LOW-1]: hold the pepper in a wipeable buffer,
-                    # zeroed in the outer finally. AESGCM.decrypt's immutable
-                    # bytes transient cannot be wiped (M10 accepted residual).
-                    remote_pepper = bytearray(aesgcm.decrypt(nonce, ciphertext_with_tag, None))
+                    remote_pepper = _unwrap_remote_pepper(
+                        password,
+                        encrypted_pepper_data,
+                        pepper_name,
+                        format_version=format_version,
+                    )
+                except (AuthenticationError, KeyDerivationError):
+                    # A config/dependency problem (e.g. Argon2 unavailable for a
+                    # v2 blob) must surface as itself, not be masked as a wrong
+                    # password (matches the encrypt path).
+                    raise
                 except Exception:
-                    # This could be wrong password or corrupted data
+                    # Wrong password, tampered blob, or a name/AAD mismatch.
                     raise AuthenticationError(
                         "Failed to decrypt remote pepper - wrong password or corrupted pepper data"
                     )
-                finally:
-                    secure_memzero(pepper_key)
 
-                # Validate pepper
+                # Validate pepper (mirror the encrypt-side 16..128 bounds).
                 if not remote_pepper or len(remote_pepper) < 16:
                     raise KeyDerivationError("Invalid pepper retrieved from server")
+
+                if len(remote_pepper) > 128:
+                    raise KeyDerivationError(
+                        "Invalid pepper retrieved from server: exceeds 128 bytes"
+                    )
 
                 if not quiet:
                     eprint(f"Remote pepper decrypted ({len(remote_pepper)} bytes)")

@@ -461,6 +461,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Remote pepper sealed with a salted, memory-hard wrap key** (gitlab#244,
+  MEDIUM / CWE-916, ADVISORY 2026-35): the keyserver-stored pepper was wrapped
+  under `HKDF-SHA256(password, salt=None)` (bare `SHA-256(password)` pre-v12)
+  with no AAD, so a hostile server holding the blobs could precompute one
+  fleet-wide table and guess the password at ~2 SHA-256/guess. New peppers now
+  use a self-describing v2 blob (`OEPPWRP2` magic ‖ 16-byte per-blob salt ‖
+  nonce ‖ AES-GCM) whose wrap key is `Argon2id(password, salt)` with fixed
+  parameters encoded by the magic version (never read from the untrusted blob,
+  avoiding a decrypt-time memory DoS) and the pepper name bound as AAD. Legacy
+  blobs stay readable; a v2-sealed pepper cannot be opened by a pre-1.4.9
+  client. Found by the 1.4.9 pre-release scan.
+
 - **`verify-usb` flags symlinked path components as tampering** (gitlab#242,
   MEDIUM / CWE-59, ADVISORY 2026-34): the v2 added-file scan enumerated the
   drive with `Path.rglob("*")`, which never descends a symlinked directory and

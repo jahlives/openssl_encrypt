@@ -226,6 +226,21 @@ relevant.
 
 ## Security Advisories
 
+### ADVISORY 2026-35: Remote Pepper Was Sealed Under an Unsalted, Non-Memory-Hard Key Derived From the Password — Resolved
+
+**Severity:** Medium · **CWE-916** (Use of Password Hash With Insufficient Computational Effort)
+**Affected versions:** all releases with the remote-pepper (keyserver) plugin, up to and including **1.4.8**. **Fixed in 1.4.9** (both the 1.4.x and 1.5.x lines).
+
+**Summary:** the remote pepper — a secret factor stored on the keyserver and mixed into key derivation — was wrapped client-side under an AES-GCM key derived as `HKDF-SHA256(ikm=password, salt=None, info="openssl_encrypt-pepper-key")` for format_version ≥ 12, or bare `SHA-256(password)` for older formats, with no AEAD associated data. Because the HKDF salt was `None` (a zero block), the wrap key was identical for a given password across every user and every file, and the derivation cost was only ~2 SHA-256 per candidate (a single SHA-256 for pre-v12 files). The wrapped blobs are uploaded to and held by the keyserver.
+
+**Impact:** a malicious or compromised remote-pepper server (which holds all wrapped blobs) could precompute a single fleet-wide table and mount an accelerated, salt-free offline dictionary attack on the user password that gates the pepper — running at hardware speed rather than at a memory-hard KDF's cost. Preconditions: the opt-in remote-pepper feature is in use and the server (or the transport) is hostile.
+
+**Fixed in 1.4.9:** new peppers are sealed in a self-describing v2 blob — `magic "OEPPWRP2" || salt(16) || nonce(12) || AES-GCM(ct‖tag)` — whose wrap key is `Argon2id(password, fresh-per-blob random salt)` (memory-hard and unique per blob, defeating both hardware-speed guessing and fleet-wide precompute), with the pepper's server-side name bound as AEAD AAD (so blobs cannot be swapped between names undetected). The Argon2id parameters are fixed by the magic version and are **not** read from the untrusted blob, so a hostile server cannot drive a decrypt-time memory-exhaustion DoS. Peppers written by earlier versions (no magic) remain readable through the legacy path. Regression-pinned by `test_remote_pepper_wrap_kdf_244.py`. **Behavior change:** a pepper written by 1.4.9+ cannot be opened by an older client (forward-incompatible by design).
+
+**Mitigation for existing installs:** upgrade to 1.4.9; re-encrypt files whose peppers were stored by an earlier version to re-seal them under the v2 wrap; only use a remote-pepper server you trust.
+
+**Disclosure:** tracked as gitlab#244 and GHSA-3v63-778v-3mvp (published with the 1.4.9 release). **Credit:** found by the 1.4.9 pre-release security scan (finding F2).
+
 ### ADVISORY 2026-34: `verify-usb` Silently Skipped Everything Under a Planted Directory Symlink — Resolved
 
 **Severity:** Medium · **CWE-59** (Improper Link Resolution Before File Access / "Link Following")
