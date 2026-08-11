@@ -552,6 +552,35 @@ class Identity:
         with open(sig_pub_path, "rb") as f:
             sig_public_key = f.read()
 
+        # Fail closed if the stored fingerprint does not match the fingerprint
+        # recomputed from the public keys just loaded (gitlab#230, scan F6/F7,
+        # CWE-345). identity.json is untrusted under the supplied-store threat
+        # model, and public keys are read from sibling .pem files, so a store
+        # whose JSON claims a genuine fingerprint but whose .pem files hold
+        # attacker keys would otherwise be shown/used under the forged
+        # fingerprint. import_public already enforces this gate; load() must
+        # too. list_identities catches this and routes the entry into its
+        # skipped list rather than silently using it.
+        #
+        # Done here -- over the cheap PUBLIC keys, before the private-key KDF /
+        # HSM unlock below -- so a crafted inconsistent store fails cheap and
+        # cannot force an Argon2id derivation or an attacker-triggered YubiKey
+        # touch before rejection (mirrors the early metadata validation above).
+        # Dual-accept v2 and legacy v1, matching check_fingerprint_consistency.
+        _recomputed_v2 = calculate_fingerprint_v2(
+            data["encryption_algorithm"],
+            enc_public_key,
+            data["signing_algorithm"],
+            sig_public_key,
+        )
+        _recomputed_v1 = calculate_fingerprint(enc_public_key + sig_public_key)
+        if data["fingerprint"] not in (_recomputed_v2, _recomputed_v1):
+            raise IdentityError(
+                f"Fingerprint verification failed for identity "
+                f"'{sanitize_for_display(name)}': the stored fingerprint does "
+                f"not match the public keys on disk"
+            )
+
         # Check if private keys exist
         enc_priv_path = path / "encryption_private.pem"
         sig_priv_path = path / "signing_private.pem"
@@ -1107,12 +1136,21 @@ class IdentityStore:
         # already pinned, compare the stored key fingerprint to the incoming
         # one. A different fingerprint is a key substitution and must be
         # accepted deliberately - even with overwrite=True.
+        #
+        # gitlab#230 (F7): compare RECOMPUTED fingerprints, not the stored
+        # `fingerprint` fields. Comparing the JSON-claimed values let an impostor
+        # forge its `fingerprint` to equal the pinned contact's and slip a
+        # key substitution past the gate; recomputing from the actual public
+        # keys binds the decision to the keys. It also avoids a false positive
+        # when a legacy-v1 pinned entry is re-imported with a v2 fingerprint for
+        # the same keys (both recompute to the same v2 value).
         if not allow_key_change:
             existing = self.get_by_name(identity.name)
-            if existing is not None and existing.fingerprint != identity.fingerprint:
-                raise IdentityKeyChangedError(
-                    identity.name, existing.fingerprint, identity.fingerprint
-                )
+            if existing is not None:
+                existing_fp = existing.calculate_fingerprint()
+                incoming_fp = identity.calculate_fingerprint()
+                if existing_fp != incoming_fp:
+                    raise IdentityKeyChangedError(identity.name, existing_fp, incoming_fp)
 
         identity.save(path, passphrase, overwrite)
 

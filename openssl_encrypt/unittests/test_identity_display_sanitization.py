@@ -491,10 +491,16 @@ class TestLoadValidatesStoredMetadata(unittest.TestCase):
     def _write_store(self, tmp, **overrides):
         import pathlib
 
+        from openssl_encrypt.modules.pqc_signing import calculate_fingerprint_v2
+
+        # Consistent by default so the clean case passes Identity.load's
+        # fingerprint gate (gitlab#230); a caller overriding "fingerprint" (the
+        # forged-field cases) still exercises the validators, which run first.
+        enc_key, sig_key = b"ek", b"sk"
         doc = {
             "name": "alice",
             "email": "alice@example.com",
-            "fingerprint": "aa:bb:cc:dd",
+            "fingerprint": calculate_fingerprint_v2("ML-KEM-768", enc_key, "ML-DSA-65", sig_key),
             "created_at": "2026-01-01T00:00:00Z",
             "encryption_algorithm": "ML-KEM-768",
             "signing_algorithm": "ML-DSA-65",
@@ -503,8 +509,8 @@ class TestLoadValidatesStoredMetadata(unittest.TestCase):
         d = pathlib.Path(tmp) / "alice"
         d.mkdir()
         (d / "identity.json").write_text(json.dumps(doc), encoding="utf-8")
-        (d / "encryption_public.pem").write_bytes(b"ek")
-        (d / "signing_public.pem").write_bytes(b"sk")
+        (d / "encryption_public.pem").write_bytes(enc_key)
+        (d / "signing_public.pem").write_bytes(sig_key)
         return d
 
     def test_crafted_fields_are_refused_on_load(self):

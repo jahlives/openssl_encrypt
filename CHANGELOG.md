@@ -479,6 +479,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Re-encrypt any files produced through the 1.4.x D-Bus service after
   upgrading. Found by the 1.4.9 pre-release security scan.
 
+- **Identity loading now re-derives the fingerprint from the keys and fails
+  closed on a mismatch** (gitlab#230, MEDIUM / CWE-345, ADVISORY 2026-22):
+  `Identity.load` copied the `fingerprint` field verbatim from an untrusted
+  `identity.json` and never re-derived it from the sibling public-key `.pem`
+  files (only the import path did). Under the supplied-store threat model a
+  store whose JSON claimed a genuine out-of-band-verified fingerprint but whose
+  `.pem` files held attacker keys was indistinguishable from a real pinned
+  contact: `identity show` printed the good fingerprint while
+  `encrypt --for-identity` encapsulated to the attacker's key, signature
+  verification printed "verified from: <legitimate fingerprint>" against the
+  substituted signing key, and re-importing the real bundle raised no TOFU
+  warning. `Identity.load` now calls `check_fingerprint_consistency()` and
+  refuses to load an entry whose stored fingerprint does not match the public
+  keys on disk (so `list_identities` skips and reports it), and the
+  `add_identity` TOFU key-change check now compares the **recomputed**
+  fingerprint on both sides so a substitution is detected from the actual keys.
+  Found by the 1.4.9 pre-release security scan.
+
 - **Decryption now refuses a file that embeds an unencrypted post-quantum
   private key** (gitlab#229, MEDIUM / CWE-287, ADVISORY 2026-21): `decrypt_file`
   adopted a PQC private key embedded in a file's own metadata verbatim whenever

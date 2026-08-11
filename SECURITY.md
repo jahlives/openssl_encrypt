@@ -226,6 +226,23 @@ relevant.
 
 ## Security Advisories
 
+### ADVISORY 2026-22: Stored Identity Fingerprint Trusted Without Re-Deriving It From the Keys — Resolved
+
+**Severity:** Medium · **CWE-345** (Insufficient Verification of Data Authenticity)
+**Affected versions:** all releases with the identity subsystem, up to and including **1.4.8**. **Fixed in 1.4.9** (both the 1.4.x and 1.5.x lines).
+
+**Summary:** `Identity.load` read the `fingerprint` field verbatim from an identity's `identity.json` and never re-derived it from the actual public-key `.pem` files, unlike the import path (`import_public`), which calls `check_fingerprint_consistency()` and fails closed. Under the supplied-store threat model (a shared contacts directory, an extracted archive, `--identity-store` / `OPENSSL_ENCRYPT_IDENTITY_STORE` pointing at attacker-controlled files), a store whose `identity.json` claimed a genuine out-of-band-verified fingerprint but whose `.pem` files held **attacker** keys was indistinguishable from a real pinned contact: `identity show` printed the good (claimed) fingerprint while `encrypt --for-identity` encapsulated to the attacker's ML-KEM key (F6); `decrypt_file_asymmetric` verified the ML-DSA signature against the substituted `signing_public.pem` and printed "Signature verified from: &lt;legitimate fingerprint&gt;", so a forged file passed the only authenticity check the format has (F7); and re-importing the real bundle raised no TOFU warning because `add_identity` compared the JSON-claimed fingerprint.
+
+**Impact:** silent key substitution against the identity trust model — a supplied store can redirect encryption to an attacker's key and make forged files display a legitimate signer, with no warning. It does not affect a user's own locally generated identities (whose fingerprints are consistent by construction). Exploitation requires the victim to use an attacker-supplied identity store.
+
+**Fixed in 1.4.9:** `Identity.load` now calls `check_fingerprint_consistency()` and fails closed when the stored fingerprint does not match the fingerprint recomputed from the public keys on disk, so a substituted store entry is rejected (and skipped/reported by `list_identities`) instead of being used under a forged fingerprint. The `add_identity` TOFU key-change check now compares the **recomputed** fingerprint on both sides, so a key substitution is detected from the actual keys (and a legacy-v1 vs v2 format difference for the same keys no longer causes a false positive). Regression-pinned by `test_identity_load_fingerprint_gate_230.py`.
+
+**Note on scope:** this proves that a loaded identity's displayed/used fingerprint matches the keys it ships with; authenticity of the keys themselves still rests on out-of-band fingerprint verification and TOFU pinning (both of which this fix makes reliable). Binding the public-key bytes into the private-key at-rest AEAD's AAD (a separate defense-in-depth hardening against local write access to one's own identity directory) is tracked separately.
+
+**Mitigation for existing installs:** upgrade to 1.4.9; on earlier versions, do not treat a fingerprint shown for an identity loaded from a supplied store as authenticated.
+
+**Disclosure:** tracked as gitlab#230 and GHSA-q8p3-7h6h-ghfr (published with the 1.4.9 release). **Credit:** found by the 1.4.9 pre-release security scan (findings F6 and F7).
+
 ### ADVISORY 2026-21: Crafted File With an Unencrypted Embedded Post-Quantum Private Key Decrypts Under Any Password — Resolved
 
 **Severity:** Medium · **CWE-287** (Improper Authentication)
