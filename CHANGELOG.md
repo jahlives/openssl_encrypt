@@ -37,7 +37,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `flatpak-build[:clean]`/`flatpak-publish[:clean]` jobs are revived CLI-only
   (no Flutter step); and the repository web pages list both apps (the landing
   page and shared assets are kept byte-identical with the GUI repo, which
-  deploys to the same server directory).
+  deploys to the same server directory). The metainfo feature list no longer
+  claims a GUI interface.
 
 - **`--gui` now resolves an *installed* desktop GUI, not a build in this tree**
   (gitlab#265, `docs/gui-split-unified-plan.md` P12): the desktop GUI is becoming
