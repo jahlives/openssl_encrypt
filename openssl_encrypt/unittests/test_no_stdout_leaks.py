@@ -37,6 +37,22 @@ module_under_test = sys.modules[__name__]
 # tripped the lint that exists to guard exactly that. Line drift also forced a
 # manual re-anchor on almost every commit touching a whitelisted file.
 STDOUT_WHITELIST = [
+    # json_output.py — THE stdout emitters for the total-json envelope
+    # (gitlab#268). Machine output is stdout's purpose; everything human goes
+    # through eprint(). These two calls are the funnel all new --json
+    # endpoints share, so nothing else needs whitelisting per endpoint.
+    (
+        "modules/json_output.py",
+        'print(json.dumps({"status": "ok", "data": data}), flush=True)',
+        1,
+        "total-json success envelope",
+    ),
+    (
+        "modules/json_output.py",
+        'print(json.dumps({"status": "error", "error": {"message": str(message)}}), flush=True)',
+        1,
+        "total-json error envelope",
+    ),
     # crypt_cli.py — JSON data outputs
     (
         "modules/crypt_cli.py",

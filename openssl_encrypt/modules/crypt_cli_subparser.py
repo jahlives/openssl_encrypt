@@ -2150,6 +2150,20 @@ def setup_simple_parser(subparser):
     pass
 
 
+def _add_json_flag(subparser):
+    """Add the total-json ``--json`` flag (gitlab#268) to a converted command.
+
+    Deliberately opt-in per command, NOT part of setup_simple_parser: a
+    command that has no JSON emitter yet must keep REJECTING --json
+    (fail-closed) instead of accepting and ignoring it.
+    """
+    subparser.add_argument(
+        "--json",
+        action="store_true",
+        help="Machine-readable JSON output on stdout (envelope: status/data)",
+    )
+
+
 def setup_analyze_security_parser(subparser):
     """Set up arguments for analyze-security command."""
     # Add only security-related arguments (no file I/O required)
@@ -3539,6 +3553,7 @@ def build_subparser():
         formatter_class=argparse.RawTextHelpFormatter,
     )
     setup_simple_parser(check_argon2_parser)
+    _add_json_flag(check_argon2_parser)
 
     check_pqc_parser = subparsers.add_parser(
         "check-pqc",
@@ -3546,6 +3561,7 @@ def build_subparser():
         formatter_class=argparse.RawTextHelpFormatter,
     )
     setup_simple_parser(check_pqc_parser)
+    _add_json_flag(check_pqc_parser)
 
     check_password_parser = subparsers.add_parser(
         "check-password",
@@ -3560,6 +3576,7 @@ def build_subparser():
         formatter_class=argparse.RawTextHelpFormatter,
     )
     setup_simple_parser(version_parser)
+    _add_json_flag(version_parser)
 
     show_version_file_parser = subparsers.add_parser(
         "show-version-file",
@@ -3567,6 +3584,7 @@ def build_subparser():
         formatter_class=argparse.RawTextHelpFormatter,
     )
     setup_simple_parser(show_version_file_parser)
+    _add_json_flag(show_version_file_parser)
 
     # Registry-based algorithm listing command
     if REGISTRY_AVAILABLE:
@@ -3576,6 +3594,7 @@ def build_subparser():
             formatter_class=argparse.RawTextHelpFormatter,
         )
         setup_list_algorithms_parser(list_algorithms_parser)
+        _add_json_flag(list_algorithms_parser)
 
     # Algorithm availability information (JSON output for GUI)
     if REGISTRY_AVAILABLE:

@@ -6487,6 +6487,25 @@ def main_with_args(args=None):
         args.use_balloon = True
 
     if args.action == "version":
+        if getattr(args, "json", False):
+            import platform
+
+            from .json_output import emit_json
+
+            try:
+                from openssl_encrypt.version import __git_commit__, __version__
+            except ImportError:
+                __version__ = "unknown"
+                __git_commit__ = "unknown"
+            emit_json(
+                {
+                    "version": __version__,
+                    "git_commit": __git_commit__,
+                    "python": sys.version.split()[0],
+                    "platform": f"{platform.system()} {platform.release()}",
+                }
+            )
+            return 0
         eprint(show_version_info())
         return 0
 
@@ -6509,6 +6528,18 @@ def main_with_args(args=None):
         return 0
 
     if args.action == "show-version-file":
+        if getattr(args, "json", False):
+            from .json_output import emit_json, emit_json_error
+
+            try:
+                from openssl_encrypt.version import get_version_info
+            except ImportError:
+                emit_json_error(
+                    "Version module not found. Run 'pip install -e .' to generate the version file."
+                )
+                return 1
+            emit_json(get_version_info())
+            return 0
         try:
             from openssl_encrypt.version import get_version_info, print_version_info
 
@@ -6921,6 +6952,30 @@ def main_with_args(args=None):
             sys.exit(1)
 
     elif args.action == "list-algorithms":
+        if getattr(args, "json", False):
+            from .json_output import emit_json, emit_json_error
+
+            try:
+                from .registry import (
+                    get_available_ciphers,
+                    get_available_hashes,
+                    get_available_kdfs,
+                    get_available_kems,
+                    get_available_signatures,
+                )
+            except ImportError:
+                emit_json_error("Registry system not available")
+                sys.exit(1)
+            emit_json(
+                {
+                    "ciphers": list(get_available_ciphers()),
+                    "hashes": list(get_available_hashes()),
+                    "kdfs": list(get_available_kdfs()),
+                    "kems": list(get_available_kems()),
+                    "signatures": list(get_available_signatures()),
+                }
+            )
+            sys.exit(0)
         show_algorithm_registry(args)
         sys.exit(0)
 
@@ -6934,6 +6989,35 @@ def main_with_args(args=None):
 
     elif args.action == "check-argon2":
         argon2_available, version, supported_types = check_argon2_support()
+        if getattr(args, "json", False):
+            from .json_output import emit_json
+
+            functional = None
+            if argon2_available:
+                try:
+                    import argon2
+
+                    test_hash = argon2.low_level.hash_secret_raw(
+                        b"test_password",
+                        b"testsalt12345678",
+                        time_cost=1,
+                        memory_cost=8,
+                        parallelism=1,
+                        hash_len=16,
+                        type=argon2.low_level.Type.ID,
+                    )
+                    functional = len(test_hash) == 16
+                except Exception:
+                    functional = False
+            emit_json(
+                {
+                    "available": argon2_available,
+                    "version": version,
+                    "variants": ["Argon2" + t for t in supported_types],
+                    "functional": functional,
+                }
+            )
+            sys.exit(0)
         eprint("\nARGON2 SUPPORT CHECK")
         eprint("====================")
         if argon2_available:
@@ -6970,6 +7054,17 @@ def main_with_args(args=None):
         from .pqc import PQCAlgorithm, check_pqc_support
 
         pqc_available, version, supported_algorithms = check_pqc_support(quiet=args.quiet)
+        if getattr(args, "json", False):
+            from .json_output import emit_json
+
+            emit_json(
+                {
+                    "available": pqc_available,
+                    "liboqs_version": version,
+                    "algorithms": list(supported_algorithms),
+                }
+            )
+            sys.exit(0)
         if not args.quiet:
             eprint("\nPOST-QUANTUM CRYPTOGRAPHY SUPPORT CHECK")
             eprint("======================================")
