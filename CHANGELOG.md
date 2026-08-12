@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`crypt capabilities` — machine-readable capability manifest** (gitlab#265,
+  github#140): a new `capabilities` command prints a JSON manifest of what this
+  CLI build supports — `schema_version`, `cli_version`, `line`, `commands`,
+  `flags`, `features`, `command_flags`, `json_endpoints`, `json_fields` — so a
+  single, separately-released desktop GUI can gate its screens and options on
+  the CLI it is paired with, instead of a hardcoded version→feature matrix (see
+  `docs/gui-split-unified-plan.md`, P1). `commands` come from the CLI's
+  authoritative command list and `flags` are introspected from the live
+  parser(s) (including the per-command subparser), so the manifest cannot drift
+  from what the CLI actually accepts; `features` are computed from that
+  introspected surface, so a feature reports `false` automatically when its
+  command/flag is absent (e.g. steganography on a line that dropped it). The
+  manifest contains only public names — never a secret value — and is
+  independent of the process environment.
 - **Batch-tab hardening follow-ups from the #214 review** (gitlab#215):
   `--verify-from` and `--no-verify` are now mutually exclusive at the CLI
   parser boundary (the pair was accepted and `--no-verify` silently won —

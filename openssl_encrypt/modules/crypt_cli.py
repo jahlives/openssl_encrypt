@@ -1301,6 +1301,7 @@ def sanitize_argv_for_debug(argv: list) -> list:
 KNOWN_COMMANDS = (
     "add-recovery",
     "armor",
+    "capabilities",
     "check-argon2",
     "check-password",
     "check-pqc",
@@ -3832,6 +3833,7 @@ def main_with_args(args=None):
             "check-password",
             "version",
             "show-version-file",
+            "capabilities",
             "create-usb",
             "verify-usb",
             "list-plugins",
@@ -4857,6 +4859,24 @@ def main_with_args(args=None):
 
     if args.action == "version":
         eprint(show_version_info())
+        return 0
+
+    if args.action == "capabilities":
+        # Machine-readable manifest of what THIS CLI build supports, so a
+        # separately-released GUI can gate its UI on the CLI it is paired with
+        # (docs/gui-split-unified-plan.md, P1). commands come from KNOWN_COMMANDS
+        # (the authoritative set); flags are introspected from this parser. The
+        # manifest carries only public names and is printed to stdout as JSON.
+        from .capabilities import manifest_json
+
+        # Union the per-command subparser's flags too (command-specific flags
+        # like --stego-password live there, not on the monolithic parser).
+        try:
+            _sub = _shared_subparser()
+        except Exception:
+            _sub = None
+        _extra = [_sub] if _sub is not None else None
+        print(manifest_json(parser, commands=KNOWN_COMMANDS, extra_parsers=_extra))
         return 0
 
     if args.action == "show-version-file":
@@ -6050,6 +6070,7 @@ def main_with_args(args=None):
         "check-password",
         "version",
         "show-version-file",
+        "capabilities",
     ]:
         parser.error("the following arguments are required: --input/-i")
 

@@ -64,6 +64,12 @@ STDOUT_WHITELIST = [
     ),
     (
         "modules/crypt_cli.py",
+        "print(manifest_json(parser, commands=KNOWN_COMMANDS, extra_parsers=_extra))",
+        1,
+        "capabilities JSON manifest (machine-readable, public names only)",
+    ),
+    (
+        "modules/crypt_cli.py",
         "print(json.dumps(events, indent=2))",
         1,
         "audit/event listing --json document",
