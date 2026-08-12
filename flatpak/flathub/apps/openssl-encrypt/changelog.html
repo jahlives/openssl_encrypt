@@ -20,6 +20,7 @@
           <div class="toc">
               <h3>&#128203; Table of Contents</h3>
               <ul>
+                  <li><a href="#v1-4-10">1.4.10 - GUI Capability Manifest (Not Released)</a></li>
                   <li><a href="#v1-4-9">1.4.9 - Security Hardening &amp; Desktop GUI</a></li>
                   <li><a href="#v1-4-8">1.4.8 - Format v14 Default &amp; Security Hardening</a></li>
                   <li><a href="#v1-4-7">1.4.7 - Documentation Update</a></li>
@@ -71,6 +72,18 @@
 
           <!-- Stable Release Series (1.4.x) -->
           <h2>&#128640; Stable Release Series (1.4.x)</h2>
+
+          <div class="changelog-item" id="v1-4-10">
+              <div class="version">
+                  1.4.10
+                  <span class="release-type dev">NOT RELEASED</span>
+                  <span class="release-type minor">FEATURE</span>
+              </div>
+              <div class="date">Unreleased (in development)</div>
+              <div class="description">
+                  <strong>NOT YET RELEASED.</strong> <strong>GUI capability manifest (gitlab#265, github#140):</strong> a new <code>crypt capabilities</code> command prints a machine-readable JSON description of what this build of the tool supports &mdash; <code>schema_version</code>, <code>cli_version</code>, <code>line</code>, <code>commands</code>, <code>flags</code>, <code>features</code>, <code>command_flags</code>, <code>json_endpoints</code> and <code>json_fields</code> &mdash; so a single desktop app, released on its own schedule, can gate its screens and options on whichever version of the command-line tool it is paired with, instead of a hardcoded version&rarr;feature matrix. The <code>commands</code> come from the tool's authoritative command list and the <code>flags</code> are introspected from the live argument parsers (including each per-command subparser), so the description cannot drift from what the tool actually accepts; <code>features</code> are computed from that surface, so a feature reports <code>false</code> automatically when the command or option it needs is absent (for example steganography on a line that dropped it). Options hidden from <code>--help</code> are excluded, so the list never claims more than the visible surface. The description carries only public command and option names &mdash; never a secret value &mdash; and does not depend on your environment. This is the foundation for shipping the desktop app as a separate application from the command-line tool.
+              </div>
+          </div>
 
           <div class="changelog-item" id="v1-4-9">
               <div class="version">

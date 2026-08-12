@@ -74,6 +74,12 @@ STDOUT_WHITELIST = [
         1,
         "check-password JSON report",
     ),
+    (
+        "modules/crypt_cli.py",
+        "print(manifest_json(parser, commands=KNOWN_COMMANDS, extra_parsers=_extra))",
+        1,
+        "capabilities JSON manifest (machine-readable, public names only)",
+    ),
     # crypt_cli.py — analyze-security / smart-recommendations / telemetry status
     # machine-readable output (gitlab#162). The human report stays on stderr; the
     # JSON documents carry only algorithm/config metadata, scores and advice text
