@@ -76,9 +76,6 @@
     },
     "hashes": {
       "type": "object",
-      "required": [
-        "original_hash"
-      ],
       "additionalProperties": true,
       "properties": {
         "original_hash": {

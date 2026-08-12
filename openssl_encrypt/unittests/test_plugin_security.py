@@ -40,6 +40,7 @@ from openssl_encrypt.modules.plugin_system.plugin_sandbox import (
     PluginSandbox,
     SandboxViolationError,
 )
+from openssl_encrypt.modules.plugin_system.plugin_signature import PluginSignaturePolicy
 
 
 class TestSensitiveDataProtection(unittest.TestCase):
@@ -419,8 +420,13 @@ class TestResourceLimits(unittest.TestCase):
 
     def setUp(self):
         self.config_manager = PluginConfigManager()
+        # This suite exercises the execution-timeout limit on an unsigned test
+        # plugin; skip the signature gate (gitlab#130 ENFORCE default would
+        # otherwise refuse it before it ever runs).
         self.plugin_manager = PluginManager(
-            config_manager=self.config_manager, strict_security_mode=False
+            config_manager=self.config_manager,
+            strict_security_mode=False,
+            signature_policy=PluginSignaturePolicy.OFF,
         )
         self.plugin_manager.max_execution_time = 2.0  # 2 second timeout for testing
         self.temp_dir = tempfile.mkdtemp()
@@ -675,8 +681,13 @@ class EvalPlugin(PreProcessorPlugin):
 
     def test_permissive_mode_allows_with_warning(self):
         """Verify permissive mode allows dangerous patterns with warning"""
+        # Signature policy OFF: this test isolates the permissive AST mode, not
+        # the signature gate (gitlab#130 ENFORCE default would otherwise refuse
+        # the unsigned eval plugin regardless of security mode).
         plugin_manager = PluginManager(
-            config_manager=self.config_manager, strict_security_mode=False  # PERMISSIVE
+            config_manager=self.config_manager,
+            strict_security_mode=False,  # PERMISSIVE
+            signature_policy=PluginSignaturePolicy.OFF,
         )
 
         plugin_path = self._create_eval_plugin()
@@ -778,8 +789,7 @@ class TestConfigDirectoryPermissions(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             with tempfile.TemporaryDirectory() as config_dir:
                 plugin_file = Path(temp_dir) / "test_plugin.py"
-                plugin_file.write_text(
-                    """
+                plugin_file.write_text("""
 from openssl_encrypt.modules.plugin_system import PreProcessorPlugin, PluginResult, PluginCapability
 
 class TestPlugin(PreProcessorPlugin):
@@ -794,12 +804,16 @@ class TestPlugin(PreProcessorPlugin):
 
     def process_file(self, file_path, context):
         return PluginResult.success_result("OK")
-"""
-                )
+""")
 
                 # Use temp config directory to avoid loading existing configs
                 config_manager = PluginConfigManager(config_dir)
-                plugin_manager = PluginManager(config_manager)
+                # Signature OFF: this test isolates the insecure-config-dir
+                # failure path, not the signature gate (gitlab#130 ENFORCE
+                # default would otherwise refuse the unsigned plugin first).
+                plugin_manager = PluginManager(
+                    config_manager, signature_policy=PluginSignaturePolicy.OFF
+                )
                 plugin_manager.add_plugin_directory(temp_dir)
 
                 # Mock ensure_plugin_data_dir to return None (permission failure)
@@ -826,7 +840,12 @@ class TestPackagePluginDiscovery(unittest.TestCase):
         self.test_dir = Path(tempfile.mkdtemp())
         self.config_dir = Path(tempfile.mkdtemp())
         self.config_manager = PluginConfigManager(str(self.config_dir))
-        self.plugin_manager = PluginManager(self.config_manager)
+        # Signature OFF: these tests isolate package-plugin discovery/loading,
+        # not the signature gate (gitlab#130 ENFORCE default would otherwise
+        # refuse the unsigned package plugins for lacking a manifest).
+        self.plugin_manager = PluginManager(
+            self.config_manager, signature_policy=PluginSignaturePolicy.OFF
+        )
         self.plugin_manager.add_plugin_directory(str(self.test_dir))
 
     def tearDown(self):
@@ -844,8 +863,7 @@ class TestPackagePluginDiscovery(unittest.TestCase):
         pkg_dir = self.test_dir / "test_package_plugin"
         pkg_dir.mkdir()
         init_file = pkg_dir / "__init__.py"
-        init_file.write_text(
-            """
+        init_file.write_text("""
 from openssl_encrypt.modules.plugin_system import PreProcessorPlugin, PluginResult, PluginCapability
 
 class PackagePlugin(PreProcessorPlugin):
@@ -860,8 +878,7 @@ class PackagePlugin(PreProcessorPlugin):
 
     def process_file(self, file_path, context):
         return PluginResult.success_result("OK")
-"""
-        )
+""")
 
         # Discover plugins
         discovered = self.plugin_manager.discover_plugins()
@@ -876,8 +893,7 @@ class PackagePlugin(PreProcessorPlugin):
         """Verify both flat files and packages are discovered."""
         # Create a flat file plugin
         flat_file = self.test_dir / "flat_plugin.py"
-        flat_file.write_text(
-            """
+        flat_file.write_text("""
 from openssl_encrypt.modules.plugin_system import PreProcessorPlugin, PluginResult, PluginCapability
 
 class FlatPlugin(PreProcessorPlugin):
@@ -892,15 +908,13 @@ class FlatPlugin(PreProcessorPlugin):
 
     def process_file(self, file_path, context):
         return PluginResult.success_result("OK")
-"""
-        )
+""")
 
         # Create a package plugin
         pkg_dir = self.test_dir / "package_plugin"
         pkg_dir.mkdir()
         init_file = pkg_dir / "__init__.py"
-        init_file.write_text(
-            """
+        init_file.write_text("""
 from openssl_encrypt.modules.plugin_system import PreProcessorPlugin, PluginResult, PluginCapability
 
 class PackagePlugin(PreProcessorPlugin):
@@ -915,8 +929,7 @@ class PackagePlugin(PreProcessorPlugin):
 
     def process_file(self, file_path, context):
         return PluginResult.success_result("OK")
-"""
-        )
+""")
 
         # Discover plugins
         discovered = self.plugin_manager.discover_plugins()
@@ -931,8 +944,7 @@ class PackagePlugin(PreProcessorPlugin):
         pkg_dir = self.test_dir / "dir_test_plugin"
         pkg_dir.mkdir()
         init_file = pkg_dir / "__init__.py"
-        init_file.write_text(
-            """
+        init_file.write_text("""
 from openssl_encrypt.modules.plugin_system import PreProcessorPlugin, PluginResult, PluginCapability
 
 class DirTestPlugin(PreProcessorPlugin):
@@ -947,8 +959,7 @@ class DirTestPlugin(PreProcessorPlugin):
 
     def process_file(self, file_path, context):
         return PluginResult.success_result("OK")
-"""
-        )
+""")
 
         # Load the plugin
         result = self.plugin_manager.load_plugin(str(init_file))
@@ -991,15 +1002,22 @@ class TestBuiltinPluginTrust(unittest.TestCase):
                 shutil.rmtree(d)
 
     def test_builtin_plugin_with_blocked_import_passes_validation(self):
-        """A plugin under builtin_plugin_root that imports pathlib must pass validation."""
-        plugin_file = self.test_dir / "test_builtin.py"
+        """A plugin inside a shipped built-in package must pass validation.
+
+        gitlab#231 (scan F10): built-in trust is an allowlist of shipped package
+        directories, so the plugin has to live inside one (e.g. hsm/), not
+        directly in the root — a top-level file is no longer trusted.
+        """
+        builtin_pkg = self.test_dir / "hsm"
+        builtin_pkg.mkdir()
+        plugin_file = builtin_pkg / "test_builtin.py"
         plugin_file.write_text("from pathlib import Path\nimport io\ndef execute(): pass\n")
 
         # Without builtin trust, strict mode should block it
         self.plugin_manager.strict_security_mode = True
         self.assertFalse(self.plugin_manager._validate_plugin_file(str(plugin_file)))
 
-        # With builtin trust set to the plugin's directory, it should pass
+        # With builtin trust set to the root, a plugin inside a shipped package passes
         self.plugin_manager.builtin_plugin_root = str(self.test_dir)
         self.assertTrue(self.plugin_manager._validate_plugin_file(str(plugin_file)))
 

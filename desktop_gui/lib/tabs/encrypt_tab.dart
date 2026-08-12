@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as path;
 import '../cli_service.dart';
+import '../input_validation.dart';
 import '../file_manager.dart';
 import '../widgets/crypto_widgets.dart';
+import '../widgets/password_strength_meter.dart';
 
 class EncryptTab extends StatefulWidget {
   final FileManager fileManager;
@@ -17,6 +19,27 @@ class EncryptTab extends StatefulWidget {
 class _EncryptTabState extends State<EncryptTab> {
   // Input mode toggle
   bool _isFileMode = true;
+
+  /// Securely delete the source file after a successful encryption (gitlab#151).
+  /// Off by default: it destroys the user's only plaintext copy.
+  bool _shredSourceAfterEncrypt = false;
+  int _shredPasses = 3;
+
+  // Encrypt-tab flag gaps (gitlab#153). Default off/empty so behaviour is
+  // unchanged unless the user opts in.
+  //
+  // Deliberately NOT exposed, because on this code path they do nothing:
+  //  - --keyring-store/-load: the CLI reads args.password, which is only the
+  //    -p value; the GUI passes the password via CRYPT_PASSWORD, so the store
+  //    never runs. Surfacing it would invite a user to discard their only copy
+  //    of a password that was never saved (gitlab#156).
+  //  - --pqc-store-key: already emitted unconditionally for every PQC
+  //    algorithm, so a toggle could not turn it off (gitlab#157).
+  final TextEditingController _pqcKeyfileController = TextEditingController();
+  /// Opt in to the legacy sequential composition (pins format v13).
+  bool _useSequentialXor = false;
+  bool _parallelKdf = false;
+  int _kdfWorkers = 4;
 
   // Text input controllers
   final TextEditingController _textController = TextEditingController();
@@ -38,13 +61,11 @@ class _EncryptTabState extends State<EncryptTab> {
   bool _showProgress = false;
 
   // Hash configuration
-  bool _showHashConfig = false;
-  Map<String, Map<String, dynamic>> _hashConfig = {};
+  final Map<String, Map<String, dynamic>> _hashConfig = {};
   Map<String, List<String>> _hashAlgorithms = {};
 
   // KDF configuration
-  bool _showKdfConfig = false;
-  Map<String, Map<String, dynamic>> _kdfConfig = {
+  final Map<String, Map<String, dynamic>> _kdfConfig = {
     'argon2': {'enabled': true, 'time_cost': 3, 'memory_cost': 65536, 'parallelism': 4, 'hash_len': 32, 'type': 2, 'rounds': 10},
     'scrypt': {'enabled': false, 'n': 16384, 'r': 8, 'p': 1, 'rounds': 10},
     'hkdf': {'enabled': false, 'rounds': 1, 'algorithm': 'sha256', 'info': 'openssl_encrypt_hkdf'},
@@ -96,14 +117,6 @@ class _EncryptTabState extends State<EncryptTab> {
 
   // JPEG-specific steganography
   int _jpegQuality = 85;
-
-  // Video-specific steganography (MP4)
-  double _videoQuantizationStep = 8.0;
-  double _videoAdaptationFactor = 1.2;
-  double _videoCompensationFactor = 0.5;
-  int _videoBitsPerCoefficient = 2;
-  bool _videoTemporalSpread = true;
-  int _videoQualityPreservation = 8;
 
   // Cascade presets
   static const Map<String, List<String>> _cascadePresets = {
@@ -162,6 +175,7 @@ class _EncryptTabState extends State<EncryptTab> {
     _cascadeAlgorithmsTextController.dispose();
     _stegoPasswordController.dispose();
     _pepperNameController.dispose();
+    _pqcKeyfileController.dispose();
     super.dispose();
   }
 
@@ -289,12 +303,6 @@ class _EncryptTabState extends State<EncryptTab> {
           randomizePixels: _stegoRandomizePixels,
           addDecoyData: _stegoDecoyData,
           jpegQuality: _isCoverJpeg() ? _jpegQuality : null,
-          videoQuantizationStep: _isCoverVideo() ? _videoQuantizationStep : null,
-          videoAdaptationFactor: _isCoverVideo() ? _videoAdaptationFactor : null,
-          videoCompensationFactor: _isCoverVideo() ? _videoCompensationFactor : null,
-          videoBitsPerCoefficient: _isCoverVideo() ? _videoBitsPerCoefficient : null,
-          videoTemporalSpread: _isCoverVideo() ? _videoTemporalSpread : true,
-          videoQualityPreservation: _isCoverVideo() ? _videoQualityPreservation : null,
           hashConfig: _encryptionMode == EncryptionMode.symmetric ? _buildHashConfigMap() : null,
           kdfConfig: _encryptionMode == EncryptionMode.symmetric ? _buildKdfConfigMap() : null,
           hsmPlugin: _hsmType != 'none' ? _hsmType : null,
@@ -339,6 +347,12 @@ class _EncryptTabState extends State<EncryptTab> {
         noDiversityCheck: _encryptionMode == EncryptionMode.cascade ? _disableDiversityCheck : false,
         strictDiversity: _encryptionMode == EncryptionMode.cascade ? _strictDiversity : false,
         forcePassword: _forcePassword,
+        pqcKeyfile: _pqcKeyfileController.text.trim().isEmpty
+            ? null
+            : _pqcKeyfileController.text.trim(),
+        useXorComposition: _useSequentialXor,
+        parallelKdf: _parallelKdf,
+        kdfWorkers: _parallelKdf ? _kdfWorkers : null,
         enablePepper: _enablePepper,
         pepperName: _pepperMode == 'named' ? _pepperNameController.text : null,
         showProgress: _showProgress,
@@ -371,9 +385,82 @@ class _EncryptTabState extends State<EncryptTab> {
       });
     } catch (e) {
       setState(() {
-        result = 'Encryption failed: $e';
+        // Sanitize: the exception embeds raw CLI stderr.
+        result = InputValidator.sanitizeForDisplay('Encryption failed: $e');
         _isLoading = false;
       });
+    }
+  }
+
+  /// Securely delete the source file after a successful encryption.
+  ///
+  /// The GUI encrypts file-mode input by reading its text and passing it
+  /// through the temp-file path, so the CLI's own `--shred` would wipe that
+  /// temp file rather than the user's source. The source is therefore shredded
+  /// as a separate step here, through the same CLI `shred` command the Secure
+  /// Shred screen uses.
+  ///
+  /// Gated behind its own confirmation regardless of the toggle: this destroys
+  /// the user's only plaintext copy, and afterwards the encrypted file plus its
+  /// password are the only way back to the data.
+  Future<void> _maybeShredSource(String outputPath) async {
+    if (!_shredSourceAfterEncrypt || _selectedFile == null) return;
+    final sourcePath = _selectedFile!.path;
+
+    if (!mounted) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.warning_amber, color: Colors.red.shade700),
+            const SizedBox(width: 8),
+            const Expanded(child: Text('Securely delete the source file?')),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('This overwrites and deletes:\n\n$sourcePath'),
+            const SizedBox(height: 12),
+            Text(
+              'The encrypted file at $outputPath becomes the only copy. If its '
+              'password is lost, the data cannot be recovered. This cannot be '
+              'undone.',
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Keep the source file'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Shred it'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    try {
+      await CLIService.shred(sourcePath, passes: _shredPasses);
+      if (mounted) {
+        setState(() {
+          result = '$result\n\nSource file securely deleted: $sourcePath';
+          _selectedFile = null;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          result = '$result\n\nThe source file was NOT deleted: $e';
+        });
+      }
     }
   }
 
@@ -462,12 +549,6 @@ class _EncryptTabState extends State<EncryptTab> {
           randomizePixels: _stegoRandomizePixels,
           addDecoyData: _stegoDecoyData,
           jpegQuality: _isCoverJpeg() ? _jpegQuality : null,
-          videoQuantizationStep: _isCoverVideo() ? _videoQuantizationStep : null,
-          videoAdaptationFactor: _isCoverVideo() ? _videoAdaptationFactor : null,
-          videoCompensationFactor: _isCoverVideo() ? _videoCompensationFactor : null,
-          videoBitsPerCoefficient: _isCoverVideo() ? _videoBitsPerCoefficient : null,
-          videoTemporalSpread: _isCoverVideo() ? _videoTemporalSpread : true,
-          videoQualityPreservation: _isCoverVideo() ? _videoQualityPreservation : null,
           hashConfig: _encryptionMode == EncryptionMode.symmetric ? _buildHashConfigMap() : null,
           kdfConfig: _encryptionMode == EncryptionMode.symmetric ? _buildKdfConfigMap() : null,
           hsmPlugin: _hsmType != 'none' ? _hsmType : null,
@@ -519,6 +600,12 @@ class _EncryptTabState extends State<EncryptTab> {
         noDiversityCheck: _encryptionMode == EncryptionMode.cascade ? _disableDiversityCheck : false,
         strictDiversity: _encryptionMode == EncryptionMode.cascade ? _strictDiversity : false,
         forcePassword: _forcePassword,
+        pqcKeyfile: _pqcKeyfileController.text.trim().isEmpty
+            ? null
+            : _pqcKeyfileController.text.trim(),
+        useXorComposition: _useSequentialXor,
+        parallelKdf: _parallelKdf,
+        kdfWorkers: _parallelKdf ? _kdfWorkers : null,
         enablePepper: _enablePepper,
         pepperName: _pepperMode == 'named' ? _pepperNameController.text : null,
         showProgress: _showProgress,
@@ -557,12 +644,16 @@ class _EncryptTabState extends State<EncryptTab> {
           result = 'File encrypted successfully!\n\nSaved to: $outputPath';
           _isLoading = false;
         });
+        // Only after the encrypted copy is confirmed written: shredding the
+        // source is irreversible, so it must never run on a path where the
+        // encryption or the save failed.
+        await _maybeShredSource(outputPath);
       } else {
         throw Exception('Failed to save encrypted file');
       }
     } catch (e) {
       setState(() {
-        result = 'File encryption failed: $e';
+        result = InputValidator.sanitizeForDisplay('File encryption failed: $e');
         _isLoading = false;
       });
     }
@@ -589,693 +680,6 @@ class _EncryptTabState extends State<EncryptTab> {
   }
 
   /// Helper to build KDF parameter sliders
-  Widget _buildKDFSlider(String label, int value, int min, int max, Function(int) onChanged) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
-      child: Row(
-        children: [
-          SizedBox(width: 120, child: Text('$label:')),
-          Expanded(
-            child: Slider(
-              value: value.toDouble().clamp(min.toDouble(), max.toDouble()),
-              min: min.toDouble(),
-              max: max.toDouble(),
-              divisions: (max - min) > 100 ? 100 : (max - min),
-              label: value.toString(),
-              onChanged: (v) => onChanged(v.toInt()),
-            ),
-          ),
-          SizedBox(width: 60, child: Text(value.toString())),
-        ],
-      ),
-    );
-  }
-
-  /// Build Argon2 configuration panel
-  Widget _buildArgon2Panel() {
-    final config = _kdfConfig['argon2'] ?? {
-      'enabled': false,
-      'time_cost': 3,
-      'memory_cost': 65536,
-      'parallelism': 4,
-      'hash_len': 32,
-      'type': 2,
-      'rounds': 10,
-    };
-    final enabled = config['enabled'] ?? false;
-
-    return Card(
-      color: enabled ? Theme.of(context).colorScheme.secondaryContainer : Theme.of(context).colorScheme.surfaceContainerHighest,
-      child: Padding(
-        padding: const EdgeInsets.all(12.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            CheckboxListTile(
-              title: Row(
-                children: [
-                  const Text('Argon2', style: TextStyle(fontWeight: FontWeight.bold)),
-                  const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: Colors.purple,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: const Text('MAX SECURITY', style: TextStyle(color: Colors.white, fontSize: 10)),
-                  ),
-                ],
-              ),
-              subtitle: const Text('Memory-hard function - best against hardware attacks'),
-              value: enabled,
-              onChanged: (bool? value) {
-                setState(() {
-                  _kdfConfig['argon2'] = Map.from(config)..['enabled'] = value ?? false;
-                });
-              },
-              contentPadding: EdgeInsets.zero,
-            ),
-            if (enabled) ...[
-              const SizedBox(height: 8),
-              _buildKDFSlider('Time Cost', config['time_cost'] ?? 3, 1, 1000, (v) =>
-                setState(() => _kdfConfig['argon2']!['time_cost'] = v)),
-              _buildKDFSlider('Memory (MB)', ((config['memory_cost'] ?? 65536) / 1024).round(), 1, 1024, (v) =>
-                setState(() => _kdfConfig['argon2']!['memory_cost'] = v * 1024)),
-              _buildKDFSlider('Parallelism', config['parallelism'] ?? 4, 1, 16, (v) =>
-                setState(() => _kdfConfig['argon2']!['parallelism'] = v)),
-              _buildKDFSlider('Hash Length', config['hash_len'] ?? 32, 16, 128, (v) =>
-                setState(() => _kdfConfig['argon2']!['hash_len'] = v)),
-              _buildKDFSlider('Rounds', config['rounds'] ?? 10, 0, 1000000, (v) =>
-                setState(() => _kdfConfig['argon2']!['rounds'] = v)),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                child: Row(
-                  children: [
-                    const Text('Type: '),
-                    DropdownButton<int>(
-                      value: config['type'] ?? 2,
-                      items: const [
-                        DropdownMenuItem(value: 0, child: Text('Argon2d')),
-                        DropdownMenuItem(value: 1, child: Text('Argon2i')),
-                        DropdownMenuItem(value: 2, child: Text('Argon2id (recommended)')),
-                      ],
-                      onChanged: (int? value) {
-                        setState(() {
-                          _kdfConfig['argon2']!['type'] = value ?? 2;
-                        });
-                      },
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Build Scrypt configuration panel
-  Widget _buildScryptPanel() {
-    final config = _kdfConfig['scrypt'] ?? {
-      'enabled': false,
-      'n': 16384,
-      'r': 8,
-      'p': 1,
-      'rounds': 10,
-    };
-    final enabled = config['enabled'] ?? false;
-
-    return Card(
-      color: enabled ? Theme.of(context).colorScheme.tertiaryContainer : Theme.of(context).colorScheme.surfaceContainerHighest,
-      child: Padding(
-        padding: const EdgeInsets.all(12.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            CheckboxListTile(
-              title: Row(
-                children: [
-                  const Text('Scrypt', style: TextStyle(fontWeight: FontWeight.bold)),
-                  const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: Colors.orange,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: const Text('BALANCED', style: TextStyle(color: Colors.white, fontSize: 10)),
-                  ),
-                ],
-              ),
-              subtitle: const Text('Memory-hard function - good balance of security and performance'),
-              value: enabled,
-              onChanged: (bool? value) {
-                setState(() {
-                  _kdfConfig['scrypt'] = Map.from(config)..['enabled'] = value ?? false;
-                });
-              },
-              contentPadding: EdgeInsets.zero,
-            ),
-            if (enabled) ...[
-              const SizedBox(height: 8),
-              _buildKDFSlider('N (CPU/Memory)', ((config['n'] ?? 16384) / 1024).round(), 1, 1024, (v) =>
-                setState(() => _kdfConfig['scrypt']!['n'] = v * 1024)),
-              _buildKDFSlider('R (Block Size)', config['r'] ?? 8, 1, 32, (v) =>
-                setState(() => _kdfConfig['scrypt']!['r'] = v)),
-              _buildKDFSlider('P (Parallelism)', config['p'] ?? 1, 1, 16, (v) =>
-                setState(() => _kdfConfig['scrypt']!['p'] = v)),
-              _buildKDFSlider('Rounds', config['rounds'] ?? 10, 0, 1000000, (v) =>
-                setState(() => _kdfConfig['scrypt']!['rounds'] = v)),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Build HKDF configuration panel
-  Widget _buildHKDFPanel() {
-    final config = _kdfConfig['hkdf'] ?? {
-      'enabled': false,
-      'rounds': 1,
-      'algorithm': 'sha256',
-      'info': 'openssl_encrypt_hkdf',
-    };
-    final enabled = config['enabled'] ?? false;
-
-    return Card(
-      color: enabled ? Theme.of(context).colorScheme.tertiaryContainer : Theme.of(context).colorScheme.surfaceContainerHighest,
-      child: Padding(
-        padding: const EdgeInsets.all(12.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            CheckboxListTile(
-              title: Row(
-                children: [
-                  const Text('HKDF', style: TextStyle(fontWeight: FontWeight.bold)),
-                  const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: Colors.teal,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: const Text('EFFICIENT', style: TextStyle(color: Colors.white, fontSize: 10)),
-                  ),
-                ],
-              ),
-              subtitle: const Text('HMAC-based Key Derivation - efficient key expansion'),
-              value: enabled,
-              onChanged: (bool? value) {
-                setState(() {
-                  _kdfConfig['hkdf'] = Map.from(config)..['enabled'] = value ?? false;
-                });
-              },
-              contentPadding: EdgeInsets.zero,
-            ),
-            if (enabled) ...[
-              const SizedBox(height: 8),
-              _buildKDFSlider('Rounds', config['rounds'] ?? 1, 0, 1000000, (v) =>
-                setState(() => _kdfConfig['hkdf']!['rounds'] = v)),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
-                child: Row(
-                  children: [
-                    const SizedBox(width: 120, child: Text('Hash Algorithm:')),
-                    DropdownButton<String>(
-                      value: config['algorithm'] ?? 'sha256',
-                      items: const [
-                        DropdownMenuItem(value: 'sha224', child: Text('SHA-224')),
-                        DropdownMenuItem(value: 'sha256', child: Text('SHA-256')),
-                        DropdownMenuItem(value: 'sha384', child: Text('SHA-384')),
-                        DropdownMenuItem(value: 'sha512', child: Text('SHA-512')),
-                      ],
-                      onChanged: (String? value) {
-                        setState(() {
-                          _kdfConfig['hkdf']!['algorithm'] = value ?? 'sha256';
-                        });
-                      },
-                    ),
-                  ],
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
-                child: TextFormField(
-                  initialValue: config['info'] ?? 'openssl_encrypt_hkdf',
-                  decoration: const InputDecoration(
-                    labelText: 'Info String',
-                    border: OutlineInputBorder(),
-                  ),
-                  onChanged: (value) {
-                    setState(() {
-                      _kdfConfig['hkdf']!['info'] = value;
-                    });
-                  },
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Build Balloon configuration panel
-  Widget _buildBalloonPanel() {
-    final config = _kdfConfig['balloon'] ?? {
-      'enabled': false,
-      'time_cost': 3,
-      'space_cost': 65536,
-      'parallelism': 4,
-      'rounds': 2,
-      'hash_len': 32,
-    };
-    final enabled = config['enabled'] ?? false;
-
-    return Card(
-      color: enabled ? Theme.of(context).colorScheme.errorContainer : Theme.of(context).colorScheme.surfaceContainerHighest,
-      child: Padding(
-        padding: const EdgeInsets.all(12.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            CheckboxListTile(
-              title: Row(
-                children: [
-                  const Text('Balloon', style: TextStyle(fontWeight: FontWeight.bold)),
-                  const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: Colors.pink,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: const Text('RESEARCH', style: TextStyle(color: Colors.white, fontSize: 10)),
-                  ),
-                ],
-              ),
-              subtitle: const Text('Newer memory-hard function - under academic evaluation'),
-              value: enabled,
-              onChanged: (bool? value) {
-                setState(() {
-                  _kdfConfig['balloon'] = Map.from(config)..['enabled'] = value ?? false;
-                });
-              },
-              contentPadding: EdgeInsets.zero,
-            ),
-            if (enabled) ...[
-              const SizedBox(height: 8),
-              _buildKDFSlider('Time Cost', config['time_cost'] ?? 3, 1, 1000, (v) =>
-                setState(() => _kdfConfig['balloon']!['time_cost'] = v)),
-              _buildKDFSlider('Space Cost (KB)', ((config['space_cost'] ?? 65536) / 1024).round(), 1, 1024, (v) =>
-                setState(() => _kdfConfig['balloon']!['space_cost'] = v * 1024)),
-              _buildKDFSlider('Parallelism', config['parallelism'] ?? 4, 1, 16, (v) =>
-                setState(() => _kdfConfig['balloon']!['parallelism'] = v)),
-              _buildKDFSlider('Rounds', config['rounds'] ?? 2, 0, 1000000, (v) =>
-                setState(() => _kdfConfig['balloon']!['rounds'] = v)),
-              _buildKDFSlider('Hash Length', config['hash_len'] ?? 32, 16, 128, (v) =>
-                setState(() => _kdfConfig['balloon']!['hash_len'] = v)),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Build RandomX configuration panel
-  Widget _buildRandomXPanel() {
-    final config = _kdfConfig['randomx'] ?? {
-      'enabled': false,
-      'mode': 'light',
-      'rounds': 1,
-      'height': 1,
-      'hash_len': 32,
-    };
-    final enabled = config['enabled'] ?? false;
-
-    return Card(
-      color: enabled ? Theme.of(context).colorScheme.errorContainer : Theme.of(context).colorScheme.surfaceContainerHighest,
-      child: Padding(
-        padding: const EdgeInsets.all(12.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            CheckboxListTile(
-              title: Row(
-                children: [
-                  const Text('RandomX', style: TextStyle(fontWeight: FontWeight.bold)),
-                  const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: Colors.purple,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: const Text('CPU-HARD', style: TextStyle(color: Colors.white, fontSize: 10)),
-                  ),
-                ],
-              ),
-              subtitle: const Text('Memory-hard KDF based on cryptocurrency mining'),
-              value: enabled,
-              onChanged: (bool? value) {
-                setState(() {
-                  _kdfConfig['randomx'] = Map.from(config)..['enabled'] = value ?? false;
-                });
-              },
-              contentPadding: EdgeInsets.zero,
-            ),
-            if (enabled) ...[
-              const SizedBox(height: 8),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
-                child: Row(
-                  children: [
-                    const SizedBox(width: 120, child: Text('Mode:')),
-                    DropdownButton<String>(
-                      value: config['mode'] ?? 'light',
-                      items: const [
-                        DropdownMenuItem(value: 'light', child: Text('Light (256MB RAM)')),
-                        DropdownMenuItem(value: 'fast', child: Text('Fast (2GB RAM)')),
-                      ],
-                      onChanged: (String? value) {
-                        setState(() {
-                          _kdfConfig['randomx']!['mode'] = value ?? 'light';
-                        });
-                      },
-                    ),
-                  ],
-                ),
-              ),
-              _buildKDFSlider('Rounds', config['rounds'] ?? 1, 1, 10, (v) =>
-                setState(() => _kdfConfig['randomx']!['rounds'] = v)),
-              _buildKDFSlider('Block Height', config['height'] ?? 1, 1, 1000, (v) =>
-                setState(() => _kdfConfig['randomx']!['height'] = v)),
-              _buildKDFSlider('Hash Length', config['hash_len'] ?? 32, 16, 64, (v) =>
-                setState(() => _kdfConfig['randomx']!['hash_len'] = v)),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Check if a hash algorithm is a legacy SHA (not SHA3)
-  bool _isLegacySha(String hashId) {
-    final lowerHashId = hashId.toLowerCase().replaceAll('-', '').replaceAll('_', '');
-    // Legacy SHA hashes: SHA-1, SHA-224, SHA-256, SHA-384, SHA-512
-    // NOT SHA3 variants
-    return (lowerHashId == 'sha1' ||
-            lowerHashId == 'sha224' ||
-            lowerHashId == 'sha256' ||
-            lowerHashId == 'sha384' ||
-            lowerHashId == 'sha512');
-  }
-
-  /// Build hash configuration widget for individual hash algorithm
-  Widget _buildHashConfig(String hashId, String hashName) {
-    final isEnabled = _hashConfig[hashId]?['enabled'] ?? false;
-    final rounds = (_hashConfig[hashId]?['rounds'] ?? 1000) as int;
-
-    return Container(
-      padding: const EdgeInsets.all(8),
-      decoration: BoxDecoration(
-        border: Border.all(
-          color: isEnabled
-              ? Theme.of(context).colorScheme.primary
-              : Theme.of(context).colorScheme.outline,
-        ),
-        borderRadius: BorderRadius.circular(8),
-        color: isEnabled
-            ? Theme.of(context).colorScheme.primaryContainer
-            : Theme.of(context).colorScheme.surfaceContainerHighest,
-      ),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              Switch(
-                value: isEnabled,
-                onChanged: (bool? value) {
-                  setState(() {
-                    if (_hashConfig[hashId] == null) {
-                      _hashConfig[hashId] = {'rounds': 1000};
-                    }
-                    _hashConfig[hashId]!['enabled'] = value;
-                  });
-                },
-              ),
-              const SizedBox(width: 8),
-              SizedBox(
-                width: 80,
-                child: Text(
-                  hashName.toUpperCase(),
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 12,
-                    color: isEnabled
-                        ? Theme.of(context).colorScheme.primary
-                        : Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ),
-              // Add LEGACY badge for non-SHA3 SHA hashes
-              if (_isLegacySha(hashId)) ...[
-                const SizedBox(width: 4),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: Colors.grey,
-                    borderRadius: BorderRadius.circular(3),
-                  ),
-                  child: const Text(
-                    'LEGACY',
-                    style: TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold),
-                  ),
-                ),
-              ],
-              if (isEnabled)
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Rounds: $rounds',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w500,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                      ),
-                      Slider(
-                        value: rounds.toDouble(),
-                        min: 100,
-                        max: 1000000,
-                        divisions: 100,
-                        label: rounds.toString(),
-                        onChanged: (value) {
-                          setState(() {
-                            _hashConfig[hashId]!['rounds'] = value.toInt();
-                          });
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// Build hash chain configuration section
-  Widget _buildHashChainSection() {
-    return Column(
-      children: [
-        InkWell(
-          onTap: () {
-            setState(() {
-              _showHashConfig = !_showHashConfig;
-            });
-          },
-          child: Row(
-            children: [
-              Icon(_showHashConfig ? Icons.expand_less : Icons.expand_more),
-              const SizedBox(width: 8),
-              const Text('Hash Chain Configuration', style: TextStyle(fontWeight: FontWeight.w500)),
-              const Spacer(),
-              const Icon(Icons.link),
-            ],
-          ),
-        ),
-        if (_showHashConfig) ...[
-          const SizedBox(height: 12),
-          Text(
-            'Configure hash algorithms and rounds (CLI order)',
-            style: TextStyle(
-              fontSize: 12,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 12),
-          ..._hashAlgorithms.entries.expand((entry) {
-            final groupName = entry.key;
-            final hashes = entry.value;
-            return [
-              Padding(
-                padding: const EdgeInsets.only(top: 12, bottom: 8),
-                child: Text(
-                  groupName,
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 13,
-                    color: Theme.of(context).colorScheme.secondary,
-                  ),
-                ),
-              ),
-              ...hashes.map((hash) {
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 8.0, left: 8.0),
-                  child: _buildHashConfig(hash, hash),
-                );
-              }),
-            ];
-          }),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            alignment: WrapAlignment.center,
-            children: [
-              TextButton(
-                onPressed: () {
-                  setState(() {
-                    for (final group in _hashAlgorithms.values) {
-                      for (String hash in group) {
-                        _hashConfig[hash] = {
-                          'enabled': true,
-                          'rounds': 1000
-                        };
-                      }
-                    }
-                  });
-                },
-                child: const Text('Enable All', style: TextStyle(fontSize: 12)),
-              ),
-              TextButton(
-                onPressed: () {
-                  setState(() {
-                    for (final group in _hashAlgorithms.values) {
-                      for (String hash in group) {
-                        if (_hashConfig[hash] != null) {
-                          _hashConfig[hash]!['enabled'] = false;
-                        }
-                      }
-                    }
-                  });
-                },
-                child: const Text('Disable All', style: TextStyle(fontSize: 12)),
-              ),
-              TextButton(
-                onPressed: () {
-                  setState(() {
-                    for (final group in _hashAlgorithms.values) {
-                      for (String hash in group) {
-                        _hashConfig[hash] = {
-                          'enabled': false,
-                          'rounds': 1000
-                        };
-                      }
-                    }
-                  });
-                },
-                child: const Text('Reset (1000)', style: TextStyle(fontSize: 12)),
-              ),
-            ],
-          ),
-        ],
-      ],
-    );
-  }
-
-  /// Build KDF chain configuration section
-  Widget _buildKdfChainSection() {
-    return Column(
-      children: [
-        InkWell(
-          onTap: () {
-            setState(() {
-              _showKdfConfig = !_showKdfConfig;
-            });
-          },
-          child: Row(
-            children: [
-              Icon(_showKdfConfig ? Icons.expand_less : Icons.expand_more),
-              const SizedBox(width: 8),
-              const Text('KDF Chain Configuration', style: TextStyle(fontWeight: FontWeight.w500)),
-              const Spacer(),
-              const Icon(Icons.vpn_key),
-            ],
-          ),
-        ),
-        if (_showKdfConfig) ...[
-          const SizedBox(height: 12),
-          Text(
-            'Configure key derivation functions for enhanced security',
-            style: TextStyle(
-              fontSize: 12,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 12),
-          _buildArgon2Panel(),
-          const SizedBox(height: 8),
-          _buildScryptPanel(),
-          const SizedBox(height: 8),
-          _buildHKDFPanel(),
-          const SizedBox(height: 8),
-          _buildBalloonPanel(),
-          const SizedBox(height: 8),
-          _buildRandomXPanel(),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            alignment: WrapAlignment.center,
-            children: [
-              TextButton(
-                onPressed: () {
-                  setState(() {
-                    _kdfConfig['argon2'] = {'enabled': true, 'time_cost': 3, 'memory_cost': 65536, 'parallelism': 4, 'hash_len': 32, 'type': 2, 'rounds': 10};
-                    _kdfConfig['scrypt']!['enabled'] = false;
-                    _kdfConfig['hkdf']!['enabled'] = false;
-                    _kdfConfig['balloon']!['enabled'] = false;
-                    _kdfConfig['randomx']!['enabled'] = false;
-                  });
-                },
-                child: const Text('Argon2 Only', style: TextStyle(fontSize: 12)),
-              ),
-              TextButton(
-                onPressed: () {
-                  setState(() {
-                    _kdfConfig['argon2']!['enabled'] = false;
-                    _kdfConfig['scrypt']!['enabled'] = false;
-                    _kdfConfig['hkdf']!['enabled'] = false;
-                    _kdfConfig['balloon']!['enabled'] = false;
-                    _kdfConfig['randomx']!['enabled'] = false;
-                  });
-                },
-                child: const Text('Disable All', style: TextStyle(fontSize: 12)),
-              ),
-            ],
-          ),
-        ],
-      ],
-    );
-  }
 
   /// Build asymmetric encryption configuration widget
   Widget _buildAsymmetricConfig() {
@@ -1285,11 +689,11 @@ class _EncryptTabState extends State<EncryptTab> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
+            const Row(
               children: [
-                const Icon(Icons.people),
-                const SizedBox(width: 8),
-                const Text('Asymmetric Encryption Configuration',
+                Icon(Icons.people),
+                SizedBox(width: 8),
+                Text('Asymmetric Encryption Configuration',
                     style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
               ],
             ),
@@ -1441,11 +845,11 @@ class _EncryptTabState extends State<EncryptTab> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Header
-            Row(
+            const Row(
               children: [
-                const Icon(Icons.layers),
-                const SizedBox(width: 8),
-                const Text('Cascade Encryption Configuration',
+                Icon(Icons.layers),
+                SizedBox(width: 8),
+                Text('Cascade Encryption Configuration',
                     style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
               ],
             ),
@@ -1498,8 +902,8 @@ class _EncryptTabState extends State<EncryptTab> {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3),
-                  border: Border.all(color: Theme.of(context).colorScheme.primary.withOpacity(0.5)),
+                  color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.3),
+                  border: Border.all(color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.5)),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
@@ -1584,7 +988,7 @@ class _EncryptTabState extends State<EncryptTab> {
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                                 decoration: BoxDecoration(
-                                  color: _getCascadeFamilyColor(algorithm).withOpacity(0.2),
+                                  color: _getCascadeFamilyColor(algorithm).withValues(alpha: 0.2),
                                   borderRadius: BorderRadius.circular(4),
                                 ),
                                 child: Text(
@@ -1647,7 +1051,7 @@ class _EncryptTabState extends State<EncryptTab> {
             const Text('HKDF Hash Function:', style: TextStyle(fontWeight: FontWeight.w500)),
             const SizedBox(height: 8),
             DropdownButtonFormField<String>(
-              value: _cascadeHash,
+              initialValue: _cascadeHash,
               decoration: const InputDecoration(
                 border: OutlineInputBorder(),
                 helperText: 'Hash function for key derivation between encryption layers',
@@ -1808,7 +1212,7 @@ class _EncryptTabState extends State<EncryptTab> {
 
                 // Method Dropdown
                 DropdownButtonFormField<String>(
-                  value: _stegoMethod,
+                  initialValue: _stegoMethod,
                   decoration: const InputDecoration(
                     labelText: 'Steganography Method',
                     border: OutlineInputBorder(),
@@ -1934,160 +1338,6 @@ class _EncryptTabState extends State<EncryptTab> {
                   ),
                 ],
 
-                // Video Options (if MP4)
-                if (_isCoverVideo()) ...[
-                  const SizedBox(height: 16),
-                  const Divider(),
-                  ExpansionTile(
-                    leading: const Icon(Icons.videocam),
-                    title: const Text('Video Steganography Options'),
-                    subtitle: const Text('DCT-based QIM embedding parameters'),
-                    children: [
-                      const SizedBox(height: 8),
-
-                      // Quantization Step
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text('Quantization Step: ${_videoQuantizationStep.toStringAsFixed(1)}'),
-                          ),
-                        ],
-                      ),
-                      Slider(
-                        value: _videoQuantizationStep,
-                        min: 1.0,
-                        max: 20.0,
-                        divisions: 38,
-                        label: _videoQuantizationStep.toStringAsFixed(1),
-                        onChanged: _isLoading ? null : (value) {
-                          setState(() {
-                            _videoQuantizationStep = value;
-                          });
-                        },
-                      ),
-                      const Text(
-                        'Lower = higher quality, less capacity',
-                        style: TextStyle(fontSize: 11, color: Colors.grey),
-                      ),
-                      const SizedBox(height: 12),
-
-                      // Adaptation Factor
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text('Adaptation Factor: ${_videoAdaptationFactor.toStringAsFixed(1)}'),
-                          ),
-                        ],
-                      ),
-                      Slider(
-                        value: _videoAdaptationFactor,
-                        min: 0.5,
-                        max: 3.0,
-                        divisions: 50,
-                        label: _videoAdaptationFactor.toStringAsFixed(1),
-                        onChanged: _isLoading ? null : (value) {
-                          setState(() {
-                            _videoAdaptationFactor = value;
-                          });
-                        },
-                      ),
-                      const Text(
-                        'For adaptive QIM algorithm (default: 1.2)',
-                        style: TextStyle(fontSize: 11, color: Colors.grey),
-                      ),
-                      const SizedBox(height: 12),
-
-                      // Compensation Factor
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text('Compensation Factor: ${_videoCompensationFactor.toStringAsFixed(1)}'),
-                          ),
-                        ],
-                      ),
-                      Slider(
-                        value: _videoCompensationFactor,
-                        min: 0.0,
-                        max: 1.0,
-                        divisions: 20,
-                        label: _videoCompensationFactor.toStringAsFixed(1),
-                        onChanged: _isLoading ? null : (value) {
-                          setState(() {
-                            _videoCompensationFactor = value;
-                          });
-                        },
-                      ),
-                      const Text(
-                        'For distortion-compensated QIM (default: 0.5)',
-                        style: TextStyle(fontSize: 11, color: Colors.grey),
-                      ),
-                      const SizedBox(height: 12),
-
-                      // Bits per Coefficient
-                      DropdownButtonFormField<int>(
-                        value: _videoBitsPerCoefficient,
-                        decoration: const InputDecoration(
-                          labelText: 'Bits per DCT Coefficient',
-                          border: OutlineInputBorder(),
-                          helperText: 'For multi-level QIM algorithm',
-                        ),
-                        items: [1, 2, 3, 4].map((bits) {
-                          return DropdownMenuItem(
-                            value: bits,
-                            child: Text('$bits bit${bits > 1 ? "s" : ""}'),
-                          );
-                        }).toList(),
-                        onChanged: _isLoading ? null : (value) {
-                          setState(() {
-                            _videoBitsPerCoefficient = value ?? 2;
-                          });
-                        },
-                      ),
-                      const SizedBox(height: 12),
-
-                      // Temporal Spread Checkbox
-                      CheckboxListTile(
-                        title: const Text('Temporal spread'),
-                        subtitle: const Text('Spread data across frames for redundancy'),
-                        value: _videoTemporalSpread,
-                        onChanged: _isLoading ? null : (value) {
-                          setState(() {
-                            _videoTemporalSpread = value ?? true;
-                          });
-                        },
-                        contentPadding: EdgeInsets.zero,
-                        controlAffinity: ListTileControlAffinity.leading,
-                        dense: true,
-                      ),
-
-                      // Quality Preservation Slider
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text('Quality Preservation: $_videoQualityPreservation'),
-                          ),
-                        ],
-                      ),
-                      Slider(
-                        value: _videoQualityPreservation.toDouble(),
-                        min: 1,
-                        max: 10,
-                        divisions: 9,
-                        label: '$_videoQualityPreservation',
-                        onChanged: _isLoading ? null : (value) {
-                          setState(() {
-                            _videoQualityPreservation = value.toInt();
-                          });
-                        },
-                      ),
-                      const Text(
-                        '1 = max capacity, 10 = max quality (default: 8)',
-                        style: TextStyle(fontSize: 11, color: Colors.grey),
-                      ),
-                      const SizedBox(height: 8),
-                    ],
-                  ),
-                ],
               ],
             ],
           ],
@@ -2510,6 +1760,9 @@ class _EncryptTabState extends State<EncryptTab> {
                       obscureText: true,
                       enabled: !_isLoading,
                     ),
+                    // Live strength meter (shells out to check-password --json,
+                    // debounced). Shown while choosing a password to encrypt.
+                    PasswordStrengthMeter(controller: _passwordController),
                     if (widget.isProMode) ...[
                       const SizedBox(height: 8),
                       CheckboxListTile(
@@ -2595,22 +1848,25 @@ class _EncryptTabState extends State<EncryptTab> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
+                      const Row(
                         children: [
-                          const Icon(Icons.vpn_key),
-                          const SizedBox(width: 8),
-                          const Text('Key Stretching', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                          Icon(Icons.vpn_key),
+                          SizedBox(width: 8),
+                          Text('Key Stretching', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                         ],
                       ),
                       const SizedBox(height: 12),
 
                       // Hash Chain Configuration
-                      _buildHashChainSection(),
+                      HashKdfConfigSection(
+                        hashConfig: _hashConfig,
+                        hashAlgorithms: _hashAlgorithms,
+                        kdfConfig: _kdfConfig,
+                      ),
 
                       const SizedBox(height: 12),
 
                       // KDF Chain Configuration
-                      _buildKdfChainSection(),
                     ],
                   ),
                 ),
@@ -2656,17 +1912,142 @@ class _EncryptTabState extends State<EncryptTab> {
                   _buildSteganographyConfig(),
                   const SizedBox(height: 12),
 
+                  // PQC keyfile / KDF composition (gitlab#153)
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(12.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          TextField(
+                            controller: _pqcKeyfileController,
+                            decoration: const InputDecoration(
+                              labelText: 'Load PQC key file',
+                              helperText:
+                                  'Optional path to an EXISTING post-quantum key '
+                                  'file to encrypt with. Generating one is not '
+                                  'available here.',
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                          const Divider(height: 24),
+                          Text('Key derivation',
+                              style: Theme.of(context).textTheme.titleSmall),
+                          const SizedBox(height: 8),
+                          SwitchListTile(
+                            title: const Text(
+                                'Use legacy sequential key derivation'),
+                            subtitle: const Text(
+                              'Writes the older format version 13 instead of the '
+                              'current default. The derived key is only as strong '
+                              'as the weakest step in the chain, wide-key ciphers '
+                              'are funnelled through a narrower intermediate, and '
+                              'the newer transcript binding is not applied. Leave '
+                              'off unless you need to interoperate with an older '
+                              'release. Not available for files over 10 MB.',
+                              style: TextStyle(color: Colors.orange),
+                            ),
+                            value: _useSequentialXor,
+                            onChanged: (v) => setState(() {
+                              _useSequentialXor = v;
+                              // Parallel derivation applies to the independent
+                              // composition only.
+                              if (v) _parallelKdf = false;
+                            }),
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                          SwitchListTile(
+                            title: const Text('Parallel key derivation'),
+                            subtitle: const Text(
+                              'Derives the independent key components '
+                              'concurrently — same key, so files decrypt with '
+                              'or without it. Speeds up configurations with '
+                              'several memory-hard KDFs; the worker count is '
+                              'capped by CPU cores and a memory safety '
+                              'ceiling.',
+                            ),
+                            value: _parallelKdf,
+                            onChanged: _useSequentialXor
+                                ? null
+                                : (v) => setState(() => _parallelKdf = v),
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                          if (_parallelKdf)
+                            Row(
+                              children: [
+                                const Text('Worker threads:'),
+                                const SizedBox(width: 12),
+                                DropdownButton<int>(
+                                  value: _kdfWorkers,
+                                  items: const [2, 4, 8, 16]
+                                      .map((n) => DropdownMenuItem(
+                                          value: n, child: Text('$n')))
+                                      .toList(),
+                                  onChanged: (v) =>
+                                      setState(() => _kdfWorkers = v ?? 4),
+                                ),
+                              ],
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+
                   // File-specific options
                   if (_isFileMode)
                     Card(
                       child: Padding(
                         padding: const EdgeInsets.all(12.0),
-                        child: CheckboxListTile(
-                          title: const Text('Force Overwrite'),
-                          subtitle: const Text('Replace source file with encrypted version'),
-                          value: _forceOverwrite,
-                          onChanged: (value) => setState(() => _forceOverwrite = value ?? false),
-                          contentPadding: EdgeInsets.zero,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            CheckboxListTile(
+                              title: const Text('Force Overwrite'),
+                              subtitle: const Text('Replace source file with encrypted version'),
+                              value: _forceOverwrite,
+                              onChanged: (value) =>
+                                  setState(() => _forceOverwrite = value ?? false),
+                              contentPadding: EdgeInsets.zero,
+                            ),
+                            const Divider(),
+                            SwitchListTile(
+                              title: const Text(
+                                  'Securely delete the source file after encrypting'),
+                              subtitle: const Text(
+                                'Overwrites and deletes the original once the '
+                                'encrypted copy is written. The encrypted file and '
+                                'its password then become the only way back to the '
+                                'data — if the password is lost it cannot be '
+                                'recovered. You are asked to confirm each time.',
+                              ),
+                              value: _shredSourceAfterEncrypt,
+                              onChanged: (value) =>
+                                  setState(() => _shredSourceAfterEncrypt = value),
+                              contentPadding: EdgeInsets.zero,
+                            ),
+                            if (_shredSourceAfterEncrypt)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 8),
+                                child: Row(
+                                  children: [
+                                    const Text('Overwrite passes:'),
+                                    const SizedBox(width: 12),
+                                    DropdownButton<int>(
+                                      value: _shredPasses,
+                                      items: const [1, 3, 7]
+                                          .map((n) => DropdownMenuItem(
+                                                value: n,
+                                                child: Text('$n'),
+                                              ))
+                                          .toList(),
+                                      onChanged: (v) =>
+                                          setState(() => _shredPasses = v ?? 3),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                          ],
                         ),
                       ),
                     ),
@@ -2722,7 +2103,7 @@ class _EncryptTabState extends State<EncryptTab> {
                         if (_operationStatus.contains('YubiKey'))
                           Icon(Icons.touch_app, color: Colors.amber.shade100)
                         else
-                          SizedBox(
+                          const SizedBox(
                             width: 16,
                             height: 16,
                             child: CircularProgressIndicator(

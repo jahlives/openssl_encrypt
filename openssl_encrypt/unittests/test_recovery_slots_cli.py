@@ -88,14 +88,20 @@ class TestListRecoverCli(RecoveryCliBase):
 class TestAddRemoveCli(RecoveryCliBase):
     def test_add_passphrase_then_recover(self):
         self._encrypt()  # plain envelope, no recovery yet
-        with mock.patch("getpass.getpass", return_value="my recovery phrase"):
-            add_recovery_cli(_ns(input=self.enc, output=self.enc, password=PASSWORD, add_passphrase=True))
+        # Policy-passing: a recovery slot is another wrapping of the same
+        # file key, so add-recovery now holds the passphrase to the same
+        # standard as a password (gitlab#149). A weak literal here would
+        # be testing the policy, not the mechanism.
+        phrase = "My-Rec0very-Phrase-With-Entropy!"
+        with mock.patch("getpass.getpass", return_value=phrase):
+            add_recovery_cli(
+                _ns(input=self.enc, output=self.enc, password=PASSWORD, add_passphrase=True)
+            )
         # recover with that passphrase
-        with mock.patch("getpass.getpass", return_value="my recovery phrase"):
+        with mock.patch("getpass.getpass", return_value=phrase):
             recover_cli(_ns(input=self.enc, output=self.out, recovery_passphrase=True))
         with open(self.out, "rb") as f:
             self.assertEqual(f.read(), PLAINTEXT)
-
 
     def test_remove_recovery(self):
         c1, c2 = generate_recovery_code(), generate_recovery_code()

@@ -1,8 +1,70 @@
 import 'dart:convert';
+
+import 'input_validation.dart';
 import 'dart:io';
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
+
+/// Result of a `generate-password --json` invocation.
+class GeneratedPassword {
+  final String password;
+  final double entropyBits;
+  final String mode; // "character" | "diceware"
+  final String? strength; // character mode only
+  final int? length; // character mode only
+  final int? wordCount; // diceware mode only
+
+  GeneratedPassword({
+    required this.password,
+    required this.entropyBits,
+    required this.mode,
+    this.strength,
+    this.length,
+    this.wordCount,
+  });
+
+  factory GeneratedPassword.fromJson(Map<String, dynamic> json) {
+    return GeneratedPassword(
+      password: json['password'] as String,
+      entropyBits: (json['entropy_bits'] as num).toDouble(),
+      mode: json['mode'] as String,
+      strength: json['strength'] as String?,
+      length: (json['length'] as num?)?.toInt(),
+      wordCount: (json['word_count'] as num?)?.toInt(),
+    );
+  }
+}
+
+/// Result of a `check-password --json` strength report.
+class PasswordStrength {
+  final int length;
+  final double bits; // pattern-aware estimate
+  final double rawBits; // raw search-space estimate
+  final String category; // e.g. "very weak" .. "strong"
+  final List<String> warnings;
+
+  PasswordStrength({
+    required this.length,
+    required this.bits,
+    required this.rawBits,
+    required this.category,
+    required this.warnings,
+  });
+
+  factory PasswordStrength.fromJson(Map<String, dynamic> json) {
+    return PasswordStrength(
+      length: (json['length'] as num?)?.toInt() ?? 0,
+      bits: (json['bits'] as num?)?.toDouble() ?? 0,
+      rawBits: (json['raw_bits'] as num?)?.toDouble() ?? 0,
+      category: (json['category'] as String?) ?? 'unknown',
+      warnings: (json['warnings'] as List<dynamic>?)
+              ?.map((w) => w.toString())
+              .toList() ??
+          const [],
+    );
+  }
+}
 
 /// Service layer for integrating with OpenSSL Encrypt CLI
 /// Replaces all pure Dart crypto implementations
@@ -23,7 +85,32 @@ class CLIService {
 
   // Cache for algorithm availability info (fetched once at startup)
   static AvailabilityInfo? _availabilityCache;
-  static bool _availabilityLoading = false;
+  static Future<AvailabilityInfo?>? _availabilityFuture;
+
+  /// When set, every CLI invocation is answered by this function instead of
+  /// spawning a subprocess. Production code must never set it: it exists so
+  /// widget tests can supply canned CLI output — a real subprocess spawned
+  /// inside the test binding leaves a pending timer that fails the test at
+  /// teardown (gitlab#211).
+  @visibleForTesting
+  static Future<ProcessResult> Function(List<String> args,
+      {String? stdinInput})? commandRunnerOverride;
+
+  /// The environment map the last run would have applied to the child. Captured
+  /// even when the override short-circuits exec, so a test can assert a secret
+  /// travels via the environment rather than argv (gitlab#258).
+  @visibleForTesting
+  static Map<String, String>? lastEnvironmentForTesting;
+
+  /// Clears the runner override and the availability cache so state cannot
+  /// leak from one test into the next.
+  @visibleForTesting
+  static void resetForTesting() {
+    commandRunnerOverride = null;
+    lastEnvironmentForTesting = null;
+    _availabilityCache = null;
+    _availabilityFuture = null;
+  }
 
   /// Initialize CLI service and verify CLI is available
   static Future<bool> initialize() async {
@@ -74,17 +161,16 @@ class CLIService {
   }
 
   /// Get algorithm availability info (cached at startup)
-  static Future<AvailabilityInfo?> getAvailabilityInfo() async {
-    if (_availabilityCache != null) return _availabilityCache;
-    if (_availabilityLoading) {
-      // Wait for loading to complete
-      while (_availabilityLoading) {
-        await Future.delayed(const Duration(milliseconds: 50));
-      }
-      return _availabilityCache;
-    }
+  ///
+  /// Concurrent callers share a single in-flight fetch instead of polling
+  /// with timers, which would trip the test binding's pending-timer check
+  /// (gitlab#211).
+  static Future<AvailabilityInfo?> getAvailabilityInfo() {
+    if (_availabilityCache != null) return Future.value(_availabilityCache);
+    return _availabilityFuture ??= _fetchAvailabilityInfo();
+  }
 
-    _availabilityLoading = true;
+  static Future<AvailabilityInfo?> _fetchAvailabilityInfo() async {
     try {
       final result = await _runCLICommand(['list-available-algorithms']);
       if (result.exitCode == 0) {
@@ -94,7 +180,10 @@ class CLIService {
     } catch (e) {
       _outputDebugLog('Error fetching availability info: $e');
     } finally {
-      _availabilityLoading = false;
+      if (_availabilityCache == null) {
+        // Failed fetch: drop the shared future so a later call can retry.
+        _availabilityFuture = null;
+      }
     }
     return _availabilityCache;
   }
@@ -296,7 +385,10 @@ class CLIService {
         result['BLAKE Family'] = blakeHashes;
       }
 
-      // NOTE: WHIRLPOOL is intentionally excluded (legacy, not recommended)
+      // NOTE: WHIRLPOOL is intentionally excluded. It is decrypt-only on
+      // 1.4 and removed entirely in 1.5, and no subparser declares
+      // --whirlpool-rounds, so offering it produced argv that exited 2
+      // (gitlab#189).
 
       return result;
     } catch (e) {
@@ -344,9 +436,39 @@ class CLIService {
      String? pepperName,                // Remote pepper: named pepper to use
      bool showProgress = false,         // CLI --progress flag
      String? template,                  // Security template: 'standard', 'quick', 'paranoid'
+     String? pqcKeyfile,                // Path to LOAD an existing PQC key file
+     bool independentXor = false,       // KDF composition: independent XOR
+     bool useXorComposition = false,    // KDF composition: sequential XOR (v13-pinned)
+     bool parallelKdf = false,          // Parallel key derivation (independent composition)
+     int? kdfWorkers,                   // Worker count for parallel key derivation
      Function(String)? onProgress,
      Function(String)? onStatus}
   ) async {
+    // The CLI does not validate this pair (verified: no check anywhere in
+    // crypt_cli.py), and the current default composition already IS independent
+    // XOR, so parallel derivation is valid without an explicit flag. What is
+    // genuinely invalid is asking for both compositions at once, which
+    // crypt_cli.py:8421-8427 rejects.
+    if (independentXor && useXorComposition) {
+      throw ArgumentError(
+        'Choose either independent XOR or sequential XOR composition, not both.',
+      );
+    }
+    // Sequential composition pins the legacy v13 format. A security template
+    // forces independent XOR, and crypt_cli.py:7093 lets the composition flag
+    // win — silently downgrading the template the user asked for.
+    if (template != null && (useXorComposition || independentXor)) {
+      throw ArgumentError(
+        'A security template already selects the key-derivation composition; '
+        'do not override it.',
+      );
+    }
+    if (kdfWorkers != null && (kdfWorkers < 1 || kdfWorkers > 64)) {
+      // Since gitlab#220/#224 the CLI itself clamps the pool (CPU count,
+      // component count and a concurrent-memory ceiling); this guard is
+      // defense-in-depth against sending a nonsensical flag value.
+      throw ArgumentError('Key-derivation workers must be between 1 and 64.');
+    }
     Directory? tempDir;
     try {
       // Create temporary directory with restrictive permissions
@@ -452,9 +574,6 @@ class CLIService {
                 break;
               case 'sha3-512':
                 args.addAll(['--sha3-512-rounds', config['rounds'].toString()]);
-                break;
-              case 'whirlpool':
-                args.addAll(['--whirlpool-rounds', config['rounds'].toString()]);
                 break;
             }
           }
@@ -596,6 +715,22 @@ class CLIService {
       if (forcePassword) {
         args.add('--force-password');
       }
+      if (pqcKeyfile != null && pqcKeyfile.isNotEmpty) {
+        args.addAll(['--pqc-keyfile', pqcKeyfile]);
+      }
+      if (independentXor) {
+        args.add('--independent-xor');
+      }
+      if (useXorComposition) {
+        args.add('--use-xor-composition');
+      }
+      if (parallelKdf) {
+        args.add('--parallel-kdf');
+      }
+      if (kdfWorkers != null) {
+        args.addAll(['--kdf-workers', '$kdfWorkers']);
+      }
+
 
       // Add progress flag if enabled
       if (showProgress) {
@@ -605,7 +740,7 @@ class CLIService {
       final maskedCommand = _getMaskedCommand(args);
       _outputDebugLog('=== CLI ENCRYPT COMMAND ===');
       _outputDebugLog('Full command: $maskedCommand');
-      _outputDebugLog('Raw args: ${args.join(' ')}');
+      _outputDebugLog('Raw args (masked): ${_getMaskedCommand(args)}');
 
       final result = await _runCLICommandWithProgress(
         args,
@@ -630,8 +765,10 @@ class CLIService {
         final stdoutMsg = result.stdout.toString().trim();
         _outputDebugLog('CLI encryption failed. Exit code: ${result.exitCode}');
         _outputDebugLog('Stderr: $errorMsg');
-        _outputDebugLog('Stdout: $stdoutMsg');
-        throw Exception('Encryption failed: ${errorMsg.isNotEmpty ? errorMsg : stdoutMsg}\n\nCommand executed: $maskedCommand');
+        // An error path is exactly when stdout may hold partially written
+        // plaintext or a credential; length only.
+        _outputDebugLog('Stdout: <suppressed, ${stdoutMsg.length} chars>');
+        throw Exception('Encryption failed: ${errorMsg.isNotEmpty ? errorMsg : "exit ${result.exitCode}"}\n\nCommand executed: $maskedCommand');
       }
 
       // Read encrypted output
@@ -758,11 +895,14 @@ class CLIService {
       // Add asymmetric decryption parameters if provided
       if (withKey != null && withKey.isNotEmpty) {
         args.addAll(['--with-key', withKey]);
-        if (verifyFrom != null && verifyFrom.isNotEmpty) {
-          args.addAll(['--verify-from', verifyFrom]);
-        }
+        // Never emit --verify-from together with --no-verify: the CLI
+        // silently prefers --no-verify, so the pair would claim an
+        // authenticity check that never happens. The tabs prevent the
+        // combination in the UI; this keeps every (future) caller honest.
         if (skipVerification) {
           args.add('--no-verify');
+        } else if (verifyFrom != null && verifyFrom.isNotEmpty) {
+          args.addAll(['--verify-from', verifyFrom]);
         }
       }
 
@@ -783,7 +923,7 @@ class CLIService {
       final maskedCommand = _getMaskedCommand(args);
       _outputDebugLog('=== CLI DECRYPT COMMAND ===');
       _outputDebugLog('Full command: $maskedCommand');
-      _outputDebugLog('Raw args: ${args.join(' ')}');
+      _outputDebugLog('Raw args (masked): ${_getMaskedCommand(args)}');
 
       // Use interactive method if integrity verification with callback is enabled
       final ProcessResult result;
@@ -834,8 +974,10 @@ class CLIService {
         final stdoutMsg = result.stdout.toString().trim();
         _outputDebugLog('CLI decryption failed. Exit code: ${result.exitCode}');
         _outputDebugLog('Stderr: $errorMsg');
-        _outputDebugLog('Stdout: $stdoutMsg');
-        throw Exception('Decryption failed: ${errorMsg.isNotEmpty ? errorMsg : stdoutMsg}\n\nCommand executed: $maskedCommand');
+        // An error path is exactly when stdout may hold partially written
+        // plaintext or a credential; length only.
+        _outputDebugLog('Stdout: <suppressed, ${stdoutMsg.length} chars>');
+        throw Exception('Decryption failed: ${errorMsg.isNotEmpty ? errorMsg : "exit ${result.exitCode}"}\n\nCommand executed: $maskedCommand');
       }
 
       // Read decrypted output
@@ -901,11 +1043,44 @@ class CLIService {
 
 
   /// Run CLI command with appropriate executable path
-  static Future<ProcessResult> _runCLICommand(List<String> args) async {
+  /// Run a CLI command and return its result.
+  ///
+  /// [logStdout] must be false for commands whose stdout contains secret
+  /// material (e.g. `generate-password --json`, whose stdout is the generated
+  /// password). When false, the debug log records only the stdout length, so a
+  /// secret cannot land in the persistent debug log under --debug.
+  ///
+  /// Defaults to NOT logging stdout: it carries data (decrypted plaintext,
+  /// generated credentials), so logging is opted into per call rather than
+  /// opted out of.
+  ///
+  /// [environment] is merged over the inherited environment for this child
+  /// only. Secrets belong here rather than on argv, which is visible in the
+  /// world-readable /proc/PID/cmdline; the CLI consumes each variable on read
+  /// so it is not inherited further.
+  static Future<ProcessResult> _runCLICommand(List<String> args,
+      {bool logStdout = false, Map<String, String>? environment}) async {
+    final override = commandRunnerOverride;
+    if (override != null) return override(args);
+
+    // Strip inherited credential variables before applying ours. If this
+    // process itself inherited e.g. OPENSSL_ENCRYPT_RECOVERY_CODE, the CLI
+    // would use it to unlock INSTEAD of the password the user typed, silently.
+    // Clearing to '' is not equivalent -- the CLI refuses a set-but-empty
+    // credential -- so the key must be absent.
+    Map<String, String>? childEnv;
+    if (environment != null) {
+      childEnv = {...Platform.environment};
+      for (final name in _credentialEnvNames) {
+        childEnv.remove(name);
+      }
+      childEnv.addAll(environment);
+    }
+
     // When running inside Flatpak, use direct CLI path for better performance and reliability
     if (_isFlaspakVersion && await File(_cliPath).exists()) {
-      _outputDebugLog('Using direct Flatpak CLI: $_cliPath ${args.join(' ')}');
-      final result = await Process.run(_cliPath, args);
+      _outputDebugLog('Using direct Flatpak CLI: $_cliPath ${_getMaskedCommand(args)}');
+      final result = await Process.run(_cliPath, args, environment: childEnv);
       _outputDebugLog('Flatpak CLI exit code: ${result.exitCode}');
       return result;
     }
@@ -914,7 +1089,7 @@ class CLIService {
     try {
       final pythonArgs = ['-m', 'openssl_encrypt.cli', ...args];
 
-      _outputDebugLog('Attempting development CLI: python ${pythonArgs.join(' ')}');
+      _outputDebugLog('Attempting development CLI: ${_getMaskedCommand(args)}');
       _outputDebugLog('Working directory: /home/work/private/git/openssl_encrypt');
 
       // Check if input file exists before calling CLI
@@ -934,12 +1109,24 @@ class CLIService {
       _outputDebugLog('Environment LD_LIBRARY_PATH: ${env['LD_LIBRARY_PATH'] ?? 'not set'}');
       _outputDebugLog('Environment PYTHONPATH: ${env['PYTHONPATH'] ?? 'not set'}');
 
+      if (environment != null) {
+        for (final name in _credentialEnvNames) {
+          env.remove(name);
+        }
+        env.addAll(environment);
+      }
       final result = await Process.run('python', pythonArgs,
         workingDirectory: '/home/work/private/git/openssl_encrypt',
         environment: env);
 
       _outputDebugLog('Development CLI exit code: ${result.exitCode}');
-      _outputDebugLog('Development CLI stdout: ${result.stdout}');
+      if (logStdout) {
+        _outputDebugLog('Development CLI stdout: ${result.stdout}');
+      } else {
+        // Secret-bearing stdout (e.g. a generated password): log only length.
+        _outputDebugLog(
+            'Development CLI stdout: <redacted, ${(result.stdout as String).length} chars>');
+      }
       _outputDebugLog('Development CLI stderr: ${result.stderr}');
 
       return result;
@@ -950,38 +1137,87 @@ class CLIService {
   }
 
   /// Run CLI command with stdin input (for passphrases, etc.)
-  static Future<ProcessResult> _runCLICommandWithStdin(List<String> args, String stdinInput) async {
+  static Future<ProcessResult> _runCLICommandWithStdin(List<String> args, String stdinInput,
+      {Map<String, String>? environment}) async {
+    final override = commandRunnerOverride;
+    if (override != null) return override(args, stdinInput: stdinInput);
+
     Process process;
 
     // When running inside Flatpak, use direct CLI path
     if (_isFlaspakVersion && await File(_cliPath).exists()) {
-      _outputDebugLog('Using direct Flatpak CLI with stdin: $_cliPath ${args.join(' ')}');
-      process = await Process.start(_cliPath, args);
+      _outputDebugLog('Using direct Flatpak CLI with stdin: $_cliPath ${_getMaskedCommand(args)}');
+      // When an explicit environment is given it is authoritative (used to
+      // remove vars like CRYPT_PASSWORD that would override the stdin value).
+      process = environment != null
+          ? await Process.start(_cliPath, args,
+              environment: environment, includeParentEnvironment: false)
+          : await Process.start(_cliPath, args);
     } else {
       // Development CLI
       final pythonArgs = ['-m', 'openssl_encrypt.cli', ...args];
       _outputDebugLog('Attempting development CLI with stdin: python ${pythonArgs.join(' ')}');
 
-      final env = Map<String, String>.from(Platform.environment);
+      // includeParentEnvironment is false in both cases: with it true the
+      // parent environment is merged back over `env`, which would undo the
+      // credential scrub entirely. _inheritableEnvironment() is a full copy
+      // of the parent minus credentials, so nothing else is lost.
+      final env = environment ?? _inheritableEnvironment();
       process = await Process.start('python', pythonArgs,
         workingDirectory: '/home/work/private/git/openssl_encrypt',
-        environment: env);
+        environment: env,
+        includeParentEnvironment: false);
     }
 
-    // Send stdin input
-    process.stdin.write(stdinInput);
-    if (!stdinInput.endsWith('\n')) {
-      process.stdin.write('\n');
-    }
-    await process.stdin.flush();
-    await process.stdin.close();
+    final result = await pumpStdinAndCollect(process, stdinInput);
+    _outputDebugLog('CLI with stdin exit code: ${result.exitCode}');
+    return result;
+  }
 
-    // Collect output
-    final stdout = await process.stdout.transform(utf8.decoder).join();
-    final stderr = await process.stderr.transform(utf8.decoder).join();
+  /// Write [stdinInput] to [process] and collect its output, draining
+  /// stdout/stderr CONCURRENTLY with the write (gitlab#175).
+  ///
+  /// Two properties this ordering guarantees, which a write-then-drain order
+  /// does not:
+  ///  - No deadlock: a child that emits more than a pipe buffer (~64 KiB)
+  ///    before it reads stdin cannot wedge against a larger payload, because
+  ///    we are already reading its output while we write.
+  ///  - No masking: if the child exits before reading stdin, the
+  ///    `write`/`flush`/`close` raises a broken-pipe `SocketException`; we
+  ///    swallow it so the child's real exit code and stderr are what the
+  ///    caller sees, not the write failure (which hid the true argparse error
+  ///    from a stale CLI bundle).
+  ///
+  /// Public as a test seam: the commandRunnerOverride injection short-circuits
+  /// the real process path, so this is the only way to exercise the actual
+  /// pipe behaviour.
+  static Future<ProcessResult> pumpStdinAndCollect(
+    Process process,
+    String stdinInput,
+  ) async {
+    // Start draining before writing stdin.
+    final stdoutFuture = process.stdout.transform(utf8.decoder).join();
+    final stderrFuture = process.stderr.transform(utf8.decoder).join();
+
+    try {
+      process.stdin.write(stdinInput);
+      if (!stdinInput.endsWith('\n')) {
+        process.stdin.write('\n');
+      }
+      await process.stdin.flush();
+      await process.stdin.close();
+    } on IOException {
+      // The child closed stdin early (e.g. exited before reading it, or does
+      // not accept --data-stdin). Its exit code and stderr below carry the
+      // real reason; do not let the write failure mask them. Caught as the
+      // IOException supertype, not just SocketException: a broken child pipe
+      // surfaces as SocketException on POSIX but can be a different IOException
+      // subtype elsewhere, and the guarantee should not be platform-specific.
+    }
+
+    final stdout = await stdoutFuture;
+    final stderr = await stderrFuture;
     final exitCode = await process.exitCode;
-
-    _outputDebugLog('CLI with stdin exit code: $exitCode');
 
     return ProcessResult(process.pid, exitCode, stdout, stderr);
   }
@@ -991,10 +1227,21 @@ class CLIService {
     List<String> args,
     {Map<String, String>? environment, Function(String)? onStdout, Function(String)? onStderr, Function(String)? onProgress, Function(String)? onStatus, String? commandForStatus, bool hsmDetectionEnabled = false}
   ) async {
+    final override = commandRunnerOverride;
+    if (override != null) {
+      lastEnvironmentForTesting = environment;
+      return override(args);
+    }
+
     Process process;
 
-    // Merge environment variables for secure password passing
-    final processEnv = Map<String, String>.from(Platform.environment);
+    // Merge environment variables for secure password passing.
+    //
+    // The credential scrub runs unconditionally, not only when an explicit
+    // `environment` map is passed: this is the helper encrypt and decrypt use,
+    // so a credential inherited from the GUI's own environment would otherwise
+    // reach the child on the path that matters most.
+    final processEnv = _inheritableEnvironment();
     processEnv['PYTHONUNBUFFERED'] = '1';  // Force unbuffered Python output for real-time YubiKey prompts
     if (environment != null) {
       processEnv.addAll(environment);
@@ -1008,7 +1255,7 @@ class CLIService {
         environment: processEnv);
       _outputDebugLog('Using development CLI with progress (python module)');
     } catch (e) {
-      _outputDebugLog('Development CLI unavailable: $e, trying Flatpak CLI with progress');
+      _outputDebugLog('Development CLI unavailable: ${_safeProcessError(e)}, trying Flatpak CLI with progress');
       // Fallback to Flatpak CLI
       if (await File(_cliPath).exists()) {
         process = await Process.start(_cliPath, args, environment: processEnv);
@@ -1131,8 +1378,10 @@ class CLIService {
   ) async {
     Process process;
 
-    // Merge environment variables for secure password passing
-    final processEnv = Map<String, String>.from(Platform.environment);
+    // Merge environment variables for secure password passing.
+    // Scrubbed unconditionally, like the other spawn helpers: this one serves
+    // decrypt when integrity verification is interactive.
+    final processEnv = _inheritableEnvironment();
     processEnv['PYTHONUNBUFFERED'] = '1';  // Force unbuffered Python output
     if (environment != null) {
       processEnv.addAll(environment);
@@ -1146,7 +1395,7 @@ class CLIService {
         environment: processEnv);
       _outputDebugLog('Using development CLI with interaction (python module)');
     } catch (e) {
-      _outputDebugLog('Development CLI unavailable: $e, trying Flatpak CLI with interaction');
+      _outputDebugLog('Development CLI unavailable: ${_safeProcessError(e)}, trying Flatpak CLI with interaction');
       // Fallback to Flatpak CLI
       if (await File(_cliPath).exists()) {
         process = await Process.start(_cliPath, args, environment: processEnv);
@@ -1302,6 +1551,13 @@ class CLIService {
         if (!await logDir.exists()) {
           await logDir.create(recursive: true);
         }
+        // gitlab#215 review F4: the log can contain sensitive operational
+        // detail; restrict the directory to the owner.
+        if (!Platform.isWindows) {
+          try {
+            await Process.run('chmod', ['700', logDir.path]);
+          } catch (_) {}
+        }
 
         final timestamp = DateTime.now().toIso8601String().replaceAll(':', '-').substring(0, 19);
         _debugLogFile = path.join(logDir.path, 'debug_$timestamp.log');
@@ -1312,12 +1568,21 @@ class CLIService {
           'Started: ${DateTime.now().toIso8601String()}',
           'Backend: ${_isFlaspakVersion ? 'Flatpak' : 'Development'}',
           'CLI Version: ${_cliVersion ?? 'Unknown'}',
+          'WARNING: this log may contain sensitive operational detail '
+              '(file paths, argv, error text). Secret VALUES are masked, but '
+              'treat this file as confidential and delete it when done.',
           '==========================================',
           ''
         ];
 
         final file = File(_debugLogFile!);
         await file.writeAsString(headerInfo.join('\n'));
+        // Owner-only: the log lands in ~/Documents (default 0644 umask).
+        if (!Platform.isWindows) {
+          try {
+            await Process.run('chmod', ['600', _debugLogFile!]);
+          } catch (_) {}
+        }
 
         outputDebugLog('Debug log file initialized: $_debugLogFile');
       } catch (e) {
@@ -1681,11 +1946,6 @@ class CLIService {
             case 'sha3-512':
               args.addAll(['--sha3-512-rounds', config['rounds'].toString()]);
               break;
-            case 'whirlpool':
-              if (config['rounds'] != null && config['rounds'] > 0) {
-                args.addAll(['--whirlpool-rounds', config['rounds'].toString()]);
-              }
-              break;
           }
         }
       }
@@ -1764,7 +2024,7 @@ class CLIService {
       commandPrefix = 'python -m openssl_encrypt.cli';
     }
 
-    return 'CRYPT_PASSWORD="[password]" $commandPrefix ${args.join(' ')}';
+    return 'CRYPT_PASSWORD="[password]" $commandPrefix ${_getMaskedCommand(args)}';
   }
 
   /// Generate CLI command preview for decryption without execution
@@ -1790,10 +2050,17 @@ class CLIService {
       commandPrefix = 'python -m openssl_encrypt.cli';
     }
 
-    return 'CRYPT_PASSWORD="[password]" $commandPrefix ${args.join(' ')}';
+    return 'CRYPT_PASSWORD="[password]" $commandPrefix ${_getMaskedCommand(args)}';
   }
 
   /// Generate copy-pasteable CLI command with masked password
+  /// Log-safe rendering of a process error: ProcessException.toString()
+  /// embeds the full argv -- including secret-valued flags -- so it must
+  /// never reach a log line verbatim (gitlab#215 review F1).
+  static String _safeProcessError(Object e) => e is ProcessException
+      ? 'ProcessException(${e.executable}): ${e.message} [${e.errorCode}]'
+      : e.toString();
+
   static String _getMaskedCommand(List<String> args) {
     // Determine command prefix
     String commandPrefix = '';
@@ -1803,15 +2070,36 @@ class CLIService {
       commandPrefix = 'python -m openssl_encrypt.cli';
     }
 
-    // Create masked args by replacing password values with asterisks
+    // Create masked args by replacing secret values with asterisks.
+    // gitlab#215 item 5: --stego-password (and friends) were displayed
+    // verbatim; keep this set in sync with the CLI's
+    // SECRET_VALUE_CLI_OPTIONS.
+    const secretFlags = {
+      '-p',
+      '--password',
+      '--second-password',
+      '--keystore-password',
+      '--manifest-password',
+      '--rekey-password',
+      '--recovery-code',
+      '--stego-password',
+      '--encryption-data',
+      '--code',
+    };
+    // F19 review (gitlab#254): this is a DISPLAY formatter — its output reaches
+    // the terminal, the persistent debug-log file, and the in-app log viewer
+    // (rendered with a bare Text widget). Untrusted argv values (e.g. a
+    // crafted recovery-slot id passed as --slot-id) must be escaped here too, or
+    // a raw ESC/newline/bidi sequence forges log lines or a spoofed screen. This
+    // never touches the exec path (Process.run gets the raw List<String>).
     final maskedArgs = <String>[];
     for (int i = 0; i < args.length; i++) {
-      if (args[i] == '--password' && i + 1 < args.length) {
-        maskedArgs.add(args[i]);
+      if (secretFlags.contains(args[i]) && i + 1 < args.length) {
+        maskedArgs.add(InputValidator.sanitizeForDisplay(args[i]));
         maskedArgs.add('****');
-        i++; // Skip the actual password value
+        i++; // Skip the actual secret value
       } else {
-        maskedArgs.add(args[i]);
+        maskedArgs.add(InputValidator.sanitizeForDisplay(args[i]));
       }
     }
 
@@ -1840,13 +2128,6 @@ class CLIService {
     bool randomizePixels = false,
     bool addDecoyData = false,
     int? jpegQuality,                        // JPEG quality (70-100)
-    // Video steganography options
-    double? videoQuantizationStep,           // default 8.0
-    double? videoAdaptationFactor,           // default 1.2
-    double? videoCompensationFactor,         // default 0.5
-    int? videoBitsPerCoefficient,            // 1-4, default 2
-    bool videoTemporalSpread = true,         // default enabled
-    int? videoQualityPreservation,           // 1-10, default 8
     Map<String, Map<String, dynamic>>? hashConfig,
     Map<String, Map<String, dynamic>>? kdfConfig,
     String? hsmPlugin,
@@ -1867,15 +2148,20 @@ class CLIService {
       '-i', inputPath,
       '--stego-hide', coverImagePath,
       '-o', outputPath,
-      '-a', algorithm,
+      // --algorithm, NOT -a: `-a` is the short form of --armor, a
+      // store_true, so `-a aes-gcm` set armor=True and left the algorithm as
+      // an unrecognised positional -- encrypt declares none, so the command
+      // died with exit 2 and steganographic encryption never worked from the
+      // GUI. Had it parsed, the user's cipher choice would silently have
+      // become "ASCII armor" (gitlab#190).
+      '--algorithm', algorithm,
       '--stego-method', stegoMethod,
       '--stego-bits-per-channel', bitsPerChannel.toString(),
     ];
 
-    // Add steganography password if provided
-    if (stegoPassword != null && stegoPassword.isNotEmpty) {
-      args.addAll(['--stego-password', stegoPassword]);
-    }
+    // The steganography password is NOT put on argv (F21/F22, gitlab#258): it is
+    // passed via the CRYPT_STEGO_PASSWORD environment variable at the runner
+    // call below, out of the world-readable /proc/<pid>/cmdline.
 
     // Add pixel randomization if enabled and stego password is provided
     if (randomizePixels && stegoPassword != null && stegoPassword.isNotEmpty) {
@@ -1892,34 +2178,13 @@ class CLIService {
       args.addAll(['--jpeg-quality', jpegQuality.toString()]);
     }
 
-    // Add video steganography options if provided
-    if (videoQuantizationStep != null) {
-      args.addAll(['--video-quantization-step', videoQuantizationStep.toString()]);
-    }
-    if (videoAdaptationFactor != null) {
-      args.addAll(['--video-adaptation-factor', videoAdaptationFactor.toString()]);
-    }
-    if (videoCompensationFactor != null) {
-      args.addAll(['--video-compensation-factor', videoCompensationFactor.toString()]);
-    }
-    if (videoBitsPerCoefficient != null) {
-      args.addAll(['--video-bits-per-coefficient', videoBitsPerCoefficient.toString()]);
-    }
-    if (!videoTemporalSpread) {
-      // Only add flag if disabled (default is enabled)
-      args.add('--no-video-temporal-spread');
-    }
-    if (videoQualityPreservation != null) {
-      args.addAll(['--video-quality-preservation', videoQualityPreservation.toString()]);
-    }
-
     // Add hash configuration if provided
     if (hashConfig != null) {
       for (final entry in hashConfig.entries) {
         final hashName = entry.key;
         final config = entry.value;
         if (config['enabled'] == true && config['rounds'] != null && config['rounds'] > 0) {
-          args.addAll(['--${hashName}-rounds', config['rounds'].toString()]);
+          args.addAll(['--$hashName-rounds', config['rounds'].toString()]);
         }
       }
     }
@@ -2027,10 +2292,13 @@ class CLIService {
       }
     }
 
-    return await _runCLICommandWithProgress(
-      args,
-      environment: {'CRYPT_PASSWORD': password},
-    );
+    final env = {'CRYPT_PASSWORD': password};
+    // F21/F22 (gitlab#258): deliver the steganography password out of band of
+    // argv, mirroring CRYPT_PASSWORD; the CLI consumes CRYPT_STEGO_PASSWORD.
+    if (stegoPassword != null && stegoPassword.isNotEmpty) {
+      env['CRYPT_STEGO_PASSWORD'] = stegoPassword;
+    }
+    return await _runCLICommandWithProgress(args, environment: env);
   }
 
   /// Encrypt text and hide in steganographic cover media
@@ -2046,13 +2314,6 @@ class CLIService {
     bool randomizePixels = false,
     bool addDecoyData = false,
     int? jpegQuality,
-    // Video steganography options
-    double? videoQuantizationStep,
-    double? videoAdaptationFactor,
-    double? videoCompensationFactor,
-    int? videoBitsPerCoefficient,
-    bool videoTemporalSpread = true,
-    int? videoQualityPreservation,
     Map<String, Map<String, dynamic>>? hashConfig,
     Map<String, Map<String, dynamic>>? kdfConfig,
     String? hsmPlugin,
@@ -2087,12 +2348,6 @@ class CLIService {
         randomizePixels: randomizePixels,
         addDecoyData: addDecoyData,
         jpegQuality: jpegQuality,
-        videoQuantizationStep: videoQuantizationStep,
-        videoAdaptationFactor: videoAdaptationFactor,
-        videoCompensationFactor: videoCompensationFactor,
-        videoBitsPerCoefficient: videoBitsPerCoefficient,
-        videoTemporalSpread: videoTemporalSpread,
-        videoQualityPreservation: videoQualityPreservation,
         hashConfig: hashConfig,
         kdfConfig: kdfConfig,
         hsmPlugin: hsmPlugin,
@@ -2148,10 +2403,8 @@ class CLIService {
       '--stego-bits-per-channel', bitsPerChannel.toString(),
     ];
 
-    // Add steganography password if provided
-    if (stegoPassword != null && stegoPassword.isNotEmpty) {
-      args.addAll(['--stego-password', stegoPassword]);
-    }
+    // The steganography password is passed via CRYPT_STEGO_PASSWORD in the
+    // environment, not on argv (F21/F22, gitlab#258).
 
     // Add HSM arguments if specified
     if (hsmPlugin != null && hsmPlugin != 'none') {
@@ -2169,18 +2422,24 @@ class CLIService {
     // Add asymmetric decryption parameters if provided
     if (withKey != null && withKey.isNotEmpty) {
       args.addAll(['--with-key', withKey]);
-      if (verifyFrom != null && verifyFrom.isNotEmpty) {
-        args.addAll(['--verify-from', verifyFrom]);
-      }
+      // Never emit --verify-from together with --no-verify: the CLI
+      // silently prefers --no-verify, so the pair would claim an
+      // authenticity check that never happens. The tabs prevent the
+      // combination in the UI; this keeps every (future) caller honest.
       if (skipVerification) {
         args.add('--no-verify');
+      } else if (verifyFrom != null && verifyFrom.isNotEmpty) {
+        args.addAll(['--verify-from', verifyFrom]);
       }
     }
 
-    return await _runCLICommandWithProgress(
-      args,
-      environment: {'CRYPT_PASSWORD': password},
-    );
+    final env = {'CRYPT_PASSWORD': password};
+    // F21/F22 (gitlab#258): deliver the steganography password out of band of
+    // argv, mirroring CRYPT_PASSWORD; the CLI consumes CRYPT_STEGO_PASSWORD.
+    if (stegoPassword != null && stegoPassword.isNotEmpty) {
+      env['CRYPT_STEGO_PASSWORD'] = stegoPassword;
+    }
+    return await _runCLICommandWithProgress(args, environment: env);
   }
 
   /// Register a new FIDO2 credential
@@ -2263,10 +2522,194 @@ class CLIService {
     }
   }
 
+  // ==================== Password Generation ====================
+
+  /// Generate a password via the CLI `generate-password --json` command.
+  ///
+  /// Character mode (default) uses [length] and the four charset toggles; if
+  /// no charset is selected the CLI defaults to all four. Diceware mode
+  /// ([dice] = true) draws [diceCount] words joined by [diceSep], optionally
+  /// from a custom [diceList] wordlist. Requires the CLI's `--json` support
+  /// (gitlab#138). Throws on non-zero exit.
+  static Future<GeneratedPassword> generatePassword({
+    int length = 32,
+    bool useLowercase = true,
+    bool useUppercase = true,
+    bool useDigits = true,
+    bool useSpecial = true,
+    bool dice = false,
+    int diceCount = 10,
+    String diceSep = '',
+    String? diceList,
+    bool forceWordlist = false,
+  }) async {
+    final args = <String>['generate-password'];
+
+    if (dice) {
+      args.add('--dice');
+      args.addAll(['--dice-count', diceCount.toString()]);
+      // Only pass a non-default separator; the empty default is valid but
+      // passing "--dice-sep ''" is harmless. Skip when empty for a cleaner argv.
+      if (diceSep.isNotEmpty) {
+        args.addAll(['--dice-sep', diceSep]);
+      }
+      if (diceList != null && diceList.isNotEmpty) {
+        args.addAll(['--dice-list', diceList]);
+      }
+      if (forceWordlist) {
+        args.add('--force-wordlist');
+      }
+    } else {
+      // Length is a positional argument in character mode.
+      args.add(length.toString());
+      if (useLowercase) args.add('--use-lowercase');
+      if (useUppercase) args.add('--use-uppercase');
+      if (useDigits) args.add('--use-digits');
+      if (useSpecial) args.add('--use-special');
+    }
+
+    args.add('--json');
+
+    // logStdout: false — stdout is the generated password; keep it out of logs.
+    final result = await _runCLICommand(args, logStdout: false);
+    if (result.exitCode != 0) {
+      throw Exception('Password generation failed: ${result.stderr}');
+    }
+
+    try {
+      // stdout is a single JSON object; the password never touches stderr
+      // under --json (see gitlab#138).
+      final data = jsonDecode((result.stdout as String).trim()) as Map<String, dynamic>;
+      return GeneratedPassword.fromJson(data);
+    } catch (_) {
+      // Do not interpolate the decode error: its message can echo a snippet of
+      // the (secret-bearing) stdout into the UI error card.
+      throw Exception('Could not parse generated password output (invalid JSON)');
+    }
+  }
+
+  // ==================== Password Strength ====================
+
+  /// Report the strength of [password] via `check-password --json`.
+  ///
+  /// The password is passed on **stdin** (never as a `-p` argument, which would
+  /// leak it to the process list), and the policy is set to "none" so this is a
+  /// pure strength report that always exits 0. Returns null for an empty
+  /// password. The password is not written to any log (the stdin runner logs
+  /// only the argv; stdout is the report, not the password).
+  static Future<PasswordStrength?> checkPassword(String password) async {
+    if (password.isEmpty) return null;
+    final args = <String>[
+      'check-password',
+      '--json',
+      '--password-policy',
+      'none',
+    ];
+    // Strip CRYPT_PASSWORD so the CLI scores the typed password (it reads that
+    // env var before stdin), making the meter reflect the field, not the env.
+    // _inheritableEnvironment() already drops CRYPT_PASSWORD along with every
+    // other credential variable.
+    final env = _inheritableEnvironment();
+    final result = await _runCLICommandWithStdin(args, password, environment: env);
+    if (result.exitCode != 0) {
+      throw Exception('Strength check failed: ${(result.stderr as String).trim()}');
+    }
+    final data = jsonDecode((result.stdout as String).trim()) as Map<String, dynamic>;
+    return PasswordStrength.fromJson(data);
+  }
+
+  // ==================== Rekey ====================
+
+  /// Re-encrypt [inputPath] to [outputPath] with a new password (and optionally
+  /// a new [algorithm]) via the CLI `rekey` command.
+  ///
+  /// The OLD password is passed via `CRYPT_PASSWORD` and the NEW password via
+  /// `OPENSSL_ENCRYPT_REKEY_PASSWORD` — both environment variables, which the
+  /// CLI reads and then deletes; neither reaches the process list or a temp
+  /// file. Throws on non-zero exit (e.g. wrong old password, weak new password
+  /// without [forcePassword]).
+  static Future<String> rekey({
+    required String inputPath,
+    required String outputPath,
+    required String oldPassword,
+    required String newPassword,
+    String? algorithm,
+    bool forcePassword = false,
+  }) async {
+    final args = <String>['rekey', '-i', inputPath, '-o', outputPath];
+    if (algorithm != null && algorithm.isNotEmpty) {
+      args.addAll(['--algorithm', algorithm]);
+    }
+    if (forcePassword) {
+      args.add('--force-password');
+    }
+
+    final result = await _runCLICommandWithProgress(
+      args,
+      environment: {
+        'CRYPT_PASSWORD': oldPassword,
+        'OPENSSL_ENCRYPT_REKEY_PASSWORD': newPassword,
+      },
+    );
+    if (result.exitCode != 0) {
+      final err = (result.stderr as String).trim();
+      throw Exception(err.isEmpty ? 'Rekey failed (exit ${result.exitCode})' : err);
+    }
+    return (result.stdout as String).trim();
+  }
+
+  // ==================== Secure Shred ====================
+
+  /// Securely delete a file (or directory with [recursive]) via the CLI
+  /// `shred` command. [inputPath] may be a glob pattern. Overwrites with
+  /// [passes] passes. Returns the CLI's human-readable output (stderr).
+  /// Throws on non-zero exit.
+  ///
+  /// The caller MUST confirm this irreversible action first, and MUST set
+  /// [recursive] when [inputPath] is (or matches) a directory — the CLI would
+  /// otherwise fall into an interactive confirmation prompt that has no stdin
+  /// under Process.run.
+  static Future<String> shred(
+    String inputPath, {
+    int passes = 3,
+    bool recursive = false,
+  }) async {
+    // The CLI shred handler runs -i through glob expansion (glob.glob), so a
+    // real, picker-supplied path whose name contains glob metacharacters (e.g.
+    // "data*.bin") would expand to and irreversibly delete siblings that were
+    // never in the confirmation dialog. GUI paths are always literal, so escape
+    // the metacharacters (mirrors Python's glob.escape) to force literal match.
+    final args = <String>[
+      'shred',
+      '-i',
+      _escapeGlob(inputPath),
+      '--shred-passes',
+      passes.toString(),
+    ];
+    if (recursive) {
+      args.add('--recursive');
+    }
+
+    final result = await _runCLICommand(args);
+    if (result.exitCode != 0) {
+      final err = (result.stderr as String).trim();
+      throw Exception(err.isEmpty ? 'Shred failed (exit ${result.exitCode})' : err);
+    }
+    // shred writes its progress/summary to stderr; stdout is empty.
+    return (result.stderr as String).trim();
+  }
+
+  /// Escape glob metacharacters (`*`, `?`, `[`) so the CLI treats the argument
+  /// as a literal path, mirroring Python's `glob.escape`. Each special char is
+  /// wrapped in a single-character class; `]` needs no escaping.
+  static String _escapeGlob(String path) {
+    return path.replaceAllMapped(RegExp(r'([*?\[])'), (m) => '[${m[1]}]');
+  }
+
   // ==================== Identity Management Methods ====================
 
   /// List all identities (own + contacts)
-  static Future<Map<String, List<Map<String, dynamic>>>> listIdentities() async {
+  static Future<Map<String, dynamic>> listIdentities() async {
     try {
       final args = ['identity', 'list', '--include-contacts', '--json'];
 
@@ -2277,19 +2720,68 @@ class CLIService {
       final result = await _runCLICommand(args);
 
       if (result.exitCode != 0) {
-        _outputDebugLog('Failed to list identities: ${result.stderr}');
-        return {'own': [], 'contacts': []};
+        // Throw, do not return empty: an empty list is indistinguishable
+        // from an empty store, which is exactly how a CLI flag that never
+        // existed went unnoticed for the whole life of this feature
+        // (gitlab#183). Every caller has an error path.
+        _outputDebugLog('Failed to list identities (exit ${result.exitCode})');
+        final detail = result.stderr.trim();
+        throw Exception(
+          'identity list failed (exit ${result.exitCode})'
+          '${detail.isEmpty ? '' : ': ${InputValidator.sanitizeForDisplay(detail)}'}',
+        );
       }
 
       final data = jsonDecode(result.stdout) as Map<String, dynamic>;
 
+      // Sanitize once, here, rather than at each widget: this is where the
+      // untrusted values enter the app, and a per-widget approach silently
+      // misses the next new screen (gitlab#183).
+      //
+      // Only the free-text fields. `name` and `fingerprint` are regex-locked
+      // by the CLI AND are passed back to it as argument values
+      // (--with-key, recipient selection), so substituting characters there
+      // would corrupt the argument, not harden the display.
+      List<Map<String, dynamic>> clean(String key) =>
+          (data[key] as List<dynamic>?)
+              ?.map((i) => i as Map<String, dynamic>)
+              .map((i) => {
+                    ...i,
+                    if (i['email'] != null)
+                      'email': InputValidator.sanitizeForDisplay(i['email'] as String),
+                    if (i['created_at'] != null)
+                      'created_at':
+                          InputValidator.sanitizeForDisplay(i['created_at'] as String),
+                  })
+              .toList() ??
+          [];
+
+      // Absent entries are not the same as absent identities, so `skipped`
+      // is RETURNED, not just logged: a debug-log line is invisible in a
+      // default build, and the whole point is that the user learns a
+      // recipient is missing rather than silently omitting one.
+      final skipped = ((data['skipped'] as List<dynamic>?) ?? [])
+          .map((s) => s as Map<String, dynamic>)
+          .map((s) => {
+                ...s,
+                if (s['entry'] != null)
+                  'entry': InputValidator.sanitizeForDisplay(s['entry'] as String),
+                if (s['reason'] != null)
+                  'reason': InputValidator.sanitizeForDisplay(s['reason'] as String),
+              })
+          .toList();
+      if (skipped.isNotEmpty) {
+        _outputDebugLog('identity list: ${skipped.length} store entry/entries could not be loaded');
+      }
+
       return {
-        'own': (data['own'] as List<dynamic>?)?.map((i) => i as Map<String, dynamic>).toList() ?? [],
-        'contacts': (data['contacts'] as List<dynamic>?)?.map((i) => i as Map<String, dynamic>).toList() ?? [],
+        'own': clean('own'),
+        'contacts': clean('contacts'),
+        'skipped': skipped,
       };
     } catch (e) {
       _outputDebugLog('Error listing identities: $e');
-      return {'own': [], 'contacts': []};
+      rethrow;
     }
   }
 
@@ -2302,6 +2794,7 @@ class CLIService {
     String sigAlgorithm = 'ML-DSA-65',
     String? hsmType,
     int? hsmSlot,
+    bool noTouch = false,
   }) async {
     final args = [
       'identity',
@@ -2319,6 +2812,14 @@ class CLIService {
       args.addAll(['--hsm', hsmType]);
       if (hsmSlot != null) {
         args.addAll(['--hsm-slot', hsmSlot.toString()]);
+      }
+      // --no-touch only has meaning with an HSM, and even then it only
+      // suppresses the tool's "touch your key" REMINDER (identity_protection
+      // .py) — it does NOT change whether the key demands a physical press,
+      // which is a hardware slot setting (gitlab#218). Never emitted without
+      // an HSM, and never by default.
+      if (noTouch) {
+        args.add('--no-touch');
       }
     }
 
@@ -2363,36 +2864,74 @@ class CLIService {
   }
 
   /// Import a contact's public key
-  static Future<void> importContact(String publicKeyData, {String? alias}) async {
-    try {
-      final args = ['identity', 'import', '--data', publicKeyData];
+  static Future<void> importContact(
+    String publicKeyData, {
+    String? alias,
+    bool allowKeyChange = false,
+  }) async {
+    // The document goes over stdin, never argv: /proc/PID/cmdline is
+    // world-readable, so an argv channel would publish the contact's
+    // metadata to every local process -- and this field is a free-text
+    // paste box, so a mis-pasted private key or passphrase would be leaked
+    // at execve, before the CLI could reject it (gitlab#164).
+    final args = ['identity', 'import', '--data-stdin'];
 
-      if (alias != null && alias.isNotEmpty) {
-        args.addAll(['--alias', alias]);
+    if (alias != null && alias.isNotEmpty) {
+      args.addAll(['--alias', alias]);
+    }
+
+    // --allow-key-change replaces a pinned key. The CLI refuses a
+    // stdin-sourced key change non-interactively (identity_cli.py), so the
+    // GUI must catch IdentityKeyChangedError, show the fingerprints, and only
+    // then re-call with allowKeyChange:true. Never set silently.
+    //
+    // --overwrite is required IN ADDITION: --allow-key-change only passes the
+    // TOFU gate, but Identity.save still refuses to overwrite the existing
+    // contact directory without --overwrite (identity.py:616), so the replace
+    // fails without it. The CLI's own interactive branch passes both
+    // (identity_cli.py). Both stay gated behind allowKeyChange so the
+    // unconfirmed first attempt can never overwrite.
+    if (allowKeyChange) {
+      args.addAll(['--allow-key-change', '--overwrite']);
+    }
+
+    final result = await _runCLICommandWithStdin(args, publicKeyData);
+
+    if (result.exitCode != 0) {
+      final stderr = result.stderr.toString();
+      // Distinguish the TOFU key-change refusal from an ordinary failure:
+      // it is the one error whose remedy is a security decision, not a retry.
+      final keyChanged = IdentityKeyChangedError.tryParse(stderr);
+      if (keyChanged != null) {
+        throw keyChanged;
       }
-
-      if (debugEnabled) {
-        args.add('--debug');
-      }
-
-      final result = await _runCLICommand(args);
-
-      if (result.exitCode != 0) {
-        throw Exception('Failed to import contact: ${result.stderr}');
-      }
-    } catch (e) {
-      throw Exception('Error importing contact: $e');
+      throw Exception('Failed to import contact: $stderr');
     }
   }
 
-  /// Delete an identity or contact
+  /// Delete an identity or contact.
+  ///
+  /// `--kind` decides WHICH entry goes when a name exists as both an own
+  /// identity and a contact. Deleting both is destructive in two different
+  /// ways -- it destroys the own identity's private keys, making every file
+  /// encrypted to it unreadable, and it drops the contact's TOFU pin, so a
+  /// later import of that name is accepted as first use with no key-change
+  /// warning -- so the caller has to say which one it means.
+  ///
+  /// This used to send `--contact`, a flag that has never existed on any
+  /// branch: argparse exited 2 and GUI contact deletion had never worked
+  /// (gitlab#185). `--force` skips the CLI's confirmation prompt, which a
+  /// subprocess cannot answer -- the app runs its own dialogue first, and
+  /// without it the prompt's `input()` raised EOFError on a non-tty pipe.
   static Future<void> deleteIdentity(String name, {bool isContact = false}) async {
     try {
-      final args = ['identity', 'delete', name];
-
-      if (isContact) {
-        args.add('--contact');
-      }
+      final args = [
+        'identity',
+        'delete',
+        name,
+        '--kind', isContact ? 'contact' : 'own',
+        '--force',
+      ];
 
       if (debugEnabled) {
         args.add('--debug');
@@ -2475,15 +3014,18 @@ class CLIService {
 
   // ==================== Network Plugin Methods ====================
 
-  /// Test keyserver connection
-  static Future<bool> testKeyserverConnection(String url) async {
+  /// Check the configured keyserver.
+  ///
+  /// Reports on the server the CLI is configured with. It used to send
+  /// `plugin keyserver test --url <url>`, a command that has never existed
+  /// (`plugin` offers only sign/trust-key/list-keys), so the check always
+  /// failed at argparse and the GUI reported "unreachable" for a server
+  /// that was fine -- gitlab#188. `keyserver status` takes no --url, so the
+  /// caller's url is no longer accepted: callers must not imply that an
+  /// arbitrary server was probed.
+  static Future<bool> checkKeyserverStatus() async {
     try {
-      final args = [
-        'plugin',
-        'keyserver',
-        'test',
-        '--url', url,
-      ];
+      final args = ['keyserver', 'status'];
 
       if (debugEnabled) {
         args.add('--debug');
@@ -2492,7 +3034,7 @@ class CLIService {
       final result = await _runCLICommand(args);
       return result.exitCode == 0;
     } catch (e) {
-      _outputDebugLog('Keyserver connection test failed: $e');
+      _outputDebugLog('Keyserver status check failed: $e');
       return false;
     }
   }
@@ -2500,11 +3042,10 @@ class CLIService {
   /// Clear keyserver cache
   static Future<bool> clearKeyserverCache() async {
     try {
-      final args = [
-        'plugin',
-        'keyserver',
-        'clear-cache',
-      ];
+      // `plugin keyserver clear-cache` never existed (gitlab#188); the
+      // real command is `keyserver cache-clear`. --force skips its
+      // confirmation prompt, which no GUI subprocess can answer.
+      final args = ['keyserver', 'cache-clear', '--force'];
 
       if (debugEnabled) {
         args.add('--debug');
@@ -2795,6 +3336,569 @@ class CLIService {
     } catch (e) {
       _outputDebugLog('Integrity verification failed: $e');
       return false;
+    }
+  }
+
+  // ==================== Signature verification (gitlab#158) ============
+
+  /// Verify a detached signature over [inputPath].
+  ///
+  /// Needs no credential: verification uses public keys, and trust comes from
+  /// the local identity store — the CLI refuses an unknown signer rather than
+  /// reporting the file as merely unverified.
+  ///
+  /// [signer] pins the expected identity by name. Without it the signer is
+  /// resolved from the signature's fingerprint, which is a materially weaker
+  /// statement: "signed by someone in your store" rather than "signed by the
+  /// identity you named".
+  ///
+  /// Throws when verification could not be performed. A signature that is
+  /// simply BAD is returned as a result with `valid == false`, never as an
+  /// exception — conflating the two would let a genuine bad signature be
+  /// reported as an error the user shrugs off.
+  static Future<SignatureVerification> verifySignature({
+    required String inputPath,
+    String? signaturePath,
+    String? signer,
+    String? identityStore,
+  }) async {
+    final args = ['verify-signature', '-i', inputPath, '--json'];
+    if (signaturePath != null && signaturePath.isNotEmpty) {
+      args.addAll(['--signature', signaturePath]);
+    }
+    if (signer != null && signer.isNotEmpty) {
+      args.addAll(['--signer', signer]);
+    }
+    if (identityStore != null && identityStore.isNotEmpty) {
+      args.addAll(['--identity-store', identityStore]);
+    }
+
+    // logStdout stays false. The verdict is public, but the document is not
+    // just the verdict: signed_at and every component label come verbatim from
+    // an attacker-supplied .sig, unbounded in count and length, and are NOT
+    // covered by the signature. A summary is everything a bug report needs.
+    final result = await _runCLICommand(args);
+    final out = (result.stdout as String).trim();
+
+    // The CLI exits 1 for a bad signature AND for "could not check at all"
+    // (missing signature file, unknown signer), but only the former emits
+    // JSON. Parse first, and treat the absence of a document as an error.
+    if (out.isEmpty) {
+      throw Exception(_cliError(result, 'Could not verify the signature'));
+    }
+    try {
+      final v = SignatureVerification.fromJson(
+          jsonDecode(out) as Map<String, dynamic>);
+      _outputDebugLog(
+        'verify-signature: valid=${v.valid} file_match=${v.fileMatch} '
+        'signature_valid=${v.signatureValid} components=${v.components.length} '
+        'failing=${v.components.where((c) => !c.valid).length}',
+      );
+      return v;
+    } catch (_) {
+      // Catch, not `on FormatException`: a wrong-typed field raises TypeError,
+      // which is an Error rather than an Exception and would escape the
+      // documented contract.
+      throw Exception(_cliError(result, 'Could not verify the signature'));
+    }
+  }
+
+  // ==================== Recovery slots (gitlab#145) ====================
+
+  /// List the recovery slots on [inputPath]. Requires no credential.
+  static Future<List<RecoverySlot>> listRecoverySlots(String inputPath) async {
+    // logStdout stays false: the slot fields are non-secret but come verbatim
+    // from an untrusted file header, and nothing bounds how many slots a
+    // crafted file declares. Log the count instead of the document.
+    final result = await _runCLICommand(['list-recovery', '-i', inputPath, '--json']);
+    if (result.exitCode != 0) {
+      throw Exception(_cliError(result, 'Could not read recovery slots'));
+    }
+    final doc = jsonDecode(result.stdout as String) as Map<String, dynamic>;
+    return ((doc['slots'] as List<dynamic>?) ?? const [])
+        .map((e) => RecoverySlot.fromJson(e as Map<String, dynamic>))
+        .toList(growable: false);
+  }
+
+  /// Add a freshly generated recovery code to [inputPath].
+  ///
+  /// The code is password-equivalent, so the CLI writes it to a 0600 file of
+  /// our choosing rather than to any stream (gitlab#146); this reads it back,
+  /// deletes the file, and returns it for one-time display.
+  /// Add a freshly generated recovery code to [inputPath].
+  ///
+  /// [onCode] receives the code as soon as it exists and MUST deliver it to the
+  /// user; the temporary file is shredded only after it returns. Delivery is
+  /// deliberately a precondition of deletion — the CLI itself refuses to delete
+  /// this file on failure, because a failure does not prove the slot is absent,
+  /// and deleting it unread would destroy the only credential that opens a slot
+  /// that exists. Losing it because a widget went away is the same bug.
+  static Future<void> addRecoveryCode({
+    required String inputPath,
+    required String outputPath,
+    required Future<void> Function(String code, bool afterFailure) onCode,
+    String? password,
+    String? recoveryCode,
+  }) async {
+    final dir = await _credentialTempDir();
+    final codeFile = File('${dir.path}/code');
+    String? code;
+    Object? failure;
+
+    try {
+      final result = await _runCLICommand(
+        [
+          'add-recovery',
+          '-i', inputPath,
+          '-o', outputPath,
+          '--add-code',
+          '--json',
+          '--recovery-code-out', codeFile.path,
+        ],
+        environment: _recoveryEnv(password: password, recoveryCode: recoveryCode),
+      );
+      if (result.exitCode != 0) {
+        failure = RecoveryCodeException(
+          _cliError(result, 'Could not add a recovery code'));
+      }
+    } catch (e) {
+      // A throw is not proof the code was not written either.
+      failure = e;
+    }
+
+    try {
+      if (await codeFile.exists()) {
+        final read = (await codeFile.readAsString()).trim();
+        if (read.isNotEmpty) code = read;
+      }
+
+      if (code != null) {
+        // Deliver first, shred second. If delivery throws, the file is left in
+        // place rather than destroyed.
+        await onCode(code, failure != null);
+      } else {
+        failure ??= Exception(
+          'The CLI reported success but wrote no recovery code',
+        );
+      }
+    } finally {
+      if (code != null) {
+        final warning = await _shredTempDir(dir, codeFile);
+        if (warning != null) _lastShredWarning = warning;
+      }
+    }
+
+    if (failure != null) throw failure;
+  }
+
+  /// Set when a temporary credential file could not be removed.
+  ///
+  /// Surfaced in the UI rather than only logged: the debug log is off by
+  /// default, so logging alone would silently leave a credential on disk.
+  static String? _lastShredWarning;
+
+  /// Take and clear the pending shred warning, if any.
+  static String? takeShredWarning() {
+    final w = _lastShredWarning;
+    _lastShredWarning = null;
+    return w;
+  }
+
+  /// A directory for a short-lived credential file.
+  ///
+  /// Prefers $XDG_RUNTIME_DIR: it is tmpfs-backed, 0700, per-user and cleared
+  /// at logout, whereas systemTemp is usually disk-backed /tmp and can survive
+  /// a reboot. Falls back to systemTemp when unset (e.g. on Windows).
+  static Future<Directory> _credentialTempDir() async {
+    final runtimeDir = Platform.environment['XDG_RUNTIME_DIR'];
+    if (runtimeDir != null && runtimeDir.isNotEmpty) {
+      final base = Directory(runtimeDir);
+      if (await base.exists()) {
+        return base.createTemp('oe_recovery_');
+      }
+    }
+    return Directory.systemTemp.createTemp('oe_recovery_');
+  }
+
+  /// Overwrite the credential file's bytes, then remove the directory.
+  ///
+  /// An unlink alone leaves a password-equivalent credential in free blocks.
+  /// Best effort: a failure is logged (path only) rather than swallowed, so a
+  /// credential left on disk is at least visible.
+  static Future<String?> _shredTempDir(Directory dir, File codeFile) async {
+    try {
+      if (await codeFile.exists()) {
+        final length = await codeFile.length();
+        await codeFile.writeAsBytes(List<int>.filled(length, 0), flush: true);
+      }
+      await dir.delete(recursive: true);
+      return null;
+    } catch (e) {
+      final warning =
+          'WARNING: the temporary recovery-code file at ${codeFile.path} could '
+          'not be removed and may still be on disk. Delete it manually.';
+      _outputDebugLog(warning);
+      return warning;
+    }
+  }
+
+  /// Add a recovery passphrase slot to [inputPath].
+  ///
+  /// [forcePassword] accepts a passphrase that fails the CLI's password
+  /// policy. A recovery slot is another wrapping of the same file key, so the
+  /// file is only as strong as its weakest slot, which is why the CLI gates
+  /// this at all (gitlab#149) -- but the flag has to be reachable, or the
+  /// error text tells the user to pass something the app cannot pass.
+  static Future<void> addRecoveryPassphrase({
+    required String inputPath,
+    required String outputPath,
+    required String newPassphrase,
+    String? password,
+    String? recoveryCode,
+    bool forcePassword = false,
+  }) async {
+    final result = await _runCLICommand(
+      [
+        'add-recovery', '-i', inputPath, '-o', outputPath, '--add-passphrase', '--json',
+        if (forcePassword) '--force-password',
+      ],
+      environment: _recoveryEnv(
+        password: password,
+        recoveryCode: recoveryCode,
+        addPassphrase: newPassphrase,
+      ),
+    );
+    if (result.exitCode != 0) {
+      throw Exception(_cliError(result, 'Could not add a recovery passphrase'));
+    }
+  }
+
+  /// Remove the recovery slot [slotId] from [inputPath].
+  ///
+  /// The caller MUST confirm first: this revokes that recovery path on the
+  /// rewritten file and cannot be undone.
+  static Future<void> removeRecoverySlot({
+    required String inputPath,
+    required String outputPath,
+    required String slotId,
+    String? password,
+    String? recoveryCode,
+  }) async {
+    final result = await _runCLICommand(
+      ['remove-recovery', '-i', inputPath, '-o', outputPath, '--slot-id', slotId, '--json'],
+      environment: _recoveryEnv(password: password, recoveryCode: recoveryCode),
+    );
+    if (result.exitCode != 0) {
+      throw Exception(_cliError(result, 'Could not remove the recovery slot'));
+    }
+  }
+
+  /// Decrypt [inputPath] using a recovery credential instead of the password.
+  static Future<void> recoverFile({
+    required String inputPath,
+    required String outputPath,
+    String? recoveryCode,
+    String? recoveryPassphrase,
+  }) async {
+    final args = ['recover', '-i', inputPath, '-o', outputPath, '--json'];
+    if (recoveryPassphrase != null && recoveryPassphrase.isNotEmpty) {
+      // The flag selects the credential type; the env var carries its value.
+      args.add('--recovery-passphrase');
+    }
+    final result = await _runCLICommand(
+      args,
+      environment: _recoveryEnv(
+        recoveryCode: recoveryCode,
+        recoveryPassphrase: recoveryPassphrase,
+      ),
+    );
+    if (result.exitCode != 0) {
+      throw Exception(_cliError(result, 'Could not recover the file'));
+    }
+  }
+
+  /// Disable telemetry and delete all collected data
+  /// (`telemetry opt-out --force`).
+  ///
+  /// `--force` skips the CLI's own interactive confirmation — which a
+  /// subprocess cannot answer — so the GUI is responsible for having shown
+  /// its own first. The action is destructive (deletes pending events and the
+  /// API key), so a nonzero exit is surfaced as an error: a caller must never
+  /// report the data gone when it is not. It is not a persistent setting —
+  /// telemetry can be re-enabled by `OPENSSL_ENCRYPT_TELEMETRY=1` or a config
+  /// file — which the GUI confirmation states.
+  static Future<void> telemetryOptOut() async {
+    final result = await _runCLICommand(['telemetry', 'opt-out', '--force']);
+    if (result.exitCode != 0) {
+      throw Exception(_cliError(result, 'Telemetry opt-out failed'));
+    }
+  }
+
+  /// Build the credential environment for a recovery command.
+  ///
+  /// Every value goes through the environment, never argv: a recovery code on
+  /// the command line is visible in the world-readable /proc/PID/cmdline. The
+  /// CLI reads each variable once and removes it.
+  /// Credential-bearing variables the CLI reads; never inherited into a child.
+  ///
+  /// Keep in lockstep with `security_logger._SECRET_ENV_VARS` on the CLI side:
+  /// a name missing here is inherited from the GUI's own environment straight
+  /// into every child process.
+  /// The parent environment minus every credential-bearing variable.
+  ///
+  /// Use this instead of `Platform.environment` in every spawn helper: a
+  /// credential inherited from the GUI's own environment would otherwise
+  /// reach the CLI child and, for variables the CLI acts on, change what it
+  /// does.
+  static Map<String, String> _inheritableEnvironment() {
+    final env = Map<String, String>.from(Platform.environment);
+    for (final name in _credentialEnvNames) {
+      env.remove(name);
+    }
+    return env;
+  }
+
+  static const List<String> _credentialEnvNames = [
+    'CRYPT_PASSWORD',
+    'CRYPT_STEGO_PASSWORD',
+    'OPENSSL_ENCRYPT_PASSWORD',
+    'OPENSSL_ENCRYPT_RECOVERY_CODE',
+    'OPENSSL_ENCRYPT_RECOVERY_PASSPHRASE',
+    'OPENSSL_ENCRYPT_ADD_RECOVERY_PASSPHRASE',
+    'OPENSSL_ENCRYPT_SECOND_PASSWORD',
+    'OPENSSL_ENCRYPT_SIGNER_PASSPHRASE',
+  ];
+
+  static Map<String, String> _recoveryEnv({
+    String? password,
+    String? recoveryCode,
+    String? recoveryPassphrase,
+    String? addPassphrase,
+  }) {
+    final env = <String, String>{};
+    if (password != null && password.isNotEmpty) {
+      env['CRYPT_PASSWORD'] = password;
+    }
+    if (recoveryCode != null && recoveryCode.isNotEmpty) {
+      env['OPENSSL_ENCRYPT_RECOVERY_CODE'] = recoveryCode;
+    }
+    if (recoveryPassphrase != null && recoveryPassphrase.isNotEmpty) {
+      env['OPENSSL_ENCRYPT_RECOVERY_PASSPHRASE'] = recoveryPassphrase;
+    }
+    if (addPassphrase != null && addPassphrase.isNotEmpty) {
+      env['OPENSSL_ENCRYPT_ADD_RECOVERY_PASSPHRASE'] = addPassphrase;
+    }
+    return env;
+  }
+
+  /// Human-readable message for a failed recovery command.
+  ///
+  /// Uses stderr only: stdout on these commands is the JSON document, which on
+  /// a failure path may be partial, and is never surfaced.
+  static String _cliError(ProcessResult result, String fallback) {
+    final err = (result.stderr as String).trim();
+    return err.isEmpty ? '$fallback (exit ${result.exitCode})' : err;
+  }
+}
+
+/// An add-recovery failure that may nonetheless have produced a live code.
+///
+/// The CLI writes the recovery code before modifying the envelope and does not
+/// delete it on failure, because a failure does not prove the slot was absent.
+/// When [code] is non-null the caller MUST show it to the user rather than
+/// discard it: a slot may exist that only this code opens.
+class RecoveryCodeException implements Exception {
+  final String message;
+  final String? code;
+
+  const RecoveryCodeException(this.message, {this.code});
+
+  @override
+  String toString() => message;
+}
+
+/// A contact import was refused because the imported key differs from the one
+/// already pinned for that identity (TOFU key-substitution).
+///
+/// This is the exact step an attacker needs in a key-substitution / MITM
+/// attack, so it is a typed error rather than a generic failure: the GUI must
+/// show the user the old and new fingerprints and get an explicit,
+/// out-of-band-verified confirmation before retrying with allowKeyChange:true.
+/// Never auto-retry.
+class IdentityKeyChangedError implements Exception {
+  final String name;
+  final String oldFingerprint;
+  final String newFingerprint;
+
+  const IdentityKeyChangedError({
+    required this.name,
+    required this.oldFingerprint,
+    required this.newFingerprint,
+  });
+
+  /// Parse the refusal from the CLI's stderr, or null if this is not a
+  /// key-change refusal. Keyed on the CLI's stable labels
+  /// (identity_cli.py: "Identity:", "Stored (pinned):", "Imported:").
+  ///
+  /// The `name` comes from the untrusted imported document. The CLI escapes
+  /// control characters before printing (sanitize_for_display, gitlab#172),
+  /// so a name cannot inject a real newline to forge a "Stored (pinned):"
+  /// line — but the fingerprint fields are additionally constrained to
+  /// colon-hex here, so even if that sanitization regressed, a crafted name
+  /// could never be mistaken for a fingerprint and mislead the confirmation.
+  static IdentityKeyChangedError? tryParse(String stderr) {
+    if (!stderr.contains('the key for this contact has CHANGED')) {
+      return null;
+    }
+    String? field(String label, String valuePattern) {
+      final match = RegExp('^\\s*$label\\s+($valuePattern)\\s*\$', multiLine: true)
+          .firstMatch(stderr);
+      return match?.group(1);
+    }
+
+    // SSH-style colon-separated hex (pqc_signing.calculate_fingerprint), and
+    // the identity-name charset (identity.py:124). Constraining both means a
+    // rewrite of the human-readable stderr, a localization, or a regressed
+    // upstream sanitizer cannot put arbitrary text into the trust dialog.
+    const fingerprint = r'[0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2})+';
+    const identityName = r'[A-Za-z0-9][A-Za-z0-9._-]*';
+    final name = field('Identity:', identityName);
+    final oldFp = field(r'Stored \(pinned\):', fingerprint);
+    final newFp = field('Imported:', fingerprint);
+    if (name == null || oldFp == null || newFp == null) {
+      return null;
+    }
+    // Identical fingerprints are not a key change: treat as a parse failure
+    // so the dialog never asks the user to "verify" a change that isn't one.
+    if (oldFp.toLowerCase() == newFp.toLowerCase()) {
+      return null;
+    }
+    return IdentityKeyChangedError(
+      name: name,
+      oldFingerprint: oldFp,
+      newFingerprint: newFp,
+    );
+  }
+
+  @override
+  String toString() =>
+      'The key for "$name" has changed (pinned $oldFingerprint, imported '
+      '$newFingerprint).';
+}
+
+/// One algorithm's contribution to a signature verification.
+class SignatureComponent {
+  final String component;
+  final bool valid;
+
+  const SignatureComponent({required this.component, required this.valid});
+
+  factory SignatureComponent.fromJson(Map<String, dynamic> json) =>
+      SignatureComponent(
+        component: (json['component'] ?? '') as String,
+        valid: json['valid'] == true,
+      );
+}
+
+/// The result of verifying a detached signature.
+///
+/// [valid] is the only field that should drive a pass/fail indicator. The
+/// component list exists so a partial failure is visible: a post-quantum
+/// component failing while a classical one passes is still a bad signature,
+/// and showing only the classical result would hide that.
+class SignatureVerification {
+  final bool valid;
+  final bool fileMatch;
+  final bool signatureValid;
+  final String signer;
+  final String signerFingerprint;
+  final String signedAt;
+  final List<SignatureComponent> components;
+  final String reason;
+
+  const SignatureVerification({
+    required this.valid,
+    required this.fileMatch,
+    required this.signatureValid,
+    required this.signer,
+    required this.signerFingerprint,
+    required this.signedAt,
+    required this.components,
+    required this.reason,
+  });
+
+  factory SignatureVerification.fromJson(Map<String, dynamic> json) {
+    final components = ((json['components'] as List<dynamic>?) ?? const [])
+        .map((e) => SignatureComponent.fromJson(e as Map<String, dynamic>))
+        .toList(growable: false);
+    final fileMatch = json['file_match'] == true;
+    final signatureValid = json['signature_valid'] == true;
+    return SignatureVerification(
+        // Re-derived rather than trusted: a truncated but parseable
+        // {"valid": true} would otherwise render a full green verdict with no
+        // signer, no fingerprint and no components at all.
+        valid: json['valid'] == true &&
+            fileMatch &&
+            signatureValid &&
+            components.isNotEmpty &&
+            components.every((c) => c.valid),
+        fileMatch: fileMatch,
+        signatureValid: signatureValid,
+        signer: (json['signer'] ?? '') as String,
+        signerFingerprint: (json['signer_fingerprint'] ?? '') as String,
+        signedAt: (json['signed_at'] ?? '') as String,
+        components: components,
+        reason: (json['reason'] ?? '') as String,
+    );
+  }
+}
+
+/// One recovery slot on an envelope file.
+class RecoverySlot {
+  /// Sanitized id, safe to render in the UI.
+  final String id;
+
+  /// The raw, unsanitized id EXACTLY as the CLI reported it. Use this ONLY as
+  /// the `--slot-id` argument to remove-recovery (the CLI must match the real
+  /// id); never render it (F19, gitlab#254).
+  final String rawId;
+  final String type;
+  final String? keyId;
+
+  const RecoverySlot({
+    required this.id,
+    required this.rawId,
+    required this.type,
+    this.keyId,
+  });
+
+  /// F19 (gitlab#254, CWE-116): id/type/key_id come from the file's
+  /// unauthenticated `list-recovery --json` output. Flutter honours bidi
+  /// overrides and treats U+2028/U+2029 as line breaks, so a crafted slot could
+  /// otherwise forge a line inside the irreversible-removal dialog. Sanitize
+  /// every DISPLAYED field at the decode boundary; keep the raw id for --slot-id.
+  factory RecoverySlot.fromJson(Map<String, dynamic> json) {
+    final rawId = (json['id'] ?? '') as String;
+    final keyId = json['key_id'] as String?;
+    return RecoverySlot(
+      id: InputValidator.sanitizeForDisplay(rawId),
+      rawId: rawId,
+      type: InputValidator.sanitizeForDisplay((json['type'] ?? '') as String),
+      keyId: keyId == null ? null : InputValidator.sanitizeForDisplay(keyId),
+    );
+  }
+
+  /// Label for the slot type, for display.
+  String get typeLabel {
+    switch (type) {
+      case 'recovery_code':
+        return 'Recovery code';
+      case 'passphrase':
+        return 'Passphrase';
+      case 'pqc':
+        return 'PQC escrow';
+      default:
+        return type;
     }
   }
 }

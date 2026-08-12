@@ -19,10 +19,81 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-from .crypt_utils import eprint
-from .identity import Identity, IdentityError, IdentityKeyChangedError, IdentityStore
+from .crypt_utils import eprint, prompt_and_read, sanitize_for_display
+from .identity import (
+    Identity,
+    IdentityError,
+    IdentityKeyChangedError,
+    IdentityStore,
+    validate_identity_name,
+)
 from .identity_protection import HSMNotAvailableError, IdentityKeyProtectionService, ProtectionLevel
+from .json_validator import JSONSecurityError, SecureJSONValidator, get_json_validator
 from .pqc_signing import LIBOQS_AVAILABLE
+
+# Upper bound on an identity document, whether it arrives on stdin or in a
+# file. Derived from the JSON validator's own limit rather than duplicated, so
+# the two cannot drift apart.
+#
+# Note the units differ deliberately: this bound is enforced in BYTES (below),
+# while SecureJSONValidator compares len() in CHARACTERS (json_validator.py).
+# Bytes are the stricter reading for any non-ASCII document, so a document
+# accepted here always satisfies the validator too.
+MAX_IDENTITY_DOCUMENT_BYTES = SecureJSONValidator.MAX_JSON_SIZE
+
+
+class IdentityDocumentTooLarge(IdentityError):
+    """Raised when an identity document exceeds MAX_IDENTITY_DOCUMENT_BYTES."""
+
+
+def _read_bounded(stream) -> str:
+    """Read an identity document without materialising an unbounded one.
+
+    Reads one character more than the limit: since every character encodes to
+    at least one byte, a stream longer than the limit always yields more than
+    MAX_IDENTITY_DOCUMENT_BYTES bytes here and is rejected. Truncation can
+    therefore never be followed by acceptance.
+
+    Args:
+        stream: A text stream positioned at the start of the document.
+
+    Returns:
+        The document text.
+
+    Raises:
+        IdentityDocumentTooLarge: If the document exceeds the byte bound.
+    """
+    raw = stream.read(MAX_IDENTITY_DOCUMENT_BYTES + 1)
+    # surrogatepass only ever over-counts (3 bytes for a lone surrogate from a
+    # surrogateescape-configured stream), which is the safe direction.
+    if len(raw.encode("utf-8", "surrogatepass")) > MAX_IDENTITY_DOCUMENT_BYTES:
+        raise IdentityDocumentTooLarge(
+            f"identity document exceeds {MAX_IDENTITY_DOCUMENT_BYTES} bytes"
+        )
+    return raw
+
+
+def _parse_identity_document(raw: str) -> object:
+    """Parse an untrusted identity document.
+
+    Routes through SecureJSONValidator first: its pre-parse linear depth
+    scan (#94) exists because json.loads recurses, and a hostile deeply
+    nested document would otherwise reach the interpreter stack. Both the
+    stdin and the file path use it -- an imported bundle is untrusted
+    whichever way it arrived.
+
+    Args:
+        raw: The document as read from stdin or a file.
+
+    Returns:
+        The parsed document.
+
+    Raises:
+        JSONSecurityError: If the document violates a security constraint.
+        json.JSONDecodeError: If the document is not valid JSON.
+    """
+    get_json_validator().validate_json_security(raw)
+    return json.loads(raw)
 
 
 def get_identity_store(base_path: Optional[Path] = None) -> IdentityStore:
@@ -110,38 +181,78 @@ def cmd_create(args) -> int:
         elif hsm_option == "onlykey-only":
             protection_level = ProtectionLevel.HSM_ONLY
             hsm_type = "onlykey"
+        elif hsm_option == "piv":
+            protection_level = ProtectionLevel.PASSWORD_AND_HSM
+            hsm_type = "piv"
+        elif hsm_option == "piv-only":
+            protection_level = ProtectionLevel.HSM_ONLY
+            hsm_type = "piv"
         else:
             eprint(f"ERROR: Unknown HSM option: {hsm_option}", file=sys.stderr)
             return 1
+
+        # PIV / PKCS#11 configuration (gitlab#218). Persisted with the identity
+        # by Identity.generate so unlock does not need it re-supplied.
+        piv_pkcs11_lib = getattr(args, "hsm_pkcs11_lib", None)
+        piv_slot = getattr(args, "hsm_piv_slot", None)
+        piv_biometric = bool(getattr(args, "hsm_biometric", False))
 
         # Check HSM availability if required
         if protection_level in (
             ProtectionLevel.PASSWORD_AND_HSM,
             ProtectionLevel.HSM_ONLY,
         ):
-            protection_service = IdentityKeyProtectionService(hsm_type=hsm_type)
-            device_label = "OnlyKey" if hsm_type == "onlykey" else "Yubikey"
-            if not protection_service.is_hsm_available():
-                eprint(
-                    f"ERROR: {device_label} not found. Please insert your {device_label}.",
-                    file=sys.stderr,
+            if hsm_type == "piv":
+                # PIV: addressed by a PKCS#11 module + PIV key slot, not an
+                # HMAC-SHA1 Challenge-Response slot (gitlab#218). Require the
+                # module path up front and probe the token with it.
+                if not piv_pkcs11_lib:
+                    eprint(
+                        "ERROR: --hsm piv requires --hsm-pkcs11-lib PATH "
+                        "(e.g. /usr/lib/opensc-pkcs11.so or the ykcs11 module).",
+                        file=sys.stderr,
+                    )
+                    return 1
+                protection_service = IdentityKeyProtectionService(
+                    hsm_type="piv",
+                    pkcs11_lib_path=piv_pkcs11_lib,
+                    piv_slot=piv_slot,
+                    biometric=piv_biometric,
                 )
-                return 1
+                if not protection_service.is_hsm_available():
+                    eprint(
+                        "ERROR: PIV token not available. Check that it is "
+                        "inserted and that --hsm-pkcs11-lib points at the right "
+                        "PKCS#11 module.",
+                        file=sys.stderr,
+                    )
+                    return 1
+                # No CR slot to auto-detect for PIV.
+                hsm_slot = None
+            else:
+                protection_service = IdentityKeyProtectionService(hsm_type=hsm_type)
+                device_label = "OnlyKey" if hsm_type == "onlykey" else "Yubikey"
+                if not protection_service.is_hsm_available():
+                    eprint(
+                        f"ERROR: {device_label} not found. Please insert your {device_label}.",
+                        file=sys.stderr,
+                    )
+                    return 1
 
-            detected_slot = protection_service.detect_hsm_slot()
-            if detected_slot is None:
-                slot_range = "1..12" if hsm_type == "onlykey" else "1 or 2"
-                eprint(
-                    f"ERROR: No Challenge-Response slot configured on {device_label}.\n"
-                    f"Please configure slot {slot_range} for HMAC-SHA1 Challenge-Response.",
-                    file=sys.stderr,
-                )
-                return 1
+                detected_slot = protection_service.detect_hsm_slot()
+                if detected_slot is None:
+                    slot_range = "1..12" if hsm_type == "onlykey" else "1 or 2"
+                    eprint(
+                        f"ERROR: No Challenge-Response slot configured on {device_label}.\n"
+                        f"Please configure slot {slot_range} for HMAC-SHA1 Challenge-Response.",
+                        file=sys.stderr,
+                    )
+                    return 1
 
-            hsm_slot = getattr(args, "hsm_slot", None)
-            if hsm_slot is None:
-                hsm_slot = detected_slot
-                eprint(f"Using {device_label} slot {hsm_slot} (auto-detected)")
+                hsm_slot = getattr(args, "hsm_slot", None)
+                if hsm_slot is None:
+                    hsm_slot = detected_slot
+                    eprint(f"Using {device_label} slot {hsm_slot} (auto-detected)")
 
         # Get passphrase (not required for HSM_ONLY)
         passphrase = None
@@ -160,13 +271,17 @@ def cmd_create(args) -> int:
         sig_algo = getattr(args, "sig_algorithm", "ML-DSA-65")
 
         # Generate identity
-        eprint(f"Generating identity for '{args.name}'...")
+        eprint(f"Generating identity for '{sanitize_for_display(args.name)}'...")
 
         if protection_level in (
             ProtectionLevel.PASSWORD_AND_HSM,
             ProtectionLevel.HSM_ONLY,
         ):
-            eprint("Touch your Yubikey to generate keys...")
+            if hsm_type == "piv":
+                eprint("Authenticate to your PIV token (PIN) to generate keys...")
+            else:
+                _dl = "OnlyKey" if hsm_type == "onlykey" else "Yubikey"
+                eprint(f"Touch your {_dl} to generate keys...")
 
         hsm_slot_arg = getattr(args, "hsm_slot", None)
         require_touch = not getattr(args, "no_touch", False)
@@ -180,6 +295,15 @@ def cmd_create(args) -> int:
             protection_level=protection_level,
             hsm_slot=hsm_slot_arg,
             require_touch=require_touch,
+            # Bind the identity to the device the user selected. Without this,
+            # `--hsm onlykey` was silently recorded and unlocked as yubikey
+            # (gitlab#218); hsm_type is otherwise the "yubikey" default.
+            hsm_type=hsm_type,
+            # PIV config, persisted so the identity unlocks later without it
+            # being re-supplied (gitlab#218). None for non-PIV identities.
+            pkcs11_lib_path=(piv_pkcs11_lib if hsm_type == "piv" else None),
+            piv_slot=(piv_slot if hsm_type == "piv" else None),
+            biometric=(piv_biometric if hsm_type == "piv" else False),
         )
 
         # Save to store. This is the user's OWN identity being generated
@@ -195,12 +319,12 @@ def cmd_create(args) -> int:
         )
 
         eprint("\nIdentity created successfully!")
-        eprint(f"Name: {identity.name}")
+        eprint(f"Name: {sanitize_for_display(identity.name)}")
         if identity.email:
-            eprint(f"Email: {identity.email}")
-        eprint(f"Fingerprint: {identity.fingerprint}")
-        eprint(f"Encryption: {identity.encryption_algorithm}")
-        eprint(f"Signing: {identity.signing_algorithm}")
+            eprint(f"Email: {sanitize_for_display(identity.email)}")
+        eprint(f"Fingerprint: {sanitize_for_display(identity.fingerprint)}")
+        eprint(f"Encryption: {sanitize_for_display(identity.encryption_algorithm)}")
+        eprint(f"Signing: {sanitize_for_display(identity.signing_algorithm)}")
 
         # Show protection level
         if identity.protection:
@@ -215,16 +339,16 @@ def cmd_create(args) -> int:
         return 0
 
     except IdentityError as e:
-        eprint(f"ERROR: {e}", file=sys.stderr)
+        eprint(f"ERROR: {sanitize_for_display(e)}", file=sys.stderr)
         return 1
     except ValueError as e:
-        eprint(f"ERROR: {e}", file=sys.stderr)
+        eprint(f"ERROR: {sanitize_for_display(e)}", file=sys.stderr)
         return 1
     except HSMNotAvailableError as e:
-        eprint(f"ERROR: {e}", file=sys.stderr)
+        eprint(f"ERROR: {sanitize_for_display(e)}", file=sys.stderr)
         return 1
     except Exception as e:
-        eprint(f"ERROR: Failed to create identity: {e}", file=sys.stderr)
+        eprint(f"ERROR: Failed to create identity: {sanitize_for_display(e)}", file=sys.stderr)
         return 1
 
 
@@ -243,28 +367,123 @@ def cmd_list(args) -> int:
 
         # Get identities based on filter
         include_contacts = getattr(args, "include_contacts", True)
-        identities = store.list_identities(include_contacts=include_contacts)
-
-        if not identities:
-            eprint("No identities found.")
-            return 0
+        skipped: list = []
+        identities = store.list_identities(include_contacts=include_contacts, skipped=skipped)
 
         # Separate own identities and contacts
         own_identities = [i for i in identities if i.is_own_identity]
         contacts = [i for i in identities if not i.is_own_identity]
+
+        if getattr(args, "json", False):
+            # Machine-readable output for the desktop GUI (gitlab#183): a
+            # single JSON document on stdout, nothing else. Deliberately NOT
+            # display-sanitized — the transport escapes control characters
+            # (ensure_ascii) and the consumer renders the values itself. The
+            # key names kem_algorithm/sig_algorithm are the GUI's contract.
+            def _entry(identity: Identity) -> dict:
+                return {
+                    "name": identity.name,
+                    "email": identity.email,
+                    "fingerprint": identity.fingerprint,
+                    "kem_algorithm": identity.encryption_algorithm,
+                    "sig_algorithm": identity.signing_algorithm,
+                    "created_at": identity.created_at,
+                }
+
+            # ensure_ascii pinned explicitly, not left to the default: it is
+            # what keeps a direct `identity list --json` in a terminal free of
+            # decoded escape sequences, and "nicer output" is a tempting edit.
+            listing_json = json.dumps(
+                {
+                    "own": [_entry(i) for i in own_identities],
+                    "contacts": [_entry(i) for i in contacts],
+                    # Absent entries must be visible: a consumer that treats
+                    # this listing as complete would otherwise silently drop
+                    # a recipient or report an own identity as deleted
+                    # (gitlab#183).
+                    "skipped": [{"entry": s["entry"], "reason": s["reason"]} for s in skipped],
+                    # Same disambiguation the human path gets: a consumer
+                    # showing this listing must be able to tell the user a
+                    # name is contested (gitlab#173).
+                    "shadowed": store.find_shadowed_names(),
+                    # Distinct from a name collision: an entry inside the
+                    # container needs a manual move, not a delete.
+                    "contacts_container_entry": store.has_misplaced_container_entry(),
+                },
+                indent=2,
+                ensure_ascii=True,
+            )
+            print(listing_json)
+            return 0
+
+        # A store written before gitlab#173 can carry a name that exists as
+        # both an own identity and a contact. get_by_name resolves the own
+        # identity, so the contact is invisible here until the own identity
+        # is deleted -- at which point it silently takes over the name.
+        if store.has_misplaced_container_entry():
+            # Deliberately NOT reported as a name collision: `identity
+            # delete contacts` is refused (reserved name), and routing it
+            # there would remove every pinned contact in the store.
+            eprint(
+                "WARNING: an identity is stored inside the store's own "
+                "'contacts/' directory, where it is not listed below but is "
+                "still resolvable by name."
+            )
+            eprint(
+                "  Move its identity.json and *.pem files into a directory of "
+                "their own next to it to make it usable again, or delete those "
+                "files to discard it. 'identity delete' cannot touch this "
+                "entry: the name 'contacts' is reserved for the store."
+            )
+            eprint()
+
+        shadowed = store.find_shadowed_names()
+        if shadowed:
+            eprint(
+                "WARNING: these names exist as BOTH an own identity and a "
+                "contact, so deleting the identity would hand the name to the "
+                "contact's keys:"
+            )
+            for name in shadowed:
+                eprint(f"  - {sanitize_for_display(name)}")
+            eprint(
+                "  Verify the contact's fingerprint out of band, then remove "
+                "the entry you did not intend to keep with "
+                "'identity delete <name> --kind own|contact'. Back up the "
+                "identity store first: deleting an own identity destroys its "
+                "private keys."
+            )
+            eprint()
+
+        if skipped:
+            eprint(
+                f"WARNING: {len(skipped)} store entr"
+                f"{'y' if len(skipped) == 1 else 'ies'} could not be loaded "
+                f"and {'is' if len(skipped) == 1 else 'are'} not listed below:"
+            )
+            for entry in skipped:
+                eprint(
+                    f"  - {sanitize_for_display(entry['entry'])}: "
+                    f"{sanitize_for_display(entry['reason'])}"
+                )
+            eprint()
+
+        if not identities:
+            eprint("No identities found.")
+            return 0
 
         # Display own identities
         if own_identities:
             eprint("Own Identities:")
             eprint("-" * 80)
             for identity in own_identities:
-                eprint(f"Name: {identity.name}")
+                eprint(f"Name: {sanitize_for_display(identity.name)}")
                 if identity.email:
-                    eprint(f"  Email: {identity.email}")
-                eprint(f"  Fingerprint: {identity.fingerprint}")
+                    eprint(f"  Email: {sanitize_for_display(identity.email)}")
+                eprint(f"  Fingerprint: {sanitize_for_display(identity.fingerprint)}")
                 alg_str = f"{identity.encryption_algorithm} / "
                 alg_str += identity.signing_algorithm
-                eprint(f"  Algorithms: {alg_str}")
+                eprint(f"  Algorithms: {sanitize_for_display(alg_str)}")
                 eprint()
 
         # Display contacts
@@ -272,13 +491,13 @@ def cmd_list(args) -> int:
             eprint("\nContacts (public keys only):")
             eprint("-" * 80)
             for identity in contacts:
-                eprint(f"Name: {identity.name}")
+                eprint(f"Name: {sanitize_for_display(identity.name)}")
                 if identity.email:
-                    eprint(f"  Email: {identity.email}")
-                eprint(f"  Fingerprint: {identity.fingerprint}")
+                    eprint(f"  Email: {sanitize_for_display(identity.email)}")
+                eprint(f"  Fingerprint: {sanitize_for_display(identity.fingerprint)}")
                 alg_str = f"{identity.encryption_algorithm} / "
                 alg_str += identity.signing_algorithm
-                eprint(f"  Algorithms: {alg_str}")
+                eprint(f"  Algorithms: {sanitize_for_display(alg_str)}")
                 eprint()
 
         # Summary
@@ -294,7 +513,7 @@ def cmd_list(args) -> int:
         return 0
 
     except Exception as e:
-        eprint(f"ERROR: Failed to list identities: {e}", file=sys.stderr)
+        eprint(f"ERROR: Failed to list identities: {sanitize_for_display(e)}", file=sys.stderr)
         return 1
 
 
@@ -316,7 +535,7 @@ def cmd_show(args) -> int:
 
         if identity is None:
             eprint(
-                f"ERROR: Identity '{args.identity_name}' not found ❌",
+                f"ERROR: Identity '{sanitize_for_display(args.identity_name)}' not found ❌",
                 file=sys.stderr,
             )
             return 1
@@ -324,10 +543,10 @@ def cmd_show(args) -> int:
         # Display information
         eprint("Identity Information:")
         eprint("=" * 80)
-        eprint(f"Name: {identity.name}")
+        eprint(f"Name: {sanitize_for_display(identity.name)}")
         if identity.email:
-            eprint(f"Email: {identity.email}")
-        eprint(f"Fingerprint: {identity.fingerprint}")
+            eprint(f"Email: {sanitize_for_display(identity.email)}")
+        eprint(f"Fingerprint: {sanitize_for_display(identity.fingerprint)}")
         identity_type = (
             "Own identity (has private keys)"
             if identity.is_own_identity
@@ -337,8 +556,8 @@ def cmd_show(args) -> int:
         eprint()
 
         eprint("Algorithms:")
-        eprint(f"  Encryption: {identity.encryption_algorithm}")
-        eprint(f"  Signing: {identity.signing_algorithm}")
+        eprint(f"  Encryption: {sanitize_for_display(identity.encryption_algorithm)}")
+        eprint(f"  Signing: {sanitize_for_display(identity.signing_algorithm)}")
         eprint()
 
         eprint("Public Keys:")
@@ -357,10 +576,19 @@ def cmd_show(args) -> int:
                 if identity.protection.requires_password():
                     eprint("  Password: Required")
                 if identity.protection.requires_hsm():
-                    eprint(f"  HSM: Required ({identity.protection.hsm_config.hsm_type})")
+                    eprint(
+                        f"  HSM: Required ({sanitize_for_display(identity.protection.hsm_config.hsm_type)})"
+                    )
+                    # slot/require_touch come from identity.json with no
+                    # type check — same hostile-store vector as hsm_type.
                     if identity.protection.hsm_config.slot:
-                        eprint(f"    Slot: {identity.protection.hsm_config.slot}")
-                    eprint(f"    Touch required: {identity.protection.hsm_config.require_touch}")
+                        eprint(
+                            f"    Slot: {sanitize_for_display(identity.protection.hsm_config.slot)}"
+                        )
+                    eprint(
+                        f"    Touch required: "
+                        f"{sanitize_for_display(identity.protection.hsm_config.require_touch)}"
+                    )
             else:
                 eprint()
                 eprint("Protection: password_only (default)")
@@ -368,7 +596,7 @@ def cmd_show(args) -> int:
         return 0
 
     except Exception as e:
-        eprint(f"ERROR: Failed to show identity: {e}", file=sys.stderr)
+        eprint(f"ERROR: Failed to show identity: {sanitize_for_display(e)}", file=sys.stderr)
         return 1
 
 
@@ -390,7 +618,7 @@ def cmd_export(args) -> int:
 
         if identity is None:
             eprint(
-                f"ERROR: Identity '{args.identity_name}' not found ❌",
+                f"ERROR: Identity '{sanitize_for_display(args.identity_name)}' not found ❌",
                 file=sys.stderr,
             )
             return 1
@@ -412,17 +640,20 @@ def cmd_export(args) -> int:
             eprint(error_msg, file=sys.stderr)
             return 1
 
-        # Write to file
-        with open(output_file, "w") as f:
+        # Write to file. Explicit UTF-8, not the locale default: under a
+        # latin-1 locale a name or email would round-trip to different
+        # characters, and the base64 key fields are ASCII, so the fingerprint
+        # check would still pass on a mangled name.
+        with open(output_file, "w", encoding="utf-8") as f:
             json.dump(public_data, f, indent=2)
 
         eprint(f"Public identity exported to: {output_file}")
-        eprint(f"Fingerprint: {identity.fingerprint}")
+        eprint(f"Fingerprint: {sanitize_for_display(identity.fingerprint)}")
 
         return 0
 
     except Exception as e:
-        eprint(f"ERROR: Failed to export identity: {e}", file=sys.stderr)
+        eprint(f"ERROR: Failed to export identity: {sanitize_for_display(e)}", file=sys.stderr)
         return 1
 
 
@@ -437,18 +668,62 @@ def cmd_import(args) -> int:
         Exit code (0 = success, 1 = error)
     """
     try:
-        # Read file
-        input_file = Path(args.file)
+        # The document may arrive as a file or, for callers that already hold
+        # it in memory (the GUI's paste field), on stdin (gitlab#164).
+        # Deliberately NOT an argv value: /proc/PID/cmdline is world-readable,
+        # which would publish the contact metadata to every local process and
+        # would irreversibly expose anything pasted into that field by
+        # mistake -- a private key or passphrase is leaked at execve, before
+        # this function can reject it.
+        file_arg = getattr(args, "file", None)
+        # A source counts only if it is the right type. argparse guarantees
+        # this, but programmatic callers need not, and a stray attribute must
+        # never select a branch by accident.
+        from_stdin = getattr(args, "data_stdin", False) is True
 
-        if not input_file.exists():
-            eprint(f"ERROR: File '{input_file}' not found", file=sys.stderr)
+        if from_stdin:
+            raw = _read_bounded(sys.stdin)
+        elif isinstance(file_arg, (str, Path)):
+            input_file = Path(file_arg)
+
+            # is_file() rather than exists(): a FIFO or character device
+            # passes exists(), and reading one blocks forever (/dev/zero) or
+            # never returns (an unwritten FIFO).
+            if not input_file.is_file():
+                eprint(
+                    f"ERROR: '{input_file}' is not a regular file",
+                    file=sys.stderr,
+                )
+                return 1
+
+            # Same bounded read as stdin: the size check must happen before
+            # the document is materialised, not after.
+            with open(input_file, "r", encoding="utf-8") as f:
+                raw = _read_bounded(f)
+        else:
+            eprint("ERROR: one of --file or --data-stdin is required", file=sys.stderr)
             return 1
 
-        with open(input_file, "r") as f:
-            public_data = json.load(f)
+        public_data = _parse_identity_document(raw)
+
+        if not isinstance(public_data, dict):
+            # json.loads happily returns a list, a string or a number; passing
+            # one on produces a TypeError from deep inside import_public.
+            eprint("ERROR: identity document must be a JSON object", file=sys.stderr)
+            return 1
 
         # Import identity
         identity = Identity.import_public(public_data)
+
+        # An alias renames the local label only. The fingerprint is computed
+        # from the algorithms and public keys (Identity.calculate_fingerprint)
+        # and does not cover the name, so renaming cannot mask a key change --
+        # but the name becomes a directory name, so it gets the same
+        # validation import_public applies to the document's own name.
+        alias = getattr(args, "alias", None)
+        if isinstance(alias, str):
+            validate_identity_name(alias)
+            identity.name = alias
 
         # Add to store
         store = get_identity_store(getattr(args, "identity_store", None))
@@ -463,16 +738,28 @@ def cmd_import(args) -> int:
             )
         except IdentityKeyChangedError as e:
             # M8: TOFU key-change. Refuse non-interactively; prompt on a TTY.
+            #
+            # The refusal keys on the document's SOURCE, not only on isatty().
+            # With --data-stdin the bundle and the confirmation would share one
+            # channel, and a pty EOF is soft: a supplier could send
+            # `{...}<^D>yes` and have isatty() still report True, so whoever
+            # supplied the untrusted bundle would also supply the confirmation
+            # that it is trustworthy. That is precisely what pinning exists to
+            # prevent, so a stdin-sourced document never gets the prompt.
+            # The highest-stakes block in the tool: sanitized even though the
+            # values are validated upstream today, so a future reordering of
+            # checks (or an unvalidated store on disk) cannot let an ANSI
+            # payload erase the MITM advisory below (gitlab#172).
             eprint("\n⚠️  WARNING: the key for this contact has CHANGED.")
-            eprint(f"  Identity:        {e.name}")
-            eprint(f"  Stored (pinned): {e.old_fingerprint}")
-            eprint(f"  Imported:        {e.new_fingerprint}")
+            eprint(f"  Identity:        {sanitize_for_display(e.name)}")
+            eprint(f"  Stored (pinned): {sanitize_for_display(e.old_fingerprint)}")
+            eprint(f"  Imported:        {sanitize_for_display(e.new_fingerprint)}")
             eprint(
                 "  A changed key can mean the contact re-keyed - or that this "
                 "bundle is forged / a man-in-the-middle. Only accept if you "
                 "have verified the new fingerprint out of band."
             )
-            if not sys.stdin.isatty():
+            if from_stdin or not sys.stdin.isatty():
                 eprint(
                     "ERROR: refusing to replace a pinned key non-interactively. "
                     "Re-run with --allow-key-change once you have verified the "
@@ -480,28 +767,43 @@ def cmd_import(args) -> int:
                     file=sys.stderr,
                 )
                 return 1
-            response = input("Accept the new key and replace the pinned one? (yes/no): ")
+            response = prompt_and_read("Accept the new key and replace the pinned one? (yes/no): ")
             if response.strip().lower() not in ("yes", "y"):
                 eprint("Import cancelled - pinned key kept.")
                 return 1
             store.add_identity(identity, passphrase=None, overwrite=True, allow_key_change=True)
 
         eprint("Identity imported successfully!")
-        eprint(f"Name: {identity.name}")
+        eprint(f"Name: {sanitize_for_display(identity.name)}")
         if identity.email:
-            eprint(f"Email: {identity.email}")
-        eprint(f"Fingerprint: {identity.fingerprint}")
+            eprint(f"Email: {sanitize_for_display(identity.email)}")
+        eprint(f"Fingerprint: {sanitize_for_display(identity.fingerprint)}")
 
         return 0
 
+    # Every message below can interpolate text derived from the untrusted
+    # document (a rejected name/alias, a validator complaint quoting a key),
+    # so each one is escaped before it reaches the terminal (gitlab#172).
     except IdentityError as e:
-        eprint(f"ERROR: {e}", file=sys.stderr)
+        eprint(f"ERROR: {sanitize_for_display(e)}", file=sys.stderr)
         return 1
     except json.JSONDecodeError as e:
-        eprint(f"ERROR: Invalid JSON file: {e}", file=sys.stderr)
+        eprint(
+            f"ERROR: Invalid JSON identity document: {sanitize_for_display(e)}",
+            file=sys.stderr,
+        )
+        return 1
+    except JSONSecurityError as e:
+        eprint(
+            f"ERROR: Rejected identity document: {sanitize_for_display(e)}",
+            file=sys.stderr,
+        )
         return 1
     except Exception as e:
-        eprint(f"ERROR: Failed to import identity: {e}", file=sys.stderr)
+        eprint(
+            f"ERROR: Failed to import identity: {sanitize_for_display(e)}",
+            file=sys.stderr,
+        )
         return 1
 
 
@@ -517,44 +819,122 @@ def cmd_delete(args) -> int:
     """
     try:
         store = get_identity_store(getattr(args, "identity_store", None))
-
-        # Check if identity exists
-        identity = store.get_by_name(args.identity_name, passphrase=None, load_private_keys=False)
-
-        if identity is None:
+        name = args.identity_name
+        # A value counts only if it is one of the three. argparse guarantees
+        # that, but programmatic callers need not, and a stray attribute must
+        # never select a branch by accident -- it falls back to the same
+        # default argparse would have supplied.
+        kind = getattr(args, "kind", "both")
+        if not isinstance(kind, str):
+            kind = "both"
+        elif kind not in ("own", "contact", "both"):
+            # An explicit but invalid value is an ERROR, never silently
+            # upgraded to "both": that would fail open to the most
+            # destructive branch, which removes the private keys AND the
+            # pinned key.
             eprint(
-                f"ERROR: Identity '{args.identity_name}' not found ❌",
+                f"ERROR: --kind must be 'own', 'contact' or 'both', not "
+                f"'{sanitize_for_display(kind)}' ❌",
                 file=sys.stderr,
             )
             return 1
 
+        # Both locations are inspected directly rather than through
+        # get_by_name, which resolves the own identity first and would hide a
+        # shadowed contact from the confirmation prompt -- exactly the entry
+        # the user needs to see before deciding (gitlab#173).
+        entries = store.describe_name(name)
+
+        if not entries:
+            eprint(
+                f"ERROR: Identity '{sanitize_for_display(name)}' not found ❌",
+                file=sys.stderr,
+            )
+            return 1
+
+        labels = {"own": "own identity", "contact": "contact"}
+        targeted = [e for e in entries if kind in ("both", e["kind"])]
+        if not targeted:
+            present = ", ".join(e["kind"] for e in entries)
+            eprint(
+                f"ERROR: No {kind} entry named '{sanitize_for_display(name)}' "
+                f"(found: {present}) ❌",
+                file=sys.stderr,
+            )
+            return 1
+
+        shadowed = len(entries) > 1
+
+        if shadowed:
+            # Never delete both sides of a collision without saying so: one
+            # side holds private keys, the other holds a TOFU pin.
+            eprint(
+                f"NOTE: '{sanitize_for_display(name)}' exists as BOTH an own "
+                f"identity and a contact."
+            )
+            for entry in entries:
+                eprint(
+                    f"  - {entry['kind']}: fingerprint "
+                    f"{sanitize_for_display(entry['fingerprint'])}"
+                )
+            eprint(
+                "  Deleting the own identity destroys its private keys, so any "
+                "file encrypted to it becomes unreadable. Deleting the contact "
+                "drops its pinned key, so a later import of that name is "
+                "accepted as first use with no key-change warning."
+            )
+            eprint(
+                "  Use --kind own or --kind contact to remove just one; "
+                "back up the identity store first."
+            )
+            eprint()
+
         # Confirm deletion unless --force
         if not getattr(args, "force", False):
-            eprint(f"WARNING: This will delete identity '{args.identity_name}'")
-            eprint(f"Fingerprint: {identity.fingerprint}")
-            if identity.is_own_identity:
-                eprint("This includes the private keys!")
+            removing = " and ".join(labels[e["kind"]] for e in targeted)
+            eprint(f"WARNING: This will delete the {removing} named '{sanitize_for_display(name)}'")
+            for entry in targeted:
+                eprint(
+                    f"  {entry['kind']} fingerprint: "
+                    f"{sanitize_for_display(entry['fingerprint'])}"
+                )
+                if entry["kind"] == "own":
+                    eprint("  This includes the private keys!")
 
-            response = input("Are you sure? (yes/no): ")
+            response = prompt_and_read("Are you sure? (yes/no): ")
             if response.lower() not in ["yes", "y"]:
                 eprint("Deletion cancelled.")
                 return 0
 
-        # Delete identity
-        result = store.delete_identity(args.identity_name)
+        removed = store.delete_identity(name, kind=kind)
 
-        if result:
-            eprint(f"Identity '{args.identity_name}' deleted successfully.")
-            return 0
-        else:
+        if removed:
             eprint(
-                f"ERROR: Failed to delete identity '{args.identity_name}'",
-                file=sys.stderr,
+                f"Deleted the {' and '.join(labels[k] for k in removed)} named "
+                f"'{sanitize_for_display(name)}'."
             )
-            return 1
+            # After removing one side of a collision, say what the name now
+            # resolves to: that promotion is precisely the event this issue
+            # is about, so it must not be left implicit.
+            survivors = [e for e in entries if e["kind"] not in removed]
+            for entry in survivors:
+                eprint(
+                    f"NOTE: '{sanitize_for_display(name)}' now resolves to the "
+                    f"{labels[entry['kind']]} entry, fingerprint "
+                    f"{sanitize_for_display(entry['fingerprint'])}."
+                )
+            if not survivors and shadowed:
+                eprint("Both entries are gone, so the name no longer resolves to anything.")
+            return 0
+
+        eprint(
+            f"ERROR: Failed to delete identity '{sanitize_for_display(name)}'",
+            file=sys.stderr,
+        )
+        return 1
 
     except Exception as e:
-        eprint(f"ERROR: Failed to delete identity: {e}", file=sys.stderr)
+        eprint(f"ERROR: Failed to delete identity: {sanitize_for_display(e)}", file=sys.stderr)
         return 1
 
 
@@ -578,7 +958,7 @@ def cmd_change_password(args) -> int:
 
         if identity_check is None:
             eprint(
-                f"ERROR: Identity '{args.identity_name}' not found ❌",
+                f"ERROR: Identity '{sanitize_for_display(args.identity_name)}' not found ❌",
                 file=sys.stderr,
             )
             return 1
@@ -586,7 +966,7 @@ def cmd_change_password(args) -> int:
         if not identity_check.is_own_identity:
             error_msg = (
                 f"ERROR: Cannot change passphrase for contact "
-                f"'{args.identity_name}' (no private keys)"
+                f"'{sanitize_for_display(args.identity_name)}' (no private keys)"
             )
             eprint(error_msg, file=sys.stderr)
             return 1
@@ -618,15 +998,15 @@ def cmd_change_password(args) -> int:
         # Save with new passphrase
         store.add_identity(identity, new_passphrase, overwrite=True)
 
-        eprint(f"Passphrase changed successfully for '{args.identity_name}'")
+        eprint(f"Passphrase changed successfully for '{sanitize_for_display(args.identity_name)}'")
 
         return 0
 
     except ValueError as e:
-        eprint(f"ERROR: {e}", file=sys.stderr)
+        eprint(f"ERROR: {sanitize_for_display(e)}", file=sys.stderr)
         return 1
     except Exception as e:
-        eprint(f"ERROR: Failed to change passphrase: {e}", file=sys.stderr)
+        eprint(f"ERROR: Failed to change passphrase: {sanitize_for_display(e)}", file=sys.stderr)
         return 1
 
 

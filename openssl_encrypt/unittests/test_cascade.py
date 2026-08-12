@@ -1124,9 +1124,7 @@ class TestTypeBasedAuthClassification(unittest.TestCase):
         """crypt_errors.AuthenticationError must classify as auth regardless of text."""
         from unittest import mock
 
-        from openssl_encrypt.modules.crypt_errors import (
-            AuthenticationError as CipherAuthError,
-        )
+        from openssl_encrypt.modules.crypt_errors import AuthenticationError as CipherAuthError
 
         ciphertext = self.cascade.encrypt(self.plaintext, self.master_key, self.salt)
         with mock.patch.object(

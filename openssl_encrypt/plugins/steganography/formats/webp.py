@@ -348,7 +348,7 @@ class WEBPSteganography(SteganographyBase):
             # Prepare data for hiding (add length prefix and end marker)
             data_length = len(secret_data)
             length_bytes = struct.pack("<I", data_length)
-            data_to_hide = length_bytes + secret_data + b"\xFF\xFE"  # 2-byte end marker
+            data_to_hide = length_bytes + secret_data + b"\xff\xfe"  # 2-byte end marker
 
             # Convert data to binary
             binary_data = list(SteganographyUtils.bytes_to_binary(data_to_hide))
@@ -409,7 +409,7 @@ class WEBPSteganography(SteganographyBase):
             length_bytes = struct.pack("<I", data_length)
 
             # Simple data format for lossy WEBP (no redundancy to avoid complexity)
-            data_to_hide = length_bytes + secret_data + b"\xFF\xFE"  # 2-byte end marker
+            data_to_hide = length_bytes + secret_data + b"\xff\xfe"  # 2-byte end marker
 
             binary_data = list(SteganographyUtils.bytes_to_binary(data_to_hide))
 

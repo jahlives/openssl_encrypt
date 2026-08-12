@@ -60,8 +60,7 @@ class LocalBuffer:
             cursor = conn.cursor()
 
             # Create events table
-            cursor.execute(
-                """
+            cursor.execute("""
                 CREATE TABLE IF NOT EXISTS events (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     timestamp TEXT NOT NULL,
@@ -83,16 +82,13 @@ class LocalBuffer:
                     uploaded INTEGER NOT NULL DEFAULT 0,
                     retry_count INTEGER NOT NULL DEFAULT 0
                 )
-            """
-            )
+            """)
 
             # Create index for efficient queries
-            cursor.execute(
-                """
+            cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_uploaded
                 ON events(uploaded, created_at)
-            """
-            )
+            """)
 
             conn.commit()
 

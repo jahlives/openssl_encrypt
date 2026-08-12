@@ -7,6 +7,15 @@ set -e
 LIBOQS_VERSION="${LIBOQS_VERSION:-0.12.0}"
 LIBOQS_PYTHON_VERSION="${LIBOQS_PYTHON_VERSION:-0.12.0}"
 
+# Immutable commit pins for the two upstreams (gitlab#252, F31/F33, CWE-494).
+# Git tags are mutable: a compromised/malicious upstream can repoint a tag to
+# arbitrary code, which would be built and loaded as the post-quantum crypto
+# implementation on the user's machine. These SHAs are the commits the 0.12.0
+# tags pointed to; the build verifies the checkout against them and fails closed
+# on mismatch. Bump both the version above and the matching SHA together.
+LIBOQS_COMMIT="${LIBOQS_COMMIT:-f4b96220e4bd208895172acc4fedb5a191d9f5b1}"
+LIBOQS_PYTHON_COMMIT="${LIBOQS_PYTHON_COMMIT:-7906e7879a099fa34217035957d977314f99757d}"
+
 INSTALL_PREFIX="${LIBOQS_INSTALL_PREFIX:-${HOME}/.local}"
 
 echo "=========================================="
@@ -32,6 +41,15 @@ trap "rm -rf ${LIBOQS_TMP}" EXIT
 
 git clone --depth 1 --branch "${LIBOQS_VERSION}" \
     https://github.com/open-quantum-safe/liboqs.git "${LIBOQS_TMP}"
+
+# Verify the checkout against the pinned commit (gitlab#252, F31). A moved tag
+# lands a different HEAD here; fail closed rather than build untrusted code.
+LIBOQS_HEAD=$(git -C "${LIBOQS_TMP}" rev-parse HEAD)
+if [ "${LIBOQS_HEAD}" != "${LIBOQS_COMMIT}" ]; then
+    echo "Error: liboqs ${LIBOQS_VERSION} checkout ${LIBOQS_HEAD} does not match the" \
+         "pinned commit ${LIBOQS_COMMIT}. Refusing to build (possible tag tampering)." >&2
+    exit 1
+fi
 
 cd "${LIBOQS_TMP}"
 
@@ -73,7 +91,8 @@ echo "Step 2/2: Building liboqs-python ${LIBOQS_PYTHON_VERSION}..."
 
 # Use python3 -m pip to install from git with specific tag
 # This is more reliable than calling pip directly, especially during build processes
-python3 -m pip install --no-cache-dir "git+https://github.com/open-quantum-safe/liboqs-python.git@${LIBOQS_PYTHON_VERSION}"
+# Pin to the immutable commit rather than the mutable tag (gitlab#252, F33).
+python3 -m pip install --no-cache-dir "git+https://github.com/open-quantum-safe/liboqs-python.git@${LIBOQS_PYTHON_COMMIT}"
 
 # Verify liboqs-python installation
 echo ""

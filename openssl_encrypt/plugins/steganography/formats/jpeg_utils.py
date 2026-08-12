@@ -31,13 +31,13 @@ from ..core import CoverMediaError, SteganographyError
 logger = logging.getLogger(__name__)
 
 # JPEG format constants
-JPEG_SOI = b"\xFF\xD8"  # Start of Image
-JPEG_EOI = b"\xFF\xD9"  # End of Image
-JPEG_SOS = b"\xFF\xDA"  # Start of Scan
-JPEG_DQT = b"\xFF\xDB"  # Define Quantization Table
-JPEG_DHT = b"\xFF\xC4"  # Define Huffman Table
-JPEG_APP0 = b"\xFF\xE0"  # Application segment 0
-JPEG_COM = b"\xFF\xFE"  # Comment
+JPEG_SOI = b"\xff\xd8"  # Start of Image
+JPEG_EOI = b"\xff\xd9"  # End of Image
+JPEG_SOS = b"\xff\xda"  # Start of Scan
+JPEG_DQT = b"\xff\xdb"  # Define Quantization Table
+JPEG_DHT = b"\xff\xc4"  # Define Huffman Table
+JPEG_APP0 = b"\xff\xe0"  # Application segment 0
+JPEG_COM = b"\xff\xfe"  # Comment
 
 # Standard JPEG quantization tables
 STANDARD_LUMINANCE_QT = np.array(
@@ -190,11 +190,11 @@ class JPEGAnalyzer:
             JPEG_DHT: "DHT",
             JPEG_APP0: "APP0",
             JPEG_COM: "COM",
-            b"\xFF\xC0": "SOF0",
-            b"\xFF\xC1": "SOF1",
-            b"\xFF\xC2": "SOF2",
-            b"\xFF\xE1": "APP1",
-            b"\xFF\xE2": "APP2",
+            b"\xff\xc0": "SOF0",
+            b"\xff\xc1": "SOF1",
+            b"\xff\xc2": "SOF2",
+            b"\xff\xe1": "APP1",
+            b"\xff\xe2": "APP2",
         }
 
         return marker_map.get(bytes(marker), f"UNKNOWN_{marker[1]:02X}")

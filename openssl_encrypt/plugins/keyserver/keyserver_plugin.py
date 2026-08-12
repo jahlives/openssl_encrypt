@@ -31,7 +31,7 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.poolmanager import PoolManager
 
-from ...modules.crypt_utils import eprint
+from ...modules.crypt_utils import eprint, sanitize_for_display
 from ...modules.key_bundle import PublicKeyBundle, create_pop_signature
 from ...modules.plugin_system.plugin_base import (
     BasePlugin,
@@ -44,6 +44,16 @@ from .cache import KeyserverCache
 from .config import KeyserverConfig
 
 logger = logging.getLogger(__name__)
+
+
+def _safe_body(response) -> str:
+    """Sanitize + truncate a server response body for an error message.
+
+    The body is remote attacker input, unbounded and free-form; it must
+    never reach the terminal raw (gitlab#172), and a multi-megabyte error
+    page must not become a multi-megabyte exception message.
+    """
+    return sanitize_for_display(response.text[:200])
 
 
 class CertPinningAdapter(HTTPAdapter):
@@ -465,7 +475,7 @@ class KeyserverPlugin(BasePlugin):
                     return None
                 else:
                     raise NetworkError(
-                        f"Keyserver returned status {response.status_code}: {response.text}"
+                        f"Keyserver returned status {response.status_code}: {_safe_body(response)}"
                     )
             else:
                 # Use search endpoint
@@ -497,7 +507,7 @@ class KeyserverPlugin(BasePlugin):
 
                 else:
                     raise NetworkError(
-                        f"Keyserver returned status {response.status_code}: {response.text}"
+                        f"Keyserver returned status {response.status_code}: {_safe_body(response)}"
                     )
 
         except requests.exceptions.Timeout:
@@ -589,6 +599,30 @@ class KeyserverPlugin(BasePlugin):
 
         return list(seen.values())
 
+    def _validate_server_url(self, server_url: str) -> None:
+        """Reject a keyserver URL that is not HTTPS or not a configured server
+        (gitlab#241, scan F15, CWE-319).
+
+        login/register/register_with_email send credentials or the
+        credential-yielding client_id; an ``http://`` URL leaks them in cleartext
+        to an on-path attacker (and bypasses the cert pinning, which is only
+        mounted for the https prefix), and an arbitrary https host that is not a
+        configured server would receive them too. These three entry points --
+        the only ones that accept a caller-supplied ``server_url`` -- go through
+        this check. The remaining request paths (upload/revoke/refresh, key
+        fetch/search) draw their URL from ``self.config.servers``, which
+        ``KeyserverConfig.__post_init__`` already forces to be https-only, so
+        they cannot target http:// or an unconfigured host.
+        """
+        if not isinstance(server_url, str) or not server_url.startswith("https://"):
+            raise ValueError(f"Invalid keyserver URL: {server_url!r}. Only HTTPS URLs are allowed.")
+        configured = {str(s).rstrip("/") for s in (self.config.servers or [])}
+        if server_url.rstrip("/") not in configured:
+            raise ValueError(
+                f"Refusing to use unconfigured keyserver URL: {server_url!r}. "
+                f"Add it to the configured servers first."
+            )
+
     def login(
         self,
         client_id: str,
@@ -627,6 +661,7 @@ class KeyserverPlugin(BasePlugin):
                 raise ValueError("No keyservers configured")
             server_url = self.config.servers[0]
 
+        self._validate_server_url(server_url)
         login_url = f"{server_url}/api/v1/keys/login"
 
         # Build request body
@@ -657,22 +692,31 @@ class KeyserverPlugin(BasePlugin):
                 # Save password for future logins
                 if effective_password:
                     self.config.save_password(effective_password)
-                logger.info(f"Logged in to keyserver, client_id={data['client_id']}")
+                # Do NOT log client_id: the login body is
+                # {"client_id": ...} with the password optional, so it
+                # alone yields access and refresh tokens. A credential
+                # in a log is outside the debug_secret() chokepoint.
+                logger.info("Logged in to keyserver")
                 return data
             elif response.status_code == 403:
                 # Server requires password setup (legacy client)
                 try:
                     data = response.json()
                     if data.get("status") == "password_required":
-                        raise PasswordRequiredError(data.get("message", "Password setup required."))
+                        # The message is remote JSON content; a hostile
+                        # server must not own the login terminal (gitlab#172).
+                        raise PasswordRequiredError(
+                            sanitize_for_display(str(data.get("message", ""))[:200])
+                            or "Password setup required."
+                        )
                 except (ValueError, KeyError):
                     pass
-                raise AuthenticationError(f"Login forbidden: {response.text}")
+                raise AuthenticationError(f"Login forbidden: {_safe_body(response)}")
             elif response.status_code == 401:
                 raise AuthenticationError("Invalid credentials")
             else:
                 raise NetworkError(
-                    f"Login failed with status {response.status_code}: {response.text}"
+                    f"Login failed with status {response.status_code}: {_safe_body(response)}"
                 )
 
         except requests.exceptions.Timeout:
@@ -710,12 +754,7 @@ class KeyserverPlugin(BasePlugin):
                 raise ValueError("No keyservers configured")
             server_url = self.config.servers[0]
 
-        # Enforce HTTPS for all server URLs
-        if not server_url.startswith("https://"):
-            raise ValueError(
-                f"Invalid server URL: {server_url}. Only HTTPS URLs are allowed for security."
-            )
-
+        self._validate_server_url(server_url)
         register_url = f"{server_url}/api/v1/keys/register"
 
         try:
@@ -737,11 +776,11 @@ class KeyserverPlugin(BasePlugin):
                 # Save refresh token if provided
                 if data.get("refresh_token"):
                     self.config.save_refresh_token(data["refresh_token"])
-                logger.info(f"Registered with keyserver, client_id={data['client_id']}")
+                logger.info("Registered with keyserver")
                 return data
             else:
                 raise NetworkError(
-                    f"Registration failed with status {response.status_code}: {response.text}"
+                    f"Registration failed with status {response.status_code}: {_safe_body(response)}"
                 )
 
         except requests.exceptions.Timeout:
@@ -782,6 +821,7 @@ class KeyserverPlugin(BasePlugin):
                 raise ValueError("No keyservers configured")
             server_url = self.config.servers[0]
 
+        self._validate_server_url(server_url)
         # Step 1: POST email registration request
         register_url = f"{server_url}/api/v1/keys/register/email"
 
@@ -803,7 +843,7 @@ class KeyserverPlugin(BasePlugin):
 
         if response.status_code != 202:
             raise NetworkError(
-                f"Email registration failed with status {response.status_code}: {response.text}"
+                f"Email registration failed with status {response.status_code}: {_safe_body(response)}"
             )
 
         data = response.json()
@@ -854,7 +894,7 @@ class KeyserverPlugin(BasePlugin):
                 # Save refresh token if provided
                 if status_data.get("refresh_token"):
                     self.config.save_refresh_token(status_data["refresh_token"])
-                logger.info(f"Email registration confirmed, client_id={status_data['client_id']}")
+                logger.info("Email registration confirmed")
                 return status_data
 
             # Still pending — wait and poll again
@@ -881,7 +921,7 @@ class KeyserverPlugin(BasePlugin):
         response = self._authenticated_request("post", challenge_url, json=body)
         if response.status_code != 200:
             raise NetworkError(
-                f"Challenge request failed with status {response.status_code}: {response.text}"
+                f"Challenge request failed with status {response.status_code}: {_safe_body(response)}"
             )
         return response.json()
 

@@ -172,10 +172,10 @@ class TestXorBytes:
 
     def test_basic_xor(self):
         """Test basic XOR operation."""
-        a = b"\x00\xFF\xAA\x55"
-        b = b"\xFF\x00\x55\xAA"
+        a = b"\x00\xff\xaa\x55"
+        b = b"\xff\x00\x55\xaa"
         result = xor_bytes(a, b)
-        assert result == b"\xFF\xFF\xFF\xFF"
+        assert result == b"\xff\xff\xff\xff"
 
     def test_xor_self_is_zero(self):
         """Test that XORing with self produces zeros."""

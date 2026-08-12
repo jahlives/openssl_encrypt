@@ -13,6 +13,7 @@ enabled KDF), the parallel path raises rather than silently dropping it.
 import unittest
 from unittest import mock
 
+from openssl_encrypt.modules.crypt_errors import ValidationError
 from openssl_encrypt.modules.parallel_kdf import generate_key_independent_xor_parallel
 
 
@@ -34,10 +35,16 @@ class TestParallelRandomXFailClosed(unittest.TestCase):
                 }
             }
         }
+        # Since gitlab#224 the parallel entry routes through
+        # compute_kdf_independent, whose RandomX thunk fail-closes with the
+        # sequential path's ValidationError (not the old dispatcher's
+        # pre-check ValueError). Force unavailability the way the runtime
+        # actually experiences it: randomx_kdf raising ImportError/OSError.
         with mock.patch(
-            "openssl_encrypt.modules.randomx.check_randomx_support", return_value=False
+            "openssl_encrypt.modules.randomx.randomx_kdf",
+            side_effect=ImportError("simulated: RandomX unavailable"),
         ):
-            with self.assertRaises(ValueError) as ctx:
+            with self.assertRaises((ValueError, ValidationError)) as ctx:
                 generate_key_independent_xor_parallel(
                     b"password", b"saltsaltsaltsalt", hash_config, quiet=True
                 )

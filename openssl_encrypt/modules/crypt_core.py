@@ -22,6 +22,8 @@ import math
 import os
 import re
 import secrets
+import shlex
+import shutil
 import stat
 import sys
 import tempfile
@@ -71,7 +73,7 @@ from .crypt_errors import (  # Error handling imports are at the top of file
 )
 
 # Import utility functions
-from .crypt_utils import eprint, safe_open_file
+from .crypt_utils import eprint, prompt_and_read, safe_open_file, sanitize_for_display
 
 # Redaction chokepoint: ALL secret material in debug output must be formatted
 # through debug_secret() (redacted by default, cleartext only with
@@ -150,6 +152,23 @@ def _is_telemetry_enabled() -> bool:
     # Check runtime flag (set by CLI)
     if _telemetry_enabled:
         return True
+
+    # A persistent opt-out (written by `telemetry opt-out`) overrides the passive
+    # env/config sources below -- otherwise a stale OPENSSL_ENCRYPT_TELEMETRY=1
+    # (or config) silently re-enabled collection and registered a new key on the
+    # next run after the user explicitly opted out (gitlab#166 part 5).
+    #
+    # Fail safe: if the marker state cannot be determined (home unresolvable, a
+    # permission error on ~/.openssl_encrypt, etc.), treat telemetry as disabled
+    # rather than consulting the passive env/config sources -- for a privacy
+    # opt-out the safe default under uncertainty is "off".
+    try:
+        from pathlib import Path
+
+        if (Path.home() / ".openssl_encrypt" / "telemetry" / "opted_out").exists():
+            return False
+    except Exception:
+        return False  # indeterminate marker state -> stay opted out
 
     # Check environment variable
     if os.getenv("OPENSSL_ENCRYPT_TELEMETRY") == "1":
@@ -586,6 +605,13 @@ try:
                             )
                             whirlpool = importlib.util.module_from_spec(spec)
                             spec.loader.exec_module(whirlpool)
+                            # gitlab#224: register the loaded extension so the
+                            # lazy `import whirlpool` inside
+                            # compute_hash_independent resolves to it --
+                            # binding only this module's global left
+                            # WHIRLPOOL_AVAILABLE True while that import
+                            # still raised ImportError.
+                            sys.modules["whirlpool"] = whirlpool
                             WHIRLPOOL_AVAILABLE = True
                             break
                 except ImportError:
@@ -2272,6 +2298,22 @@ def _combine_peppers(hsm_pepper: bytes = None, remote_pepper: bytes = None) -> b
     Returns:
         ``hsm_pepper || remote_pepper`` as a bytearray, or ``None`` when
         neither pepper is present (empty values count as absent).
+
+    Accepted residual (gitlab#117 / fable-review INFO-1): the two peppers are
+    concatenated here and the result enters ``_v14_seed_encode`` as ONE
+    length-prefixed TLV field, so the boundary BETWEEN them is not itself
+    length-prefixed. That is the last of the ambiguity class v14 retired at
+    the password/salt/pepper level.
+
+    Not exploitable, for the reason the original gitlab#100 was rated
+    impractical: both peppers are fixed-length, tool-generated and not
+    attacker-controllable -- a YubiKey HMAC-SHA1 pepper is 20 bytes and a
+    remote pepper is 32 (validated 16-128) -- so no pair of distinct
+    (hsm, remote) inputs can produce the same concatenation.
+
+    It CANNOT be fixed inside v14: the seed encoding is pinned by
+    cross-line golden vectors, so length-prefixing the two sub-fields would
+    change every derived key. Do it in a format v15 if one ever happens.
     """
     hsm = hsm_pepper or b""
     remote = remote_pepper or b""
@@ -2281,6 +2323,79 @@ def _combine_peppers(hsm_pepper: bytes = None, remote_pepper: bytes = None) -> b
     combined[: len(hsm)] = hsm
     combined[len(hsm) :] = remote
     return combined
+
+
+def _warm_component_imports(component_ids: list) -> None:
+    """Resolve heavy component imports on the main thread (gitlab#224 item 10).
+
+    First-time module imports inside worker threads are safe (per-module
+    import locks) but move real work off the main thread -- importing
+    ``.randomx`` runs module-level subprocess availability probes -- and
+    would deadlock if derivation were ever reached during a caller's own
+    module import. Failures are ignored: the component thunk fails closed
+    with the authoritative error (e.g. the RandomX ValidationError, #71).
+
+    Args:
+        component_ids: The task list's component ids (the same strings used
+            for the components' domain-separated salts, pinned by
+            test_indep_xor_component_pins_224.py).
+    """
+    for comp_id in component_ids:
+        try:
+            if comp_id == "blake3":
+                import blake3  # noqa: F401
+            elif comp_id == "whirlpool":
+                import whirlpool  # noqa: F401
+            elif comp_id == "argon2":
+                import argon2.low_level  # noqa: F401
+            elif comp_id == "balloon":
+                from . import balloon  # noqa: F401
+            elif comp_id == "randomx":
+                from . import randomx  # noqa: F401
+        except Exception:
+            pass  # the thunk raises the authoritative error
+
+
+def _parallel_kdf_worker_limit(requested: int, component_memory_kb: list, quiet: bool) -> int:
+    """Worker count for the parallel Independent-XOR pool (gitlab#224 item 2).
+
+    Caps the pool at the CPU count, at the component count, and at
+    the largest count whose worst-case co-resident set of components stays
+    within the decrypt safety ceiling. Concurrency turns peak KDF memory from
+    max(components) into the sum of the co-running ones, and the encrypt path
+    has no ceiling check of its own — without this clamp a high-memory custom
+    config could be encrypted above ``HARD_MEMORY_CEILING_KB`` and then be
+    refused by ``decrypt --parallel-kdf``'s summed-estimate enforcement.
+
+    Args:
+        requested: Explicit ``--kdf-workers`` value, or None/0 for auto.
+        component_memory_kb: Estimated peak memory (KB) per component task
+            (an unparseable config estimates as over-ceiling, degrading
+            toward sequential execution rather than unbounded memory).
+        quiet: Suppress the reduction notice.
+
+    Returns:
+        Worker count >= 1.
+    """
+    from .decryption_estimator import HARD_MEMORY_CEILING_KB
+
+    count = len(component_memory_kb)
+    cpu = os.cpu_count() or 1
+    workers = min(requested if (requested and requested > 0) else cpu, cpu, count)
+    workers = max(workers, 1)
+
+    # Worst case, the scheduler co-runs the `workers` most memory-hungry
+    # components; shrink the pool until that set fits under the ceiling.
+    largest = sorted(component_memory_kb, reverse=True)
+    memory_capped = workers
+    while memory_capped > 1 and sum(largest[:memory_capped]) > HARD_MEMORY_CEILING_KB:
+        memory_capped -= 1
+    if memory_capped < workers and not quiet:
+        eprint(
+            f"ℹ️ Limiting parallel KDF to {memory_capped} worker(s) so concurrent "
+            f"KDF memory stays within the safety ceiling."
+        )
+    return memory_capped
 
 
 def compute_hash_independent(
@@ -2365,9 +2480,18 @@ def compute_hash_independent(
             elif algorithm == "shake256":
                 h = hashlib.shake_256(bytes(current)).digest(64)
             elif algorithm == "whirlpool":
-                import whirlpool
+                try:
+                    import whirlpool
 
-                h = whirlpool.new(bytes(current)).digest()
+                    h = whirlpool.new(bytes(current)).digest()
+                except ImportError:
+                    # pywhirlpool-only installs also set WHIRLPOOL_AVAILABLE,
+                    # and its interface differs (gitlab#224 re-review f5) --
+                    # mirror the legacy chain's fallback instead of failing
+                    # closed on a capability the probe reported as present.
+                    import pywhirlpool
+
+                    h = pywhirlpool.whirlpool(bytes(current)).digest()
             else:
                 raise ValueError(f"Unsupported hash algorithm: {algorithm}")
 
@@ -2424,6 +2548,7 @@ def compute_kdf_independent(
     quiet: bool = False,
     progress: bool = False,
     debug: bool = False,
+    format_version: int = None,
 ) -> "SecureBytes":
     """
     Compute a single KDF independently for v11 Independent XOR.
@@ -2436,6 +2561,9 @@ def compute_kdf_independent(
         salt: Original salt bytes
         kdf_type: KDF type (argon2, scrypt, balloon, hkdf, pbkdf2)
         kdf_config: KDF-specific configuration dict
+        format_version: Metadata format version of the file being processed,
+            when the caller knows it; gates fail-closed parameter validation
+            (gitlab#125). None preserves legacy fallback behavior.
         key_length: Target output length in bytes
         quiet: Suppress output messages
         progress: Show progress indicators
@@ -2544,7 +2672,21 @@ def compute_kdf_independent(
             raise ValueError("Balloon hash not available")
 
         # Extract Balloon parameters
-        space_cost = kdf_config.get("space_cost", 16)
+        space_cost = kdf_config.get("space_cost")
+        if space_cost is None:
+            # gitlab#125: v14 postdates the M3 fix (deb4bc09), so every
+            # released v14+ writer persists space_cost - a missing field can
+            # only be crafted/corrupted metadata and is refused instead of
+            # silently deriving with the weak value.
+            if format_version is not None and format_version >= 14:
+                raise ValueError(
+                    "Balloon KDF configuration is missing space_cost for "
+                    "format_version >= 14; refusing the weak legacy fallback"
+                )
+            # Load-bearing legacy fallback: v11 balloon files written by
+            # released v1.4.0-v1.4.3 (pre-M3) did not persist space_cost and
+            # were really derived with 16 (see test_balloon_defaults_m3.py).
+            space_cost = 16
         time_cost = kdf_config.get("time_cost", 20)
         delta = kdf_config.get("delta", 4)
 
@@ -2800,6 +2942,8 @@ def generate_key_independent_xor(
     pqc_keypair: tuple = None,
     hsm_pepper: bytes = None,
     format_version: int = 11,
+    parallel: bool = False,
+    max_workers: int = None,
 ) -> tuple:
     """
     Generate encryption key using Independent XOR composition.
@@ -2946,6 +3090,42 @@ def generate_key_independent_xor(
         # This ensures all algorithms work with normalized 256-bit input
         algorithm_input = SecureBytes(initial_hash)
 
+        # Independent-XOR components (gitlab#220): each enabled algorithm derives
+        # ONE component from the shared `algorithm_input` using a domain-separated
+        # per-component salt, and all components are combined with XOR. The
+        # components are mutually independent and XOR is commutative, so they may
+        # be computed sequentially or concurrently on a thread pool with a
+        # byte-identical result. We therefore build a list of (label, thunk)
+        # tasks here and execute them once, below, in whichever mode was
+        # requested. Each thunk returns the component bytes for its algorithm.
+        # Each task is (label, thunk, est_memory_kb). The memory estimates
+        # feed the worker-count clamp (gitlab#224 item 2); reuse the decrypt
+        # estimator so encrypt and decrypt agree on what a config costs.
+        from .decryption_estimator import (
+            HARD_MEMORY_CEILING_KB,
+            estimate_argon2,
+            estimate_balloon,
+            estimate_hash_operation,
+            estimate_hkdf,
+            estimate_randomx,
+            estimate_scrypt,
+        )
+
+        def _mem_estimate(estimator, *est_args):
+            # Unparseable configs estimate as over-ceiling (the estimator
+            # module's own convention), degrading toward sequential execution
+            # rather than unbounded concurrent memory.
+            try:
+                return int(estimator(*est_args)[1])
+            except Exception:
+                return HARD_MEMORY_CEILING_KB + 1
+
+        component_tasks = []
+        # A live progress bar interleaves unreadably across worker threads, so
+        # suppress per-component progress when parallelising. This is display
+        # only; it never affects the derived key.
+        _cprog = progress and not parallel
+
         # 1. Process each enabled hash algorithm
         hash_algorithms = [
             "sha256",
@@ -2961,47 +3141,24 @@ def generate_key_independent_xor(
         for algo in hash_algorithms:
             rounds = get_hash_rounds(hash_config, algo)
             if rounds > 0:
-                algo_display = algo.upper()
-
-                if not quiet and not progress:
-                    # Only print initial message if progress bars disabled
-                    eprint(
-                        f"Computing {algo_display} hash ({rounds} rounds)...",
-                        end=" ",
-                        flush=True,
+                component_tasks.append(
+                    (
+                        algo,
+                        f"{algo.upper()} hash ({rounds} rounds)",
+                        functools.partial(
+                            compute_hash_independent,
+                            password=algorithm_input,  # Use initial hash, not raw password
+                            salt=_indep_xor_component_salt(salt, algo, format_version),
+                            algorithm=algo,
+                            rounds=rounds,
+                            key_length=key_length,
+                            quiet=quiet,
+                            progress=_cprog,
+                            debug=debug,
+                        ),
+                        _mem_estimate(estimate_hash_operation, algo, rounds),
                     )
-                elif not quiet and progress:
-                    # Print header before progress bar
-                    algo_names = {
-                        "sha256": "SHA-256",
-                        "sha512": "SHA-512",
-                        "sha3_256": "SHA3-256",
-                        "sha3_512": "SHA3-512",
-                        "blake2b": "BLAKE2b",
-                        "blake3": "BLAKE3",
-                        "shake256": "SHAKE-256",
-                        "whirlpool": "Whirlpool",
-                    }
-                    algo_name = algo_names.get(algo, algo.upper())
-                    eprint(f"Applying {rounds} rounds of {algo_name}")
-
-                result = compute_hash_independent(
-                    password=algorithm_input,  # Use initial hash instead of raw password
-                    salt=_indep_xor_component_salt(salt, algo, format_version),
-                    algorithm=algo,
-                    rounds=rounds,
-                    key_length=key_length,
-                    quiet=quiet,
-                    progress=progress,
-                    debug=debug,
                 )
-                xor_components.append(result)
-
-                if not quiet and not progress:
-                    eprint("✅")
-
-                if debug:
-                    logger.debug(f"INDEPENDENT-XOR: Added {algo} component #{len(xor_components)}")
 
         # 2. Process each enabled KDF
         # Extract KDF config (handle both nested and flat formats)
@@ -3013,156 +3170,279 @@ def generate_key_independent_xor(
         # Check and process Argon2
         if kdf_config_section.get("argon2", {}).get("enabled", False):
             argon2_config = kdf_config_section["argon2"]
-
-            if not quiet and not progress:
-                eprint("Computing Argon2 KDF...", end=" ", flush=True)
-            elif not quiet and progress:
-                eprint("Using Argon2 for key derivation")
-
-            result = compute_kdf_independent(
-                password=algorithm_input,  # Use initial hash instead of raw password
-                salt=_indep_xor_component_salt(salt, "argon2", format_version),
-                kdf_type="argon2",
-                kdf_config=argon2_config,
-                key_length=key_length,
-                quiet=quiet,
-                progress=progress,
-                debug=debug,
+            component_tasks.append(
+                (
+                    "argon2",
+                    "Argon2 KDF",
+                    functools.partial(
+                        compute_kdf_independent,
+                        password=algorithm_input,  # Use initial hash, not raw password
+                        salt=_indep_xor_component_salt(salt, "argon2", format_version),
+                        kdf_type="argon2",
+                        kdf_config=argon2_config,
+                        key_length=key_length,
+                        quiet=quiet,
+                        progress=_cprog,
+                        debug=debug,
+                    ),
+                    _mem_estimate(estimate_argon2, argon2_config),
+                )
             )
-            xor_components.append(result)
-
-            if not quiet and not progress:
-                eprint("✅")
-
-            if debug:
-                logger.debug(f"INDEPENDENT-XOR: Added Argon2 component #{len(xor_components)}")
 
         # Check and process Scrypt
         if kdf_config_section.get("scrypt", {}).get("enabled", False):
             scrypt_config = kdf_config_section["scrypt"]
-
-            if not quiet and not progress:
-                eprint("Computing Scrypt KDF...", end=" ", flush=True)
-            elif not quiet and progress:
-                eprint("Using Scrypt for key derivation")
-
-            result = compute_kdf_independent(
-                password=algorithm_input,  # Use initial hash instead of raw password
-                salt=_indep_xor_component_salt(salt, "scrypt", format_version),
-                kdf_type="scrypt",
-                kdf_config=scrypt_config,
-                key_length=key_length,
-                quiet=quiet,
-                progress=False,
-                debug=debug,
+            component_tasks.append(
+                (
+                    "scrypt",
+                    "Scrypt KDF",
+                    functools.partial(
+                        compute_kdf_independent,
+                        password=algorithm_input,  # Use initial hash, not raw password
+                        salt=_indep_xor_component_salt(salt, "scrypt", format_version),
+                        kdf_type="scrypt",
+                        kdf_config=scrypt_config,
+                        key_length=key_length,
+                        quiet=quiet,
+                        progress=False,
+                        debug=debug,
+                    ),
+                    _mem_estimate(estimate_scrypt, scrypt_config),
+                )
             )
-            xor_components.append(result)
-
-            if not quiet and not progress:
-                eprint("✅")
-
-            if debug:
-                logger.debug(f"INDEPENDENT-XOR: Added Scrypt component #{len(xor_components)}")
 
         # Check and process Balloon
         if kdf_config_section.get("balloon", {}).get("enabled", False):
             balloon_config = kdf_config_section["balloon"]
-
-            if not quiet and not progress:
-                eprint("Computing Balloon KDF...", end=" ", flush=True)
-            elif not quiet and progress:
-                eprint("Using Balloon-Hashing for key derivation")
-
-            result = compute_kdf_independent(
-                password=algorithm_input,  # Use initial hash instead of raw password
-                salt=_indep_xor_component_salt(salt, "balloon", format_version),
-                kdf_type="balloon",
-                kdf_config=balloon_config,
-                key_length=key_length,
-                quiet=quiet,
-                progress=False,
-                debug=debug,
+            component_tasks.append(
+                (
+                    "balloon",
+                    "Balloon KDF",
+                    functools.partial(
+                        compute_kdf_independent,
+                        password=algorithm_input,  # Use initial hash, not raw password
+                        salt=_indep_xor_component_salt(salt, "balloon", format_version),
+                        kdf_type="balloon",
+                        kdf_config=balloon_config,
+                        key_length=key_length,
+                        quiet=quiet,
+                        progress=False,
+                        debug=debug,
+                        format_version=format_version,
+                    ),
+                    _mem_estimate(estimate_balloon, balloon_config),
+                )
             )
-            xor_components.append(result)
-
-            if not quiet and not progress:
-                eprint("✅")
-
-            if debug:
-                logger.debug(f"INDEPENDENT-XOR: Added Balloon component #{len(xor_components)}")
 
         # Check and process HKDF
         if kdf_config_section.get("hkdf", {}).get("enabled", False):
-            if not quiet and not progress:
-                eprint("Computing HKDF...", end=" ")
-
             hkdf_config = kdf_config_section["hkdf"]
-            result = compute_kdf_independent(
-                password=algorithm_input,  # Use initial hash instead of raw password
-                salt=_indep_xor_component_salt(salt, "hkdf", format_version),
-                kdf_type="hkdf",
-                kdf_config=hkdf_config,
-                key_length=key_length,
-                quiet=quiet,
-                progress=progress,
-                debug=debug,
+            component_tasks.append(
+                (
+                    "hkdf",
+                    "HKDF",
+                    functools.partial(
+                        compute_kdf_independent,
+                        password=algorithm_input,  # Use initial hash, not raw password
+                        salt=_indep_xor_component_salt(salt, "hkdf", format_version),
+                        kdf_type="hkdf",
+                        kdf_config=hkdf_config,
+                        key_length=key_length,
+                        quiet=quiet,
+                        progress=_cprog,
+                        debug=debug,
+                    ),
+                    _mem_estimate(estimate_hkdf, hkdf_config),
+                )
             )
-            xor_components.append(result)
-
-            if not quiet and not progress:
-                eprint("✅")
-
-            if debug:
-                logger.debug(f"INDEPENDENT-XOR: Added HKDF component #{len(xor_components)}")
 
         # Check and process RandomX
         if kdf_config_section.get("randomx", {}).get("enabled", False):
             randomx_config = kdf_config_section["randomx"]
 
-            try:
-                if not quiet and not progress:
-                    eprint("Computing RandomX KDF...", end=" ", flush=True)
-                elif not quiet and progress:
-                    eprint("Using RandomX for key derivation")
+            def _randomx_component(_cfg=randomx_config):
+                try:
+                    return compute_kdf_independent(
+                        password=algorithm_input,
+                        salt=_indep_xor_component_salt(salt, "randomx", format_version),
+                        kdf_type="randomx",
+                        kdf_config=_cfg,
+                        key_length=key_length,
+                        quiet=quiet,
+                        progress=_cprog,
+                        debug=debug,
+                    )
+                except (ImportError, OSError) as e:
+                    # SECURITY (#71): RandomX is explicitly enabled, so a failure
+                    # must NOT be silently skipped -- dropping it can collapse the
+                    # derived key to a single un-stretched sha256(password+salt).
+                    # Fail closed, like every other KDF in this path (which let
+                    # errors propagate). In the parallel executor this exception
+                    # re-raises out of future.result(), preserving fail-closed.
+                    logger.warning(f"RandomX KDF enabled but unavailable: {e}")
+                    raise ValidationError(
+                        "RandomX KDF is enabled but unavailable; refusing to derive a "
+                        "weaker key. Install RandomX support or disable RandomX in the "
+                        f"KDF configuration. ({e})"
+                    ) from e
 
-                result = compute_kdf_independent(
-                    password=algorithm_input,
-                    salt=_indep_xor_component_salt(salt, "randomx", format_version),
-                    kdf_type="randomx",
-                    kdf_config=randomx_config,
-                    key_length=key_length,
-                    quiet=quiet,
-                    progress=progress,
-                    debug=debug,
+            component_tasks.append(
+                (
+                    "randomx",
+                    "RandomX KDF",
+                    _randomx_component,
+                    _mem_estimate(estimate_randomx, randomx_config),
                 )
-                xor_components.append(result)
+            )
 
+        # All-empty config (gitlab#224): the "no components" check that used
+        # to sit below was unreachable -- the initial-hash component is
+        # appended unconditionally -- so an empty config silently derived an
+        # unstretched normalized SHA-256 of password+salt as the key. A
+        # parallel request keeps the retired dispatcher's contract and is
+        # refused outright. The sequential path has always derived for such
+        # configs and callers rely on it (fast-test API usage), so it warns
+        # instead of silently proceeding. Decryption metadata is fully
+        # exempt so any legacy file written that way stays readable.
+        if not component_tasks and not (
+            hash_config and hash_config.get("_is_from_decryption_metadata", False)
+        ):
+            if parallel:
+                raise ValueError(
+                    "No algorithms enabled for key derivation. "
+                    "Enable at least one hash algorithm or KDF."
+                )
+            if not quiet:
+                eprint(
+                    "⚠️ No hash algorithms or KDFs enabled: the key is derived "
+                    "from a single unstretched hash of password+salt. Enable "
+                    "at least one hash algorithm or KDF for real key stretching."
+                )
+
+        # Execute the collected component tasks and gather their outputs into
+        # xor_components (gitlab#220). Sequential mode reproduces the historical
+        # one-at-a-time behavior; parallel mode runs the mutually-independent
+        # components concurrently on a thread pool. Results are collected in
+        # submission order so debug output is deterministic; the XOR below is
+        # commutative, so ordering never affects the derived key. Any exception
+        # from a thunk (e.g. the RandomX fail-closed ValidationError) propagates
+        # unchanged -- future.result() re-raises it in the parallel path.
+        if parallel and len(component_tasks) > 1:
+            from concurrent.futures import ThreadPoolExecutor
+
+            workers = _parallel_kdf_worker_limit(
+                max_workers, [task_mem for _c, _l, _t, task_mem in component_tasks], quiet
+            )
+            if not quiet:
+                eprint(
+                    f"Deriving {len(component_tasks)} independent KDF components "
+                    f"in parallel ({workers} workers)..."
+                )
+            _warm_component_imports([comp_id for comp_id, _l, _t, _m in component_tasks])
+
+            # No `with` block: its __exit__ is shutdown(wait=True), which would
+            # re-block an abort (Ctrl-C) until every running component finishes.
+            executor = ThreadPoolExecutor(max_workers=workers)
+            interrupted = False
+            futures = []
+            results = []
+            try:
+                # Explicit append loop (not a comprehension): if a submit
+                # raises mid-way, the already-submitted futures stay
+                # reachable for the handler's wipe below (re-review rA).
+                for _c, _l, _thunk, _m in component_tasks:
+                    futures.append(executor.submit(_thunk))
+                # Drain EVERY future before acting on the outcome. If a component
+                # fails (e.g. RandomX fail-closed, #71), the other workers may
+                # already have produced SecureBytes results that are held only by
+                # this futures list -- outside xor_components and therefore missed
+                # by the finally-wipe below. Collect them all, and on any failure
+                # zeroize the already-computed results before re-raising, so no
+                # derived key material lingers on the error path (#220 review).
+                first_error = None
+                for future in futures:
+                    try:
+                        results.append(future.result())
+                    except Exception as exc:  # component failures only
+                        if first_error is None:
+                            first_error = exc
+                        else:
+                            # gitlab#224 item 5: secondary failures must not
+                            # vanish behind the first one (labels/exception
+                            # text only -- no key material in these messages).
+                            logger.debug(
+                                f"INDEPENDENT-XOR: additional component failure: "
+                                f"{type(exc).__name__}: {exc}"
+                            )
+                if first_error is not None:
+                    for _r in results:
+                        try:
+                            secure_memzero(_r)
+                        except Exception:
+                            pass  # Best effort cleanup
+                    raise first_error
+                for (_cid, label, _thunk, _mem), _r in zip(component_tasks, results):
+                    xor_components.append(_r)
+                    if debug:
+                        logger.debug(
+                            f"INDEPENDENT-XOR: Added {label} component #{len(xor_components)}"
+                        )
+            except BaseException as _exc:
+                # Any unwind -- component failure (first_error re-raised
+                # above), an unexpected Exception (MemoryError, a logging
+                # failure), or a true abort -- must not leave collected
+                # component buffers waiting on GC (re-review rA).
+                for _r in results:
+                    try:
+                        secure_memzero(_r)
+                    except Exception:
+                        pass  # Best effort cleanup
+                if not isinstance(_exc, Exception):
+                    # Abort (KeyboardInterrupt/SystemExit) anywhere in the
+                    # submit/drain/collect window (gitlab#224 item 3 +
+                    # re-review f2): do NOT treat it as a component failure
+                    # and do NOT keep draining or re-joining the pool.
+                    # Unstarted components are cancelled.
+                    interrupted = True
+                    executor.shutdown(wait=False, cancel_futures=True)
+
+                    # Completed-but-unretrieved futures still hold their
+                    # component SecureBytes in future._result, reachable for
+                    # as long as the propagating traceback keeps this frame
+                    # alive (re-review f3). A done-callback wipes each --
+                    # it fires inline for already-done futures and in the
+                    # worker thread for ones that finish after the abort
+                    # (re-review rB), so no result waits on frame lifetime.
+                    def _wipe_future_result(_fut):
+                        try:
+                            if not _fut.cancelled() and _fut.exception() is None:
+                                secure_memzero(_fut.result())
+                        except Exception:
+                            pass  # Best effort cleanup
+
+                    for _fut in futures:
+                        try:
+                            _fut.add_done_callback(_wipe_future_result)
+                        except Exception:
+                            pass  # Best effort cleanup
+                raise
+            finally:
+                if not interrupted:
+                    executor.shutdown(wait=True)
+            if not quiet:
+                eprint(f"✅ Derived {len(xor_components)} components in parallel")
+        else:
+            for _cid, label, thunk, _mem in component_tasks:
+                if not quiet and not progress:
+                    eprint(f"Computing {label}...", end=" ", flush=True)
+                xor_components.append(thunk())
                 if not quiet and not progress:
                     eprint("✅")
-
                 if debug:
-                    logger.debug(f"INDEPENDENT-XOR: Added RandomX component #{len(xor_components)}")
-            except (ImportError, OSError) as e:
-                # SECURITY (#71): RandomX is explicitly enabled, so a failure must
-                # NOT be silently skipped -- dropping it can collapse the derived
-                # key to a single un-stretched sha256(password+salt). Fail closed,
-                # like every other KDF in this path (which let errors propagate).
-                logger.warning(f"RandomX KDF enabled but unavailable: {e}")
-                raise ValidationError(
-                    "RandomX KDF is enabled but unavailable; refusing to derive a "
-                    "weaker key. Install RandomX support or disable RandomX in the "
-                    f"KDF configuration. ({e})"
-                ) from e
+                    logger.debug(f"INDEPENDENT-XOR: Added {label} component #{len(xor_components)}")
 
         # NOTE: PBKDF2 is deprecated and NOT used for v11 encryption
         # It's only supported for decryption of legacy files (v1-v9)
-
-        # Verify we have at least one component
-        if len(xor_components) == 0:
-            raise ValueError(
-                "No algorithms enabled for key derivation. "
-                "Enable at least one hash algorithm or KDF."
-            )
 
         if debug:
             logger.debug(
@@ -3559,11 +3839,19 @@ def generate_key(
             )
     else:
         # Even when no hash iterations are configured, we need to combine password with salt
-        # for consistency with the original key derivation behavior
-        if hsm_pepper:
-            password = password + salt + hsm_pepper
-        else:
-            password = password + salt
+        # for consistency with the original key derivation behavior.
+        # gitlab#124: build the seed in one exact-size wipeable buffer instead of
+        # an immutable concatenation, so the finally-wipe at the return site (and
+        # the legacy_seed_buffer wipe there for the KDF-rebind case) is effective.
+        pepper_part = hsm_pepper if hsm_pepper else b""
+        legacy_seed_buffer = bytearray(len(password) + len(salt) + len(pepper_part))
+        seed_view = memoryview(legacy_seed_buffer)
+        seed_view[: len(password)] = password
+        seed_view[len(password) : len(password) + len(salt)] = salt
+        if pepper_part:
+            seed_view[len(password) + len(salt) :] = pepper_part
+        seed_view.release()
+        password = legacy_seed_buffer
 
     # Check if Argon2 is available on the system
     argon2_available = ARGON2_AVAILABLE
@@ -4617,6 +4905,10 @@ def generate_key(
                 secure_memzero(iteration_specific_salt)
             if "salt_material" in locals():
                 secure_memzero(salt_material)
+            if "legacy_seed_buffer" in locals():
+                # gitlab#124: wipe the legacy seed even when a KDF rebound
+                # `password` to its output.
+                secure_memzero(legacy_seed_buffer)
         except (NameError, TypeError):
             # Ignore cleanup errors to ensure we don't interrupt the program flow
             pass
@@ -4778,8 +5070,11 @@ def convert_metadata_v4_to_v3(metadata):
         "format_version": 3,
         "salt": metadata["derivation_config"]["salt"],
         "hash_config": {},
-        "original_hash": metadata["hashes"]["original_hash"],
-        "encrypted_hash": metadata["hashes"]["encrypted_hash"],
+        # F8 (gitlab#245): original_hash is no longer written; guard the read so
+        # this legacy downgrade converter tolerates its absence (matches the
+        # guarded convert_metadata_v3_to_v4 sibling).
+        "original_hash": metadata.get("hashes", {}).get("original_hash", ""),
+        "encrypted_hash": metadata.get("hashes", {}).get("encrypted_hash", ""),
         "algorithm": metadata["encryption"]["algorithm"],
     }
 
@@ -4875,12 +5170,14 @@ def create_metadata_v5(
     # Encode salt to base64
     salt_b64 = base64.b64encode(salt).decode("utf-8")
 
-    # Create hashes dictionary based on AAD mode
+    # F8 (gitlab#245, CWE-311): the unkeyed sha256(plaintext) was a
+    # plaintext-confirmation oracle readable without the key, and redundant to
+    # the cipher's own authentication, so original_hash is no longer written.
+    # encrypted_hash (over the already-public ciphertext) is kept for non-AEAD
+    # integrity. Decrypt stays tolerant of old files that still carry either.
+    hashes_dict = {}
     if include_encrypted_hash and encrypted_hash is not None:
-        hashes_dict = {"original_hash": original_hash, "encrypted_hash": encrypted_hash}
-    else:
-        # AEAD mode: only include original_hash
-        hashes_dict = {"original_hash": original_hash}
+        hashes_dict["encrypted_hash"] = encrypted_hash
 
     # Create basic metadata
     metadata = {
@@ -5035,12 +5332,14 @@ def create_metadata_v6(
     # Encode salt to base64
     salt_b64 = base64.b64encode(salt).decode("utf-8")
 
-    # Create hashes dictionary based on AAD mode
+    # F8 (gitlab#245, CWE-311): the unkeyed sha256(plaintext) was a
+    # plaintext-confirmation oracle readable without the key, and redundant to
+    # the cipher's own authentication, so original_hash is no longer written.
+    # encrypted_hash (over the already-public ciphertext) is kept for non-AEAD
+    # integrity. Decrypt stays tolerant of old files that still carry either.
+    hashes_dict = {}
     if include_encrypted_hash and encrypted_hash is not None:
-        hashes_dict = {"original_hash": original_hash, "encrypted_hash": encrypted_hash}
-    else:
-        # AEAD mode: only include original_hash
-        hashes_dict = {"original_hash": original_hash}
+        hashes_dict["encrypted_hash"] = encrypted_hash
 
     # Create basic metadata
     metadata = {
@@ -5111,15 +5410,10 @@ def create_metadata_v6(
             "dual_encryption"
         ]
 
-    # Copy password verification hashes for dual encryption if present
-    if "pqc_dual_encrypt_verify" in hash_config:
-        metadata["derivation_config"]["kdf_config"]["pqc_dual_encrypt_verify"] = hash_config[
-            "pqc_dual_encrypt_verify"
-        ]
-    if "pqc_dual_encrypt_verify_salt" in hash_config:
-        metadata["derivation_config"]["kdf_config"]["pqc_dual_encrypt_verify_salt"] = hash_config[
-            "pqc_dual_encrypt_verify_salt"
-        ]
+    # gitlab#131 F18: the weak 10k-PBKDF2 pqc_dual_encrypt_verify hash is no
+    # longer trusted on decrypt and must not be written into new metadata (it is
+    # brute-forceable offline). This formerly copied it from hash_config; that
+    # copy is removed so a fresh/re-encrypted file never carries the verifier.
 
     # Add PQC information if present
     if pqc_info:
@@ -5258,11 +5552,14 @@ def create_metadata_v8(
     # Encode salt to base64
     salt_b64 = base64.b64encode(salt).decode("utf-8")
 
-    # Create hashes dictionary
+    # F8 (gitlab#245, CWE-311): the unkeyed sha256(plaintext) was a
+    # plaintext-confirmation oracle readable without the key, and redundant to
+    # the cipher's own authentication, so original_hash is no longer written.
+    # encrypted_hash (over the already-public ciphertext) is kept for non-AEAD
+    # integrity. Decrypt stays tolerant of old files that still carry either.
+    hashes_dict = {}
     if include_encrypted_hash and encrypted_hash is not None:
-        hashes_dict = {"original_hash": original_hash, "encrypted_hash": encrypted_hash}
-    else:
-        hashes_dict = {"original_hash": original_hash}
+        hashes_dict["encrypted_hash"] = encrypted_hash
 
     # Create encryption metadata based on cascade mode
     if cascade and cipher_chain:
@@ -5347,15 +5644,10 @@ def create_metadata_v8(
             "dual_encryption"
         ]
 
-    # Copy password verification hashes for dual encryption
-    if "pqc_dual_encrypt_verify" in hash_config:
-        metadata["derivation_config"]["kdf_config"]["pqc_dual_encrypt_verify"] = hash_config[
-            "pqc_dual_encrypt_verify"
-        ]
-    if "pqc_dual_encrypt_verify_salt" in hash_config:
-        metadata["derivation_config"]["kdf_config"]["pqc_dual_encrypt_verify_salt"] = hash_config[
-            "pqc_dual_encrypt_verify_salt"
-        ]
+    # gitlab#131 F18: the weak 10k-PBKDF2 pqc_dual_encrypt_verify hash is no
+    # longer trusted on decrypt and must not be written into new metadata (it is
+    # brute-forceable offline). This formerly copied it from hash_config; that
+    # copy is removed so a fresh/re-encrypted file never carries the verifier.
 
     # Add PQC information if present
     if pqc_info:
@@ -5483,11 +5775,14 @@ def create_metadata_v7(
     # Encode salt to base64
     salt_b64 = base64.b64encode(salt).decode("utf-8")
 
-    # Create hashes dictionary
+    # F8 (gitlab#245, CWE-311): the unkeyed sha256(plaintext) was a
+    # plaintext-confirmation oracle readable without the key, and redundant to
+    # the cipher's own authentication, so original_hash is no longer written.
+    # encrypted_hash (over the already-public ciphertext) is kept for non-AEAD
+    # integrity. Decrypt stays tolerant of old files that still carry either.
+    hashes_dict = {}
     if include_encrypted_hash and encrypted_hash is not None:
-        hashes_dict = {"original_hash": original_hash, "encrypted_hash": encrypted_hash}
-    else:
-        hashes_dict = {"original_hash": original_hash}
+        hashes_dict["encrypted_hash"] = encrypted_hash
 
     # Encode recipient data to base64
     recipients_encoded = []
@@ -5626,6 +5921,7 @@ def decrypt_file_asymmetric(
     verbose: bool = False,
     second_password=None,
     hidden_header=None,
+    allow_high_kdf_cost: bool = False,
 ):
     """
     Decrypt a file asymmetrically encrypted with Format V7.
@@ -5776,8 +6072,11 @@ def decrypt_file_asymmetric(
             )
 
         if not quiet:
+            # key_id is signature-covered, but the signer is only as trusted
+            # as the pinned contact — a malicious pinned sender must not be
+            # able to repaint this line's verdict (gitlab#172).
             sender_id = metadata["asymmetric"]["sender"]["key_id"]
-            eprint(f"Signature verified from: {sender_id} ✅")
+            eprint(f"Signature verified from: {sanitize_for_display(sender_id)} ✅")
 
     else:
         if not quiet:
@@ -5848,6 +6147,32 @@ def decrypt_file_asymmetric(
                 elif kdf_name == "pbkdf2":
                     hash_config["pbkdf2_iterations"] = kdf_params.get("rounds", 0)
 
+            # Enforce the KDF memory ceiling before the expensive derivation
+            # (gitlab#128). The default path verifies the sender signature first
+            # (DoS protection above), but the skip_verification / --no-verify
+            # branch bypasses that, so a crafted recipient file's KDF cost would
+            # otherwise run unchecked. This guard is the independent backstop.
+            from .decryption_estimator import (
+                enforce_memory_ceiling,
+                enforce_time_ceiling,
+                estimate_decryption_cost,
+            )
+
+            try:
+                _asym_estimate = estimate_decryption_cost(metadata)
+            except Exception:
+                _asym_estimate = None
+            if _asym_estimate is None:
+                enforce_memory_ceiling(float("inf"), allow_high_kdf_cost=allow_high_kdf_cost)
+            else:
+                enforce_memory_ceiling(
+                    _asym_estimate.peak_memory_kb, allow_high_kdf_cost=allow_high_kdf_cost
+                )
+                # F30 (gitlab#247): also refuse an over-ceiling estimated CPU time.
+                enforce_time_ceiling(
+                    _asym_estimate.total_time_seconds, allow_high_kdf_cost=allow_high_kdf_cost
+                )
+
             if not quiet:
                 eprint("Running KDF chain (this may take a while)...")
 
@@ -5874,19 +6199,37 @@ def decrypt_file_asymmetric(
             aead = AESGCM(derived_key[:32])
             plaintext = aead.decrypt(nonce, ciphertext, None)
 
-            # Step 7: Verify hash
-            original_hash_computed = hashlib.sha256(plaintext).hexdigest()
-            original_hash_expected = metadata["hashes"]["original_hash"]
+            # Step 7: Verify hash (backward-compat only). The AES-256-GCM tag
+            # above already authenticated the plaintext and the metadata is
+            # ML-DSA-signed, so this is redundant. New files no longer carry
+            # original_hash (F8, gitlab#245); verify it only when an older file
+            # still provides it, and never require its presence.
+            original_hash_expected = metadata.get("hashes", {}).get("original_hash")
+            if original_hash_expected:
+                original_hash_computed = hashlib.sha256(plaintext).hexdigest()
+                if original_hash_computed != original_hash_expected:
+                    raise ValueError("Hash verification failed! File may be corrupted.")
+                if not quiet:
+                    eprint("Hash verified ✅")
 
-            if original_hash_computed != original_hash_expected:
-                raise ValueError("Hash verification failed! File may be corrupted.")
-
-            if not quiet:
-                eprint("Hash verified ✅")
-
-            # Write output
-            with open(output_file, "wb") as f:
-                f.write(plaintext)
+            # Through the shared writer: `decrypt -i f -o f` names its own
+            # input as the destination, and a bare "wb" truncated the only
+            # copy of the ciphertext before the plaintext existed. A crash or
+            # ENOSPC in between left a shortened, unreadable file where the
+            # encrypted one had been (gitlab#195; gitlab#148 fixed the same
+            # shape in the envelope header writer).
+            if output_file is None:
+                # Pre-change this reached open(None, "wb") and raised
+                # TypeError. _write_replacement_bytes reads None as "in
+                # place", which would silently overwrite the CIPHERTEXT with
+                # plaintext -- a loud failure turned destructive.
+                raise ValidationError("decrypt_file_asymmetric requires an output path")
+            _write_replacement_bytes(plaintext, input_file, output_file)
+            # The atomic path preserves the ORIGINAL file's mode, and a .enc
+            # that arrived by scp or git checkout is commonly 0644. Without
+            # this, `decrypt --with-key --overwrite` left world-readable
+            # plaintext; decrypt_file has the same clamp.
+            set_secure_permissions(output_file)
 
             if not quiet:
                 eprint(f"File decrypted successfully: {output_file} ✅")
@@ -6003,9 +6346,6 @@ def encrypt_file_asymmetric(
             # Generate salt
             salt = secrets.token_bytes(16)
 
-            # Calculate original hash
-            original_hash = hashlib.sha256(plaintext).hexdigest()
-
             # Derive encryption key using KDF chain
             derived_key, _, _ = generate_key(
                 password=bytes(secure_password),
@@ -6095,8 +6435,10 @@ def encrypt_file_asymmetric(
                         "sig_algorithm": "ML-DSA-65",
                     },
                 },
+                # F8 (gitlab#245, CWE-311): drop the unkeyed sha256(plaintext)
+                # plaintext-confirmation oracle. The metadata is ML-DSA-signed and
+                # the payload is AES-256-GCM authenticated, so it was redundant.
                 "hashes": {
-                    "original_hash": original_hash,
                     "encrypted_hash": encrypted_hash,
                 },
                 "encryption": {
@@ -6221,6 +6563,13 @@ def _derive_pepper_key(password: bytes, format_version: int = None) -> bytearray
     For format_version >= 12, uses HKDF with domain separation.
     For legacy formats, uses bare SHA-256(password).
 
+    .. deprecated::
+        Retained ONLY to read pre-1.4.9 wrapped-pepper blobs. New peppers are
+        sealed by :func:`_wrap_remote_pepper` (v2, Argon2id + per-blob salt).
+        This derivation is unsalted (HKDF salt=None) and not memory-hard, so a
+        server holding the blobs could precompute a fleet-wide table and guess
+        the password cheaply (gitlab#244, F2, CWE-916).
+
     Args:
         password: Raw password bytes
         format_version: File format version. None or < 12 uses legacy SHA-256.
@@ -6242,6 +6591,130 @@ def _derive_pepper_key(password: bytes, format_version: int = None) -> bytearray
         )
     else:
         return bytearray(hashlib.sha256(password).digest())
+
+
+# --- Remote-pepper wrap format v2 (gitlab#244, F2, CWE-916) ---------------------
+#
+# The wrapped pepper is a server-side artifact (stored on the keyserver, opaque
+# base64), independent of the encrypted file's format_version, so its format is
+# self-describing via a magic prefix. v2 fixes the F2 weakness: the wrap key is
+# derived with Argon2id over the password and a FRESH per-blob random salt (so a
+# hostile server cannot precompute one fleet-wide table and the derivation is
+# memory-hard rather than ~2 SHA-256/guess), and the pepper name is bound as
+# AEAD AAD (so blobs cannot be swapped between names on the server undetected).
+#
+# Blob layout:  magic(8) || salt(16) || nonce(12) || AES-GCM(ct || tag)
+#
+# Argon2id parameters are FIXED by the magic version and are NOT stored in the
+# blob: reading cost parameters from an untrusted server blob would let an
+# attacker drive a decrypt-time memory-exhaustion DoS (cf. the KDF-cost ceiling
+# findings). A future parameter change bumps the magic to v3.
+_PEPPER_WRAP_V2_MAGIC = b"OEPPWRP2"
+_PEPPER_WRAP_V2_SALT_LEN = 16
+_PEPPER_WRAP_V2_NONCE_LEN = 12
+_PEPPER_WRAP_V2_TIME_COST = 3
+_PEPPER_WRAP_V2_MEMORY_COST = 65536  # KiB (64 MiB)
+_PEPPER_WRAP_V2_PARALLELISM = 4
+_PEPPER_WRAP_V2_AAD_PREFIX = b"openssl_encrypt-pepper-wrap-v2\x00"
+
+
+def _pepper_wrap_aad(pepper_name: str) -> bytes:
+    """AEAD associated data binding a wrapped pepper to its server-side name."""
+    name_bytes = pepper_name.encode("utf-8") if isinstance(pepper_name, str) else bytes(pepper_name)
+    return _PEPPER_WRAP_V2_AAD_PREFIX + name_bytes
+
+
+def _derive_pepper_wrap_key_v2(password: bytes, salt: bytes) -> bytearray:
+    """Argon2id wrap key for the v2 remote-pepper blob (memory-hard, salted)."""
+    if not ARGON2_AVAILABLE:
+        raise KeyDerivationError(
+            "Argon2 is required to seal or open a remote pepper (v2 wrap); "
+            "install the argon2-cffi dependency."
+        )
+    return bytearray(
+        hash_secret_raw(
+            secret=bytes(password),
+            salt=bytes(salt),
+            time_cost=_PEPPER_WRAP_V2_TIME_COST,
+            memory_cost=_PEPPER_WRAP_V2_MEMORY_COST,
+            parallelism=_PEPPER_WRAP_V2_PARALLELISM,
+            hash_len=32,
+            type=Type.ID,
+        )
+    )
+
+
+def _wrap_remote_pepper(password: bytes, pepper: bytes, pepper_name: str) -> bytes:
+    """Seal a remote pepper into a self-describing v2 blob (gitlab#244).
+
+    Args:
+        password: Raw password bytes.
+        pepper: Plaintext pepper bytes to seal.
+        pepper_name: The name/id under which the blob is stored on the server;
+            bound as AEAD AAD.
+
+    Returns:
+        ``magic || salt || nonce || AES-GCM(ct||tag)`` bytes.
+    """
+    salt = secrets.token_bytes(_PEPPER_WRAP_V2_SALT_LEN)
+    nonce = secrets.token_bytes(_PEPPER_WRAP_V2_NONCE_LEN)
+    wrap_key = _derive_pepper_wrap_key_v2(password, salt)
+    try:
+        ciphertext = AESGCM(bytes(wrap_key)).encrypt(
+            nonce, bytes(pepper), _pepper_wrap_aad(pepper_name)
+        )
+    finally:
+        secure_memzero(wrap_key)
+    return _PEPPER_WRAP_V2_MAGIC + salt + nonce + ciphertext
+
+
+def _unwrap_remote_pepper(
+    password: bytes, blob: bytes, pepper_name: str, format_version: int = None
+) -> bytearray:
+    """Open a wrapped remote pepper, auto-detecting v2 vs. legacy format.
+
+    v2 blobs (``magic`` prefix) are opened with Argon2id over the blob's own
+    salt and the ``pepper_name`` AAD. Legacy blobs (no magic) fall back to the
+    pre-1.4.9 unsalted :func:`_derive_pepper_key` path (read-only compatibility);
+    ``format_version`` selects HKDF (>= 12) vs. SHA-256 (< 12) there.
+
+    Returns:
+        The plaintext pepper in a wipeable ``bytearray`` (caller zeroizes).
+
+    Raises:
+        Exception: if authentication fails (wrong password, tampered blob, or a
+        name/AAD mismatch). The AEAD tag failure is surfaced unchanged so the
+        caller can report "wrong password or corrupted data" without an oracle.
+    """
+    if blob.startswith(_PEPPER_WRAP_V2_MAGIC):
+        off = len(_PEPPER_WRAP_V2_MAGIC)
+        salt = blob[off : off + _PEPPER_WRAP_V2_SALT_LEN]
+        off += _PEPPER_WRAP_V2_SALT_LEN
+        nonce = blob[off : off + _PEPPER_WRAP_V2_NONCE_LEN]
+        off += _PEPPER_WRAP_V2_NONCE_LEN
+        ciphertext_with_tag = blob[off:]
+        if len(salt) != _PEPPER_WRAP_V2_SALT_LEN or len(nonce) != _PEPPER_WRAP_V2_NONCE_LEN:
+            raise KeyDerivationError("Invalid v2 wrapped-pepper blob (truncated header)")
+        wrap_key = _derive_pepper_wrap_key_v2(password, salt)
+        try:
+            return bytearray(
+                AESGCM(bytes(wrap_key)).decrypt(
+                    nonce, ciphertext_with_tag, _pepper_wrap_aad(pepper_name)
+                )
+            )
+        finally:
+            secure_memzero(wrap_key)
+
+    # Legacy (pre-1.4.9) blob: nonce(12) || AES-GCM(ct||tag), no AAD.
+    if len(blob) < 28:  # 12 + 16 minimum
+        raise KeyDerivationError("Invalid encrypted pepper data format")
+    nonce = blob[:12]
+    ciphertext_with_tag = blob[12:]
+    pepper_key = _derive_pepper_key(password, format_version=format_version)
+    try:
+        return bytearray(AESGCM(pepper_key).decrypt(nonce, ciphertext_with_tag, None))
+    finally:
+        secure_memzero(pepper_key)
 
 
 def _derive_pqc_sig_key(
@@ -6821,29 +7294,24 @@ def encrypt_file(
                     except Exception as e:
                         raise KeyDerivationError(f"Failed to retrieve pepper '{pepper_name}': {e}")
 
-                    # Decrypt pepper with password
-                    # Format: nonce (12 bytes) + ciphertext + tag (16 bytes)
-                    if len(encrypted_pepper_data) < 28:  # 12 + 16 minimum
-                        raise KeyDerivationError("Invalid encrypted pepper data format")
-
-                    nonce = encrypted_pepper_data[:12]
-                    ciphertext_with_tag = encrypted_pepper_data[12:]
-
-                    # Derive decryption key from password
-                    pepper_key = _derive_pepper_key(password, format_version=format_version)
-
+                    # Decrypt pepper with password. _unwrap_remote_pepper
+                    # auto-detects the v2 (Argon2id + salt + name-AAD) blob and
+                    # falls back to the legacy unsalted format for old peppers
+                    # (gitlab#244, F2). gitlab#113 [LOW-1]: the pepper is returned
+                    # in a wipeable bytearray, zeroed in the outer finally.
                     try:
-                        aesgcm = AESGCM(pepper_key)
-                        # gitlab#113 [LOW-1]: hold the pepper in a wipeable buffer,
-                        # zeroed in the outer finally. AESGCM.decrypt's immutable
-                        # bytes transient cannot be wiped (M10 accepted residual).
-                        remote_pepper = bytearray(aesgcm.decrypt(nonce, ciphertext_with_tag, None))
+                        remote_pepper = _unwrap_remote_pepper(
+                            password,
+                            encrypted_pepper_data,
+                            pepper_name,
+                            format_version=format_version,
+                        )
+                    except KeyDerivationError:
+                        raise
                     except Exception:
                         raise KeyDerivationError(
                             "Failed to decrypt pepper - wrong password or corrupted data"
                         )
-                    finally:
-                        secure_memzero(pepper_key)
 
                     remote_pepper_name = pepper_name
 
@@ -6863,24 +7331,16 @@ def encrypt_file(
                     # accepted residual), zeroed in the outer finally.
                     remote_pepper = bytearray(secrets.token_bytes(32))
 
-                    # Derive encryption key from password
-                    pepper_key = _derive_pepper_key(password, format_version=format_version)
-
-                    # Encrypt pepper with AES-GCM
-                    try:
-                        nonce = secrets.token_bytes(12)
-                        aesgcm = AESGCM(pepper_key)
-                        ciphertext_with_tag = aesgcm.encrypt(nonce, remote_pepper, None)
-                    finally:
-                        secure_memzero(pepper_key)
-
-                    # Store encrypted pepper
-                    encrypted_pepper_data = nonce + ciphertext_with_tag
-
-                    # Generate file_id for pepper name
+                    # file_id is the server-side pepper name; compute it BEFORE
+                    # wrapping so it can be bound as AEAD AAD (gitlab#244, F2).
                     file_id = hashlib.sha256(
                         os.path.abspath(input_file).encode("utf-8")
                     ).hexdigest()[:32]
+
+                    # Seal with the v2 wrap (Argon2id + fresh per-blob salt +
+                    # name-AAD) so a hostile keyserver cannot precompute a
+                    # fleet-wide table or guess the password cheaply.
+                    encrypted_pepper_data = _wrap_remote_pepper(password, remote_pepper, file_id)
 
                     try:
                         pepper_plugin.store_pepper(
@@ -7044,7 +7504,7 @@ def encrypt_file(
         if is_independent_xor:
             # Independent XOR mode - each algorithm processes original input
             if parallel_kdf:
-                # Parallel execution via multiprocessing
+                # Thread-pool component derivation (gitlab#220/#224)
                 from .parallel_kdf import generate_key_independent_xor_parallel
 
                 key, salt, _ = generate_key_independent_xor_parallel(
@@ -7114,12 +7574,26 @@ def encrypt_file(
     _envelope_wrapped_dek = None
     _envelope_dek_slots = None
     _envelope_dek_slots_mac = None
+    _envelope_dek_slot_count = 0
     # Recovery credentials imply envelope mode (recovery slots wrap the DEK).
     if envelope or recovery_credentials:
-        from .envelope import generate_dek, wrap_dek, wrap_dek_cascade
+        from .envelope import generate_dek, wrap_dek, wrap_dek_cascade, wrapped_dek_aad
 
         _dek = generate_dek()
         try:
+            # Build recovery slots FIRST so the slot count is known before the
+            # DEK is wrapped: the wrap binds encryption.dek_slot_count in its
+            # AEAD associated data (F17/F18, gitlab#234), so an attacker cannot
+            # strip the recovery slots from the header and have the password
+            # decrypt path silently proceed. Bind the slot set with a DEK-keyed
+            # MAC as before.
+            if recovery_credentials:
+                from .recovery_slots import build_recovery_slots, compute_slot_set_mac
+
+                _envelope_dek_slots = build_recovery_slots(bytes(_dek), recovery_credentials)
+                _envelope_dek_slots_mac = compute_slot_set_mac(bytes(_dek), _envelope_dek_slots)
+            _envelope_dek_slot_count = len(_envelope_dek_slots or [])
+            _wrap_aad = wrapped_dek_aad(_envelope_dek_slot_count)
             if cascade and cipher_names:
                 # Cascade bulk: wrap the DEK under the SAME chain so the envelope
                 # is never the weak link (matches the bulk's guarantee). New
@@ -7127,17 +7601,15 @@ def encrypt_file(
                 # xchacha layer, so the DEK wrap must mirror the bulk (format 2)
                 # to keep envelope and bulk in the same nonce format.
                 _envelope_wrapped_dek = wrap_dek_cascade(
-                    bytes(_dek), key, cipher_names, cascade_hash, xchacha_nonce_format=2
+                    bytes(_dek),
+                    key,
+                    cipher_names,
+                    cascade_hash,
+                    xchacha_nonce_format=2,
+                    aad=_wrap_aad,
                 )
             else:
-                _envelope_wrapped_dek = wrap_dek(bytes(_dek), key)
-            # Optional recovery slots: wrap the SAME DEK under independent
-            # recovery credentials, and bind the slot set with a DEK-keyed MAC.
-            if recovery_credentials:
-                from .recovery_slots import build_recovery_slots, compute_slot_set_mac
-
-                _envelope_dek_slots = build_recovery_slots(bytes(_dek), recovery_credentials)
-                _envelope_dek_slots_mac = compute_slot_set_mac(bytes(_dek), _envelope_dek_slots)
+                _envelope_wrapped_dek = wrap_dek(bytes(_dek), key, aad=_wrap_aad)
         finally:
             secure_memzero(key)
             key = bytes(_dek)
@@ -7178,12 +7650,10 @@ def encrypt_file(
         if not quiet:
             eprint(f"Using streaming encryption (chunk size: {_streaming_chunk_size} bytes)")
 
-        # Pass 1: Calculate hash without loading entire file
-        if not quiet:
-            eprint("Calculating content hash (streaming)", end=" ")
-        original_hash = calculate_hash_streaming(input_file, _streaming_chunk_size)
-        if not quiet:
-            eprint("✅")
+        # F8 (gitlab#245, CWE-311): the plaintext-confirmation oracle is no longer
+        # written, so the pass-1 whole-file plaintext hash is dropped entirely
+        # (the streaming trailer HMAC already authenticates the content).
+        original_hash = ""
 
         # Prepare cascade encryptor if needed
         _cascade_enc_streaming = None
@@ -7264,6 +7734,11 @@ def encrypt_file(
             metadata.setdefault("encryption", {})["wrapped_dek"] = base64.b64encode(
                 _envelope_wrapped_dek
             ).decode("ascii")
+            # F17/F18 (gitlab#234): commit the recovery-slot count. It is bound
+            # into the wrapped_dek AEAD (wrapped_dek_aad) and EXCLUDED from the
+            # bulk AAD, so decrypt fails closed if the slots are stripped, while
+            # slot add/remove stays an O(header) header rewrite.
+            metadata.setdefault("encryption", {})["dek_slot_count"] = _envelope_dek_slot_count
         # Recovery slots are additive: present only when recovery credentials
         # were supplied. Absent on every other file (full backward compat).
         if _envelope_dek_slots:
@@ -7367,13 +7842,11 @@ def encrypt_file(
         with safe_open_file(input_file, "rb", secure_mode=secure_mode) as file:
             data = file.read()
 
-    # Calculate hash of original data for integrity verification
-    if not quiet:
-        eprint("Calculating content hash", end=" ")
-
-    original_hash = calculate_hash(data)
-    if not quiet:
-        eprint("✅")
+    # F8 (gitlab#245, CWE-311): no longer compute or store sha256(plaintext) —
+    # it was a plaintext-confirmation oracle in the cleartext header and is
+    # redundant to the cipher's own authentication. The metadata builders ignore
+    # this value; kept empty only to satisfy their signatures.
+    original_hash = ""
 
     # Encrypt the data
     if not quiet:
@@ -8131,6 +8604,11 @@ def encrypt_file(
             metadata.setdefault("encryption", {})["wrapped_dek"] = base64.b64encode(
                 _envelope_wrapped_dek
             ).decode("ascii")
+            # F17/F18 (gitlab#234): commit the recovery-slot count. It is bound
+            # into the wrapped_dek AEAD (wrapped_dek_aad) and EXCLUDED from the
+            # bulk AAD, so decrypt fails closed if the slots are stripped, while
+            # slot add/remove stays an O(header) header rewrite.
+            metadata.setdefault("encryption", {})["dek_slot_count"] = _envelope_dek_slot_count
         # Recovery slots are additive: present only when recovery credentials
         # were supplied. Absent on every other file (full backward compat).
         if _envelope_dek_slots:
@@ -8434,6 +8912,11 @@ def encrypt_file(
             metadata.setdefault("encryption", {})["wrapped_dek"] = base64.b64encode(
                 _envelope_wrapped_dek
             ).decode("ascii")
+            # F17/F18 (gitlab#234): commit the recovery-slot count. It is bound
+            # into the wrapped_dek AEAD (wrapped_dek_aad) and EXCLUDED from the
+            # bulk AAD, so decrypt fails closed if the slots are stripped, while
+            # slot add/remove stays an O(header) header rewrite.
+            metadata.setdefault("encryption", {})["dek_slot_count"] = _envelope_dek_slot_count
         # Recovery slots are additive: present only when recovery credentials
         # were supplied. Absent on every other file (full backward compat).
         if _envelope_dek_slots:
@@ -8531,11 +9014,24 @@ def encrypt_file(
     if not quiet:
         eprint(f"Writing encrypted file: {output_file}", end=" ")
 
-    with safe_open_file(output_file, "wb", secure_mode=secure_mode) as file:
-        file.write(output_bytes)
-        # Add two newlines after encrypted data when writing to stdout/stderr
-        if output_file in ("/dev/stdout", "/dev/stderr"):
-            file.write(b"\n\n")
+    # Identity is tested BEFORE the stream names: with fd 1 redirected to the
+    # input, /dev/stdout resolves back to it, so testing the names first would
+    # route the very case this guards straight past the guard.
+    if output_file not in ("/dev/stdout", "/dev/stderr") and _destroys_input_safely(
+        input_file, output_file
+    ):
+        # `encrypt -i f -o f` truncated the plaintext before the ciphertext
+        # existed, so a crash or ENOSPC in between left a partial ciphertext
+        # where the only copy of the data had been -- verified, not assumed.
+        # A successful run was always fine, so this protects the failure path
+        # without refusing a working command (gitlab#195 review).
+        _write_replacement_bytes(output_bytes, input_file, output_file)
+    else:
+        with safe_open_file(output_file, "wb", secure_mode=secure_mode) as file:
+            file.write(output_bytes)
+            # Add two newlines after encrypted data when writing to stdout/stderr
+            if output_file in ("/dev/stdout", "/dev/stderr"):
+                file.write(b"\n\n")
 
     # Set secure permissions on the output file
     set_secure_permissions(output_file)
@@ -8763,7 +9259,10 @@ def print_file_info(input_file: str, json_output: bool = False, second_password=
     metadata = info["metadata"]
 
     if json_output:
-        print(json.dumps(metadata, indent=2, ensure_ascii=False))
+        # ensure_ascii=True so a crafted legacy-format file's raw C1/DEL/bidi
+        # bytes are \uXXXX-escaped rather than emitted to the terminal (gitlab#236
+        # review). json.dumps only escapes C0 on its own.
+        print(json.dumps(metadata, indent=2, ensure_ascii=True))
         return metadata
 
     # Pretty-print metadata
@@ -8775,12 +9274,15 @@ def print_file_info(input_file: str, json_output: bool = False, second_password=
 
     eprint("File Information:")
     eprint(f"  Format Version:    {format_version}")
-    eprint(f"  Mode:              {mode}")
+    # mode / xor_mode / encrypted_at are enum/pattern-constrained by the schema
+    # only for v3+; a crafted legacy (v1/v2) file skips schema validation, so
+    # sanitize them too (gitlab#236 review -- same terminal-repaint sink).
+    eprint(f"  Mode:              {sanitize_for_display(mode)}")
     if xor_mode:
-        eprint(f"  XOR Mode:          {xor_mode}")
+        eprint(f"  XOR Mode:          {sanitize_for_display(xor_mode)}")
     eprint(f"  AEAD Binding:      {'yes' if aead_binding else 'no'}")
     if encrypted_at:
-        eprint(f"  Encrypted At:      {encrypted_at}")
+        eprint(f"  Encrypted At:      {sanitize_for_display(encrypted_at)}")
 
     # Encryption section
     encryption = metadata.get("encryption", {})
@@ -8790,26 +9292,30 @@ def print_file_info(input_file: str, json_output: bool = False, second_password=
     eprint("  Encryption:")
     if is_cascade:
         cipher_chain = encryption.get("cipher_chain", [])
-        eprint(f"    Cipher Chain:    {' -> '.join(cipher_chain)}")
+        eprint(
+            f"    Cipher Chain:    {sanitize_for_display(' -> '.join(str(c) for c in cipher_chain))}"
+        )
         hkdf_hash = encryption.get("hkdf_hash")
         if hkdf_hash:
-            eprint(f"    HKDF Hash:       {hkdf_hash}")
+            eprint(f"    HKDF Hash:       {sanitize_for_display(hkdf_hash)}")
         layer_info = encryption.get("layer_info", [])
         if layer_info:
             eprint(f"    Layers:          {len(layer_info)}")
             for i, layer in enumerate(layer_info):
                 cipher = layer.get("cipher", "unknown")
                 key_size = layer.get("key_size", 0)
-                eprint(f"      Layer {i+1}:       {cipher} ({key_size * 8} bits)")
+                eprint(
+                    f"      Layer {i+1}:       {sanitize_for_display(cipher)} ({key_size * 8} bits)"
+                )
         total_overhead = encryption.get("total_overhead")
         if total_overhead:
             eprint(f"    Total Overhead:  {total_overhead} bytes")
     else:
         algorithm = encryption.get("algorithm", "unknown")
-        eprint(f"    Algorithm:       {algorithm}")
+        eprint(f"    Algorithm:       {sanitize_for_display(algorithm)}")
         encryption_data = encryption.get("encryption_data")
         if encryption_data:
-            eprint(f"    Encryption Data: {encryption_data}")
+            eprint(f"    Encryption Data: {sanitize_for_display(encryption_data)}")
         key_size = encryption.get("key_size")
         if key_size:
             eprint(f"    Key Size:        {key_size * 8} bits")
@@ -8827,7 +9333,7 @@ def print_file_info(input_file: str, json_output: bool = False, second_password=
     eprint()
     eprint("  Key Derivation:")
     if salt:
-        eprint(f"    Salt:            {salt}")
+        eprint(f"    Salt:            {sanitize_for_display(salt)}")
 
     if hash_config:
         eprint("    Hash Functions:")
@@ -8837,7 +9343,7 @@ def print_file_info(input_file: str, json_output: bool = False, second_password=
             else:
                 rounds = config
             if rounds > 0:
-                display_name = algo.upper().replace("_", "-")
+                display_name = sanitize_for_display(algo.upper().replace("_", "-"))
                 eprint(
                     f"      {display_name}:{' ' * max(1, 13 - len(display_name))}{rounds} rounds"
                 )
@@ -8846,8 +9352,8 @@ def print_file_info(input_file: str, json_output: bool = False, second_password=
         eprint("    KDFs:")
         for kdf_name, kdf_params in kdf_config.items():
             if isinstance(kdf_params, dict) and kdf_params.get("enabled", True):
-                display_name = kdf_name.capitalize()
-                params_str = _format_kdf_params(kdf_name, kdf_params)
+                display_name = sanitize_for_display(kdf_name.capitalize())
+                params_str = sanitize_for_display(_format_kdf_params(kdf_name, kdf_params))
                 eprint(f"      {display_name}:{' ' * max(1, 13 - len(display_name))}{params_str}")
 
     # Integrity section
@@ -8856,10 +9362,10 @@ def print_file_info(input_file: str, json_output: bool = False, second_password=
     if original_hash:
         eprint()
         eprint("  Integrity:")
-        eprint(f"    Original Hash:   {original_hash}")
+        eprint(f"    Original Hash:   {sanitize_for_display(original_hash)}")
         encrypted_hash = hashes.get("encrypted_hash")
         if encrypted_hash:
-            eprint(f"    Encrypted Hash:  {encrypted_hash}")
+            eprint(f"    Encrypted Hash:  {sanitize_for_display(encrypted_hash)}")
 
     # PQC info
     pqc = metadata.get("pqc")
@@ -8868,7 +9374,7 @@ def print_file_info(input_file: str, json_output: bool = False, second_password=
         eprint("  Post-Quantum:")
         pub_key = pqc.get("public_key")
         if pub_key:
-            eprint(f"    Public Key:      {pub_key[:40]}...")
+            eprint(f"    Public Key:      {sanitize_for_display(pub_key[:40])}...")
 
     # HSM info
     hsm_config = encryption.get("hsm_config")
@@ -8877,7 +9383,7 @@ def print_file_info(input_file: str, json_output: bool = False, second_password=
         eprint()
         eprint("  HSM:")
         if hsm_plugin:
-            eprint(f"    Plugin:          {hsm_plugin}")
+            eprint(f"    Plugin:          {sanitize_for_display(hsm_plugin)}")
         if hsm_config:
             slot = hsm_config.get("slot")
             if slot is not None:
@@ -8888,10 +9394,10 @@ def print_file_info(input_file: str, json_output: bool = False, second_password=
     if pepper_plugin:
         eprint()
         eprint("  Pepper:")
-        eprint(f"    Plugin:          {pepper_plugin}")
+        eprint(f"    Plugin:          {sanitize_for_display(pepper_plugin)}")
         pepper_name = encryption.get("pepper_name")
         if pepper_name:
-            eprint(f"    Name:            {pepper_name}")
+            eprint(f"    Name:            {sanitize_for_display(pepper_name)}")
 
     # Reconstructed CLI — show users how they could re-encrypt with the
     # same settings on a fresh file. Salt and per-file random values are
@@ -8902,9 +9408,17 @@ def print_file_info(input_file: str, json_output: bool = False, second_password=
         metadata, hidden=info.get("hidden", False), keyed=info.get("keyed", False)
     )
     for line in _recon.splitlines():
-        eprint(f"    {line}")
+        eprint(f"    {sanitize_for_display(line)}")
 
     return metadata
+
+
+def _shq(value) -> str:
+    """Shell-quote an untrusted metadata value for the reconstructed-CLI block
+    (gitlab#234, scan F35, CWE-78). A crafted file may put shell metacharacters
+    in any field; quoting keeps each value a single shell token when the printed
+    command is pasted."""
+    return shlex.quote(str(value))
 
 
 def _reconstruct_cli_from_metadata(
@@ -9001,7 +9515,7 @@ def _append_hash_rounds_flags(lines: list, hash_config: dict) -> None:
         else:
             rounds = cfg
         if rounds and rounds > 0:
-            lines.append(f"  --{flag_prefix}-rounds {rounds}")
+            lines.append(f"  --{flag_prefix}-rounds {_shq(rounds)}")
 
 
 # Reverse map for argon2 type integers stored in metadata.
@@ -9014,20 +9528,20 @@ def _append_argon2_flags(lines: list, cfg: dict) -> None:
         return
     lines.append("  --enable-argon2")
     if "rounds" in cfg:
-        lines.append(f"  --argon2-rounds {cfg['rounds']}")
+        lines.append(f"  --argon2-rounds {_shq(cfg['rounds'])}")
     if "time_cost" in cfg:
-        lines.append(f"  --argon2-time {cfg['time_cost']}")
+        lines.append(f"  --argon2-time {_shq(cfg['time_cost'])}")
     if "memory_cost" in cfg:
-        lines.append(f"  --argon2-memory {cfg['memory_cost']}")
+        lines.append(f"  --argon2-memory {_shq(cfg['memory_cost'])}")
     if "parallelism" in cfg:
-        lines.append(f"  --argon2-parallelism {cfg['parallelism']}")
+        lines.append(f"  --argon2-parallelism {_shq(cfg['parallelism'])}")
     if "hash_len" in cfg:
-        lines.append(f"  --argon2-hash-len {cfg['hash_len']}")
+        lines.append(f"  --argon2-hash-len {_shq(cfg['hash_len'])}")
     if "type" in cfg:
         t = cfg["type"]
         # Metadata stores type as int (0,1,2). CLI expects "d","i","id".
         type_str = _ARGON2_INT_TO_STR.get(t, t) if isinstance(t, int) else t
-        lines.append(f"  --argon2-type {type_str}")
+        lines.append(f"  --argon2-type {_shq(type_str)}")
 
 
 def _append_scrypt_flags(lines: list, cfg: dict) -> None:
@@ -9036,13 +9550,13 @@ def _append_scrypt_flags(lines: list, cfg: dict) -> None:
         return
     lines.append("  --enable-scrypt")
     if "rounds" in cfg:
-        lines.append(f"  --scrypt-rounds {cfg['rounds']}")
+        lines.append(f"  --scrypt-rounds {_shq(cfg['rounds'])}")
     if "n" in cfg:
-        lines.append(f"  --scrypt-n {cfg['n']}")
+        lines.append(f"  --scrypt-n {_shq(cfg['n'])}")
     if "r" in cfg:
-        lines.append(f"  --scrypt-r {cfg['r']}")
+        lines.append(f"  --scrypt-r {_shq(cfg['r'])}")
     if "p" in cfg:
-        lines.append(f"  --scrypt-p {cfg['p']}")
+        lines.append(f"  --scrypt-p {_shq(cfg['p'])}")
 
 
 def _append_balloon_flags(lines: list, cfg: dict) -> None:
@@ -9051,13 +9565,13 @@ def _append_balloon_flags(lines: list, cfg: dict) -> None:
         return
     lines.append("  --enable-balloon")
     if "rounds" in cfg:
-        lines.append(f"  --balloon-rounds {cfg['rounds']}")
+        lines.append(f"  --balloon-rounds {_shq(cfg['rounds'])}")
     if "time_cost" in cfg:
-        lines.append(f"  --balloon-time-cost {cfg['time_cost']}")
+        lines.append(f"  --balloon-time-cost {_shq(cfg['time_cost'])}")
     if "space_cost" in cfg:
-        lines.append(f"  --balloon-space-cost {cfg['space_cost']}")
+        lines.append(f"  --balloon-space-cost {_shq(cfg['space_cost'])}")
     if "parallelism" in cfg:
-        lines.append(f"  --balloon-parallelism {cfg['parallelism']}")
+        lines.append(f"  --balloon-parallelism {_shq(cfg['parallelism'])}")
 
 
 def _append_hkdf_flags(lines: list, cfg: dict) -> None:
@@ -9066,11 +9580,11 @@ def _append_hkdf_flags(lines: list, cfg: dict) -> None:
         return
     lines.append("  --enable-hkdf")
     if "rounds" in cfg:
-        lines.append(f"  --hkdf-rounds {cfg['rounds']}")
+        lines.append(f"  --hkdf-rounds {_shq(cfg['rounds'])}")
     if "algorithm" in cfg:
-        lines.append(f"  --hkdf-algorithm {cfg['algorithm']}")
+        lines.append(f"  --hkdf-algorithm {_shq(cfg['algorithm'])}")
     if "info" in cfg:
-        lines.append(f"  --hkdf-info {cfg['info']}")
+        lines.append(f"  --hkdf-info {_shq(cfg['info'])}")
 
 
 def _append_pbkdf2_flags(lines: list, cfg: dict) -> None:
@@ -9090,7 +9604,7 @@ def _append_pbkdf2_flags(lines: list, cfg: dict) -> None:
     else:
         rounds = cfg
     if rounds and rounds > 0:
-        lines.append(f"  --pbkdf2-iterations {rounds}")
+        lines.append(f"  --pbkdf2-iterations {_shq(rounds)}")
 
 
 def _append_whirlpool_flags(lines: list, cfg) -> None:
@@ -9107,7 +9621,7 @@ def _append_whirlpool_flags(lines: list, cfg) -> None:
     else:
         rounds = cfg
     if rounds and rounds > 0:
-        lines.append(f"  --whirlpool-rounds {rounds}")
+        lines.append(f"  --whirlpool-rounds {_shq(rounds)}")
 
 
 def _append_randomx_flags(lines: list, cfg: dict) -> None:
@@ -9116,13 +9630,13 @@ def _append_randomx_flags(lines: list, cfg: dict) -> None:
         return
     lines.append("  --enable-randomx")
     if "rounds" in cfg:
-        lines.append(f"  --randomx-rounds {cfg['rounds']}")
+        lines.append(f"  --randomx-rounds {_shq(cfg['rounds'])}")
     if "mode" in cfg:
-        lines.append(f"  --randomx-mode {cfg['mode']}")
+        lines.append(f"  --randomx-mode {_shq(cfg['mode'])}")
     if "height" in cfg:
-        lines.append(f"  --randomx-height {cfg['height']}")
+        lines.append(f"  --randomx-height {_shq(cfg['height'])}")
     if "hash_len" in cfg:
-        lines.append(f"  --randomx-hash-len {cfg['hash_len']}")
+        lines.append(f"  --randomx-hash-len {_shq(cfg['hash_len'])}")
 
 
 def _append_pepper_flags(lines: list, encryption: dict) -> None:
@@ -9140,7 +9654,7 @@ def _append_pepper_flags(lines: list, encryption: dict) -> None:
     lines.append("  --pepper")
     pepper_name = encryption.get("pepper_name")
     if pepper_name:
-        lines.append(f"  --pepper-name {pepper_name}")
+        lines.append(f"  --pepper-name {_shq(pepper_name)}")
 
 
 def _append_hsm_flags(lines: list, encryption: dict) -> None:
@@ -9155,12 +9669,12 @@ def _append_hsm_flags(lines: list, encryption: dict) -> None:
     if not plugin:
         return
     short = plugin[:-4] if plugin.endswith("_hsm") else plugin
-    lines.append(f"  --hsm {short}")
+    lines.append(f"  --hsm {_shq(short)}")
 
     hsm_cfg = encryption.get("hsm_config") or {}
     slot = hsm_cfg.get("slot")
     if slot is not None:
-        lines.append(f"  --hsm-slot {slot}")
+        lines.append(f"  --hsm-slot {_shq(slot)}")
 
 
 def _append_cipher_flags(lines: list, encryption: dict) -> None:
@@ -9170,11 +9684,11 @@ def _append_cipher_flags(lines: list, encryption: dict) -> None:
         chain = encryption.get("cipher_chain") or []
         if chain:
             lines.append("  --cascade")
-            lines.append(f"  --algorithm {','.join(chain)}")
+            lines.append(f"  --algorithm {_shq(','.join(chain))}")
     else:
         algorithm = encryption.get("algorithm")
         if algorithm:
-            lines.append(f"  --algorithm {algorithm}")
+            lines.append(f"  --algorithm {_shq(algorithm)}")
 
 
 def _format_kdf_params(kdf_name: str, params: dict) -> str:
@@ -9301,6 +9815,7 @@ def _rekey_envelope_fast(
     new_password: bytes,
     in_place: bool,
     quiet: bool = False,
+    allow_high_kdf_cost: bool = False,
 ) -> bool:
     """Attempt the O(header) envelope rekey: unwrap the DEK with the old KEK and
     rewrap it under a KEK from ``new_password``, rewriting only the metadata.
@@ -9314,8 +9829,20 @@ def _rekey_envelope_fast(
             or tampering) -- callers must NOT swallow this into a fallback.
         RekeyError: If the envelope_aad invariant does not hold (should never
             happen; indicates a metadata-handling bug -- fail closed).
+
+    Note:
+        ``in_place`` is accepted for backward compatibility and IGNORED; the
+        envelope write is delegated to _write_envelope_header, which derives
+        eligibility itself (gitlab#148).
     """
-    from .envelope import envelope_aad, unwrap_dek, unwrap_dek_cascade, wrap_dek, wrap_dek_cascade
+    from .envelope import (
+        envelope_aad,
+        unwrap_dek,
+        unwrap_dek_cascade,
+        wrap_dek,
+        wrap_dek_cascade,
+        wrapped_dek_aad,
+    )
 
     with open(input_file, "rb") as f:
         raw = f.read()
@@ -9359,6 +9886,29 @@ def _rekey_envelope_fast(
 
     old_salt_len = len(base64.b64decode(derivation_config["salt"]))
 
+    # Enforce the KDF memory ceiling before deriving the KEK (gitlab#128). This
+    # fast-path derives from the file's own (attacker-controllable) KDF config
+    # without ever reaching decrypt_file, so it must guard the ceiling itself or
+    # a crafted envelope would OOM the host on `rekey`.
+    from .decryption_estimator import (
+        enforce_memory_ceiling,
+        enforce_time_ceiling,
+        estimate_decryption_cost,
+    )
+
+    try:
+        _rk_estimate = estimate_decryption_cost(meta)
+    except Exception:
+        _rk_estimate = None
+    if _rk_estimate is None:
+        enforce_memory_ceiling(float("inf"), allow_high_kdf_cost=allow_high_kdf_cost)
+    else:
+        enforce_memory_ceiling(_rk_estimate.peak_memory_kb, allow_high_kdf_cost=allow_high_kdf_cost)
+        # F30 (gitlab#247): also refuse an over-ceiling estimated CPU time.
+        enforce_time_ceiling(
+            _rk_estimate.total_time_seconds, allow_high_kdf_cost=allow_high_kdf_cost
+        )
+
     # Unwrap with the old KEK. A wrong password makes unwrap raise -- let it
     # propagate (do NOT fall back, or we'd silently full-re-encrypt on bad input).
     old_kek = _derive_envelope_kek(
@@ -9369,6 +9919,10 @@ def _rekey_envelope_fast(
     # unwrap and rewrap -- otherwise the rewrapped DEK would no longer match the
     # bulk's construction.
     _xchacha_format = encryption.get("xchacha_nonce_format", 1)
+    # F17/F18 (gitlab#234): the rekey retains the recovery-slot set verbatim, so
+    # the DEK wrap keeps its existing slot-count binding (absent => legacy None)
+    # on both unwrap and rewrap.
+    _wrap_aad = wrapped_dek_aad(encryption.get("dek_slot_count"))
     try:
         if is_cascade:
             dek = unwrap_dek_cascade(
@@ -9377,9 +9931,10 @@ def _rekey_envelope_fast(
                 cipher_chain,
                 hkdf_hash,
                 xchacha_nonce_format=_xchacha_format,
+                aad=_wrap_aad,
             )
         else:
-            dek = unwrap_dek(base64.b64decode(wrapped_b64), old_kek)
+            dek = unwrap_dek(base64.b64decode(wrapped_b64), old_kek, aad=_wrap_aad)
     finally:
         secure_memzero(old_kek)
 
@@ -9401,9 +9956,10 @@ def _rekey_envelope_fast(
                     cipher_chain,
                     hkdf_hash,
                     xchacha_nonce_format=_xchacha_format,
+                    aad=_wrap_aad,
                 )
             else:
-                new_wrapped = wrap_dek(bytes(dek), new_kek)
+                new_wrapped = wrap_dek(bytes(dek), new_kek, aad=_wrap_aad)
         finally:
             secure_memzero(new_kek)
         new_meta["encryption"]["wrapped_dek"] = base64.b64encode(new_wrapped).decode("ascii")
@@ -9415,25 +9971,12 @@ def _rekey_envelope_fast(
     if envelope_aad(new_meta) != envelope_aad(meta):
         raise RekeyError("Envelope rekey would change the bound metadata subset")
 
-    new_payload = base64.b64encode(json.dumps(new_meta).encode("utf-8")) + b":" + payload
-
-    input_dir = os.path.dirname(os.path.abspath(input_file))
-    if in_place:
-        original_mode = stat.S_IMODE(os.stat(input_file).st_mode)
-        fd, tmp_path = tempfile.mkstemp(prefix=".rekey_env_", dir=input_dir)
-        try:
-            with os.fdopen(fd, "wb") as out:
-                out.write(new_payload)
-            os.replace(tmp_path, input_file)
-            os.chmod(input_file, original_mode)
-        except BaseException:
-            if os.path.exists(tmp_path):
-                os.remove(tmp_path)
-            raise
-    else:
-        with open(output_file, "wb") as out:
-            out.write(new_payload)
-        set_secure_permissions(output_file)
+    # Delegated so there is ONE definition of "write an envelope without
+    # destroying the file it replaces". This block used to be a second copy
+    # of the same logic, which meant the gitlab#148 guarantees landed on the
+    # recovery-slot path only and silently did not apply to rekey. The bytes
+    # are identical: _write_envelope_header builds b64(json(meta)):payload.
+    _write_envelope_header(new_meta, payload, input_file, output_file)
 
     return True
 
@@ -9464,6 +10007,54 @@ def list_recovery_slots(input_file: str) -> list:
     return out
 
 
+def _enforce_dek_slot_presence(enc: dict, dek: bytes) -> None:
+    """Fail closed unless the recovery slots present match their commitment.
+
+    F17/F18 (gitlab#234, CWE-354/347). Two cases:
+
+    * New files carry an authenticated ``encryption.dek_slot_count`` (bound into
+      the wrapped_dek AEAD, so the count was already authenticated by the unwrap
+      on the password path). Require the present ``dek_slots`` set to match the
+      count exactly, and -- when the count is non-zero -- require the DEK-keyed
+      ``dek_slots_mac`` to verify. This is what detects wholesale stripping: an
+      attacker who deletes the slots but leaves the count trips the length
+      check, and one who also zeroes/removes the count breaks the wrapped_dek
+      unwrap upstream (no legacy fallback).
+
+    * Legacy files predate the binding (no ``dek_slot_count``). Keep the original
+      behavior: authenticate the slot set only when slots are present.
+
+    Args:
+        enc: The file's ``encryption`` metadata dict.
+        dek: The recovered DEK (used to key the slot-set MAC).
+
+    Raises:
+        AuthenticationError: If the slot set does not authenticate.
+    """
+    from .recovery_slots import verify_slot_set_mac
+
+    count = enc.get("dek_slot_count")
+    slots = enc.get("dek_slots") or []
+    mac_b64 = enc.get("dek_slots_mac")
+
+    def _mac_ok() -> bool:
+        return bool(mac_b64) and verify_slot_set_mac(bytes(dek), slots, base64.b64decode(mac_b64))
+
+    if count is not None:
+        if not isinstance(count, int) or isinstance(count, bool) or count < 0:
+            raise AuthenticationError("Recovery-slot count is malformed")
+        if len(slots) != count:
+            raise AuthenticationError(
+                "Recovery-slot set does not match the authenticated count " "(possible tampering)"
+            )
+        if count > 0 and not _mac_ok():
+            raise AuthenticationError("Recovery slot set failed authentication")
+    else:
+        # Legacy file: only present slots are checked.
+        if slots and not _mac_ok():
+            raise AuthenticationError("Recovery slot set failed authentication")
+
+
 def _recover_envelope_dek(
     meta: dict,
     *,
@@ -9471,23 +10062,37 @@ def _recover_envelope_dek(
     recovery_code=None,
     recovery_passphrase=None,
     recovery_private_key=None,
+    allow_high_kdf_cost=False,
 ) -> bytearray:
     """Recover the envelope DEK via the password or a recovery credential, then
     authenticate the existing slot set with it (fail-closed). Returns a
     bytearray (caller must secure_memzero it)."""
-    from .envelope import unwrap_dek, unwrap_dek_cascade
+    from .envelope import unwrap_dek, unwrap_dek_cascade, wrapped_dek_aad
     from .recovery_slots import (
+        MAX_DEK_SLOTS,
         unlock_passphrase_slot,
         unlock_pqc_slot,
         unlock_recovery_code_slot,
-        verify_slot_set_mac,
     )
 
     enc = meta.get("encryption", {})
     wrapped_b64 = enc.get("wrapped_dek")
+    # F17/F18: bind the wrapped_dek unwrap to the recovery-slot count (absent =>
+    # legacy, aad=None). No fallback: a bound wrap never unwraps under None.
+    _wrap_aad = wrapped_dek_aad(enc.get("dek_slot_count"))
     if not wrapped_b64:
         raise ValidationError("File is not an envelope file (no wrapped_dek)")
     slots = enc.get("dek_slots") or []
+    # F16 (gitlab#233, CWE-405): dek_slots is attacker-controlled plaintext and
+    # the recovery-credential branch below runs a full Argon2id per passphrase
+    # slot before the slot-set MAC. add_recovery_slots/remove_recovery_slot pass
+    # a caller's recovery_passphrase straight here, so cap the slot count cheaply
+    # (matching the decrypt_file recovery path) before any KDF work.
+    if len(slots) > MAX_DEK_SLOTS:
+        raise ValidationError(
+            f"Refusing recovery: {len(slots)} recovery slots exceeds the "
+            f"maximum of {MAX_DEK_SLOTS} (possible tampering)"
+        )
     dek = None
 
     if password is not None:
@@ -9495,6 +10100,30 @@ def _recover_envelope_dek(
             password = password.encode("utf-8")
         is_cascade = bool(enc.get("cascade", False))
         algorithm = "cascade" if is_cascade else enc.get("algorithm")
+        # Enforce the KDF memory ceiling before deriving from the file's own
+        # (attacker-controllable) config (gitlab#128). This runs before the
+        # slot-set MAC is checked below, so a crafted envelope handed to
+        # add-recovery/remove-recovery must be refused here or it OOMs the host.
+        from .decryption_estimator import (
+            enforce_memory_ceiling,
+            enforce_time_ceiling,
+            estimate_decryption_cost,
+        )
+
+        try:
+            _rec_estimate = estimate_decryption_cost(meta)
+        except Exception:
+            _rec_estimate = None
+        if _rec_estimate is None:
+            enforce_memory_ceiling(float("inf"), allow_high_kdf_cost=allow_high_kdf_cost)
+        else:
+            enforce_memory_ceiling(
+                _rec_estimate.peak_memory_kb, allow_high_kdf_cost=allow_high_kdf_cost
+            )
+            # F30 (gitlab#247): also refuse an over-ceiling estimated CPU time.
+            enforce_time_ceiling(
+                _rec_estimate.total_time_seconds, allow_high_kdf_cost=allow_high_kdf_cost
+            )
         kek = _derive_envelope_kek(
             password,
             meta.get("derivation_config"),
@@ -9510,9 +10139,10 @@ def _recover_envelope_dek(
                     enc.get("cipher_chain"),
                     enc.get("hkdf_hash", "sha256"),
                     xchacha_nonce_format=enc.get("xchacha_nonce_format", 1),
+                    aad=_wrap_aad,
                 )
             else:
-                dek = unwrap_dek(base64.b64decode(wrapped_b64), kek)
+                dek = unwrap_dek(base64.b64decode(wrapped_b64), kek, aad=_wrap_aad)
         finally:
             secure_memzero(kek)
     else:
@@ -9535,34 +10165,553 @@ def _recover_envelope_dek(
         if dek is None:
             raise DecryptionError("No recovery slot matched the supplied credential")
 
-    if slots:
-        _mac_b64 = enc.get("dek_slots_mac")
-        if not _mac_b64 or not verify_slot_set_mac(bytes(dek), slots, base64.b64decode(_mac_b64)):
-            secure_memzero(dek)
-            raise AuthenticationError("Recovery slot set failed authentication")
+    try:
+        _enforce_dek_slot_presence(enc, dek)
+    except Exception:
+        secure_memzero(dek)
+        raise
     return dek
 
 
-def _write_envelope_header(meta: dict, payload: bytes, input_file, output_file, in_place):
-    """Write metadata||payload, preserving the bulk payload verbatim."""
-    new_payload = base64.b64encode(json.dumps(meta).encode("utf-8")) + b":" + payload
-    if in_place:
-        original_mode = stat.S_IMODE(os.stat(input_file).st_mode)
-        input_dir = os.path.dirname(os.path.abspath(input_file))
-        fd, tmp_path = tempfile.mkstemp(prefix=".slotmgmt_", dir=input_dir)
+def _fsync_directory(path) -> None:
+    """Commit a directory entry so a rename or create survives a power loss.
+
+    Best effort in full: the operation that needed this has already happened,
+    so a failure to open, fsync or close the directory must not be reported
+    as a failed write -- the caller would report failure for a change that is
+    durably on disk.
+    """
+    try:
+        dir_fd = os.open(path, os.O_RDONLY)
+    except OSError:  # pragma: no cover - platform dependent
+        return
+    try:
+        os.fsync(dir_fd)
+    except OSError:  # pragma: no cover - platform dependent
+        pass
+    finally:
         try:
-            with os.fdopen(fd, "wb") as out:
-                out.write(new_payload)
-            os.replace(tmp_path, input_file)
-            os.chmod(input_file, original_mode)
+            os.close(dir_fd)
+        except OSError:  # pragma: no cover - platform dependent
+            pass
+
+
+def _restore_from_backup(backup_path, target_path, target_dir) -> None:
+    """Copy a backup back over the file it was taken from, durably.
+
+    shutil.copyfile would leave the restored bytes in the page cache while
+    the backup -- at that moment the only other copy -- is unlinked right
+    afterwards. A power loss in that window reproduces exactly the data loss
+    the backup exists to prevent, so the restore is fsynced before anything
+    is removed.
+    """
+    # O_WRONLY|O_TRUNC without O_CREAT: if the target has vanished under us
+    # (a concurrent unlink, a removed symlink target) this fails loudly into
+    # the keep-the-backup path instead of silently recreating the ciphertext
+    # at the umask -- open(..., "wb") would have made it 0644 on most
+    # systems, since only the success path calls set_secure_permissions.
+    fd = os.open(target_path, os.O_WRONLY | os.O_TRUNC)
+    try:
+        dst = os.fdopen(fd, "wb")
+    except BaseException:
+        try:
+            os.close(fd)
+        except OSError:  # pragma: no cover - platform dependent
+            pass
+        raise
+    with dst, open(backup_path, "rb") as src:
+        shutil.copyfileobj(src, dst)
+        dst.flush()
+        os.fsync(dst.fileno())
+    _fsync_directory(target_dir)
+
+
+def _remove_or_warn(path) -> None:
+    """Delete a backup copy, saying so on stderr if it cannot be removed.
+
+    The leftover is a byte-for-byte copy of the file BEFORE the change, so
+    for remove-recovery it is still openable by the credential the user has
+    just revoked, and for rekey by the old password. It is dot-prefixed and
+    therefore invisible to a plain ls, so staying silent would hide it
+    completely.
+    """
+    try:
+        os.remove(path)
+    except FileNotFoundError:
+        pass
+    except OSError as exc:  # pragma: no cover - needs an unremovable path
+        eprint(
+            f"WARNING: could not remove the temporary backup "
+            f"{sanitize_for_display(path)}: {sanitize_for_display(str(exc))}"
+        )
+        eprint(
+            "  It is a copy of the file as it was BEFORE this change -- "
+            "delete it yourself once you no longer need it."
+        )
+
+
+def _is_regular_file(path) -> bool:
+    """Whether path resolves to a regular file (symlinks followed)."""
+    try:
+        return stat.S_ISREG(os.stat(path).st_mode)
+    except (OSError, TypeError, ValueError):
+        return False
+
+
+def _remove_quietly(path) -> None:
+    """Delete a path, ignoring its absence and any failure to remove it.
+
+    Used on cleanup paths where a raising remove would replace the real
+    exception with its own. os.path.exists() is deliberately not used as a
+    guard: it follows symlinks, so a dangling one reports False and is left
+    behind.
+    """
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+
+
+def _destroys_input_safely(input_file, output_file) -> bool:
+    """_write_destroys_input, but never raising.
+
+    That predicate deliberately lets an error on the INPUT propagate, which
+    is right where it is called before any work is done. At the encrypt and
+    decrypt write sites the work is already finished, so an input that
+    vanished mid-operation must not discard a completed result -- if it is
+    gone, there is nothing left to protect.
+    """
+    try:
+        return _write_destroys_input(input_file, output_file)
+    except (OSError, TypeError, ValueError):
+        return False
+
+
+def _write_destroys_input(input_file, output_file) -> bool:
+    """Whether writing output_file overwrites the bytes of input_file.
+
+    This is the IDENTITY question, and it is deliberately NOT the same as
+    _rewrites_same_file's "can this be replaced atomically". Folding the two
+    together made the recoverable truncating path in _write_envelope_header
+    unreachable for exactly the cases it was written for: a hardlinked or
+    symlinked envelope is excluded from the atomic path, but it is still
+    the user's only ciphertext, and that is the whole of gitlab#148.
+
+    Symlinks ARE followed here -- writing through a link destroys the file
+    it points at. Errors on OUTPUT mean "not the same file"; an error on
+    INPUT propagates, as in _rewrites_same_file.
+
+    Args:
+        input_file: Path the payload was read from.
+        output_file: Path about to be written, or None for "in place".
+
+    Returns:
+        True when the write lands on the same file the payload came from.
+    """
+    if output_file is None:
+        return True
+    input_stat = os.stat(input_file)  # deliberately NOT swallowed
+    try:
+        output_stat = os.stat(output_file)
+    except (OSError, TypeError, ValueError):
+        return False
+    return os.path.samestat(input_stat, output_stat)
+
+
+def _rewrites_same_file(input_file, output_file) -> bool:
+    """Whether a rewrite of output_file can be done atomically in place.
+
+    Identity is by samestat, not by comparing path strings: a
+    case-insensitive filesystem makes two spellings of one file compare
+    unequal, which would send a genuine same-file rewrite down the
+    destructive truncating path.
+
+    Three cases are deliberately excluded, all for the same reason -- the
+    atomic path installs a NEW inode via os.replace, so anything that
+    depends on the existing inode surviving would silently break:
+
+    * A symlink on either side. os.replace does not follow symlinks, so the
+      link would be replaced by a regular file and the real file would keep
+      its old header.
+    * A file with more than one hard link. No rename can update two names
+      at once: the other name would keep the OLD envelope. For
+      remove-recovery that is a silent revocation failure -- the tool
+      reports success while the slot it claims to have removed still opens
+      the file under its other name. Writing through the shared inode is
+      the only way to keep every name consistent, so the truncating path
+      stays in charge.
+    * Anything that is not a regular file. samestat is happily true for a
+      FIFO or a device node named as both input and output, and os.replace
+      would destroy it, leaving a regular file where the truncating path
+      would have written through the pipe.
+
+    Errors on OUTPUT are normal (it need not exist yet) and mean "not a
+    rewrite". An error on INPUT is not normal -- the caller has just read
+    it -- and is allowed to propagate rather than silently selecting the
+    destructive path.
+    """
+    if output_file is None:
+        return False
+    try:
+        output_stat = os.stat(output_file, follow_symlinks=False)
+    except (OSError, TypeError, ValueError):
+        # Output not created yet, or an unresolvable path: not a rewrite.
+        return False
+    if os.path.islink(input_file) or stat.S_ISLNK(output_stat.st_mode):
+        return False
+
+    input_stat = os.stat(input_file)  # deliberately NOT swallowed
+    if not stat.S_ISREG(input_stat.st_mode) or not stat.S_ISREG(output_stat.st_mode):
+        return False
+    if input_stat.st_nlink > 1 or output_stat.st_nlink > 1:
+        return False
+    return os.path.samestat(input_stat, output_stat)
+
+
+def _write_replacement_bytes(new_payload: bytes, input_file, output_file) -> None:
+    """Replace output_file's contents with new_payload without destroying it.
+
+    ONE implementation of "write over a file safely", used by every path that
+    rewrites a file it may also be reading from. It existed only inside the
+    envelope header writer (gitlab#148), so `rekey -i f -o f` and
+    `decrypt -i f -o f` kept the truncating write it was created to remove
+    (gitlab#195).
+
+    Three paths, chosen from the filesystem and never from a caller's flag:
+
+    * atomic -- mkstemp beside the target, write, fsync, fchmod to the
+      original mode, os.replace, fsync the directory.
+    * write-through -- for a symlink or a multiply-linked inode, where
+      os.replace would install a new inode and break the other name. The
+      original is copied to an fsynced backup first and restored if the
+      write fails.
+    * plain -- a genuinely distinct destination, where nothing of the
+      caller's is at risk.
+
+    Args:
+        new_payload: The bytes to leave in output_file.
+        input_file: The file the payload was derived from.
+        output_file: Where to write; None means "in place", i.e. input_file.
+
+    Raises:
+        ValidationError: A same-file rewrite of a non-regular file, which
+            cannot be backed up and so cannot be made recoverable.
+    """
+    destroys_input = _write_destroys_input(input_file, output_file)
+    if output_file is None:
+        output_file = input_file
+    # Two separate questions, and conflating them is what left the excluded
+    # cases unprotected once already: "does this write destroy the input"
+    # decides whether a backup is needed at all, "can it be replaced
+    # atomically" decides which mechanism gets used.
+    in_place = destroys_input and _rewrites_same_file(input_file, output_file)
+
+    if in_place:
+        # Everything below names output_file rather than input_file. They are
+        # the same file here, but samestat can be a false positive where a
+        # filesystem reports st_ino as 0, and then renaming onto input_file
+        # would silently write to the wrong one of the two and never create
+        # the file the caller asked for.
+        original_mode = stat.S_IMODE(os.stat(output_file).st_mode)
+        target_dir = os.path.dirname(os.path.abspath(output_file))
+        fd, tmp_path = tempfile.mkstemp(prefix=".slotmgmt_", dir=target_dir)
+        try:
+            handle = os.fdopen(fd, "wb")
         except BaseException:
-            if os.path.exists(tmp_path):
-                os.remove(tmp_path)
+            # fdopen never took ownership of the descriptor, so the outer
+            # handler below would leak it for the process lifetime. Both
+            # cleanups are themselves guarded: a raising close or remove
+            # would otherwise replace the real exception with its own and
+            # skip the rest of the cleanup.
+            try:
+                os.close(fd)
+            except OSError:  # pragma: no cover - fdopen may have closed it
+                pass
+            _remove_quietly(tmp_path)
             raise
+        try:
+            with handle as out:
+                out.write(new_payload)
+                # Durability, not just atomicity: closing only flushes to the
+                # page cache, so without this a power loss between the write
+                # and the rename can leave the new name pointing at empty or
+                # partial content — destroying the envelope, which is the very
+                # outcome the atomic path exists to prevent.
+                out.flush()
+                os.fsync(out.fileno())
+                # fchmod on the descriptor rather than chmod on the path after
+                # the rename: no window in which the path can be swapped for a
+                # symlink that redirects the mode change. fchmod is Unix-only,
+                # so Windows falls back to the path form (the same split
+                # file_permissions.create_secure_file makes).
+                if hasattr(os, "fchmod"):
+                    os.fchmod(out.fileno(), original_mode)
+                else:  # pragma: no cover - Windows
+                    os.chmod(tmp_path, original_mode)
+            os.replace(tmp_path, output_file)
+            # Commit the directory entry too, so the rename itself survives.
+            _fsync_directory(target_dir)
+        except BaseException:
+            _remove_quietly(tmp_path)
+            raise
+    elif destroys_input and _is_regular_file(output_file):
+        # The atomic path was ruled out -- a symlink, a multiply-linked inode
+        # -- but this write still lands on the user's only ciphertext, so
+        # "not eligible for os.replace" must not mean "unprotected". These
+        # cases have to be written THROUGH the existing inode to keep every
+        # name consistent, which is the truncating open. It is made
+        # recoverable instead: copy the original to an fsynced backup beside
+        # it, restore on failure, remove it on success. A crash leaves that
+        # backup on disk for manual recovery.
+        #
+        # Cost: this reads and writes the whole file, so an operation
+        # documented as O(header) becomes O(file) here and needs free space
+        # equal to the file. Only a symlinked or multiply-linked envelope
+        # reaches it.
+        # realpath, not abspath: for a symlinked target this puts the backup
+        # beside the real ciphertext rather than beside the link, which may
+        # sit in a world-writable directory, on another filesystem, or
+        # somewhere the user never chose to store their data.
+        target_dir = os.path.dirname(os.path.realpath(output_file))
+        backup_fd, backup_path = tempfile.mkstemp(prefix=".slotbak_", dir=target_dir)
+        try:
+            backup = os.fdopen(backup_fd, "wb")
+        except BaseException:
+            # Reachable ONLY while fdopen has not taken ownership of the
+            # descriptor. Closing it after the `with` below has run would
+            # close a number the OS may already have reissued to another
+            # thread, which no exception handler could detect.
+            try:
+                os.close(backup_fd)
+            except OSError:  # pragma: no cover - platform dependent
+                pass
+            _remove_quietly(backup_path)
+            raise
+        try:
+            # Read output_file, not input_file: output_file is by definition
+            # the one about to be truncated. They are the same file here, but
+            # samestat can be a false positive where a filesystem reports
+            # st_ino as 0, and backing up A while truncating B would restore
+            # A's bytes over B -- destroying a file that was never at risk.
+            with backup, open(output_file, "rb") as src:
+                shutil.copyfileobj(src, backup)
+                backup.flush()
+                os.fsync(backup.fileno())
+            # Commit the backup's NAME too. Fsyncing its data is not enough:
+            # without this, "a crash leaves the backup on disk" is not a
+            # guarantee POSIX makes.
+            _fsync_directory(target_dir)
+        except BaseException:
+            _remove_quietly(backup_path)
+            raise
+
+        try:
+            out = open(output_file, "wb")
+        except BaseException:
+            # The open itself failed -- EACCES on a file we can read but not
+            # write, EPERM on an immutable file, EROFS. NOTHING was truncated,
+            # so the handler below must not run: it would report the file as
+            # destroyed and orphan a full copy of it over a routine
+            # permission error.
+            _remove_or_warn(backup_path)
+            raise
+        try:
+            with out:
+                out.write(new_payload)
+                # Durability for this path too: without it a power loss after
+                # a successful return can still leave partial content.
+                out.flush()
+                os.fsync(out.fileno())
+        except BaseException as write_error:
+            # BaseException on the restore as well, not OSError: the handler
+            # this sits in catches a KeyboardInterrupt mid-write on purpose,
+            # and a SECOND Ctrl-C during the restore is the realistic case on
+            # a large file. Catching only OSError there would leave the file
+            # truncated, the backup orphaned and nothing said.
+            try:
+                _restore_from_backup(backup_path, output_file, target_dir)
+            except BaseException as restore_error:
+                # The original now exists ONLY in the backup, which is
+                # dot-prefixed and so invisible to a plain ls. The path has to
+                # reach the user HERE: RekeyError is a SecureError, which
+                # REPLACES the message it is given with a generic one unless
+                # DEBUG=1 is set in the environment, so putting the path in
+                # the exception would silently discard it in production.
+                eprint(
+                    "CRITICAL: rewriting the file failed and the original could " "not be restored."
+                )
+                eprint(
+                    f"  The only remaining copy is {sanitize_for_display(backup_path)} "
+                    "-- move it back into place manually."
+                )
+                eprint(f"  The write failed with: {sanitize_for_display(str(write_error))}")
+                eprint(f"  The restore failed with: {sanitize_for_display(str(restore_error))}")
+                raise ValidationError(
+                    "file rewrite failed and the original could not be restored"
+                ) from restore_error
+            _remove_or_warn(backup_path)
+            raise
+        _remove_or_warn(backup_path)
+        set_secure_permissions(output_file)
+    elif destroys_input:
+        # Same file, but not a regular one: a FIFO or a device node named as
+        # both input and output. No backup can be taken -- reading a FIFO
+        # back would block, and a device node cannot be restored by copying
+        # bytes into it -- so this write cannot be made recoverable. Refuse
+        # rather than write, which answers a residual left open in the first
+        # round. Nothing legitimate reaches here: rekey_file already refuses
+        # a non-regular input via os.path.isfile, and the recovery-slot
+        # commands would have had to read a complete envelope out of the
+        # special file first.
+        # eprint first, for the same reason the restore handler does:
+        # ValidationError is a SecureError, which replaces the message it is
+        # given with a generic "Security validation check failed" unless
+        # DEBUG=1 is set, so the reason would otherwise reach test runs and
+        # nobody else.
+        eprint(
+            f"Refusing to rewrite {sanitize_for_display(output_file)} in place: it is "
+            "not a regular file, so no backup of it can be taken and the "
+            "rewrite could not be undone if it failed."
+        )
+        raise ValidationError(
+            "Refusing to rewrite a non-regular file in place: no recoverable "
+            "backup of it can be taken"
+        )
     else:
+        # A genuinely distinct destination -- nothing of the user's is at
+        # risk, so this is the ordinary write.
         with open(output_file, "wb") as out:
             out.write(new_payload)
         set_secure_permissions(output_file)
+
+
+def _write_envelope_header(meta: dict, payload: bytes, input_file, output_file):
+    """Write metadata||payload, preserving the bulk payload verbatim."""
+    new_payload = base64.b64encode(json.dumps(meta).encode("utf-8")) + b":" + payload
+    _write_replacement_bytes(new_payload, input_file, output_file)
+
+
+def _password_unwrap_and_rewrapper(meta: dict, password, allow_high_kdf_cost: bool = False):
+    """Slot-management primitive (F17/F18, gitlab#234).
+
+    Recovery-slot add/remove must re-bind the wrapped DEK to the NEW slot count,
+    which requires the password KEK (a recovery credential recovers only the DEK,
+    not the KEK). This helper requires the primary password, derives the KEK
+    (guarding the KDF cost ceiling against a crafted header), unwraps the DEK
+    binding the CURRENT slot count, and returns a rewrap closure that re-binds
+    the DEK to a new count.
+
+    Returns:
+        (dek, rewrap, dispose):
+          * dek -- recovered DEK (bytearray; caller MUST secure_memzero it),
+          * rewrap(new_count) -> base64 str of the DEK re-wrapped binding new_count,
+          * dispose() -- zeroes the retained KEK (call in the caller's finally).
+
+    Raises:
+        ValidationError: If the password is missing or the file is not an envelope.
+        DecryptionError: If the password is wrong (unwrap fails).
+    """
+    from .envelope import (
+        unwrap_dek,
+        unwrap_dek_cascade,
+        wrap_dek,
+        wrap_dek_cascade,
+        wrapped_dek_aad,
+    )
+
+    if password is None:
+        raise ValidationError(
+            "Managing recovery slots requires the primary password: a recovery "
+            "credential alone can no longer add or remove slots (the wrapped key "
+            "must be re-bound to the new slot count)."
+        )
+    if isinstance(password, str):
+        password = password.encode("utf-8")
+
+    enc = meta.get("encryption", {})
+    wrapped_b64 = enc.get("wrapped_dek")
+    if not wrapped_b64:
+        raise ValidationError("File is not an envelope file (no wrapped_dek)")
+
+    is_cascade = bool(enc.get("cascade", False))
+    algorithm = "cascade" if is_cascade else enc.get("algorithm")
+    cipher_chain = enc.get("cipher_chain")
+    hkdf_hash = enc.get("hkdf_hash", "sha256")
+    xchacha_format = enc.get("xchacha_nonce_format", 1)
+
+    # Guard the KDF cost ceiling before deriving from the file's own
+    # (attacker-controllable) config (gitlab#128/#247), exactly as the recover
+    # and rekey paths do -- add/remove never reaches decrypt_file.
+    from .decryption_estimator import (
+        enforce_memory_ceiling,
+        enforce_time_ceiling,
+        estimate_decryption_cost,
+    )
+
+    try:
+        _est = estimate_decryption_cost(meta)
+    except Exception:
+        _est = None
+    if _est is None:
+        enforce_memory_ceiling(float("inf"), allow_high_kdf_cost=allow_high_kdf_cost)
+    else:
+        enforce_memory_ceiling(_est.peak_memory_kb, allow_high_kdf_cost=allow_high_kdf_cost)
+        enforce_time_ceiling(_est.total_time_seconds, allow_high_kdf_cost=allow_high_kdf_cost)
+
+    kek = _derive_envelope_kek(
+        password,
+        meta.get("derivation_config"),
+        algorithm,
+        meta.get("format_version"),
+        meta.get("xor_mode", "sequential"),
+    )
+    old_aad = wrapped_dek_aad(enc.get("dek_slot_count"))
+    try:
+        if is_cascade:
+            dek = unwrap_dek_cascade(
+                base64.b64decode(wrapped_b64),
+                kek,
+                cipher_chain,
+                hkdf_hash,
+                xchacha_nonce_format=xchacha_format,
+                aad=old_aad,
+            )
+        else:
+            dek = unwrap_dek(base64.b64decode(wrapped_b64), kek, aad=old_aad)
+    except Exception:
+        secure_memzero(kek)
+        raise
+
+    # Authenticate the EXISTING slot set before a slot change rewrites and
+    # re-MACs it (review F1): otherwise add/remove would launder a tampered or
+    # injected incoming slot set into a freshly authenticated, count-bound
+    # header instead of refusing it. Fail closed.
+    try:
+        _enforce_dek_slot_presence(enc, dek)
+    except Exception:
+        secure_memzero(dek)
+        secure_memzero(kek)
+        raise
+
+    def rewrap(new_count: int) -> str:
+        new_aad = wrapped_dek_aad(new_count)
+        if is_cascade:
+            wb = wrap_dek_cascade(
+                bytes(dek),
+                kek,
+                cipher_chain,
+                hkdf_hash,
+                xchacha_nonce_format=xchacha_format,
+                aad=new_aad,
+            )
+        else:
+            wb = wrap_dek(bytes(dek), kek, aad=new_aad)
+        return base64.b64encode(wb).decode("ascii")
+
+    def dispose() -> None:
+        secure_memzero(kek)
+
+    return dek, rewrap, dispose
 
 
 def add_recovery_slots(
@@ -9575,21 +10724,27 @@ def add_recovery_slots(
     recovery_code=None,
     recovery_passphrase=None,
     recovery_private_key=None,
+    allow_high_kdf_cost=False,
 ) -> bool:
     """Add recovery slots to an existing envelope file without re-encrypting the
-    bulk. The DEK is recovered via the password or a recovery credential."""
+    bulk. The DEK is recovered via the password or a recovery credential.
+
+    Note:
+        ``in_place`` is accepted for backward compatibility and IGNORED. The
+        writer derives whether the write lands on its own input immediately
+        before writing, because a caller-supplied flag could both truncate a
+        file in place when omitted and skip the safety exclusions when
+        asserted (gitlab#148).
+    """
     from .envelope import envelope_aad
     from .recovery_slots import build_recovery_slots, compute_slot_set_mac
 
     meta, payload = _read_envelope_file(input_file)
     aad_before = envelope_aad(meta)
-    dek = _recover_envelope_dek(
-        meta,
-        password=password,
-        recovery_code=recovery_code,
-        recovery_passphrase=recovery_passphrase,
-        recovery_private_key=recovery_private_key,
-    )
+    # F17/F18 (gitlab#234): requires the primary password so the DEK can be
+    # re-wrapped binding the new slot count. recovery_* params are accepted for
+    # signature compatibility but no longer authorize a slot change on their own.
+    dek, rewrap, dispose = _password_unwrap_and_rewrapper(meta, password, allow_high_kdf_cost)
     try:
         enc = meta.setdefault("encryption", {})
         existing = list(enc.get("dek_slots") or [])
@@ -9601,12 +10756,16 @@ def add_recovery_slots(
         enc["dek_slots_mac"] = base64.b64encode(compute_slot_set_mac(bytes(dek), combined)).decode(
             "ascii"
         )
+        # Re-bind the wrapped DEK to the new count so a later strip fails closed.
+        enc["dek_slot_count"] = len(combined)
+        enc["wrapped_dek"] = rewrap(len(combined))
     finally:
         secure_memzero(dek)
+        dispose()
 
     if envelope_aad(meta) != aad_before:
         raise RekeyError("Recovery-slot change would alter the bound metadata subset")
-    _write_envelope_header(meta, payload, input_file, output_file, in_place)
+    _write_envelope_header(meta, payload, input_file, output_file)
     return True
 
 
@@ -9620,9 +10779,15 @@ def remove_recovery_slot(
     recovery_code=None,
     recovery_passphrase=None,
     recovery_private_key=None,
+    allow_high_kdf_cost=False,
 ) -> bool:
     """Remove a recovery slot (by id) from an existing envelope file without
-    re-encrypting the bulk."""
+    re-encrypting the bulk.
+
+    Note:
+        ``in_place`` is accepted for backward compatibility and IGNORED; see
+        :func:`add_recovery_slots`.
+    """
     from .envelope import envelope_aad
     from .recovery_slots import compute_slot_set_mac
 
@@ -9634,13 +10799,9 @@ def remove_recovery_slot(
     if len(remaining) == len(existing):
         raise ValidationError(f"No recovery slot with id {slot_id!r}")
 
-    dek = _recover_envelope_dek(
-        meta,
-        password=password,
-        recovery_code=recovery_code,
-        recovery_passphrase=recovery_passphrase,
-        recovery_private_key=recovery_private_key,
-    )
+    # F17/F18 (gitlab#234): requires the primary password so the DEK can be
+    # re-wrapped binding the new (smaller) slot count.
+    dek, rewrap, dispose = _password_unwrap_and_rewrapper(meta, password, allow_high_kdf_cost)
     try:
         if remaining:
             enc["dek_slots"] = remaining
@@ -9650,12 +10811,16 @@ def remove_recovery_slot(
         else:
             enc.pop("dek_slots", None)
             enc.pop("dek_slots_mac", None)
+        # Re-bind the wrapped DEK to the new count (0 when the last slot is gone).
+        enc["dek_slot_count"] = len(remaining)
+        enc["wrapped_dek"] = rewrap(len(remaining))
     finally:
         secure_memzero(dek)
+        dispose()
 
     if envelope_aad(meta) != aad_before:
         raise RekeyError("Recovery-slot change would alter the bound metadata subset")
-    _write_envelope_header(meta, payload, input_file, output_file, in_place)
+    _write_envelope_header(meta, payload, input_file, output_file)
     return True
 
 
@@ -9676,6 +10841,7 @@ def rekey_file(
     hsm_plugin=None,
     hsm_slot=None,
     no_estimate: bool = False,
+    allow_high_kdf_cost: bool = False,
     verify_integrity: bool = False,
     parallel_kdf: bool = False,
     kdf_workers: int = None,
@@ -9738,12 +10904,37 @@ def rekey_file(
     """
     temp_output_path = None
     plaintext_data = None
+    # Set after the input has been validated below -- deriving it needs to
+    # stat the input.
     in_place = output_file is None
 
     try:
         # Validate input file exists
         if not os.path.isfile(input_file):
             raise RekeyError(f"Input file not found: {input_file}")
+
+        # DERIVED, not just "no output given": `rekey -i f -o f` names its own
+        # input as the destination, and the non-atomic branch below handed that
+        # path straight to encrypt_file, which opens it "wb" -- truncating the
+        # only copy of the ciphertext before the replacement existed
+        # (gitlab#195). Uses the same predicate as the envelope header writer
+        # so the two definitions of "the same file" cannot drift apart, which
+        # is how this path came to be missed by gitlab#148.
+        # BOTH questions, not just identity. _write_destroys_input follows
+        # symlinks and counts a multiply-linked inode as the same file, which
+        # is right for "does this write destroy the input" and wrong for "may
+        # I os.replace it": replace installs a NEW inode, so for a hardlinked
+        # or symlinked target the other name keeps the OLD ciphertext -- a
+        # credential rotation reported as complete while a full copy stays
+        # readable under the password the user just retired. Deriving only
+        # identity here did exactly that (caught in review of gitlab#195).
+        rewrite_target = output_file if output_file is not None else input_file
+        destroys_input = output_file is None or _write_destroys_input(input_file, output_file)
+        in_place = destroys_input and _rewrites_same_file(input_file, rewrite_target)
+        # Same file, but not atomically replaceable: it has to be written
+        # THROUGH the shared inode, which _write_replacement_bytes does with a
+        # backup and a restore-on-failure.
+        write_through = destroys_input and not in_place
 
         # Read original file metadata to inherit settings
         try:
@@ -9805,6 +10996,7 @@ def rekey_file(
             new_password=new_password,
             in_place=in_place,
             quiet=quiet,
+            allow_high_kdf_cost=allow_high_kdf_cost,
         ):
             if not quiet:
                 eprint("Rekey completed successfully (envelope fast-path).")
@@ -9830,6 +11022,7 @@ def rekey_file(
             hsm_plugin=hsm_plugin,
             hsm_slot=hsm_slot,
             no_estimate=no_estimate,
+            allow_high_kdf_cost=allow_high_kdf_cost,
             verify_integrity=verify_integrity,
             parallel_kdf=parallel_kdf,
             kdf_workers=kdf_workers,
@@ -9842,7 +11035,10 @@ def rekey_file(
         if not quiet:
             eprint("Re-encrypting with new password...")
 
-        input_dir = os.path.dirname(os.path.abspath(input_file))
+        # realpath, not abspath: for a symlinked target the temp must be
+        # created beside the REAL file, or os.replace can cross a filesystem
+        # boundary and raise EXDEV after a full decrypt and re-encrypt.
+        input_dir = os.path.dirname(os.path.realpath(rewrite_target))
 
         if in_place:
             # Write to a second temp file, then atomically replace
@@ -9851,7 +11047,14 @@ def rekey_file(
         else:
             temp_output_path = None
 
-        encrypt_target = temp_output_path if in_place else output_file
+        if in_place:
+            encrypt_target = temp_output_path
+        elif write_through:
+            # Ask for the bytes instead of a path, then let the shared writer
+            # place them without breaking the other name.
+            encrypt_target = None
+        else:
+            encrypt_target = output_file
 
         success = encrypt_file(
             input_file=plaintext_data,  # Pass bytes directly — no temp file!
@@ -9890,9 +11093,24 @@ def rekey_file(
 
         # Step 5: For in-place, atomically replace the original
         if in_place:
-            os.replace(temp_output_path, input_file)
-            os.chmod(input_file, original_mode)
+            # fchmod on the descriptor BEFORE the rename, not chmod on the
+            # path after it: the path form leaves a window in which the target
+            # can be swapped for a symlink that redirects the mode change.
+            mode_fd = os.open(temp_output_path, os.O_RDONLY)
+            try:
+                if hasattr(os, "fchmod"):
+                    os.fchmod(mode_fd, original_mode)
+                else:  # pragma: no cover - Windows
+                    os.chmod(temp_output_path, original_mode)
+            finally:
+                os.close(mode_fd)
+            os.replace(temp_output_path, rewrite_target)
+            _fsync_directory(input_dir)
             temp_output_path = None  # Prevent cleanup since it's been moved
+        elif write_through:
+            # success carries the ciphertext bytes when encrypt_file is given
+            # no output path.
+            _write_replacement_bytes(success, input_file, rewrite_target)
 
         if not quiet:
             eprint("Rekey completed successfully.")
@@ -10050,6 +11268,7 @@ def decrypt_file(
     hsm_plugin=None,
     hsm_slot=None,
     no_estimate=False,
+    allow_high_kdf_cost=False,
     verify_integrity=False,
     parallel_kdf=False,
     kdf_workers=None,
@@ -10058,6 +11277,7 @@ def decrypt_file(
     recovery_private_key=None,
     second_password=None,
     hidden_header=None,
+    allow_unencrypted_pqc_key=False,
 ):
     """
     Decrypt a file with a password.
@@ -10308,7 +11528,9 @@ def decrypt_file(
                         # Ask user if they want to proceed
                         try:
                             response = (
-                                input("Do you want to proceed anyway? [y/N]: ").strip().lower()
+                                prompt_and_read("Do you want to proceed anyway? [y/N]: ")
+                                .strip()
+                                .lower()
                             )
                             if response not in ("y", "yes"):
                                 raise IntegrityVerificationError(
@@ -10521,6 +11743,32 @@ def decrypt_file(
     else:
         raise ValueError(f"Unsupported file format version: {format_version}")
 
+    # Default-deny an embedded PQC private key that is NOT password-encrypted
+    # (gitlab#229, scan F5, CWE-287). pqc_key_encrypted defaults to False; when
+    # false/absent the file's own encryption.pqc_private_key would be adopted
+    # verbatim, and for mayo/cross/ML-KEM hybrids the bulk key derives ONLY from
+    # it -- so a crafted self-contained file decrypts under ANY password. The
+    # legitimate encryptor never emits an unencrypted embedded key (every store
+    # path sets key_encrypted=True), so refusing this breaks no real file. Only
+    # the embedded key is dangerous: an externally supplied pqc_private_key means
+    # the embedded one is ignored. This check is metadata-only, so it runs here --
+    # before the memory-ceiling estimate, any HSM/YubiKey touch, the remote-pepper
+    # round-trip, and all key derivation -- so a doomed file is rejected without any
+    # hardware/network work and no plaintext is ever produced; a trusted legacy file
+    # needs explicit opt-in.
+    if (
+        pqc_has_private_key
+        and not pqc_key_is_encrypted
+        and not pqc_private_key
+        and not allow_unencrypted_pqc_key
+    ):
+        raise DecryptionError(
+            "Refusing to decrypt: the file embeds an unencrypted post-quantum "
+            "private key (pqc_key_encrypted is not set), which would let it "
+            "decrypt under any password. Re-encrypt the file, or pass "
+            "allow_unencrypted_pqc_key=True to override for a trusted legacy file."
+        )
+
     print_hash_config(
         print_hash_config_metadata if format_version == 4 else hash_config,
         encryption_algo=algorithm,  # Use the extracted algorithm value
@@ -10550,16 +11798,65 @@ def decrypt_file(
             except (ValueError, TypeError):
                 pass  # Malformed timestamp — skip warning silently
 
+    # Enforce the hard memory ceiling before any KDF runs (gitlab#128).
+    # Unlike the estimate *display* below, this guard is NOT suppressed by
+    # quiet/no_estimate: a crafted file must not be able to OOM the host on an
+    # unattended decrypt. It is still escapable (allow_high_kdf_cost, or an
+    # interactive confirmation) so a user may choose an expensive config for
+    # their own files.
+    from .decryption_estimator import (
+        enforce_memory_ceiling,
+        enforce_time_ceiling,
+        estimate_decryption_cost,
+    )
+
+    _kdf_estimate = None
+    try:
+        _kdf_estimate = estimate_decryption_cost(metadata)
+    except Exception as e:
+        if verbose or debug:
+            eprint(f"Warning: Could not estimate decryption cost: {e}")
+    if _kdf_estimate is None:
+        # Fail closed: the metadata is attacker-controlled, so an estimator that
+        # cannot even be computed is treated as over-ceiling rather than waved
+        # through (still escapable via allow_high_kdf_cost).
+        enforce_memory_ceiling(float("inf"), allow_high_kdf_cost=allow_high_kdf_cost)
+    else:
+        if parallel_kdf:
+            # The parallel-KDF path runs components concurrently, so its real
+            # peak is a sum -- but not the sum of ALL components: the pool is
+            # bounded by _parallel_kdf_worker_limit, so at most `workers`
+            # components are co-resident. Enforce the same worst-case bound
+            # the encrypt-side clamp guarantees (gitlab#224 re-review f1):
+            # the sum of the `workers` largest component estimates. Using
+            # total_memory_kb here refused legitimately-produced files with
+            # more than two memory-hard components.
+            # Note: the breakdown may list operations the independent-XOR
+            # path never runs (e.g. a metadata-only pbkdf2 entry); phantom
+            # small entries are conservative and cannot weaken the guard --
+            # refusal is equivalent to a single component over the ceiling.
+            _mems = sorted((m for _n, _t, m in _kdf_estimate.breakdown), reverse=True)
+            _workers = _parallel_kdf_worker_limit(kdf_workers, _mems, quiet=True)
+            _peak_kb = sum(_mems[:_workers])
+        else:
+            _peak_kb = _kdf_estimate.peak_memory_kb
+        enforce_memory_ceiling(_peak_kb, allow_high_kdf_cost=allow_high_kdf_cost)
+        # F30 (gitlab#247): a crafted file can pass the memory ceiling with tiny
+        # memory but huge iteration counts; also refuse an over-ceiling CPU time.
+        enforce_time_ceiling(
+            _kdf_estimate.total_time_seconds, allow_high_kdf_cost=allow_high_kdf_cost
+        )
+
     # Display time/memory estimates for decryption
     if not quiet and not no_estimate:
         try:
-            from .decryption_estimator import estimate_decryption_cost, format_memory, format_time
+            from .decryption_estimator import format_memory, format_time
 
             eprint("\n" + "=" * 60)
             eprint("DECRYPTION COST ESTIMATE")
             eprint("=" * 60)
 
-            estimate = estimate_decryption_cost(metadata)
+            estimate = _kdf_estimate
 
             # Show breakdown if operations exist
             if estimate.breakdown:
@@ -10820,33 +12117,37 @@ def decrypt_file(
                         f"Ensure you have network access and proper mTLS configuration. Error: {e}"
                     )
 
-                # Decrypt pepper with password
-                if len(encrypted_pepper_data) < 28:  # 12 + 16 minimum
-                    raise KeyDerivationError("Invalid encrypted pepper data format from server")
-
-                nonce = encrypted_pepper_data[:12]
-                ciphertext_with_tag = encrypted_pepper_data[12:]
-
-                # Derive decryption key from password
-                pepper_key = _derive_pepper_key(password, format_version=format_version)
-
+                # Decrypt pepper with password. _unwrap_remote_pepper auto-detects
+                # the v2 (Argon2id + salt + name-AAD) blob and falls back to the
+                # legacy unsalted format for peppers written before 1.4.9
+                # (gitlab#244, F2). gitlab#113 [LOW-1]: the pepper is returned in a
+                # wipeable bytearray, zeroed in the enclosing finally.
                 try:
-                    aesgcm = AESGCM(pepper_key)
-                    # gitlab#113 [LOW-1]: hold the pepper in a wipeable buffer,
-                    # zeroed in the outer finally. AESGCM.decrypt's immutable
-                    # bytes transient cannot be wiped (M10 accepted residual).
-                    remote_pepper = bytearray(aesgcm.decrypt(nonce, ciphertext_with_tag, None))
+                    remote_pepper = _unwrap_remote_pepper(
+                        password,
+                        encrypted_pepper_data,
+                        pepper_name,
+                        format_version=format_version,
+                    )
+                except (AuthenticationError, KeyDerivationError):
+                    # A config/dependency problem (e.g. Argon2 unavailable for a
+                    # v2 blob) must surface as itself, not be masked as a wrong
+                    # password (matches the encrypt path).
+                    raise
                 except Exception:
-                    # This could be wrong password or corrupted data
+                    # Wrong password, tampered blob, or a name/AAD mismatch.
                     raise AuthenticationError(
                         "Failed to decrypt remote pepper - wrong password or corrupted pepper data"
                     )
-                finally:
-                    secure_memzero(pepper_key)
 
-                # Validate pepper
+                # Validate pepper (mirror the encrypt-side 16..128 bounds).
                 if not remote_pepper or len(remote_pepper) < 16:
                     raise KeyDerivationError("Invalid pepper retrieved from server")
+
+                if len(remote_pepper) > 128:
+                    raise KeyDerivationError(
+                        "Invalid pepper retrieved from server: exceeds 128 bytes"
+                    )
 
                 if not quiet:
                     eprint(f"Remote pepper decrypted ({len(remote_pepper)} bytes)")
@@ -10890,7 +12191,7 @@ def decrypt_file(
             # by design (M2 decision), so route it here even if a hand-crafted
             # blob omits xor_mode — the v14 schema also requires xor_mode.
             if parallel_kdf:
-                # Parallel execution via multiprocessing
+                # Thread-pool component derivation (gitlab#220/#224)
                 from .parallel_kdf import generate_key_independent_xor_parallel
 
                 key, _, _ = generate_key_independent_xor_parallel(
@@ -10963,13 +12264,23 @@ def decrypt_file(
         from .crypt_errors import DecryptionError as _DecErr
         from .crypt_errors import ValidationError as _ValErr
         from .recovery_slots import (
+            MAX_DEK_SLOTS,
             unlock_passphrase_slot,
             unlock_pqc_slot,
             unlock_recovery_code_slot,
-            verify_slot_set_mac,
         )
 
         _slots = _enc_meta.get("dek_slots") or []
+        # F16 (gitlab#233, CWE-405): dek_slots is attacker-controlled plaintext
+        # (excluded from the bulk AAD) and each passphrase slot below runs a full
+        # Argon2id BEFORE the slot-set MAC can reject a tampered set. Cap the slot
+        # count cheaply, before any KDF work, so a crafted file with hundreds of
+        # expensive slots cannot exhaust CPU/memory pre-authentication.
+        if len(_slots) > MAX_DEK_SLOTS:
+            raise _ValErr(
+                f"Refusing recovery: {len(_slots)} recovery slots exceeds the "
+                f"maximum of {MAX_DEK_SLOTS} (possible tampering)"
+            )
         _dek = None
         if recovery_code is not None:
             _want_type, _material = "recovery_code", recovery_code
@@ -10992,15 +12303,22 @@ def decrypt_file(
                 continue
         if _dek is None:
             raise _DecErr("No recovery slot matched the supplied recovery material")
-        _mac_b64 = _enc_meta.get("dek_slots_mac")
-        if not _mac_b64 or not verify_slot_set_mac(bytes(_dek), _slots, base64.b64decode(_mac_b64)):
+        # Authenticate the whole slot set (and its count, when the file carries
+        # the F17/F18 commitment) with the recovered DEK. Fail closed.
+        try:
+            _enforce_dek_slot_presence(_enc_meta, _dek)
+        except Exception:
             secure_memzero(_dek)
-            raise _AuthErr("Recovery slot set failed authentication")
+            raise
         key = bytes(_dek)
         secure_memzero(_dek)
     elif _wrapped_dek_b64:
-        from .envelope import unwrap_dek, unwrap_dek_cascade
+        from .envelope import unwrap_dek, unwrap_dek_cascade, wrapped_dek_aad
 
+        # F17/F18 (gitlab#234): bind the unwrap to the recovery-slot count. A
+        # stripped or zeroed count fails the unwrap here (no legacy fallback);
+        # absent count => legacy file wrapped with aad=None.
+        _wrap_aad = wrapped_dek_aad(_enc_meta.get("dek_slot_count"))
         _kek = key
         try:
             if is_cascade and cascade_cipher_chain:
@@ -11016,26 +12334,20 @@ def decrypt_file(
                     xchacha_nonce_format=metadata.get("encryption", {}).get(
                         "xchacha_nonce_format", 1
                     ),
+                    aad=_wrap_aad,
                 )
             else:
-                _dek = unwrap_dek(base64.b64decode(_wrapped_dek_b64), _kek)
+                _dek = unwrap_dek(base64.b64decode(_wrapped_dek_b64), _kek, aad=_wrap_aad)
         finally:
             secure_memzero(_kek)
         key = bytes(_dek)
         secure_memzero(_dek)
 
-        # If recovery slots are present, authenticate the slot SET with the
-        # recovered DEK on the password path too (slot fields are excluded from
-        # the bulk AAD, so this MAC is what detects tampering). Fail closed.
-        _dek_slots = _enc_meta.get("dek_slots")
-        if _dek_slots:
-            from .recovery_slots import verify_slot_set_mac
-
-            _slots_mac_b64 = _enc_meta.get("dek_slots_mac")
-            if not _slots_mac_b64 or not verify_slot_set_mac(
-                key, _dek_slots, base64.b64decode(_slots_mac_b64)
-            ):
-                raise AuthenticationError("Recovery slot set failed authentication")
+        # Authenticate recovery-slot PRESENCE with the recovered DEK on the
+        # password path (slot fields + count are excluded from the bulk AAD).
+        # New files fail closed if the slots were stripped while the count says
+        # otherwise; legacy files keep the present-slots-only MAC check.
+        _enforce_dek_slot_presence(_enc_meta, key)
 
     # Helper function to get expected nonce size for each algorithm
     def get_nonce_size(alg, include_legacy=True):
@@ -11940,11 +13252,23 @@ def decrypt_file(
     if not quiet:
         eprint(f"Writing decrypted file: {output_file}")
 
-    with safe_open_file(output_file, "wb", secure_mode=secure_mode) as file:
-        file.write(decrypted_data)
-        # Add two newlines after decrypted data when writing to stdout/stderr
-        if output_file in ("/dev/stdout", "/dev/stderr"):
+    # /dev/stdout and /dev/stderr are streams, not files to replace: the
+    # shared writer would refuse them as non-regular same-file targets, and
+    # there is nothing of the user's to protect there anyway.
+    if output_file in ("/dev/stdout", "/dev/stderr"):
+        with safe_open_file(output_file, "wb", secure_mode=secure_mode) as file:
+            file.write(decrypted_data)
             file.write(b"\n\n")
+    elif _destroys_input_safely(input_file, output_file):
+        # `decrypt -i f -o f` names its own input as the destination. A bare
+        # "wb" truncated the only copy of the ciphertext before the plaintext
+        # existed, so a crash or ENOSPC in between left a shortened,
+        # unreadable file where the encrypted one had been (gitlab#195;
+        # gitlab#148 fixed the same shape in the envelope header writer).
+        _write_replacement_bytes(decrypted_data, input_file, output_file)
+    else:
+        with safe_open_file(output_file, "wb", secure_mode=secure_mode) as file:
+            file.write(decrypted_data)
 
     # Set secure permissions on the output file
     set_secure_permissions(output_file)

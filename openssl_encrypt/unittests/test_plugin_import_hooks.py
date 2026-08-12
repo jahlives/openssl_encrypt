@@ -20,6 +20,7 @@ from openssl_encrypt.modules.plugin_system.plugin_base import (
 from openssl_encrypt.modules.plugin_system.plugin_config import PluginConfigManager
 from openssl_encrypt.modules.plugin_system.plugin_manager import PluginManager
 from openssl_encrypt.modules.plugin_system.plugin_sandbox import PluginImportGuard
+from openssl_encrypt.modules.plugin_system.plugin_signature import PluginSignaturePolicy
 
 
 class TestDirectImportBlocking:
@@ -183,7 +184,12 @@ class TestFromImportBlocking:
     def setup_method(self):
         self.config_manager = PluginConfigManager()
         self.plugin_manager = PluginManager(
-            config_manager=self.config_manager, strict_security_mode=False
+            config_manager=self.config_manager,
+            strict_security_mode=False,
+            # These suites exercise the import hook, not the signature gate;
+            # disable the now-default-ENFORCE signature check (gitlab#130) so the
+            # unsigned test plugin loads and its imports are what get tested.
+            signature_policy=PluginSignaturePolicy.OFF,
         )
         self.temp_dir = tempfile.mkdtemp()
 
@@ -261,7 +267,12 @@ class TestSafeImportsAllowed:
     def setup_method(self):
         self.config_manager = PluginConfigManager()
         self.plugin_manager = PluginManager(
-            config_manager=self.config_manager, strict_security_mode=False
+            config_manager=self.config_manager,
+            strict_security_mode=False,
+            # These suites exercise the import hook, not the signature gate;
+            # disable the now-default-ENFORCE signature check (gitlab#130) so the
+            # unsigned test plugin loads and its imports are what get tested.
+            signature_policy=PluginSignaturePolicy.OFF,
         )
         self.temp_dir = tempfile.mkdtemp()
 
@@ -406,7 +417,12 @@ class TestErrorMessages:
     def setup_method(self):
         self.config_manager = PluginConfigManager()
         self.plugin_manager = PluginManager(
-            config_manager=self.config_manager, strict_security_mode=False
+            config_manager=self.config_manager,
+            strict_security_mode=False,
+            # These suites exercise the import hook, not the signature gate;
+            # disable the now-default-ENFORCE signature check (gitlab#130) so the
+            # unsigned test plugin loads and its imports are what get tested.
+            signature_policy=PluginSignaturePolicy.OFF,
         )
         self.temp_dir = tempfile.mkdtemp()
 
@@ -485,7 +501,12 @@ class TestEdgeCases:
     def setup_method(self):
         self.config_manager = PluginConfigManager()
         self.plugin_manager = PluginManager(
-            config_manager=self.config_manager, strict_security_mode=False
+            config_manager=self.config_manager,
+            strict_security_mode=False,
+            # These suites exercise the import hook, not the signature gate;
+            # disable the now-default-ENFORCE signature check (gitlab#130) so the
+            # unsigned test plugin loads and its imports are what get tested.
+            signature_policy=PluginSignaturePolicy.OFF,
         )
         self.temp_dir = tempfile.mkdtemp()
 

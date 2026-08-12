@@ -48,7 +48,21 @@ _AAD_EXCLUDED_TOP = ("derivation_config",)
 # rekey AND post-hoc recovery-slot add/remove. The recovery-slot set has its
 # OWN DEK-keyed integrity MAC (encryption.dek_slots_mac), verified after the
 # DEK is recovered on every decryption path.
-_AAD_EXCLUDED_ENCRYPTION = ("wrapped_dek", "dek_slots", "dek_slots_mac")
+#
+# dek_slot_count (F17/F18, gitlab#234): the number of recovery slots is
+# authenticated NOT by the bulk AAD but by the wrapped_dek AEAD (see
+# wrapped_dek_aad). It MUST be excluded from the bulk AAD -- otherwise every
+# slot add/remove would change the bulk AAD and force a full re-encrypt. Binding
+# it into the wrapped_dek tag instead keeps slot management an O(header) rewrite
+# while still failing closed when an attacker strips the slots (the password
+# unwrap uses wrapped_dek_aad(count) with no legacy fallback, so a stripped or
+# zeroed count no longer authenticates the retained wrapped_dek).
+_AAD_EXCLUDED_ENCRYPTION = ("wrapped_dek", "dek_slots", "dek_slots_mac", "dek_slot_count")
+
+# Domain-separated label for the wrapped-DEK slot-count binding. Bumping the
+# version invalidates every prior binding, so it is pinned across the 1.4.x /
+# 1.5.x lines.
+_WRAPPED_DEK_AAD_LABEL = b"openssl_encrypt.envelope.wrapped-dek.slot-count.v1"
 # Minimum acceptable KEK length (generate_key produces >= 32 bytes).
 _MIN_KEK_SIZE = 32
 _WRAP_NONCE_SIZE = 12
@@ -116,6 +130,39 @@ def envelope_aad(metadata: dict) -> bytes:
     )
 
 
+def wrapped_dek_aad(dek_slot_count):
+    """Associated data binding a wrapped DEK to the recovery-slot count.
+
+    F17/F18 (gitlab#234): the wrapped DEK is AEAD-bound to the number of
+    recovery slots so an attacker cannot strip ``encryption.dek_slots`` from the
+    header and have the password decrypt path silently proceed. Decrypt/unwrap
+    call this with the count read from the file's metadata; because the wrapped
+    ciphertext cannot be recomputed without the KEK, a stripped, zeroed, or
+    altered count makes the unwrap fail closed.
+
+    Args:
+        dek_slot_count: The recovery-slot count from ``encryption.dek_slot_count``,
+            or ``None`` for a legacy file that predates this binding.
+
+    Returns:
+        Canonical AAD bytes, or ``None`` when ``dek_slot_count`` is ``None`` so
+        the result can be passed straight to :func:`wrap_dek` / :func:`unwrap_dek`
+        and legacy files keep unwrapping with ``associated_data=None`` (there is
+        NO fallback the other way -- a file wrapped WITH a binding never unwraps
+        under ``None``, which is what defeats the downgrade attack).
+
+    Raises:
+        ValidationError: If ``dek_slot_count`` is not a non-negative int.
+    """
+    if dek_slot_count is None:
+        return None
+    if isinstance(dek_slot_count, bool) or not isinstance(dek_slot_count, int):
+        raise ValidationError("dek_slot_count must be a non-negative int")
+    if dek_slot_count < 0:
+        raise ValidationError("dek_slot_count must be a non-negative int")
+    return _WRAPPED_DEK_AAD_LABEL + b"|" + str(dek_slot_count).encode("ascii")
+
+
 def _derive_wrap_key(kek: bytes) -> bytearray:
     """Derive the AES-256 wrap key from the KEK via HKDF-SHA256.
 
@@ -131,12 +178,16 @@ def _derive_wrap_key(kek: bytes) -> bytearray:
     )
 
 
-def wrap_dek(dek: bytes, kek: bytes) -> bytes:
+def wrap_dek(dek: bytes, kek: bytes, aad: bytes = None) -> bytes:
     """Wrap a DEK under a KEK with AES-256-GCM.
 
     Args:
         dek: The data encryption key to protect (typically ``DEK_SIZE`` bytes).
         kek: The password-derived key encryption key (>= 32 bytes).
+        aad: Optional associated data to bind into the wrap tag (e.g. the
+            recovery-slot-count commitment from :func:`wrapped_dek_aad`). Must
+            be supplied identically to :func:`unwrap_dek`. ``None`` (default)
+            preserves the legacy unbound wrap byte-for-byte.
 
     Returns:
         ``nonce || ciphertext || tag`` bytes.
@@ -156,18 +207,22 @@ def wrap_dek(dek: bytes, kek: bytes) -> bytes:
     wrap_key = _derive_wrap_key(kek)
     try:
         nonce = secrets.token_bytes(_WRAP_NONCE_SIZE)
-        ciphertext_with_tag = AESGCM(bytes(wrap_key)).encrypt(nonce, bytes(dek), None)
+        ciphertext_with_tag = AESGCM(bytes(wrap_key)).encrypt(nonce, bytes(dek), aad)
         return nonce + ciphertext_with_tag
     finally:
         secure_memzero(wrap_key)
 
 
-def unwrap_dek(wrapped: bytes, kek: bytes) -> bytearray:
+def unwrap_dek(wrapped: bytes, kek: bytes, aad: bytes = None) -> bytearray:
     """Unwrap a DEK produced by :func:`wrap_dek`.
 
     Args:
         wrapped: The ``nonce || ciphertext || tag`` blob.
         kek: The password-derived key encryption key (>= 32 bytes).
+        aad: The associated data the DEK was wrapped with (see
+            :func:`wrap_dek`). Must match exactly or unwrap fails closed; this
+            is what binds the recovery-slot count. ``None`` (default) unwraps a
+            legacy unbound wrap.
 
     Returns:
         The recovered DEK as a mutable ``bytearray`` (caller should
@@ -175,7 +230,8 @@ def unwrap_dek(wrapped: bytes, kek: bytes) -> bytearray:
 
     Raises:
         ValidationError: If inputs are the wrong type/size.
-        DecryptionError: If authentication fails (wrong KEK or tampering).
+        DecryptionError: If authentication fails (wrong KEK, wrong AAD, or
+            tampering).
     """
     if not isinstance(wrapped, (bytes, bytearray)):
         raise ValidationError("wrapped must be bytes")
@@ -191,7 +247,7 @@ def unwrap_dek(wrapped: bytes, kek: bytes) -> bytearray:
         nonce = bytes(wrapped[:_WRAP_NONCE_SIZE])
         ciphertext_with_tag = bytes(wrapped[_WRAP_NONCE_SIZE:])
         try:
-            plaintext = AESGCM(bytes(wrap_key)).decrypt(nonce, ciphertext_with_tag, None)
+            plaintext = AESGCM(bytes(wrap_key)).decrypt(nonce, ciphertext_with_tag, aad)
         except Exception as e:
             # Generic message: never leak key material or crypto internals.
             raise DecryptionError("Envelope DEK unwrap failed", original_exception=e)
@@ -206,6 +262,7 @@ def wrap_dek_cascade(
     cipher_names: list,
     hkdf_hash: str = "sha256",
     xchacha_nonce_format: int = 1,
+    aad: bytes = None,
 ) -> bytes:
     """Wrap a DEK under the same cascade chain that protects the bulk data.
 
@@ -250,7 +307,7 @@ def wrap_dek_cascade(
     )
     wrap_key = _derive_wrap_key(kek)
     try:
-        return enc.encrypt(bytes(dek), bytes(wrap_key), _CASCADE_WRAP_SALT, associated_data=None)
+        return enc.encrypt(bytes(dek), bytes(wrap_key), _CASCADE_WRAP_SALT, associated_data=aad)
     finally:
         secure_memzero(wrap_key)
 
@@ -261,6 +318,7 @@ def unwrap_dek_cascade(
     cipher_names: list,
     hkdf_hash: str = "sha256",
     xchacha_nonce_format: int = 1,
+    aad: bytes = None,
 ) -> bytearray:
     """Unwrap a DEK produced by :func:`wrap_dek_cascade`.
 
@@ -300,7 +358,7 @@ def unwrap_dek_cascade(
     wrap_key = _derive_wrap_key(kek)
     try:
         plaintext = dec.decrypt(
-            bytes(wrapped), bytes(wrap_key), _CASCADE_WRAP_SALT, associated_data=None
+            bytes(wrapped), bytes(wrap_key), _CASCADE_WRAP_SALT, associated_data=aad
         )
         return bytearray(plaintext)
     except (DecryptionError, ValidationError):

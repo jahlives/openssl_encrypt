@@ -52,12 +52,14 @@ from .crypt_utils import (
     eprint,
     expand_glob_patterns,
     generate_strong_password,
+    prompt_and_read,
     request_confirmation,
+    sanitize_for_display,
     secure_shred_file,
     show_security_recommendations,
     tty_clear_line,
 )
-from .debug_redaction import debug_secret, set_show_secrets
+from .debug_redaction import debug_secret, set_show_secrets, show_secrets_enabled
 
 # Try to import the CLI helper module
 try:
@@ -77,11 +79,14 @@ from . import crypt_errors
 from .cli_aliases import add_cli_aliases, process_cli_aliases
 from .config_analyzer import ConfigurationAnalyzer
 from .config_wizard import generate_cli_arguments, run_configuration_wizard
+from .credential_env import CredentialError, consume_env, resolve_credential
+from .credential_env import validated as credential_validated
 from .keystore_utils import auto_generate_pqc_key
 
 # Import keystore-related modules
 from .keystore_wrapper import decrypt_file_with_keystore, encrypt_file_with_keystore
 from .password_policy import PasswordPolicy, get_password_strength
+from .security_logger import register_consumed_secret
 from .security_scorer import SecurityScorer
 
 # Import security audit logger
@@ -95,6 +100,96 @@ from .template_manager import TemplateCategory, TemplateFormat, TemplateManager
 
 # Set up module-level logger
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# .pqc keyfile private-key wrapping KDF (gitlab#131 / F16)
+#
+# A --pqc-keyfile stores a long-lived PQC private key wrapped under a
+# password-derived AES-256-GCM key. New keyfiles derive that key with Argon2id
+# and record a self-describing "key_kdf" descriptor. Keyfiles written before
+# this fix carry no "key_kdf" and used PBKDF2-HMAC-SHA256 100k (below the OWASP
+# floor) plus a redundant trailing SHA-256; they still decrypt via the legacy
+# branch below, so the change is backward compatible.
+# ---------------------------------------------------------------------------
+_PQC_KEYFILE_ARGON2_TIME_COST = 3
+_PQC_KEYFILE_ARGON2_MEMORY_KIB = 65536  # 64 MiB
+_PQC_KEYFILE_ARGON2_PARALLELISM = 4
+# Upper bounds for Argon2 cost read from an (untrusted) keyfile: a tampered
+# keyfile could otherwise declare a huge memory_cost and OOM the host on decrypt
+# before the AES-GCM tag authenticates (same class as gitlab#128/#129). Mirrors
+# identity_protection._validate_identity_argon2_params.
+_PQC_KEYFILE_ARGON2_MAX_TIME = 64
+_PQC_KEYFILE_ARGON2_MAX_MEMORY = 2 * 1024 * 1024  # KiB (2 GiB)
+_PQC_KEYFILE_ARGON2_MAX_PARALLELISM = 16
+
+
+def _new_pqc_keyfile_kdf() -> Dict[str, Any]:
+    """Return the KDF descriptor stored in a freshly written .pqc keyfile."""
+    return {
+        "type": "argon2id",
+        "time_cost": _PQC_KEYFILE_ARGON2_TIME_COST,
+        "memory_cost": _PQC_KEYFILE_ARGON2_MEMORY_KIB,
+        "parallelism": _PQC_KEYFILE_ARGON2_PARALLELISM,
+    }
+
+
+def _derive_pqc_keyfile_key(
+    keyfile_password: bytes, key_salt: bytes, kdf: Optional[Dict[str, Any]]
+) -> bytes:
+    """Derive the 32-byte AES-256-GCM key that wraps a .pqc keyfile private key.
+
+    Args:
+        keyfile_password: The keyfile password.
+        key_salt: The per-keyfile random salt.
+        kdf: The keyfile's ``key_kdf`` descriptor, or ``None`` for a legacy
+            keyfile written before gitlab#131 (PBKDF2-SHA256 100k + a redundant
+            trailing SHA-256).
+
+    Returns:
+        A 32-byte wrapping key.
+
+    Raises:
+        ValueError: On an unsupported or out-of-range KDF descriptor.
+    """
+    if kdf is None:
+        # Legacy keyfiles (pre-gitlab#131 F16): PBKDF2-SHA256 100k, then a
+        # redundant SHA-256 kept only so existing keyfiles still decrypt.
+        return hashlib.sha256(
+            hashlib.pbkdf2_hmac("sha256", keyfile_password, key_salt, 100000)
+        ).digest()
+
+    ktype = kdf.get("type") if isinstance(kdf, dict) else None
+    if ktype != "argon2id":
+        raise ValueError(f"Unsupported .pqc keyfile KDF type: {ktype!r}")
+
+    time_cost = kdf.get("time_cost")
+    memory_cost = kdf.get("memory_cost")
+    parallelism = kdf.get("parallelism")
+    for name, value, lo, hi in (
+        ("time_cost", time_cost, 1, _PQC_KEYFILE_ARGON2_MAX_TIME),
+        ("memory_cost", memory_cost, 8, _PQC_KEYFILE_ARGON2_MAX_MEMORY),
+        ("parallelism", parallelism, 1, _PQC_KEYFILE_ARGON2_MAX_PARALLELISM),
+    ):
+        # bool is an int subclass; reject it and any non-int explicitly.
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ValueError(f"Invalid .pqc keyfile Argon2 {name}: {value!r}")
+        if not (lo <= value <= hi):
+            raise ValueError(
+                f".pqc keyfile Argon2 {name} out of allowed range [{lo}, {hi}]: {value}"
+            )
+
+    from argon2.low_level import Type, hash_secret_raw
+
+    return hash_secret_raw(
+        secret=keyfile_password,
+        salt=key_salt,
+        time_cost=time_cost,
+        memory_cost=memory_cost,
+        parallelism=parallelism,
+        hash_len=32,
+        type=Type.ID,
+    )
 
 
 def resolve_identity_store_path(args):
@@ -119,6 +214,35 @@ def resolve_identity_store_path(args):
     if path:
         return Path(path).expanduser()
     return None
+
+
+# Upper bound on recipient entries read/printed from an untrusted asymmetric file
+# header during decrypt auto-detection (gitlab#237, scan F3). A real file targets
+# a handful of recipients; the cap prevents a crafted list from driving a large
+# materialization or an unbounded print.
+_MAX_RECIPIENTS_SHOWN = 64
+
+
+def _detect_metadata_loads(metadata_json):
+    """Bounded parse of an untrusted header for decrypt auto-detection
+    (gitlab#237, scan F3). Runs the JSON security scan (1 MiB size cap, nesting
+    depth, control-character rejection) BEFORE json.loads, so a crafted header
+    cannot drive an unbounded parse or smuggle control characters -- without
+    coupling this lightweight peek to a specific metadata schema version. A
+    security-scan failure raises ValueError, which the caller treats as
+    'not detected' (a safe default)."""
+    if isinstance(metadata_json, (bytes, bytearray)):
+        # Decode strictly so a non-UTF-8 header is rejected, not silently mangled.
+        metadata_json = metadata_json.decode("utf-8", errors="strict")
+    try:
+        from .json_validator import get_json_validator
+
+        get_json_validator().validate_json_security(metadata_json)
+    except ImportError:
+        pass  # validator unavailable -> best-effort json.loads below
+    except Exception as exc:
+        raise ValueError(f"metadata rejected by security scan: {exc}")
+    return json.loads(metadata_json)
 
 
 def detect_encryption_type(input_file: str) -> dict:
@@ -152,7 +276,7 @@ def detect_encryption_type(input_file: str) -> dict:
             metadata_b64 = content[:colon_pos]
             try:
                 metadata_json = base64.b64decode(metadata_b64)
-                metadata = json.loads(metadata_json)
+                metadata = _detect_metadata_loads(metadata_json)
             except (ValueError, json.JSONDecodeError):
                 pass
 
@@ -161,8 +285,8 @@ def detect_encryption_type(input_file: str) -> dict:
             try:
                 content_str = content.decode("utf-8", errors="ignore")
                 metadata_str = content_str.split("---ENCRYPTED_DATA---")[0]
-                metadata = json.loads(metadata_str)
-            except (json.JSONDecodeError, UnicodeDecodeError, IndexError):
+                metadata = _detect_metadata_loads(metadata_str)
+            except (ValueError, json.JSONDecodeError, UnicodeDecodeError, IndexError):
                 pass
 
         # Check if asymmetric
@@ -176,8 +300,15 @@ def detect_encryption_type(input_file: str) -> dict:
                 recipients = asymmetric_data.get("recipients", [])
                 sender = asymmetric_data.get("sender", {})
 
-                recipient_fingerprints = [r.get("key_id", "") for r in recipients]
-                sender_fingerprint = sender.get("key_id", "")
+                # Bound the recipient list taken from the untrusted header so a
+                # crafted file cannot force a huge materialization/print
+                # (gitlab#237, scan F3). A real file has a handful of recipients.
+                if isinstance(recipients, list) and len(recipients) > _MAX_RECIPIENTS_SHOWN:
+                    recipients = recipients[:_MAX_RECIPIENTS_SHOWN]
+                recipient_fingerprints = [
+                    r.get("key_id", "") for r in recipients if isinstance(r, dict)
+                ]
+                sender_fingerprint = sender.get("key_id", "") if isinstance(sender, dict) else ""
 
                 return {
                     "type": "asymmetric",
@@ -311,28 +442,58 @@ class StdinMetadataExtractor:
         try:
             # Decode base64 metadata
             metadata_json = base64.b64decode(metadata_b64).decode("utf-8")
-            # MED-8 Security fix: Use secure JSON validation for metadata parsing
+            # MED-8 Security fix: Use secure JSON validation for metadata parsing.
+            #
+            # The import is resolved BEFORE the try that uses it (gitlab#118).
+            # It used to sit inside that try, with `except (JSONSecurityError,
+            # JSONValidationError)` as the first handler -- and evaluating
+            # that tuple needs names the failed import never bound, so it
+            # raised UnboundLocalError before `except ImportError` was ever
+            # considered. The fallback was unreachable.
             try:
                 from .json_validator import (
                     JSONSecurityError,
                     JSONValidationError,
                     secure_metadata_loads,
                 )
-
-                metadata = secure_metadata_loads(metadata_json)
-            except (JSONSecurityError, JSONValidationError) as e:
-                eprint(f"Error: Invalid metadata JSON: {e}")
-                return None
             except ImportError:
-                # Fallback to basic JSON loading if validator not available
+                secure_metadata_loads = None
+                # Empty tuples never match, so the handler below is inert on
+                # this path rather than referencing unbound names.
+                JSONSecurityError = JSONValidationError = ()
+
+            if secure_metadata_loads is not None:
+                try:
+                    metadata = secure_metadata_loads(metadata_json)
+                except (JSONSecurityError, JSONValidationError) as e:
+                    eprint(f"Error: Invalid metadata JSON: {e}")
+                    return None
+            else:
+                # Fallback: basic JSON loading, with the bounds the validator
+                # would otherwise have applied.
                 try:
                     metadata = json.loads(metadata_json)
                 except json.JSONDecodeError as e:
                     eprint(f"Error: Invalid JSON in metadata: {e}")
                     return None
+                if not isinstance(metadata, dict):
+                    eprint("Error: Invalid metadata JSON: not an object")
+                    return None
 
-            # Extract algorithm info based on format version
+            # Extract algorithm info based on format version.
+            #
+            # Bounded rather than taken as-is: a crafted file must not decide
+            # this field's type. bool is an int subclass and `True >= 4` would
+            # silently select the legacy branch, so it is rejected explicitly
+            # -- the same guard crypt_core.py's equivalent site already has
+            # (gitlab#118).
             format_version = metadata.get("format_version", 1)
+            if isinstance(format_version, bool) or not isinstance(format_version, int):
+                eprint(f"Error: Invalid metadata format version: {format_version!r}")
+                return None
+            if not (1 <= format_version <= LATEST_STABLE_FORMAT_VERSION):
+                eprint(f"Error: Unsupported metadata format version: {format_version}")
+                return None
 
             if format_version >= 4:  # v4+ hierarchical metadata (see crypt_core gate fix)
                 encryption = metadata.get("encryption", {})
@@ -357,6 +518,10 @@ def clear_password_environment():
     """Securely clear password from environment variables with multiple overwrites."""
     try:
         if "CRYPT_PASSWORD" in os.environ:
+            # Register the fingerprint before the overwrites destroy the value,
+            # so a later log_event still redacts it once the variable is gone
+            # (gitlab#147).
+            register_consumed_secret("CRYPT_PASSWORD", os.environ["CRYPT_PASSWORD"])
             # Get the original length to overwrite with same size
             original_length = len(os.environ["CRYPT_PASSWORD"])
 
@@ -520,6 +685,14 @@ def load_template_file(template_name: str) -> Optional[Dict[str, Any]]:
     # Templates are in project root
     template_dir = os.path.join(project_root, "templates")
 
+    # SECURITY: this is the path `encrypt --template` uses, and it never
+    # constructs a TemplateManager -- so harden the template directory HERE too,
+    # not only in TemplateManager.__init__. A group/other-writable dir lets
+    # another local user plant a template this path would then apply (gitlab#169).
+    from .file_permissions import harden_directory_permissions
+
+    harden_directory_permissions(template_dir)
+
     # Try different extensions
     for ext in [".json", ".yaml", ".yml"]:
         template_path = os.path.join(template_dir, safe_template_name + ext)
@@ -575,6 +748,56 @@ def load_template_file(template_name: str) -> Optional[Dict[str, Any]]:
 
     eprint(f"Template {safe_template_name} not found in {template_dir}")
     sys.exit(1)
+
+
+def _warn_if_weak_template_kdf(hash_config, source) -> None:
+    """Warn (loudly; does NOT block) when a template's applied KDF parameters
+    fall below a safe floor.
+
+    A template file dropped into the template directory could otherwise silently
+    downgrade key derivation -- e.g. ``pbkdf2_iterations: 1`` with Argon2
+    disabled -- delivered through the template interface (gitlab#169). This is
+    advisory: the encryption still runs (the user asked for this template), but
+    the weakness is surfaced instead of hidden. Only file templates pass through
+    here; the built-in --quick/--standard/--paranoid presets do not.
+    """
+    if not isinstance(hash_config, dict):
+        return
+
+    def _num(value):
+        return value if isinstance(value, (int, float)) and not isinstance(value, bool) else 0
+
+    def _kdf(name):
+        entry = hash_config.get(name)
+        return entry if isinstance(entry, dict) else {}
+
+    argon2, scrypt, balloon = _kdf("argon2"), _kdf("scrypt"), _kdf("balloon")
+    pbkdf2 = _num(hash_config.get("pbkdf2_iterations"))
+
+    # A memory-hard KDF at reasonable strength is the real protection; if one is
+    # present, the config is not "weak" regardless of pbkdf2. Each is gated on a
+    # strength floor, not merely "enabled" -- otherwise a planted
+    # balloon:{enabled:true, space_cost:1} (or similar) would evade the check.
+    strong_memory_hard = (
+        (argon2.get("enabled") and _num(argon2.get("memory_cost")) >= 65536)
+        or (scrypt.get("enabled") and _num(scrypt.get("n")) >= 16384)
+        or (balloon.get("enabled") and _num(balloon.get("space_cost")) >= 65536)
+    )
+    if strong_memory_hard:
+        return
+    # No strong memory-hard KDF -> PBKDF2 is the fallback and must clear a
+    # minimal iteration floor (600,000, current OWASP PBKDF2-HMAC-SHA256
+    # guidance).
+    if pbkdf2 >= 600000:
+        return
+
+    eprint(
+        f"⚠️  SECURITY WARNING: template '{source}' configures weak key "
+        "derivation -- no memory-hard KDF (Argon2/scrypt/Balloon) at strength "
+        f"and pbkdf2_iterations={pbkdf2} (below the 600,000 minimum, current "
+        "OWASP guidance). This is far easier to brute-force. Encryption will "
+        "proceed; consider a stronger template (e.g. --standard or --paranoid)."
+    )
 
 
 def get_template_config(template: str or SecurityTemplate) -> Dict[str, Any]:
@@ -683,6 +906,10 @@ def get_template_config(template: str or SecurityTemplate) -> Dict[str, Any]:
             if custom_template:
                 # Validate template structure
                 if "hash_config" in custom_template:
+                    # A template file is untrusted (any local process could drop
+                    # one in); surface a KDF downgrade instead of applying it
+                    # silently (gitlab#169).
+                    _warn_if_weak_template_kdf(custom_template["hash_config"], template)
                     return custom_template
                 else:
                     eprint("Invalid template format: missing 'hash_config' key")
@@ -692,11 +919,20 @@ def get_template_config(template: str or SecurityTemplate) -> Dict[str, Any]:
             sys.exit(1)
 
 
+# Environment channel for the keyed-hidden-mode second password (gitlab#154).
+# Read once and deleted; see modules/credential_env.py for the rationale.
+SECOND_PASSWORD_ENV = "OPENSSL_ENCRYPT_SECOND_PASSWORD"
+
+# Subcommands whose credential arrives as a POSITIONAL argument, which
+# SECRET_VALUE_CLI_OPTIONS cannot match because it keys on option names.
+SECRET_POSITIONAL_SUBCOMMANDS = frozenset({"set-token", "login"})
+
 # Value-taking CLI options whose VALUE is a secret. Their values must never
 # appear in the --debug argv dump; they are routed through the debug_secret()
 # redaction chokepoint instead. Keep in sync with the parsers in this module
 # and crypt_cli_subparser.py. File-path/fd options (--password-file,
-# --password-fd, --recovery-share, ...) are not secrets themselves.
+# --password-fd, --recovery-share, --random-password-out, ...) are not secrets
+# themselves.
 SECRET_VALUE_CLI_OPTIONS = frozenset(
     {
         "-p",
@@ -707,8 +943,288 @@ SECRET_VALUE_CLI_OPTIONS = frozenset(
         "--rekey-password",
         "--recovery-code",
         "--encryption-data",
+        # The one-time TOTP code for `plugin pepper verify-totp` — ephemeral,
+        # but an auth credential that must not appear in a --debug argv dump.
+        "--code",
+        # Steganographic security password (gitlab#215 item 5): a real
+        # secret, distinct from the encryption password.
+        "--stego-password",
     }
 )
+
+
+def _write_generated_password_file(path, password):
+    """Write a `--random` generated password to a file only its owner can read.
+
+    The generated password is the only thing standing between an attacker and
+    the file's plaintext, so it must not travel on a general-purpose stream.
+    stderr -- where it used to be printed -- is collapsed into stdout by
+    `2>&1`, lands in terminal scrollback, in `script(1)` transcripts, in CI job
+    logs and in the desktop GUI's persistent debug log. Writing it ourselves is
+    the only way the tool controls the permissions (gitlab#152).
+
+    Args:
+        path: Destination, created 0600 and refused if it already exists.
+        password: The generated password.
+
+    Raises:
+        ValueError: If the destination already exists.
+        OSError: If the file cannot be created or written.
+    """
+    from .file_permissions import PermissionLevel, create_secure_file
+
+    # Same hardened primitive as the recovery-code writer (gitlab#146): it adds
+    # O_NOFOLLOW and O_EXCL, so a pre-planted symlink, FIFO or device is
+    # refused outright, rejects non-regular and foreign-owned targets, and pins
+    # the mode with an unconditional fchmod rather than trusting open()'s mode
+    # (which is ignored for an existing file, and which a restrictive umask
+    # would otherwise subtract from).
+    fd = create_secure_file(path, PermissionLevel.OWNER_ONLY, exclusive=True)
+    try:
+        os.write(fd, (password + "\n").encode("utf-8"))
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+    # fsync the directory too: the whole point of writing the credential before
+    # the ciphertext is that it survives a crash the ciphertext also survives,
+    # and an unsynced directory entry can vanish while the encrypted file stays.
+    #
+    # Best-effort by design. Windows cannot open a directory handle this way,
+    # and a write-only destination directory refuses it on POSIX; failing here
+    # would abort a correct operation *after* the O_EXCL file already exists,
+    # so the obvious retry would then die with FileExistsError.
+    try:
+        dir_fd = os.open(os.path.dirname(os.path.abspath(path)), os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(dir_fd)
+    except OSError:  # pragma: no cover - platform/filesystem dependent
+        pass
+    finally:
+        os.close(dir_fd)
+
+
+def _warn_orphan_random_password(args, ciphertext_maybe_written=True):
+    """Warn that a `--random-password-out` file was written and left in place.
+
+    The generated password is written before the ciphertext, so a later failure
+    can leave a 0600 orphan on disk. Deleting it automatically would be wrong
+    when a matching encrypted file might exist (the file is then its only
+    credential), but an unannounced orphan is its own hazard: the obvious retry
+    dies with FileExistsError, and a stale file beside a later run looks like a
+    live credential.
+
+    Coverage is structural (gitlab#223): the encrypt dispatch is wrapped in a
+    try/finally that calls this on every incomplete exit -- including the
+    `return 1` / `sys.exit(1)` sites (steganography failure, cascade-diversity
+    abort, XOR mutual-exclusivity, keystore-branch failures) that the
+    `except Exception` handler cannot see (gitlab#182, gitlab#152, mirroring
+    gitlab#146). The finally passes ciphertext_maybe_written from the
+    _ciphertext_on_disk flag, so a post-processing failure after the output
+    was written (armor rewrite, shred) gets the verify-first wording. The
+    only direct call sites besides the finally are the password-write-failure
+    handler (fires before the dispatch try) and the signal handler (a signal
+    death runs neither the finally nor atexit).
+
+    Args:
+        args: Parsed CLI arguments.
+        ciphertext_maybe_written: True at the top-level handler, where the
+            failure could have struck after the encrypted file was written, so
+            the file may be a live credential and the user is told to check
+            decryptability before removing it. False at the sites that provably
+            fail before any usable encrypted file exists (a pre-encryption abort,
+            or the password write itself failing part-way) -- there the orphan
+            can simply be removed, and claiming otherwise would tell the user to
+            test a file that cannot exist.
+    """
+    orphan = getattr(args, "random_password_out", None)
+    if not (orphan and os.path.exists(orphan)):
+        return
+    # gitlab#172 discipline: the path is caller-supplied text echoed to the
+    # terminal -- strip ANSI/bidi controls like every other untrusted echo.
+    orphan = sanitize_for_display(orphan)
+    if ciphertext_maybe_written:
+        eprint(
+            f"\nNOTE: a generated password was already written to {orphan}. "
+            f"It is NOT deleted, because this failure does not prove the "
+            f"encrypted file was not written. Check whether the output file "
+            f"exists and is decryptable with it before removing it; until you "
+            f"do, a retry with the same --random-password-out will refuse to "
+            f"overwrite it."
+        )
+    else:
+        eprint(
+            f"\nNOTE: a password file may remain at {orphan} (the encryption "
+            f"did not complete, so no usable encrypted file was written). You "
+            f"can remove it; until you do, a retry with the same "
+            f"--random-password-out will refuse to overwrite it."
+        )
+
+
+def _effective_encrypt_output(args):
+    """The path the encrypt run will actually write its ciphertext to.
+
+    `args.output` is not normalized anywhere, so reading it alone misses the
+    two derived cases: `--overwrite` writes back over the input, and an
+    omitted `--output` appends ".encrypted". A collision check that consulted
+    only `args.output` would therefore pass for
+    `encrypt -i f --random-password-out f.encrypted` and let the ciphertext
+    truncate the password file (gitlab#152).
+
+    Args:
+        args: Parsed CLI arguments.
+
+    Returns:
+        The output path, or None when it cannot be determined (stdin input
+        with no explicit output, which goes to stdout).
+    """
+    if getattr(args, "overwrite", False):
+        return args.input
+    if getattr(args, "output", None):
+        return args.output
+    if args.input == "/dev/stdin":
+        return None
+    return args.input + ".encrypted"
+
+
+def _check_random_password_destination(out_path, input_path, output_path):
+    """Refuse a destination that the run would then destroy.
+
+    A destination equal to the output would be truncated by the ciphertext
+    write moments later, destroying the password and reporting success -- the
+    file would be sealed under a value that no longer exists anywhere. O_EXCL
+    does not catch it, because the destination does not exist yet at the time
+    it is created.
+
+    Args:
+        out_path: Destination given with --random-password-out.
+        input_path: The --input path.
+        output_path: The --output path.
+
+    Raises:
+        ValueError: If the destination collides with the input or output.
+    """
+    if out_path is None:
+        return
+    if not out_path.strip():
+        raise ValueError("--random-password-out needs a path")
+    out_real = os.path.realpath(out_path)
+    for label, other in (("--input", input_path), ("--output", output_path)):
+        if not other:
+            continue
+        if out_real == os.path.realpath(other):
+            raise ValueError(f"--random-password-out must differ from {label}")
+        # realpath resolves symlinks but NOT hard links, so a destination
+        # hardlinked to --output passed this check and was then truncated by
+        # the ciphertext write moments later (gitlab#182). samefile compares
+        # st_dev/st_ino, which is what "the same file" actually means.
+        # Only meaningful when both already exist; the usual case is a
+        # destination this run is about to create, and that is handled by the
+        # realpath comparison above plus O_EXCL at creation.
+        try:
+            if os.path.exists(out_path) and os.path.samefile(out_path, other):
+                raise ValueError(f"--random-password-out must differ from {label}")
+        except OSError:
+            pass  # unreadable/missing: the realpath comparison stands
+
+
+def _random_password_destination_ok(isatty, out_path, quiet=False):
+    """Whether a generated password has somewhere safe to go.
+
+    A destination is required whenever the password cannot be displayed:
+    without a terminal there is nowhere safe to put it, and under --quiet the
+    banner is suppressed entirely -- which would otherwise encrypt the file
+    successfully, print nothing, exit 0, and leave nobody holding the
+    password. This mirrors `add-recovery --add-code --json`, refused rather
+    than silently withholding the credential.
+
+    Args:
+        isatty: Whether the display stream is a terminal.
+        out_path: Destination given with --random-password-out, or None.
+        quiet: Whether --quiet suppresses the display.
+
+    Returns:
+        True if the password can actually be delivered.
+    """
+    if out_path:
+        return True
+    return bool(isatty) and not quiet
+
+
+def _display_generated_password(password):
+    """Show a generated password on the terminal, once, before encrypting.
+
+    Called BEFORE the ciphertext is written: any later failure would otherwise
+    leave an encrypted file whose password was never disclosed.
+
+    Deliberately makes no claim to erase anything. The previous version ran a
+    10-second countdown, emitted \\033[2J and announced "Password has been
+    cleared from screen" -- which was false. That sequence repaints the visible
+    screen; it removes nothing from scrollback, from a pipe, from a `script(1)`
+    transcript, or from a CI log. Claiming otherwise is worse than saying
+    nothing, because the user stops taking their own precautions
+    (gitlab#152).
+
+    Args:
+        password: The generated password.
+    """
+    eprint("\n" + "!" * 80)
+    eprint("SAVE THIS PASSWORD NOW".center(80))
+    eprint("!" * 80)
+    eprint(f"\nGenerated Password: {password}")
+    eprint("\nThis is the ONLY time this password is shown.")
+    eprint("If you lose it, the data CANNOT be recovered.")
+    eprint(
+        "\nIt is now in this terminal's scrollback, and in any transcript or\n"
+        "log of this session. Use --random-password-out PATH to have it\n"
+        "written to a 0600 file instead and never displayed."
+    )
+
+
+# Short options that take a value and whose value is a secret. Derived from
+# SECRET_VALUE_CLI_OPTIONS so the two cannot drift.
+_SECRET_SHORT_OPTIONS = frozenset(
+    opt for opt in SECRET_VALUE_CLI_OPTIONS if len(opt) == 2 and opt[0] == "-" and opt[1] != "-"
+)
+
+
+def _resolve_secret_long_option(token):
+    """Whether a ``--`` token names a secret-valued option (gitlab#209).
+
+    argparse accepts unambiguous prefixes -- no parser here sets
+    ``allow_abbrev=False`` -- so ``--manifest-p`` binds
+    ``--manifest-password`` and the exact-membership test missed it.
+
+    Fails CLOSED, which is the opposite of _is_boolean_option's default: an
+    ambiguous prefix that could name a secret option is redacted, because
+    printing a password is worse than redacting a filename.
+    """
+    if token in SECRET_VALUE_CLI_OPTIONS:
+        return True
+    if not token.startswith("--") or len(token) <= 2:
+        return False
+    return any(opt.startswith(token) for opt in SECRET_VALUE_CLI_OPTIONS if opt.startswith("--"))
+
+
+def _split_secret_short_bundle(token):
+    """Split ``-apSECRET``/``-ap`` into (prefix, attached_value_or_None).
+
+    argparse resolves a bundle of short options, so ``-ap<value>`` is ``-a``
+    plus ``-p <value>`` -- and the previous ``startswith("-p")`` rule saw
+    neither (gitlab#209). Returns (None, None) when the token contains no
+    secret-valued short option.
+
+    A returned attached value of None means the SECRET IS THE NEXT TOKEN.
+    """
+    if not token.startswith("-") or token.startswith("--") or len(token) < 2:
+        return (None, None)
+    for position, letter in enumerate(token[1:], start=1):
+        if f"-{letter}" in _SECRET_SHORT_OPTIONS:
+            attached = token[position + 1 :]
+            return (token[: position + 1], attached if attached else None)
+    return (None, None)
 
 
 def sanitize_argv_for_debug(argv: list) -> list:
@@ -731,26 +1247,199 @@ def sanitize_argv_for_debug(argv: list) -> list:
     redact_next = False
     for i, arg in enumerate(sanitized):
         if redact_next:
+            if arg == "--":
+                # The separator is not the credential -- it is what a user
+                # MUST type when the token starts with "-", and base64url
+                # tokens and JWT segments legitimately do. Redacting it here
+                # consumed the redaction and printed the token in cleartext
+                # on the next iteration (security review of gitlab#177).
+                continue
             sanitized[i] = debug_secret("", arg)
             redact_next = False
-        elif arg in SECRET_VALUE_CLI_OPTIONS:
+        elif _resolve_secret_long_option(arg) or arg in SECRET_VALUE_CLI_OPTIONS:
             redact_next = True
-        elif "=" in arg and arg.split("=", 1)[0] in SECRET_VALUE_CLI_OPTIONS:
+        elif arg in SECRET_POSITIONAL_SUBCOMMANDS:
+            # These subcommands take a credential as a POSITIONAL argument, so
+            # SECRET_VALUE_CLI_OPTIONS (which matches option names) cannot see
+            # it; redact whatever follows.
+            #
+            # `keyserver set-token <token>` is the bearer token (gitlab#134,
+            # F17). `keyserver login <client_id>` is equally a credential: the
+            # login body is {"client_id": ...} with the password optional, so
+            # the client_id alone yields access and refresh tokens. It became
+            # reachable here only with gitlab#171 -- before that, argparse
+            # rejected `--debug` after `keyserver` and this dump never ran.
+            redact_next = True
+        elif "=" in arg and _resolve_secret_long_option(arg.split("=", 1)[0]):
             opt, value = arg.split("=", 1)
             sanitized[i] = f"{opt}={debug_secret('', value)}"
-        elif arg.startswith("-p") and not arg.startswith("--") and len(arg) > 2:
-            sanitized[i] = f"-p{debug_secret('', arg[2:])}"
+        else:
+            # Short-option bundles: argparse reads -apSECRET as -a plus
+            # -p SECRET, and -ap SECRET as the same with the value in the
+            # next token. The old rule only matched a token literally
+            # starting with "-p", so both spellings printed the password
+            # (gitlab#209).
+            prefix, attached = _split_secret_short_bundle(arg)
+            if prefix is not None:
+                if attached is not None:
+                    sanitized[i] = f"{prefix}{debug_secret('', attached)}"
+                else:
+                    redact_next = True
     return sanitized
 
 
-def preprocess_global_args(argv):
-    """Preprocess sys.argv to move truly global flags to the front for subparser compatibility.
+# Every command name recognised on the command line, used by
+# preprocess_global_args to find where the command starts. It is ONE list on
+# purpose: this was previously two hand-maintained copies, and the
+# preprocessor's had drifted to less than half the real set, so global flags
+# placed after `identity`, `keyserver`, `telemetry`, `plugin`, `hsm`, `test`
+# and 11 others were never relocated and argparse rejected them (gitlab#171).
+#
+# This is deliberately NOT the routing set. Membership here says "this token
+# is a command, so the flags after it belong to it" -- which is true of every
+# command whichever parser ends up handling it. Which parser that is comes
+# from _subparser_choices() below, read off the real subparser.
+#
+# Those two questions were one list until gitlab#179, and that conflation is
+# what broke seven commands: create-usb, verify-usb and the five *-plugin
+# commands were listed, had no subparser registered, and so routed to a
+# parser that rejected them with `invalid choice` even though the monolithic
+# parser declared them and their handlers existed.
+KNOWN_COMMANDS = (
+    "encrypt",
+    "decrypt",
+    "rekey",
+    "armor",
+    "dearmor",
+    "shred",
+    "generate-password",
+    "derive-password",
+    "list-algorithms",
+    "list-available-algorithms",
+    "install-dependencies",
+    "security-info",
+    "analyze-security",
+    "config-wizard",
+    "analyze-config",
+    "template",
+    "smart-recommendations",
+    "test",
+    "identity",
+    "check-argon2",
+    "check-pqc",
+    "check-password",
+    "version",
+    "show-version-file",
+    # Handled by the monolithic parser, which accepts global flags anywhere,
+    # so its absence here was latent rather than user-visible -- but the list
+    # means "every command name", and a subparser for it would break the day
+    # it was added (gitlab#176).
+    "info",
+    "create-usb",
+    "verify-usb",
+    "list-plugins",
+    "plugin-info",
+    "enable-plugin",
+    "disable-plugin",
+    "reload-plugin",
+    "plugin",
+    "telemetry",
+    "keyserver",
+    "hsm",
+    "verify-integrity",
+    "sign",
+    "verify-signature",
+    "list-recovery",
+    "recover",
+    "add-recovery",
+    "remove-recovery",
+)
 
-    This allows global flags like --debug, --verbose, --quiet, --progress to be specified
-    anywhere in the command line, maintaining backward compatibility with v1.2.1 behavior.
+# Back-compatible alias. The old name described what the list was used for
+# rather than what it contains, which is how it came to answer two different
+# questions (gitlab#179).
+SUBPARSER_COMMANDS = KNOWN_COMMANDS
+
+_BUILT_SUBPARSER = None
+
+
+def _shared_subparser():
+    """One built subparser, shared by the two caches below.
+
+    Both _subparser_choices() and _top_level_flags() run on every
+    invocation, and each used to build its own -- double the few
+    milliseconds the caches were budgeted for (security review of
+    gitlab#177). Returns None if it cannot be built; each caller has its own
+    fallback for that.
     """
-    # Flags that are truly global and can appear anywhere
-    TRULY_GLOBAL_FLAGS = {
+    global _BUILT_SUBPARSER
+    if _BUILT_SUBPARSER is None:
+        try:
+            from .crypt_cli_subparser import build_subparser
+
+            _BUILT_SUBPARSER = (build_subparser(),)
+        except Exception:  # noqa: BLE001 - routing must not be fatal
+            _BUILT_SUBPARSER = (None,)
+    return _BUILT_SUBPARSER[0]
+
+
+_SUBPARSER_CHOICES = None
+
+
+def _subparser_choices():
+    """The commands the subparser actually registers.
+
+    Read off the built parser rather than kept as a list beside it: a
+    hand-maintained copy is exactly what drifted in gitlab#171 and again in
+    gitlab#179. A command with no subparser must fall through to the
+    monolithic parser, which declares it and has its handler -- routing it to
+    a parser that has never heard of it is a dead command, not a fallback.
+
+    Cached because build_subparser() costs a few milliseconds and the answer
+    cannot change within a process.
+
+    Returns a frozenset, not the mutable cache: handing out the live set lets
+    any in-process caller re-create gitlab#179 at runtime -- .clear() sends
+    every command to the monolithic parser, and .add("x") routes x to a
+    subparser that will reject it with `invalid choice`. Immutability also
+    makes the unsynchronised check-then-set below provably harmless: two
+    threads would build equivalent values and neither can observe a
+    half-built one.
+
+    A failure to build degrades to "nothing is routed" rather than taking the
+    whole CLI down. This is now on the unconditional path -- every
+    invocation, including the monolithic ones -- where before, importing
+    crypt_cli_subparser only happened for commands that were about to use it.
+    Falling back to the monolithic parser, which declares every command, is
+    the safe direction.
+    """
+    global _SUBPARSER_CHOICES
+    if _SUBPARSER_CHOICES is None:
+        import argparse as _argparse
+
+        choices = set()
+        parser = _shared_subparser()
+        if parser is not None:
+            for action in parser._actions:
+                if isinstance(action, _argparse._SubParsersAction):
+                    choices |= set(action.choices)
+        _SUBPARSER_CHOICES = frozenset(choices)
+    return _SUBPARSER_CHOICES
+
+
+# Flags that are truly global and can appear anywhere on the command line.
+#
+# Membership here means "relocate this to the front so the top-level parser
+# consumes it". Only add a flag that is declared ONLY on the top-level parser:
+# if a subparser also declares the same dest, its default overwrites the
+# relocated value when argparse copies the subcommand namespace back, and the
+# flag is silently dropped instead of working (gitlab#171).
+#
+# In particular -t/--template must never appear here: it is a subcommand
+# option on encrypt/decrypt that selects the KDF/hash parameters, so a silent
+# drop would mean encrypting at default cost instead of the requested one.
+TRULY_GLOBAL_FLAGS = frozenset(
+    {
         "--debug",
         "--unsafe-show-secrets",
         "--verbose",
@@ -759,38 +1448,254 @@ def preprocess_global_args(argv):
         "--progress",
         "--parallel-kdf",
         "--kdf-workers",
+        # gitlab#176: declared top-level as "Automatic yes to prompts (for
+        # install-dependencies command)", recognised for routing, but never
+        # relocated -- so `install-dependencies --yes`, the one invocation it
+        # exists for, exited 2. Held back from gitlab#171 because `hsm
+        # fido2-unregister` declares its own --yes whose default would clobber
+        # a relocated one; that declaration now uses default=SUPPRESS, the
+        # same treatment --quiet needed.
+        "--yes",
+        "-y",
     }
+)
 
-    # Find the command position
-    commands = {
-        "encrypt",
-        "decrypt",
-        "rekey",
-        "shred",
-        "generate-password",
-        "derive-password",
-        "security-info",
-        "analyze-security",
-        "config-wizard",
-        "analyze-config",
-        "template",
-        "smart-recommendations",
-        "check-argon2",
-        "check-pqc",
-        "check-password",
-        "version",
-        "show-version-file",
-        "create-usb",
-        "verify-usb",
-    }
+# The single global flag that carries a value; its value must move with it.
+VALUE_CARRYING_GLOBAL_FLAGS = frozenset({"--kdf-workers"})
 
-    command_pos = None
-    for i, arg in enumerate(argv[1:], 1):  # Skip argv[0] (script name)
-        if arg in commands:
-            command_pos = i
+
+_TOP_LEVEL_FLAGS = None
+
+
+def _top_level_flags():
+    """(value-taking, boolean) top-level option strings.
+
+    Read off the real parser rather than hand-listed (gitlab#177), for the
+    same reason as _subparser_choices: a copy beside the definition drifts,
+    and this one decides whether the next token is a command or somebody
+    else's value.
+
+    Falls back to the known set if the parser cannot be built, so a failure
+    here degrades to today's behaviour rather than mis-scanning every argv.
+    """
+    global _TOP_LEVEL_FLAGS
+    if _TOP_LEVEL_FLAGS is None:
+        import argparse as _argparse
+
+        value_flags, boolean_flags = set(), set()
+        parser = _shared_subparser()
+        try:
+            if parser is None:
+                raise RuntimeError("subparser unavailable")
+            for action in parser._actions:
+                if not action.option_strings:
+                    continue
+                boolean = (
+                    isinstance(
+                        action,
+                        (
+                            _argparse._StoreTrueAction,
+                            _argparse._StoreFalseAction,
+                            _argparse._HelpAction,
+                            _argparse._VersionAction,
+                        ),
+                    )
+                    or action.nargs == 0
+                )
+                (boolean_flags if boolean else value_flags).update(action.option_strings)
+        except Exception:  # noqa: BLE001 - scanning must not be fatal
+            value_flags = {"--kdf-workers", "--identity-store", "--keyring-remove"}
+            # MINUS the value-carrying ones: TRULY_GLOBAL_FLAGS contains
+            # --kdf-workers, and calling it boolean here means the fallback
+            # would not consume its value and would read "4" as the command
+            # -- verbatim the gitlab#171 bug this file elsewhere says is
+            # fixed (security review of gitlab#177).
+            boolean_flags = (set(TRULY_GLOBAL_FLAGS) - set(VALUE_CARRYING_GLOBAL_FLAGS)) | {
+                "-h",
+                "--help",
+            }
+        _TOP_LEVEL_FLAGS = (frozenset(value_flags), frozenset(boolean_flags))
+    return _TOP_LEVEL_FLAGS
+
+
+def _find_command(argv):
+    """(command, index) for the command in argv, or (None, None).
+
+    The INDEX matters to preprocess_global_args: whether to strip a leading
+    `--` is a question about position, and testing "is the command already
+    in the output list" stood in for it badly -- a token equal to the
+    command name appearing earlier as some option's value suppressed a strip
+    that should have happened (follow-up review of gitlab#177).
+
+    Two rules the previous scans lacked (gitlab#177):
+
+      * Stop at a bare ``--``. Everything after it is data by POSIX
+        convention, so a file literally named ``--quiet`` must not be read as
+        a flag and a positional named ``encrypt`` must not be read as the
+        command.
+      * A value belongs to its option, not to the scan. gitlab#171 widened
+        the command set from 20 names to 42, which added ordinary barewords
+        -- test, version, sign, recover, template, identity, plugin, hsm,
+        armor -- so ``--alias telemetry`` used to look like the ``telemetry``
+        command.
+
+    An option this scan does not recognise is assumed to take a value. That
+    is safe because the recognised sets ARE the top-level parser's own: an
+    unrecognised option at this position is one argparse will reject anyway,
+    so consuming its value cannot break a command line that would otherwise
+    have worked. Both sets are needed, not just the value-taking one --
+    --yes/-y and -h/--help are top-level booleans that are NOT in
+    TRULY_GLOBAL_FLAGS (they are recognised but not relocatable), so keying
+    off that set alone made `crypt --yes encrypt` swallow the command.
+    """
+    commands = set(KNOWN_COMMANDS)
+    value_flags, boolean_flags = _top_level_flags()
+
+    index = 1
+    while index < len(argv):
+        token = argv[index]
+        if token == "--":
+            # POSIX and argparse both take the NEXT token as the positional,
+            # so the command can legitimately follow the separator. Returning
+            # None here sent `crypt -- identity list` to the wrong parser
+            # (security review of gitlab#177). Everything after is data, so
+            # the search stops at that one token.
+            following = argv[index + 1] if index + 1 < len(argv) else None
+            return (following, index + 1) if following in commands else (None, None)
+        if token.startswith("-") and token != "-":
+            # --flag=value is self-contained; it never consumes the next token.
+            if "=" not in token and not _is_boolean_option(token, boolean_flags, value_flags):
+                index += 1  # its value, whether the flag is known or not
+            index += 1
+            continue
+        return (token, index) if token in commands else (None, None)
+    return (None, None)
+
+
+def _first_command_token(argv):
+    """The command name in argv, or None. See _find_command for the rules."""
+    return _find_command(argv)[0]
+
+
+def _is_boolean_option(token, boolean_flags, value_flags):
+    """Whether this option token takes no value.
+
+    Exact membership is not enough, because argparse accepts two forms the
+    flag sets cannot express (security review of gitlab#177):
+
+      * **Bundled short options.** `-qy` is `-q` plus `-y`, both booleans,
+        but matches neither set -- so the scan assumed a value and swallowed
+        the command. `-qy install-dependencies` failed while `-q -y
+        install-dependencies` worked, and `-qy` is the natural spelling for
+        the one command --yes exists for.
+      * **Abbreviated long options.** No parser here sets
+        `allow_abbrev=False`, so `--deb` is a valid unambiguous prefix of
+        `--debug` -- and it swallowed the command too.
+
+    Unknown or ambiguous stays "takes a value", which is the fail-closed
+    direction: it is what stopped `--alias telemetry` being read as the
+    `telemetry` command, and an option argparse cannot resolve is one it
+    will reject anyway.
+    """
+    if token in boolean_flags:
+        return True
+    if token in value_flags:
+        return False
+
+    if token.startswith("--"):
+        # Unambiguous prefix, resolved against both sets together so an
+        # abbreviation shared by a boolean and a value flag stays unknown.
+        matches = {flag for flag in boolean_flags | value_flags if flag.startswith(token)}
+        if len(matches) == 1:
+            return matches.pop() in boolean_flags
+        return False
+
+    # A short-option bundle is boolean only if EVERY letter in it is.
+    singles = {flag for flag in boolean_flags if len(flag) == 2 and flag[0] == "-"}
+    return len(token) > 2 and all(f"-{letter}" in singles for letter in token[1:])
+
+
+def _keyring_remove_label(argv):
+    """The label `--keyring-remove` was given, or None.
+
+    Only honoured in top-level option position: before any `--`, and before
+    the command token. `--keyring-remove` is declared on the top-level
+    parser, so after a subcommand it is that subcommand's argument, not a
+    request to delete a credential.
+
+    Both spellings are recognised. The old scan matched only the separate
+    form, so `--keyring-remove=LABEL` silently did nothing.
+    """
+    _value_flags, boolean_flags = _top_level_flags()
+    command = _first_command_token(argv)
+    found = None
+
+    index = 1
+    while index < len(argv):
+        token = argv[index]
+        if token == "--":
+            break
+        if command is not None and token == command:
             break
 
-    if command_pos is None:
+        if token.startswith("--keyring-remove="):
+            candidate = token.split("=", 1)[1]
+            # An empty label is a mistake, not a request to delete "".
+            found = candidate or None
+            index += 1
+            continue
+
+        if _is_keyring_remove_option(token):
+            candidate = argv[index + 1] if index + 1 < len(argv) else None
+            # A label that looks like a flag means the user forgot it.
+            found = candidate if candidate and not candidate.startswith("-") else None
+            index += 2
+            continue
+
+        if token.startswith("-") and token != "-":
+            # Skip this option's VALUE too. Without it, `--identity-store
+            # --keyring-remove encrypt` deleted the entry named "encrypt" --
+            # a "forgot the path" typo that argparse would have rejected
+            # outright (follow-up review of gitlab#177).
+            if "=" not in token and not _is_boolean_option(token, boolean_flags, _value_flags):
+                index += 1
+            index += 1
+            continue
+
+        index += 1
+
+    # Last occurrence wins, as argparse binds it.
+    return found
+
+
+def _is_keyring_remove_option(token):
+    """Whether this token names --keyring-remove, abbreviations included.
+
+    argparse accepts unambiguous prefixes, so `--keyring-rem` binds the
+    option -- and the exact-match scan ignored it, making the option a
+    silent no-op in that spelling (follow-up review of gitlab#177).
+    """
+    if token == "--keyring-remove":
+        return True
+    if not token.startswith("--") or len(token) <= 2 or "=" in token:
+        return False
+    _value_flags, boolean_flags = _top_level_flags()
+    candidates = {flag for flag in set(_value_flags) | set(boolean_flags) if flag.startswith(token)}
+    return candidates == {"--keyring-remove"}
+
+
+def preprocess_global_args(argv):
+    """Preprocess sys.argv to move truly global flags to the front for subparser compatibility.
+
+    This allows global flags like --debug, --verbose, --quiet, --progress to be specified
+    anywhere in the command line, maintaining backward compatibility with v1.2.1 behavior.
+    """
+    # Every command, not just the routed ones: a flag written after
+    # `create-usb` belongs to create-usb regardless of which parser handles
+    # it. Shared with main()'s routing scan so the two cannot disagree
+    # (gitlab#177).
+    command_token, command_index = _find_command(argv)
+    if command_token is None:
         return argv  # No command found, return as-is
 
     # Extract global flags and their values from anywhere in the command line
@@ -801,11 +1706,44 @@ def preprocess_global_args(argv):
     while i < len(argv):
         arg = argv[i]
 
-        if arg in TRULY_GLOBAL_FLAGS:
+        if arg == "--":
+            # Everything from here is data, not flags (gitlab#177). Copy the
+            # rest verbatim: a file literally named --quiet was being hoisted
+            # out of its subcommand's argument list and read as a flag.
+            #
+            # A separator BEFORE the command is dropped rather than kept.
+            # POSIX reads `crypt -- identity list` as "identity is a
+            # positional", but argparse does not strip it for a subparser --
+            # it reports `invalid choice: '--'` -- so passing it through
+            # makes a legitimate invocation fail (security review of
+            # gitlab#177, whose premise that argparse strips it turned out
+            # not to hold; verified directly against argparse).
+            if command_index == i + 1:
+                other_args.extend(argv[i + 1 :])
+            else:
+                other_args.extend(argv[i:])
+            break
+
+        # The --flag=value form is one token, so an exact membership test
+        # misses it and argparse then rejects it after a subcommand -- the
+        # same gitlab#171 symptom, for the "=" spelling.
+        if "=" in arg and arg.split("=", 1)[0] in VALUE_CARRYING_GLOBAL_FLAGS:
             global_args.append(arg)
-            # Check if this flag takes a value
+        elif arg in TRULY_GLOBAL_FLAGS:
+            global_args.append(arg)
+            # Check if this flag takes a value.
+            #
+            # --kdf-workers is the only value-carrying global flag. Do NOT add
+            # --template/-t here: it is a *subcommand* option on encrypt and
+            # decrypt, and it selects the KDF/hash parameters. Relocating it
+            # would hand it to the top-level parser, whose value the encrypt
+            # subparser's own `template=None` default then overwrites -- so
+            # `encrypt -t hardened` would silently encrypt at default KDF cost
+            # instead of the requested one. (It was listed here for a long
+            # time but is unreachable: the branch above requires membership in
+            # TRULY_GLOBAL_FLAGS, which -t/--template are not.)
             if (
-                arg in ["--template", "-t", "--kdf-workers"]
+                arg in VALUE_CARRYING_GLOBAL_FLAGS
                 and i + 1 < len(argv)
                 and not argv[i + 1].startswith("-")
             ):
@@ -826,8 +1764,10 @@ def analyze_current_security_configuration(args):
     Args:
         args: Parsed command line arguments containing security configuration
     """
-    eprint("\nSECURITY CONFIGURATION ANALYSIS")
-    eprint("===============================")
+    output_format = getattr(args, "output_format", "text")
+    if output_format != "json":
+        eprint("\nSECURITY CONFIGURATION ANALYSIS")
+        eprint("===============================")
 
     try:
         # Extract hash configuration
@@ -918,6 +1858,19 @@ def analyze_current_security_configuration(args):
         scorer = SecurityScorer()
         analysis = scorer.score_configuration(hash_config, kdf_config, cipher_info, pqc_info)
 
+        # Machine-readable document on stdout so a GUI reads the real security
+        # analysis instead of scraping the unversioned human report (gitlab#162).
+        # A misparsed security readout is worse than none, so emit structured
+        # data. The only non-JSON-native value is the overall SecurityLevel enum.
+        if output_format == "json":
+            import json
+
+            result = dict(analysis)
+            result["overall"] = dict(analysis["overall"])
+            result["overall"]["level"] = analysis["overall"]["level"].name
+            print(json.dumps(result, indent=2, ensure_ascii=False, default=str))
+            return
+
         # Display analysis results
         eprint(f"\nOVERALL SECURITY SCORE: {analysis['overall']['score']}/10")
         eprint(f"Security Level: {analysis['overall']['level'].name}")
@@ -966,6 +1919,15 @@ def analyze_current_security_configuration(args):
         eprint()
 
     except Exception as e:
+        # In json mode stdout must stay a reliable contract: a scoring failure
+        # emits a structured error document and exits non-zero, so a GUI/script
+        # can tell failure from an empty success instead of getting empty
+        # stdout + exit 0 (gitlab#162 security review).
+        if output_format == "json":
+            import json
+
+            print(json.dumps({"error": str(e)}))
+            sys.exit(1)
         eprint(f"Error analyzing security configuration: {e}")
         eprint("Please check your configuration parameters.")
 
@@ -1335,6 +2297,38 @@ def output_available_algorithms_json(args):
     print(json.dumps(result, indent=2))
 
 
+# Immutable commit pins for the PQC upstreams (gitlab#252, F31/F33, CWE-494).
+# Git tags are mutable; a repointed tag would build/load arbitrary code as the
+# post-quantum crypto implementation. These are the commits the 0.12.0 tags
+# pointed to; the inline build verifies the checkout against LIBOQS_PINNED_COMMIT
+# and installs liboqs-python from LIBOQS_PYTHON_PINNED_COMMIT. Bump alongside the
+# version strings.
+LIBOQS_PINNED_COMMIT = "f4b96220e4bd208895172acc4fedb5a191d9f5b1"
+LIBOQS_PYTHON_PINNED_COMMIT = "7906e7879a099fa34217035957d977314f99757d"
+
+# Environment channel for the steganography password (gitlab#258, F21/F22,
+# CWE-214). The desktop GUI used to pass --stego-password on the child argv,
+# where /proc/<pid>/cmdline leaks it to any local user; it now passes the value
+# here, mirroring the main password's CRYPT_PASSWORD channel.
+STEGO_PASSWORD_ENV = "CRYPT_STEGO_PASSWORD"
+
+
+def _resolve_stego_password_env(args):
+    """Consume the CRYPT_STEGO_PASSWORD environment variable into
+    ``args.stego_password`` when ``--stego-password`` was not given.
+
+    The variable is consumed (read and removed) unconditionally when present, so
+    a superseded or unused value is never left behind for a spawned child to
+    inherit. An explicit ``--stego-password`` still takes precedence.
+    """
+    from .credential_env import consume_env
+
+    env_value = consume_env(STEGO_PASSWORD_ENV)
+    if env_value and not getattr(args, "stego_password", None):
+        args.stego_password = env_value
+    return args
+
+
 def install_optional_dependencies(args):
     """
     Install optional dependencies (liboqs, liboqs-python, threefish).
@@ -1366,7 +2360,7 @@ def install_optional_dependencies(args):
     eprint("=" * 70 + "\n")
 
     if not args.yes:
-        response = input("Continue? [y/N]: ").strip().lower()
+        response = prompt_and_read("Continue? [y/N]: ").strip().lower()
         if response not in ("y", "yes"):
             eprint("Installation cancelled.")
             return
@@ -1455,6 +2449,21 @@ def install_optional_dependencies(args):
                     check=True,
                 )
 
+                # Verify the checkout against the pinned commit (gitlab#252, F31):
+                # a moved tag lands a different HEAD; fail closed rather than build
+                # untrusted post-quantum crypto code.
+                head = subprocess.run(
+                    ["git", "-C", liboqs_dir, "rev-parse", "HEAD"],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                ).stdout.strip()
+                if head != LIBOQS_PINNED_COMMIT:
+                    raise RuntimeError(
+                        f"liboqs checkout {head} does not match the pinned commit "
+                        f"{LIBOQS_PINNED_COMMIT}; refusing to build (possible tag tampering)"
+                    )
+
                 # Build
                 build_path = os.path.join(liboqs_dir, "build")
                 os.makedirs(build_path, exist_ok=True)
@@ -1510,7 +2519,9 @@ def install_optional_dependencies(args):
                     "-m",
                     "pip",
                     "install",
-                    "git+https://github.com/open-quantum-safe/liboqs-python.git@0.12.0",
+                    # Pin to the immutable commit, not the mutable tag (gitlab#252, F33).
+                    "git+https://github.com/open-quantum-safe/liboqs-python.git@"
+                    + LIBOQS_PYTHON_PINNED_COMMIT,
                 ],
                 check=True,
             )
@@ -1636,6 +2647,87 @@ def run_config_wizard(args):
         return None
 
 
+def _build_analysis_config(args):
+    """Translate analyze-config argv into the dict the analyzer reads.
+
+    ``ConfigurationAnalyzer`` reads a different set of key names than the
+    analyze-config parser produces (``pbkdf2_iterations`` vs ``pbkdf2_rounds``,
+    ``argon2_memory`` vs ``argon2_memory_cost``, ``enable_scrypt`` /
+    ``enable_balloon`` / ``enable_hkdf`` which the parser never defines, and
+    ``algorithm`` vs ``encryption_data_algorithm``), so feeding it ``vars(args)``
+    scored the flags the user passed as absent (gitlab#168). This renames each
+    flag to the key the analyzer reads and derives the missing ``enable_*``
+    booleans from a positive cost, so a passed flag actually moves the score.
+
+    It is also a whitelist: only analysis inputs are copied, never the live
+    ``Namespace.__dict__`` (which the old ``vars(args)`` aliased and then
+    mutated, and which on the monolithic entry can carry secret-valued
+    attributes), so no secret can ride along into a future ``eprint(config)``.
+    Sub-parameters are only set when explicitly given, so the analyzer's own
+    defaults fire for the rest rather than being duplicated here.
+    """
+
+    def _int(name):
+        try:
+            return int(getattr(args, name, 0) or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    config = {}
+
+    # Hash rounds -- the analyzer reads "<name>_rounds" directly, same dests.
+    for name in ("sha256", "sha512", "blake2b", "blake3"):
+        config[f"{name}_rounds"] = _int(f"{name}_rounds")
+
+    # PBKDF2: parser dest pbkdf2_rounds -> analyzer key pbkdf2_iterations.
+    if _int("pbkdf2_rounds") > 0:
+        config["pbkdf2_iterations"] = _int("pbkdf2_rounds")
+
+    # Argon2: an explicit --enable-argon2 flag; *_cost dests -> *_memory/*_time.
+    if bool(getattr(args, "enable_argon2", False)):
+        config["enable_argon2"] = True
+        if _int("argon2_memory_cost") > 0:
+            config["argon2_memory"] = _int("argon2_memory_cost")
+        if _int("argon2_time_cost") > 0:
+            config["argon2_time"] = _int("argon2_time_cost")
+        if _int("argon2_parallelism") > 0:
+            config["argon2_parallelism"] = _int("argon2_parallelism")
+
+    # Scrypt/Balloon/HKDF have no --enable flag; a positive cost IS the signal.
+    if _int("scrypt_n") > 0:
+        config["enable_scrypt"] = True
+        config["scrypt_n"] = _int("scrypt_n")
+        if _int("scrypt_r") > 0:
+            config["scrypt_r"] = _int("scrypt_r")
+        if _int("scrypt_p") > 0:
+            config["scrypt_p"] = _int("scrypt_p")
+
+    balloon_space = _int("balloon_space_cost")
+    balloon_time = _int("balloon_time_cost")
+    if balloon_space > 0 or balloon_time > 0:
+        config["enable_balloon"] = True
+        if balloon_space > 0:
+            config["balloon_space_cost"] = balloon_space
+        if balloon_time > 0:
+            config["balloon_time_cost"] = balloon_time
+
+    if _int("hkdf_rounds") > 0:
+        config["enable_hkdf"] = True
+        config["hkdf_rounds"] = _int("hkdf_rounds")
+
+    # Cipher: parser dest encryption_data_algorithm -> analyzer key algorithm.
+    config["algorithm"] = getattr(args, "encryption_data_algorithm", None) or "aes-gcm"
+
+    # PQC: the analyzer reads pqc_algorithm directly (it already treats the
+    # argparse default "none" as absent, gitlab#166).
+    config["pqc_algorithm"] = getattr(args, "pqc_algorithm", None)
+
+    # Context for use-case-aware analysis.
+    config["use_case"] = getattr(args, "use_case", None)
+
+    return config
+
+
 def run_config_analyzer(args):
     """
     Run configuration analysis and display detailed results.
@@ -1653,8 +2745,9 @@ def run_config_analyzer(args):
             eprint("Analyzing Configuration...")
             eprint("Performing comprehensive security and performance analysis.\n")
 
-        # Convert args to configuration dictionary
-        config = vars(args)
+        # Translate argv into the analyzer's key names, as an explicit
+        # whitelisted copy (not the live namespace); see _build_analysis_config.
+        config = _build_analysis_config(args)
 
         # Add compliance requirements if specified
         if compliance_frameworks:
@@ -1872,10 +2965,15 @@ def run_template_manager(args):
             _handle_template_delete(template_mgr, args)
         else:
             eprint("Invalid template subcommand. Use --help for available options.")
+            # Previously fell through to an unconditional sys.exit(0) at the
+            # dispatch, so a mistyped subcommand reported success (gitlab#167).
+            return 1
 
     except Exception as e:
         eprint(f"Error in template management: {e}")
-        sys.exit(1)
+        return 1
+
+    return 0
 
 
 def run_smart_recommendations(args):
@@ -1950,6 +3048,22 @@ def _handle_recommendations_get(engine, args):
     # Generate recommendations
     recommendations = engine.generate_recommendations(user_context, current_config)
 
+    # Machine-readable document on stdout so a GUI reads the recommendation
+    # list instead of scraping the unversioned human report (gitlab#162).
+    if getattr(args, "output_format", "text") == "json":
+        import json
+
+        print(
+            json.dumps(
+                {"recommendations": [_recommendation_to_dict(r) for r in recommendations]},
+                indent=2,
+                ensure_ascii=False,
+                default=str,
+            )
+        )
+        engine.save_user_context(user_id, user_context)
+        return
+
     # Display recommendations
     eprint("🧠 SMART RECOMMENDATIONS")
     eprint("=" * 50)
@@ -1983,14 +3097,15 @@ def _handle_recommendations_profile(engine, args):
 
         # Interactive profile creation
         user_context.user_type = (
-            input("User type [personal/business/developer/compliance]: ").strip() or "personal"
+            prompt_and_read("User type [personal/business/developer/compliance]: ").strip()
+            or "personal"
         )
         user_context.experience_level = (
-            input("Experience level [beginner/intermediate/advanced/expert]: ").strip()
+            prompt_and_read("Experience level [beginner/intermediate/advanced/expert]: ").strip()
             or "intermediate"
         )
 
-        use_cases_str = input(
+        use_cases_str = prompt_and_read(
             "Primary use cases (comma-separated) [personal/business/compliance/archival]: "
         ).strip()
         if use_cases_str:
@@ -1999,13 +3114,14 @@ def _handle_recommendations_profile(engine, args):
             user_context.primary_use_cases = ["personal"]
 
         user_context.data_sensitivity = (
-            input("Data sensitivity [low/medium/high/top_secret]: ").strip() or "medium"
+            prompt_and_read("Data sensitivity [low/medium/high/top_secret]: ").strip() or "medium"
         )
         user_context.performance_priority = (
-            input("Performance priority [speed/security/balanced]: ").strip() or "balanced"
+            prompt_and_read("Performance priority [speed/security/balanced]: ").strip()
+            or "balanced"
         )
 
-        compliance_str = input(
+        compliance_str = prompt_and_read(
             "Compliance requirements (comma-separated) [fips_140_2/common_criteria/nist_guidelines]: "
         ).strip()
         if compliance_str:
@@ -2054,12 +3170,48 @@ def _handle_recommendations_feedback(engine, args):
         eprint(f"Comment: {feedback_text}")
 
 
+def _recommendation_to_dict(rec):
+    """Convert a SmartRecommendation dataclass to a JSON-serialisable dict.
+
+    Its category/priority/confidence fields are enums; everything else is
+    already a primitive/list/dict (gitlab#162).
+    """
+    from dataclasses import asdict
+
+    d = asdict(rec)
+    for key in ("category", "priority", "confidence"):
+        value = d.get(key)
+        if hasattr(value, "value"):
+            d[key] = value.value
+        elif hasattr(value, "name"):
+            d[key] = value.name
+    return d
+
+
 def _handle_recommendations_quick(engine, args):
     """Handle quick recommendations command."""
     use_case = args.use_case
     experience_level = getattr(args, "experience_level", "intermediate")
 
     quick_recs = engine.get_quick_recommendations(use_case, experience_level)
+
+    # Machine-readable document on stdout so a GUI reads the recommendation
+    # list instead of scraping the unversioned human report (gitlab#162).
+    if getattr(args, "output_format", "text") == "json":
+        import json
+
+        print(
+            json.dumps(
+                {
+                    "use_case": use_case,
+                    "experience_level": experience_level,
+                    "recommendations": quick_recs,
+                },
+                indent=2,
+                ensure_ascii=False,
+            )
+        )
+        return
 
     eprint(f"⚡ QUICK RECOMMENDATIONS FOR {use_case.upper()}")
     eprint("=" * 50)
@@ -2255,13 +3407,120 @@ def run_security_tests(args):
         sys.exit(1)
 
 
+def _template_list_payload(templates):
+    """Build the `template list --format json` entries.
+
+    Every string here originates in a template file, which is any .json/.yaml
+    a local process can drop into the template directory, so each field is
+    coerced to the expected type and bounded. One malformed file must not fail
+    the whole listing -- list_templates() already skips files it cannot load,
+    and this keeps that property.
+    """
+
+    def _text(value, limit=256):
+        return str(value)[:limit] if isinstance(value, (str, int, float)) else ""
+
+    def _texts(value, limit=32):
+        return [_text(v, 64) for v in value[:limit]] if isinstance(value, list) else []
+
+    payload = []
+    for template in templates[:256]:
+        try:
+            payload.append(
+                {
+                    "name": _text(template.metadata.name),
+                    "description": _text(template.metadata.description, 1024),
+                    "use_cases": _texts(template.metadata.use_cases),
+                    "tags": _texts(template.metadata.tags),
+                    "built_in": bool(template.is_built_in),
+                }
+            )
+        except Exception:  # noqa: BLE001 - one bad file must not kill the list
+            continue
+    return payload
+
+
+def _template_compare_payload(comparison):
+    """Build the `template compare --format json` document.
+
+    Same file-origin discipline as `_template_list_payload`: every
+    template-declared string comes from a file any local process can drop in,
+    so each is coerced and bounded. The self-asserted `security_score` /
+    `security_level` and their raw difference are NOT published -- they are read
+    verbatim from the file, and handing an untrusted number to an automated
+    consumer as an authoritative rating is the wrong direction (gitlab#169). The
+    derived verdicts answer the comparison instead (the performance verdict is
+    analyzer-computed, not self-asserted).
+    """
+
+    def _text(value, limit=512):
+        return str(value)[:limit] if isinstance(value, (str, int, float)) else ""
+
+    def _texts(value, limit=32):
+        return [str(v)[:64] for v in value[:limit]] if isinstance(value, list) else []
+
+    comparison = comparison if isinstance(comparison, dict) else {}
+    templates = comparison.get("templates", {})
+    templates = templates if isinstance(templates, dict) else {}
+
+    def _tmpl(key):
+        entry = templates.get(key, {})
+        entry = entry if isinstance(entry, dict) else {}
+        return {"name": _text(entry.get("name"), 256), "use_cases": _texts(entry.get("use_cases"))}
+
+    sec = comparison.get("security_comparison", {})
+    sec = sec if isinstance(sec, dict) else {}
+    perf = comparison.get("performance_comparison", {})
+    perf = perf if isinstance(perf, dict) else {}
+    # Each verdict is labelled with its trust basis so a machine consumer can
+    # tell them apart: the security verdict is DERIVED from the templates'
+    # self-asserted (file-declared) scores -- no raw number is published, but
+    # the verdict must not read as an authoritative rating (gitlab#169) -- while
+    # the performance verdict is analyzer-computed.
+    return {
+        "template1": _tmpl("template1"),
+        "template2": _tmpl("template2"),
+        "security_comparison": {
+            "verdict": _text(sec.get("verdict")),
+            "basis": "template_declared",
+        },
+        "performance_comparison": {
+            "verdict": _text(perf.get("verdict")),
+            "basis": "analyzer_computed",
+        },
+    }
+
+
 def _handle_template_list(template_mgr: TemplateManager, args):
     """Handle template list command."""
-    category = getattr(args, "category", None)
-    if category:
-        category = TemplateCategory(category)
+    # `template list` declares --use-case (personal/business/compliance/archival),
+    # not --category; the handler read a `category` attribute the parser never
+    # sets, so the filter was silently ignored (gitlab#169). Filter by the
+    # template's declared use-cases instead -- TemplateCategory is a disjoint
+    # domain (built_in/user_created/...), so it cannot be the filter here.
+    use_case = getattr(args, "use_case", None)
+    templates = template_mgr.list_templates()
+    if use_case:
+        templates = [t for t in templates if use_case in (t.metadata.use_cases or [])]
 
-    templates = template_mgr.list_templates(category)
+    if getattr(args, "format", "table") == "json":
+        # --format was declared on this parser and never read, so a caller could
+        # ask for JSON, get exit 0, and receive nothing (gitlab#167). stdout
+        # carries the document; the human report stays on stderr.
+        #
+        # security_score / security_level are deliberately NOT published here.
+        # For the metadata-bearing template format they are taken verbatim from
+        # the file and never recomputed, and list_templates() sorts by that
+        # value -- so a planted template claiming a top score would rank first
+        # and be handed to an automated consumer as an authoritative rating
+        # (gitlab#169). Publishing an untrusted number as a security rating is
+        # the wrong direction to fix that in.
+        print(json.dumps({"templates": _template_list_payload(templates)}, indent=2))
+        try:
+            sys.stdout.flush()
+        except BrokenPipeError:  # pragma: no cover - `| head` and friends
+            pass
+        return
 
     if not templates:
         eprint("No templates found.")
@@ -2300,7 +3559,9 @@ def _handle_template_list(template_mgr: TemplateManager, args):
 
 def _handle_template_create(template_mgr: TemplateManager, args):
     """Handle template creation from current configuration."""
-    name = getattr(args, "template_name", None)
+    # Parser dest is `name` (positional), not `template_name` -- reading the
+    # wrong attribute made `template create` always exit 1 (gitlab#169).
+    name = getattr(args, "name", None)
     if not name:
         eprint("Error: Template name is required for creation.")
         sys.exit(1)
@@ -2341,7 +3602,9 @@ def _handle_template_create(template_mgr: TemplateManager, args):
 
 def _handle_template_analyze(template_mgr: TemplateManager, args):
     """Handle template analysis command."""
-    template_name = getattr(args, "template_name", None)
+    # Parser dest is `template` (positional), not `template_name` -- reading the
+    # wrong attribute made this subcommand always exit 1 (gitlab#169).
+    template_name = getattr(args, "template", None)
     if not template_name:
         eprint("Error: Template name is required for analysis.")
         sys.exit(1)
@@ -2393,9 +3656,7 @@ def _handle_template_analyze(template_mgr: TemplateManager, args):
                 priority_icon = (
                     "🚨"
                     if rec["priority"] == "critical"
-                    else "⚠️"
-                    if rec["priority"] == "high"
-                    else "💡"
+                    else "⚠️" if rec["priority"] == "high" else "💡"
                 )
                 eprint(f"   {i}. {priority_icon} {rec['title']}")
                 eprint(f"      {rec['description']}")
@@ -2422,6 +3683,17 @@ def _handle_template_compare(template_mgr: TemplateManager, args):
         sys.exit(1)
 
     comparison = template_mgr.compare_templates(template1, template2)
+
+    if getattr(args, "format", "table") == "json":
+        # --format was declared on this parser and never read, so a caller could
+        # ask for JSON, get exit 0, and receive nothing (gitlab#167). stdout
+        # carries the document; the human report stays on stderr.
+        print(json.dumps(_template_compare_payload(comparison), indent=2))
+        try:
+            sys.stdout.flush()
+        except BrokenPipeError:  # pragma: no cover - `| head` and friends
+            pass
+        return
 
     eprint("🔄 TEMPLATE COMPARISON")
     eprint("=" * 50)
@@ -2483,7 +3755,9 @@ def _handle_template_recommend(template_mgr: TemplateManager, args):
 
 def _handle_template_delete(template_mgr: TemplateManager, args):
     """Handle template deletion command."""
-    template_name = getattr(args, "template_name", None)
+    # Parser dest is `template` (positional), not `template_name` -- reading the
+    # wrong attribute made this subcommand always exit 1 (gitlab#169).
+    template_name = getattr(args, "template", None)
     if not template_name:
         eprint("Error: Template name is required for deletion.")
         sys.exit(1)
@@ -2499,7 +3773,9 @@ def _handle_template_delete(template_mgr: TemplateManager, args):
 
     # Confirm deletion unless forced
     if not getattr(args, "force", False):
-        confirm = input(f"⚠️  Are you sure you want to delete template '{template_name}'? [y/N]: ")
+        confirm = prompt_and_read(
+            f"⚠️  Are you sure you want to delete template '{template_name}'? [y/N]: "
+        )
         if confirm.lower() != "y":
             eprint("Deletion cancelled.")
             return
@@ -2735,7 +4011,7 @@ def handle_hsm_command(args):
                 target = credential_id or "primary"
                 prompt = f"Are you sure you want to remove credential '{target}'? This cannot be undone. (y/N): "
 
-            confirmation = input(prompt).strip().lower()
+            confirmation = prompt_and_read(prompt).strip().lower()
             if confirmation != "y":
                 eprint("Operation cancelled.")
                 sys.exit(0)
@@ -2943,8 +4219,8 @@ def handle_keyserver_command(args):
 
                 eprint("\n✓ Email confirmed! Registration complete.")
                 eprint("=" * 60)
-                eprint(f"Client ID:   {result['client_id']}")
-                eprint(f"Token Type:  {result.get('token_type', 'Bearer')}")
+                eprint(f"Client ID:   {sanitize_for_display(result['client_id'])}")
+                eprint(f"Token Type:  {sanitize_for_display(result.get('token_type', 'Bearer'))}")
                 eprint(f"Token File:  {config.api_token_file}")
                 eprint("=" * 60)
             else:
@@ -2954,9 +4230,9 @@ def handle_keyserver_command(args):
 
                 eprint("\n✓ Successfully registered with keyserver")
                 eprint("=" * 60)
-                eprint(f"Client ID:   {result['client_id']}")
-                eprint(f"Expires:     {result['expires_at']}")
-                eprint(f"Token Type:  {result['token_type']}")
+                eprint(f"Client ID:   {sanitize_for_display(result['client_id'])}")
+                eprint(f"Expires:     {sanitize_for_display(result['expires_at'])}")
+                eprint(f"Token Type:  {sanitize_for_display(result['token_type'])}")
                 eprint(f"Token File:  {config.api_token_file}")
                 eprint("=" * 60)
 
@@ -2968,7 +4244,7 @@ def handle_keyserver_command(args):
         except KeyboardInterrupt:
             eprint("\n\n✗ Registration cancelled.")
         except Exception as e:
-            eprint(f"\n✗ Registration failed: {e}")
+            eprint(f"\n✗ Registration failed: {sanitize_for_display(e)}")
             eprint("\nTroubleshooting:")
             eprint("  - Check network connectivity")
             eprint("  - Verify keyserver URL is correct")
@@ -2992,8 +4268,8 @@ def handle_keyserver_command(args):
 
             eprint("\n✓ Login successful")
             eprint("=" * 60)
-            eprint(f"Client ID:     {result['client_id']}")
-            eprint(f"Token Type:    {result.get('token_type', 'Bearer')}")
+            eprint(f"Client ID:     {sanitize_for_display(result['client_id'])}")
+            eprint(f"Token Type:    {sanitize_for_display(result.get('token_type', 'Bearer'))}")
             eprint(f"Token File:    {config.api_token_file}")
             eprint(f"Refresh File:  {config.refresh_token_file}")
             eprint("=" * 60)
@@ -3003,7 +4279,7 @@ def handle_keyserver_command(args):
             eprint("  openssl-encrypt keyserver revoke <fingerprint>")
 
         except Exception as e:
-            eprint(f"\n✗ Login failed: {e}")
+            eprint(f"\n✗ Login failed: {sanitize_for_display(e)}")
             eprint("\nTroubleshooting:")
             eprint("  - Verify your client ID is correct (from registration email)")
             eprint("  - Check network connectivity")
@@ -3027,13 +4303,21 @@ def handle_keyserver_command(args):
             if args.json:
                 print(json.dumps(bundle.to_dict(), indent=2))
             else:
+                # Sanitized like the trust prompt in key_resolver
+                # (gitlab#172): the bundle is remote attacker input, and
+                # cached bundles predate __post_init__ content validation.
                 eprint("\n✓ Key found")
                 eprint("-" * 60)
-                eprint(f"Name:        {bundle.name}")
-                eprint(f"Email:       {bundle.email or 'N/A'}")
-                eprint(f"Fingerprint: {bundle.fingerprint}")
-                eprint(f"Algorithms:  {bundle.encryption_algorithm} / {bundle.signing_algorithm}")
-                eprint(f"Created:     {bundle.created_at}")
+                eprint(f"Name:        {sanitize_for_display(bundle.name)}")
+                eprint(
+                    f"Email:       {sanitize_for_display(bundle.email) if bundle.email else 'N/A'}"
+                )
+                eprint(f"Fingerprint: {sanitize_for_display(bundle.fingerprint)}")
+                eprint(
+                    f"Algorithms:  {sanitize_for_display(bundle.encryption_algorithm)} / "
+                    f"{sanitize_for_display(bundle.signing_algorithm)}"
+                )
+                eprint(f"Created:     {sanitize_for_display(bundle.created_at)}")
                 eprint("-" * 60)
         else:
             eprint(f"✗ Key not found for '{identifier}'")
@@ -3060,14 +4344,17 @@ def handle_keyserver_command(args):
 
         try:
             identity = resolver.resolve(args.identifier, load_private_keys=False)
-            eprint(f"✓ Successfully imported '{identity.name}' to local store")
-            eprint(f"  Fingerprint: {identity.fingerprint}")
+            eprint(
+                f"✓ Successfully imported "
+                f"'{sanitize_for_display(identity.name)}' to local store"
+            )
+            eprint(f"  Fingerprint: {sanitize_for_display(identity.fingerprint)}")
         except KeyNotFoundError:
             eprint(f"✗ Key not found for '{args.identifier}'")
         except TrustDeclinedError:
             eprint("✗ Import cancelled (user declined to trust key)")
         except Exception as e:
-            eprint(f"✗ Failed to import key: {e}")
+            eprint(f"✗ Failed to import key: {sanitize_for_display(e)}")
 
     elif action == "upload":
         # Upload key to keyserver
@@ -3111,13 +4398,13 @@ def handle_keyserver_command(args):
             success = plugin.upload_key(bundle)
 
             if success:
-                eprint(f"✓ Successfully uploaded '{identity_name}'")
-                eprint(f"  Fingerprint: {bundle.fingerprint}")
+                eprint(f"✓ Successfully uploaded '{sanitize_for_display(identity_name)}'")
+                eprint(f"  Fingerprint: {sanitize_for_display(bundle.fingerprint)}")
             else:
                 eprint(f"✗ Failed to upload '{identity_name}'")
 
         except Exception as e:
-            eprint(f"✗ Failed to upload key: {e}")
+            eprint(f"✗ Failed to upload key: {sanitize_for_display(e)}")
 
     elif action == "revoke":
         # Revoke key on keyserver
@@ -3136,16 +4423,19 @@ def handle_keyserver_command(args):
             eprint(f"✗ Failed to save API token: {e}")
 
     elif action == "show-token":
-        # Show API token (masked)
         token = config.load_api_token()
         if token:
-            # Mask token (show first 8 and last 4 characters)
-            if len(token) > 12:
-                masked = token[:8] + "*" * (len(token) - 12) + token[-4:]
-            else:
-                masked = "*" * len(token)
-            eprint(f"API Token: {masked}")
+            # Through the redaction chokepoint, not a private masking rule.
+            # This used to print the first 8 and last 4 characters, and 12
+            # characters of a bearer token is still key material: stderr
+            # reaches terminal scrollback, is merged by 2>&1, and the desktop
+            # GUI keeps a persistent debug log (gitlab#178). Reading the token
+            # back deliberately goes through the same explicit opt-in as every
+            # other secret.
+            eprint(debug_secret("API Token", token))
             eprint(f"Token file: {config.api_token_file}")
+            if not show_secrets_enabled():
+                eprint("  Run with --debug --unsafe-show-secrets to display it.")
         else:
             eprint("✗ No API token set")
             eprint("  Use: openssl-encrypt keyserver set-token <token>")
@@ -3170,7 +4460,7 @@ def handle_keyserver_command(args):
             return
 
         if not args.force:
-            response = input(f"Clear {count} cached keys? (yes/no): ")
+            response = prompt_and_read(f"Clear {count} cached keys? (yes/no): ")
             if response.lower() not in ["yes", "y"]:
                 eprint("Cancelled")
                 return
@@ -3194,7 +4484,8 @@ def handle_keyserver_command(args):
 
         if stats["most_accessed"]:
             eprint(
-                f"Most Accessed Key: {stats['most_accessed']['name']} ({stats['most_accessed']['count']} times)"
+                f"Most Accessed Key: {sanitize_for_display(stats['most_accessed']['name'])} "
+                f"({stats['most_accessed']['count']} times)"
             )
 
         eprint(f"Cache Path: {stats['cache_path']}")
@@ -3217,14 +4508,14 @@ def handle_telemetry_command(args):
     except ImportError as e:
         eprint("Error: Telemetry plugin not available.")
         eprint(f"Details: {e}")
-        return
+        return 1
 
     # Get or create telemetry plugin instance
     try:
         plugin = OpenSSLEncryptTelemetryPlugin()
     except Exception as e:
         eprint(f"Error: Failed to initialize telemetry plugin: {e}")
-        return
+        return 1
 
     # Handle subcommands
     action = args.telemetry_action
@@ -3232,17 +4523,26 @@ def handle_telemetry_command(args):
     if action == "status":
         # Show telemetry status
         status = plugin.get_status()
-        eprint("\nTELEMETRY STATUS")
-        eprint("=" * 60)
-        eprint(f"Enabled: {'Yes' if status['enabled'] else 'No'}")
-        eprint(f"Pending Events: {status['pending_events']}")
-        eprint(f"Server URL: {status['server_url']}")
-        eprint(f"API Key: {'Present' if status['has_api_key'] else 'Not registered'}")
-        eprint(
-            f"Upload Interval: {status['upload_interval']} seconds ({status['upload_interval'] // 3600} hours)"
-        )
-        eprint(f"Background Upload: {'Running' if status['upload_thread_alive'] else 'Stopped'}")
-        eprint("=" * 60)
+        if getattr(args, "json", False):
+            # Machine-readable document on stdout so a GUI reads the real state
+            # instead of scraping the unversioned human report (gitlab#162).
+            import json
+
+            print(json.dumps(status, indent=2))
+        else:
+            eprint("\nTELEMETRY STATUS")
+            eprint("=" * 60)
+            eprint(f"Enabled: {'Yes' if status['enabled'] else 'No'}")
+            eprint(f"Pending Events: {status['pending_events']}")
+            eprint(f"Server URL: {status['server_url']}")
+            eprint(f"API Key: {'Present' if status['has_api_key'] else 'Not registered'}")
+            eprint(
+                f"Upload Interval: {status['upload_interval']} seconds ({status['upload_interval'] // 3600} hours)"
+            )
+            eprint(
+                f"Background Upload: {'Running' if status['upload_thread_alive'] else 'Stopped'}"
+            )
+            eprint("=" * 60)
 
     elif action == "show-pending":
         # Show pending events (transparency)
@@ -3303,6 +4603,9 @@ def handle_telemetry_command(args):
             eprint(f"✓ {result.message}")
         else:
             eprint(f"✗ {result.message}")
+            # A wrapper may clear local state believing the events were
+            # uploaded; a failed flush has to reach the exit status.
+            return 1
 
     elif action == "clear":
         # Delete all pending events without uploading
@@ -3313,10 +4616,20 @@ def handle_telemetry_command(args):
             return
 
         if not args.force:
-            response = input(f"Delete {pending_count} pending events without uploading? (yes/no): ")
+            try:
+                response = prompt_and_read(
+                    f"Delete {pending_count} pending events without uploading? (yes/no): "
+                )
+            except (EOFError, KeyboardInterrupt):
+                # No usable stdin (a GUI or CI caller) or an interrupt: treat as
+                # a decline rather than a traceback outside the status contract.
+                eprint("\nCancelled.")
+                return 3
             if response.lower() not in ["yes", "y"]:
                 eprint("Cancelled.")
-                return
+                # Distinct from both success and failure: nothing was changed, and
+                # a caller must not read a decline as a completed action.
+                return 3
 
         deleted = plugin.buffer.clear_all()
         eprint(f"✓ Deleted {deleted} pending events.")
@@ -3333,22 +4646,41 @@ def handle_telemetry_command(args):
             eprint("  3. Delete your API key")
             eprint("  4. Stop background uploads")
             eprint()
-            response = input("Are you sure you want to opt out? (yes/no): ")
+            try:
+                response = prompt_and_read("Are you sure you want to opt out? (yes/no): ")
+            except (EOFError, KeyboardInterrupt):
+                # No usable stdin (a GUI or CI caller) or an interrupt: treat as
+                # a decline rather than a traceback outside the status contract.
+                eprint("\nCancelled.")
+                return 3
             if response.lower() not in ["yes", "y"]:
                 eprint("Cancelled.")
-                return
+                # Distinct from both success and failure: nothing was changed, and
+                # a caller must not read a decline as a completed action.
+                return 3
 
         result = plugin.opt_out()
 
         if result.success:
             eprint(f"✓ {result.message}")
-            eprint("\nTelemetry has been completely disabled.")
-            eprint("To re-enable, use: --telemetry flag or set OPENSSL_ENCRYPT_TELEMETRY=1")
+            eprint("\nTelemetry collection is disabled and the stored data is deleted.")
+            eprint(
+                "This does not write a persistent setting: telemetry can be switched "
+                "on again by OPENSSL_ENCRYPT_TELEMETRY=1 or a config file, which "
+                "would register a new key."
+            )
         else:
             eprint(f"✗ {result.message}")
+            # Opt-out is destructive. A caller that cannot tell a refusal from a
+            # completed deletion may tell the user their data is gone when it is
+            # not, so the failure has to reach the exit status.
+            return 1
 
     else:
         eprint(f"Unknown telemetry action: {action}")
+        return 1
+
+    return 0
 
 
 def main():
@@ -3359,21 +4691,37 @@ def main():
     import sys
 
     # Handle --keyring-remove early (before argparse) since it's a standalone action
-    if "--keyring-remove" in sys.argv:
-        idx = sys.argv.index("--keyring-remove")
-        if idx + 1 < len(sys.argv):
-            label = sys.argv[idx + 1]
-            try:
-                import keyring as _keyring
+    # Deliberately not a bare `"--keyring-remove" in sys.argv` membership
+    # test (security review of gitlab#177). That scan ran before any parsing,
+    # over the WHOLE of argv, so `crypt shred -- --keyring-remove label`
+    # deleted the stored password and exited 0 having shredded nothing --
+    # when what the user described was two files with those names. It also
+    # missed the `--keyring-remove=LABEL` spelling entirely, so that form
+    # silently did nothing.
+    label = _keyring_remove_label(sys.argv)
+    if label is not None:
+        try:
+            import keyring as _keyring
+        except ImportError:
+            eprint("Error: keyring package not installed. Install with: pip install keyring")
+            sys.exit(1)
 
-                _keyring.delete_password("openssl_encrypt", label)
-                eprint(f"Password removed from keyring: '{label}'")
-            except ImportError:
-                eprint("Error: keyring package not installed. Install with: pip install keyring")
-                sys.exit(1)
-            except Exception:
-                eprint(f"No password found in keyring for label '{label}'")
-            sys.exit(0)
+        # "Not found" and "the backend failed" are different answers, and a
+        # caller that cannot tell them apart may believe a credential is gone
+        # when it is still there -- the same reasoning the telemetry opt-out
+        # applies (follow-up review of gitlab#177). Exit 0 only on a
+        # confirmed deletion or a confirmed absence.
+        not_found = getattr(getattr(_keyring, "errors", None), "PasswordDeleteError", ())
+        try:
+            _keyring.delete_password("openssl_encrypt", label)
+            eprint(f"Password removed from keyring: '{label}'")
+        except not_found:
+            eprint(f"No password found in keyring for label '{label}'")
+        except Exception as error:
+            eprint(f"Error: could not remove '{label}' from the keyring: {error}")
+            eprint("  The password may still be stored.")
+            sys.exit(1)
+        sys.exit(0)
 
     sys.argv = preprocess_global_args(sys.argv)
 
@@ -3381,82 +4729,27 @@ def main():
     # Check if position 1 is a subcommand to decide which parser to use.
     # This allows backward compatibility: when global flags are BEFORE the command,
     # the monolithic parser is used (which has all arguments).
-    subparser_commands = [
-        "encrypt",
-        "decrypt",
-        "rekey",
-        "armor",
-        "dearmor",
-        "shred",
-        "generate-password",
-        "derive-password",
-        "list-algorithms",
-        "list-available-algorithms",
-        "install-dependencies",
-        "security-info",
-        "analyze-security",
-        "config-wizard",
-        "analyze-config",
-        "template",
-        "smart-recommendations",
-        "test",
-        "identity",
-        "check-argon2",
-        "check-pqc",
-        "check-password",
-        "version",
-        "show-version-file",
-        "create-usb",
-        "verify-usb",
-        "list-plugins",
-        "plugin-info",
-        "enable-plugin",
-        "disable-plugin",
-        "reload-plugin",
-        "plugin",
-        "telemetry",
-        "keyserver",
-        "hsm",
-        "verify-integrity",
-        "sign",
-        "verify-signature",
-        "list-recovery",
-        "recover",
-        "add-recovery",
-        "remove-recovery",
-    ]
+    # Read off the real subparser, not a list beside it (gitlab#179): a name
+    # that has no subparser registered must fall through to the monolithic
+    # parser below, which declares every command and holds their handlers.
+    # Routing it to the subparser turns a working command into `invalid
+    # choice`, which is how create-usb, verify-usb and the five *-plugin
+    # commands were unreachable while still being listed in --help.
+    subparser_commands = _subparser_choices()
 
-    # Use subparser only if a subcommand is present
-    # (after global flags have been moved to the front by preprocess_global_args)
-    # Find the first non-flag argument (skip global flags)
-    global_flags = {
-        "--progress",
-        "--verbose",
-        "--debug",
-        "--unsafe-show-secrets",
-        "--quiet",
-        "--yes",
-        "-y",
-        "--parallel-kdf",
-        "--kdf-workers",
-    }
-    first_command = None
-    for i in range(1, len(sys.argv)):
-        arg = sys.argv[i]
-        # Skip global flags (and their values if applicable)
-        if arg in global_flags:
-            # Skip the flag and its value if it takes one
-            if (
-                arg in ["--kdf-workers"]
-                and i + 1 < len(sys.argv)
-                and not sys.argv[i + 1].startswith("-")
-            ):
-                continue  # Will skip the value in next iteration
-            continue
-        # Found a non-flag argument
-        if not arg.startswith("-"):
-            first_command = arg
-            break
+    # Use subparser only if a subcommand is present, after
+    # preprocess_global_args has moved the global flags to the front.
+    #
+    # The SAME scan the relocation gate uses (gitlab#177). This was a third
+    # hand-maintained copy of "which flags carry a value", and the copies had
+    # already drifted twice: it once omitted -q, and its value-skip once
+    # `continue`d without consuming the value, so `--kdf-workers N` made the
+    # scan read "N" as the command and silently fall back to the monolithic
+    # parser (gitlab#171). Sharing one implementation means the relocation
+    # gate and the routing decision cannot disagree about where the command
+    # is -- and disagreement is exactly how the flags end up moved for one
+    # parser and interpreted by the other.
+    first_command = _first_command_token(sys.argv)
 
     if first_command in subparser_commands:
         # Use subparser for all command-specific operations
@@ -3607,21 +4900,134 @@ def _validate_generate_password_args(
         )
 
 
+def _consume_encrypt_signer_passphrase(args):
+    """Consume ``$OPENSSL_ENCRYPT_SIGNER_PASSPHRASE`` up front on the encrypt
+    ``--sign-with`` path.
+
+    ``sign`` consumes it as its very first statement so the value is gone from
+    ``os.environ`` before anything -- an identity-load path, a plugin -- can
+    spawn a child that would inherit it. The encrypt path reaches the same
+    signing code only after the plugin system, HSM/pepper plugins and keyserver
+    connections have come up, all with the variable still live. Consuming it
+    here, before that machinery runs, restores the read-once-and-remove
+    guarantee; the value is handed to :func:`resolve_credential` as ``explicit``
+    (gitlab#180).
+
+    A non-signing encrypt, or any other action, returns ``None`` and touches
+    nothing. When signing is requested the variable is consumed (removed)
+    whether or not it is ultimately needed -- an unneeded value not left in the
+    environment is the point.
+
+    Args:
+        args: Parsed command-line arguments.
+
+    Returns:
+        The consumed passphrase, or ``None``.
+    """
+    if getattr(args, "action", None) == "encrypt" and getattr(args, "sign_with", None):
+        from .file_signature import SIGNER_PASSPHRASE_ENV
+
+        return consume_env(SIGNER_PASSPHRASE_ENV)
+    return None
+
+
 def _resolve_second_password(args):
     """Resolve the optional second password (keyed hidden mode) to bytes or None.
 
     Priority: ``--second-password-fd`` > ``--second-password`` >
-    ``--second-password-prompt``. Returns ``None`` when none is supplied (the
-    keyless / non-hidden case). The trailing newline from fd/prompt sources is
-    stripped, mirroring the primary-password handling.
+    ``$OPENSSL_ENCRYPT_SECOND_PASSWORD`` > ``--second-password-prompt``.
+    Returns ``None`` when none is supplied (the keyless / non-hidden case).
+    The trailing newline from fd/prompt sources is stripped, mirroring the
+    primary-password handling.
+
+    The environment variable exists because the prompt reads /dev/tty, which
+    the desktop GUI and any CI caller cannot answer, while ``--second-password``
+    puts the credential in world-readable ``/proc/PID/cmdline`` (gitlab#154).
+    It is consumed on every call, even when a higher-priority source wins, so
+    it is never inherited by a later child process.
+
+    An environment value alone does NOT enable keyed hidden mode. A non-None
+    return here makes `_hidden_for_encrypt` turn hidden mode on, so if the
+    variable could supply a value unasked, an exported variable would silently
+    write every file with a keyed hidden header under a value the user never
+    chose and cannot reproduce -- readable by whoever planted it, and locking
+    the user out of their own metadata. The variable is therefore only read
+    when a flag has actually requested the credential: the environment
+    supplies a value, an explicit flag still selects the path.
     """
+    # Consumed unconditionally, before the branches and regardless of whether
+    # it is wanted: a value left behind is inherited by any child process, and
+    # several call sites run subprocess.run() with no env=.
+    env_value = consume_env(SECOND_PASSWORD_ENV)
+
+    # A blank credential is a hard error when ENCRYPTING -- wrapping metadata
+    # under a secret anyone can guess is the actual harm. When decrypting it
+    # is allowed through: a file encrypted on an earlier release with a
+    # whitespace-only value must stay decryptable, and the same
+    # data-preservation reasoning that motivates reject_newline=False applies.
+    encrypting = getattr(args, "action", None) not in ("decrypt", "info")
+
     fd = getattr(args, "second_password_fd", None)
     if fd is not None:
         with os.fdopen(os.dup(fd), "rb") as f:
-            return f.read().split(b"\n", 1)[0]
+            from_fd = f.read().split(b"\n", 1)[0]
+        # The fd path used to skip validation entirely, so an empty or
+        # EOF-closed descriptor yielded b"", which hidden_header maps back to
+        # "keyless" -- silently giving a keyless header to a caller who asked
+        # for a keyed one. That is exactly what `--second-password ""` now
+        # errors on, so it errors here too.
+        #
+        # Route through the same canonical rule the flag and env channels use
+        # (credential_env.validated) instead of a bytes-only `.strip()`, which
+        # strips ASCII whitespace only: a U+00A0-only credential was rejected
+        # via --second-password but accepted here, and a future change to the
+        # blank rule would silently not reach this channel (gitlab#180). The fd
+        # already stops at the first newline, so reject_newline is moot; match
+        # the flag's reject_newline=False. surrogateescape keeps arbitrary
+        # bytes round-trippable so binary credentials behave as before while
+        # Unicode whitespace is still recognised as blank.
+        if encrypting:
+            credential_validated(
+                from_fd.decode("utf-8", "surrogateescape"),
+                "--second-password-fd",
+                reject_newline=False,
+            )
+        return from_fd
     val = getattr(args, "second_password", None)
-    if val:
+    if val is not None:
+        # `is not None`, not truthiness: `--second-password ""` used to fall
+        # through to the next source and silently produce a keyless header.
+        # reject_newline=False: this flag predates that rule, and a file
+        # already encrypted with a newline-bearing value must stay
+        # decryptable. Only the new environment channel enforces it.
+        if encrypting:
+            credential_validated(val, "--second-password", reject_newline=False)
         return val.encode("utf-8")
+
+    requested = bool(
+        getattr(args, "hidden_header", False) or getattr(args, "second_password_prompt", False)
+    )
+    if env_value is not None and not requested:
+        # Silently dropping it would leave a GUI or CI caller believing the
+        # metadata is keyed when the file was written in plain legacy format.
+        # The NAME only -- never the value.
+        eprint(
+            f"WARNING: ${SECOND_PASSWORD_ENV} was set but ignored. Keyed "
+            f"hidden mode must be requested with --hidden-header or "
+            f"--second-password-prompt; the variable supplies the value, it "
+            f"does not enable the mode."
+        )
+    if requested and env_value is not None:
+        # reject_newline only when ENCRYPTING, matching the fd and flag channels
+        # (gitlab#180): now that `info`/`decrypt` reach the env channel, a keyed
+        # hidden file written through fd/flag with a newline-bearing second
+        # password must stay readable through the environment too. On encrypt the
+        # new-channel strictness stays -- a GUI's trailing newline would derive an
+        # unreproducible key. (A blank value is still refused on every path, since
+        # a blank env variable is almost always an unset one.)
+        return credential_validated(
+            env_value, f"${SECOND_PASSWORD_ENV}", reject_newline=encrypting
+        ).encode("utf-8")
     if getattr(args, "second_password_prompt", False):
         import getpass
 
@@ -3772,9 +5178,29 @@ def main_with_args(args=None):
     # Register cleanup function to run on normal exit
     atexit.register(cleanup_all)
 
+    # gitlab#223: orphan-password NOTE state, initialized before any code that
+    # could write the --random-password-out file so the signal handler and the
+    # dispatch finally can always read it. _ciphertext_on_disk: a usable (or
+    # possibly usable) encrypted output exists, so the password file is a live
+    # credential -- the NOTE must tell the user to verify, never "you can
+    # remove it". _encrypt_completed: the run reached its normal end -- no
+    # NOTE at all (delivery was announced at write time).
+    _ciphertext_on_disk = False
+    _encrypt_completed = False
+
     # Register signal handlers for common termination signals
     def signal_handler(signum, frame):
         cleanup_temp_files()
+        # gitlab#223 review f5: a signal death runs neither the dispatch
+        # finally nor atexit (SIG_DFL re-kill below), and Ctrl-C during a
+        # memory-hard KDF is the most likely incomplete encrypt exit. The
+        # NOTE is advisory: it must never change the outcome, so failures
+        # are swallowed.
+        try:
+            if not _encrypt_completed:
+                _warn_orphan_random_password(args, ciphertext_maybe_written=_ciphertext_on_disk)
+        except Exception:
+            pass
         # Re-raise the signal to allow the default handler to run
         signal.signal(signum, signal.SIG_DFL)
         os.kill(os.getpid(), signum)
@@ -3827,16 +5253,19 @@ def main_with_args(args=None):
     global_group.add_argument(
         "--parallel-kdf",
         action="store_true",
-        help="Use parallel processing for key derivation (v11 only, requires --independent-xor). "
-        "Speeds up encryption by running hash algorithms and KDFs concurrently. "
-        "Requires multiprocessing support.",
+        help="Derive the independent KDF components concurrently on a thread pool. "
+        "Applies to every producible format (the derived key is byte-identical, so "
+        "the flag is never needed to decrypt). Speeds up configs with several "
+        "memory-hard KDFs (Argon2, Scrypt); pure hash-round components gain "
+        "little (they serialize on the Python GIL).",
     )
     global_group.add_argument(
         "--kdf-workers",
         type=int,
         default=None,
         metavar="N",
-        help="Number of parallel workers for KDF (default: auto-detect, max: CPU count). "
+        help="Number of parallel workers for KDF (default: auto-detect; capped at CPU "
+        "count, component count and a concurrent-memory safety ceiling). "
         "Only used with --parallel-kdf.",
     )
     global_group.add_argument("--verbose", action="store_true", help="Show hash/kdf details")
@@ -4087,6 +5516,22 @@ def main_with_args(args=None):
         "--no-second-password-prompt",
         action="store_true",
         help="Never prompt for a second password, even at an interactive terminal.",
+    )
+    # `info` reaches this monolithic parser (it has no dedicated subparser), and
+    # it passes the second password to print_file_info to read a keyed hidden
+    # file's metadata. Without this flag `requested` was always False for info,
+    # so $OPENSSL_ENCRYPT_SECOND_PASSWORD was never read and the ignored-variable
+    # warning told the user to pass --hidden-header -- a flag argparse then
+    # rejected on this route, leaving only the tty prompt that the env channel
+    # exists to replace for GUI/CI callers (gitlab#180). Same flag/semantics as
+    # the encrypt/decrypt subparsers' --hidden-header: it REQUESTS the second
+    # password so the environment value is read only when it is present.
+    parser.add_argument(
+        "--hidden-header",
+        action="store_true",
+        help="Expect the hidden (whitened) format and request the second password "
+        "for a keyed hidden file; $OPENSSL_ENCRYPT_SECOND_PASSWORD is read only "
+        "when this (or --second-password-prompt) is present.",
     )
     parser.add_argument(
         "--overwrite",
@@ -4536,21 +5981,31 @@ def main_with_args(args=None):
         help="Length of generated password (default: 16)",
     )
     password_group.add_argument(
-        "--use-digits", action="store_true", help="Include digits in generated password"
+        "--use-digits",
+        action="store_true",
+        # default=None, not the implicit False: _charclass then treats both
+        # parser routes alike (gitlab#181). With False the monolithic route
+        # fell into generate_strong_password's empty-pool fallback and
+        # produced a 62-char alphabet while the subparser route produced 94.
+        default=None,
+        help="Include digits in generated password",
     )
     password_group.add_argument(
         "--use-lowercase",
         action="store_true",
+        default=None,
         help="Include lowercase letters in generated password",
     )
     password_group.add_argument(
         "--use-uppercase",
         action="store_true",
+        default=None,
         help="Include uppercase letters in generated password",
     )
     password_group.add_argument(
         "--use-special",
         action="store_true",
+        default=None,
         help="Include special characters in generated password",
     )
 
@@ -4745,9 +6200,13 @@ def main_with_args(args=None):
         # Process CLI aliases and apply overrides
         args, alias_errors = process_cli_aliases(args, alias_processor)
         if alias_errors:
+            # No `sys.` here: the local `import sys` further down makes the
+            # name local to this whole function, so touching it above that
+            # line raises UnboundLocalError -- this path would have crashed
+            # with a traceback instead of reporting the alias errors.
             for error in alias_errors:
-                eprint(f"Error: {error}", file=sys.stderr)
-            sys.exit(1)
+                eprint(f"Error: {error}")
+            raise SystemExit(1)
 
     # Add compatibility layer for subparser args - set missing attributes to defaults
     default_attrs = {
@@ -4871,13 +6330,39 @@ def main_with_args(args=None):
         if not hasattr(args, attr):
             setattr(args, attr, default_val)
 
+    # F21/F22 (gitlab#258): accept the steganography password via the
+    # CRYPT_STEGO_PASSWORD environment variable (out of the world-readable argv).
+    _resolve_stego_password_env(args)
+
     # Resolve the optional second password (hidden keyed mode) exactly once, so
     # an interactive prompt is shown at most a single time per invocation.
     # NOTE: only the *explicit* forms (--second-password / -fd / -prompt) are
     # resolved here. The auto-detect fallback (keyless peek + prompt) runs later,
     # AFTER stdin buffering and de-armoring, so it can peek a seekable file even
     # when the ciphertext arrives on stdin (e.g. armor ... | decrypt -i /dev/stdin).
-    _hidden_second_password = _resolve_second_password(args)
+    # This runs for EVERY subcommand, well outside the main try/except, so an
+    # unhandled CredentialError here would be a raw traceback out of an
+    # unrelated command (`shred`, `list-algorithms`, ...) merely because a
+    # blank variable was exported.
+    try:
+        _hidden_second_password = _resolve_second_password(args)
+    except CredentialError as e:
+        # No `sys.` here: main_with_args has a local `import sys` further down,
+        # which makes the name local to the whole function, so touching it
+        # before that line raises UnboundLocalError. eprint already writes to
+        # stderr, and SystemExit is sys.exit's underlying mechanism.
+        eprint(f"ERROR: {e}")
+        raise SystemExit(2)
+
+    # Consume $OPENSSL_ENCRYPT_SIGNER_PASSPHRASE here, right after argument
+    # handling and alongside the second-password consume above -- BEFORE the
+    # plugin system, HSM/pepper plugins and keyserver connections come up on the
+    # `encrypt --sign-with` path (gitlab#180). `sign` consumes it as its first
+    # statement for the same reason; consuming it this early (rather than just
+    # before the plugin block) keeps the read-once-and-remove guarantee robust
+    # against future code being added ahead of that block. Passed to
+    # resolve_credential below as explicit=.
+    _early_signer_passphrase = _consume_encrypt_signer_passphrase(args)
 
     # Store the original user-provided algorithm name from command line
     import sys
@@ -4909,6 +6394,17 @@ def main_with_args(args=None):
 
         # Also configure this module's logger explicitly
         logger.setLevel(logging.DEBUG)
+
+        # Keep third-party HTTP libraries out of DEBUG. urllib3 logs the full
+        # request line, and the keyserver interpolates the identifier -- a
+        # fingerprint or an email address -- into the request path, so DEBUG
+        # would put contact metadata on stderr and into the desktop GUI's
+        # persistent debug log, entirely outside the debug_secret()
+        # chokepoint. This matters since gitlab#171: --debug now actually
+        # reaches `keyserver` and `telemetry`, where argparse used to reject
+        # it before any of this ran.
+        for _noisy in ("urllib3", "requests", "httpx", "httpcore", "asyncio"):
+            logging.getLogger(_noisy).setLevel(logging.WARNING)
 
         # Try to configure basic config for new handlers, but don't fail if handlers exist
         try:
@@ -5055,8 +6551,32 @@ def main_with_args(args=None):
                 hash_config["shake128"] = args.shake128_rounds
             if hasattr(args, "whirlpool_rounds") and args.whirlpool_rounds:
                 hash_config["whirlpool"] = args.whirlpool_rounds
-            if hasattr(args, "pbkdf2_iterations") and args.pbkdf2_iterations:
-                hash_config["pbkdf2_iterations"] = args.pbkdf2_iterations
+
+            # --pbkdf2-iterations is refused rather than recorded (gitlab#205).
+            # multi_hash_password never reads it -- 100k and 5M derive the
+            # identical key -- but it WAS written into hash_config.json and
+            # .integrity, so the drive advertised a work factor that was never
+            # applied. Recording a control that was not applied is the same
+            # defect as gitlab#199; say so instead.
+            if getattr(args, "pbkdf2_iterations", 0):
+                eprint(
+                    "Error: --pbkdf2-iterations has no effect on USB drives and "
+                    "would be recorded without being applied."
+                )
+                eprint(
+                    "  Use the hash round options instead, e.g. --sha512-rounds, "
+                    "which are applied and stored on the drive."
+                )
+                return 1
+
+            # No rounds named at all: record a strong default rather than
+            # falling through to the PBKDF2-100k fallback (gitlab#205). It has
+            # to be RECORDED, not just used, because verification re-derives
+            # from whatever the drive stores.
+            if not hash_config:
+                from .portable_media.usb_creator import default_usb_hash_config
+
+                hash_config = default_usb_hash_config()
 
             # Build manifest hash config if manifest security profile specified
             manifest_hash_config = None
@@ -5095,9 +6615,35 @@ def main_with_args(args=None):
 
             # Create USB
             security_profile = getattr(args, "security_profile", "standard")
+            # The interactive gate lives here, not in the library: a
+            # function that prompts is unusable from a script (gitlab#207).
+            # _is_removable_drive only ever logged a warning, so a mistyped
+            # path went ahead and wrote a drive into e.g. the home directory.
+            from .portable_media.usb_creator import USBDriveCreator as _USBDriveCreator
+
+            forced = bool(getattr(args, "yes", False))
+            # args.usb_path, not Path(args.usb_path): `Path` is imported
+            # function-locally further down main_with_args, which makes the
+            # name function-local for the WHOLE function -- using it here
+            # raises UnboundLocalError. _is_removable_drive only does
+            # str(path) anyway.
+            if not forced and not _USBDriveCreator()._is_removable_drive(args.usb_path):
+                eprint(f"Warning: {args.usb_path} does not look like a removable drive.")
+                eprint("  Creating a portable installation there will write into that")
+                eprint("  directory and replace any autorun files it already contains.")
+                if not sys.stdin.isatty():
+                    eprint("Refusing to continue without --yes.")
+                    return 1
+                answer = prompt_and_read("Continue? [y/N]: ").strip().lower()
+                if answer not in ("y", "yes"):
+                    eprint("Aborted.")
+                    return 1
+                forced = True
+
             result = create_portable_usb(
                 usb_path=args.usb_path,
                 password=args.password,
+                force=forced,
                 security_profile=security_profile,
                 executable_path=getattr(args, "executable_path", None),
                 keystore_path=getattr(args, "keystore_to_include", None),
@@ -5200,17 +6746,32 @@ def main_with_args(args=None):
                 eprint(f"  Files verified: {result['verified_files']}")
                 eprint(f"  Failed files: {result['failed_files']}")
                 eprint(f"  Missing files: {result['missing_files']}")
+                # gitlab#132 F13: report files added to the drive after creation.
+                eprint(f"  Added files: {result.get('added_files', 0)}")
+                # These lists hold path names discovered on the UNTRUSTED drive
+                # (outside the authenticated manifest), so a planted filename with
+                # cursor-movement/erase bytes could repaint a forged PASSED verdict
+                # under the FAILED banner (gitlab#238, scan F25, CWE-117). Escape
+                # each name before it reaches the terminal.
                 if result["tampered_files"]:
-                    eprint(f"  Tampered files: {', '.join(result['tampered_files'])}")
+                    _names = ", ".join(sanitize_for_display(n) for n in result["tampered_files"])
+                    eprint(f"  Tampered files: {_names}")
                 if result["missing_file_list"]:
-                    eprint(f"  Missing files: {', '.join(result['missing_file_list'])}")
+                    _names = ", ".join(sanitize_for_display(n) for n in result["missing_file_list"])
+                    eprint(f"  Missing files: {_names}")
+                if result.get("added_file_list"):
+                    _names = ", ".join(sanitize_for_display(n) for n in result["added_file_list"])
+                    eprint(f"  Added files: {_names}")
                 return 1
 
         except ImportError:
             eprint("Error: Portable media module not available")
             return 1
         except Exception as e:
-            eprint(f"Error verifying USB: {e}")
+            # The exception message can embed the user-supplied --usb-path or
+            # decrypted-manifest fragments; sanitize for consistency with the
+            # other error sinks (gitlab#238 review).
+            eprint(f"Error verifying USB: {sanitize_for_display(e)}")
             return 1
 
     # Handle scrypt_cost conversion to scrypt_n
@@ -5237,8 +6798,8 @@ def main_with_args(args=None):
         sys.exit(0)
 
     elif args.action == "template":
-        run_template_manager(args)
-        sys.exit(0)
+        _status = run_template_manager(args)
+        sys.exit(0 if _status is None else _status)
 
     elif args.action == "smart-recommendations":
         run_smart_recommendations(args)
@@ -5259,8 +6820,10 @@ def main_with_args(args=None):
         sys.exit(plugin_main(args))
 
     elif args.action == "telemetry":
-        handle_telemetry_command(args)
-        sys.exit(0)
+        _status = handle_telemetry_command(args)
+        # Explicit: `or 0` would silently turn a future falsy status into
+        # success, and sys.exit(None) exits 0.
+        sys.exit(0 if _status is None else _status)
 
     elif args.action == "keyserver":
         handle_keyserver_command(args)
@@ -5299,7 +6862,7 @@ def main_with_args(args=None):
             sign_file_cli(args)
             sys.exit(0)
         except Exception as e:
-            print(f"Error: {e}", file=sys.stderr)
+            print(f"Error: {sanitize_for_display(e)}", file=sys.stderr)
             sys.exit(1)
 
     elif args.action == "verify-signature":
@@ -5310,7 +6873,7 @@ def main_with_args(args=None):
             verify_signature_cli(args)
             sys.exit(0)
         except Exception as e:
-            print(f"Error: {e}", file=sys.stderr)
+            print(f"Error: {sanitize_for_display(e)}", file=sys.stderr)
             sys.exit(1)
 
     elif args.action in ("list-recovery", "recover", "add-recovery", "remove-recovery"):
@@ -5330,7 +6893,11 @@ def main_with_args(args=None):
             }[args.action](args)
             sys.exit(0)
         except Exception as e:
-            print(f"Error: {e}", file=sys.stderr)
+            # Sanitized like its sibling handlers: these messages interpolate
+            # untrusted header fields and filesystem paths, and one of them
+            # now carries a data-recovery instruction -- exactly the line an
+            # escape sequence would want to forge (gitlab#172 class).
+            print(f"Error: {sanitize_for_display(e)}", file=sys.stderr)
             sys.exit(1)
 
     elif args.action == "list-algorithms":
@@ -5660,7 +7227,10 @@ def main_with_args(args=None):
         # pipe, then an interactive prompt. The safer sources avoid leaking the
         # password via shell history / the process list.
         # NB: getpass is used module-wide in main_with_args; do not import it
-        # locally here or it becomes a function-local name and unbinds elsewhere.
+        # locally here or it becomes a function-local name and unbinds
+        # elsewhere. json is the opposite case: several branches of this
+        # function import it locally, which makes `json` function-local
+        # THROUGHOUT, so every branch that uses it needs its own import.
         import json
 
         from .password_policy import build_strength_report, format_strength_report
@@ -5724,6 +7294,12 @@ def main_with_args(args=None):
                 eprint(f"Error generating passphrase: {e}")
                 sys.exit(1)
 
+            # The audit log's shape heuristic cannot catch this: it needs a
+            # 32-char run of [A-Za-z0-9+_=], which punctuation breaks and a
+            # diceware phrase of lowercase words never has. Registered so any
+            # path that logs it redacts it (same reasoning as gitlab#152).
+            register_consumed_secret("generated_password", passphrase)
+
             min_entropy = getattr(args, "min_password_entropy", None)
             if min_entropy is not None and entropy_bits < min_entropy:
                 eprint(
@@ -5742,6 +7318,30 @@ def main_with_args(args=None):
                 )
                 sys.exit(1)
 
+            if getattr(args, "json", False):
+                # Local import: `json` is function-local throughout
+                # main_with_args (see the check-password branch).
+                import json
+
+                # stdout IS the delivery channel here: the passphrase is the
+                # payload. It must not also go to stderr, which 2>&1 merges,
+                # which lands in scrollback, and which the GUI writes to its
+                # persistent debug log -- the reasoning applied to
+                # `encrypt --random` (gitlab#152). The human display below is
+                # skipped entirely rather than merely duplicated.
+                password_json = json.dumps(
+                    {
+                        "password": passphrase,
+                        "entropy_bits": round(entropy_bits, 1),
+                        "mode": "diceware",
+                        "word_count": args.dice_count,
+                    },
+                    indent=2,
+                    ensure_ascii=True,
+                )
+                print(password_json)
+                sys.exit(0)
+
             eprint(f"\nPassphrase entropy: {entropy_bits:.1f} bits " f"({args.dice_count} words)")
             display_password_with_timeout(passphrase)
             sys.exit(0)
@@ -5752,6 +7352,11 @@ def main_with_args(args=None):
             args.use_uppercase = True
             args.use_digits = True
             args.use_special = True
+
+        # Reported in the JSON document below. A machine caller cannot see
+        # the stderr warning, so the verdict has to travel in the payload.
+        policy_valid = True
+        policy_warnings: list = []
 
         # Apply password policy if specified
         if args.password_policy != "none" and not args.force_password:
@@ -5778,9 +7383,12 @@ def main_with_args(args=None):
             args.use_special,
         )
 
+        register_consumed_secret("generated_password", password)
+
         # Check password strength
         entropy, strength = get_password_strength(password)
-        eprint(f"\nPassword strength: {strength} (entropy: {entropy:.1f} bits)")
+        if not getattr(args, "json", False):
+            eprint(f"\nPassword strength: {strength} (entropy: {entropy:.1f} bits)")
 
         # Validate against policy
         if args.password_policy != "none":
@@ -5799,11 +7407,39 @@ def main_with_args(args=None):
             policy = PasswordPolicy(policy_level=args.password_policy, **policy_params)
 
             # Check if generated password meets policy (it should, but verify)
-            valid, _ = policy.validate_password(password, quiet=True)
+            valid, policy_messages = policy.validate_password(password, quiet=True)
+            policy_valid = valid
+            policy_warnings = list(policy_messages or []) if not valid else []
             if not valid:
                 # This is rare but could happen with specific combinations of constraints
                 eprint("Warning: Generated password does not meet policy requirements.")
                 eprint("Consider adjusting character requirements or using a longer length.")
+
+        if getattr(args, "json", False):
+            import json
+
+            # The policy check on this path WARNS rather than rejects (unlike
+            # the diceware gate above, which exits). Human mode shows that
+            # warning next to the password; a machine caller reads stderr
+            # only on a non-zero exit, so the verdict travels in the document
+            # instead of being lost. Mode parity is deliberate: JSON must not
+            # be stricter than the human path, and must not claim a guarantee
+            # the code does not provide.
+            password_json = json.dumps(
+                {
+                    "password": password,
+                    "entropy_bits": round(entropy, 1),
+                    "mode": "character",
+                    "strength": strength,
+                    "length": len(password),
+                    "policy_valid": policy_valid,
+                    "policy_warnings": policy_warnings,
+                },
+                indent=2,
+                ensure_ascii=True,
+            )
+            print(password_json)
+            sys.exit(0)
 
         # Display the password
         display_password_with_timeout(password)
@@ -5850,6 +7486,9 @@ def main_with_args(args=None):
                     sys.exit(1)
             elif env_pw:
                 args.password = env_pw
+                # Register before delete so redaction survives the variable's
+                # removal (gitlab#147).
+                register_consumed_secret("OPENSSL_ENCRYPT_PASSWORD", env_pw)
                 try:
                     del os.environ["OPENSSL_ENCRYPT_PASSWORD"]
                 except KeyError:
@@ -5999,7 +7638,7 @@ def main_with_args(args=None):
         # generate_key the same way the encrypt path uses it, so the
         # derived value is reproducible iff the password, the salt AND the
         # hardware-loaded secret all match.
-        hsm_pepper: bytes = None
+        hsm_pepper: bytearray = None
         if getattr(args, "hsm", None):
             hsm_value = args.hsm.lower()
             try:
@@ -6050,13 +7689,22 @@ def main_with_args(args=None):
             if not hsm_result.success:
                 eprint(f"Error obtaining HSM pepper: {hsm_result.message}")
                 sys.exit(1)
-            hsm_pepper = hsm_result.data.get("hsm_pepper")
-            if not hsm_pepper:
+            hsm_pepper_value = hsm_result.data.get("hsm_pepper")
+            if not hsm_pepper_value:
                 eprint("Error: HSM plugin returned no pepper")
                 sys.exit(1)
+            # gitlab#123: hold the pepper in a wipeable buffer. A mutable
+            # plugin buffer is reused in place so the wipe below also clears
+            # the plugin's copy.
+            hsm_pepper = (
+                hsm_pepper_value
+                if isinstance(hsm_pepper_value, bytearray)
+                else bytearray(hsm_pepper_value)
+            )
 
         # Call generate_key to derive the key
         from .crypt_core import generate_key
+        from .secure_memory import secure_memzero
 
         output_length = getattr(args, "output_length", 32) or 32
 
@@ -6070,50 +7718,51 @@ def main_with_args(args=None):
 
         pbkdf2_iters = getattr(args, "pbkdf2_iterations", 0) or 0
 
+        derived: bytearray = None
         try:
-            key, _, _ = generate_key(
-                password=(
-                    derive_password.encode("utf-8")
-                    if isinstance(derive_password, str)
-                    else derive_password
-                ),
-                salt=salt,
-                hash_config=hash_config,
-                pbkdf2_iterations=pbkdf2_iters,
-                quiet=True,
-                algorithm=synth_algorithm,
-                progress=getattr(args, "progress", False),
-                debug=getattr(args, "debug", False),
-                hsm_pepper=hsm_pepper,
-                format_version=9,
-            )
-        except Exception as e:
-            eprint(f"Error during key derivation: {e}")
-            sys.exit(1)
+            try:
+                key, _, _ = generate_key(
+                    password=(
+                        derive_password.encode("utf-8")
+                        if isinstance(derive_password, str)
+                        else derive_password
+                    ),
+                    salt=salt,
+                    hash_config=hash_config,
+                    pbkdf2_iterations=pbkdf2_iters,
+                    quiet=True,
+                    algorithm=synth_algorithm,
+                    progress=getattr(args, "progress", False),
+                    debug=getattr(args, "debug", False),
+                    hsm_pepper=hsm_pepper,
+                    format_version=9,
+                )
+            except Exception as e:
+                eprint(f"Error during key derivation: {e}")
+                sys.exit(1)
 
-        # Truncate to requested length
-        derived = key[:output_length]
+            # Truncate to requested length in a wipeable buffer; the
+            # memoryview avoids an intermediate immutable slice copy.
+            derived = bytearray(memoryview(key)[:output_length])
 
-        # Output the derived key
-        output_format = getattr(args, "output_format", "hex") or "hex"
-        if output_format == "hex":
-            print(derived.hex())
-        elif output_format == "base64":
-            import base64 as _b64
+            # Output the derived key
+            output_format = getattr(args, "output_format", "hex") or "hex"
+            if output_format == "hex":
+                print(derived.hex())
+            elif output_format == "base64":
+                import base64 as _b64
 
-            print(_b64.b64encode(derived).decode("ascii"))
-        elif output_format == "raw":
-            sys.stdout.buffer.write(derived)
-
-        # Secure cleanup
-        try:
-            from .secure_memory import secure_memzero
-
-            if isinstance(key, (bytes, bytearray)):
-                key_ba = bytearray(key)
-                secure_memzero(key_ba)
-        except (ImportError, TypeError):
-            pass
+                print(_b64.b64encode(derived).decode("ascii"))
+            elif output_format == "raw":
+                sys.stdout.buffer.write(derived)
+        finally:
+            # gitlab#123: wipe the pepper and the output buffer on all exit
+            # paths. The immutable bytes returned by generate_key cannot be
+            # wiped from here (M10 - secure_memzero refuses immutable input).
+            if hsm_pepper is not None:
+                secure_memzero(hsm_pepper)
+            if derived is not None:
+                secure_memzero(derived)
 
         sys.exit(0)
 
@@ -6232,7 +7881,11 @@ def main_with_args(args=None):
                 )
                 eprint("\nFile was encrypted for:", file=sys.stderr)
                 for fp in encryption_info["recipient_fingerprints"]:
-                    eprint(f"  • {fp}", file=sys.stderr)
+                    # key_id comes verbatim from the untrusted file header; a
+                    # crafted value with cursor-movement/erase bytes could repaint
+                    # a forged "Fingerprint:" line here (gitlab#237, scan F3,
+                    # CWE-117). Escape it before it reaches the terminal.
+                    eprint(f"  • {sanitize_for_display(fp)}", file=sys.stderr)
                 eprint(
                     "\nTo decrypt, you need one of these identities in your keystore.",
                     file=sys.stderr,
@@ -6273,6 +7926,29 @@ def main_with_args(args=None):
             eprint("\nUse 'list-algorithms' command to see available algorithms.")
             eprint("Install required packages or choose different algorithms.\n")
 
+    # Validated ABOVE the asymmetric gate below: --for-identity sets
+    # is_asymmetric_encrypt, which skips the whole password-resolution block --
+    # so a guard placed inside it silently ignored both --random and
+    # --random-password-out for asymmetric runs, which is the very
+    # "stale file read back as this run's password" hazard it exists to stop
+    # (gitlab#152).
+    if getattr(args, "random_password_out", None):
+        if is_asymmetric_encrypt or is_asymmetric_decrypt:
+            eprint(
+                "ERROR: --random-password-out does not apply to asymmetric "
+                "encryption: --for-identity encrypts to a recipient's public "
+                "key, so no password is generated."
+            )
+            raise SystemExit(2)
+        if not (args.action == "encrypt" and args.random and not args.password):
+            eprint(
+                "ERROR: --random-password-out has no effect without --random "
+                "on an encrypt with no explicit password. Refusing rather "
+                "than leaving a stale file that looks like this run's "
+                "password."
+            )
+            raise SystemExit(2)
+
     if args.action in ["encrypt", "decrypt", "rekey"] and not (
         is_asymmetric_encrypt or is_asymmetric_decrypt
     ):
@@ -6308,6 +7984,9 @@ def main_with_args(args=None):
                         sys.exit(1)
                 elif env_pw:
                     args.password = env_pw
+                    # Register before delete so redaction survives the variable's
+                    # removal (gitlab#147).
+                    register_consumed_secret("OPENSSL_ENCRYPT_PASSWORD", env_pw)
                     try:
                         del os.environ["OPENSSL_ENCRYPT_PASSWORD"]
                     except KeyError:
@@ -6343,14 +8022,20 @@ def main_with_args(args=None):
                     file=sys.stderr,
                 )
 
-            # Store password in keyring if requested (before secure_string wipes it)
-            if args.password and getattr(args, "keyring_store", None):
+            # The actual store happens AFTER the password is resolved (see
+            # below): it used to be gated on args.password, which only
+            # -p/--password sets. CRYPT_PASSWORD is consumed straight into
+            # the secure buffer and never assigned there, so for every
+            # caller using the environment -- the recommended way, and the
+            # only one the desktop GUI uses -- --keyring-store stored
+            # nothing AND printed nothing, because the confirmation lived
+            # inside the same `if` (gitlab#156).
+            #
+            # Reported here rather than later only when the package is
+            # missing, so the user learns before the operation runs.
+            if getattr(args, "keyring_store", None):
                 try:
-                    import keyring as _keyring
-
-                    _keyring.set_password("openssl_encrypt", args.keyring_store, args.password)
-                    if not args.quiet:
-                        eprint(f"Password stored in keyring as '{args.keyring_store}'")
+                    import keyring as _keyring  # noqa: F401
                 except ImportError:
                     if not args.quiet:
                         eprint("Warning: keyring package not installed, password not stored")
@@ -6360,10 +8045,21 @@ def main_with_args(args=None):
                 # Handle random password generation for encryption
                 if args.action == "encrypt" and args.random and not args.password:
                     # Determine character sets based on args or defaults
-                    use_lowercase = args.use_lowercase if args.use_lowercase is not None else True
-                    use_uppercase = args.use_uppercase if args.use_uppercase is not None else True
-                    use_digits = args.use_digits if args.use_digits is not None else True
-                    use_special = args.use_special if args.use_special is not None else True
+                    # getattr, not attribute access: the character-class flags
+                    # are declared on `generate-password` and on the monolithic
+                    # parser, but NOT on the `encrypt` subparser -- so
+                    # `encrypt --random` raised AttributeError and the feature
+                    # was unusable on the only route `encrypt` takes
+                    # (gitlab#181). All four default to enabled, which is the
+                    # strongest generation setting.
+                    def _charclass(name):
+                        value = getattr(args, name, None)
+                        return True if value is None else value
+
+                    use_lowercase = _charclass("use_lowercase")
+                    use_uppercase = _charclass("use_uppercase")
+                    use_digits = _charclass("use_digits")
+                    use_special = _charclass("use_special")
 
                     # Ensure length meets policy requirements
                     if args.password_policy != "none" and not args.force_password:
@@ -6417,6 +8113,111 @@ def main_with_args(args=None):
                                     eprint(f"\n{msg}")
 
                     password_secure.extend(generated_password.encode())
+
+                    # Deliver the password BEFORE encrypting (gitlab#152).
+                    #
+                    # Order matters and only one order is safe: if the write
+                    # failed after the file were encrypted, the file would be
+                    # sealed under a password nobody has -- unrecoverable data
+                    # loss. Writing first means a failure costs at most a
+                    # not-yet-encrypted file, and the user still has nothing to
+                    # lose. This mirrors the recovery-code channel (gitlab#146),
+                    # where the code is likewise written before the envelope is
+                    # modified.
+                    # The generated password is not reliably caught by the
+                    # audit log's shape heuristic: _SECRET_TOKEN_RE needs a
+                    # 32-char run of [A-Za-z0-9+_=], which a shorter password
+                    # never has and which punctuation breaks. Register it
+                    # explicitly so any path that logs it redacts it.
+                    register_consumed_secret("generated_random_password", generated_password)
+
+                    _random_out = getattr(args, "random_password_out", None)
+
+                    # A destination the run would then destroy is refused:
+                    # equal to --output, it would be truncated by the
+                    # ciphertext write moments later, sealing the file under a
+                    # password that no longer exists anywhere. O_EXCL does not
+                    # catch it -- the destination does not exist yet.
+                    try:
+                        _check_random_password_destination(
+                            _random_out,
+                            args.input,
+                            _effective_encrypt_output(args),
+                        )
+                    except ValueError as _e:
+                        eprint(f"ERROR: {_e}")
+                        raise SystemExit(2)
+
+                    try:
+                        _stderr_isatty = sys.stderr.isatty()
+                    except (AttributeError, ValueError):
+                        # Replaced or closed stream: fail closed, so a
+                        # destination is required rather than assumed.
+                        _stderr_isatty = False
+                    if not _random_password_destination_ok(
+                        isatty=_stderr_isatty,
+                        out_path=_random_out,
+                        quiet=args.quiet,
+                    ):
+                        eprint(
+                            "ERROR: --random has nowhere to deliver the "
+                            "generated password: stderr is not a terminal, or "
+                            "--quiet suppresses the display. Encrypting anyway "
+                            "would seal the file under a password nobody "
+                            "holds. Name a destination with "
+                            "--random-password-out PATH."
+                        )
+                        raise SystemExit(2)
+
+                    # Deliver BEFORE encrypting -- both channels, not just the
+                    # file (gitlab#152).
+                    #
+                    # Only one order is safe. Disclosing after the ciphertext
+                    # is written means any later failure (armor, stego, the
+                    # permissions call, the audit log) leaves an encrypted file
+                    # on disk whose password was never disclosed --
+                    # unrecoverable. Disclosing first costs, at worst,
+                    # over-disclosing a password for a file that was never
+                    # created, which is harmless. Mirrors the recovery-code
+                    # channel (gitlab#146), where the code is likewise written
+                    # before the envelope is modified.
+                    if _random_out:
+                        try:
+                            _write_generated_password_file(_random_out, generated_password)
+                        except Exception as _e:
+                            # Never echo the password itself in the message.
+                            if isinstance(_e, FileExistsError):
+                                # gitlab#223 review f3: a pre-existing
+                                # destination is NOT this run's orphan -- it
+                                # may hold the password of an earlier,
+                                # successful encryption. The removable-orphan
+                                # NOTE would be dangerously wrong here.
+                                eprint(
+                                    f"ERROR: {sanitize_for_display(_random_out)} "
+                                    f"already exists; refusing to overwrite it. "
+                                    f"It may hold the password for an earlier "
+                                    f"encryption -- verify before removing it, "
+                                    f"or choose another path."
+                                )
+                                raise SystemExit(1)
+                            eprint(
+                                f"ERROR: could not write the generated "
+                                f"password to {sanitize_for_display(_random_out)}: {_e}"
+                            )
+                            # create_secure_file may have created the 0600 file
+                            # before os.write/os.fsync failed, leaving a partial
+                            # orphan a retry would refuse; no ciphertext exists
+                            # (gitlab#182).
+                            _warn_orphan_random_password(args, ciphertext_maybe_written=False)
+                            raise SystemExit(1)
+                        if not args.quiet:
+                            eprint(
+                                f"\nGenerated password written to "
+                                f"{sanitize_for_display(_random_out)} (mode 0600)."
+                            )
+                    else:
+                        _display_generated_password(generated_password)
+
                     if not args.quiet:
                         eprint("\nGenerated a random password for encryption.")
 
@@ -6425,6 +8226,9 @@ def main_with_args(args=None):
                     # Get password from environment variable
                     env_password = os.environ.get("CRYPT_PASSWORD")
 
+                    # Register before delete so redaction survives the variable's
+                    # removal (gitlab#147).
+                    register_consumed_secret("CRYPT_PASSWORD", env_password)
                     # Immediately clear the environment variable for security
                     try:
                         del os.environ["CRYPT_PASSWORD"]
@@ -6581,9 +8385,9 @@ def main_with_args(args=None):
                                             policy_params["check_common_passwords"] = False
 
                                         if args.custom_password_list:
-                                            policy_params[
-                                                "common_passwords_path"
-                                            ] = args.custom_password_list
+                                            policy_params["common_passwords_path"] = (
+                                                args.custom_password_list
+                                            )
 
                                         # Create policy and validate password
                                         policy = PasswordPolicy(
@@ -6640,6 +8444,26 @@ def main_with_args(args=None):
                 # Convert to bytes for the rest of the code
                 password = bytes(password_secure)
 
+                # Store in the keyring from the RESOLVED password, whatever
+                # source it came from -- command line, environment, file, fd
+                # or prompt (gitlab#156). A user who believes the password is
+                # now recoverable from the keyring may discard their only
+                # copy of it, so this must never fail silently.
+                if getattr(args, "keyring_store", None) and password:
+                    try:
+                        import keyring as _keyring
+
+                        _keyring.set_password(
+                            "openssl_encrypt", args.keyring_store, password.decode("utf-8")
+                        )
+                        if not args.quiet:
+                            eprint(f"Password stored in keyring as '{args.keyring_store}'")
+                    except ImportError:
+                        pass  # already reported above
+                    except Exception as error:
+                        eprint(f"Error: could not store the password in the keyring: {error}")
+                        eprint("  Do not discard your only copy of it.")
+
             # Handle rekey password (new password for re-encryption)
             if args.action == "rekey":
                 rekey_password = None
@@ -6678,6 +8502,11 @@ def main_with_args(args=None):
                         env_rekey_pw = os.environ.get("OPENSSL_ENCRYPT_REKEY_PASSWORD")
                         if env_rekey_pw:
                             rekey_pw_arg = env_rekey_pw
+                            # Register the fingerprint before deleting, or the
+                            # live-environment redaction check goes inert the
+                            # moment the variable is gone and a later log_event
+                            # could write it unredacted (gitlab#147).
+                            register_consumed_secret("OPENSSL_ENCRYPT_REKEY_PASSWORD", env_rekey_pw)
                             try:
                                 del os.environ["OPENSSL_ENCRYPT_REKEY_PASSWORD"]
                             except KeyError:
@@ -6691,7 +8520,19 @@ def main_with_args(args=None):
                             "Use --rekey-password-file or OPENSSL_ENCRYPT_REKEY_PASSWORD env var instead.",
                             file=sys.stderr,
                         )
-                    rekey_password = rekey_pw_arg.encode("utf-8")
+                    # surrogateescape round-trips bytes os.environ/argv decoded
+                    # the same way; a strict encode would raise UnicodeEncodeError,
+                    # whose message embeds a byte of the password and is printed
+                    # verbatim by the generic handler (gitlab#147). A lone HIGH
+                    # surrogate still raises and is refused without echoing bytes.
+                    try:
+                        rekey_password = rekey_pw_arg.encode("utf-8", "surrogateescape")
+                    except UnicodeEncodeError:
+                        eprint(
+                            "ERROR: rekey password could not be encoded "
+                            "(contains an unpaired surrogate)"
+                        )
+                        sys.exit(1)
                 else:
                     # Interactive double-prompt for new password
                     match = False
@@ -7426,16 +9267,48 @@ def main_with_args(args=None):
                     sys.exit(1)
 
                 # Determine if passphrase is needed
+                # Same environment channel as `sign` (gitlab#159): this path
+                # signs with the same identity and reached only a /dev/tty
+                # prompt, so a GUI or CI caller could not use --sign-with at
+                # all -- and the variable would have survived the whole run,
+                # contradicting the read-once-and-remove guarantee.
+                from .file_signature import SIGNER_PASSPHRASE_ENV
                 from .identity_protection import ProtectionLevel
 
-                sender_passphrase = None
-                if (
+                _sender_needs_passphrase = (
                     not sender_metadata.protection
                     or sender_metadata.protection.level != ProtectionLevel.HSM_ONLY
-                ):
-                    sender_passphrase = getpass.getpass(
-                        f"Passphrase for sender identity '{args.sign_with}': "
+                )
+                try:
+                    # explicit=: the variable was consumed up front, before the
+                    # plugin/HSM/pepper/keyserver machinery ran, so it is no
+                    # longer live in os.environ here (gitlab#180). resolve_credential
+                    # still calls consume_env internally (a harmless no-op now)
+                    # and validates the explicit value like every other channel.
+                    sender_passphrase = resolve_credential(
+                        requested=_sender_needs_passphrase,
+                        env_name=SIGNER_PASSPHRASE_ENV,
+                        prompt=f"Passphrase for sender identity " f"'{args.sign_with}': ",
+                        explicit=_early_signer_passphrase,
+                        explicit_source=f"${SIGNER_PASSPHRASE_ENV}",
                     )
+                except CredentialError as e:
+                    eprint(f"ERROR: {e} ❌")
+                    raise SystemExit(1)
+                except EOFError:
+                    # Matches `sign`: name the variable rather than surfacing
+                    # an empty message from the generic handler.
+                    eprint(
+                        f"ERROR: no passphrase supplied and no terminal to "
+                        f"prompt on; set ${SIGNER_PASSPHRASE_ENV} ❌"
+                    )
+                    raise SystemExit(1)
+                except KeyboardInterrupt:
+                    # Also matches `sign`. KeyboardInterrupt is a
+                    # BaseException, so without this it escapes the outer
+                    # `except Exception` as a raw traceback.
+                    eprint("Aborted.")
+                    raise SystemExit(130)
 
                 try:
                     sender = store.get_by_name(
@@ -7639,6 +9512,12 @@ def main_with_args(args=None):
 
                         shred_file(args.input, passes=args.shred_passes)
 
+                    # Defense-in-depth (gitlab#223 review f4): the guard that
+                    # refuses --random-password-out for asymmetric runs makes
+                    # this unreachable with an orphan today, but a relaxed
+                    # guard must not turn every successful asymmetric encrypt
+                    # into a false orphan NOTE.
+                    _encrypt_completed = True
                     sys.exit(0)
 
                 except Exception as e:
@@ -7753,6 +9632,423 @@ def main_with_args(args=None):
                     eprint(f"Consider using '{data_replacement}' instead for better security.")
 
             # Handle output file path
+            # Resolved ONCE, before the overwrite branch, so both output
+            # paths use the same keypair. This used to be duplicated: the
+            # overwrite branch had its own copy (which wrote the private key
+            # in the clear and could not read a wrapped keyfile), and this
+            # one was labelled "for non-overwriting case". Deleting the
+            # duplicate without moving this left the overwrite path with no
+            # keyfile handling at all -- it encrypted with an ephemeral key
+            # and only reached this block afterwards, so a bad keyfile was
+            # reported after the input had already been replaced (gitlab#157).
+            # Handle PQC key operations (for non-overwriting case)
+            pqc_keypair = None
+            if args.algorithm in [
+                "kyber512-hybrid",
+                "kyber768-hybrid",
+                "kyber1024-hybrid",
+                "hqc-128-hybrid",
+                "hqc-192-hybrid",
+                "hqc-256-hybrid",
+                "ml-kem-512-hybrid",
+                "ml-kem-768-hybrid",
+                "ml-kem-1024-hybrid",
+                "ml-kem-512-chacha20",
+                "ml-kem-768-chacha20",
+                "ml-kem-1024-chacha20",
+            ]:
+                # Check if we should generate and save a new key pair
+                if args.pqc_gen_key and args.pqc_keyfile:
+                    from .pqc import PQCAlgorithm, PQCipher, check_pqc_support
+
+                    # Map algorithm name to PQCAlgorithm with fallbacks
+                    pqc_algorithms = check_pqc_support(quiet=args.quiet)[2]
+
+                    # Determine which variants are available
+                    kyber512_options = [
+                        alg
+                        for alg in pqc_algorithms
+                        if alg.lower().replace("-", "").replace("_", "") in ["kyber512", "mlkem512"]
+                    ]
+                    kyber768_options = [
+                        alg
+                        for alg in pqc_algorithms
+                        if alg.lower().replace("-", "").replace("_", "") in ["kyber768", "mlkem768"]
+                    ]
+                    kyber1024_options = [
+                        alg
+                        for alg in pqc_algorithms
+                        if alg.lower().replace("-", "").replace("_", "")
+                        in ["kyber1024", "mlkem1024"]
+                    ]
+                    hqc128_options = [
+                        alg
+                        for alg in pqc_algorithms
+                        if alg.lower().replace("-", "").replace("_", "") in ["hqc128"]
+                    ]
+                    hqc192_options = [
+                        alg
+                        for alg in pqc_algorithms
+                        if alg.lower().replace("-", "").replace("_", "") in ["hqc192"]
+                    ]
+                    hqc256_options = [
+                        alg
+                        for alg in pqc_algorithms
+                        if alg.lower().replace("-", "").replace("_", "") in ["hqc256"]
+                    ]
+
+                    # Choose first available or fall back to default name
+                    kyber512_algo = kyber512_options[0] if kyber512_options else "Kyber512"
+                    kyber768_algo = kyber768_options[0] if kyber768_options else "Kyber768"
+                    kyber1024_algo = kyber1024_options[0] if kyber1024_options else "Kyber1024"
+                    hqc128_algo = hqc128_options[0] if hqc128_options else "HQC-128"
+                    hqc192_algo = hqc192_options[0] if hqc192_options else "HQC-192"
+                    hqc256_algo = hqc256_options[0] if hqc256_options else "HQC-256"
+
+                    if not args.quiet:
+                        eprint(
+                            f"Using algorithm mappings: kyber512-hybrid → {kyber512_algo}, kyber768-hybrid → {kyber768_algo}, kyber1024-hybrid → {kyber1024_algo}, hqc-128-hybrid → {hqc128_algo}, hqc-192-hybrid → {hqc192_algo}, hqc-256-hybrid → {hqc256_algo}"
+                        )
+
+                    # Create direct string mapping
+                    algo_map = {
+                        "kyber512-hybrid": kyber512_algo,
+                        "kyber768-hybrid": kyber768_algo,
+                        "kyber1024-hybrid": kyber1024_algo,
+                        "hqc-128-hybrid": hqc128_algo,
+                        "hqc-192-hybrid": hqc192_algo,
+                        "hqc-256-hybrid": hqc256_algo,
+                        "ml-kem-512-hybrid": kyber512_algo,
+                        "ml-kem-768-hybrid": kyber768_algo,
+                        "ml-kem-1024-hybrid": kyber1024_algo,
+                        "ml-kem-512-chacha20": kyber512_algo,
+                        "ml-kem-768-chacha20": kyber768_algo,
+                        "ml-kem-1024-chacha20": kyber1024_algo,
+                    }
+
+                    # Generate key pair
+                    cipher = PQCipher(algo_map[args.algorithm], quiet=args.quiet)
+                    public_key, private_key = cipher.generate_keypair()
+
+                    # Save key pair to file
+                    import base64
+                    import json
+
+                    # Get password for encrypting the private key in the keyfile
+                    keyfile_password = None
+                    if "password" in locals() and password:
+                        # Use the same password as for the file encryption
+                        keyfile_password = password
+                    else:
+                        # Get a separate password for the keyfile
+                        keyfile_password = getpass.getpass(
+                            "Enter password to encrypt the private key in keyfile: "
+                        ).encode()
+
+                    # Encrypt the private key with the password.
+                    # gitlab#131 (F16): derive the wrapping key with Argon2id and
+                    # record a self-describing descriptor. Legacy keyfiles used
+                    # PBKDF2-SHA256 100k (below the OWASP floor); they still
+                    # decrypt via the no-"key_kdf" branch of
+                    # _derive_pqc_keyfile_key.
+                    key_salt = secrets.token_bytes(16)
+                    keyfile_kdf = _new_pqc_keyfile_kdf()
+                    encryption_key = _derive_pqc_keyfile_key(
+                        keyfile_password, key_salt, keyfile_kdf
+                    )
+
+                    # Use AES-GCM to encrypt the private key
+                    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+                    aes_cipher = AESGCM(encryption_key)
+                    nonce = secrets.token_bytes(12)  # 12 bytes for AES-GCM
+                    encrypted_private_key = nonce + aes_cipher.encrypt(nonce, private_key, None)
+
+                    key_data = {
+                        "algorithm": args.algorithm,
+                        "public_key": base64.b64encode(public_key).decode("utf-8"),
+                        "private_key": base64.b64encode(encrypted_private_key).decode("utf-8"),
+                        "key_salt": base64.b64encode(key_salt).decode("utf-8"),
+                        "key_kdf": keyfile_kdf,  # F16: Argon2id descriptor
+                        "key_encrypted": True,  # Mark that the key is encrypted
+                    }
+
+                    # 0600 via create_secure_file, not a bare open(): this file
+                    # holds the long-lived post-quantum private key. It is
+                    # wrapped with Argon2id + AES-GCM, so a world-readable copy
+                    # is not an immediate break, but it hands anyone on the host
+                    # an offline target and the mode was whatever the umask
+                    # said -- typically 0644 (gitlab#157). The same primitive
+                    # the recovery-code writer uses: O_NOFOLLOW and O_EXCL, so a
+                    # pre-planted symlink or FIFO is refused rather than
+                    # followed, and the mode is pinned with fchmod.
+                    from .file_permissions import PermissionLevel, create_secure_file
+
+                    try:
+                        fd = create_secure_file(
+                            args.pqc_keyfile, PermissionLevel.OWNER_ONLY, exclusive=True
+                        )
+                    except FileExistsError:
+                        # Unconditional eprint: the generic handler's message is
+                        # suppressed by --quiet, which would leave a bare exit 1.
+                        eprint(
+                            f"Error: {sanitize_for_display(args.pqc_keyfile)} already exists; "
+                            "refusing to overwrite a key file."
+                        )
+                        eprint(
+                            "  Remove it or choose another path. Overwriting would "
+                            "destroy the private key it holds, and anything encrypted "
+                            "to that key with it."
+                        )
+                        raise
+                    # fdopen rather than a bare os.write: os.write may write
+                    # fewer bytes than asked (a small tmpfs hitting ENOSPC),
+                    # and an unchecked short write would report a truncated
+                    # keyfile as saved.
+                    with os.fdopen(fd, "wb") as keyfile_handle:
+                        keyfile_handle.write(json.dumps(key_data).encode("utf-8"))
+                        keyfile_handle.flush()
+                        os.fsync(keyfile_handle.fileno())
+
+                    # Commit the directory entry too, the same way the
+                    # recovery-code writer does: the key must survive a crash
+                    # that the file encrypted to it also survives. Best effort
+                    # -- the key is already written, so a directory that
+                    # cannot be opened must not fail the run.
+                    try:
+                        keyfile_dir_fd = os.open(
+                            os.path.dirname(os.path.abspath(args.pqc_keyfile)), os.O_RDONLY
+                        )
+                    except OSError:
+                        keyfile_dir_fd = None
+                    if keyfile_dir_fd is not None:
+                        try:
+                            os.fsync(keyfile_dir_fd)
+                        except OSError:
+                            pass
+                        finally:
+                            os.close(keyfile_dir_fd)
+
+                    if not args.quiet:
+                        eprint(f"Post-quantum key pair saved to {args.pqc_keyfile}")
+
+                    pqc_keypair = (public_key, private_key)
+
+                # Check if we should load an existing key pair
+                elif args.pqc_keyfile and os.path.exists(args.pqc_keyfile):
+                    import base64
+                    import json
+
+                    with open(args.pqc_keyfile, "r") as f:
+                        # MED-8 Security fix: Use secure JSON validation for PQC key file loading
+                        json_content = f.read()
+                        try:
+                            from .json_validator import (
+                                JSONSecurityError,
+                                JSONValidationError,
+                                secure_json_loads,
+                            )
+
+                            key_data = secure_json_loads(json_content)
+                        except (JSONSecurityError, JSONValidationError) as e:
+                            eprint(f"Error: PQC key file validation failed: {e}")
+                            sys.exit(1)
+                        except ImportError:
+                            # Fallback to basic JSON loading if validator not available
+                            try:
+                                key_data = json.loads(json_content)
+                            except json.JSONDecodeError as e:
+                                eprint(f"Error: Invalid JSON in PQC key file: {e}")
+                                sys.exit(1)
+
+                    if "public_key" in key_data and "private_key" in key_data:
+                        public_key = base64.b64decode(key_data["public_key"])
+                        encrypted_private_key = base64.b64decode(key_data["private_key"])
+
+                        # Check if key is encrypted (will be for keys created after our fix)
+                        if key_data.get("key_encrypted", False):
+                            if not args.quiet:
+                                eprint("Found encrypted private key in keyfile")
+
+                            # Get password to decrypt the private key
+                            keyfile_password = None
+                            if "password" in locals() and password:
+                                # Try the same password as for the file
+                                keyfile_password = password
+                            else:
+                                # Ask for the keyfile password
+                                keyfile_password = getpass.getpass(
+                                    "Enter password to decrypt the private key in keyfile: "
+                                ).encode()
+
+                            # Import what we need to decrypt
+                            from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+                            # Derive the wrapping key. New keyfiles carry a "key_kdf"
+                            # Argon2id descriptor (gitlab#131 F16); legacy keyfiles
+                            # have none and use the PBKDF2-SHA256 100k path inside
+                            # _derive_pqc_keyfile_key.
+                            try:
+                                # key_salt is read INSIDE the try for the same
+                                # reason key_kdf is: a keyfile marked
+                                # key_encrypted but missing key_salt raised a
+                                # bare KeyError past this handler and aborted
+                                # with `Error: 'key_salt'` (gitlab#157 review).
+                                key_salt = base64.b64decode(key_data["key_salt"])
+                                # A malformed/tampered key_kdf raises ValueError;
+                                # keep it inside the try so it surfaces as the
+                                # graceful "Wrong password?" path, not a traceback.
+                                encryption_key = _derive_pqc_keyfile_key(
+                                    keyfile_password, key_salt, key_data.get("key_kdf")
+                                )
+                                # Format: nonce (12 bytes) + encrypted_key
+                                nonce = encrypted_private_key[:12]
+                                encrypted_key_data = encrypted_private_key[12:]
+
+                                # Decrypt the private key with the password-derived key
+                                aes_cipher = AESGCM(encryption_key)
+                                private_key = aes_cipher.decrypt(nonce, encrypted_key_data, None)
+
+                                if not args.quiet:
+                                    eprint("Successfully decrypted private key from keyfile")
+                            except Exception as e:
+                                eprint(f"Error decrypting private key: {e}. Wrong password?")
+                                eprint("Will proceed with only the public key.")
+                                private_key = None
+                        else:
+                            # Legacy support for non-encrypted keys (created before our fix)
+                            private_key = encrypted_private_key
+                            if not args.quiet:
+                                eprint("WARNING: Using legacy unencrypted private key from keyfile")
+
+                        pqc_keypair = (
+                            (public_key, private_key) if private_key else (public_key, None)
+                        )
+
+                        if not args.quiet:
+                            eprint(f"Loaded post-quantum key pair from {args.pqc_keyfile}")
+                elif args.pqc_gen_key:
+                    # The mirror image, and newly reachable because this change
+                    # exposes the flag: --pqc-gen-key with nowhere to save to
+                    # matched no branch, generated an ephemeral key and saved
+                    # nothing -- the same silent-ignore this issue exists to
+                    # remove (gitlab#157).
+                    from .crypt_errors import ValidationError
+
+                    eprint("Error: --pqc-gen-key needs --pqc-keyfile to say where to save.")
+                    raise ValidationError("--pqc-gen-key without --pqc-keyfile")
+                elif args.pqc_keyfile:
+                    # Named a path that does not exist, without --pqc-gen-key.
+                    # Neither branch above ran and no error was raised, so the
+                    # flag was silently ignored: the user asked for a keyfile,
+                    # got an ephemeral key instead, and could never decrypt with
+                    # the keyfile they thought they had made (gitlab#157).
+                    from .crypt_errors import ValidationError
+
+                    # eprint first: ValidationError is a SecureError, which
+                    # replaces the message it is given with a generic
+                    # "Security validation check failed" unless DEBUG=1 is set,
+                    # so the instruction would otherwise reach test runs and
+                    # nobody else.
+                    eprint(
+                        f"Error: --pqc-keyfile {sanitize_for_display(args.pqc_keyfile)} "
+                        "does not exist."
+                    )
+                    eprint(
+                        "  Pass --pqc-gen-key to generate and save a new key pair "
+                        "there, or point --pqc-keyfile at an existing key file."
+                    )
+                    raise ValidationError("--pqc-keyfile does not exist")
+                else:
+                    # No keyfile specified - generate an ephemeral keypair for this encryption
+                    from .pqc import PQCipher, check_pqc_support
+
+                    # Map algorithm name to available algorithms
+                    pqc_algorithms = check_pqc_support(quiet=args.quiet)[2]
+                    kyber512_options = [
+                        alg
+                        for alg in pqc_algorithms
+                        if alg.lower().replace("-", "").replace("_", "") in ["kyber512", "mlkem512"]
+                    ]
+                    kyber768_options = [
+                        alg
+                        for alg in pqc_algorithms
+                        if alg.lower().replace("-", "").replace("_", "") in ["kyber768", "mlkem768"]
+                    ]
+                    kyber1024_options = [
+                        alg
+                        for alg in pqc_algorithms
+                        if alg.lower().replace("-", "").replace("_", "")
+                        in ["kyber1024", "mlkem1024"]
+                    ]
+                    hqc128_options = [
+                        alg
+                        for alg in pqc_algorithms
+                        if alg.lower().replace("-", "").replace("_", "") in ["hqc128"]
+                    ]
+                    hqc192_options = [
+                        alg
+                        for alg in pqc_algorithms
+                        if alg.lower().replace("-", "").replace("_", "") in ["hqc192"]
+                    ]
+                    hqc256_options = [
+                        alg
+                        for alg in pqc_algorithms
+                        if alg.lower().replace("-", "").replace("_", "") in ["hqc256"]
+                    ]
+
+                    # Choose first available algorithm
+                    algo_map = {
+                        "kyber512-hybrid": (
+                            kyber512_options[0] if kyber512_options else "Kyber512"
+                        ),
+                        "kyber768-hybrid": (
+                            kyber768_options[0] if kyber768_options else "Kyber768"
+                        ),
+                        "kyber1024-hybrid": (
+                            kyber1024_options[0] if kyber1024_options else "Kyber1024"
+                        ),
+                        "hqc-128-hybrid": (hqc128_options[0] if hqc128_options else "HQC-128"),
+                        "hqc-192-hybrid": (hqc192_options[0] if hqc192_options else "HQC-192"),
+                        "hqc-256-hybrid": (hqc256_options[0] if hqc256_options else "HQC-256"),
+                        "ml-kem-512-hybrid": (
+                            kyber512_options[0] if kyber512_options else "Kyber512"
+                        ),
+                        "ml-kem-768-hybrid": (
+                            kyber768_options[0] if kyber768_options else "Kyber768"
+                        ),
+                        "ml-kem-1024-hybrid": (
+                            kyber1024_options[0] if kyber1024_options else "Kyber1024"
+                        ),
+                        "ml-kem-512-chacha20": (
+                            kyber512_options[0] if kyber512_options else "Kyber512"
+                        ),
+                        "ml-kem-768-chacha20": (
+                            kyber768_options[0] if kyber768_options else "Kyber768"
+                        ),
+                        "ml-kem-1024-chacha20": (
+                            kyber1024_options[0] if kyber1024_options else "Kyber1024"
+                        ),
+                    }
+
+                    # Generate a new ephemeral keypair
+                    if not args.quiet:
+                        eprint(f"Generating ephemeral post-quantum key pair for {args.algorithm}")
+                        if args.pqc_store_key:
+                            # Only log this message with INFO level so it only appears in verbose mode
+                            logger.info(
+                                "Private key will be stored in the encrypted file for self-decryption"
+                            )
+                        else:
+                            # Keep this as a print since it's a warning
+                            eprint(
+                                "WARNING: Private key will NOT be stored - you must use a key file for decryption"
+                            )
+
+                    cipher = PQCipher(algo_map[args.algorithm], quiet=args.quiet)
+                    public_key, private_key = cipher.generate_keypair()
+                    pqc_keypair = (public_key, private_key)
+
             if args.overwrite:
                 output_file = args.input
                 # Create a temporary file for the encryption to enable atomic
@@ -7769,151 +10065,18 @@ def main_with_args(args=None):
                 try:
                     # Get original file permissions before doing anything
                     original_permissions = get_file_permissions(args.input)
-                    # Handle PQC key operations
-                    pqc_keypair = None
-                    if args.algorithm in [
-                        "kyber512-hybrid",
-                        "kyber768-hybrid",
-                        "kyber1024-hybrid",
-                        "hqc-128-hybrid",
-                        "hqc-192-hybrid",
-                        "hqc-256-hybrid",
-                        "ml-kem-512-hybrid",
-                        "ml-kem-768-hybrid",
-                        "ml-kem-1024-hybrid",
-                        "ml-kem-512-chacha20",
-                        "ml-kem-768-chacha20",
-                        "ml-kem-1024-chacha20",
-                    ]:
-                        # Check if we should generate and save a new key pair
-                        if args.pqc_gen_key and args.pqc_keyfile:
-                            from .pqc import PQCAlgorithm, PQCipher, check_pqc_support
-
-                            # Map algorithm name to PQCAlgorithm with fallbacks
-                            pqc_algorithms = check_pqc_support(quiet=args.quiet)[2]
-
-                            # Determine which variants are available
-                            kyber512_options = [
-                                alg
-                                for alg in pqc_algorithms
-                                if alg.lower().replace("-", "").replace("_", "")
-                                in ["kyber512", "mlkem512"]
-                            ]
-                            kyber768_options = [
-                                alg
-                                for alg in pqc_algorithms
-                                if alg.lower().replace("-", "").replace("_", "")
-                                in ["kyber768", "mlkem768"]
-                            ]
-                            kyber1024_options = [
-                                alg
-                                for alg in pqc_algorithms
-                                if alg.lower().replace("-", "").replace("_", "")
-                                in ["kyber1024", "mlkem1024"]
-                            ]
-                            hqc128_options = [
-                                alg
-                                for alg in pqc_algorithms
-                                if alg.lower().replace("-", "").replace("_", "") in ["hqc128"]
-                            ]
-                            hqc192_options = [
-                                alg
-                                for alg in pqc_algorithms
-                                if alg.lower().replace("-", "").replace("_", "") in ["hqc192"]
-                            ]
-                            hqc256_options = [
-                                alg
-                                for alg in pqc_algorithms
-                                if alg.lower().replace("-", "").replace("_", "") in ["hqc256"]
-                            ]
-
-                            # Choose first available or fall back to default name
-                            kyber512_algo = kyber512_options[0] if kyber512_options else "Kyber512"
-                            kyber768_algo = kyber768_options[0] if kyber768_options else "Kyber768"
-                            kyber1024_algo = (
-                                kyber1024_options[0] if kyber1024_options else "Kyber1024"
-                            )
-                            hqc128_algo = hqc128_options[0] if hqc128_options else "HQC-128"
-                            hqc192_algo = hqc192_options[0] if hqc192_options else "HQC-192"
-                            hqc256_algo = hqc256_options[0] if hqc256_options else "HQC-256"
-
-                            if not args.quiet:
-                                eprint(
-                                    f"Using algorithm mappings: kyber512-hybrid → {kyber512_algo}, kyber768-hybrid → {kyber768_algo}, kyber1024-hybrid → {kyber1024_algo}, hqc-128-hybrid → {hqc128_algo}, hqc-192-hybrid → {hqc192_algo}, hqc-256-hybrid → {hqc256_algo}"
-                                )
-
-                            # Create direct string mapping instead of using enum
-                            algo_map = {
-                                "kyber512-hybrid": kyber512_algo,
-                                "kyber768-hybrid": kyber768_algo,
-                                "kyber1024-hybrid": kyber1024_algo,
-                                "hqc-128-hybrid": hqc128_algo,
-                                "hqc-192-hybrid": hqc192_algo,
-                                "hqc-256-hybrid": hqc256_algo,
-                                "ml-kem-512-hybrid": kyber512_algo,
-                                "ml-kem-768-hybrid": kyber768_algo,
-                                "ml-kem-1024-hybrid": kyber1024_algo,
-                                "ml-kem-512-chacha20": kyber512_algo,
-                                "ml-kem-768-chacha20": kyber768_algo,
-                                "ml-kem-1024-chacha20": kyber1024_algo,
-                            }
-
-                            # Generate key pair
-                            cipher = PQCipher(algo_map[args.algorithm], quiet=args.quiet)
-                            public_key, private_key = cipher.generate_keypair()
-
-                            # Save key pair to file
-                            import base64
-                            import json
-
-                            key_data = {
-                                "algorithm": args.algorithm,
-                                "public_key": base64.b64encode(public_key).decode("utf-8"),
-                                "private_key": base64.b64encode(private_key).decode("utf-8"),
-                            }
-
-                            with open(args.pqc_keyfile, "w") as f:
-                                json.dump(key_data, f)
-
-                            if not args.quiet:
-                                eprint(f"Post-quantum key pair saved to {args.pqc_keyfile}")
-
-                            pqc_keypair = (public_key, private_key)
-
-                        # Check if we should load an existing key pair
-                        elif args.pqc_keyfile and os.path.exists(args.pqc_keyfile):
-                            import base64
-                            import json
-
-                            with open(args.pqc_keyfile, "r") as f:
-                                # MED-8 Security fix: Use secure JSON validation for PQC key file loading
-                                json_content = f.read()
-                                try:
-                                    from .json_validator import (
-                                        JSONSecurityError,
-                                        JSONValidationError,
-                                        secure_json_loads,
-                                    )
-
-                                    key_data = secure_json_loads(json_content)
-                                except (JSONSecurityError, JSONValidationError) as e:
-                                    eprint(f"Error: PQC key file validation failed: {e}")
-                                    sys.exit(1)
-                                except ImportError:
-                                    # Fallback to basic JSON loading if validator not available
-                                    try:
-                                        key_data = json.loads(json_content)
-                                    except json.JSONDecodeError as e:
-                                        eprint(f"Error: Invalid JSON in PQC key file: {e}")
-                                        sys.exit(1)
-
-                            if "public_key" in key_data and "private_key" in key_data:
-                                public_key = base64.b64decode(key_data["public_key"])
-                                private_key = base64.b64decode(key_data["private_key"])
-                                pqc_keypair = (public_key, private_key)
-
-                                if not args.quiet:
-                                    eprint(f"Loaded post-quantum key pair from {args.pqc_keyfile}")
+                    # pqc_keypair is deliberately NOT reset here: it is
+                    # resolved once above, before this branch, so an
+                    # --overwrite run uses the same keyfile the non-overwrite
+                    # path would. A second copy of the keyfile logic used to
+                    # live here and wrote `private_key` as bare base64 with no
+                    # key_encrypted marker -- reintroduced by a
+                    # file-reconstruction commit after the wrapping fix had
+                    # landed, and missed by the later Argon2id upgrade, whose
+                    # message says it touched "the one write site". Its loader
+                    # read `private_key` unconditionally too, so given a
+                    # properly wrapped keyfile it would have base64-decoded the
+                    # AES-GCM ciphertext and used it as the key (gitlab#157).
 
                     # For PQC algorithms, we may need to generate a keypair if not specified
                     if (
@@ -8047,7 +10210,9 @@ def main_with_args(args=None):
                                         "Use --auto-create-keystore option to automatically create keystore"
                                     )
                                     create_prompt = (
-                                        input("Would you like to create a new keystore? (y/n): ")
+                                        prompt_and_read(
+                                            "Would you like to create a new keystore? (y/n): "
+                                        )
                                         .lower()
                                         .strip()
                                     )
@@ -8295,6 +10460,8 @@ def main_with_args(args=None):
                                                 "Use --no-diversity-check to bypass.",
                                                 file=sys.stderr,
                                             )
+                                        # Pre-encryption abort: the dispatch
+                                        # finally announces the orphan (gitlab#223).
                                         return 1
 
                                 except ImportError:
@@ -8403,22 +10570,30 @@ def main_with_args(args=None):
                                     )
 
                                     if result.success:
+                                        _ciphertext_on_disk = True
                                         if not args.quiet:
                                             eprint(
                                                 f"Data successfully hidden in image: {output_file}"
                                             )
                                     else:
                                         eprint(f"Steganography error: {result.message}")
+                                        # Stego failed: no usable encrypted output
+                                        # survives; the dispatch finally announces
+                                        # the orphan (gitlab#223).
                                         return 1
                                 else:
                                     # Fallback to normal file output
                                     os.replace(temp_output, output_file)
+                                    _ciphertext_on_disk = True
                             except Exception as e:
                                 eprint(f"Steganography error: {e}")
+                                # Stego failed: the dispatch finally announces
+                                # the orphan (gitlab#223).
                                 return 1
                         else:
                             # Normal file output
                             os.replace(temp_output, output_file)
+                            _ciphertext_on_disk = True
 
                         # Successful operation means we don't need to clean up the temp file
                         temp_files_to_cleanup.remove(temp_output)
@@ -8668,318 +10843,13 @@ def main_with_args(args=None):
 
                 # Skip the normal encryption logic
                 if success:
+                    # Delivered to stdout: the run is complete and the
+                    # password file is the live credential for output the
+                    # caller now holds (gitlab#223).
+                    _encrypt_completed = True
                     return
                 else:
                     sys.exit(1)
-
-            # Handle PQC key operations (for non-overwriting case)
-            pqc_keypair = None
-            if args.algorithm in [
-                "kyber512-hybrid",
-                "kyber768-hybrid",
-                "kyber1024-hybrid",
-                "hqc-128-hybrid",
-                "hqc-192-hybrid",
-                "hqc-256-hybrid",
-                "ml-kem-512-hybrid",
-                "ml-kem-768-hybrid",
-                "ml-kem-1024-hybrid",
-                "ml-kem-512-chacha20",
-                "ml-kem-768-chacha20",
-                "ml-kem-1024-chacha20",
-            ]:
-                # Check if we should generate and save a new key pair
-                if args.pqc_gen_key and args.pqc_keyfile:
-                    from .pqc import PQCAlgorithm, PQCipher, check_pqc_support
-
-                    # Map algorithm name to PQCAlgorithm with fallbacks
-                    pqc_algorithms = check_pqc_support(quiet=args.quiet)[2]
-
-                    # Determine which variants are available
-                    kyber512_options = [
-                        alg
-                        for alg in pqc_algorithms
-                        if alg.lower().replace("-", "").replace("_", "") in ["kyber512", "mlkem512"]
-                    ]
-                    kyber768_options = [
-                        alg
-                        for alg in pqc_algorithms
-                        if alg.lower().replace("-", "").replace("_", "") in ["kyber768", "mlkem768"]
-                    ]
-                    kyber1024_options = [
-                        alg
-                        for alg in pqc_algorithms
-                        if alg.lower().replace("-", "").replace("_", "")
-                        in ["kyber1024", "mlkem1024"]
-                    ]
-                    hqc128_options = [
-                        alg
-                        for alg in pqc_algorithms
-                        if alg.lower().replace("-", "").replace("_", "") in ["hqc128"]
-                    ]
-                    hqc192_options = [
-                        alg
-                        for alg in pqc_algorithms
-                        if alg.lower().replace("-", "").replace("_", "") in ["hqc192"]
-                    ]
-                    hqc256_options = [
-                        alg
-                        for alg in pqc_algorithms
-                        if alg.lower().replace("-", "").replace("_", "") in ["hqc256"]
-                    ]
-
-                    # Choose first available or fall back to default name
-                    kyber512_algo = kyber512_options[0] if kyber512_options else "Kyber512"
-                    kyber768_algo = kyber768_options[0] if kyber768_options else "Kyber768"
-                    kyber1024_algo = kyber1024_options[0] if kyber1024_options else "Kyber1024"
-                    hqc128_algo = hqc128_options[0] if hqc128_options else "HQC-128"
-                    hqc192_algo = hqc192_options[0] if hqc192_options else "HQC-192"
-                    hqc256_algo = hqc256_options[0] if hqc256_options else "HQC-256"
-
-                    if not args.quiet:
-                        eprint(
-                            f"Using algorithm mappings: kyber512-hybrid → {kyber512_algo}, kyber768-hybrid → {kyber768_algo}, kyber1024-hybrid → {kyber1024_algo}, hqc-128-hybrid → {hqc128_algo}, hqc-192-hybrid → {hqc192_algo}, hqc-256-hybrid → {hqc256_algo}"
-                        )
-
-                    # Create direct string mapping
-                    algo_map = {
-                        "kyber512-hybrid": kyber512_algo,
-                        "kyber768-hybrid": kyber768_algo,
-                        "kyber1024-hybrid": kyber1024_algo,
-                        "hqc-128-hybrid": hqc128_algo,
-                        "hqc-192-hybrid": hqc192_algo,
-                        "hqc-256-hybrid": hqc256_algo,
-                        "ml-kem-512-hybrid": kyber512_algo,
-                        "ml-kem-768-hybrid": kyber768_algo,
-                        "ml-kem-1024-hybrid": kyber1024_algo,
-                        "ml-kem-512-chacha20": kyber512_algo,
-                        "ml-kem-768-chacha20": kyber768_algo,
-                        "ml-kem-1024-chacha20": kyber1024_algo,
-                    }
-
-                    # Generate key pair
-                    cipher = PQCipher(algo_map[args.algorithm], quiet=args.quiet)
-                    public_key, private_key = cipher.generate_keypair()
-
-                    # Save key pair to file
-                    import base64
-                    import json
-
-                    # Get password for encrypting the private key in the keyfile
-                    keyfile_password = None
-                    if "password" in locals() and password:
-                        # Use the same password as for the file encryption
-                        keyfile_password = password
-                    else:
-                        # Get a separate password for the keyfile
-                        keyfile_password = getpass.getpass(
-                            "Enter password to encrypt the private key in keyfile: "
-                        ).encode()
-
-                    # Encrypt the private key with the password
-                    # We generate a key derived from the password
-                    key_salt = secrets.token_bytes(16)
-                    key_derivation = hashlib.pbkdf2_hmac(
-                        "sha256", keyfile_password, key_salt, 100000
-                    )
-                    encryption_key = hashlib.sha256(key_derivation).digest()
-
-                    # Use AES-GCM to encrypt the private key
-                    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-
-                    aes_cipher = AESGCM(encryption_key)
-                    nonce = secrets.token_bytes(12)  # 12 bytes for AES-GCM
-                    encrypted_private_key = nonce + aes_cipher.encrypt(nonce, private_key, None)
-
-                    key_data = {
-                        "algorithm": args.algorithm,
-                        "public_key": base64.b64encode(public_key).decode("utf-8"),
-                        "private_key": base64.b64encode(encrypted_private_key).decode("utf-8"),
-                        "key_salt": base64.b64encode(key_salt).decode("utf-8"),
-                        "key_encrypted": True,  # Mark that the key is encrypted
-                    }
-
-                    with open(args.pqc_keyfile, "w") as f:
-                        json.dump(key_data, f)
-
-                    if not args.quiet:
-                        eprint(f"Post-quantum key pair saved to {args.pqc_keyfile}")
-
-                    pqc_keypair = (public_key, private_key)
-
-                # Check if we should load an existing key pair
-                elif args.pqc_keyfile and os.path.exists(args.pqc_keyfile):
-                    import base64
-                    import json
-
-                    with open(args.pqc_keyfile, "r") as f:
-                        # MED-8 Security fix: Use secure JSON validation for PQC key file loading
-                        json_content = f.read()
-                        try:
-                            from .json_validator import (
-                                JSONSecurityError,
-                                JSONValidationError,
-                                secure_json_loads,
-                            )
-
-                            key_data = secure_json_loads(json_content)
-                        except (JSONSecurityError, JSONValidationError) as e:
-                            eprint(f"Error: PQC key file validation failed: {e}")
-                            sys.exit(1)
-                        except ImportError:
-                            # Fallback to basic JSON loading if validator not available
-                            try:
-                                key_data = json.loads(json_content)
-                            except json.JSONDecodeError as e:
-                                eprint(f"Error: Invalid JSON in PQC key file: {e}")
-                                sys.exit(1)
-
-                    if "public_key" in key_data and "private_key" in key_data:
-                        public_key = base64.b64decode(key_data["public_key"])
-                        encrypted_private_key = base64.b64decode(key_data["private_key"])
-
-                        # Check if key is encrypted (will be for keys created after our fix)
-                        if key_data.get("key_encrypted", False):
-                            if not args.quiet:
-                                eprint("Found encrypted private key in keyfile")
-
-                            # Get password to decrypt the private key
-                            keyfile_password = None
-                            if "password" in locals() and password:
-                                # Try the same password as for the file
-                                keyfile_password = password
-                            else:
-                                # Ask for the keyfile password
-                                keyfile_password = getpass.getpass(
-                                    "Enter password to decrypt the private key in keyfile: "
-                                ).encode()
-
-                            # Import what we need to decrypt
-                            from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-
-                            # Key derivation using the same method as when encrypting
-                            key_salt = base64.b64decode(key_data["key_salt"])
-                            key_derivation = hashlib.pbkdf2_hmac(
-                                "sha256", keyfile_password, key_salt, 100000
-                            )
-                            encryption_key = hashlib.sha256(key_derivation).digest()
-
-                            try:
-                                # Format: nonce (12 bytes) + encrypted_key
-                                nonce = encrypted_private_key[:12]
-                                encrypted_key_data = encrypted_private_key[12:]
-
-                                # Decrypt the private key with the password-derived key
-                                aes_cipher = AESGCM(encryption_key)
-                                private_key = aes_cipher.decrypt(nonce, encrypted_key_data, None)
-
-                                if not args.quiet:
-                                    eprint("Successfully decrypted private key from keyfile")
-                            except Exception as e:
-                                eprint(f"Error decrypting private key: {e}. Wrong password?")
-                                eprint("Will proceed with only the public key.")
-                                private_key = None
-                        else:
-                            # Legacy support for non-encrypted keys (created before our fix)
-                            private_key = encrypted_private_key
-                            if not args.quiet:
-                                eprint("WARNING: Using legacy unencrypted private key from keyfile")
-
-                        pqc_keypair = (
-                            (public_key, private_key) if private_key else (public_key, None)
-                        )
-
-                        if not args.quiet:
-                            eprint(f"Loaded post-quantum key pair from {args.pqc_keyfile}")
-                else:
-                    # No keyfile specified - generate an ephemeral keypair for this encryption
-                    from .pqc import PQCipher, check_pqc_support
-
-                    # Map algorithm name to available algorithms
-                    pqc_algorithms = check_pqc_support(quiet=args.quiet)[2]
-                    kyber512_options = [
-                        alg
-                        for alg in pqc_algorithms
-                        if alg.lower().replace("-", "").replace("_", "") in ["kyber512", "mlkem512"]
-                    ]
-                    kyber768_options = [
-                        alg
-                        for alg in pqc_algorithms
-                        if alg.lower().replace("-", "").replace("_", "") in ["kyber768", "mlkem768"]
-                    ]
-                    kyber1024_options = [
-                        alg
-                        for alg in pqc_algorithms
-                        if alg.lower().replace("-", "").replace("_", "")
-                        in ["kyber1024", "mlkem1024"]
-                    ]
-                    hqc128_options = [
-                        alg
-                        for alg in pqc_algorithms
-                        if alg.lower().replace("-", "").replace("_", "") in ["hqc128"]
-                    ]
-                    hqc192_options = [
-                        alg
-                        for alg in pqc_algorithms
-                        if alg.lower().replace("-", "").replace("_", "") in ["hqc192"]
-                    ]
-                    hqc256_options = [
-                        alg
-                        for alg in pqc_algorithms
-                        if alg.lower().replace("-", "").replace("_", "") in ["hqc256"]
-                    ]
-
-                    # Choose first available algorithm
-                    algo_map = {
-                        "kyber512-hybrid": (
-                            kyber512_options[0] if kyber512_options else "Kyber512"
-                        ),
-                        "kyber768-hybrid": (
-                            kyber768_options[0] if kyber768_options else "Kyber768"
-                        ),
-                        "kyber1024-hybrid": (
-                            kyber1024_options[0] if kyber1024_options else "Kyber1024"
-                        ),
-                        "hqc-128-hybrid": (hqc128_options[0] if hqc128_options else "HQC-128"),
-                        "hqc-192-hybrid": (hqc192_options[0] if hqc192_options else "HQC-192"),
-                        "hqc-256-hybrid": (hqc256_options[0] if hqc256_options else "HQC-256"),
-                        "ml-kem-512-hybrid": (
-                            kyber512_options[0] if kyber512_options else "Kyber512"
-                        ),
-                        "ml-kem-768-hybrid": (
-                            kyber768_options[0] if kyber768_options else "Kyber768"
-                        ),
-                        "ml-kem-1024-hybrid": (
-                            kyber1024_options[0] if kyber1024_options else "Kyber1024"
-                        ),
-                        "ml-kem-512-chacha20": (
-                            kyber512_options[0] if kyber512_options else "Kyber512"
-                        ),
-                        "ml-kem-768-chacha20": (
-                            kyber768_options[0] if kyber768_options else "Kyber768"
-                        ),
-                        "ml-kem-1024-chacha20": (
-                            kyber1024_options[0] if kyber1024_options else "Kyber1024"
-                        ),
-                    }
-
-                    # Generate a new ephemeral keypair
-                    if not args.quiet:
-                        eprint(f"Generating ephemeral post-quantum key pair for {args.algorithm}")
-                        if args.pqc_store_key:
-                            # Only log this message with INFO level so it only appears in verbose mode
-                            logger.info(
-                                "Private key will be stored in the encrypted file for self-decryption"
-                            )
-                        else:
-                            # Keep this as a print since it's a warning
-                            eprint(
-                                "WARNING: Private key will NOT be stored - you must use a key file for decryption"
-                            )
-
-                    cipher = PQCipher(algo_map[args.algorithm], quiet=args.quiet)
-                    public_key, private_key = cipher.generate_keypair()
-                    pqc_keypair = (public_key, private_key)
 
             # Direct encryption to output file (when not overwriting)
             if not args.overwrite:
@@ -9002,7 +10872,9 @@ def main_with_args(args=None):
                                     "Use --auto-create-keystore option to automatically create keystore"
                                 )
                                 create_prompt = (
-                                    input("Would you like to create a new keystore? (y/n): ")
+                                    prompt_and_read(
+                                        "Would you like to create a new keystore? (y/n): "
+                                    )
                                     .lower()
                                     .strip()
                                 )
@@ -9304,6 +11176,13 @@ def main_with_args(args=None):
                         second_password=_hidden_second_password,
                     )
 
+                if success:
+                    # A usable ciphertext already sits at output_file (the
+                    # non-overwrite branch writes it directly); a stego or
+                    # armor post-processing failure below must not claim
+                    # otherwise (gitlab#223 review f1).
+                    _ciphertext_on_disk = True
+
                 # Handle steganography if requested
                 if success and hasattr(args, "stego_hide") and args.stego_hide:
                     try:
@@ -9379,81 +11258,26 @@ def main_with_args(args=None):
                     prefix = "" if output_file in ("/dev/stdout", "/dev/stderr") else "\n"
                     eprint(f"{prefix}File encrypted successfully: {output_file}")
 
-                    # If we used a generated password, display it with a
-                    # warning
-                    if generated_password:
-                        # Store the original signal handler
-                        original_sigint = signal.getsignal(signal.SIGINT)
-
-                        # Flag to track if Ctrl+C was pressed
-                        interrupted = False
-
-                        # Custom signal handler for SIGINT
-                        def sigint_handler(signum, frame):
-                            nonlocal interrupted
-                            interrupted = True
-                            # Restore original handler immediately
-                            signal.signal(signal.SIGINT, original_sigint)
-
-                        try:
-                            # Set our custom handler
-                            signal.signal(signal.SIGINT, sigint_handler)
-
-                            eprint("\n" + "!" * 80)
-                            eprint("IMPORTANT: SAVE THIS PASSWORD NOW".center(80))
-                            eprint("!" * 80)
-                            eprint(f"\nGenerated Password: {generated_password}")
-                            eprint(
-                                "\nWARNING: This is the ONLY time this password will be displayed."
-                            )
-                            eprint("         If you lose it, your data CANNOT be recovered.")
-                            eprint(
-                                "         Please write it down or save it in a password manager now."
-                            )
-                            eprint("\nThis message will disappear in 10 seconds...")
-
-                            # Wait for 10 seconds or until keyboard interrupt
-                            for remaining in range(10, 0, -1):
-                                if interrupted:
-                                    break
-                                # Overwrite the line with updated countdown
-                                eprint(
-                                    f"\rTime remaining: {remaining} seconds...",
-                                    end="",
-                                    flush=True,
-                                )
-                                # Sleep in small increments to check for
-                                # interruption more frequently
-                                for _ in range(10):
-                                    if interrupted:
-                                        break
-                                    time.sleep(0.1)
-
-                        finally:
-                            # Restore original signal handler no matter what
-                            signal.signal(signal.SIGINT, original_sigint)
-
-                            # Give an indication that we're clearing the screen
-                            if interrupted:
-                                eprint("\n\nClearing password from screen (interrupted by user)...")
-                            else:
-                                eprint("\n\nClearing password from screen...")
-
-                            # Clear screen using ANSI escape sequences (safer than os.system)
-                            # \033[2J clears the entire screen, \033[H moves cursor to home position
-                            sys.stderr.write("\033[2J\033[H")
-                            sys.stderr.flush()
-
-                            eprint("Password has been cleared from screen.")
-                            eprint(
-                                "For additional security, consider clearing your terminal history."
-                            )
+                    # The generated password was disclosed BEFORE the
+                    # encryption ran (gitlab#152). Disclosing it here, as
+                    # this code used to, meant any failure after the
+                    # ciphertext was written left an encrypted file whose
+                    # password had never been shown. The 10-second
+                    # countdown and the screen-clear claim went with it:
+                    # they repainted the visible screen and removed
+                    # nothing from scrollback, a pipe, or a log.
 
                 # If shredding was requested and encryption was successful
                 if args.shred and not args.overwrite:
                     if not args.quiet:
                         eprint("Shredding the original file as requested...")
                     secure_shred_file(args.input, args.shred_passes, args.quiet)
+
+                # Keep LAST in this block: post-processing above (armor
+                # rewrite, audit log, shred) can still fail, and those
+                # failures must reach the finally with completed unset so
+                # the check-decryptability NOTE fires (gitlab#223 review f2).
+                _encrypt_completed = True
 
         elif args.action == "info":
             # Display encrypted file metadata without decrypting
@@ -9620,6 +11444,9 @@ def main_with_args(args=None):
                                         verbose=args.verbose,
                                         hidden_header=_hidden_for_decrypt(args),
                                         second_password=_hidden_second_password,
+                                        allow_high_kdf_cost=getattr(
+                                            args, "allow_high_kdf_cost", False
+                                        ),
                                     )
 
                                     try:
@@ -9808,6 +11635,7 @@ def main_with_args(args=None):
                                     verbose=args.verbose,
                                     hidden_header=_hidden_for_decrypt(args),
                                     second_password=_hidden_second_password,
+                                    allow_high_kdf_cost=getattr(args, "allow_high_kdf_cost", False),
                                 )
 
                                 # Handle temp file if overwrite mode
@@ -10096,14 +11924,20 @@ def main_with_args(args=None):
                                     # Import what we need to decrypt
                                     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-                                    # Key derivation using the same method as when encrypting
+                                    # Derive the wrapping key. New keyfiles carry a
+                                    # "key_kdf" Argon2id descriptor (gitlab#131 F16);
+                                    # legacy keyfiles have none and use the
+                                    # PBKDF2-SHA256 100k path inside
+                                    # _derive_pqc_keyfile_key.
                                     key_salt = base64.b64decode(key_data["key_salt"])
-                                    key_derivation = hashlib.pbkdf2_hmac(
-                                        "sha256", keyfile_password, key_salt, 100000
-                                    )
-                                    encryption_key = hashlib.sha256(key_derivation).digest()
 
                                     try:
+                                        # A malformed/tampered key_kdf raises
+                                        # ValueError; derive inside the try so it
+                                        # surfaces gracefully, not as a traceback.
+                                        encryption_key = _derive_pqc_keyfile_key(
+                                            keyfile_password, key_salt, key_data.get("key_kdf")
+                                        )
                                         # Format: nonce (12 bytes) + encrypted_key
                                         nonce = encrypted_private_key[:12]
                                         encrypted_key_data = encrypted_private_key[12:]
@@ -10206,6 +12040,7 @@ def main_with_args(args=None):
                             hsm_plugin=hsm_plugin_instance,
                             hsm_slot=getattr(args, "hsm_slot", None),
                             no_estimate=getattr(args, "no_estimate", False),
+                            allow_high_kdf_cost=getattr(args, "allow_high_kdf_cost", False),
                             verify_integrity=getattr(args, "verify_integrity", False),
                             parallel_kdf=getattr(args, "parallel_kdf", False),
                             kdf_workers=getattr(args, "kdf_workers", None),
@@ -10286,14 +12121,20 @@ def main_with_args(args=None):
                                 # Import what we need to decrypt
                                 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-                                # Key derivation using the same method as when encrypting
+                                # Derive the wrapping key. New keyfiles carry a
+                                # "key_kdf" Argon2id descriptor (gitlab#131 F16);
+                                # legacy keyfiles have none and use the
+                                # PBKDF2-SHA256 100k path inside
+                                # _derive_pqc_keyfile_key.
                                 key_salt = base64.b64decode(key_data["key_salt"])
-                                key_derivation = hashlib.pbkdf2_hmac(
-                                    "sha256", keyfile_password, key_salt, 100000
-                                )
-                                encryption_key = hashlib.sha256(key_derivation).digest()
 
                                 try:
+                                    # A malformed/tampered key_kdf raises
+                                    # ValueError; derive inside the try so it
+                                    # surfaces gracefully, not as a traceback.
+                                    encryption_key = _derive_pqc_keyfile_key(
+                                        keyfile_password, key_salt, key_data.get("key_kdf")
+                                    )
                                     # Format: nonce (12 bytes) + encrypted_key
                                     nonce = encrypted_private_key[:12]
                                     encrypted_key_data = encrypted_private_key[12:]
@@ -10437,6 +12278,7 @@ def main_with_args(args=None):
                         hsm_plugin=hsm_plugin_instance,
                         hsm_slot=getattr(args, "hsm_slot", None),
                         no_estimate=getattr(args, "no_estimate", False),
+                        allow_high_kdf_cost=getattr(args, "allow_high_kdf_cost", False),
                         verify_integrity=getattr(args, "verify_integrity", False),
                         hidden_header=_hidden_for_decrypt(args),
                         second_password=_hidden_second_password,
@@ -10516,14 +12358,20 @@ def main_with_args(args=None):
                                 # Import what we need to decrypt
                                 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-                                # Key derivation using the same method as when encrypting
+                                # Derive the wrapping key. New keyfiles carry a
+                                # "key_kdf" Argon2id descriptor (gitlab#131 F16);
+                                # legacy keyfiles have none and use the
+                                # PBKDF2-SHA256 100k path inside
+                                # _derive_pqc_keyfile_key.
                                 key_salt = base64.b64decode(key_data["key_salt"])
-                                key_derivation = hashlib.pbkdf2_hmac(
-                                    "sha256", keyfile_password, key_salt, 100000
-                                )
-                                encryption_key = hashlib.sha256(key_derivation).digest()
 
                                 try:
+                                    # A malformed/tampered key_kdf raises
+                                    # ValueError; derive inside the try so it
+                                    # surfaces gracefully, not as a traceback.
+                                    encryption_key = _derive_pqc_keyfile_key(
+                                        keyfile_password, key_salt, key_data.get("key_kdf")
+                                    )
                                     # Format: nonce (12 bytes) + encrypted_key
                                     nonce = encrypted_private_key[:12]
                                     encrypted_key_data = encrypted_private_key[12:]
@@ -10612,6 +12460,7 @@ def main_with_args(args=None):
                         hsm_plugin=hsm_plugin_instance,
                         hsm_slot=getattr(args, "hsm_slot", None),
                         no_estimate=getattr(args, "no_estimate", False),
+                        allow_high_kdf_cost=getattr(args, "allow_high_kdf_cost", False),
                         verify_integrity=getattr(args, "verify_integrity", False),
                         hidden_header=_hidden_for_decrypt(args),
                         second_password=_hidden_second_password,
@@ -10684,6 +12533,7 @@ def main_with_args(args=None):
                     hsm_plugin=hsm_plugin_instance,
                     hsm_slot=getattr(args, "hsm_slot", None),
                     no_estimate=getattr(args, "no_estimate", False),
+                    allow_high_kdf_cost=getattr(args, "allow_high_kdf_cost", False),
                     verify_integrity=getattr(args, "verify_integrity", False),
                     parallel_kdf=getattr(args, "parallel_kdf", False),
                     kdf_workers=getattr(args, "kdf_workers", None),
@@ -10781,7 +12631,35 @@ def main_with_args(args=None):
     except Exception as e:
         if not args.quiet:
             eprint(f"\nError: {e}")
+        # A --random-password-out orphan is announced by the finally below
+        # (gitlab#223), which also covers the SystemExit/return-1 sites this
+        # handler cannot see.
         exit_code = 1
+
+    finally:
+        # gitlab#223: the orphan-password NOTE must fire on EVERY incomplete
+        # encrypt exit. The sys.exit(1)/return-1 sites (XOR mutual-exclusivity,
+        # keystore-branch failures, validation aborts) bypass the `except
+        # Exception` above by language rule (SystemExit), and wiring each site
+        # individually proved incomplete twice (#182, the #222 review). The
+        # helper no-ops unless --random-password-out actually left a file; a
+        # completed run stays silent (its file is the live credential, already
+        # announced at write time); and _ciphertext_on_disk picks the accurate
+        # wording -- "verify before removing" when a usable output may exist,
+        # "you can remove it" only when provably none does. The NOTE is
+        # advisory and must never change the outcome (a raising eprint in a
+        # finally would replace the propagating SystemExit -- review f6).
+        # Known window: the password file exists from the write in the
+        # password-delivery block above, but this try starts a few hundred
+        # lines later; every exit in between is either pre-write or handled
+        # at the write site (verified in the #223 confirmation review). Any
+        # NEW sys.exit/raise added between the delivery block and this try
+        # must call the helper itself.
+        if not _encrypt_completed:
+            try:
+                _warn_orphan_random_password(args, ciphertext_maybe_written=_ciphertext_on_disk)
+            except Exception:
+                pass
 
     # Exit with appropriate code
     sys.exit(exit_code)

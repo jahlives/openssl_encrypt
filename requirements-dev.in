@@ -5,7 +5,7 @@
 # Development tools
 pytest>=8.0.0,<9.0.0
 pytest-cov>=4.1.0,<5.0.0
-black==26.1.0  # keep in sync with the black rev pinned in .pre-commit-config.yaml
+black==26.3.1  # keep in sync with the black rev pinned in .pre-commit-config.yaml (CVE-2026-32274)
 pylint>=3.0.0,<4.0.0
 
 # Optional runtime extra: pattern-aware password strength estimation.
@@ -25,4 +25,4 @@ filelock>=3.20.3  # Security fix for TOCTOU symlink vulnerability
 virtualenv>=20.36.1  # Security fix for TOCTOU symlink vulnerability in directory creation
 wheel>=0.46.2  # Security fix for path traversal in wheel unpack
 authlib>=1.6.9  # Security fix per Dependabot alert (CVE-2026-27962, CVE-2026-28490, CVE-2026-28498)
-nltk>=3.9.4  # Security fix per Dependabot alert (CVE-2026-33236, CVE-2026-33231, CVE-2026-33230, GHSA-rf74-v2fm-23pw)
+nltk>=3.10.0  # Security fix per Dependabot alert (CVE-2026-33236, CVE-2026-33231, CVE-2026-33230, GHSA-rf74-v2fm-23pw; +CVE-2026-12061/12072/12074/12075 fixed in 3.10.0)

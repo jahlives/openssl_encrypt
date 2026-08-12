@@ -15,6 +15,7 @@ pre-existing file.
 """
 
 import os
+import shutil
 import stat
 import sys
 import tempfile
@@ -74,3 +75,47 @@ class TestCreateSecureFileHardening(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestCreateSecureFileExclusive(unittest.TestCase):
+    """exclusive=True must refuse an existing path without touching it.
+
+    Added with the recovery-code destination (gitlab#146), which relies on
+    O_EXCL so a pre-planted symlink, FIFO or device cannot receive a credential
+    and an existing file is never silently clobbered.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_refuses_existing_file_and_preserves_contents(self):
+        from openssl_encrypt.modules.file_permissions import create_secure_file
+
+        path = os.path.join(self.tmp, "existing.txt")
+        with open(path, "w") as f:
+            f.write("original")
+
+        with self.assertRaises(FileExistsError):
+            create_secure_file(path, exclusive=True)
+
+        # Pins the absence of O_TRUNC on the exclusive path.
+        with open(path) as f:
+            self.assertEqual(f.read(), "original")
+
+    def test_refuses_planted_symlink_and_leaves_target_intact(self):
+        from openssl_encrypt.modules.file_permissions import create_secure_file
+
+        target = os.path.join(self.tmp, "target.txt")
+        with open(target, "w") as f:
+            f.write("target contents")
+        link = os.path.join(self.tmp, "link.txt")
+        os.symlink(target, link)
+
+        with self.assertRaises(OSError):
+            create_secure_file(link, exclusive=True)
+
+        with open(target) as f:
+            self.assertEqual(f.read(), "target contents")

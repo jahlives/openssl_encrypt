@@ -1,5 +1,5 @@
 # Core dependencies
-cryptography>=48.0.1,<49.0.0  # Updated to fix vulnerable bundled OpenSSL (GHSA-537c-gmf6-5ccf)
+cryptography>=50.0.0,<51.0.0  # GHSA-537c-gmf6-5ccf (bundled OpenSSL) + CVE-2026-69247 (PKCS#7 EnvelopedData; not used here)
 argon2-cffi>=23.1.0,<24.0.0
 # does not build on python 3.13
 #whirlpool>=0.3 ; python_version < '3.12'
@@ -9,7 +9,7 @@ pywin32>=306,<307; sys_platform == 'win32'
 PyYAML>=6.0.2,<7.0.0
 
 # Steganography dependencies (v1.3.0)
-Pillow>=12.1.1,<13.0.0
+Pillow>=12.3.0,<13.0.0  # Dependabot: 13 image-parsing CVEs fixed in 12.3.0
 numpy>=2.1.0,<3.0.0
 blake3>=1.0.0,<2.0.0
 
@@ -32,5 +32,5 @@ requests>=2.31.0,<3.0.0
 # Development tools (commented out by default)
 pytest>=9.0.3,<10.0.0
 pytest-cov>=4.1.0,<5.0.0
-black==26.1.0  # keep in sync with the black rev pinned in .pre-commit-config.yaml
+black==26.3.1  # keep in sync with the black rev pinned in .pre-commit-config.yaml (CVE-2026-32274)
 pylint>=3.0.0,<4.0.0

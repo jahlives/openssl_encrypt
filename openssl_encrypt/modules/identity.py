@@ -43,6 +43,7 @@ from .identity_protection import (
     InvalidCredentialsError,
     ProtectionLevel,
 )
+from .json_validator import SecureJSONValidator, get_json_validator
 from .pqc import PQCipher
 from .pqc_signing import PQCSigner, calculate_fingerprint, calculate_fingerprint_v2
 from .secure_memory import secure_memzero
@@ -99,6 +100,15 @@ class IdentityKeyChangedError(IdentityError):
         )
 
 
+class IdentityNamespaceCollisionError(IdentityExistsError):
+    """Raised when a name is already taken by the OTHER kind of entry.
+
+    Distinct from IdentityExistsError so a caller can tell "your store
+    refused a name collision" from "no such key" -- the keyserver path
+    otherwise reports both as a lookup failure (gitlab#173).
+    """
+
+
 class IdentityAmbiguousError(IdentityError):
     """Raised when a fingerprint lookup matches more than one identity."""
 
@@ -107,11 +117,14 @@ class IdentityAmbiguousError(IdentityError):
 
 import re
 
-from .crypt_utils import eprint
+from .crypt_utils import eprint, sanitize_for_display
 
 # Strict pattern for identity names: alphanumeric, hyphens, underscores, dots.
 # No path separators, no ".." sequences, no leading dots.
 _IDENTITY_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
+
+# Directory name the store uses for pinned contacts; never a valid entry name.
+_CONTACTS_DIR_NAME = "contacts"
 
 
 def validate_identity_name(name: str) -> None:
@@ -131,13 +144,173 @@ def validate_identity_name(name: str) -> None:
     if len(name) > 255:
         raise IdentityError("Identity name too long (max 255 characters)")
     if not _IDENTITY_NAME_RE.match(name):
+        # The rejected value is echoed in error output; a name carrying ANSI
+        # escapes must not reach the terminal verbatim (gitlab#172).
         raise IdentityError(
-            f"Invalid identity name '{name}': must contain only "
+            f"Invalid identity name '{sanitize_for_display(name)}': must contain only "
             f"alphanumeric characters, hyphens, underscores, and dots, "
             f"and must not start with a dot"
         )
     if ".." in name:
-        raise IdentityError(f"Invalid identity name '{name}': must not contain '..'")
+        raise IdentityError(
+            f"Invalid identity name '{sanitize_for_display(name)}': must not contain '..'"
+        )
+    # `contacts` is the container directory inside the identity store, so an
+    # entry of that name would be written INTO it: unlistable (list_identities
+    # skips the container), unreportable, yet resolvable by get_by_name -- and
+    # deleting it would remove every pinned contact in the store (gitlab#173).
+    # Case-folded because the store lives on case-insensitive filesystems too.
+    if name.casefold() == _CONTACTS_DIR_NAME:
+        raise IdentityError(
+            f"Invalid identity name '{sanitize_for_display(name)}': "
+            f"'{_CONTACTS_DIR_NAME}' is reserved for the identity store itself"
+        )
+
+
+# RFC 5321 caps a mailbox at 254 octets; 320 leaves headroom for the
+# historical 64+1+255 reading without admitting unbounded strings.
+_IDENTITY_EMAIL_MAX = 320
+
+# Deliberately its own policy, NOT reuse of the display sanitizer's class:
+# that helper may grow (it now escapes backslash and bidi controls for
+# display unambiguity), and an input-validation rule that silently shifts
+# with a presentation helper would start rejecting bundles that were
+# previously accepted, under an error message that no longer describes the
+# cause. C0, DEL, C1 — the terminal-control class — plus the Unicode
+# bidi/format controls: those pass every terminal-escape check yet reorder
+# text in any renderer implementing UAX #9 (Flutter does), and U+2028/U+2029
+# are mandatory line breaks under UAX #14, so a GUI consumer of the
+# machine-readable channel would render attacker text on its own line
+# (gitlab#183). Zero-width space/joiners are deliberately NOT rejected:
+# U+200C/U+200D are load-bearing in Persian and Indic scripts and in emoji
+# sequences, and the display side neutralizes them.
+_IDENTITY_CONTROL_CHAR_RE = re.compile(
+    r"[\x00-\x1f\x7f-\x9f\u061c\u200e\u200f\u202a-\u202e\u2028\u2029\u2066-\u2069]"
+)
+
+
+def _validate_display_text(value, field: str, max_len: int) -> None:
+    """Reject a non-string, overlong, or control-character-bearing field.
+
+    Shared rule for untrusted display-only metadata (email, created_at):
+    what is dangerous to display or store is rejected; the offending value
+    is never interpolated into the message.
+
+    Args:
+        value: Field value from an untrusted document.
+        field: Field name for the error message.
+        max_len: Maximum accepted length in characters.
+
+    Raises:
+        IdentityError: If the value is not a string, too long, or contains
+            control characters.
+    """
+    if not isinstance(value, str):
+        raise IdentityError(f"Identity {field} must be a string")
+    if len(value) > max_len:
+        raise IdentityError(f"Identity {field} too long (max {max_len} characters)")
+    if _IDENTITY_CONTROL_CHAR_RE.search(value):
+        raise IdentityError(f"Identity {field} must not contain control characters")
+
+
+def validate_identity_email(email) -> None:
+    """Validate an identity email taken from an untrusted import document.
+
+    Unlike ``name`` (which becomes a directory name and is locked to a strict
+    regex), ``email`` is display-only metadata — so this rejects only what is
+    dangerous to display or store: non-strings, unbounded lengths, and
+    control characters that could smuggle terminal escape sequences into
+    output printed next to the fingerprint (gitlab#172).
+
+    Args:
+        email: Value of the document's ``email`` field; ``None`` is valid.
+
+    Raises:
+        IdentityError: If the email is not a string, too long, or contains
+            control characters. The offending value is never interpolated
+            into the message.
+    """
+    if email is None:
+        return
+    _validate_display_text(email, "email", _IDENTITY_EMAIL_MAX)
+
+
+def validate_identity_created_at(created_at) -> None:
+    """Validate an identity's created_at timestamp from an untrusted source.
+
+    An ISO 8601 timestamp needs ~35 characters; 64 is generous. The field is
+    displayed by the keyserver trust prompt directly BELOW the fingerprint
+    line, so an unconstrained value is a cursor-movement vector against the
+    fingerprint the user is being told to verify (gitlab#172).
+
+    Args:
+        created_at: Value of the document's ``created_at`` field.
+
+    Raises:
+        IdentityError: If the value is not a string, too long, or contains
+            control characters.
+    """
+    _validate_display_text(created_at, "created_at", 64)
+
+
+# Algorithm identifiers ("ML-KEM-768", "ML-DSA-65", legacy "Dilithium3").
+# Displayed directly under the Fingerprint: line, so they get the same
+# format contract as the sidecar's algorithm field (gitlab#172). "+", "_"
+# and "." are deliberately excluded — no identity algorithm ever used them;
+# if 1.5.x exposes SLH-DSA under the legacy "SPHINCS+..." spelling, widen
+# this to the new canonical name, not to "+".
+_IDENTITY_ALGORITHM_RE = re.compile(r"^[A-Za-z0-9-]{1,32}$")
+
+
+def validate_identity_algorithm(algorithm) -> None:
+    """Validate an algorithm identifier from an untrusted source.
+
+    Args:
+        algorithm: Value of an ``encryption_algorithm`` /
+            ``signing_algorithm`` field.
+
+    Raises:
+        IdentityError: If the value is not a plausible algorithm name. The
+            offending value is never interpolated into the message.
+    """
+    if not isinstance(algorithm, str) or not _IDENTITY_ALGORITHM_RE.match(algorithm):
+        raise IdentityError("Identity algorithm is not a valid algorithm name")
+
+
+# Both fingerprint generations (v1 legacy and v2) format as lowercase hex
+# byte pairs joined by colons (pqc_signing.calculate_fingerprint). 191 chars
+# is a SHA-512 fingerprint (64 pairs); nothing legitimate is longer.
+_IDENTITY_FINGERPRINT_MAX = 191
+_IDENTITY_FINGERPRINT_RE = re.compile(r"^[0-9a-f]{2}(:[0-9a-f]{2})+$")
+
+
+def validate_identity_fingerprint(fingerprint) -> None:
+    """Validate the format of a fingerprint from an untrusted source.
+
+    Every fingerprint this tool has ever written is lowercase hex pairs
+    joined by colons; anything else in a stored identity file or an imported
+    document is crafted or corrupted. Format validation keeps an arbitrary
+    attacker string out of the ``Fingerprint:`` display sites — the exact
+    line out-of-band verification depends on (gitlab#172). Consistency with
+    the actual keys is checked separately (check_fingerprint_consistency).
+
+    Args:
+        fingerprint: Fingerprint string from a document or stored file.
+
+    Raises:
+        IdentityError: If the value is not a colon-separated lowercase hex
+            fingerprint. The offending value is never interpolated into the
+            message.
+    """
+    # Length first: a SHA-512 fingerprint is 64 pairs = 191 chars; the cap
+    # keeps a multi-megabyte all-hex string from passing the regex and then
+    # being printed in full.
+    if (
+        not isinstance(fingerprint, str)
+        or len(fingerprint) > _IDENTITY_FINGERPRINT_MAX
+        or not _IDENTITY_FINGERPRINT_RE.match(fingerprint)
+    ):
+        raise IdentityError("Identity fingerprint is not a colon-separated hex fingerprint")
 
 
 @dataclass
@@ -197,6 +370,10 @@ class Identity:
         protection_level: ProtectionLevel = ProtectionLevel.PASSWORD_ONLY,
         hsm_slot: Optional[int] = None,
         require_touch: bool = True,
+        hsm_type: str = "yubikey",
+        pkcs11_lib_path: Optional[str] = None,
+        piv_slot: Optional[int] = None,
+        biometric: bool = False,
     ) -> "Identity":
         """
         Generate a new identity with fresh keypairs.
@@ -208,8 +385,12 @@ class Identity:
             kem_algorithm: KEM algorithm for encryption
             sig_algorithm: Signature algorithm
             protection_level: Protection level (PASSWORD_ONLY, PASSWORD_AND_HSM, or HSM_ONLY)
-            hsm_slot: Yubikey slot (1 or 2, None = auto-detect)
-            require_touch: Whether Yubikey touch is required
+            hsm_slot: HSM slot (None = auto-detect)
+            require_touch: Whether an HSM touch/button press is required
+            hsm_type: Which HSM the identity is bound to ("yubikey" default, or
+                "onlykey"). Threaded into the protection service so the recorded
+                config and the pepper derivation use the device the caller
+                selected, not the yubikey default (gitlab#218).
 
         Returns:
             New Identity instance
@@ -220,6 +401,10 @@ class Identity:
             HSMNotAvailableError: If HSM required but not available
         """
         validate_identity_name(name)
+        # The email is persisted, re-emitted verbatim by export_public() and
+        # uploaded in a PublicKeyBundle — an unvalidated value here becomes
+        # an attack on OTHER users' trust prompts (gitlab#172).
+        validate_identity_email(email)
         logger.info(f"Generating identity '{name}' with {kem_algorithm} + {sig_algorithm}")
 
         try:
@@ -248,7 +433,15 @@ class Identity:
             # Create protection configuration
             protection = None
             if protection_level != ProtectionLevel.PASSWORD_ONLY:
-                protection_service = IdentityKeyProtectionService()
+                # PIV config is threaded into the service so create_protection_config
+                # records it in the persisted HSMProtectionConfig, letting the
+                # identity be unlocked later without re-supplying it (gitlab#218).
+                protection_service = IdentityKeyProtectionService(
+                    hsm_type=hsm_type,
+                    pkcs11_lib_path=pkcs11_lib_path,
+                    piv_slot=piv_slot,
+                    biometric=biometric,
+                )
                 protection = protection_service.create_protection_config(
                     level=protection_level,
                     hsm_slot=hsm_slot,
@@ -307,8 +500,34 @@ class Identity:
         if not identity_json_path.exists():
             raise IdentityNotFoundError(f"identity.json not found in {path}")
 
-        with open(identity_json_path, "r") as f:
-            data = json.load(f)
+        # Bounded and explicit-UTF-8, like the import path: under the
+        # supplied-store threat model a gigabyte or deeply nested
+        # identity.json must not DoS `identity list`, and a locale-dependent
+        # read would mangle a non-ASCII name or email (gitlab#172). Bounding
+        # the read itself (not a stat() gate) also covers a symlink to a
+        # huge file, /dev/zero, or a swap between check and open. The
+        # validator's pre-parse depth scan guards json.loads' recursion.
+        with open(identity_json_path, "r", encoding="utf-8") as f:
+            raw = f.read(SecureJSONValidator.MAX_JSON_SIZE + 1)
+        if len(raw) > SecureJSONValidator.MAX_JSON_SIZE:
+            raise IdentityError(
+                f"identity.json exceeds {SecureJSONValidator.MAX_JSON_SIZE} characters"
+            )
+        get_json_validator().validate_json_security(raw)
+        data = json.loads(raw)
+
+        # A stored identity file is untrusted display input too: with
+        # --identity-store / OPENSSL_ENCRYPT_IDENTITY_STORE pointing at a
+        # supplied directory (a shared contacts dir, an extracted archive),
+        # these fields feed list/show and the TOFU key-change warning without
+        # ever having passed an import-time check (gitlab#172). Validated
+        # before the private-key KDF below, so a crafted file fails cheap.
+        validate_identity_name(data["name"])
+        validate_identity_email(data.get("email"))
+        validate_identity_fingerprint(data["fingerprint"])
+        validate_identity_created_at(data["created_at"])
+        validate_identity_algorithm(data["encryption_algorithm"])
+        validate_identity_algorithm(data["signing_algorithm"])
 
         name = data["name"]
         logger.debug(f"Loading identity '{name}' from {path}")
@@ -332,6 +551,35 @@ class Identity:
             enc_public_key = f.read()
         with open(sig_pub_path, "rb") as f:
             sig_public_key = f.read()
+
+        # Fail closed if the stored fingerprint does not match the fingerprint
+        # recomputed from the public keys just loaded (gitlab#230, scan F6/F7,
+        # CWE-345). identity.json is untrusted under the supplied-store threat
+        # model, and public keys are read from sibling .pem files, so a store
+        # whose JSON claims a genuine fingerprint but whose .pem files hold
+        # attacker keys would otherwise be shown/used under the forged
+        # fingerprint. import_public already enforces this gate; load() must
+        # too. list_identities catches this and routes the entry into its
+        # skipped list rather than silently using it.
+        #
+        # Done here -- over the cheap PUBLIC keys, before the private-key KDF /
+        # HSM unlock below -- so a crafted inconsistent store fails cheap and
+        # cannot force an Argon2id derivation or an attacker-triggered YubiKey
+        # touch before rejection (mirrors the early metadata validation above).
+        # Dual-accept v2 and legacy v1, matching check_fingerprint_consistency.
+        _recomputed_v2 = calculate_fingerprint_v2(
+            data["encryption_algorithm"],
+            enc_public_key,
+            data["signing_algorithm"],
+            sig_public_key,
+        )
+        _recomputed_v1 = calculate_fingerprint(enc_public_key + sig_public_key)
+        if data["fingerprint"] not in (_recomputed_v2, _recomputed_v1):
+            raise IdentityError(
+                f"Fingerprint verification failed for identity "
+                f"'{sanitize_for_display(name)}': the stored fingerprint does "
+                f"not match the public keys on disk"
+            )
 
         # Check if private keys exist
         enc_priv_path = path / "encryption_private.pem"
@@ -536,6 +784,16 @@ class Identity:
             IdentityError: If name is invalid or fingerprint doesn't match keys
         """
         validate_identity_name(data["name"])
+        # email was the one field taken raw from the document (gitlab#172):
+        # printed straight to the terminal directly above the Fingerprint:
+        # line, it could carry ANSI escapes forging the only authenticity
+        # readout this design has. fingerprint and created_at get the same
+        # treatment — both are displayed adjacent to it.
+        validate_identity_email(data.get("email"))
+        validate_identity_fingerprint(data["fingerprint"])
+        validate_identity_created_at(data["created_at"])
+        validate_identity_algorithm(data["encryption_algorithm"])
+        validate_identity_algorithm(data["signing_algorithm"])
         identity = cls(
             name=data["name"],
             email=data.get("email"),
@@ -551,8 +809,12 @@ class Identity:
         )
         # Verify fingerprint matches the actual public keys to detect tampering
         if not identity.check_fingerprint_consistency():
+            # The name has passed validate_identity_name by here, so it is
+            # regex-clean today — sanitized anyway so a future reordering of
+            # these checks cannot silently reopen the escape channel.
             raise IdentityError(
-                f"Fingerprint verification failed for imported identity '{data['name']}': "
+                f"Fingerprint verification failed for imported identity "
+                f"'{sanitize_for_display(data['name'])}': "
                 f"the fingerprint does not match the public keys"
             )
         return identity
@@ -669,12 +931,20 @@ class IdentityStore:
         self.base_path.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.contacts_path.mkdir(parents=True, exist_ok=True, mode=0o700)
 
-    def list_identities(self, include_contacts: bool = True) -> List[Identity]:
+    def list_identities(
+        self, include_contacts: bool = True, skipped: Optional[List[Dict]] = None
+    ) -> List[Identity]:
         """
         List all identities.
 
         Args:
             include_contacts: Include contacts (public keys only)
+            skipped: Optional list that receives one
+                ``{"entry": name, "reason": message}`` dict per store entry
+                that failed to load. Callers that present this listing as
+                complete — the GUI's recipient and signer pickers — need to
+                know an entry is missing rather than silently omitting a
+                recipient or reporting an identity as deleted (gitlab#183).
 
         Returns:
             List of Identity instances
@@ -688,7 +958,15 @@ class IdentityStore:
                     identity = Identity.load(item, load_private_keys=False)
                     identities.append(identity)
                 except Exception as e:
-                    logger.warning(f"Failed to load identity from {item}: {e}")
+                    # item is a directory name — attacker-controlled in the supplied-
+                    # store threat model, and control characters are legal in
+                    # POSIX filenames (gitlab#172).
+                    logger.warning(
+                        f"Failed to load identity from "
+                        f"{sanitize_for_display(item.name)}: {sanitize_for_display(e)}"
+                    )
+                    if skipped is not None:
+                        skipped.append({"entry": item.name, "reason": str(e)})
 
         # Contacts (public keys only)
         if include_contacts:
@@ -698,7 +976,12 @@ class IdentityStore:
                         identity = Identity.load(item, load_private_keys=False)
                         identities.append(identity)
                     except Exception as e:
-                        logger.warning(f"Failed to load contact from {item}: {e}")
+                        logger.warning(
+                            f"Failed to load contact from "
+                            f"{sanitize_for_display(item.name)}: {sanitize_for_display(e)}"
+                        )
+                        if skipped is not None:
+                            skipped.append({"entry": item.name, "reason": str(e)})
 
         return identities
 
@@ -721,14 +1004,15 @@ class IdentityStore:
         """
         validate_identity_name(name)
 
-        # Check own identities first
+        # is_dir(), not exists(): a stray file or dangling symlink at this
+        # path must not shadow a real contact behind it (gitlab#173).
         path = self.base_path / name
-        if path.exists():
+        if path.is_dir():
             return Identity.load(path, passphrase, load_private_keys)
 
         # Check contacts
         contact_path = self.contacts_path / name
-        if contact_path.exists():
+        if contact_path.is_dir():
             return Identity.load(contact_path, passphrase, load_private_keys)
 
         return None
@@ -811,53 +1095,182 @@ class IdentityStore:
         """
         validate_identity_name(identity.name)
 
+        if identity.is_own_identity:
+            path = self.base_path / identity.name
+            shadowed = self.contacts_path / identity.name
+            kinds = ("own identity", "contact")
+        else:
+            path = self.contacts_path / identity.name
+            shadowed = self.base_path / identity.name
+            kinds = ("contact", "own identity")
+
+        # gitlab#173: get_by_name resolves base_path/<name> before
+        # contacts/<name>, so storing the two kinds under one name creates a
+        # SHADOW -- invisible while both exist, and a key substitution the
+        # moment the shadowing entry is deleted.
+        #
+        # Checked BEFORE the TOFU dialogue below: for a contact bundle named
+        # after an own identity the key-change prompt would otherwise present
+        # the user's OWN fingerprint as a "pinned contact" key and ask them to
+        # accept replacing it, only for this check to refuse afterwards.
+        #
+        # Deliberately NOT folded into that dialogue: it gates a changed KEY,
+        # is designed to be passable with --allow-key-change, and does not
+        # fire at all when the fingerprints happen to match. A name collision
+        # across the two kinds must fail closed on its own.
+        #
+        # Accepted residual: this is a check-then-write with no lock, so two
+        # concurrent writers can both pass it. The store has no locking
+        # anywhere, and an attacker who can write to it needs no race; the
+        # collision is reported by find_shadowed_names() if it ever occurs.
+        if shadowed.is_dir():
+            raise IdentityNamespaceCollisionError(
+                f"Cannot store {kinds[0]} '{sanitize_for_display(identity.name)}': "
+                f"a {kinds[1]} of that name already exists. One name resolves to "
+                f"one key, so storing both would let the hidden one take over "
+                f"if the other is removed. Delete or rename the existing entry "
+                f"first."
+            )
+
         # M8: TOFU key-change detection. If a contact/identity with this name is
         # already pinned, compare the stored key fingerprint to the incoming
         # one. A different fingerprint is a key substitution and must be
         # accepted deliberately - even with overwrite=True.
+        #
+        # gitlab#230 (F7): compare RECOMPUTED fingerprints, not the stored
+        # `fingerprint` fields. Comparing the JSON-claimed values let an impostor
+        # forge its `fingerprint` to equal the pinned contact's and slip a
+        # key substitution past the gate; recomputing from the actual public
+        # keys binds the decision to the keys. It also avoids a false positive
+        # when a legacy-v1 pinned entry is re-imported with a v2 fingerprint for
+        # the same keys (both recompute to the same v2 value).
         if not allow_key_change:
             existing = self.get_by_name(identity.name)
-            if existing is not None and existing.fingerprint != identity.fingerprint:
-                raise IdentityKeyChangedError(
-                    identity.name, existing.fingerprint, identity.fingerprint
-                )
-
-        if identity.is_own_identity:
-            path = self.base_path / identity.name
-        else:
-            path = self.contacts_path / identity.name
+            if existing is not None:
+                existing_fp = existing.calculate_fingerprint()
+                incoming_fp = identity.calculate_fingerprint()
+                if existing_fp != incoming_fp:
+                    raise IdentityKeyChangedError(identity.name, existing_fp, incoming_fp)
 
         identity.save(path, passphrase, overwrite)
 
-    def delete_identity(self, name: str) -> bool:
+    def find_shadowed_names(self) -> List[str]:
+        """Names that exist as BOTH an own identity and a contact.
+
+        add_identity refuses to create these (gitlab#173), but a store
+        written before that rule can already contain one, where it is
+        invisible: get_by_name resolves the own identity and the contact
+        never appears, until the own identity is deleted. Callers that
+        present the store to a user should surface these rather than show
+        two identically named entries with no disambiguation.
+
+        Returns:
+            Sorted list of colliding names (usually empty).
+        """
+        if not self.base_path.is_dir() or not self.contacts_path.is_dir():
+            return []
+        own = {
+            p.name for p in self.base_path.iterdir() if p.is_dir() and p.name != _CONTACTS_DIR_NAME
+        }
+        contacts = {p.name for p in self.contacts_path.iterdir() if p.is_dir()}
+        return sorted(own & contacts)
+
+    def has_misplaced_container_entry(self) -> bool:
+        """Whether an identity was written INTO the contacts container.
+
+        Possible on stores predating the reserved-name rule: such an entry is
+        invisible to list_identities (which skips the container) yet
+        resolvable by get_by_name, and it cannot be removed with
+        `identity delete` because the name is now refused -- deleting it that
+        way would take every pinned contact with it. Reported separately from
+        a real name collision, because the remedy is different: move or
+        delete the files by hand (gitlab#173).
+
+        Returns:
+            True if the contacts container itself holds an identity.json.
+        """
+        return (self.contacts_path / "identity.json").is_file()
+
+    def describe_name(self, name: str) -> List[Dict]:
+        """Describe every store entry using this name, both kinds.
+
+        get_by_name deliberately resolves the own identity first, which is
+        what hides a shadowed contact; a caller about to DELETE a name has to
+        see both (gitlab#173).
+
+        Args:
+            name: Identity name.
+
+        Returns:
+            List of ``{"kind": "own"|"contact", "fingerprint": str}``, own
+            first; empty if the name is not present.
+        """
+        validate_identity_name(name)
+        entries: List[Dict] = []
+        for kind, path in (
+            ("own", self.base_path / name),
+            ("contact", self.contacts_path / name),
+        ):
+            if not path.is_dir():
+                continue
+            try:
+                identity = Identity.load(path, passphrase=None, load_private_keys=False)
+                fingerprint = identity.fingerprint
+            except Exception as exc:  # unreadable entry still has to be shown
+                fingerprint = f"<unreadable: {exc}>"
+            entries.append({"kind": kind, "fingerprint": fingerprint})
+        return entries
+
+    def delete_identity(self, name: str, kind: str = "both") -> List[str]:
         """
         Delete identity from store.
 
         Args:
             name: Identity name
+            kind: Which entry to remove -- "own", "contact", or "both"
+                (default). A store written before gitlab#173 can hold the
+                same name as both, and the caller must be able to keep one:
+                removing an own identity destroys its private keys, and
+                removing a contact drops its TOFU pin.
 
         Returns:
-            True if deleted, False if not found
+            The kinds actually removed, e.g. ``["own"]`` or
+            ``["own", "contact"]``; empty if the name was not found.
         """
         import shutil
 
         validate_identity_name(name)
 
-        # Check own identities
+        if kind not in ("own", "contact", "both"):
+            raise ValueError(f"kind must be 'own', 'contact' or 'both', not {kind!r}")
+
+        # Default removes BOTH locations, not just the first one found
+        # (gitlab#173): a store written before the namespace rule can already
+        # contain a shadow, and deleting only the own identity would silently
+        # promote the shadowed contact's keys under a name the user still
+        # trusts -- the substitution this deletion is often performed to
+        # prevent. The caller can still keep one side deliberately, which is
+        # what the CLI offers once it has shown the user both fingerprints.
         path = self.base_path / name
-        if path.exists():
-            shutil.rmtree(path)
-            logger.info(f"Deleted identity '{name}'")
-            return True
-
-        # Check contacts
         contact_path = self.contacts_path / name
-        if contact_path.exists():
-            shutil.rmtree(contact_path)
-            logger.info(f"Deleted contact '{name}'")
-            return True
+        removed: List[str] = []
 
-        return False
+        if kind in ("own", "both") and path.is_dir():
+            shutil.rmtree(path)
+            logger.info(f"Deleted identity '{sanitize_for_display(name)}'")
+            removed.append("own")
+
+        if kind in ("contact", "both") and contact_path.is_dir():
+            if removed:
+                logger.warning(
+                    f"Removed a shadowed contact that shared the name "
+                    f"'{sanitize_for_display(name)}' (gitlab#173)"
+                )
+            shutil.rmtree(contact_path)
+            logger.info(f"Deleted contact '{sanitize_for_display(name)}'")
+            removed.append("contact")
+
+        return removed
 
     def identity_exists(self, name: str) -> bool:
         """
@@ -919,9 +1332,22 @@ def _encrypt_private_key(
     if not ARGON2_AVAILABLE:
         raise RuntimeError("argon2-cffi required for private key encryption")
 
-    # Use HSM protection service if configured
+    # Use HSM protection service if configured. The service must be built for
+    # the device the identity is bound to (its recorded hsm_type), not the
+    # yubikey default -- otherwise an OnlyKey identity would derive its pepper
+    # from the YubiKey plugin (gitlab#218). Legacy configs without a type fall
+    # back to "yubikey" for backward compatibility.
     if protection and protection.level != ProtectionLevel.PASSWORD_ONLY:
-        protection_service = IdentityKeyProtectionService()
+        _hc = protection.hsm_config
+        hsm_type = _hc.hsm_type if _hc else "yubikey"
+        # Rebuild with the PIV config persisted at create time, so a PIV
+        # identity unlocks without the flags being re-supplied (gitlab#218).
+        protection_service = IdentityKeyProtectionService(
+            hsm_type=hsm_type,
+            pkcs11_lib_path=(_hc.pkcs11_lib_path if _hc else None),
+            piv_slot=(_hc.piv_slot if _hc else None),
+            biometric=(_hc.biometric if _hc else False),
+        )
         return protection_service.encrypt_private_key(
             private_key_data=private_key,
             password=passphrase,
@@ -995,9 +1421,22 @@ def _decrypt_private_key(
     if not ARGON2_AVAILABLE:
         raise RuntimeError("argon2-cffi required for private key decryption")
 
-    # Use HSM protection service if configured
+    # Use HSM protection service if configured, built for the device the
+    # identity is bound to (its recorded hsm_type), not the yubikey default --
+    # otherwise an OnlyKey identity would try to derive its pepper from the
+    # YubiKey plugin and never unlock (gitlab#218). Legacy configs without a
+    # type fall back to "yubikey".
     if protection and protection.level != ProtectionLevel.PASSWORD_ONLY:
-        protection_service = IdentityKeyProtectionService()
+        _hc = protection.hsm_config
+        hsm_type = _hc.hsm_type if _hc else "yubikey"
+        # Rebuild with the PIV config persisted at create time, so a PIV
+        # identity unlocks without the flags being re-supplied (gitlab#218).
+        protection_service = IdentityKeyProtectionService(
+            hsm_type=hsm_type,
+            pkcs11_lib_path=(_hc.pkcs11_lib_path if _hc else None),
+            piv_slot=(_hc.piv_slot if _hc else None),
+            biometric=(_hc.biometric if _hc else False),
+        )
         try:
             private_key_bytes = protection_service.decrypt_private_key(
                 encrypted_data=encrypted_data,

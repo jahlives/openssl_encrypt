@@ -245,8 +245,8 @@ class TestJPEGSteganography(unittest.TestCase):
         jpeg_data = create_jpeg_test_image(width=400, height=300, quality=85)
 
         # Verify it's valid JPEG data
-        self.assertTrue(jpeg_data.startswith(b"\xFF\xD8\xFF"))  # JPEG SOI marker
-        self.assertIn(b"\xFF\xD9", jpeg_data)  # JPEG EOI marker
+        self.assertTrue(jpeg_data.startswith(b"\xff\xd8\xff"))  # JPEG SOI marker
+        self.assertIn(b"\xff\xd9", jpeg_data)  # JPEG EOI marker
         self.assertGreater(len(jpeg_data), 1000)  # Reasonable size
 
     def test_jpeg_analyzer(self):
@@ -309,7 +309,7 @@ class TestJPEGSteganography(unittest.TestCase):
         # Hide data
         stego_jpeg = stego.hide_data(jpeg_data, test_data)
         self.assertIsInstance(stego_jpeg, bytes)
-        self.assertTrue(stego_jpeg.startswith(b"\xFF\xD8\xFF"))  # Still valid JPEG
+        self.assertTrue(stego_jpeg.startswith(b"\xff\xd8\xff"))  # Still valid JPEG
 
         # Note: Basic method currently has EOF marker issues in extraction
         # This would be resolved in production implementation
@@ -1848,7 +1848,7 @@ class TestMP3Steganography(unittest.TestCase):
                 self.assertGreater(len(mp3_data), 100)  # Minimum MP3 size
 
                 # Check for MP3 frame sync (0xFF at start of frames)
-                self.assertIn(b"\xFF", mp3_data[:100])  # Should find sync word early
+                self.assertIn(b"\xff", mp3_data[:100])  # Should find sync word early
 
     def test_mp3_capacity_calculation(self):
         """Test MP3 capacity calculation for different configurations."""
@@ -1908,7 +1908,7 @@ class TestMP3Steganography(unittest.TestCase):
         self.assertIsInstance(stego_data, bytes)
 
         # MP3 should still contain frame sync patterns
-        self.assertIn(b"\xFF", stego_data[:100])
+        self.assertIn(b"\xff", stego_data[:100])
 
         # Extract data
         extracted_data = mp3_stego.extract_data(stego_data)
@@ -2017,7 +2017,7 @@ class TestMP3Steganography(unittest.TestCase):
                 if capacity > len(test_data):
                     stego_data = mp3_stego.hide_data(mp3_data, test_data)
                     self.assertIsInstance(stego_data, bytes)
-                    self.assertIn(b"\xFF", stego_data[:100])  # Still has MP3 sync
+                    self.assertIn(b"\xff", stego_data[:100])  # Still has MP3 sync
 
     def test_mp3_coefficient_bits_variation(self):
         """Test MP3 steganography with different coefficient bit settings."""
@@ -2088,7 +2088,7 @@ class TestMP3Steganography(unittest.TestCase):
             stego_data = mp3_stego.hide_data(mp3_data, test_data)
 
             # Should still contain MP3 frame sync
-            self.assertIn(b"\xFF", stego_data[:100])
+            self.assertIn(b"\xff", stego_data[:100])
 
             # Should be able to extract
             extracted_data = mp3_stego.extract_data(stego_data)

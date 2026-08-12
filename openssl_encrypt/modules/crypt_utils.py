@@ -11,6 +11,7 @@ import glob
 import json
 import os
 import random
+import re
 import secrets
 import signal
 import stat
@@ -23,6 +24,49 @@ def eprint(*args, **kwargs):
     """Print to stderr. Drop-in replacement for print() for non-data output."""
     kwargs.setdefault("file", sys.stderr)
     print(*args, **kwargs)
+
+
+# C0 controls, DEL, and the C1 range: ESC (\x1b) starts most terminal escape
+# sequences, but C1 CSI (\x9b) is a one-byte introducer on some terminals
+# (VTE/xterm decode U+009B from its UTF-8 bytes), so the whole range is
+# covered, not just ESC. Backslash is escaped so output stays unambiguous —
+# a literal seven-character "a\\x1b[1A" must not render identically to an
+# escaped real ESC, or the evidence trail the escaping exists to provide is
+# forgeable. The bidi/format controls (LRM/RLM, LRE..RLO/PDF, the isolate
+# pair) ARE honoured by VTE and Kitty and can visually reorder text within a
+# line — email spoofing, not fingerprint forgery. U+2028/U+2029 were
+# considered and excluded: terminals do not line-break on them.
+_DISPLAY_UNSAFE_RE = re.compile(r"[\x00-\x1f\x5c\x7f-\x9f\u200e\u200f\u202a-\u202e\u2066-\u2069]")
+
+
+def sanitize_for_display(value) -> str:
+    """Escape terminal control characters in an untrusted value for display.
+
+    Untrusted text (an imported identity's email, a rejected name echoed in
+    an error message) printed to the terminal can carry ANSI escape sequences
+    that move the cursor and overwrite adjacent lines — e.g. forging the
+    ``Fingerprint:`` line that out-of-band verification depends on
+    (gitlab#172). Escaping rather than stripping keeps the evidence visible:
+    the user sees ``\\x1b[1A`` instead of having their display rewritten.
+
+    This is NOT a secret-redaction chokepoint: the value is printed in full,
+    merely escaped. Secrets (passwords, tokens, key material) go through
+    debug_secret() in debug_redaction.py — never through this helper.
+
+    The "safe to display" contract assumes a stream that does not raise on
+    unencodable code points (CPython's stderr uses errors="backslashreplace",
+    which also covers lone surrogates JSON may smuggle in); a consumer
+    writing elsewhere must provide the same guarantee.
+
+    Args:
+        value: Untrusted value; coerced with str() (error paths pass
+            exception objects).
+
+    Returns:
+        The value with every C0 control, DEL, C1, backslash, and bidi/format
+        control replaced by its backslash escape.
+    """
+    return _DISPLAY_UNSAFE_RE.sub(lambda m: repr(m.group())[1:-1], str(value))
 
 
 def tty_write(message: str) -> bool:
@@ -232,12 +276,13 @@ def display_password_with_timeout(password, timeout_seconds=10):
         eprint(" GENERATED PASSWORD ".center(60, "="))
         eprint("=" * 60)
         eprint(f"\nPassword: {password}")
+        eprint("\nSAVE THIS PASSWORD NOW -- this is the only time it is shown.")
+        eprint("If you lose it, the data CANNOT be recovered.")
         eprint(
-            "\nThis password will be cleared from the screen in {0} seconds.".format(
-                timeout_seconds
-            )
+            "\nIt will be hidden from view in {0} seconds (a screen repaint, "
+            "not an erase).".format(timeout_seconds)
         )
-        eprint("Press Ctrl+C to clear immediately.")
+        eprint("Press Ctrl+C to hide it immediately.")
         eprint("=" * 60)
 
         # Countdown timer
@@ -256,19 +301,26 @@ def display_password_with_timeout(password, timeout_seconds=10):
         # Restore original signal handler no matter what
         signal.signal(signal.SIGINT, original_sigint)
 
-        # Give an indication that we're clearing the screen
+        # The visible screen is repainted, and that is ALL that happens. The
+        # escape sequence removes nothing from scrollback, from a pipe, from
+        # a script(1) transcript or from a CI log, so the old wording -- an
+        # announcement that the password had been cleared from the screen --
+        # was false. gitlab#152 removed that claim from the `encrypt
+        # --random` path; it survived here, on the other command that shows
+        # a generated password (gitlab#182). Claiming it is worse than saying nothing, because the
+        # user stops taking their own precautions.
         if interrupted:
-            eprint("\n\nClearing password from screen (interrupted by user)...")
+            eprint("\n\nHiding password from view (interrupted by user)...")
         else:
-            eprint("\n\nClearing password from screen...")
+            eprint("\n\nHiding password from view...")
 
-        # Clear screen using ANSI escape sequences (safer than os.system)
-        # \033[2J clears the entire screen, \033[H moves cursor to home position
+        # \033[2J clears the visible screen, \033[H moves cursor to home.
         sys.stderr.write("\033[2J\033[H")
         sys.stderr.flush()
 
-        eprint("Password has been cleared from screen.")
-        eprint("For additional security, consider clearing your terminal history.")
+        eprint("The password is no longer on screen, but this is only a repaint:")
+        eprint("it remains in scrollback, and in any pipe, transcript or CI log")
+        eprint("that captured this session. Clear those yourself if it matters.")
 
 
 def safe_open_file(file_path, mode, secure_mode=False, allow_special_files=True):
@@ -560,7 +612,7 @@ def secure_shred_file(file_path, passes=3, quiet=False, secure_mode=False):
                         # Second pattern: All ones (0xFF)
                         while bytes_written < file_size:
                             chunk_size = min(buffer_size, file_size - bytes_written)
-                            f.write(b"\xFF" * chunk_size)
+                            f.write(b"\xff" * chunk_size)
                             bytes_written += chunk_size
 
                     else:
@@ -646,6 +698,32 @@ def show_security_recommendations():
         eprint("    pip install argon2-cffi")
 
 
+def prompt_and_read(prompt: str) -> str:
+    """Write a prompt where the user will see it, then read one line.
+
+    `input(prompt)` writes its prompt to STDOUT, but every warning that
+    precedes a confirmation in this tool goes to stderr via eprint().
+    Redirecting stdout therefore left the user with a frightening warning and
+    an apparently hung program -- the question invisible, when typing
+    anything other than "yes" is exactly what protects them (gitlab#174).
+
+    tty_write() puts the prompt on /dev/tty so it survives redirection of
+    either stream, falling back to stderr where there is no terminal.
+
+    Args:
+        prompt: The question to display, including any trailing space.
+
+    Returns:
+        The line the user typed, or "" at end of input -- an unattended run
+        must resolve to the refusing answer, not raise.
+    """
+    tty_write(prompt)
+    try:
+        return input()
+    except EOFError:
+        return ""
+
+
 def request_confirmation(message):
     """
     Ask the user for confirmation before proceeding with an action.
@@ -656,7 +734,7 @@ def request_confirmation(message):
     Returns:
         bool: True if the user confirmed (y/yes), False otherwise
     """
-    response = input(f"{message} (y/N): ").strip().lower()
+    response = prompt_and_read(f"{message} (y/N): ").strip().lower()
     return response == "y" or response == "yes"
 
 

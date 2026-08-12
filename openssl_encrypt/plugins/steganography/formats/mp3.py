@@ -528,7 +528,7 @@ class MP3Steganography(SteganographyBase):
             # Prepare data for hiding (length + data + end marker)
             data_length = len(secret_data)
             length_bytes = struct.pack("<I", data_length)
-            payload = length_bytes + secret_data + b"\xFF\xFE"  # End marker
+            payload = length_bytes + secret_data + b"\xff\xfe"  # End marker
 
             # Convert to binary representation
             binary_data = SteganographyUtils.bytes_to_binary(payload)
@@ -733,7 +733,7 @@ class MP3Steganography(SteganographyBase):
             # Verify end marker if we have enough bytes
             if len(extracted_bytes) >= 4 + data_length + 2:
                 end_marker = extracted_bytes[4 + data_length : 4 + data_length + 2]
-                if end_marker != b"\xFF\xFE":
+                if end_marker != b"\xff\xfe":
                     logger.warning(f"End marker mismatch: expected \\xFF\\xFE, got {end_marker}")
 
             logger.debug(f"Extracted payload length: {len(payload)}, expected: {data_length}")

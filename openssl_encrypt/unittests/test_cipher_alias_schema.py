@@ -42,9 +42,7 @@ def _cascade_metadata(version, cipher_chain):
             "cipher_chain": cipher_chain,
             "hkdf_hash": "sha256",
             "cascade_salt": _B64,
-            "layer_info": [
-                {"cipher": c, "key_size": 32, "tag_size": 16} for c in cipher_chain
-            ],
+            "layer_info": [{"cipher": c, "key_size": 32, "tag_size": 16} for c in cipher_chain],
         },
     }
 

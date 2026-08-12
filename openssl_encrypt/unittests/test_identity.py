@@ -1394,8 +1394,9 @@ class TestMetadataV7Creation(unittest.TestCase):
             include_encrypted_hash=True,
         )
 
-        # Should include both hashes
-        self.assertIn("original_hash", metadata["hashes"])
+        # F8 (gitlab#245): original_hash is no longer written; encrypted_hash
+        # is still included when requested.
+        self.assertNotIn("original_hash", metadata["hashes"])
         self.assertIn("encrypted_hash", metadata["hashes"])
         self.assertEqual(metadata["hashes"]["encrypted_hash"], encrypted_hash)
 
@@ -1422,8 +1423,9 @@ class TestMetadataV7Creation(unittest.TestCase):
             include_encrypted_hash=False,
         )
 
-        # Should only include original_hash
-        self.assertIn("original_hash", metadata["hashes"])
+        # F8 (gitlab#245): with original_hash removed and encrypted_hash
+        # suppressed (AAD mode), the hashes object is now empty.
+        self.assertNotIn("original_hash", metadata["hashes"])
         self.assertNotIn("encrypted_hash", metadata["hashes"])
 
     def test_create_v7_aad_mode(self):

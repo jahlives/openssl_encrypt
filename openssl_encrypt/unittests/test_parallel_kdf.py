@@ -2,8 +2,9 @@
 """
 Unit tests for parallel KDF functionality in v11 Independent XOR.
 
-Tests parallel execution of hash algorithms and KDFs with multiprocessing,
-verifies key consistency with sequential mode, and validates progress reporting.
+Tests the parallel derivation entry point (since gitlab#224 a thread-pool run
+of the same shared component implementation as sequential mode) and verifies
+key consistency with sequential mode.
 """
 
 import os
@@ -314,9 +315,9 @@ class TestParallelKDF(unittest.TestCase):
 
     def test_parallel_all_hash_algorithms(self):
         """Test parallel mode with all supported hash algorithms."""
-        # Config with all hash algorithms
-        # Note: whirlpool excluded due to multiprocessing import issues in CI
-        # (whirlpool is deprecated and still works in non-parallel code paths)
+        # Config with all hash algorithms. (Whirlpool participates since
+        # gitlab#224; its dedicated equivalence tests live in
+        # test_parallel_kdf_legacy_route_224.py.)
         full_hash_config = {
             "sha256": 10,
             "sha512": 10,

@@ -111,6 +111,30 @@ openssl_encrypt identity import --file bob_public.json
 
 This adds Bob as a contact (public keys only).
 
+If you already hold the document in memory rather than in a file, pipe it in
+with `--data-stdin`:
+
+```bash
+cat bob_public.json | openssl_encrypt identity import --data-stdin
+```
+
+There is deliberately no flag that takes the document as a command-line
+*value*: `/proc/PID/cmdline` is world-readable, so an inline argument would
+publish the contact's name, email and fingerprint to every other process on
+the machine — and would irreversibly expose anything pasted in by mistake.
+
+Use `--alias` to file the contact under a name of your choosing instead of
+the one in the document:
+
+```bash
+openssl_encrypt identity import --file bob_public.json --alias bob-work
+```
+
+The alias is a local label only. Identities are pinned by fingerprint, not by
+name, so an alias cannot disguise a changed key: importing different keys
+under a name you already have is refused unless you pass
+`--allow-key-change`, after verifying the new fingerprint out of band.
+
 ### Deleting Identities
 
 ```bash
@@ -119,7 +143,17 @@ openssl_encrypt identity delete Alice
 
 # Skip confirmation
 openssl_encrypt identity delete Alice --force
+
+# If a name exists as BOTH an own identity and a contact (possible on stores
+# written before 1.4.9), choose which entry to remove. The default removes
+# both: leaving one behind means the name silently resolves to the survivor.
+openssl_encrypt identity delete Alice --kind own      # keeps the contact
+openssl_encrypt identity delete Alice --kind contact  # keeps your identity
 ```
+
+`identity list` reports such a collision. Deleting an own identity destroys
+its private keys, so every file encrypted to it becomes unreadable — back up
+the identity store first.
 
 ### Changing Passphrases
 

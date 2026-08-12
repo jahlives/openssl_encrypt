@@ -65,9 +65,7 @@ def run_derive_password(extra_args, password="testpassword123!", env=None):
                         exit_code = (
                             e.code
                             if e.code is not None
-                            else mock_exit.call_args[0][0]
-                            if mock_exit.called
-                            else 0
+                            else mock_exit.call_args[0][0] if mock_exit.called else 0
                         )
             else:
                 try:
@@ -76,9 +74,7 @@ def run_derive_password(extra_args, password="testpassword123!", env=None):
                     exit_code = (
                         e.code
                         if e.code is not None
-                        else mock_exit.call_args[0][0]
-                        if mock_exit.called
-                        else 0
+                        else mock_exit.call_args[0][0] if mock_exit.called else 0
                     )
 
             if exit_code is None and mock_exit.called:

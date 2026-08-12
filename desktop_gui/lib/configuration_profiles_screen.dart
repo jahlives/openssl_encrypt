@@ -489,21 +489,22 @@ class _ConfigurationProfilesScreenState extends State<ConfigurationProfilesScree
         initialName: initialName,
         initialProfile: initialProfile,
         onProfileCreated: (name, profile) async {
+          // Resolve against the dialog's context BEFORE the awaits: the
+          // State's `mounted` says nothing about this (shadowed) dialog
+          // context, so an of(context) lookup after the gap could hit a
+          // deactivated element.
+          final messenger = ScaffoldMessenger.of(context);
           final success = await ConfigurationProfilesService.saveProfile(name, profile);
           if (success) {
             await _loadProfiles();
-            if (mounted) {
-              // ignore: use_build_context_synchronously
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Profile created: $name'),
-                  backgroundColor: Colors.green,
-                ),
-              );
-            }
-          } else if (mounted) {
-            // ignore: use_build_context_synchronously
-            ScaffoldMessenger.of(context).showSnackBar(
+            messenger.showSnackBar(
+              SnackBar(
+                content: Text('Profile created: $name'),
+                backgroundColor: Colors.green,
+              ),
+            );
+          } else {
+            messenger.showSnackBar(
               const SnackBar(content: Text('Failed to create profile')),
             );
           }
@@ -1017,7 +1018,6 @@ class _CreateProfileDialogState extends State<CreateProfileDialog> {
       'blake3': {'enabled': false, 'rounds': 1000},
       'shake128': {'enabled': false, 'rounds': 1000},
       'shake256': {'enabled': false, 'rounds': 1000},
-      if (!CLIService.shouldHideLegacyAlgorithms()) 'whirlpool': {'enabled': false, 'rounds': 1000},
     };
 
     // Initialize default KDF configuration
@@ -1076,7 +1076,7 @@ class _CreateProfileDialogState extends State<CreateProfileDialog> {
             ),
             const SizedBox(height: 16),
             DropdownButtonFormField<String>(
-              value: _algorithm,
+              initialValue: _algorithm,
               decoration: const InputDecoration(
                 labelText: 'Algorithm',
                 border: OutlineInputBorder(),
@@ -1197,11 +1197,11 @@ class _CreateProfileDialogState extends State<CreateProfileDialog> {
         const SizedBox(height: 8),
         Column(
           children: _hashConfig.entries.where((entry) {
-            // Hide legacy algorithms in CLI v1.2+
-            if (CLIService.shouldHideLegacyAlgorithms() && entry.key == 'whirlpool') {
-              return false;
-            }
-            return true;
+            // Whirlpool is gone: decrypt-only on 1.4, removed in 1.5, and no
+            // subparser declares --whirlpool-rounds (gitlab#189). A profile
+            // saved by an older build can still carry it, so it is filtered
+            // here rather than assumed absent.
+            return entry.key != 'whirlpool';
           }).map((entry) {
             final hashName = entry.key;
             final config = entry.value;

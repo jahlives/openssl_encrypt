@@ -38,7 +38,7 @@ class SteganographyBase(abc.ABC):
         """
         self.password = password
         self.security_level = security_level
-        self.eof_marker = b"\xFF\xFF\xFF\xFE"
+        self.eof_marker = b"\xff\xff\xff\xfe"
 
         # Generate deterministic key material from password for crypto shuffle
         if password:

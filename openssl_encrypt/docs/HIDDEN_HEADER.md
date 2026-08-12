@@ -103,7 +103,13 @@ pw-manager show master | openssl_encrypt decrypt -i /dev/stdin -o secret.txt
 
 Second-password sources, in priority order: `--second-password-fd FD`,
 `--second-password PW` (DEPRECATED — visible in the process list),
-`--second-password-prompt`.
+`$OPENSSL_ENCRYPT_SECOND_PASSWORD`, `--second-password-prompt`.
+
+The environment variable *supplies the value*; it does not enable keyed
+hidden mode. Keyed mode must still be requested with `--hidden-header` or
+`--second-password-prompt` — otherwise a stray exported value would silently
+write every file with a keyed header you never chose. A variable that is set
+but unused is reported as a warning rather than dropped silently.
 
 `armor`/`dearmor` are a pure, reversible transport transform over the whole
 container; `decrypt`/`info`/`verify`/`rekey` auto-de-armor input, so no flag is

@@ -184,8 +184,16 @@ class TemplateManager:
         else:
             self.template_dir = template_dir
 
-        # Ensure template directory exists
-        os.makedirs(self.template_dir, exist_ok=True)
+        # Ensure template directory exists, and is not writable by other local
+        # users -- a group/other-writable template dir lets another process
+        # plant a template that then ranks first and downgrades key derivation
+        # (gitlab#169). New dirs are created 0700; an existing dir has its
+        # group/other WRITE bits stripped (read is preserved for multi-user
+        # installs). Best-effort: a read-only package dir simply stays as-is.
+        os.makedirs(self.template_dir, mode=0o700, exist_ok=True)
+        from .file_permissions import harden_directory_permissions
+
+        harden_directory_permissions(self.template_dir)
 
         # Initialize built-in templates with analysis
         self._initialize_built_in_templates()
@@ -254,7 +262,32 @@ class TemplateManager:
         self, args, name: str, description: str = "", use_cases: List[str] = None
     ) -> EnhancedTemplate:
         """Create a template from parsed CLI arguments."""
-        config = vars(args)
+        # Never copy secret-valued args into a template that gets written to disk
+        # (gitlab#169). A template's config is KDF/hash parameters, not
+        # credentials. Two filters: an exact-dest blocklist of the authoritative
+        # secret arg dests (incl. `code`, which the substring heuristic below
+        # does not catch), plus a name heuristic for any future secret-named
+        # arg. Defense in depth -- the template-create parser defines none of
+        # these flags today, so vars(args) currently carries no secret.
+        _secret_dests = frozenset(
+            {
+                "password",
+                "second_password",
+                "keystore_password",
+                "manifest_password",
+                "rekey_password",
+                "recovery_code",
+                "encryption_data",
+                "code",
+                "signer_passphrase",
+            }
+        )
+        _secret_hint = ("password", "passphrase", "secret", "pepper", "token", "recovery_code")
+        config = {
+            key: value
+            for key, value in vars(args).items()
+            if key not in _secret_dests and not any(hint in key.lower() for hint in _secret_hint)
+        }
 
         metadata = TemplateMetadata(
             name=name,
@@ -327,11 +360,31 @@ class TemplateManager:
         template_data = {"metadata": metadata_dict, "config": template.config}
 
         # Save based on format
-        with open(filepath, "w") as f:
-            if format == TemplateFormat.JSON:
-                json.dump(template_data, f, indent=2, ensure_ascii=False)
-            else:  # YAML
-                yaml.dump(template_data, f, default_flow_style=False, allow_unicode=True)
+        # Write atomically at 0600: a template can carry configuration a caller
+        # would not want world-readable, and the old bare open() left it at the
+        # umask (gitlab#169). A temp file in the same directory + os.replace so a
+        # partial write is never visible as the template.
+        import tempfile
+
+        # Neutral ".tmp" suffix (not ".json"/".yaml"): if the process is killed
+        # between the write and os.replace, list_templates() -- which scans for
+        # .json/.yaml/.yml -- must not surface the leftover as a duplicate
+        # template (gitlab#169 review).
+        fd, tmp_path = tempfile.mkstemp(dir=self.template_dir, prefix=".tmp_", suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w") as f:
+                if format == TemplateFormat.JSON:
+                    json.dump(template_data, f, indent=2, ensure_ascii=False)
+                else:  # YAML
+                    yaml.dump(template_data, f, default_flow_style=False, allow_unicode=True)
+            os.chmod(tmp_path, 0o600)
+            os.replace(tmp_path, filepath)
+        except Exception:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
 
         return filepath
 
@@ -342,14 +395,32 @@ class TemplateManager:
         if not safe_filename or ".." in filename:
             raise ValueError(f"Invalid filename: {filename}")
 
-        # Try different locations and extensions
-        possible_paths = [
-            filename,  # Exact path if provided
+        # The caller-supplied `filename` used to be tried FIRST and RAW, so an
+        # absolute path pointing OUTSIDE the template directory was read and
+        # parsed as a template (gitlab#169). Every candidate is now constrained
+        # to template_dir via os.path.commonpath: the raw filename is honoured
+        # only if it resolves inside (which the path save_template returns does),
+        # and the basename fallbacks are inside by construction.
+        template_dir_abs = os.path.abspath(self.template_dir)
+        candidates = [
+            filename,  # Exact path if provided (only if inside template_dir)
             os.path.join(self.template_dir, safe_filename),
             os.path.join(self.template_dir, safe_filename + ".json"),
             os.path.join(self.template_dir, safe_filename + ".yaml"),
             os.path.join(self.template_dir, safe_filename + ".yml"),
         ]
+        # Containment uses abspath, not realpath: a symlink INSIDE template_dir
+        # pointing out would still pass. Acceptable here -- planting one needs
+        # write access to a dir hardened to strip group/other write, and no CLI
+        # path reaches this method.
+        possible_paths = []
+        for candidate in candidates:
+            candidate_abs = os.path.abspath(candidate)
+            try:
+                if os.path.commonpath([candidate_abs, template_dir_abs]) == template_dir_abs:
+                    possible_paths.append(candidate_abs)
+            except ValueError:
+                continue  # different drive/root -> not under template_dir
 
         for filepath in possible_paths:
             if os.path.exists(filepath):
@@ -360,6 +431,26 @@ class TemplateManager:
                     continue
 
         return None
+
+    def _recompute_security_rating(self, metadata, config) -> None:
+        """Overwrite a template's self-asserted security rating with values
+        computed from its actual config (gitlab#169).
+
+        The metadata-bearing format took ``security_score``/``security_level``
+        verbatim from the file, and ``list_templates()`` sorts by the score, so a
+        planted file could claim a top rating and rank first. A config that
+        cannot be analyzed scores 0 (ranks last) rather than keeping the claim.
+        """
+        metadata.security_score = 0.0
+        metadata.security_level = ""
+        try:
+            hash_config = config.get("hash_config") if isinstance(config, dict) else None
+            if hash_config:
+                analysis = self.analyzer.analyze_configuration(hash_config)
+                metadata.security_score = analysis.overall_score
+                metadata.security_level = analysis.security_level.name
+        except Exception:
+            pass
 
     def _load_template_file(self, filepath: str) -> EnhancedTemplate:
         """Load template from specific file path."""
@@ -384,14 +475,12 @@ class TemplateManager:
             )
             config = data
 
-            # Try to analyze legacy template
-            try:
-                if "hash_config" in config:
-                    analysis = self.analyzer.analyze_configuration(config["hash_config"])
-                    metadata.security_score = analysis.overall_score
-                    metadata.security_level = analysis.security_level.name
-            except Exception:
-                pass
+        # SECURITY: a template file is untrusted -- any local process could drop
+        # one in. Its self-asserted security_score/security_level are recomputed
+        # from the actual config here, because list_templates() sorts by the
+        # score and a planted file claiming a top rating would otherwise rank
+        # first (gitlab#169).
+        self._recompute_security_rating(metadata, config)
 
         template = EnhancedTemplate(
             metadata=metadata, config=config, file_path=filepath, is_built_in=False

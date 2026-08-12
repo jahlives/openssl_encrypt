@@ -13,10 +13,7 @@ out-of-band-verified fingerprint breaks.
 
 import unittest
 
-from openssl_encrypt.modules.pqc_signing import (
-    calculate_fingerprint,
-    calculate_fingerprint_v2,
-)
+from openssl_encrypt.modules.pqc_signing import calculate_fingerprint, calculate_fingerprint_v2
 
 
 class TestFingerprintV2Encoding(unittest.TestCase):

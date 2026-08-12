@@ -2,6 +2,12 @@ import concurrent.futures
 import hashlib
 import secrets
 
+# Upper bound on Balloon parallel instances (gitlab#233, scan F9). The CLI
+# default is 4 and parallelism gives no security benefit beyond a handful; this
+# cap is generous headroom while still bounding the ThreadPoolExecutor task
+# explosion a crafted file could otherwise trigger during key derivation.
+_MAX_PARALLEL_COST = 256
+
 hash_functions = {
     "sha224": hashlib.sha224,
     "sha256": hashlib.sha256,
@@ -273,6 +279,18 @@ def balloon_m(
     """
     if not isinstance(parallel_cost, int) or parallel_cost < 1:
         raise ValueError("'parallel_cost' must be a positive integer.")
+    # Hard upper bound (gitlab#233, scan F9, CWE-1284). parallel_cost arrives
+    # verbatim from a decrypted file's balloon.parallelism; the loop below
+    # submits that many tasks to a ThreadPoolExecutor, so an unbounded value
+    # (e.g. 10**8) allocates ~10**8 Future/_WorkItem objects during
+    # pre-authentication key derivation and OOM-kills the process. No legitimate
+    # config exceeds a handful of parallel instances (CLI default 4), so cap
+    # well above any real use and fail closed on anything larger. The estimator
+    # additionally models parallelism so the memory ceiling catches it earlier.
+    if parallel_cost > _MAX_PARALLEL_COST:
+        raise ValueError(
+            f"'parallel_cost' ({parallel_cost}) exceeds the maximum of {_MAX_PARALLEL_COST}."
+        )
     output = b""
 
     with concurrent.futures.ThreadPoolExecutor() as executor:

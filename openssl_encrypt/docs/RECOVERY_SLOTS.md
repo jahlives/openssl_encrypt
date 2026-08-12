@@ -57,6 +57,66 @@ openssl-encrypt recover -i secret.enc -o secret.txt --recovery-code ABCDE-FGHIJ-
 openssl-encrypt recover -i secret.enc -o secret.txt --recovery-passphrase
 ```
 
+### Non-interactive use (scripts, the desktop GUI)
+
+Credentials are passed through the environment, never on the command line — a
+recovery code on argv is visible in the world-readable `/proc/PID/cmdline`.
+Each variable is read once and removed from the environment:
+
+| Variable | Purpose |
+|---|---|
+| `OPENSSL_ENCRYPT_RECOVERY_CODE` | existing code, to unlock |
+| `OPENSSL_ENCRYPT_RECOVERY_PASSPHRASE` | existing passphrase, to unlock |
+| `OPENSSL_ENCRYPT_ADD_RECOVERY_PASSPHRASE` | new passphrase for `--add-passphrase` |
+| `CRYPT_PASSWORD` | the file's primary password |
+
+An explicit flag still selects *which* credential is used; the variable only
+supplies its value. Passing `--recovery-code` on the command line still works
+but warns.
+
+The same mechanism carries two other credentials that likewise have no safe
+command-line channel:
+
+| Variable | Purpose |
+|---|---|
+| `OPENSSL_ENCRYPT_SECOND_PASSWORD` | second password for keyed hidden mode |
+| `OPENSSL_ENCRYPT_SIGNER_PASSPHRASE` | signer identity passphrase for `sign` |
+
+Both are read once and removed, and both are refused when blank rather than
+falling through to a prompt no GUI subprocess could answer.
+
+Neither can *enable* the feature it belongs to. Keyed hidden mode is switched
+on by the presence of a second password, so `--hidden-header` (or an explicit
+`--second-password*` form) must request the credential before the variable is
+read — otherwise a stray exported value would silently write every file with a
+keyed hidden header you never chose and cannot reproduce. An HSM-only signer
+identity is likewise never given a passphrase just because a variable is set.
+
+A value containing a newline is refused rather than trimmed: the
+file-descriptor and prompt channels stop at the first newline, so a trailing
+`\n` would derive a different key from the same passphrase typed at the
+prompt. This applies to the environment channel only — the older
+`--second-password` flag keeps its exact byte semantics so that files already
+encrypted with such a value stay decryptable.
+
+`--json` emits a single JSON document on stdout instead of the human report:
+
+```bash
+openssl-encrypt list-recovery -i secret.enc --json
+#   -> {"slots": [{"id": ..., "type": ..., "key_id": ...}]}
+
+# A generated code is never written to stdout or stderr in JSON mode — it
+# unwraps the file's key. Name a destination; it is created 0600 and the
+# command refuses to overwrite an existing file:
+openssl-encrypt add-recovery -i secret.enc -o secret.enc --add-code --json \
+    --recovery-code-out /run/user/1000/code.txt
+#   -> {"output": ..., "slot_type": "recovery_code",
+#       "credential_source": ..., "recovery_code_written_to": "/run/user/1000/code.txt"}
+```
+
+`--recovery-code-out` works without `--json` too, and then replaces the
+one-time terminal display rather than adding to it.
+
 > The PQC escrow type is available via the Python API
 > (`recovery_credentials=[{"type": "pqc", "public_key": ..., "kem_algorithm": ...}]`
 > and `decrypt_file(recovery_private_key=...)`); CLI flags for it are a planned

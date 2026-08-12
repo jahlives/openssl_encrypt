@@ -261,8 +261,7 @@ def test_integrity_client():
     print("=" * 70)
     print("Usage Example (with proper mTLS setup):")
     print("=" * 70)
-    print(
-        """
+    print("""
 from openssl_encrypt.plugins.integrity import IntegrityPlugin, IntegrityConfig
 from pathlib import Path
 
@@ -332,15 +331,13 @@ with IntegrityPlugin(config) as plugin:
     plugin.delete_hash(file_id)
 
 # Automatic cleanup when exiting context manager
-"""
-    )
+""")
 
     print()
     print("=" * 70)
     print("Additional Features:")
     print("=" * 70)
-    print(
-        """
+    print("""
 Profile Management:
   - Update display name: plugin.update_profile("My Computer")
 
@@ -363,8 +360,7 @@ Security:
   - No sensitive data transmitted (only SHA-256 hashes)
   - Auto-registration on first connection
   - OPT-IN by default (enabled=false)
-"""
-    )
+""")
 
     return True
 

@@ -229,10 +229,17 @@ def verify_integrity(
     if not sig_checked:
         code = EXIT_GPG_UNAVAILABLE
 
-    if not quiet and not as_json:
-        # Human-readable report -> stderr (stdout stays clean for non-JSON callers).
+    if not as_json:
+        # The verdict itself is NOT suppressible. --quiet is documented as
+        # "shorten the trust warning to one line"; until gitlab#171 it was
+        # silently dropped for this command, and once it started working it
+        # would have hidden a failed verification behind the exit code alone.
         sig_state = "VALID" if sig_good else "NOT VALID"
         print(f"Signature: {sig_state} ({sig_summary})", file=sys.stderr)
+
+    if not quiet and not as_json:
+        # The rest of the human-readable report -> stderr (stdout stays clean
+        # for non-JSON callers).
         if sig_fpr:
             print(f"Signing key: {sig_fpr}", file=sys.stderr)
         n_files = len(manifest.get("files", {}))

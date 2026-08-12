@@ -175,12 +175,16 @@ class PQCKeystore:
             traceback.print_exc()
             raise InternalError(f"Failed to create keystore: {str(e)}")
 
-    def load_keystore(self, master_password: str) -> bool:
+    def load_keystore(self, master_password: str, allow_high_kdf_cost: bool = False) -> bool:
         """
         Load the keystore from file
 
         Args:
             master_password: Master password for the keystore
+            allow_high_kdf_cost: Permit loading even when the header's KDF cost
+                parameters exceed the memory safety ceiling (gitlab#128). The
+                header is attacker-controllable and consumed before the AEAD tag
+                is verified, so oversized cost is refused by default.
 
         Returns:
             bool: True if the keystore was loaded successfully
@@ -225,6 +229,24 @@ class PQCKeystore:
             protection = header["protection"]
             method = protection["method"]
             params = protection["params"]
+
+            # Enforce the memory safety ceiling on the header's KDF cost before
+            # deriving (gitlab#128). These parameters are attacker-controllable
+            # and consumed BEFORE the AEAD tag is verified, so a tampered header
+            # could otherwise OOM the host pre-authentication. This path bypasses
+            # the file decryptor's estimator, so it is guarded independently.
+            from .decryption_estimator import enforce_memory_ceiling
+
+            _peak_kb = 0
+            if method == KeystoreProtectionMethod.ARGON2ID_AES_GCM.value:
+                _peak_kb = params.get("argon2_params", {}).get("memory_cost", 0) or 0
+            elif method == KeystoreProtectionMethod.SCRYPT_CHACHA20.value:
+                _sp = params.get("scrypt_params", {})
+                _n = _sp.get("n", 0) or 0
+                _r = _sp.get("r", 8) or 8
+                _p = _sp.get("p", 1) or 1
+                _peak_kb = (128 * _n * _r * _p) // 1024
+            enforce_memory_ceiling(_peak_kb, allow_high_kdf_cost=allow_high_kdf_cost)
 
             # Derive key from master password
             if method == KeystoreProtectionMethod.ARGON2ID_AES_GCM.value:
@@ -343,6 +365,12 @@ class PQCKeystore:
             # Clear any cached keys
             self._clear_cached_keys()
 
+            # Let security-relevant refusals (e.g. the KDF memory ceiling,
+            # gitlab#128) and authentication failures propagate unwrapped so the
+            # caller sees the actionable message rather than a generic internal
+            # error.
+            if isinstance(e, (ValidationError, AuthenticationError)):
+                raise
             if isinstance(e, (KeyError, json.JSONDecodeError)):
                 raise InternalError(f"Invalid keystore format: {str(e)}")
             elif "MAC check failed" in str(e) or "Cipher tag does not match" in str(e):

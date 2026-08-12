@@ -129,11 +129,18 @@ class MyPlugin(PreProcessorPlugin):
 
 ### 2. Plugin Registration
 
-Place your plugin file in the `openssl_encrypt/plugins/` directory. The plugin manager will automatically discover it based on:
+Place your plugin file in the `openssl_encrypt/plugins/user/` directory. The plugin manager will automatically discover it based on:
 
-- File location: `openssl_encrypt/plugins/**/*.py`
+- File location: `openssl_encrypt/plugins/user/**/*.py`
 - Plugin class inheritance from base plugin classes
 - Proper `__init__` method signature
+
+> **Security:** only the packages that ship with the tool are trusted as
+> built-in. A third-party plugin **must** live under `plugins/user` (or
+> `plugins/community` / `plugins/official`) so it passes the signature + AST +
+> hash-pin gate — the ENFORCE-by-default signature policy. Do **not** drop a
+> plugin directly in `plugins/` or invent a new top-level directory: such a
+> plugin is treated as untrusted and will be rejected unless properly signed.
 
 ### 3. Testing Your Plugin
 
@@ -504,12 +511,14 @@ variable (or the `signature_policy` argument to `create_default_plugin_manager`)
 | Value     | Behavior                                                        |
 |-----------|-----------------------------------------------------------------|
 | `off`     | signatures not checked (AST denylist only)                      |
-| `warn`    | unsigned/unverifiable plugins load, with a loud warning + log (default) |
-| `enforce` | unsigned/unverifiable non-built-in plugins are refused           |
+| `warn`    | unsigned/unverifiable plugins load, with a loud warning + log   |
+| `enforce` | unsigned/unverifiable non-built-in plugins are refused (default) |
 
-The default is `warn`: existing unsigned plugins keep working but emit a
-warning, so operators are nudged toward signing without anything breaking. Set
-`enforce` once your plugins are signed, or `off` to silence the check.
+The default is `enforce` (gitlab#130): an unsigned/unverifiable non-built-in
+plugin is refused before its code is imported, rather than executed behind the
+bypassable AST denylist. Sign your plugins and enroll the signing key (see
+below), or set `warn` to load unsigned plugins with a loud warning, or `off` to
+silence the check entirely — an unrecognized value fails closed to `enforce`.
 
 Built-in plugins shipped with the package are unaffected (they are covered by
 the source-integrity manifest, not per-file signatures).

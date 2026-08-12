@@ -22,7 +22,7 @@ authlib==1.6.12
     # via safety
 bandit==1.7.10
     # via -r requirements-dev.in
-black==26.1.0
+black==26.3.1
     # via -r requirements-dev.in
 blake3==1.0.8
     # via -r requirements-prod.in
@@ -50,7 +50,7 @@ click==8.3.1
     #   typer
 coverage[toml]==7.13.1
     # via pytest-cov
-cryptography==48.0.1
+cryptography==50.0.0
     # via
     #   -r requirements-prod.in
     #   authlib
@@ -104,7 +104,7 @@ mdurl==0.1.2
     # via markdown-it-py
 mypy-extensions==1.1.0
     # via black
-nltk==3.9.4
+nltk==3.10.0
     # via safety
 nodeenv==1.10.0
     # via pre-commit
@@ -121,7 +121,7 @@ packaging==25.0
     #   wheel
 pathspec==1.0.3
     # via black
-pillow==12.2.0
+pillow==12.3.0
     # via
     #   -r requirements-prod.in
     #   qrcode

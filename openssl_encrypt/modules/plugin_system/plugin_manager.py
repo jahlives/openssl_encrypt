@@ -45,6 +45,28 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+# The shipped built-in plugin packages. Built-in trust is an ALLOWLIST, not a
+# denylist (gitlab#231, scan F10; supersedes the gitlab#130 user/community/
+# official denylist): only a file inside one of these package directories is
+# trusted to skip the signature + AST + TOCTOU gate. A file dropped directly in
+# the plugin root (top-level plugins/*.py) or inside ANY other subdirectory —
+# the advertised user/community/official third-party drop dirs, or a brand-new
+# directory an attacker creates — must pass the full gate. Matching is
+# case-insensitive (see _BUILTIN_PLUGIN_PACKAGES_CF) so a variant casing
+# (plugins/HSM) resolves the same on a case-insensitive filesystem. A denylist
+# fails open the moment a shipped-looking name that is not on it appears; adding
+# a genuinely new built-in package is a deliberate code change here.
+_BUILTIN_PLUGIN_PACKAGES = (
+    "examples",
+    "hsm",
+    "integrity",
+    "keyserver",
+    "pepper",
+    "steganography",
+    "telemetry",
+)
+_BUILTIN_PLUGIN_PACKAGES_CF = frozenset(s.casefold() for s in _BUILTIN_PLUGIN_PACKAGES)
+
 
 class PluginRegistration:
     """
@@ -114,14 +136,21 @@ class PluginManager:
         # manifest (scopes the sibling-import hook).
         self._verified_package_paths: Dict[str, Set[str]] = {}
 
-        # Signature-gated loading (#66). Default WARN (D1): unsigned/
-        # unverifiable non-built-in plugins still load, but a warning +
-        # security-log event is emitted; enforce refuses them, off disables
-        # the check. trusted_keys_dir defaults to the per-user store resolved
-        # lazily on first use.
+        # Signature-gated loading (#66; gitlab#130). Default ENFORCE: an
+        # unsigned/unverifiable non-built-in plugin is refused rather than
+        # exec'd in the host process behind the bypassable AST denylist; warn
+        # loads it with a warning + security-log event, off disables the check.
+        # Built-in bundled plugins keep their trust shortcut and are unaffected.
+        # trusted_keys_dir defaults to the per-user store resolved lazily on
+        # first use.
         from .plugin_signature import PluginSignaturePolicy
 
-        self.signature_policy = signature_policy or PluginSignaturePolicy.WARN
+        # Explicit None check (not truthiness): an explicit caller choice must
+        # never be silently overridden, and this stays correct even if a future
+        # PluginSignaturePolicy member were to have a falsy value (gitlab#130).
+        self.signature_policy = (
+            signature_policy if signature_policy is not None else PluginSignaturePolicy.ENFORCE
+        )
         self.trusted_keys_dir = trusted_keys_dir
         # D2: the bundled project source-integrity key is a default anchor so
         # officially distributed plugins verify without manual enrollment.
@@ -308,23 +337,9 @@ class PluginManager:
                     return PluginResult.error_result(error_msg)
 
             # Register plugin
-            with self.lock:
-                if plugin.plugin_id in self.plugins:
-                    logger.warning(f"Plugin {plugin.plugin_id} already registered, replacing")
-
-                # Pass file_path as-is to PluginRegistration
-                # For packages (__init__.py), PluginRegistration will correctly extract the package directory
-                registration = PluginRegistration(plugin, file_path)
-                self.plugins[plugin.plugin_id] = registration
-
-                # Initialize plugin
-                config = self.config_manager.get_plugin_config(plugin.plugin_id)
-                init_result = plugin.initialize(config)
-                if not init_result.success:
-                    del self.plugins[plugin.plugin_id]
-                    return PluginResult.error_result(
-                        f"Plugin initialization failed: {init_result.message}"
-                    )
+            registration = self._register_loaded_plugin(plugin, file_path)
+            if isinstance(registration, PluginResult):
+                return registration
 
             self._audit_log(f"Loaded plugin: {plugin.plugin_id} from {file_path}")
             logger.info(f"Successfully loaded plugin: {plugin.plugin_id}")
@@ -567,25 +582,86 @@ class PluginManager:
         with self.lock:
             return [self.get_plugin_info(plugin_id) for plugin_id in self.plugins.keys()]
 
-    def enable_plugin(self, plugin_id: str) -> PluginResult:
-        """Enable plugin by ID."""
+    def _set_enabled(self, plugin_id: str, enabled: bool) -> PluginResult:
+        """Set and persist a plugin's enabled state (gitlab#199).
+
+        The in-memory flag alone died with the process: the CLI builds a
+        fresh manager per invocation, so `disable-plugin` reported success
+        and the plugin ran enabled on the very next command. A user who
+        disables a plugin for a security reason must not be told it worked
+        when it did not.
+        """
         with self.lock:
             if plugin_id not in self.plugins:
                 return PluginResult.error_result(f"Plugin not found: {plugin_id}")
 
-            self.plugins[plugin_id].enabled = True
-            self._audit_log(f"Enabled plugin: {plugin_id}")
-            return PluginResult.success_result(f"Plugin {plugin_id} enabled")
+            try:
+                self.config_manager.update_plugin_config(plugin_id, {"enabled": enabled})
+            except Exception as error:  # noqa: BLE001 - reported, not swallowed
+                # Reporting failure is the whole point: a silent fall back to
+                # the in-memory flag reproduces the bug being fixed.
+                return PluginResult.error_result(
+                    f"Could not persist enabled state for {plugin_id}: {error}"
+                )
+
+            self.plugins[plugin_id].enabled = enabled
+            word = "Enabled" if enabled else "Disabled"
+            self._audit_log(f"{word} plugin: {plugin_id}")
+            return PluginResult.success_result(f"Plugin {plugin_id} {word.lower()}")
+
+    def enable_plugin(self, plugin_id: str) -> PluginResult:
+        """Enable plugin by ID, persistently."""
+        return self._set_enabled(plugin_id, True)
 
     def disable_plugin(self, plugin_id: str) -> PluginResult:
-        """Disable plugin by ID."""
-        with self.lock:
-            if plugin_id not in self.plugins:
-                return PluginResult.error_result(f"Plugin not found: {plugin_id}")
+        """Disable plugin by ID, persistently."""
+        return self._set_enabled(plugin_id, False)
 
-            self.plugins[plugin_id].enabled = False
-            self._audit_log(f"Disabled plugin: {plugin_id}")
-            return PluginResult.success_result(f"Plugin {plugin_id} disabled")
+    def _register_loaded_plugin(self, plugin: Any, file_path: str):
+        """Register an already-loaded, already-validated plugin.
+
+        Extracted from load_plugin so the enabled-state handling can be
+        tested without standing up the signature-verification path.
+
+        A plugin whose stored config says `enabled: false` is registered but
+        NOT initialized -- initialize() is where a plugin claims resources
+        and installs hooks, so skipping it is the concrete thing disabling
+        buys. It stays in `self.plugins` so `list-plugins` can show it and
+        the user can turn it back on; the dispatch paths already gate on
+        `registration.enabled`.
+
+        Residual, deliberately not addressed here: the module has already
+        been imported by this point, so a disabled plugin's module-level
+        code has run. Refusing the import needs a file-to-id map that does
+        not exist before the module is loaded.
+
+        Returns:
+            The PluginRegistration, or a failed PluginResult if the plugin's
+            own initialize() rejected the load.
+        """
+        with self.lock:
+            if plugin.plugin_id in self.plugins:
+                logger.warning(f"Plugin {plugin.plugin_id} already registered, replacing")
+
+            config = self.config_manager.get_plugin_config(plugin.plugin_id)
+            enabled = config.get("enabled", True) is not False
+
+            # Pass file_path as-is to PluginRegistration
+            # For packages (__init__.py), PluginRegistration will correctly extract the package directory
+            registration = PluginRegistration(plugin, file_path, enabled=enabled)
+            self.plugins[plugin.plugin_id] = registration
+
+            if not enabled:
+                logger.info(f"Plugin {plugin.plugin_id} is disabled; not initializing")
+                return registration
+
+            init_result = plugin.initialize(config)
+            if not init_result.success:
+                del self.plugins[plugin.plugin_id]
+                return PluginResult.error_result(
+                    f"Plugin initialization failed: {init_result.message}"
+                )
+            return registration
 
     def get_hsm_plugin(self, plugin_name: str) -> Optional[Any]:
         """
@@ -1077,14 +1153,43 @@ class PluginManager:
         return True
 
     def _is_builtin_plugin(self, real_path: str) -> bool:
-        """True if ``real_path`` (already realpath-resolved) is under the
-        trusted built-in plugin root. Built-ins skip the AST/signature gate and
-        the TOCTOU hash pin (they are shipped, owner-only, and gated by the H8
-        writable-location check)."""
+        """True if ``real_path`` (already realpath-resolved) is a shipped
+        built-in plugin. Built-ins skip the AST/signature gate and the TOCTOU
+        hash pin (they are shipped, owner-only, and gated by the H8
+        writable-location check).
+
+        Trust is an ALLOWLIST (gitlab#231, scan F10): only a file INSIDE one of
+        the shipped built-in package directories (``_BUILTIN_PLUGIN_PACKAGES``)
+        is built-in. Everything else under the root goes through the full
+        signature + AST + TOCTOU gate:
+
+        - a file dropped directly in the root (top-level ``plugins/*.py``) — the
+          location the docs used to advertise for third-party plugins, so
+          following them would otherwise bypass the ENFORCE-by-default signature
+          policy;
+        - the advertised drop directories ``plugins/user`` /
+          ``plugins/community`` / ``plugins/official`` (gitlab#130); and
+        - any other/unknown subdirectory an attacker creates under the root.
+
+        A denylist ("everything except user/community/official") failed open the
+        moment any other name appeared; the allowlist fails closed.
+        """
         if not self.builtin_plugin_root:
             return False
         real_root = os.path.realpath(self.builtin_plugin_root)
-        return real_path == real_root or real_path.startswith(real_root + os.sep)
+        if real_path != real_root and not real_path.startswith(real_root + os.sep):
+            return False
+        rel = os.path.relpath(real_path, real_root)
+        if rel == os.curdir:
+            # The root directory itself is not a plugin file.
+            return False
+        # A file directly in the root has no package component -> not built-in.
+        parts = rel.split(os.sep, 1)
+        if len(parts) < 2:
+            return False
+        # Trust ONLY the shipped built-in packages. Case-insensitive so a variant
+        # casing (plugins/HSM) resolves the same on a case-insensitive filesystem.
+        return parts[0].casefold() in _BUILTIN_PLUGIN_PACKAGES_CF
 
     def _validate_plugin_file(self, file_path: str) -> bool:
         """

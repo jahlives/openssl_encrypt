@@ -127,6 +127,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       _buildThemeSelector(),
                     ],
                   ),
+                const SizedBox(height: 16),
+                // Always visible: a privacy action every user should reach,
+                // not a Pro-only setting (gitlab#165).
+                if (_matchesSearch('privacy telemetry opt-out analytics data'))
+                  _buildCategoryCard(
+                    'Privacy & Telemetry',
+                    Icons.privacy_tip,
+                    Colors.teal,
+                    [
+                      _buildTelemetryOptOut(),
+                    ],
+                  ),
                 if (SettingsService.isProMode()) ...[
                 const SizedBox(height: 16),
                 if (_matchesSearch('cryptographic defaults security algorithm'))
@@ -891,19 +903,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           ElevatedButton(
             onPressed: () async {
+              // Resolve the messenger and close the dialog BEFORE the await:
+              // the State's `mounted` says nothing about this (shadowed)
+              // dialog context, and popping after the gap could pop the
+              // wrong route if the user dismissed the dialog via the
+              // barrier while the reset was running.
+              final messenger = ScaffoldMessenger.of(context);
+              Navigator.of(context).pop();
               await SettingsService.resetToDefaults();
-              setState(() {});
-              if (mounted) {
-                // ignore: use_build_context_synchronously
-                Navigator.of(context).pop();
-                // ignore: use_build_context_synchronously
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Settings reset to defaults'),
-                    backgroundColor: Colors.green,
-                  ),
-                );
-              }
+              if (mounted) setState(() {});
+              messenger.showSnackBar(
+                const SnackBar(
+                  content: Text('Settings reset to defaults'),
+                  backgroundColor: Colors.green,
+                ),
+              );
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: Theme.of(context).colorScheme.error,
@@ -1155,6 +1169,98 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  /// Telemetry opt-out action (gitlab#165 P34). Deliberately an irreversible
+  /// ACTION, not a two-way toggle: `telemetry status` has no machine-readable
+  /// output (gitlab#162), so the GUI cannot reliably read the current state,
+  /// and a toggle that can render the wrong state is worse than a one-way
+  /// button. The CLI's own confirmation is skipped with --force, so the GUI
+  /// takes responsibility for enumerating what is destroyed here.
+  Widget _buildTelemetryOptOut() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Disable telemetry collection and delete all data already '
+            'collected on this machine. This is an action, not a toggle: it '
+            'runs once and cannot be undone.',
+            style: TextStyle(fontSize: 13),
+          ),
+          const SizedBox(height: 8),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.teal.shade700,
+              foregroundColor: Colors.white,
+            ),
+            icon: const Icon(Icons.privacy_tip, size: 18),
+            label: const Text('Disable telemetry and delete data'),
+            onPressed: _confirmTelemetryOptOut,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _confirmTelemetryOptOut() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Disable telemetry?'),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('This will, on this machine:'),
+            SizedBox(height: 8),
+            Text('• Stop telemetry collection and background uploads'),
+            Text('• Delete all pending (unsent) telemetry events'),
+            Text('• Delete your telemetry API key'),
+            SizedBox(height: 12),
+            Text(
+              'This cannot be undone. It is not a permanent setting — telemetry '
+              'can be switched on again later by an environment variable or a '
+              'config file, which would register a new key.',
+              style: TextStyle(fontSize: 12),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.teal),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Disable telemetry'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      await CLIService.telemetryOptOut();
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Telemetry disabled and collected data deleted.'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(InputValidator.sanitizeForDisplay(
+              'Could not disable telemetry: $e')),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   Widget _buildKeyserverSection() {
     return StatefulBuilder(
       builder: (context, setState) {
@@ -1239,7 +1345,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 leading: const Icon(Icons.schedule, size: 20),
                 title: const Text('Cache TTL', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
                 subtitle: DropdownButtonFormField<int>(
-                  value: cacheTtl,
+                  initialValue: cacheTtl,
                   decoration: const InputDecoration(
                     border: OutlineInputBorder(),
                     contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
@@ -1283,20 +1389,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   Expanded(
                     child: ElevatedButton.icon(
                       onPressed: () async {
-                        final success = await CLIService.testKeyserverConnection(keyserverUrl);
+                        // Reports on the CONFIGURED server: the CLI's
+                        // `keyserver status` takes no --url, so the message
+                        // must not claim the URL in the field was probed
+                        // (gitlab#188).
+                        final success = await CLIService.checkKeyserverStatus();
                         if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
                               content: Text(success
-                                ? 'Connection successful!'
-                                : 'Connection failed. Check URL and network.'),
+                                ? 'Configured keyserver reachable.'
+                                : 'Configured keyserver unreachable. Check the CLI keyserver settings and network.'),
                               backgroundColor: success ? Colors.green : Colors.red,
                             ),
                           );
                         }
                       },
                       icon: const Icon(Icons.wifi_tethering, size: 16),
-                      label: const Text('Test', style: TextStyle(fontSize: 12)),
+                      label: const Text('Check status', style: TextStyle(fontSize: 12)),
                       style: ElevatedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 8),
                       ),
@@ -1609,10 +1719,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return Column(
       children: [
         // Client Cert + Key PEM
-        ListTile(
-          leading: const Icon(Icons.badge, size: 20),
-          title: const Text('Client Certificate + Key (PEM)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-          subtitle: const Text('Paste combined certificate and private key', style: TextStyle(fontSize: 10)),
+        const ListTile(
+          leading: Icon(Icons.badge, size: 20),
+          title: Text('Client Certificate + Key (PEM)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+          subtitle: Text('Paste combined certificate and private key', style: TextStyle(fontSize: 10)),
         ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -1633,10 +1743,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
         const SizedBox(height: 8),
 
         // CA Certificate PEM
-        ListTile(
-          leading: const Icon(Icons.verified_user, size: 20),
-          title: const Text('CA Certificate (PEM)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-          subtitle: const Text('Paste CA certificate', style: TextStyle(fontSize: 10)),
+        const ListTile(
+          leading: Icon(Icons.verified_user, size: 20),
+          title: Text('CA Certificate (PEM)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+          subtitle: Text('Paste CA certificate', style: TextStyle(fontSize: 10)),
         ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -1672,7 +1782,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     clientKeyPath: certMode == 'file' ? SettingsService.getPepperClientKeyPath() : null,
                     caCertPath: certMode == 'file' ? SettingsService.getPepperCaCertPath() : null,
                   );
-                  if (context.mounted) {
+                  if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
                         content: Text(result['success']
@@ -1695,7 +1805,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: ElevatedButton.icon(
                 onPressed: () async {
                   final peppers = await CLIService.listPeppers();
-                  if (context.mounted) {
+                  if (mounted) {
                     showDialog(
                       context: context,
                       builder: (context) => AlertDialog(
@@ -2004,10 +2114,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return Column(
       children: [
         // Client Cert + Key PEM
-        ListTile(
-          leading: const Icon(Icons.badge, size: 20),
-          title: const Text('Client Certificate + Key (PEM)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-          subtitle: const Text('Paste combined certificate and private key', style: TextStyle(fontSize: 10)),
+        const ListTile(
+          leading: Icon(Icons.badge, size: 20),
+          title: Text('Client Certificate + Key (PEM)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+          subtitle: Text('Paste combined certificate and private key', style: TextStyle(fontSize: 10)),
         ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -2028,10 +2138,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
         const SizedBox(height: 8),
 
         // CA Certificate PEM
-        ListTile(
-          leading: const Icon(Icons.verified_user, size: 20),
-          title: const Text('CA Certificate (PEM)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-          subtitle: const Text('Paste CA certificate', style: TextStyle(fontSize: 10)),
+        const ListTile(
+          leading: Icon(Icons.verified_user, size: 20),
+          title: Text('CA Certificate (PEM)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+          subtitle: Text('Paste CA certificate', style: TextStyle(fontSize: 10)),
         ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -2067,7 +2177,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     clientKeyPath: certMode == 'file' ? SettingsService.getIntegrityClientKeyPath() : null,
                     caCertPath: certMode == 'file' ? SettingsService.getIntegrityCaCertPath() : null,
                   );
-                  if (context.mounted) {
+                  if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
                         content: Text(result['success']
@@ -2090,7 +2200,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: ElevatedButton.icon(
                 onPressed: () async {
                   final stats = await CLIService.getIntegrityStats();
-                  if (context.mounted) {
+                  if (mounted) {
                     showDialog(
                       context: context,
                       builder: (context) => AlertDialog(

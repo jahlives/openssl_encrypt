@@ -56,6 +56,7 @@ from .crypt_errors import (
     ValidationError,
 )
 from .crypt_utils import secure_shred_file
+from .dbus_kdf_config import build_encrypt_hash_config, config_provides_key_stretching
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -88,6 +89,17 @@ POLKIT_ACTION_SHRED = "ch.rmrf.openssl_encrypt.shred"
 POLKIT_ACTION_KEYSTORE = "ch.rmrf.openssl_encrypt.keystore"
 POLKIT_ACTION_GENERATE_KEY = "ch.rmrf.openssl_encrypt.generate_key"
 POLKIT_ACTION_DELETE_KEY = "ch.rmrf.openssl_encrypt.delete_key"
+# gitlab#250 (F12): mutating a service property via the D-Bus Properties.Set
+# method is an admin/configuration action and must be authorized like the rest.
+POLKIT_ACTION_CONFIGURE = "ch.rmrf.openssl_encrypt.configure"
+
+# gitlab#250 (F13): bounds for the writable properties. MaxConcurrentOperations
+# must stay >= 1 (0/negative makes the concurrency gate refuse every operation)
+# and below a sane ceiling (a huge value removes the limit); DefaultTimeout must
+# stay a positive, bounded number of seconds.
+_MAX_CONCURRENT_OPS_CEILING = 64
+_MIN_DEFAULT_TIMEOUT = 1
+_MAX_DEFAULT_TIMEOUT = 86400  # 24 h
 
 # CheckAuthorizationFlags.AllowUserInteraction - lets polkit prompt the
 # caller's authentication agent instead of silently denying
@@ -542,31 +554,32 @@ class CryptoService(dbus.service.Object):
                 operation.update_progress(0.0, "Starting encryption...")
                 self._emit_progress(operation_id, 0.0, "Starting encryption...")
 
-                # Build hash configuration from options
-                hash_config = {}
-                hash_option_map = {
-                    "sha256_rounds": "sha256_iterations",
-                    "sha512_rounds": "sha512_iterations",
-                    "sha3_256_rounds": "sha3_256_iterations",
-                    "sha3_512_rounds": "sha3_512_iterations",
-                    "blake2b_rounds": "blake2b_iterations",
-                    "blake3_rounds": "blake3_iterations",
-                    "balloon_rounds": "balloon_iterations",
-                    "enable_hkdf": "enable_hkdf",
-                    "argon2_mode": "argon2_mode",
-                }
-                for opt_key, config_key in hash_option_map.items():
-                    if opt_key in parsed_options:
-                        hash_config[config_key] = parsed_options[opt_key]
+                # Build the hash configuration in the structure crypt_core
+                # actually consumes (gitlab#228, security F1). The previous
+                # hand-built dict used key names crypt_core never reads
+                # (sha512_iterations, argon2_time_cost, enable_hkdf, ...), so no
+                # KDF/hash was ever enabled and the non-empty dict also defeated
+                # encrypt_file's STANDARD-template default -- collapsing every
+                # D-Bus-encrypted file's key to a single unstretched SHA-256.
+                hash_config = build_encrypt_hash_config(parsed_options)
 
-                # Enable Argon2 by default if not specified
-                # (pbkdf2_iterations=0 disables PBKDF2 and uses Argon2)
-                if "argon2_mode" not in hash_config and "argon2_time_cost" not in hash_config:
-                    # Set default Argon2 configuration
-                    hash_config["argon2_mode"] = "argon2id"
-                    hash_config["argon2_time_cost"] = 3
-                    hash_config["argon2_memory_cost"] = 65536  # 64 MB
-                    hash_config["argon2_parallelism"] = 4
+                # Fail closed: never derive a key without password stretching.
+                # A client cannot, through any option combination, coax this
+                # path into an unstretched single-hash key (CWE-916).
+                if not config_provides_key_stretching(hash_config):
+                    operation.complete(
+                        False, "Refusing to encrypt: no key-stretching KDF configured"
+                    )
+                    reply_handler(
+                        (
+                            False,
+                            "Refusing to encrypt: the requested options enable no "
+                            "key-stretching KDF (Argon2/scrypt/balloon) and no hash "
+                            "rounds",
+                            operation_id,
+                        )
+                    )
+                    return
 
                 # Map algorithm string to enum
                 algorithm_enum = self.ALGORITHM_MAP.get(algorithm.lower())
@@ -586,7 +599,7 @@ class CryptoService(dbus.service.Object):
                     input_file=input_path,
                     output_file=output_path,
                     password=password_bytes,
-                    hash_config=hash_config if hash_config else None,
+                    hash_config=hash_config,
                     pbkdf2_iterations=pbkdf2_iterations,
                     algorithm=algorithm_enum,
                     quiet=True,
@@ -1198,19 +1211,55 @@ class CryptoService(dbus.service.Object):
                 name="org.freedesktop.DBus.Error.UnknownProperty",
             )
 
-    @dbus.service.method(dbus.PROPERTIES_IFACE, in_signature="ssv")
-    def Set(self, interface_name: str, property_name: str, value):
-        """Set property value"""
+    @dbus.service.method(dbus.PROPERTIES_IFACE, in_signature="ssv", sender_keyword="sender")
+    def Set(self, interface_name: str, property_name: str, value, sender=None):
+        """Set property value.
+
+        gitlab#250 (F12): mutating a property is authorized like every other
+        operation (polkit ``configure`` action / same-UID on the session bus),
+        failing closed. gitlab#250 (F13): the value is range-checked so a caller
+        cannot wedge the concurrency gate (0/negative) or remove the limit
+        (huge), nor set a degenerate timeout.
+        """
         if interface_name != self.INTERFACE_NAME:
             raise dbus.exceptions.DBusException(
                 f"Unknown interface: {interface_name}",
                 name="org.freedesktop.DBus.Error.UnknownInterface",
             )
 
+        authorized, auth_error = self._authorize_caller(sender, POLKIT_ACTION_CONFIGURE)
+        if not authorized:
+            raise dbus.exceptions.DBusException(
+                f"Access denied: {auth_error}",
+                name="org.freedesktop.DBus.Error.AccessDenied",
+            )
+
+        try:
+            int_value = int(value)
+        except (TypeError, ValueError, OverflowError):
+            # OverflowError covers a variant double of +/-inf; nan raises
+            # ValueError. Either way this is pre-mutation, so nothing changes.
+            raise dbus.exceptions.DBusException(
+                f"Property {property_name} requires an integer value",
+                name="org.freedesktop.DBus.Error.InvalidArgs",
+            )
+
         if property_name == "MaxConcurrentOperations":
-            self.max_concurrent_ops = int(value)
+            if not (1 <= int_value <= _MAX_CONCURRENT_OPS_CEILING):
+                raise dbus.exceptions.DBusException(
+                    f"MaxConcurrentOperations must be between 1 and "
+                    f"{_MAX_CONCURRENT_OPS_CEILING}",
+                    name="org.freedesktop.DBus.Error.InvalidArgs",
+                )
+            self.max_concurrent_ops = int_value
         elif property_name == "DefaultTimeout":
-            self.default_timeout = int(value)
+            if not (_MIN_DEFAULT_TIMEOUT <= int_value <= _MAX_DEFAULT_TIMEOUT):
+                raise dbus.exceptions.DBusException(
+                    f"DefaultTimeout must be between {_MIN_DEFAULT_TIMEOUT} and "
+                    f"{_MAX_DEFAULT_TIMEOUT} seconds",
+                    name="org.freedesktop.DBus.Error.InvalidArgs",
+                )
+            self.default_timeout = int_value
         else:
             raise dbus.exceptions.DBusException(
                 f"Property not writable: {property_name}",

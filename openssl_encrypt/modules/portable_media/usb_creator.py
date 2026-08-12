@@ -9,9 +9,11 @@ This module provides air-gapped portable security for scenarios where
 network connectivity is not available or desired.
 
 Security Features:
-- Encrypted workspace with AES-256-GCM
+- Sealed AES-256-GCM workspace vault (explicit seal/unlock; loose files in the
+  workspace are NOT encrypted until sealed -- there is no transparent/automatic
+  workspace encryption, and removal of unlocked plaintext is a plain delete, not
+  a secure wipe, which is unreliable on wear-levelled flash media)
 - Tamper detection and integrity verification
-- Secure file deletion on eject
 - Isolated portable environment
 - Pre-loaded encrypted keystores
 """
@@ -24,11 +26,12 @@ import os
 import platform
 import secrets
 import shutil
+import stat
 import tempfile
 import time
 from enum import Enum
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 try:
     from cryptography.hazmat.primitives import hashes
@@ -50,6 +53,31 @@ except ImportError:
 
 # Set up module logger
 logger = logging.getLogger(__name__)
+
+
+# The KDF a new drive gets when the user names no rounds at all.
+#
+# Without this, a plain `create-usb --usb-path X` built an empty dict, passed
+# hash_config=None, and derived with PBKDF2-HMAC-SHA256 at 100 000 iterations
+# -- what crypt_cli's own comment calls "below the OWASP floor" -- to protect
+# an encrypted keystore and integrity manifest on removable media, the
+# highest offline-exposure artifact this tool writes (gitlab#205).
+#
+# Expressed as hash ROUNDS rather than a raised PBKDF2 count on purpose. The
+# fallback's iteration count is recorded nowhere a verifier can read: the
+# drive's security_profile lives inside .integrity, which is encrypted with
+# the key derived from that profile, and verify_usb_integrity always builds a
+# STANDARD creator. Raising it would derive a different key, fail to decrypt
+# .integrity, and report a good drive as TAMPERED. Rounds, by contrast, are
+# stored in hash_config.json and .integrity and read back on verify, so a new
+# drive carries its own parameters and the no-config path stays untouched for
+# drives already in existence.
+_DEFAULT_USB_HASH_ROUNDS = 600_000
+
+
+def default_usb_hash_config() -> Dict[str, int]:
+    """The hash config a create-usb with no explicit rounds should record."""
+    return {"sha512": _DEFAULT_USB_HASH_ROUNDS}
 
 
 class USBCreationError(KeystoreError):
@@ -79,6 +107,8 @@ class USBDriveCreator:
     CONFIG_DIR = "config"
     DATA_DIR = "data"
     LOGS_DIR = "logs"
+    VAULT_FILENAME = "workspace.vault"  # AES-256-GCM sealed workspace (gitlab#263)
+    UNLOCKED_DIR = "unlocked"  # where 'unlock' extracts the vault, relative to data/
 
     # Security constants
     SALT_LENGTH = 32
@@ -90,6 +120,29 @@ class USBDriveCreator:
     INTEGRITY_FILE = ".integrity"
     SALT_FILE = "salt.bin"  # per-drive KDF salt (plaintext; salts are not secret)
     VERSION = "1.0"
+
+    # Integrity manifest scan version (gitlab#132 F13). v2 manifests additionally
+    # detect ADDED executable-type files and tampered/added root-level autorun.*
+    # that were not present at creation. v1 manifests (drives created before this
+    # fix) carry no such flag and are verified exactly as before — only listed
+    # files are checked — so existing drives keep working (backward compatible).
+    INTEGRITY_SCAN_VERSION = 2
+    # v2 integrity is an ALLOWLIST, not an extension denylist: every file in the
+    # tool tree is recorded at creation, and verification flags ANY file present
+    # afterward that is not in that record — so a planted .dll/.so/.pyd/.exe or
+    # any other payload dropped into the tool tree is caught, not just a fixed set
+    # of extensions (gitlab#132 F13). The genuinely user-mutable subtrees below —
+    # the encrypt/decrypt workspace and logs — are excluded so ordinary use
+    # (encrypting files onto the drive) does not trip verification.
+    #   (values compared against the FIRST path component under portable_root)
+    _INTEGRITY_MUTABLE_SUBDIRS = ("data", "logs")  # == DATA_DIR, LOGS_DIR
+    # Artifacts legitimately not in the manifest: the manifest itself, and files
+    # written after it (the cryptographic hash manifest + its instructions).
+    _INTEGRITY_EXCLUDED_NAMES = (".integrity", "hash_manifest.enc", "VERIFY_INTEGRITY.md")
+    # Root-level auto-run files (they live at the USB root, above the portable
+    # directory, and are executed by the OS on insert — so they must be integrity
+    # protected and any unexpected one must be flagged).
+    _ROOT_AUTORUN_NAMES = ("autorun.inf", "autorun.sh", ".autorun")
 
     # Legacy fixed salt used by pre-fix drives. Retained ONLY so that USB drives
     # created before per-drive salts were introduced remain decryptable/verifiable.
@@ -126,6 +179,7 @@ class USBDriveCreator:
         manifest_password: Optional[str] = None,
         manifest_security_profile: Optional[str] = None,
         manifest_hash_config: Optional[Dict] = None,
+        force: bool = False,
     ) -> Dict[str, any]:
         """
         Create encrypted portable USB drive
@@ -150,6 +204,31 @@ class USBDriveCreator:
 
             if not self._is_removable_drive(usb_path):
                 logger.warning(f"Path {usb_path} may not be a removable drive")
+
+            # Refuse to clobber a root autorun file the user already has
+            # (gitlab#207). These are written unconditionally at the USB
+            # ROOT, above the portable directory, so a mistyped --usb-path --
+            # which only produced a log warning -- silently replaced them.
+            if not force:
+                clashes = [name for name in self._ROOT_AUTORUN_NAMES if (usb_path / name).exists()]
+                if clashes:
+                    raise USBCreationError(
+                        f"{usb_path} already contains {', '.join(clashes)}. "
+                        "Creating a drive here would overwrite them. Re-run with "
+                        "--yes if this is the drive you meant."
+                    )
+
+            # A supplied path that does not exist is a typo, not a choice
+            # (gitlab#206). Both options used to take a silent else branch
+            # that recorded `included: False`, and the CLI summary simply
+            # omitted the line -- so the user believed their keystore was on
+            # the drive. Checked up front, before anything is written.
+            for option, candidate in (
+                ("--executable-path", executable_path),
+                ("--keystore-to-include", keystore_path),
+            ):
+                if candidate and not os.path.exists(candidate):
+                    raise USBCreationError(f"{option} does not exist: {candidate}")
 
             # Create secure password key
             secure_password = SecureBytes(password.encode("utf-8"))
@@ -182,6 +261,7 @@ class USBDriveCreator:
 
             with open(config_path, "w") as f:
                 json.dump(config, f, indent=2)
+            self._restrict_to_owner(config_path)
 
             # Copy executable if provided
             executable_info = {}
@@ -220,8 +300,12 @@ class USBDriveCreator:
             if hash_config:
                 self._store_hash_config_metadata(config_dir, hash_config)
 
-            # Generate integrity file and cryptographic hash manifest
-            integrity_info = self._create_integrity_file(portable_root, encryption_key, hash_config)
+            # Generate integrity file and cryptographic hash manifest. Pass
+            # usb_path so the root-level autorun.* files (above portable_root)
+            # are integrity-protected (gitlab#132 F13).
+            integrity_info = self._create_integrity_file(
+                portable_root, encryption_key, hash_config, usb_root=usb_path
+            )
             manifest_info = self._create_hash_manifest(
                 portable_root,
                 password,
@@ -301,22 +385,25 @@ class USBDriveCreator:
 
             # Create secure password key
             secure_password = SecureBytes(password.encode("utf-8"))
-            # Load this drive's salt (legacy fixed salt for pre-fix drives).
-            salt = self._load_or_create_salt(portable_root, create=False)
-            encryption_key = self._derive_encryption_key(secure_password, hash_config, salt)
+            encryption_key = None
+            try:
+                # Load this drive's salt (legacy fixed salt for pre-fix drives).
+                salt = self._load_or_create_salt(portable_root, create=False)
+                encryption_key = self._derive_encryption_key(secure_password, hash_config, salt)
 
-            # Verify integrity file
-            integrity_path = portable_root / self.INTEGRITY_FILE
-            if not integrity_path.exists():
-                raise USBCreationError("Integrity file missing - USB may be tampered")
+                # Verify integrity file
+                integrity_path = portable_root / self.INTEGRITY_FILE
+                if not integrity_path.exists():
+                    raise USBCreationError("Integrity file missing - USB may be tampered")
 
-            verification_result = self._verify_integrity_file(portable_root, encryption_key)
-
-            # Clean up
-            secure_memzero(encryption_key)
-            secure_memzero(secure_password)
-
-            return verification_result
+                return self._verify_integrity_file(portable_root, encryption_key, usb_root=usb_path)
+            finally:
+                # finally, not the success path only (gitlab#201): the common
+                # outcome here is a wrong password or an actually tampered
+                # drive, and both used to leave the key and password resident.
+                if encryption_key is not None:
+                    secure_memzero(encryption_key)
+                secure_memzero(secure_password)
 
         except Exception as e:
             raise USBCreationError(f"USB verification failed: {e}")
@@ -351,6 +438,7 @@ class USBDriveCreator:
             salt = secrets.token_bytes(self.SALT_LENGTH)
             salt_path.parent.mkdir(parents=True, exist_ok=True)
             salt_path.write_bytes(salt)
+            self._restrict_to_owner(salt_path)
             return salt
 
         # Pre-fix drive without a salt file: use the legacy fixed salt for compat.
@@ -361,12 +449,18 @@ class USBDriveCreator:
         password: SecureBytes,
         hash_config: Optional[Dict] = None,
         salt: Optional[bytes] = None,
-    ) -> bytes:
+    ) -> bytearray:
         """
         Derive encryption key from password using complex hash chaining system
 
         Uses the same multi-hash approach as the main CLI for consistency.
         Falls back to PBKDF2 if no hash config provided or if import fails.
+
+        Returns a bytearray, not bytes (gitlab#201): this key protects an
+        encrypted keystore and the integrity manifest on removable media, and
+        secure_memzero refuses immutable input -- it returned False and every
+        caller discarded that, so the key stayed resident while the code read
+        as if it had been wiped.
 
         Args:
             password: The master password.
@@ -401,9 +495,12 @@ class USBDriveCreator:
                 # Hash the result to get the exact length we need
                 import hashlib
 
-                return hashlib.sha256(hashed_password).digest()[: self.KEY_LENGTH]
+                normalized = bytearray(hashlib.sha256(hashed_password).digest())
+                del normalized[self.KEY_LENGTH :]
+                secure_memzero(hashed_password)
+                return normalized
 
-            return hashed_password
+            return bytearray(hashed_password)
 
         except ImportError:
             # Fallback if crypt_core not available
@@ -415,7 +512,7 @@ class USBDriveCreator:
 
     def _derive_key_pbkdf2_fallback(
         self, password: SecureBytes, salt: Optional[bytes] = None
-    ) -> bytes:
+    ) -> bytearray:
         """Fallback PBKDF2 key derivation.
 
         Args:
@@ -440,8 +537,8 @@ class USBDriveCreator:
             iterations=iterations,
         )
 
-        key = kdf.derive(bytes(password))
-        return key
+        # bytearray, so secure_memzero can actually wipe it (gitlab#201).
+        return bytearray(kdf.derive(bytes(password)))
 
     def _create_portable_config(self, custom_config: Optional[Dict], include_logs: bool) -> Dict:
         """Create portable configuration file"""
@@ -449,8 +546,12 @@ class USBDriveCreator:
             "portable_mode": True,
             "version": self.VERSION,
             "security_profile": self.security_profile.value,
-            "auto_encrypt_workspace": True,
-            "secure_deletion_on_exit": True,
+            # Honest flags (gitlab#263): the workspace is protected only by the
+            # explicit seal/unlock vault -- there is no transparent auto-encryption
+            # and no secure-erase-on-eject implementation, so advertising either as
+            # true was a false security assurance (CWE-311).
+            "auto_encrypt_workspace": False,
+            "secure_deletion_on_exit": False,
             "network_disabled": True,  # Air-gapped mode
             "logging_enabled": include_logs,
             "workspace_path": "data/",
@@ -494,77 +595,230 @@ class USBDriveCreator:
         except Exception as e:
             raise USBCreationError(f"Failed to encrypt keystore: {e}")
 
-    def _create_encrypted_workspace(self, workspace_dir: Path, key: bytes) -> Dict:
-        """Create encrypted workspace directory"""
+    # Files that describe the workspace itself and must never be sealed into
+    # the vault (they live alongside it, not inside it).
+    _WORKSPACE_NON_VAULT_NAMES = frozenset({VAULT_FILENAME, ".workspace", "README.txt"})
+
+    def _seal_workspace_vault(self, source_dir: Path, vault_path: Path, key: bytes) -> int:
+        """Seal the workspace's regular files into an authenticated vault.
+
+        Every regular file under ``source_dir`` (except the workspace's own
+        metadata files -- the vault, marker and README) is packed into a tar
+        archive and encrypted with AES-256-GCM under ``key``. The output layout
+        is ``nonce + ciphertext``, identical to :meth:`_encrypt_keystore_to_usb`.
+        The vault is written to a temp file, restricted to the owner, then
+        atomically moved into place so a reader never sees a partial vault.
+
+        Symlinks are skipped rather than followed: a symlink in the workspace
+        must not pull its target's contents into the encrypted archive.
+
+        Args:
+            source_dir: The workspace directory whose files are sealed.
+            vault_path: Destination path for the encrypted vault.
+            key: The 32-byte AES-256 key derived from the master password.
+
+        Returns:
+            The number of files sealed into the vault.
+        """
+        import io
+        import tarfile
+
+        file_count = 0
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode="w") as tar:
+            for path in sorted(source_dir.rglob("*")):
+                if path.is_symlink() or not path.is_file():
+                    continue
+                rel = path.relative_to(source_dir)
+                if rel.parts and rel.parts[0] in self._WORKSPACE_NON_VAULT_NAMES:
+                    continue
+                # Build a minimal, deterministic tar entry -- do not leak the
+                # host's uid/gid/mtime, and pin owner-only mode inside the archive.
+                info = tarfile.TarInfo(name=rel.as_posix())
+                info.size = path.stat().st_size
+                info.mode = 0o600
+                info.mtime = 0
+                info.uid = info.gid = 0
+                info.uname = info.gname = ""
+                with open(path, "rb") as fh:
+                    tar.addfile(info, fh)
+                file_count += 1
+
+        # bytearray so the cleartext workspace copy can be wiped after sealing.
+        plaintext = bytearray(buf.getvalue())
+        buf.close()
+        nonce = os.urandom(self.NONCE_LENGTH)
         try:
-            # Create workspace metadata file
+            # Pass the bytearray directly (AESGCM accepts any bytes-like): a
+            # bytes() copy would be an immutable, unwipeable cleartext duplicate.
+            ciphertext = AESGCM(bytes(key)).encrypt(nonce, plaintext, None)
+        finally:
+            secure_memzero(plaintext)
+
+        # Create the temp vault with a random name and O_CREAT|O_EXCL|O_NOFOLLOW
+        # so a pre-planted symlink at a predictable name cannot redirect the
+        # write, and the file is owner-only from creation (no chmod race). This
+        # mirrors the manifest tempfile hardening (gitlab#204).
+        tmp_path = vault_path.with_name(f".{vault_path.name}.{secrets.token_hex(8)}.tmp")
+        flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, "O_NOFOLLOW", 0)
+        fd = os.open(tmp_path, flags, 0o600)
+        try:
+            with os.fdopen(fd, "wb") as f:
+                f.write(nonce + ciphertext)
+            os.replace(tmp_path, vault_path)
+        except Exception:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
+        self._restrict_to_owner(vault_path)
+        return file_count
+
+    def _unlock_workspace_vault(self, vault_path: Path, dest_dir: Path, key: bytes) -> int:
+        """Decrypt and extract a workspace vault into ``dest_dir``.
+
+        AES-256-GCM authenticates the whole archive, so a wrong key or any
+        tampering raises before a single byte is written. As defense in depth
+        against a forged archive, each member is resolved against ``dest_dir``
+        and any name that would escape it (``..`` traversal or an absolute
+        path) is refused; only regular files are extracted.
+
+        Args:
+            vault_path: The encrypted vault to open.
+            dest_dir: Directory to extract into (created if absent).
+            key: The 32-byte AES-256 key derived from the master password.
+
+        Returns:
+            The number of files extracted.
+
+        Raises:
+            USBCreationError: on a truncated vault or an unsafe member name.
+            cryptography.exceptions.InvalidTag: on wrong key / tampering.
+        """
+        import io
+        import tarfile
+
+        blob = vault_path.read_bytes()
+        if len(blob) <= self.NONCE_LENGTH:
+            raise USBCreationError("Workspace vault is truncated or corrupt")
+        nonce, ciphertext = blob[: self.NONCE_LENGTH], blob[self.NONCE_LENGTH :]
+        plaintext = AESGCM(bytes(key)).decrypt(nonce, ciphertext, None)
+
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        dest_root = dest_dir.resolve()
+        count = 0
+        with tarfile.open(fileobj=io.BytesIO(plaintext), mode="r") as tar:
+            for member in tar.getmembers():
+                if not member.isfile():
+                    # Only regular files are ever sealed; ignore anything else
+                    # (dirs are recreated implicitly, links are never trusted).
+                    continue
+                target = (dest_dir / member.name).resolve()
+                if target != dest_root and dest_root not in target.parents:
+                    raise USBCreationError(
+                        f"Refusing to extract vault member outside workspace: {member.name}"
+                    )
+                target.parent.mkdir(parents=True, exist_ok=True)
+                extracted = tar.extractfile(member)
+                if extracted is None:
+                    continue
+                with open(target, "wb") as fh:
+                    shutil.copyfileobj(extracted, fh)
+                self._restrict_to_owner(target)
+                count += 1
+        return count
+
+    def _create_encrypted_workspace(self, workspace_dir: Path, key: bytes) -> Dict:
+        """Create a genuinely encrypted workspace.
+
+        The workspace is protected by a real AES-256-GCM vault sealed with the
+        derived ``key`` (previously this method advertised encryption but never
+        used the key). An initial vault is sealed immediately so the workspace
+        is encrypted from creation, and the marker/README describe the vault
+        honestly: loose files placed in the directory are NOT encrypted until
+        they are sealed. See gitlab#263 (F27, CWE-311).
+        """
+        try:
+            vault_path = workspace_dir / self.VAULT_FILENAME
+            # Genuinely use the key: seal the (initially empty) workspace.
+            sealed_files = self._seal_workspace_vault(workspace_dir, vault_path, key)
+
             metadata = {
-                "encrypted": True,
+                "vault": self.VAULT_FILENAME,
+                "algorithm": "AES-256-GCM",
+                "sealed": True,
+                "sealed_files": sealed_files,
                 "created_at": time.time(),
                 "security_profile": self.security_profile.value,
+                "note": (
+                    "Workspace contents are protected only when sealed inside "
+                    f"{self.VAULT_FILENAME}. Files left loose in this directory "
+                    "are NOT encrypted until you run 'python ../crypt.py seal'."
+                ),
             }
 
             metadata_path = workspace_dir / ".workspace"
             with open(metadata_path, "w", encoding="utf-8") as f:
                 json.dump(metadata, f, indent=2)
+            self._restrict_to_owner(metadata_path)
 
-            # Create README for workspace
-            readme_content = """# 🔒 Encrypted USB Workspace
+            # Honest README: the directory is NOT transparently encrypted. Data
+            # at rest is protected only inside the sealed vault; the seal/unlock
+            # commands manage it, and per-file encrypt/decrypt is also available.
+            readme_content = f"""# USB Workspace (sealed vault)
 
-This directory contains encrypted files created by OpenSSL Encrypt Portable.
+Data at rest in this workspace is protected by an AES-256-GCM vault named
+"{self.VAULT_FILENAME}". IMPORTANT: files you drop loose into this directory
+are NOT encrypted until you seal them. Only the contents inside the vault are
+protected at rest.
 
-## 📁 File Encryption Workflow:
+## Sealed-workspace workflow
 
-### Encrypt a file:
+### Unlock the vault to work on your files
 ```bash
-python3 ../encrypt_file.py /path/to/file.txt PASSWORD
+python3 ../crypt.py unlock
+# → decrypts {self.VAULT_FILENAME} into data/unlocked/
 ```
 
-### Decrypt a file:
+### Seal the workspace again when you are done
 ```bash
-# View content directly (stdout - default)
-python3 ../decrypt_file.py filename.txt.enc PASSWORD
-
-# Save to specific file
-python3 ../decrypt_file.py filename.txt.enc PASSWORD output.txt
+python3 ../crypt.py seal
+# → re-encrypts the files under data/unlocked/ into {self.VAULT_FILENAME}
+#   and removes the loose plaintext copies
 ```
 
-### Examples:
+The password is read from the CRYPT_PASSWORD environment variable, or you are
+prompted. Never pass it on the command line: other users on the machine can
+read the process arguments and your shell records them in history.
+
+## Per-file encryption (alternative)
+
+To encrypt/decrypt individual files instead of the whole workspace:
 ```bash
-# Encrypt document.pdf to the USB workspace
-python3 ../encrypt_file.py /home/user/document.pdf mypassword
-
-# Quick view encrypted text file (prints to terminal)
-python3 ../decrypt_file.py secret.txt.enc mypassword
-
-# Save decrypted file to specific location
-python3 ../decrypt_file.py document.pdf.enc mypassword /home/user/recovered.pdf
-
-# Pipe content to other commands
-python3 ../decrypt_file.py data.txt.enc mypassword | grep "important"
+python3 ../crypt.py encrypt -i /path/to/file.txt   # → data/file.txt.enc
+python3 ../crypt.py decrypt -i file.txt.enc         # → stdout (or -o <file>)
 ```
 
-## 🔐 Security Features:
-- ✅ AES-256-GCM encryption
-- ✅ Complex hash chaining (same as main CLI)
-- ✅ Automatic workspace management
-- ✅ Tamper detection & integrity verification
-- ✅ Cross-platform compatibility
-
-## 💡 Tips:
-- Files are automatically named with .enc extension
-- Use the same password as your USB master password
-- Encrypted files are stored safely in this workspace directory
+## Security notes
+- AES-256-GCM (authenticated) with the same key derivation as the main CLI.
+- Tampering with {self.VAULT_FILENAME} or using the wrong password is detected
+  and refused on unlock.
+- After sealing, delete any leftover plaintext under data/unlocked/ that you no
+  longer need — only the vault is encrypted.
 """
 
             readme_path = workspace_dir / "README.txt"
             with open(readme_path, "w", encoding="utf-8") as f:
                 f.write(readme_content)
+            self._restrict_to_owner(readme_path)
 
             return {
                 "created": True,
                 "path": str(workspace_dir.name),
                 "encryption": "AES-256-GCM",
+                "vault": self.VAULT_FILENAME,
+                "sealed_files": sealed_files,
             }
 
         except Exception as e:
@@ -627,39 +881,230 @@ fi
         except Exception as e:
             raise USBCreationError(f"Failed to create autorun files: {e}")
 
-    def _create_integrity_file(
-        self, portable_root: Path, key: bytes, hash_config: Optional[Dict] = None
-    ) -> Dict:
-        """Create integrity verification file"""
+    # Bound on how much of any single file the verifier will hash. The drive is
+    # untrusted (gitlab#132); this stops a substituted huge file, or a FIFO /
+    # symlink to an unbounded stream (e.g. /dev/zero), from exhausting memory or
+    # looping forever. A legitimate tool file is far smaller; a file exceeding
+    # this simply hashes differently and surfaces as tampered.
+    _MAX_HASH_BYTES = 1 * 1024 * 1024 * 1024  # 1 GiB
+    # Bound on the .integrity blob read before authentication (it is a small
+    # JSON manifest; an attacker could otherwise plant a multi-GB file there).
+    _MAX_INTEGRITY_BYTES = 128 * 1024 * 1024  # 128 MiB
+
+    # config/hash_config.json is plaintext, unauthenticated, and sits on the
+    # drive being verified, yet its contents set the KDF work factor before
+    # any integrity check runs (gitlab#200). It is a handful of small
+    # integers; anything larger is an attack, not a drive.
+    _MAX_HASH_CONFIG_BYTES = 64 * 1024
+
+    # An allowlist rather than a per-key ceiling, because the file is
+    # unauthenticated: there is no reason to honour a shape create-usb never
+    # writes. These are exactly the keys the CLI builds (crypt_cli.py, the
+    # create-usb/verify-usb hash_config blocks), plus the "type" that
+    # multi_hash_password mutates in. A memory-hard block (argon2, scrypt,
+    # balloon, derivation_config) is not among them, so the OOM vector is
+    # refused by shape.
+    _ALLOWED_HASH_CONFIG_ROUNDS = frozenset(
+        {
+            "sha512",
+            "sha384",
+            "sha256",
+            "sha224",
+            "sha3_512",
+            "sha3_384",
+            "sha3_256",
+            "sha3_224",
+            "blake2b",
+            "blake3",
+            "shake256",
+            "shake128",
+            "whirlpool",
+            "pbkdf2_iterations",
+        }
+    )
+    # Well above any real configuration (the CLI's own presets top out in the
+    # low millions of PBKDF2 iterations) and far below a denial of service.
+    _MAX_HASH_CONFIG_ROUNDS = 10_000_000
+    _ALLOWED_HASH_CONFIG_TYPES = frozenset({"id", "i", "d", "argon2id", "argon2i", "argon2d"})
+
+    @classmethod
+    def _validated_drive_hash_config(cls, raw: Any) -> Optional[Dict]:
+        """Accept a hash_config read off an untrusted drive, or reject it.
+
+        Returns None rather than raising: the caller's contract for "no
+        usable stored config" is already None, and a refused config must
+        fall back to the built-in derivation exactly as a missing file does
+        -- not abort the verification the user asked for.
+        """
+        if not isinstance(raw, dict):
+            return None
+
+        for key, value in raw.items():
+            if key == "type":
+                if value not in cls._ALLOWED_HASH_CONFIG_TYPES:
+                    return None
+                continue
+            if key not in cls._ALLOWED_HASH_CONFIG_ROUNDS:
+                return None
+            # bool is an int subclass; reject it and every non-int explicitly.
+            if isinstance(value, bool) or not isinstance(value, int):
+                return None
+            if not (0 <= value <= cls._MAX_HASH_CONFIG_ROUNDS):
+                return None
+
+        return raw
+
+    def _sha256_file(self, path: Path) -> str:
+        """SHA-256 of a regular file on a drive we do not trust.
+
+        Streamed in fixed-size chunks and hard-bounded so a very large
+        attacker-supplied file cannot exhaust memory (gitlab#132), and opened
+        so that a substituted non-regular file cannot hang or redirect the
+        read (gitlab#202).
+
+        The byte bound alone did NOT deliver what its previous docstring
+        claimed: `open(path, "rb")` on a FIFO blocks inside open() itself,
+        before a single byte is read, so a manifest-listed file replaced by a
+        named pipe hung verify-usb forever -- on the exact path whose job is
+        to report tampering. O_NONBLOCK makes that open return instead, and
+        the S_ISREG check turns the substitution into a refusal.
+
+        O_NOFOLLOW likewise refuses a listed name replaced by a symlink,
+        which would otherwise read a file from outside the drive entirely.
+
+        Raises:
+            OSError: If the path is not a regular file, or is a symlink. The
+                callers treat that as tampering, which is the correct
+                verdict: a real manifest lists regular files, so anything
+                else at that path is a substitution.
+        """
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+        fd = os.open(path, flags)
         try:
-            # Calculate checksums of important files
+            mode = os.fstat(fd).st_mode
+            if not stat.S_ISREG(mode):
+                raise OSError(f"Not a regular file: {path}")
+            # Clear O_NONBLOCK now that we know it is a regular file, so the
+            # reads below behave normally.
+            if hasattr(os, "O_NONBLOCK"):
+                import fcntl
+
+                fcntl.fcntl(fd, fcntl.F_SETFL, fcntl.fcntl(fd, fcntl.F_GETFL) & ~os.O_NONBLOCK)
+
+            h = hashlib.sha256()
+            remaining = self._MAX_HASH_BYTES
+            with os.fdopen(fd, "rb") as f:
+                fd = None  # fdopen owns it now
+                while remaining > 0:
+                    chunk = f.read(min(1024 * 1024, remaining))
+                    if not chunk:
+                        break
+                    h.update(chunk)
+                    remaining -= len(chunk)
+            return h.hexdigest()
+        finally:
+            if fd is not None:
+                os.close(fd)
+
+    def _integrity_excluded(self, rel: str) -> bool:
+        """True if the ``portable_root``-relative path is excluded from integrity
+        coverage (gitlab#132 F13): the user-mutable workspace/logs subtrees, or an
+        artifact that legitimately is not in the manifest (the manifest itself and
+        files written after it)."""
+        if rel in self._INTEGRITY_EXCLUDED_NAMES:
+            return True
+        first = rel.replace("\\", "/").split("/", 1)[0]
+        return first in self._INTEGRITY_MUTABLE_SUBDIRS
+
+    def _create_integrity_file(
+        self,
+        portable_root: Path,
+        key: bytes,
+        hash_config: Optional[Dict] = None,
+        usb_root: Optional[Path] = None,
+    ) -> Dict:
+        """Create integrity verification file.
+
+        gitlab#132 F13: records a v2 manifest that is an ALLOWLIST of every file
+        in the tool tree (not a fixed set of extensions), so verification can
+        detect ANY file added afterward — a planted .dll/.so/.pyd/.exe or any
+        other payload — plus tampered/added root-level ``autorun.*`` files (which
+        live above ``portable_root`` and are auto-executed by the OS on insert).
+        The user-mutable workspace (``data/``) and ``logs/`` are excluded so that
+        ordinary use — encrypting files onto the drive — does not fail
+        verification.
+        """
+        try:
+            # Allowlist: checksum EVERY file in the tool tree except the
+            # user-mutable workspace/logs and the manifest artifacts.
+            #
+            # F26 (gitlab#242, CWE-59): enumerate with os.walk(followlinks=False)
+            # and REFUSE any non-excluded symlink, so a created drive provably
+            # contains no symlinks. The invariant is what lets verify treat a
+            # symlink as tampering (a symlinked directory otherwise shrouds a
+            # planted __pycache__/*.pyc from this allowlist). The copy step
+            # preserves source symlinks (symlinks=True, gitlab#203), so without
+            # this a source-tree symlink would yield either a manifest that omits
+            # a directory symlink (verify then false-flags it as "added") or an
+            # opaque OSError from _sha256_file's O_NOFOLLOW open on a file symlink.
+            # Fail closed here so create and verify agree that portable media
+            # contains no symlinks. The real source tree contains none, so this is
+            # a safety net, not a functional restriction.
             checksums = {}
-            important_files = []
+            for dirpath, dirnames, filenames in os.walk(str(portable_root), followlinks=False):
+                for name in list(dirnames):
+                    full = os.path.join(dirpath, name)
+                    rel = os.path.relpath(full, str(portable_root))
+                    # islink BEFORE the exclusion prune: a symlink named like an
+                    # excluded tree (e.g. data/, logs/) must still be refused, so an
+                    # evil-maid cannot redirect the workspace via a symlinked data/.
+                    if os.path.islink(full):
+                        dirnames.remove(name)  # never descend a symlink
+                        raise USBCreationError(
+                            f"portable install contains a symlinked directory ({rel}); "
+                            f"symlinks are not permitted on portable media"
+                        )
+                    if self._integrity_excluded(rel):
+                        dirnames.remove(name)  # don't descend excluded trees
+                        continue
+                for name in filenames:
+                    full = os.path.join(dirpath, name)
+                    rel = os.path.relpath(full, str(portable_root))
+                    if os.path.islink(full):
+                        raise USBCreationError(
+                            f"portable install contains a symlinked file ({rel}); "
+                            f"symlinks are not permitted on portable media"
+                        )
+                    if self._integrity_excluded(rel):
+                        continue
+                    if os.path.isfile(full):
+                        checksums[rel] = self._sha256_file(Path(full))
+                    elif not os.path.isdir(full):
+                        # A special file (FIFO/socket/device) is neither a legit
+                        # tool file nor a directory; refuse rather than silently
+                        # omit it and let verify later false-flag it as "added".
+                        raise USBCreationError(
+                            f"portable install contains a non-regular file ({rel}); "
+                            f"only regular files are permitted on portable media"
+                        )
 
-            # Find important files to checksum
-            for pattern in [
-                "*.conf",
-                "*.exe",
-                "openssl_encrypt",
-                "*.encrypted",
-                "*.py",
-                "*.bat",
-                "*.sh",
-            ]:
-                important_files.extend(portable_root.rglob(pattern))
-
-            for file_path in important_files:
-                if file_path.is_file():
-                    with open(file_path, "rb") as f:
-                        file_hash = hashlib.sha256(f.read()).hexdigest()
-                    checksums[str(file_path.relative_to(portable_root))] = file_hash
+            # F13: hash the root-level autorun files (they live at the USB root,
+            # above portable_root, and the OS auto-executes them on insert).
+            root_checksums = {}
+            if usb_root is not None:
+                for name in self._ROOT_AUTORUN_NAMES:
+                    autorun_path = usb_root / name
+                    if autorun_path.is_file():
+                        root_checksums[name] = self._sha256_file(autorun_path)
 
             # Create integrity data
             integrity_data = {
                 "version": self.VERSION,
+                "scan_version": self.INTEGRITY_SCAN_VERSION,  # F13
                 "created_at": time.time(),
                 "security_profile": self.security_profile.value,
                 "checksums": checksums,
+                "root_checksums": root_checksums,  # F13: root-level autorun.*
                 "file_count": len(checksums),
                 "hash_config": hash_config,  # Store hash configuration for verification
             }
@@ -675,6 +1120,7 @@ fi
             integrity_path = portable_root / self.INTEGRITY_FILE
             with open(integrity_path, "wb") as f:
                 f.write(nonce + encrypted_integrity)
+            self._restrict_to_owner(integrity_path)
 
             return {
                 "created": True,
@@ -685,13 +1131,27 @@ fi
         except Exception as e:
             raise USBCreationError(f"Failed to create integrity file: {e}")
 
-    def _verify_integrity_file(self, portable_root: Path, key: bytes) -> Dict:
-        """Verify integrity file and check for tampering"""
+    def _verify_integrity_file(
+        self, portable_root: Path, key: bytes, usb_root: Optional[Path] = None
+    ) -> Dict:
+        """Verify integrity file and check for tampering.
+
+        gitlab#132 F13: for v2 manifests, this is an ALLOWLIST check — it flags
+        ANY file present in the tool tree that is not in the recorded manifest
+        (a planted binary/script of any type), plus tampered/added/removed
+        root-level ``autorun.*`` files, while excluding the user-mutable
+        workspace (``data/``) and ``logs/``. v1 manifests (drives created before
+        this fix) carry no scan_version and are verified exactly as before
+        (listed files only), so existing drives keep working.
+        """
         try:
             integrity_path = portable_root / self.INTEGRITY_FILE
 
             with open(integrity_path, "rb") as f:
-                encrypted_data = f.read()
+                # Bounded read: the .integrity blob is small; cap it so an
+                # attacker cannot plant a huge file here to exhaust memory
+                # before authentication (gitlab#132).
+                encrypted_data = f.read(self._MAX_INTEGRITY_BYTES)
 
             # Extract nonce and decrypt
             nonce = encrypted_data[: self.NONCE_LENGTH]
@@ -703,14 +1163,20 @@ fi
             # Parse integrity data
             integrity_data = json.loads(decrypted_data.decode("utf-8"))
             stored_checksums = integrity_data["checksums"]
+            # scan_version 1 (or absent) => legacy manifest; skip added/autorun
+            # detection so pre-fix drives verify exactly as they did before.
+            scan_version = integrity_data.get("scan_version", 1)
+            root_checksums = integrity_data.get("root_checksums", {})
 
             # Verify current checksums
             verification_results = {
                 "verified_files": 0,
                 "failed_files": 0,
                 "missing_files": 0,
+                "added_files": 0,  # F13
                 "tampered_files": [],
                 "missing_file_list": [],
+                "added_file_list": [],  # F13
             }
 
             for file_path, expected_hash in stored_checksums.items():
@@ -721,8 +1187,15 @@ fi
                     verification_results["missing_file_list"].append(file_path)
                     continue
 
-                with open(full_path, "rb") as f:
-                    current_hash = hashlib.sha256(f.read()).hexdigest()
+                try:
+                    current_hash = self._sha256_file(full_path)
+                except OSError:
+                    # A listed name that is no longer a regular file -- a
+                    # planted FIFO, a directory, a symlink out of the drive --
+                    # is a substitution, so it IS tampering (gitlab#202).
+                    verification_results["failed_files"] += 1
+                    verification_results["tampered_files"].append(file_path)
+                    continue
 
                 if current_hash == expected_hash:
                     verification_results["verified_files"] += 1
@@ -730,10 +1203,90 @@ fi
                     verification_results["failed_files"] += 1
                     verification_results["tampered_files"].append(file_path)
 
+            # F13: root-level autorun.* — verify the recorded ones and flag any
+            # autorun file that was tampered, removed, or newly added.
+            if usb_root is not None and scan_version >= 2:
+                for name, expected_hash in root_checksums.items():
+                    autorun_path = usb_root / name
+                    if not autorun_path.is_file():
+                        verification_results["missing_files"] += 1
+                        verification_results["missing_file_list"].append(name)
+                        continue
+                    try:
+                        autorun_hash = self._sha256_file(autorun_path)
+                    except OSError:
+                        autorun_hash = None
+                    if autorun_hash == expected_hash:
+                        verification_results["verified_files"] += 1
+                    else:
+                        verification_results["failed_files"] += 1
+                        verification_results["tampered_files"].append(name)
+                for name in self._ROOT_AUTORUN_NAMES:
+                    if (usb_root / name).is_file() and name not in root_checksums:
+                        verification_results["added_files"] += 1
+                        verification_results["added_file_list"].append(name)
+
+            # F13: ALLOWLIST — flag any file present in the tool tree that is not
+            # in the recorded manifest (a planted binary/script of ANY type),
+            # excluding the user-mutable workspace/logs and the manifest
+            # artifacts. This is the counterpart of the allowlist recorded at
+            # creation, so a wrong file type cannot slip past a fixed extension
+            # list.
+            if scan_version >= 2:
+                # F26 (gitlab#242, CWE-59): enumerate with os.walk(followlinks=
+                # False), NOT rglob("*"). rglob silently does not descend a
+                # symlinked directory, so an evil-maid attacker could replace a
+                # tool-tree directory with a symlink to a copy holding the same
+                # files plus a planted __pycache__/*.pyc (which CPython loads in
+                # preference to the clean .py); the listed files hashed clean
+                # through the symlink, the planted file was never enumerated,
+                # added_files stayed 0, and verify reported PASSED. A legitimate
+                # portable install contains no symlinks, so ANY symlinked path
+                # component is treated as tampering here.
+                for dirpath, dirnames, filenames in os.walk(str(portable_root), followlinks=False):
+                    for name in list(dirnames):
+                        full = os.path.join(dirpath, name)
+                        rel = os.path.relpath(full, str(portable_root))
+                        # islink BEFORE the exclusion prune: a symlink named like
+                        # an excluded tree (e.g. data/, logs/) is still tampering
+                        # (an evil-maid redirecting the workspace), so flag it.
+                        if os.path.islink(full):
+                            # A symlinked directory: os.walk won't (and must not)
+                            # descend it; flag it and stop it being descended.
+                            verification_results["added_files"] += 1
+                            verification_results["added_file_list"].append(rel)
+                            dirnames.remove(name)
+                            continue
+                        if self._integrity_excluded(rel):
+                            dirnames.remove(name)  # don't descend excluded trees
+                            continue
+                    for name in filenames:
+                        full = os.path.join(dirpath, name)
+                        rel = os.path.relpath(full, str(portable_root))
+                        if os.path.islink(full):
+                            # A symlinked file (its target is outside the manifest).
+                            verification_results["added_files"] += 1
+                            verification_results["added_file_list"].append(rel)
+                        elif self._integrity_excluded(rel):
+                            # Manifest artifacts / user-mutable workspace files:
+                            # excluded from the allowlist. Checked AFTER islink so a
+                            # symlink wearing an excluded name is still flagged.
+                            continue
+                        elif os.path.isfile(full):
+                            if rel not in stored_checksums:
+                                verification_results["added_files"] += 1
+                                verification_results["added_file_list"].append(rel)
+                        elif not os.path.isdir(full):
+                            # A special file (FIFO/socket/device) planted on the
+                            # drive is neither a legit tool file nor a directory.
+                            verification_results["added_files"] += 1
+                            verification_results["added_file_list"].append(rel)
+
             # Overall verification status
             verification_results["integrity_ok"] = (
                 verification_results["failed_files"] == 0
                 and verification_results["missing_files"] == 0
+                and verification_results["added_files"] == 0  # F13
             )
 
             verification_results["created_at"] = integrity_data["created_at"]
@@ -785,10 +1338,33 @@ fi
             metadata_file = config_dir / "hash_config.json"
 
             if metadata_file.exists():
+                # Bounded read, then validate: this file is unauthenticated
+                # and on the drive under examination, and its contents set
+                # the KDF work factor before any integrity check runs
+                # (gitlab#200). An uncapped json.load OOMs on a planted
+                # multi-GB file before parsing even finishes.
                 with open(metadata_file, "r") as f:
-                    hash_config = json.load(f)
+                    blob = f.read(self._MAX_HASH_CONFIG_BYTES + 1)
+                if len(blob) > self._MAX_HASH_CONFIG_BYTES:
+                    logger.warning(
+                        "Ignoring hash_config.json on the drive: larger than "
+                        f"{self._MAX_HASH_CONFIG_BYTES} bytes"
+                    )
+                    return None
+                try:
+                    hash_config = json.loads(blob)
+                except ValueError:
+                    logger.warning("Ignoring hash_config.json on the drive: not valid JSON")
+                    return None
+                validated = self._validated_drive_hash_config(hash_config)
+                if validated is None:
+                    logger.warning(
+                        "Ignoring hash_config.json on the drive: unrecognised or "
+                        "out-of-range key-derivation parameters"
+                    )
+                    return None
                 logger.debug("Successfully read hash_config from metadata file")
-                return hash_config
+                return validated
 
             # Fallback: try to decrypt integrity file with PBKDF2 (for backwards compatibility)
             integrity_path = portable_root / self.INTEGRITY_FILE
@@ -797,37 +1373,45 @@ fi
 
             # Try to decrypt with PBKDF2 (fallback method)
             secure_password = SecureBytes(password.encode("utf-8"))
-            salt = self._load_or_create_salt(portable_root, create=False)
-            pbkdf2_key = self._derive_key_pbkdf2_fallback(secure_password, salt)
-
-            with open(integrity_path, "rb") as f:
-                encrypted_data = f.read()
-
-            # Extract nonce and decrypt
-            nonce = encrypted_data[: self.NONCE_LENGTH]
-            ciphertext = encrypted_data[self.NONCE_LENGTH :]
-
-            cipher = AESGCM(pbkdf2_key)
+            pbkdf2_key = None
             try:
-                decrypted_data = cipher.decrypt(nonce, ciphertext, None)
-                integrity_data = json.loads(decrypted_data.decode("utf-8"))
+                salt = self._load_or_create_salt(portable_root, create=False)
+                pbkdf2_key = self._derive_key_pbkdf2_fallback(secure_password, salt)
 
-                # Clean up sensitive data
-                secure_memzero(pbkdf2_key)
-                secure_memzero(secure_password)
+                with open(integrity_path, "rb") as f:
+                    # Bounded read: the .integrity blob is small; cap it so an
+                    # attacker cannot plant a huge file here to exhaust memory
+                    # before authentication (gitlab#132).
+                    encrypted_data = f.read(self._MAX_INTEGRITY_BYTES)
 
-                # Return the stored hash_config if it exists
+                # Extract nonce and decrypt
+                nonce = encrypted_data[: self.NONCE_LENGTH]
+                ciphertext = encrypted_data[self.NONCE_LENGTH :]
+
+                cipher = AESGCM(bytes(pbkdf2_key))
+                try:
+                    decrypted_data = cipher.decrypt(nonce, ciphertext, None)
+                    integrity_data = json.loads(decrypted_data.decode("utf-8"))
+                except Exception:
+                    # PBKDF2 decryption failed, so complex hashing was likely
+                    # used; the caller has to supply the hash_config.
+                    return None
+
+                # This blob IS authenticated (AES-GCM under the
+                # password-derived key), unlike the plaintext
+                # hash_config.json handled above, so it needs no allowlist.
                 hash_config = integrity_data.get("hash_config")
                 if hash_config:
                     logger.debug("Successfully read hash_config from integrity file")
                 return hash_config
-
-            except Exception:
-                # Decryption with PBKDF2 failed, this means complex hashing was likely used
-                # Clean up and return None to indicate we need the hash_config parameter
-                secure_memzero(pbkdf2_key)
+            finally:
+                # finally, not per-branch (gitlab#201): a raise between
+                # deriving the key and the decrypt attempt -- a missing salt
+                # file, an unreadable .integrity -- used to leave both
+                # resident via the outer handler.
+                if pbkdf2_key is not None:
+                    secure_memzero(pbkdf2_key)
                 secure_memzero(secure_password)
-                return None
 
         except Exception as e:
             logger.debug(f"Failed to read hash_config from metadata: {e}")
@@ -855,34 +1439,170 @@ import os
 import subprocess
 import tempfile
 from pathlib import Path
-from ..crypt_utils import eprint
+
+
+def eprint(*args, **kwargs):
+    """Local, not imported: this file runs as a standalone script on the
+    drive, so `from ..crypt_utils import eprint` raised ImportError on the
+    first run (gitlab#206)."""
+    kwargs.setdefault("file", sys.stderr)
+    print(*args, **kwargs)
+
+
+def _load_workspace_key(script_dir):
+    """Re-derive the AES-256 workspace key from the master password plus the
+    drive's stored salt and hash_config, using the bundled library. The
+    password comes from CRYPT_PASSWORD or an interactive prompt -- never from
+    the command line, where it would be visible in the process list.
+
+    Returns (creator, key) where key is a bytearray the caller MUST wipe with
+    secure_memzero when done."""
+    import getpass
+    import json as _json
+
+    lib_dir = script_dir / "openssl_encrypt_lib"
+    if str(lib_dir) not in sys.path:
+        sys.path.insert(0, str(lib_dir))
+    from openssl_encrypt.modules.portable_media.usb_creator import (
+        USBDriveCreator,
+        USBSecurityProfile,
+    )
+    from openssl_encrypt.modules.secure_memory import SecureBytes, secure_memzero
+
+    password = os.environ.get("CRYPT_PASSWORD")
+    if not password:
+        password = getpass.getpass("USB master password: ")
+    if not password:
+        eprint("No password provided.")
+        sys.exit(1)
+
+    # Honor the drive's recorded security profile so a PBKDF2-fallback drive
+    # (hash_config absent) re-derives the same key it was sealed with.
+    profile = USBSecurityProfile.STANDARD
+    marker_path = script_dir / "data" / ".workspace"
+    try:
+        if marker_path.exists():
+            recorded = _json.loads(marker_path.read_text(encoding="utf-8")).get("security_profile")
+            if recorded:
+                profile = USBSecurityProfile(recorded)
+    except Exception:
+        profile = USBSecurityProfile.STANDARD
+    creator = USBDriveCreator(profile)
+
+    salt = creator._load_or_create_salt(script_dir, create=False)
+
+    # The drive is untrusted (evil-maid model): bound the read and validate the
+    # stored hash_config before it can drive KDF work, exactly as the integrity
+    # verifier does -- otherwise a tampered config/hash_config.json could OOM us
+    # or force attacker-chosen KDF cost on seal/unlock.
+    hash_config = None
+    hc_path = script_dir / "config" / "hash_config.json"
+    try:
+        if hc_path.exists():
+            with open(hc_path, "rb") as f:
+                blob = f.read(creator._MAX_HASH_CONFIG_BYTES + 1)
+            if len(blob) > creator._MAX_HASH_CONFIG_BYTES:
+                eprint("Refusing config/hash_config.json on the drive: too large.")
+                sys.exit(1)
+            hash_config = creator._validated_drive_hash_config(_json.loads(blob.decode("utf-8")))
+    except SystemExit:
+        raise
+    except Exception:
+        hash_config = None
+
+    secure_pw = SecureBytes(password.encode("utf-8"))
+    try:
+        key = creator._derive_encryption_key(secure_pw, hash_config, salt)
+    finally:
+        del secure_pw
+    return creator, key
+
+
+def run_unlock(script_dir, workspace_dir):
+    """Decrypt data/workspace.vault into data/unlocked/ for editing."""
+    creator, key = _load_workspace_key(script_dir)
+    from openssl_encrypt.modules.secure_memory import secure_memzero
+
+    try:
+        vault_path = workspace_dir / "workspace.vault"
+        if not vault_path.exists():
+            eprint("No workspace.vault found in data/. Nothing to unlock.")
+            sys.exit(1)
+        unlocked = workspace_dir / "unlocked"
+        n = creator._unlock_workspace_vault(vault_path, unlocked, key)
+        eprint("Unlocked %d file(s) into %s" % (n, unlocked))
+        eprint("Edit them, then run 'python crypt.py seal' to re-encrypt.")
+    finally:
+        try:
+            secure_memzero(key)
+        except Exception:
+            pass
+
+
+def run_seal(script_dir, workspace_dir):
+    """Re-encrypt data/unlocked/ into data/workspace.vault and drop plaintext.
+
+    Note: this is a plain delete of the loose plaintext, not a secure wipe;
+    on wear-levelled flash media a secure erase is not achievable from
+    userspace anyway."""
+    import shutil as _shutil
+
+    creator, key = _load_workspace_key(script_dir)
+    from openssl_encrypt.modules.secure_memory import secure_memzero
+
+    try:
+        vault_path = workspace_dir / "workspace.vault"
+        unlocked = workspace_dir / "unlocked"
+        if not unlocked.is_dir():
+            eprint("Nothing to seal: no data/unlocked/ directory. Run 'unlock' first.")
+            sys.exit(1)
+        n = creator._seal_workspace_vault(unlocked, vault_path, key)
+        _shutil.rmtree(unlocked, ignore_errors=True)
+        eprint("Sealed %d file(s) into %s and removed the loose plaintext." % (n, vault_path.name))
+    finally:
+        try:
+            secure_memzero(key)
+        except Exception:
+            pass
+
 
 def show_help():
-    eprint("Usage: python crypt.py <encrypt|decrypt> [options...]")
+    eprint("Usage: python crypt.py <encrypt|decrypt|seal|unlock> [options...]")
     eprint("")
     eprint("Unified crypto wrapper with automatic USB workspace handling")
     eprint("Supports all OpenSSL Encrypt CLI arguments")
     eprint("")
     eprint("ENCRYPT:")
-    eprint("  python crypt.py encrypt -i <file> --password <pass> [options...]")
+    eprint("  python crypt.py encrypt -i <file> [options...]")
     eprint("  → Automatically saves to USB workspace as <file>.enc")
     eprint("")
     eprint("DECRYPT:")
-    eprint("  python crypt.py decrypt -i <file> --password <pass> [options...]")
+    eprint("  python crypt.py decrypt -i <file> [options...]")
     eprint("  → Smart workspace file resolution, outputs to stdout by default")
     eprint("  → Use -o <file> to save to data/decrypted/ (relative paths)")
     eprint("  → Use -o /absolute/path to save anywhere")
     eprint("")
+    eprint("SEALED WORKSPACE (encrypt the whole data/ workspace at rest):")
+    eprint("  python crypt.py unlock   → decrypt data/workspace.vault to data/unlocked/")
+    eprint("  python crypt.py seal     → re-encrypt data/unlocked/ into the vault,")
+    eprint("                             then delete the loose plaintext")
+    eprint("  Loose files in data/ are NOT encrypted until you seal them.")
+    eprint("")
+    eprint("PASSWORD:")
+    eprint("  You will be prompted, or set CRYPT_PASSWORD in the environment.")
+    eprint("  Do NOT pass it as an argument: every other user on the machine")
+    eprint("  can read the command line, and your shell records it in history.")
+    eprint("")
     eprint("Examples:")
-    eprint("  python crypt.py encrypt -i document.pdf --password mypass")
-    eprint("  python crypt.py encrypt -i document.pdf --password mypass --algorithm aes-gcm-siv")
-    eprint("  python crypt.py decrypt -i document.pdf.enc --password mypass")
-    eprint("  python crypt.py decrypt -i document.pdf.enc --password mypass -o recovered.pdf")
+    eprint("  python crypt.py encrypt -i document.pdf")
+    eprint("  python crypt.py encrypt -i document.pdf --algorithm aes-gcm-siv")
+    eprint("  python crypt.py decrypt -i document.pdf.enc")
+    eprint("  python crypt.py decrypt -i document.pdf.enc -o recovered.pdf")
     eprint("    → Saves to: data/decrypted/recovered.pdf")
-    eprint("  python crypt.py decrypt -i document.pdf.enc --password mypass --verbose")
+    eprint("  python crypt.py decrypt -i document.pdf.enc --verbose")
 
 def main():
-    if len(sys.argv) < 2 or sys.argv[1] not in ['encrypt', 'decrypt']:
+    if len(sys.argv) < 2 or sys.argv[1] not in ['encrypt', 'decrypt', 'seal', 'unlock']:
         show_help()
         sys.exit(1)
 
@@ -895,6 +1615,14 @@ def main():
         lib_dir = script_dir / "openssl_encrypt_lib"
         workspace_dir = script_dir / "data"
         workspace_dir.mkdir(exist_ok=True)
+
+        # Sealed-workspace commands operate on the vault directly (no CLI call).
+        if operation in ("seal", "unlock"):
+            if operation == "seal":
+                run_seal(script_dir, workspace_dir)
+            else:
+                run_unlock(script_dir, workspace_dir)
+            return
 
         # Build base CLI command
         cli_path = lib_dir / "openssl_encrypt" / "crypt.py"
@@ -1057,15 +1785,18 @@ if __name__ == "__main__":
                 encrypt_bat = portable_root / "encrypt_file.bat"
                 decrypt_bat = portable_root / "decrypt_file.bat"
 
-                with open(encrypt_bat, "w", encoding="utf-8") as f:
-                    f.write(
-                        "@echo off\\npython crypt.py encrypt -i %1 --password %2 %3 %4 %5 %6 %7 %8 %9\\npause\\n"
-                    )
-
-                with open(decrypt_bat, "w", encoding="utf-8") as f:
-                    f.write(
-                        "@echo off\\npython crypt.py decrypt -i %1 --password %2 %3 %4 %5 %6 %7 %8 %9\\npause\\n"
-                    )
+                # Real newlines: these were written from a non-raw string
+                # containing a literal backslash-n, so each file was one
+                # unusable line (gitlab#206). The password is no longer taken
+                # as an argument -- %2 put the master password in the process
+                # list and the command history.
+                for bat_path, action in ((encrypt_bat, "encrypt"), (decrypt_bat, "decrypt")):
+                    with open(bat_path, "w", encoding="utf-8") as f:
+                        f.write(
+                            "@echo off\r\n"
+                            f"python crypt.py {action} -i %1 %2 %3 %4 %5 %6 %7 %8 %9\r\n"
+                            "pause\r\n"
+                        )
 
             logger.debug("Created transparent encryption helper scripts")
 
@@ -1180,12 +1911,19 @@ if __name__ == "__main__":
 
                 from ..crypt_core import EncryptionAlgorithm, encrypt_file
 
-                # Create temporary files for encryption
-                with tempfile.NamedTemporaryFile(mode="w", delete=False) as temp_input:
+                # Both temp paths are CLAIMED by mkstemp, not derived by
+                # string concatenation (gitlab#204). The output used to be
+                # `temp_input_path + ".enc"` -- an unclaimed sibling in the
+                # shared temp directory whose name anyone able to list it
+                # could derive, and encrypt_file's default secure_mode=False
+                # meant a symlink planted there was followed, giving a local
+                # attacker an arbitrary file overwrite as this user.
+                input_fd, temp_input_path = tempfile.mkstemp(suffix=".manifest")
+                with os.fdopen(input_fd, "w", encoding="utf-8") as temp_input:
                     temp_input.write(manifest_json)
-                    temp_input_path = temp_input.name
 
-                temp_output_path = temp_input_path + ".enc"
+                output_fd, temp_output_path = tempfile.mkstemp(suffix=".manifest.enc")
+                os.close(output_fd)
 
                 try:
                     # Convert string algorithm to EncryptionAlgorithm enum
@@ -1205,6 +1943,9 @@ if __name__ == "__main__":
                         progress=False,
                         verbose=False,
                         debug=False,
+                        # O_NOFOLLOW on the output: refuse a symlink at that
+                        # path rather than writing through it (gitlab#204).
+                        secure_mode=True,
                     )
 
                     if success:
@@ -1230,21 +1971,35 @@ if __name__ == "__main__":
             except Exception as e:
                 logger.warning(f"Main CLI encryption failed: {e}, using fallback format")
 
-                # Derive key for manifest encryption
+                # Derive key for manifest encryption. gitlab#132 F19: pass this
+                # drive's unique per-drive salt (salt.bin) instead of letting
+                # _derive_encryption_key fall back to the global fixed salt,
+                # which would otherwise defeat precomputation resistance for the
+                # manifest key on every drive that hits this fallback path.
+                manifest_salt = self._load_or_create_salt(portable_root, create=True)
                 secure_password = SecureBytes(actual_manifest_password.encode("utf-8"))
-                manifest_key = self._derive_encryption_key(
-                    secure_password, actual_manifest_hash_config
-                )
+                manifest_key = None
+                try:
+                    manifest_key = self._derive_encryption_key(
+                        secure_password, actual_manifest_hash_config, manifest_salt
+                    )
+                    # Encrypt manifest
+                    cipher = AESGCM(manifest_key)
+                    nonce = secrets.token_bytes(self.NONCE_LENGTH)
+                    encrypted_manifest = cipher.encrypt(nonce, manifest_json.encode("utf-8"), None)
 
-                # Encrypt manifest
-                cipher = AESGCM(manifest_key)
-                nonce = secrets.token_bytes(self.NONCE_LENGTH)
-                encrypted_manifest = cipher.encrypt(nonce, manifest_json.encode("utf-8"), None)
-
-                # Write encrypted manifest (fallback format)
-                manifest_file = portable_root / "hash_manifest.enc"
-                with open(manifest_file, "wb") as f:
-                    f.write(nonce + encrypted_manifest)
+                    # Write encrypted manifest (fallback format)
+                    manifest_file = portable_root / "hash_manifest.enc"
+                    with open(manifest_file, "wb") as f:
+                        f.write(nonce + encrypted_manifest)
+                finally:
+                    # gitlab#132: the fallback path derives its own key/password
+                    # and must wipe them on all exits — including if key
+                    # derivation itself raises (the primary encrypt_file path
+                    # handles its own key hygiene).
+                    if manifest_key is not None:
+                        secure_memzero(manifest_key)
+                    secure_memzero(secure_password)
 
             # Create verification instructions
             instructions_content = f"""# 🔐 Hash Manifest Verification Instructions
@@ -1320,8 +2075,64 @@ If any verification step fails, assume the USB has been compromised!
             logger.error(f"Failed to create hash manifest: {e}")
             return {"created": False, "error": str(e)}
 
+    # Never copied onto a drive that is carried around (gitlab#203). The
+    # copy previously had no filter at all, so a source checkout put the
+    # unittests tree -- including four test identity private keys -- onto
+    # removable media unencrypted, typically FAT32 where the mode bits
+    # copy2 preserves mean nothing.
+    _PROJECT_COPY_EXCLUDE_NAMES = frozenset({"unittests", "__pycache__", ".git", ".pytest_cache"})
+    _PROJECT_COPY_EXCLUDE_SUFFIXES = (
+        ".pem",
+        ".key",
+        ".pqc",
+        ".pyc",
+        ".pyo",
+    )
+
+    @staticmethod
+    def _restrict_to_owner(path) -> None:
+        """Make a drive artifact owner-only where the filesystem allows it.
+
+        Nothing on this path was chmod'd except the three files deliberately
+        made 0755, so the salt, the integrity manifest, the portable config
+        and the encrypted keystore were created at the process umask --
+        typically 0644 (gitlab#207). That is meaningless on FAT32, which is
+        the common case, and exposed the moment the target is a real
+        filesystem, which create-usb permits.
+
+        Best effort by design: a chmod on a filesystem without POSIX modes
+        raises, and failing the whole drive creation over it would be worse
+        than the exposure it prevents.
+        """
+        try:
+            os.chmod(path, 0o600)
+        except OSError as error:
+            logger.debug(f"Could not restrict permissions on {path}: {error}")
+
+    @classmethod
+    def _project_copy_ignore(cls, directory, names):
+        """shutil.copytree ignore callback: key material and build junk.
+
+        Deliberately name-based rather than path-based so it applies at
+        every depth -- a key does not become safe to ship by sitting one
+        directory further down.
+        """
+        ignored = set()
+        for name in names:
+            if name in cls._PROJECT_COPY_EXCLUDE_NAMES:
+                ignored.add(name)
+            elif name.endswith(cls._PROJECT_COPY_EXCLUDE_SUFFIXES):
+                ignored.add(name)
+        return ignored
+
     def _copy_openssl_encrypt_project(self, portable_root: Path) -> None:
-        """Copy the entire openssl_encrypt project to USB for full CLI compatibility"""
+        """Copy the openssl_encrypt project to USB for full CLI compatibility.
+
+        Key material, the test tree and build caches are excluded
+        (gitlab#203), and symlinks are copied as links rather than
+        dereferenced -- dereferencing pulls a target's contents in from
+        outside the copied subtree.
+        """
         try:
             import inspect
             import shutil
@@ -1359,8 +2170,14 @@ If any verification step fails, assume the USB has been compromised!
                 if usb_project_dir.exists():
                     shutil.rmtree(usb_project_dir)
 
-                # Copy the entire openssl_encrypt directory
-                shutil.copytree(openssl_encrypt_src, usb_project_dir / "openssl_encrypt")
+                # Filtered copy: no key material, no test tree, no caches,
+                # and symlinks stay symlinks (gitlab#203).
+                shutil.copytree(
+                    openssl_encrypt_src,
+                    usb_project_dir / "openssl_encrypt",
+                    ignore=self._project_copy_ignore,
+                    symlinks=True,
+                )
 
                 # Copy essential project files
                 essential_files = [

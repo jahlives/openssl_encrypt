@@ -26,14 +26,42 @@ import base64
 import hashlib
 import hmac
 import json
+import os
 import secrets
+import sys
 from typing import List
 
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
+from .credential_env import consume_env as _shared_consume_env
+from .crypt_utils import eprint
 from .secure_memory import secure_memzero
 from .secure_ops import constant_time_compare
+from .security_logger import register_consumed_secret
+
+# Environment variables carrying recovery credentials for non-interactive
+# callers (the desktop GUI). Each is consumed on read, so the credential is not
+# on the process list and is not inherited by a child process spawned later.
+# (Spawns reachable from these paths do sanitize their env; unsanitized ones do
+# exist in the tree — e.g. crypt_cli.py:1306 and :1516 pass no env= — so the
+# guarantee rests on consumption here rather than on every caller behaving.)
+#
+# Scope of that protection: del os.environ[...] calls unsetenv(), which drops the
+# pointer from environ[] but does NOT scrub the exec-time copy of the string that
+# /proc/self/environ exposes. A value set by our parent therefore stays readable
+# there for this process's lifetime. That file is 0400 and gated by
+# PTRACE_MODE_READ_FSCREDS (same uid or root), whereas /proc/PID/cmdline is
+# world-readable — so this converts a cross-user leak into a same-user residual.
+# It protects the credential from other local users, not from a compromised
+# session of the user's own.
+#
+# The values are also registered with security_logger.register_consumed_secret()
+# on read: _value_looks_secret resolves _SECRET_ENV_VARS against the live
+# environment, which cannot match once the variable has been consumed.
+RECOVERY_CODE_ENV = "OPENSSL_ENCRYPT_RECOVERY_CODE"
+RECOVERY_PASSPHRASE_ENV = "OPENSSL_ENCRYPT_RECOVERY_PASSPHRASE"
+ADD_RECOVERY_PASSPHRASE_ENV = "OPENSSL_ENCRYPT_ADD_RECOVERY_PASSPHRASE"
 
 # The recovery-credential types a slot may use to wrap the DEK.
 SLOT_TYPES = {"recovery_code", "passphrase", "pqc"}
@@ -244,8 +272,23 @@ _PASSPHRASE_ARGON2_PARALLELISM = 4
 # a tampered slot could otherwise set memory_cost to gigabytes and OOM/crash the
 # host. Legitimate slots use the defaults above, far under these caps (#73).
 _PASSPHRASE_ARGON2_MAX_TIME = 64
+# Per-slot Argon2 memory cap (KiB). Kept at 2 GiB: lowering it is enforced on
+# UNLOCK too, which would make any pre-existing slot created above the new cap
+# permanently unopenable -- exactly the recovery scenario where the primary
+# password is already gone (gitlab#233 review). The pre-auth exhaustion the scan
+# flagged (F16) is bounded instead by the slot-COUNT cap below: peak memory is
+# one in-flight slot (the loop is sequential), and the cumulative cost is bounded
+# by MAX_DEK_SLOTS rather than the 1000-slot array cap.
 _PASSPHRASE_ARGON2_MAX_MEMORY = 2 * 1024 * 1024  # KiB (2 GiB)
 _PASSPHRASE_ARGON2_MAX_PARALLELISM = 16
+
+# The maximum number of recovery slots processed on any recovery-unlock path
+# before the slot-set MAC is verified (gitlab#233, scan F16). dek_slots is
+# attacker-controlled plaintext excluded from the bulk AAD, and each passphrase
+# slot triggers a full Argon2id run; a crafted file with hundreds of slots would
+# otherwise exhaust CPU before the tampered set is rejected. A legitimate
+# recovery-enabled file has a handful of slots, so this cap is generous headroom.
+MAX_DEK_SLOTS = 32
 
 
 def _validate_argon2_params(time_cost, memory_cost, parallelism) -> None:
@@ -273,7 +316,21 @@ def _passphrase_kek(passphrase: bytes, salt: bytes, time_cost, memory_cost, para
 
     _validate_argon2_params(time_cost, memory_cost, parallelism)
     if isinstance(passphrase, str):
-        passphrase = passphrase.encode("utf-8")
+        # surrogateescape, not strict: os.environ decodes with surrogateescape,
+        # so an env-supplied passphrase containing non-UTF-8 bytes arrives with
+        # lone surrogates. A strict encode would raise UnicodeEncodeError, whose
+        # message embeds one byte of the passphrase and its offset and is printed
+        # verbatim by the generic CLI handler — outside debug_secret(). Identical
+        # bytes for any surrogate-free string, so no existing slot's KEK changes.
+        # A lone HIGH surrogate is outside surrogateescape's round-trip range and
+        # still raises; re-raise carrying nothing value-derived rather than let
+        # UnicodeEncodeError's char/offset reach the generic handler (gitlab#147).
+        try:
+            passphrase = passphrase.encode("utf-8", "surrogateescape")
+        except UnicodeEncodeError:
+            raise ValueError(
+                "recovery passphrase could not be encoded (contains an unpaired surrogate)"
+            ) from None
     return argon2.low_level.hash_secret_raw(
         secret=bytes(passphrase),
         salt=bytes(salt),
@@ -523,61 +580,459 @@ def build_recovery_slots(dek: bytes, credentials: List[dict]) -> List[dict]:
 #
 # These wrap the recovery-slot API (crypt_core add/remove/list_recovery_slots
 # and decrypt_file) for the list-recovery / add-recovery / remove-recovery /
-# recover subcommands. All human output goes to stderr via eprint (stdout is
-# reserved for piped data), matching secret_sharing's CLI convention.
+# recover subcommands. Human output goes to stderr via eprint; stdout carries
+# only the --json document, and never a credential (see
+# _write_recovery_code_file for why the generated code gets its own file).
 
 
-def _read_password(args, prompt="Password: "):
-    """Resolve a password from --password, $CRYPT_PASSWORD, or a prompt."""
+def _consume_env(name):
+    """Read a secret-bearing env var and remove it from the environment.
+
+    Delegates to the shared implementation in credential_env (gitlab#154):
+    this primitive must stay in lockstep with
+    security_logger._value_looks_secret, and the gitlab#144 review already
+    found one "inert by construction" bug in that interaction -- a second copy
+    would let a future hardening be applied to one and not the other, failing
+    silently and open.
+
+    Args:
+        name: Environment variable to read.
+
+    Returns:
+        The value -- possibly the empty string when the variable is present
+        but empty -- or None only when the variable is absent.
+    """
+    return _shared_consume_env(name)
+
+
+def _consume_recovery_env():
+    """Consume every credential-bearing env var this module reads.
+
+    Called first in each handler, before any validation that can raise:
+    consumption must not depend on which branch runs or on validation
+    succeeding, or an early error would strand the remaining credentials in the
+    environment for a later child process to inherit.
+
+    Returns:
+        Dict of consumed values keyed 'code', 'passphrase', 'add_passphrase'
+        and 'password'. Each is the value, "" if set-but-empty, or None if the
+        variable was absent.
+    """
+    return {
+        "code": _consume_env(RECOVERY_CODE_ENV),
+        "passphrase": _consume_env(RECOVERY_PASSPHRASE_ENV),
+        "add_passphrase": _consume_env(ADD_RECOVERY_PASSPHRASE_ENV),
+        "password": _consume_env("CRYPT_PASSWORD"),
+    }
+
+
+def _read_password(args, env_pw, prompt="Password: "):
+    """Resolve a password from --password, an already-consumed env value, or a prompt.
+
+    Args:
+        args: Parsed CLI namespace.
+        env_pw: Value already consumed from $CRYPT_PASSWORD by
+            _consume_recovery_env, or None if it was absent.
+        prompt: Prompt text used when neither source supplied one.
+
+    Returns:
+        The password as bytes.
+    """
     import getpass
-    import os
 
     pw = getattr(args, "password", None)
-    if pw is None:
-        pw = os.environ.get("CRYPT_PASSWORD")
+    if pw is not None:
+        # -p/--password is visible in the world-readable /proc/PID/cmdline, the
+        # same exposure --recovery-code and --rekey-password warn about; prefer
+        # $CRYPT_PASSWORD. Not silenced by --quiet, matching those warnings
+        # (gitlab#147).
+        eprint(
+            "WARNING: --password is visible in process list. "
+            "Use the CRYPT_PASSWORD env var instead."
+        )
+    if pw is None and env_pw:
+        # An empty CRYPT_PASSWORD keeps its long-standing meaning of "not
+        # supplied" here; only the new recovery channels treat blank as an error.
+        pw = env_pw
     if pw is None:
         pw = getpass.getpass(prompt)
-    return pw.encode("utf-8") if isinstance(pw, str) else pw
+    # surrogateescape round-trips bytes that os.environ decoded the same way, so
+    # a non-UTF-8 password neither crashes nor echoes its bytes in the traceback.
+    # A lone HIGH surrogate is still outside that range; refuse it value-free
+    # rather than let UnicodeEncodeError's char reach the handler (gitlab#147),
+    # mirroring _passphrase_kek.
+    if not isinstance(pw, str):
+        return pw
+    try:
+        return pw.encode("utf-8", "surrogateescape")
+    except UnicodeEncodeError:
+        raise ValueError("password could not be encoded (contains an unpaired surrogate)") from None
+
+
+def _read_recovery_code(args, env_code):
+    """Resolve an existing recovery code from --recovery-code or the env value.
+
+    Pure resolution over an already-consumed value: it may raise, so it must run
+    after _consume_recovery_env has emptied every variable, never before.
+
+    The flag takes precedence but warns: a recovery credential on argv is
+    visible in the world-readable /proc/PID/cmdline. The warning is deliberately
+    not silenced by --quiet, matching the --rekey-password warning.
+
+    Args:
+        args: Parsed CLI namespace.
+        env_code: Value already consumed from the env var, "" if it was set but
+            empty, or None if it was absent.
+
+    Returns:
+        The recovery code, or None if neither source supplied one.
+
+    Raises:
+        ValueError: If the env var was set but empty and no flag was given.
+    """
+    flag_code = getattr(args, "recovery_code", None)
+    if flag_code:
+        eprint(
+            "WARNING: --recovery-code is visible in process list. "
+            f"Use the {RECOVERY_CODE_ENV} env var instead."
+        )
+        return flag_code
+    if env_code == "":
+        # Set but empty: fail fast rather than fall through to a password
+        # prompt no GUI subprocess can answer.
+        raise ValueError(f"${RECOVERY_CODE_ENV} is set but empty")
+    return env_code
+
+
+def _read_recovery_passphrase(env_name, env_value, prompt):
+    """Resolve a recovery passphrase from its env var, else prompt for it.
+
+    Only called once the caller has explicitly selected the passphrase path via
+    its flag; the env var supplies the value, it never selects the path.
+
+    Args:
+        env_name: Environment variable the value came from (for messages).
+        env_value: Already-consumed value, or None if the variable was absent.
+        prompt: Prompt text used when the env var was absent.
+
+    Returns:
+        The passphrase as a str.
+
+    Raises:
+        ValueError: If the passphrase is blank, from either source.
+    """
+    import getpass
+
+    if env_value is not None:
+        validated = _validated_passphrase(env_value, f"${env_name}")
+        eprint(f"Using recovery passphrase from ${env_name}.")
+        return validated
+    return _validated_passphrase(getpass.getpass(prompt), "interactive prompt")
+
+
+def _capped(value, limit=256):
+    """Bound an untrusted header field before echoing it into JSON output.
+
+    id/type/key_id are copied verbatim out of the plaintext file header, so a
+    crafted file could otherwise drive an arbitrarily large stdout document at a
+    consumer that buffers the whole thing. A non-string is not merely long, it is
+    the wrong shape for the documented schema, so it is reported as null rather
+    than passed through.
+    """
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        return None
+    if len(value) > limit:
+        return value[:limit]
+    return value
+
+
+def _display_safe(value, limit=256):
+    """Bound and de-fang an untrusted header field before printing it.
+
+    json.dumps escapes control characters for the --json path; the human path
+    writes straight to a terminal, so strip C0/C1 controls (ANSI escapes,
+    carriage returns, newlines) that a crafted file could otherwise use to
+    spoof or overwrite output.
+
+    Args:
+        value: The raw header field.
+        limit: Maximum characters to keep.
+
+    Returns:
+        A printable string, or "" for a missing or non-string value.
+    """
+    capped = _capped(value, limit)
+    if capped is None:
+        return ""
+    return "".join(ch for ch in capped if ch.isprintable())
+
+
+def _write_recovery_code_file(path, code):
+    """Write a generated recovery code to a file only its owner can read.
+
+    A recovery code unwraps the DEK of every file it is added to, so it is
+    password-equivalent and must not travel on a general-purpose stream. stdout
+    is the conventional target of `> file` (created at the caller's umask,
+    typically world-readable) and is collapsed into stderr by `2>&1`; stderr
+    lands in terminal scrollback and in the desktop GUI's persistent debug log.
+    Writing it ourselves is the only way the tool controls the permissions.
+
+    Args:
+        path: Destination path, created 0600 and refused if it already exists.
+        code: The generated recovery code.
+
+    Raises:
+        ValueError: If the destination already exists.
+        OSError: If the file cannot be created or written.
+    """
+    from .file_permissions import PermissionLevel, create_secure_file
+
+    # Delegate to the hardened primitive rather than a local os.open: it adds
+    # O_NOFOLLOW, rejects non-regular and foreign-owned targets, pins the mode
+    # with an unconditional fchmod (open()'s mode is ignored for an existing
+    # file, and a restrictive umask would otherwise subtract from it), and
+    # applies a DACL on Windows, where mode bits alone do nothing. exclusive
+    # adds O_EXCL, so a pre-planted symlink, FIFO or device is refused outright.
+    fd = create_secure_file(path, PermissionLevel.OWNER_ONLY, exclusive=True)
+    try:
+        os.write(fd, (code + "\n").encode("ascii"))
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+    # fsync the directory too: the whole point of writing the credential before
+    # the envelope is that it survives a crash the envelope also survives, and
+    # an unsynced directory entry can vanish while the envelope's new slot stays.
+    #
+    # Best-effort by design. Windows cannot open a directory handle this way at
+    # all, and a write-only destination directory refuses it on POSIX; failing
+    # the command here would abort a correct operation *after* the O_EXCL file
+    # already exists, so the obvious retry would then die with FileExistsError.
+    # Losing the extra durability is much cheaper than that.
+    try:
+        dir_fd = os.open(os.path.dirname(os.path.abspath(path)), os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(dir_fd)
+    except OSError:  # pragma: no cover - platform/filesystem dependent
+        pass
+    finally:
+        os.close(dir_fd)
+
+
+def _validated_passphrase(value, source):
+    """Reject a blank/whitespace-only recovery passphrase, whatever its source.
+
+    A recovery slot is an *additional* wrapping of the same DEK, so the file's
+    confidentiality is that of its weakest slot: a blank-passphrase slot is
+    equivalent to publishing the file, and nothing downstream rejects one
+    (_passphrase_kek feeds the value straight to Argon2id).
+
+    The value is validated but deliberately NOT modified. Stripping here while
+    the interactive path stores the raw input would wrap a slot under one string
+    and later look it up under another, leaving it permanently unopenable
+    through the other channel — an availability failure with no fallback,
+    precisely when the primary password is already gone.
+
+    Args:
+        value: The candidate passphrase.
+        source: Human-readable origin, used in the error message.
+
+    Returns:
+        The passphrase, unmodified.
+
+    Raises:
+        ValueError: If it is empty or whitespace-only.
+    """
+    if not value or not value.strip():
+        raise ValueError(f"Recovery passphrase ({source}) is empty or whitespace-only")
+    return value
+
+
+def _policy_checked_passphrase(value, source, args=None):
+    """Blank check plus the password policy, for a passphrase being CREATED.
+
+    A recovery slot is an additional wrapping of the same DEK, so a file's
+    confidentiality is that of its weakest slot -- and the primary password
+    was already policy-checked while this one was not, which put the weaker
+    check on the weaker credential (gitlab#149).
+
+    Deliberately NOT used when unlocking -- that is `recover` only, via
+    `_read_recovery_passphrase`; `add-recovery` and `remove-recovery` cannot
+    unlock with a passphrase at all. Two reasons, and the second is the
+    stronger one:
+
+    * Enforcing a policy against a passphrase the user already holds would
+      refuse an existing slot on a file whose primary password is typically
+      already gone, turning a weak-choice warning into permanent data loss.
+    * It would also run a credential-dependent, non-constant-time computation
+      BEFORE the Argon2id unwrap, and split the failure into "wrong
+      passphrase" versus "weak passphrase" -- a distinguisher on the
+      verification path where none exists today.
+
+    `--force-password` overrides, as it does for the primary password: a
+    passphrase the user cannot change is better used than refused. It does
+    NOT override the blank check -- a blank slot is equivalent to publishing
+    the file.
+
+    Args:
+        value: The candidate passphrase.
+        source: Human-readable origin, used in messages.
+        args: Parsed CLI namespace, for `force_password` and
+            `password_policy`. None means "no policy context available", in
+            which case only the blank check applies.
+
+    Returns:
+        The passphrase, unmodified.
+
+    Raises:
+        ValueError: If it is empty or whitespace-only.
+        ValidationError: If it fails the policy and --force-password is not set.
+    """
+    value = _validated_passphrase(value, source)
+
+    if args is None or getattr(args, "force_password", False):
+        return value
+
+    from .password_policy import validate_password
+
+    level = getattr(args, "password_policy", None) or "standard"
+    # "none" is treated as "standard", not as an escape hatch. main_with_args
+    # back-fills password_policy="none" for namespaces that lack the
+    # attribute, so honouring it would make this check a silent no-op the day
+    # --password-policy is renamed or dropped from the subparser -- a fix that
+    # fails OPEN with nothing to notice (gitlab#149 review). --force-password
+    # is the one documented override.
+    if level == "none":
+        level = "standard"
+
+    # The NON-raising API: validate_password_or_raise hides the reasons behind
+    # SecureError's generic message, and reconstructing a number with
+    # get_password_strength printed "STRONG" next to a refusal, because that
+    # figure is raw search space while the gate is character classes. Telling
+    # someone their passphrase is strong and refusing it in the same breath
+    # points them straight at --force-password.
+    valid, messages = validate_password(value, policy_level=level, quiet=True)
+    if valid:
+        return value
+
+    from .crypt_errors import ValidationError
+
+    # Unconditional, including under --quiet: a refusal the user cannot see
+    # the reason for is a refusal they will bypass. The messages are canned
+    # policy strings and constants -- none embeds the passphrase. The entropy
+    # figure is deliberately NOT printed: it inverts to the exact distinct
+    # character count and class set of a credential that unwraps the file key,
+    # on a stream that reaches scrollback and the GUI's debug log.
+    eprint(f"Recovery passphrase ({source}) does not meet the {level} password policy:")
+    for message in messages:
+        eprint(f"  - {message}")
+    eprint(
+        "  A recovery slot is another wrapping of the same file key, so the "
+        "file is only as strong as its weakest slot."
+    )
+    eprint("  Use --force-password to add it anyway (not recommended).")
+    raise ValidationError(f"Recovery passphrase does not meet the {level} password policy")
+
+    try:
+        validate_password_or_raise(value, policy_level=level, quiet=getattr(args, "quiet", False))
+    except Exception:
+        # eprint before re-raising: ValidationError is a SecureError, which
+        # replaces the message it is given with a generic string unless
+        # DEBUG=1 is set, so the reason would otherwise reach nobody.
+        entropy, strength = get_password_strength(value)
+        eprint(f"\nRecovery passphrase strength: {strength} (entropy: {entropy:.1f} bits)")
+        eprint(f"Recovery passphrase ({source}) does not meet the {level} password policy.")
+        eprint(
+            "  A recovery slot is another wrapping of the same file key, so the "
+            "file is only as strong as its weakest slot."
+        )
+        eprint("  Use --force-password to add it anyway (not recommended).")
+        raise
+    return value
 
 
 def _recover_kwargs_from_args(args):
-    """Build decrypt/unlock recovery kwargs from CLI args (one credential)."""
-    if getattr(args, "recovery_code", None):
-        return {"recovery_code": args.recovery_code}
-    if getattr(args, "recovery_passphrase", False):
-        import getpass
+    """Build decrypt/unlock recovery kwargs from CLI args (one credential).
 
-        return {"recovery_passphrase": getpass.getpass("Recovery passphrase: ")}
+    Every credential env var is consumed before anything that can raise, so no
+    branch and no early error leaves one behind. `recover` itself uses neither
+    the add-passphrase value nor the password, but both are consumed anyway.
+    """
+    env = _consume_recovery_env()
+    code = _read_recovery_code(args, env["code"])
+    env_phrase = env["passphrase"]
+    if code:
+        return {"recovery_code": code}
+    # The flag selects the passphrase path; the env var only supplies the value.
+    # Letting the environment alone select it would let a planted variable steer
+    # the credential type behind the user's back.
+    if getattr(args, "recovery_passphrase", False):
+        return {
+            "recovery_passphrase": _read_recovery_passphrase(
+                RECOVERY_PASSPHRASE_ENV, env_phrase, "Recovery passphrase: "
+            )
+        }
     return {}
 
 
 def list_recovery_cli(args) -> None:
     """`list-recovery`: print the recovery slots in a file (no credential)."""
     from .crypt_core import list_recovery_slots
-    from .crypt_utils import eprint
 
     slots = list_recovery_slots(args.input)
+    if getattr(args, "json", False):
+        # Full key_id, not the 16-char display truncation below: a machine
+        # consumer needs the whole value.
+        print(
+            json.dumps(
+                {
+                    "slots": [
+                        {
+                            "id": _capped(s.get("id")),
+                            "type": _capped(s.get("type")),
+                            "key_id": _capped(s.get("key_id")),
+                        }
+                        for s in slots
+                    ]
+                },
+                indent=2,
+            )
+        )
+        sys.stdout.flush()
+        return
     if not slots:
         eprint("No recovery slots on this file.")
         return
     eprint(f"{len(slots)} recovery slot(s):")
     for s in slots:
-        line = f"  id={s['id']}  type={s['type']}"
-        if s.get("key_id"):
-            line += f"  key_id={s['key_id'][:16]}..."
+        # These come verbatim from the plaintext file header, i.e. from whoever
+        # authored the file. Listing a file requires no credential, so raw
+        # output here would let a crafted file emit ANSI escapes and newlines
+        # into the operator's terminal, and an over-long or non-string value
+        # would garble or crash the listing.
+        slot_id = _display_safe(s.get("id"))
+        slot_type = _display_safe(s.get("type"))
+        key_id = _display_safe(s.get("key_id"))
+        line = f"  id={slot_id}  type={slot_type}"
+        if key_id:
+            line += f"  key_id={key_id[:16]}..."
         eprint(line)
 
 
 def recover_cli(args) -> None:
     """`recover`: decrypt a file using a recovery credential (not the password)."""
     from .crypt_core import decrypt_file
-    from .crypt_utils import eprint
 
     kwargs = _recover_kwargs_from_args(args)
     if not kwargs:
         raise ValueError(
-            "Provide a recovery credential: --recovery-code, "
-            "--recovery-passphrase, or --recovery-share"
+            "Provide a recovery credential: --recovery-code (or "
+            f"${RECOVERY_CODE_ENV}), or --recovery-passphrase (value optionally "
+            f"via ${RECOVERY_PASSPHRASE_ENV})"
         )
     decrypt_file(
         input_file=args.input,
@@ -585,57 +1040,200 @@ def recover_cli(args) -> None:
         quiet=getattr(args, "quiet", False),
         **kwargs,
     )
-    eprint(f"Recovered to: {args.output}")
+    if getattr(args, "json", False):
+        print(json.dumps({"output": args.output}, indent=2))
+        sys.stdout.flush()
+    else:
+        eprint(f"Recovered to: {args.output}")
 
 
 def add_recovery_cli(args) -> None:
     """`add-recovery`: add a recovery slot to an existing envelope file.
 
-    Unlock with --password (or an existing --recovery-code); add one of
-    --add-code (generated and printed) or --add-passphrase (prompted).
+    Unlock with the primary password (--password / $CRYPT_PASSWORD); add one of
+    --add-code (generated and printed) or --add-passphrase (prompted). A recovery
+    code can no longer authorize a slot change (F17/F18, gitlab#234): the wrapped
+    key is re-bound to the new slot count, which requires the password KEK.
     """
     import getpass
 
     from .crypt_core import add_recovery_slots
-    from .crypt_utils import eprint
 
-    # How to unlock the existing file (to recover the DEK).
-    unlock = {}
-    if getattr(args, "recovery_code", None):
-        unlock["recovery_code"] = args.recovery_code
-    else:
-        unlock["password"] = _read_password(args)
+    add_code = getattr(args, "add_code", False)
+    add_passphrase = getattr(args, "add_passphrase", False)
+
+    # Consume every credential env var first, before any check that can raise,
+    # so no branch and no early error leaves one behind for a later child.
+    env = _consume_recovery_env()
+    env_phrase = env["add_passphrase"]
+
+    # Validate EVERY usage error before acquiring the unlock credential:
+    # otherwise a bare `add-recovery -i f -o g` blocks on a getpass() prompt
+    # (indefinitely, for a GUI subprocess) only to fail with a usage error
+    # afterwards.
+    code_out = getattr(args, "recovery_code_out", None)
+    if add_code and add_passphrase:
+        raise ValueError("Specify only one of --add-code or --add-passphrase")
+    if not add_code and not add_passphrase:
+        raise ValueError("Specify --add-code or --add-passphrase")
+    if code_out and not add_code:
+        # Silently ignoring it would let a wrapper that always passes the flag
+        # read back a stale file from an earlier run and present it as the new
+        # credential.
+        raise ValueError("--recovery-code-out is only meaningful with --add-code")
+    if getattr(args, "json", False) and add_code and not code_out:
+        # Fail closed rather than silently withhold the credential: under --json
+        # there is no safe general-purpose stream to put it on (see
+        # _write_recovery_code_file), so the caller must name a destination.
+        raise ValueError(
+            "--add-code with --json requires --recovery-code-out PATH: the "
+            "generated code is never written to stdout or stderr in JSON mode"
+        )
+    if code_out:
+        # A destination equal to the envelope would be truncated by the header
+        # write moments later, destroying the credential and reporting success.
+        code_real = os.path.realpath(code_out)
+        for label, other in (("--input", args.input), ("--output", args.output)):
+            if other and code_real == os.path.realpath(other):
+                raise ValueError(f"--recovery-code-out must differ from {label}")
+
+    existing_code = _read_recovery_code(args, env["code"])
+
+    # F17/F18 (gitlab#234): adding a slot re-binds the wrapped key to the new
+    # slot count, which needs the password KEK -- a recovery code recovers only
+    # the DEK. Refuse a recovery-code unlock rather than prompt (a GUI passing
+    # only a code would otherwise hang on getpass).
+    if existing_code:
+        raise ValueError(
+            "add-recovery now requires the primary password: a recovery code can "
+            "no longer authorize adding a slot. Re-run with --password / "
+            "$CRYPT_PASSWORD."
+        )
+    unlock = {"password": _read_password(args, env["password"])}
 
     creds = []
     generated_code = None
-    if getattr(args, "add_code", False):
+    if add_code:
         generated_code = generate_recovery_code()
+        # Not caught by the log redactor's shape heuristic: a grouped base32
+        # code has no 32-char contiguous run. Register it explicitly.
+        register_consumed_secret("generated_recovery_code", generated_code)
         creds.append({"type": "recovery_code", "code": generated_code})
-    elif getattr(args, "add_passphrase", False):
-        p1 = getpass.getpass("New recovery passphrase: ")
-        p2 = getpass.getpass("Confirm recovery passphrase: ")
-        if p1 != p2:
-            raise ValueError("Recovery passphrases do not match")
-        creds.append({"type": "passphrase", "passphrase": p1})
+        slot_source = "generated recovery code"
     else:
-        raise ValueError("Specify --add-code or --add-passphrase")
+        # --add-passphrase selects the path; the env var only supplies the
+        # value. If the environment alone could select it, anyone able to plant
+        # a variable in the user's session once would get a durable extra
+        # decryption path into every file later passed to add-recovery.
+        if env_phrase is not None:
+            # Supplied non-interactively; there is no second channel to confirm
+            # against, so the caller owns the typo risk.
+            phrase = _policy_checked_passphrase(env_phrase, f"${ADD_RECOVERY_PASSPHRASE_ENV}", args)
+            slot_source = f"passphrase from ${ADD_RECOVERY_PASSPHRASE_ENV}"
+        else:
+            p1 = getpass.getpass("New recovery passphrase: ")
+            p2 = getpass.getpass("Confirm recovery passphrase: ")
+            if p1 != p2:
+                raise ValueError("Recovery passphrases do not match")
+            # Same validation as the env path: two Enter presses would otherwise
+            # wrap the DEK under an empty passphrase, which anyone can unwrap.
+            phrase = _policy_checked_passphrase(p1, "interactive prompt", args)
+            slot_source = "interactively entered passphrase"
+        creds.append({"type": "passphrase", "passphrase": phrase})
 
-    add_recovery_slots(args.input, args.output, creds, **unlock)
-    eprint(f"Recovery slot added; wrote: {args.output}")
+    # Deliver the credential BEFORE modifying the envelope. The reverse order
+    # risks the worst outcome available here: the slot is durably written and
+    # the only credential that opens it is then lost to a failed write, leaving
+    # an extra decryption path nobody can use and nobody can remove without the
+    # primary password.
+    if generated_code is not None and code_out:
+        _write_recovery_code_file(code_out, generated_code)
+
+    try:
+        add_recovery_slots(
+            args.input,
+            args.output,
+            creds,
+            allow_high_kdf_cost=getattr(args, "allow_high_kdf_cost", False),
+            **unlock,
+        )
+    except Exception:
+        # Deliberately do NOT delete the code file here. A raise does not prove
+        # the slot was not written: add_recovery_slots writes the envelope and
+        # only then sets its permissions, so a failure in that later step leaves
+        # the slot durably on disk. Deleting the file would then destroy the one
+        # credential that opens it. An orphan code file, by contrast, is a random
+        # string that opens nothing.
+        if generated_code is not None and code_out:
+            eprint(
+                f"NOTE: a recovery code was written to {code_out} before this "
+                "failure. If the slot was not added, that file is unused and "
+                "can be deleted; verify with list-recovery before deleting. "
+                "A retry with the same --recovery-code-out will fail with "
+                "FileExistsError until this file is removed."
+            )
+        raise
+
+    if getattr(args, "json", False):
+        doc = {
+            "output": args.output,
+            "slot_type": creds[0]["type"],
+            # Which credential produced the slot. Omitting this would make a
+            # slot wrapped under a planted $OPENSSL_ENCRYPT_ADD_RECOVERY_PASSPHRASE
+            # indistinguishable from one the user typed — the very disclosure
+            # the human path exists to provide.
+            "credential_source": slot_source,
+        }
+        if generated_code is not None:
+            doc["recovery_code_written_to"] = code_out
+        print(json.dumps(doc, indent=2))
+        sys.stdout.flush()
+        return
+
+    # Name the credential source: an unintended env-driven path must be visible
+    # rather than reported as a bare "slot added".
+    eprint(f"Recovery slot added ({slot_source}); wrote: {args.output}")
     if generated_code is not None:
-        eprint("\n=== RECOVERY CODE (store this securely; it is shown only once) ===")
-        eprint(f"  {generated_code}")
+        if code_out:
+            # The caller named a private destination, which is the strongest
+            # possible statement that the credential must not go on a stream —
+            # stderr reaches terminal scrollback and the GUI's persistent debug
+            # log. Honour that regardless of --json.
+            eprint(f"Recovery code written to: {code_out}")
+        else:
+            eprint("\n=== RECOVERY CODE (store this securely; it is shown only once) ===")
+            eprint(f"  {generated_code}")
 
 
 def remove_recovery_cli(args) -> None:
     """`remove-recovery`: remove a recovery slot by id from an envelope file."""
     from .crypt_core import remove_recovery_slot
-    from .crypt_utils import eprint
 
-    unlock = {}
-    if getattr(args, "recovery_code", None):
-        unlock["recovery_code"] = args.recovery_code
+    # Consume every credential env var first, before any check that can raise.
+    # remove-recovery adds no slot, so the passphrase values are unused here —
+    # consumed anyway so a stray value cannot survive the invocation.
+    env = _consume_recovery_env()
+
+    # F17/F18 (gitlab#234): removing a slot re-binds the wrapped key to the new
+    # slot count, which needs the password KEK. A recovery code can no longer
+    # authorize a slot change.
+    existing_code = _read_recovery_code(args, env["code"])
+    if existing_code:
+        raise ValueError(
+            "remove-recovery now requires the primary password: a recovery code "
+            "can no longer authorize removing a slot. Re-run with --password / "
+            "$CRYPT_PASSWORD."
+        )
+    unlock = {"password": _read_password(args, env["password"])}
+    remove_recovery_slot(
+        args.input,
+        args.output,
+        args.slot_id,
+        allow_high_kdf_cost=getattr(args, "allow_high_kdf_cost", False),
+        **unlock,
+    )
+    if getattr(args, "json", False):
+        print(json.dumps({"output": args.output, "removed_slot_id": args.slot_id}, indent=2))
+        sys.stdout.flush()
     else:
-        unlock["password"] = _read_password(args)
-    remove_recovery_slot(args.input, args.output, args.slot_id, **unlock)
-    eprint(f"Removed recovery slot {args.slot_id!r}; wrote: {args.output}")
+        eprint(f"Removed recovery slot {args.slot_id!r}; wrote: {args.output}")

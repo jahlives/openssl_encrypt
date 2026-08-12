@@ -5,7 +5,1216 @@ All notable changes to the openssl_encrypt project will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.4.9] - TBD
+## [1.4.9] - 2026-08-12
+
+### Added
+
+- **Desktop GUI: steganography extraction on the Decrypt tab**
+  (gitlab#217): the Encrypt tab could hide encrypted data in cover media,
+  but recovering it required the CLI — `decryptFromSteganography` had no
+  caller. Pro-mode file decryption gains an "Extract from steganography"
+  mode: cover-media picker (image/audio formats only — the video flags are
+  dead CLI surface until gitlab#170 is decided, so they are not
+  advertised), optional steganography password, bits-per-channel selector,
+  wired through the existing asymmetric/integrity options. The extracted
+  plaintext previews and saves like a normal decrypt.
+
+- **PIV / PKCS#11 protection for `identity create`** (gitlab#218): `identity
+  create` declared `--hsm-piv-slot`/`--hsm-pkcs11-lib`/`--hsm-biometric` but its
+  `--hsm` choices excluded `piv` and the handler never read them — dead surface.
+  `identity create --hsm piv` (password + PIV token) and `--hsm piv-only` (token
+  only) now work: the PIV configuration (PKCS#11 module path, PIV key slot,
+  biometric flag — none of them secret) is persisted with the identity, so it
+  can be unlocked later without re-supplying the flags (no unlock subcommand
+  takes them). The HSM-pepper length check now accepts the exact length the
+  configured device returns (the PIV token's 32-byte HKDF pepper, the 20-byte
+  Yubikey/OnlyKey HMAC-SHA1 response), and the Challenge-Response slot detection
+  and touch prompt are correctly skipped for PIV (which authenticates with a
+  PIN). Because the persisted PKCS#11 module path is loaded as native code at
+  unlock, it is refused unless it resolves to a regular file in a standard
+  module directory (`/usr/lib`, `/usr/lib64`, `/usr/local/lib`, `/lib`, …) or
+  one listed in `OPENSSL_ENCRYPT_PKCS11_ALLOW` — so a tampered identity file
+  from an untrusted store cannot make the tool `dlopen` an attacker-planted
+  library. Existing Yubikey/OnlyKey identities are unaffected.
+
+- **Machine-readable output for `analyze-security`, `smart-recommendations`
+  and `telemetry status`** (gitlab#162): a GUI that renders a *misparsed*
+  security readout is worse than one that renders none. `analyze-security`
+  and `smart-recommendations get`/`quick` gain `--output-format {text,json}`,
+  and `telemetry status` gains `--json`; each emits its document as JSON on
+  stdout while the human report stays on stderr, matching the convention
+  `analyze-config` / `check-password` / `telemetry show-pending` already use.
+  The JSON documents carry only algorithm/config metadata, scores and advice
+  text — no secrets (`telemetry status` exposes `has_api_key` as a boolean,
+  not the key). Unblocks the GUI's analyze-security (P30), smart-recommendations
+  (P33) and telemetry-state (P34) screens. `telemetry status --json` also lands
+  on 1.5.x; `analyze-security`/`smart-recommendations` do not exist there.
+
+- **`plugin pepper` management CLI** (gitlab#193): a subcommand group driving
+  the existing remote-pepper plugin — `list` (stored peppers as JSON), `test`
+  (mTLS connectivity probe from ad-hoc `--url`/cert flags), `setup-totp` /
+  `verify-totp` (TOTP 2FA enrolment), and `configure-deadman` (the pepper
+  dead-man's switch). This is the CLI surface the desktop GUI already called
+  but that never existed, so wiring it also un-breaks those GUI controls. The
+  TOTP shared secret and the one-time backup codes are the only secret
+  payloads: they are emitted on stdout only (never stderr, which the GUI
+  persists) and registered with the audit-log redactor, mirroring
+  `generate-password --json`. `configure-deadman --interval`/`--grace-period`
+  take whole days and are rejected below 1 (the switch auto-wipes all peppers
+  on a missed check-in, so a zero/negative deadline must not be armable); the
+  destructive `panic` operation is deliberately not exposed.
+
+- **`plugin integrity` management CLI** (gitlab#194): `test` (mTLS probe),
+  `stats` (verification statistics as JSON), and `verify --file-id
+  --metadata-hash`. `verify` uses a deliberate four-outcome contract so a file
+  the service never registered, or an unreachable service, can never be
+  reported as a tamper alarm (the bug the removed GUI batch path had):
+  distinct exit codes — 0 match, 1 mismatch, 3 not-found, 4 unreachable — and
+  a JSON `outcome` field. Mismatch is keyed on the service's own violation
+  signal; the not-found path stays cautious rather than reassuring, because
+  the exact server response shape is a documented dependency (gitlab#194).
+
+- **Desktop GUI: telemetry opt-out action in Settings** (gitlab#165 P34): a
+  "Privacy & Telemetry" section (visible in both Simple and Pro mode) with a
+  one-way "Disable telemetry and delete data" button. It is deliberately an
+  action, not a two-way toggle — `telemetry status` has no machine-readable
+  output (gitlab#162), so the GUI cannot reliably read the current state, and
+  a toggle that can render the wrong state is worse than a button. The GUI
+  shows its own confirmation enumerating what is destroyed (collection +
+  background uploads stopped, pending events deleted, API key deleted) and
+  that it is not a permanent setting, then invokes `telemetry opt-out
+  --force` (the CLI's own prompt cannot be answered by a subprocess). A
+  nonzero exit surfaces as an error rather than a false "data deleted".
+
+  The other half of gitlab#165 — an `analyze-config` screen (P31) — is
+  deliberately **not** built yet: `analyze-config` crashes on every
+  invocation via the real CLI (`args.algorithm` back-filled to `None` →
+  `TypeError`, gitlab#219) and, even once that is fixed, ignores most of the
+  KDF/cipher parameters the user selects (gitlab#168). A screen built on it
+  would show a crash or scores disconnected from the user's actual choices,
+  so P31 is held until both land.
+
+- **Desktop GUI: identity HSM touch and contact key-change controls**
+  (gitlab#161 / github#77): the Create-identity dialog gains a "Show a touch
+  reminder when this identity is used" switch (shown only when an HSM is
+  selected, on by default), which maps to `identity create --no-touch` when
+  turned off. The copy states plainly what the flag does and does not do —
+  it records a reminder preference on the identity, but does not itself
+  configure whether the key requires a physical button press (that is a
+  hardware setting, e.g. `ykman`); the CLI help overstates this and the
+  discrepancy is tracked in gitlab#218.
+
+  The Import-contact flow now handles a TOFU key change safely: when the
+  imported key differs from the pinned one, the CLI's non-interactive
+  refusal is surfaced as a typed `IdentityKeyChangedError` (fingerprints
+  parsed from stderr, constrained to colon-hex and the name to the identity
+  charset, with equal fingerprints rejected, so a crafted contact name
+  cannot forge the trust dialog). A two-phase confirmation shows the stored
+  and imported fingerprints side by side with the man-in-the-middle framing
+  before anything is replaced — only an explicit "Replace the pinned key"
+  re-runs the import, and only then with `--allow-key-change --overwrite`
+  together (the CLI needs both: the first passes the TOFU gate, the second
+  the overwrite check). The displayed fingerprints/name and the error
+  messages route through the GUI's display sanitizer. `--hsm-piv-slot` was
+  evaluated and deliberately not wired: it is dead surface on `identity
+  create` (argparse rejects `--hsm piv` there and the handler never reads
+  it — gitlab#218).
+
+- **`generate-password --json`** (gitlab#187 / github#104): the desktop GUI
+  has always appended `--json` and parsed stdout as a JSON object, but the
+  flag existed on no branch or release tag and the handler had no JSON path
+  at all — so GUI password generation, and the Password Generator screen
+  built on it, never worked. This is a JSON *mode*, not just a flag: the
+  handler now emits one document on stdout in both character and diceware
+  mode, carrying the fields the GUI reads (`password`, `entropy_bits`,
+  `mode`, plus `strength`/`length` or `word_count`).
+
+  The password is the payload on stdout and never reaches stderr in this
+  mode: stderr is merged by `2>&1`, lands in scrollback and in the GUI's
+  persistent debug log — the same reasoning applied to `encrypt --random`
+  (gitlab#152). The on-screen countdown display is skipped rather than
+  duplicated, and the generated password is registered with the audit-log
+  redactor, whose shape heuristic would not otherwise match it.
+  `ensure_ascii` is pinned, as for the other JSON channels.
+
+  The character-mode policy check *warns* rather than rejecting, unlike the
+  diceware gate which exits. Human mode shows that warning beside the
+  password, but a machine caller reads stderr only on a non-zero exit, so
+  the document carries `policy_valid` and `policy_warnings` instead of the
+  verdict being lost. JSON is deliberately not stricter than the human
+  path.
+
+- **Lint: every argv the desktop GUI builds must parse against the real CLI
+  parser** (gitlab#186 / github#103). Four times the GUI has emitted CLI
+  surface that does not exist — `identity import --data/--alias`
+  (gitlab#164), `identity list --json` (gitlab#183), `identity delete
+  --contact` (gitlab#185), `generate-password --json` (gitlab#187) — each
+  failing at argparse with exit 2 and each swallowed by the GUI into an
+  empty result, so the feature simply never worked. Writing the widget does
+  not verify the feature; only driving the real CLI does, and pytest never
+  exercises the GUI.
+
+  The lint reads `cli_service.dart`, extracts each call site's command path
+  and flag literals, and checks them against the parser `build_subparser()`
+  returns — the same object the CLI uses, not a reconstruction. (That
+  required splitting the parser construction out of `create_subparser_main`,
+  which built and immediately parsed `sys.argv`, so the surface it exposes
+  could not be inspected.) Dart-interpolated literals are skipped rather
+  than guessed at.
+
+  Call sites that fail today are listed in a `KNOWN_BROKEN` registry, each
+  naming its tracking issue, so the lint passes now but fails on anything
+  new; companion tests assert that every entry is still genuinely broken and
+  names an issue, so an exemption cannot outlive the bug it describes. It
+  surfaced two more dead surfaces than the four already known: the GUI's
+  pepper management and its keyserver/integrity connection tests call
+  `plugin pepper`/`plugin keyserver`/`plugin integrity` subcommands that do
+  not exist (gitlab#188) — `plugin` offers only `sign`, `trust-key` and
+  `list-keys`.
+
+  Review of the lint then found two more, in surface it had been blind to
+  until its extractor was rewritten to cover the encrypt/decrypt paths:
+  `--whirlpool-rounds`, which no subparser declares (gitlab#189), and
+  `-a <algorithm>` in the steganography path, where `-a` is the short form
+  of `--armor`, a boolean — so the cipher choice never reached the CLI and
+  the command failed outright (gitlab#190). The latter is an *arity*
+  defect, which a name-only model cannot see; the lint documents that gap
+  rather than implying it covers it, as it documents that the
+  command-preview builders are outside its anchor (gitlab#191).
+
+- **Environment input path for the second password and the signer passphrase**
+  (gitlab#154 / github#72, gitlab#159 / github#77): the keyed-hidden-mode
+  second password and the `sign` signer-identity passphrase could be supplied
+  only through a `getpass()` prompt, which reads `/dev/tty` — so neither the
+  desktop GUI nor any CI caller could drive them at all, blocking GUI
+  hidden-header support and the Sign screen. `OPENSSL_ENCRYPT_SECOND_PASSWORD`
+  and `OPENSSL_ENCRYPT_SIGNER_PASSPHRASE` now carry them.
+
+  Rather than a third and fourth private copy of the mechanism, the
+  read-once-and-delete channel built for recovery slots (gitlab#144) is
+  generalized into `modules/credential_env.py` and shared. Each variable is
+  read once and removed from the environment immediately — including when a
+  higher-priority source supersedes it — so it is not inherited by a later
+  child process (several call sites run `subprocess.run()` with no `env=`); it
+  is registered for audit-log redaction *before* the deletion, since in
+  between it would match neither the live-environment check nor the
+  fingerprint registry; a blank value is refused rather than falling through
+  to a prompt a GUI subprocess could never answer; and the value is validated
+  without being modified, so a credential set through one channel still opens
+  through another.
+
+  Neither variable can *enable* the feature it belongs to. This matters most
+  for the second password: a non-`None` value there is what switches keyed
+  hidden mode on, so a bare exported variable would otherwise write every file
+  with a keyed hidden header the user never chose and cannot reproduce —
+  readable by whoever planted it, and locking the user out of their own
+  metadata. `--hidden-header` (or an explicit `--second-password*` form) must
+  request the credential before the variable is read, and an HSM-only signer
+  identity is never given a passphrase merely because a variable is set. The
+  environment supplies a value; an explicit flag still selects the path.
+
+  On the new environment channel a value containing a newline is refused
+  rather than silently trimmed: the file-descriptor and prompt channels both
+  stop at the first newline, so a trailing `\n` — exactly what passing a GUI
+  text field's contents produces — would otherwise derive a different key from
+  the same passphrase typed at the prompt, with no error at any point. The
+  pre-existing `--second-password` flag deliberately keeps its exact byte
+  semantics, so a file already encrypted with a newline-bearing value stays
+  decryptable. `--second-password ""` now errors like a blank variable instead
+  of falling through to a silently keyless header.
+  `sign` with no passphrase and no terminal exits with an instruction naming
+  the variable instead of a `getpass` traceback, and Ctrl-C at the prompt exits
+  130 rather than being reported as a missing terminal. `encrypt --sign-with`
+  uses the same variable and the same error handling — it signs with the same
+  identity and was equally undriveable without a terminal.
+
+  A variable that is set but not requested is now reported as a warning naming
+  the variable (never its value) rather than dropped in silence: the help text
+  points callers at it, so setting it and receiving a plain legacy-format file
+  with cleartext metadata, at exit code 0 with no output, would be the worst
+  possible outcome. `--second-password-fd` gained the same blank check as the
+  other channels — an empty or EOF-closed descriptor previously yielded a
+  silently *keyless* header for a caller who asked for a keyed one. Blank
+  values are refused when encrypting but accepted when decrypting, so a file
+  written by an earlier release with a whitespace-only value stays
+  decryptable.
+- **Desktop GUI: Verify Signature screen** (gitlab#158 / github#76): a new
+  Pro-mode screen checks a detached signature against a file. Verification needs
+  no password — it uses public keys, and trust comes from the local identity
+  store, which refuses an unknown signer outright rather than reporting the file
+  as merely unverified.
+
+  The screen is built around not being misread. Three outcomes are kept
+  visually distinct: a valid signature, an invalid one, and a check that could
+  not be performed — the last shown as explicitly not a verdict. Naming an
+  expected signer that the signature does not match is treated as a hard
+  failure rather than an inability to check, since that is the strongest
+  negative result available and it only arises when the user asked for it. A
+  failed verification never attributes the file to a named person; it reports
+  the claimed signer as unverified. Each algorithm component is listed so a
+  failing one is not hidden by a passing one, with the caveat that component
+  names come from the signature file and are not themselves signed
+  (gitlab#160). The overall verdict is re-derived from the individual fields
+  rather than trusted, so a truncated or inconsistent result cannot render as
+  valid.
+
+- **Desktop GUI: Batch Operations tab parity** (gitlab#155 / github#73): the
+  Batch tab gains the HSM/YubiKey, remote-pepper and hash/KDF-chain controls the
+  single-file Encrypt tab already had, and now sends them. Previously it passed
+  no hash or KDF configuration and omitted HSM and pepper entirely, so batching
+  silently used CLI defaults while the same files encrypted one at a time used
+  whatever the user had configured — with nothing in the UI to show the
+  difference.
+
+  The hash and KDF panels were extracted from the Encrypt tab into a shared
+  widget rather than duplicated, so the two surfaces cannot drift apart again.
+  As on the Encrypt tab, that configuration is sent for symmetric encryption
+  only: supplying it in asymmetric or cascade mode would take the CLI out of the
+  branch that applies its built-in security template, and the panel is hidden in
+  those modes so the interface never implies a setting applies where it is not
+  sent.
+
+- **Desktop GUI: Encrypt tab PQC key file and key-derivation controls**
+  (gitlab#153 / github#71): the Encrypt tab's Advanced Options gain a field to
+  load an existing post-quantum key file, an off-by-default switch for the
+  legacy sequential key derivation, and a parallel key-derivation option with a
+  worker count.
+
+  The legacy switch is labelled as the downgrade it is: it pins the older
+  format version 13, whose derived key is only as strong as the weakest step in
+  the chain, which funnels wide-key ciphers through a narrower intermediate and
+  omits the newer transcript binding. It is never the default.
+
+  Three flags that plan items P16/P17 called for were deliberately **not**
+  exposed, because on the GUI's code path they do nothing: `--keyring-store`
+  and `--keyring-load` are gated on the `-p` value and the GUI passes the
+  password through the environment, so the store never runs and prints nothing
+  (gitlab#156) — offering it would invite a user to discard the only copy of a
+  password that was never saved; and `--pqc-store-key` is already emitted
+  unconditionally for every post-quantum algorithm, so a toggle could not turn
+  it off (gitlab#157). Saving a new PQC key file is likewise unreachable
+  without `--pqc-gen-key`, so the field loads only.
+
+- **Desktop GUI: securely delete the source file after encrypting**
+  (gitlab#151 / github#69): the Encrypt tab's Advanced Options gain an
+  off-by-default switch that overwrites and deletes the original file once the
+  encrypted copy has been written, with a selectable pass count. Every run is
+  gated behind a confirmation naming the file and stating that the encrypted
+  copy and its password become the only way back to the data.
+
+  Implemented as a separate `shred` invocation after a successful encryption
+  rather than by passing the CLI's own `--shred`: the GUI encrypts file-mode
+  input by reading its text and passing it through a temporary file, so
+  `--shred` would have wiped that temporary file instead of the user's source.
+  The shred only runs once the encrypted output is confirmed written, never on
+  a path where the encryption or the save failed.
+
+- **Desktop GUI: Recovery Slots screen** (gitlab#145 / github#63): a new
+  Pro-mode "Recovery" screen lists an envelope file's recovery slots, adds a
+  generated recovery code or a recovery passphrase, removes a slot, and
+  decrypts a file with a recovery credential when the password is unavailable.
+  Every credential travels through the environment rather than the command
+  line, and a generated code is written by the CLI to a private temporary file,
+  shown once with copy-to-clipboard, and deleted — it is never placed on a
+  stream or held in widget state. Removing a slot is gated behind an explicit
+  confirmation naming the slot, since it irreversibly revokes that recovery
+  path.
+
+  Two GUI-side leaks found while building it are fixed with it: `CLIService`
+  now defaults to **not** logging a command's stdout (it carries decrypted
+  plaintext and generated credentials, so logging is opted into per call rather
+  than opted out of), and the encrypt/decrypt error paths no longer write
+  stdout to the debug log or embed it in the exception message — an error is
+  precisely when stdout may hold a partially written secret.
+
+- **`--json` output for the recovery-slot commands** (gitlab#146 / github#64):
+  `list-recovery`, `recover`, `add-recovery` and `remove-recovery` gain a
+  `--json` flag that emits a single JSON document on stdout *instead of* the
+  human report, which otherwise goes to stderr as before. `list-recovery --json`
+  reports every slot's `id`, `type` and full `key_id` (the human view truncates
+  it to 16 characters for display; the value is bounded, since it comes from an
+  untrusted file header). `add-recovery --json` reports the output path, the
+  slot type, and which credential produced the slot — so a slot wrapped under a
+  planted `$OPENSSL_ENCRYPT_ADD_RECOVERY_PASSPHRASE` is distinguishable from one
+  the user typed. Previously the only way to read a slot list or a generated
+  code was to scrape an unversioned human-readable stderr format.
+
+  A generated recovery code is **never** written to stdout or stderr in JSON
+  mode. It unwraps the file's key, so it is password-equivalent, and neither
+  stream is safe for it: stdout is the conventional target of `> file` (created
+  at the caller's umask) and is merged into stderr by `2>&1`, while stderr
+  reaches terminal scrollback and log files. Instead, `--recovery-code-out PATH`
+  has the tool write the code itself to a file it creates `0600` and refuses to
+  overwrite, and the JSON carries only that path; `--add-code --json` without a
+  destination is refused rather than silently withholding the credential. The
+  code is written *before* the envelope is modified, so the credential cannot be
+  lost to a failed write; if the slot write then fails, the code file is left
+  in place and reported rather than deleted, since a failure does not prove the
+  slot was not written and an orphan code opens nothing. Prerequisite for the
+  desktop GUI Recovery Slots screen.
+
+- **Recovery credentials can be supplied through the environment**
+  (gitlab#144 / github#62): the recovery-slot commands previously accepted a
+  recovery code only on the command line — where it is visible in the process
+  list, and unlike `--password`/`--rekey-password` with no warning — while
+  recovery passphrases were reachable only through a `getpass()` prompt that
+  reads `/dev/tty`, so no non-interactive caller could drive them at all.
+  Three env vars now carry these credentials: `OPENSSL_ENCRYPT_RECOVERY_CODE`
+  and `OPENSSL_ENCRYPT_RECOVERY_PASSPHRASE` (to unlock, for `recover`,
+  `add-recovery` and `remove-recovery`) and
+  `OPENSSL_ENCRYPT_ADD_RECOVERY_PASSPHRASE` (the new passphrase for
+  `add-recovery --add-passphrase`). Each is read once and deleted from the
+  environment immediately — including when an explicit flag supersedes it — so
+  it is not on the process list and is not inherited by a later child process
+  (several call sites run `subprocess.run()` with no `env=`). `$CRYPT_PASSWORD`
+  is now consumed on the same paths, closing a hygiene gap where the
+  higher-value primary password outlived the lower-value recovery credentials.
+  An explicit flag still selects *which* credential is used — an environment
+  variable alone can never select the passphrase path, so a planted variable
+  cannot silently wrap a file's key under an attacker-chosen passphrase — and
+  `add-recovery` now names the credential source it used. Passing
+  `--recovery-code` on the command line warns that it is visible in the process
+  list (not silenced by `--quiet`). A blank or whitespace-only recovery
+  passphrase is now refused from **either** channel — previously two Enter
+  presses at the interactive prompt would wrap the file's key under an empty
+  passphrase, and since a recovery slot is an additional wrapping of the same
+  key, such a slot lets anyone unwrap the file. A blank environment value fails
+  fast rather than falling through to a prompt a GUI subprocess could never
+  answer, and passphrases are validated without being modified, so a slot added
+  through one channel always opens through the other. Redaction of these values
+  in the security audit log survives their removal from the environment,
+  matched by an HMAC fingerprint under an ephemeral per-process key (never a
+  bare hash, which would be an offline guessing oracle) — the existing check
+  resolves the live environment and would otherwise never fire.
+  `OPENSSL_ENCRYPT_REKEY_PASSWORD` is added to that list too, which it
+  previously was not — though its own consumption site does not yet register
+  the value, so its redaction still stops once consumed. Note that `unsetenv()`
+  does not scrub the exec-time copy visible in
+  `/proc/self/environ`, so this converts a world-readable `cmdline` leak into a
+  same-uid residual rather than eliminating it entirely. Prerequisite for the
+  desktop GUI Recovery Slots screen.
+
+- **Desktop GUI: Rekey screen** (gitlab#142 / github#60): a new Pro-mode
+  "Rekey" screen re-encrypts an existing file with a new password (and
+  optionally a new algorithm) via the CLI `rekey` command, writing a new output
+  file and leaving the original untouched. The old password is passed via
+  `CRYPT_PASSWORD` and the new via `OPENSSL_ENCRYPT_REKEY_PASSWORD` (both
+  environment variables the CLI deletes after reading — never on the process
+  list or a temp file). This iteration changes password/algorithm only; full
+  KDF/hash reconfiguration during rekey is not yet exposed.
+
+- **Desktop GUI: live password-strength meter** (gitlab#141 / github#59): the
+  Encrypt tab's password field now shows a live strength indicator (bar,
+  category, entropy in bits, and weakness warnings) driven by the CLI
+  `check-password --json` command. The password is passed on stdin (never as an
+  argument) and the check is debounced to avoid spawning a CLI process per
+  keystroke. Placed on the Encrypt tab only — where a password is being chosen;
+  the Decrypt tab (entering an existing password) and the Password Generator
+  (which already reports entropy/strength) intentionally omit it.
+
+- **Desktop GUI: Secure Shred screen** (gitlab#140 / github#58): a new
+  Pro-mode "Secure Shred" screen securely overwrites and deletes files (and
+  directories, with a recursive toggle) via the CLI `shred` command, with a
+  selectable pass count. Every run is gated behind a mandatory
+  irreversible-action confirmation dialog listing the exact targets, and the
+  UI blocks shredding a directory unless "recursive" is enabled (avoiding the
+  CLI's stdin-less interactive prompt).
+
+- **Desktop GUI: Password Generator screen** (gitlab#139 / github#57): a new
+  Pro-mode "Password Gen" screen generates passwords via the CLI
+  `generate-password --json` command in both **character** mode (length +
+  lowercase/uppercase/digits/special toggles) and **diceware** passphrase mode
+  (word count, separator, optional custom wordlist, force-small-wordlist). The
+  generated password is shown with its entropy/strength and can be copied to
+  the clipboard. Requires the CLI `generate-password --json` support
+  (gitlab#138).
+
+- **Desktop GUI: asymmetric-decryption controls in the Decrypt tab**
+  (gitlab#137 / github#55): the Flutter desktop GUI can now decrypt files
+  encrypted to an identity. The Decrypt tab's Advanced Options (Pro mode) expose
+  a **decryption-identity** selector (`--with-key`) and, once an identity is
+  chosen, a **verify-signature-from** selector (`--verify-from`) and a
+  **skip-signature-verification** checkbox (`--no-verify`). These map to
+  CLI flags that were already wired into the GUI's CLI service but had no
+  widget setting them, so they were previously unreachable. Skipping signature
+  verification is off by default and requires an explicit opt-in behind a clear
+  warning; identity lists are de-duplicated and empty names skipped so a
+  duplicate/blank identity name can no longer crash the tab.
+
+### Removed
+
+- **Dead video-steganography surface removed** (gitlab#170): the
+  `--video-temporal-spread` flag and the entire "Video steganography options
+  (MP4)" group on the `encrypt`/`decrypt` parsers had **no consumer anywhere**
+  — the options dict handed to the steganography transport is built from a
+  fixed key list, never `vars(args)`, so no video key ever reached the plugin —
+  and there is no MP4/video backend at all (`_detect_media_format` returns
+  UNKNOWN for video, raising `CoverMediaError`). MP4 was nonetheless advertised
+  in the `--stego-hide`/`--stego-method` help text, and the desktop GUI emitted
+  `--no-video-temporal-spread` (which argparse rejected, since the flag was
+  `store_true, default=True` and had no negated form), so unticking that box
+  failed the whole encrypt command. The flags, the MP4 help claims, and the
+  GUI's Video Steganography Options panel (encrypt tab) are all removed; the
+  argv lint's last `KNOWN_BROKEN` entry is now gone. Implementing real video
+  steganography (backend + a self-describing payload header) is left as future
+  work. 1.4.x only — steganography was removed wholesale on 1.5.x.
+
+### Security
+
+- **Recovery-slot presence is now authenticated — slots can no longer be
+  stripped undetected** (gitlab#264, MEDIUM / CWE-354/347, ADVISORY 2026-44):
+  envelope files exclude the recovery-slot fields (`dek_slots`/`dek_slots_mac`)
+  from the bulk AEAD so slots can be managed without re-encrypting the payload,
+  and the slot-set MAC was only verified when slots were present — so an
+  attacker who could rewrite the header could delete both fields wholesale (no
+  key needed) and the password decrypt path proceeded as if the file never had
+  recovery slots, silently removing a recovery path the owner added. The DEK
+  wrap is now AEAD-bound to a recovery-slot-count commitment
+  (`encryption.dek_slot_count`, via `envelope.wrapped_dek_aad`): because the
+  wrapped DEK cannot be recomputed without the password KEK and decrypt binds
+  the count deterministically (no legacy fallback for files that carry the
+  commitment), the slots can no longer be stripped, the count zeroed, or the
+  file downgraded without the password unwrap failing closed. Decrypt also
+  fails closed unless the present slot set matches the authenticated count (and,
+  when non-zero, the DEK-keyed slot-set MAC verifies), on both the password and
+  recovery-credential paths; `dek_slot_count` is excluded from the bulk AAD so
+  slot add/remove stays an O(header) rewrite. **Behavior change:** managing
+  recovery slots (`add-recovery`/`remove-recovery`) now requires the primary
+  password — re-binding the wrapped key to the new count needs the password KEK,
+  so a recovery credential alone can no longer add or remove slots. Both lines.
+- **Portable USB workspace is now genuinely encrypted (was a false claim)**
+  (gitlab#263, MEDIUM / CWE-311, ADVISORY 2026-43): the portable-USB creator
+  branded the workspace as an "Encrypted USB Workspace" with "AES-256-GCM
+  encryption", wrote a `.workspace` marker declaring `encrypted: true`, and set
+  `auto_encrypt_workspace`/`secure_deletion_on_exit` true in the portable config
+  — while `_create_encrypted_workspace` received the derived key and never used
+  it, leaving `data/` in cleartext (a user who trusted the branding left files
+  unencrypted on removable media). The derived key now seals the workspace into
+  a real authenticated AES-256-GCM vault (`data/workspace.vault`, `nonce + ct`),
+  created at USB-creation time; new `_seal_workspace_vault`/`_unlock_workspace_vault`
+  and `crypt.py seal`/`unlock` commands re-encrypt/decrypt it, re-deriving the key
+  on the target from the master password (via `CRYPT_PASSWORD`/prompt, never argv)
+  plus the drive's stored salt and a **bounded, validated** `hash_config.json`
+  (mirrors the integrity verifier — a tampered oversized/high-cost config is
+  refused, not fed to the KDF). The vault temp is created `O_CREAT|O_EXCL|O_NOFOLLOW`
+  `0600` with a random name and atomically renamed; the re-derived key and the
+  cleartext archive buffer are zeroized after use. The marker/README and the
+  `auto_encrypt_workspace`/`secure_deletion_on_exit` flags are now honest: loose
+  files in the workspace are NOT encrypted until sealed, and removing unlocked
+  plaintext is a plain delete (not a secure wipe, which is unreliable on flash).
+  1.4.x and 1.5.x.
+- **GUI writes decrypted output owner-only (0600), not world-readable 0644**
+  (gitlab#260, MEDIUM / CWE-276, ADVISORY 2026-42): `FileManager.writeFileText`
+  / `writeFileBytes` used Dart's `writeAsString`/`writeAsBytes`, creating the
+  output at the umask (typically `0644`); the GUI decrypt path writes recovered
+  plaintext through them, leaving it world-readable on a multi-user host (the CLI
+  uses `0600`). The output file is now created owner-only *before* its content is
+  written. Found by the 1.4.9 pre-release scan.
+
+- **mTLS client private key no longer stored in plaintext preferences**
+  (gitlab#259, MEDIUM / CWE-312, ADVISORY 2026-41): the GUI's "Client Cert + Key
+  PEM" setting wrote the pasted PEM — including the client private key — into the
+  world-readable (`0644`) `SharedPreferences` file in cleartext. The client
+  cert+key PEM is now written to a dedicated `0600` file (under a `0700` dir) and
+  only its path is stored in preferences; the dead `*ClientKeyPem` accessors and
+  import entries are removed, and a startup migration relocates any legacy
+  plaintext PEM and scrubs the removed keys. Rotate any key previously pasted
+  into the GUI. Found by the 1.4.9 pre-release scan.
+
+- **Steganography password no longer passed on the child command line**
+  (gitlab#258, MEDIUM / CWE-214, ADVISORY 2026-40): the desktop GUI passed the
+  stego password as `--stego-password` on the CLI's argv (visible in
+  `/proc/<pid>/cmdline`) on both encrypt and decrypt, while the main password
+  used `CRYPT_PASSWORD`. A `CRYPT_STEGO_PASSWORD` environment channel now carries
+  it out of band: the GUI passes it in the child's environment (stripping any
+  inherited value) and the CLI consumes it into `args.stego_password` when
+  `--stego-password` is absent, reading and deleting the variable. 1.4.x only —
+  the 1.5.x desktop GUI ships no steganography, so 1.5.0 has no vulnerable
+  caller. Found by the 1.4.9 pre-release scan.
+
+- **Desktop GUI escapes recovery-slot id/type in the removal dialog**
+  (gitlab#254, MEDIUM / CWE-116, ADVISORY 2026-39): the recovery-slot manager
+  rendered a slot's `id`/`type` from the file's unauthenticated
+  `list-recovery --json` output with bare `Text(...)`, including in the
+  irreversible-removal confirmation. A crafted file could embed bidi overrides or
+  `U+2028`/`U+2029` (which Flutter treats as line breaks) to forge a line under
+  the warning. `RecoverySlot.fromJson` now runs every displayed field through
+  `InputValidator.sanitizeForDisplay`; the raw id is kept only for the
+  `--slot-id` removal argument, and the removal dialog isolates and length-caps
+  the untrusted value so it cannot push the warning off-screen. 1.4.x only (the
+  1.5.x GUI does not ship the recovery-slot manager). Found by the 1.4.9
+  pre-release scan.
+
+- **liboqs / liboqs-python are built from pinned commit SHAs, not mutable tags**
+  (gitlab#252, CWE-494): the PQC dependency build cloned liboqs from
+  `--branch <tag>` and pip-installed liboqs-python from `@<tag>` with no
+  integrity check, so a repointed upstream tag could build and load arbitrary
+  post-quantum crypto code on the user's machine. All three build sites
+  (`build_local_deps.sh`, `build_local_deps.ps1`, and the `install-dependencies`
+  inline fallback in `crypt_cli.py`) now pin the exact commit — verifying the
+  clone's `git rev-parse HEAD` against the pinned SHA and failing closed on
+  mismatch, and installing liboqs-python from the commit SHA. Found by the 1.4.9
+  pre-release scan.
+
+- **D-Bus `Properties.Set` now authorizes the caller and validates the value**
+  (gitlab#250, MEDIUM / CWE-862+CWE-20, ADVISORY 2026-38): every functional
+  D-Bus method was polkit-gated, but `Properties.Set` was not and did no range
+  check, so any local UID could set `MaxConcurrentOperations` to 0/negative on
+  the system bus (wedging the concurrency gate into refusing every operation — a
+  persistent DoS of the root daemon) or to a huge value (removing the limit),
+  with no polkit prompt. `Set` now goes through the same fail-closed
+  `_authorize_caller` gate under a dedicated `ch.rmrf.openssl_encrypt.configure`
+  polkit action and rejects `MaxConcurrentOperations` outside `[1, 64]` and
+  `DefaultTimeout` outside `[1, 86400]` with `InvalidArgs`, mutating nothing
+  until every check passes. `Get`/`GetAll` stay unauthenticated (non-sensitive
+  counts). 1.4.x only (the D-Bus service is removed on 1.5.x). Found by the
+  1.4.9 pre-release scan.
+
+- **`tools/list_keystore_keys.py` no longer requires the keystore password on
+  argv** (gitlab#249, CWE-214): the helper script forced the keystore master
+  password onto the command line (visible in `ps` / `/proc/<pid>/cmdline` /
+  shell history). `--password` is now optional; the password is resolved from
+  the flag (with a stderr exposure warning), then the `KEYSTORE_PASSWORD`
+  environment variable, then an interactive `getpass` prompt — matching the
+  keystore CLI convention. Dev-tool hardening (the script ships only in a source
+  checkout), so no advisory. Found by the 1.4.9 pre-release scan.
+
+- **Decrypt enforces a hard KDF time ceiling, not just a memory ceiling**
+  (gitlab#247, MEDIUM / CWE-400, ADVISORY 2026-37): the pre-decryption cost
+  estimator refused configs over an 8 GiB memory ceiling but only *warned* on
+  time, so a crafted file with huge KDF iteration counts and tiny memory (e.g.
+  `argon2 time_cost=2**31, memory_cost=8`) pinned a CPU core before the password
+  was checked. A hard `HARD_TIME_CEILING_SECONDS` (120 s, ~30× the heaviest
+  preset) is now enforced alongside the memory ceiling at every decrypt
+  cost-gate via `enforce_time_ceiling()`, overridable with
+  `--allow-high-kdf-cost`/interactive confirmation and independent of the
+  `--quiet`/`--no-estimate` display flags. Found by the 1.4.9 pre-release scan.
+
+- **Plaintext-hash confirmation oracle removed from the file header**
+  (gitlab#245, MEDIUM / CWE-311, ADVISORY 2026-36): every file stored
+  `hashes.original_hash = sha256(plaintext)` in its cleartext header — an
+  unkeyed value readable without the password that let anyone holding the file
+  confirm a guessed or brute-forced plaintext offline, and fingerprint identical
+  plaintexts across files. It was redundant to the cipher's own authentication
+  (AEAD tag / Fernet HMAC / Camellia encrypt-then-MAC / streaming trailer HMAC /
+  v7 signed header). It is no longer written on any path and the metadata schemas
+  no longer require it; decrypt stays tolerant of older files that still carry it
+  (presence-guarded). Re-encrypt existing sensitive files to strip the oracle
+  from their headers. Found by the 1.4.9 pre-release scan.
+
+- **Remote pepper sealed with a salted, memory-hard wrap key** (gitlab#244,
+  MEDIUM / CWE-916, ADVISORY 2026-35): the keyserver-stored pepper was wrapped
+  under `HKDF-SHA256(password, salt=None)` (bare `SHA-256(password)` pre-v12)
+  with no AAD, so a hostile server holding the blobs could precompute one
+  fleet-wide table and guess the password at ~2 SHA-256/guess. New peppers now
+  use a self-describing v2 blob (`OEPPWRP2` magic ‖ 16-byte per-blob salt ‖
+  nonce ‖ AES-GCM) whose wrap key is `Argon2id(password, salt)` with fixed
+  parameters encoded by the magic version (never read from the untrusted blob,
+  avoiding a decrypt-time memory DoS) and the pepper name bound as AAD. Legacy
+  blobs stay readable; a v2-sealed pepper cannot be opened by a pre-1.4.9
+  client. Found by the 1.4.9 pre-release scan.
+
+- **`verify-usb` flags symlinked path components as tampering** (gitlab#242,
+  MEDIUM / CWE-59, ADVISORY 2026-34): the v2 added-file scan enumerated the
+  drive with `Path.rglob("*")`, which never descends a symlinked directory and
+  treats it as an ordinary entry (the hash side's `O_NOFOLLOW` binds only the
+  final component). An evil-maid attacker could replace a tool-tree directory
+  with a symlink to a copy holding the same files plus a planted
+  `__pycache__/*.pyc`; the listed files hashed clean, the planted file was never
+  enumerated, `added_files` stayed 0, and verify reported PASSED — code
+  execution. The scan now uses `os.walk(..., followlinks=False)` and flags any
+  symlinked directory or file as added, so a symlink-shrouded planted tree fails
+  verification (legit installs contain no symlinks). Found by the 1.4.9
+  pre-release scan.
+
+- **Keyserver login/registration reject non-HTTPS and unconfigured servers**
+  (gitlab#241, MEDIUM / CWE-319, ADVISORY 2026-33): `register()` enforced
+  `https://` but `login()` and `register_with_email()` did not, and cert pinning
+  only mounts for the https prefix, so an `http://` (or arbitrary non-configured)
+  server URL leaked the `client_id` (which alone yields tokens), a stored
+  password, and returned JWTs in cleartext. A shared validator now requires
+  `https://` and membership of `config.servers`, applied by all three entry
+  points before any request is built. Found by the 1.4.9 pre-release scan.
+
+- **FLAC steganography bounds the untrusted `total_samples` field** (gitlab#240,
+  MEDIUM / CWE-789, ADVISORY 2026-32): the 36-bit STREAMINFO `total_samples`
+  drove `np.random.randint(size=(total_samples, channels))`; the only guard
+  re-estimated above 100M samples, so a ~50-byte file declaring ~100M samples
+  allocated ~800 MB plus a copy. `total_samples` is now bounded by what the
+  audio payload could actually contain. Found by the 1.4.9 pre-release scan.
+
+- **Multi-QR key import bounds the untrusted `total` field** (gitlab#239,
+  MEDIUM / CWE-789, ADVISORY 2026-31): `_parse_multi_qr_data` took `total`
+  verbatim from a QR payload and drove `set(range(1, total+1))`; two QR images
+  declaring `total=10**12` hung `import-qr` until OOM. `part`/`total` are now
+  validated as ints in 1..99 (the 99-chunk creation cap) before any range
+  materialization. Found by the 1.4.9 pre-release scan.
+
+- **D-Bus `EncryptFile` no longer derives keys without password stretching**
+  (gitlab#228, HIGH / CWE-916, ADVISORY 2026-20 — **1.4.x only**, the D-Bus
+  service is removed on 1.5.x): the D-Bus handler hand-built a `hash_config`
+  with key names the key-derivation core does not read
+  (`sha512_iterations`, `argon2_time_cost`, `enable_hkdf`, …), so no KDF and
+  no hash rounds were ever enabled, and the always-non-empty dict also
+  defeated the encryptor's STANDARD-template default — every file encrypted
+  through the service was keyed by a single unstretched SHA-256 instead of
+  Argon2id (t=3, m=64 MiB, p=4), making offline password guessing ~6-7
+  orders of magnitude cheaper (silently, since `quiet=True` swallowed the
+  core's warning). The D-Bus key-derivation config now lives in a dedicated,
+  testable module that builds the structure the core actually consumes
+  (starting from the STANDARD template) and **fails closed** — the handler
+  refuses to encrypt when no hash rounds and no memory-hard/iterated KDF are
+  enabled, so no client option combination can produce an unstretched key.
+  Re-encrypt any files produced through the 1.4.x D-Bus service after
+  upgrading. Found by the 1.4.9 pre-release security scan.
+
+- **Decrypt auto-detection escapes and bounds the untrusted file header**
+  (gitlab#237, MEDIUM / CWE-117, ADVISORY 2026-29): `detect_encryption_type`
+  parsed the header with a bare `json.loads` and the "no matching identity"
+  path printed each `recipient key_id` unescaped, so a crafted `key_id` could
+  forge a Fingerprint line. The printed fingerprint is now escaped via
+  `sanitize_for_display()`, the recipient list read from the header is capped,
+  and the header is parsed through a size/depth/control-char-bounded security
+  scan before `json.loads`. Found by the 1.4.9 pre-release security scan.
+
+- **`verify-usb` escapes attacker-planted filenames** (gitlab#238, MEDIUM /
+  CWE-117, ADVISORY 2026-30): the tampered/missing/added file lists are built
+  from raw path names scanned off the untrusted drive (outside the authenticated
+  manifest) and were printed under the FAILED banner with no
+  `sanitize_for_display()`, so a planted filename could repaint a forged PASSED
+  verdict. Every drive-derived name, and the error-path exception, are now
+  escaped. Found by the 1.4.9 pre-release security scan.
+
+- **`info` now escapes terminal control characters in untrusted metadata**
+  (gitlab#236, MEDIUM / CWE-117, ADVISORY 2026-28): `print_file_info` printed
+  metadata fields (algorithm, cipher_chain, layer ciphers, hkdf_hash, salt, KDF
+  names/params, hashes, PQC public key, hsm_plugin, pepper_plugin/name, and —
+  for crafted legacy files that bypass schema validation — mode/xor_mode/
+  encrypted_at) to the terminal with no `sanitize_for_display()`, and `--json`
+  emitted raw bytes via `ensure_ascii=False`. A crafted file's cursor-movement /
+  erase-line / bidi bytes could repaint the info output, including forging a
+  Fingerprint line. Every metadata-derived value is now escaped and the JSON
+  output uses `ensure_ascii=True`. Found by the 1.4.9 pre-release security scan.
+
+- **Legacy GUI no longer reads its KDF settings from a CWD-relative file**
+  (gitlab#235, MEDIUM / CWE-426, ADVISORY 2026-27): `crypt_settings.py` defined
+  `CONFIG_FILE` as `~/.crypt_settings.json` but then reassigned it to the bare
+  relative name `crypt_settings.json`, so the legacy Tk GUI read/wrote whatever
+  `crypt_settings.json` sat in the launch directory. A planted CWD config (all
+  memory-hard KDFs off, one hash round) silently downgraded every file encrypted
+  that session. The reassignment is removed (the config always resolves to the
+  absolute per-user path), and `load_settings` now warns when the loaded config
+  provides no memory-hard/iterated key stretching. Found by the 1.4.9
+  pre-release security scan.
+
+- **The `info` reconstructed-CLI block now shell-quotes untrusted metadata**
+  (gitlab#234, MEDIUM / CWE-78, ADVISORY 2026-26): the "Reconstructed CLI"
+  command that `info` prints interpolated attacker-controlled metadata fields
+  (`pepper_name`, `hsm_plugin`, `algorithm`, `cipher_chain`, `hkdf.info`,
+  `argon2.type`, `randomx.mode`, and numeric fields) into shell text with no
+  quoting, so a `pepper_name` such as `work; curl … | sh #` ran attacker code
+  when the user pasted the block. Every interpolated value now passes through
+  `shlex.quote()`, so a crafted value stays a single shell token. Found by the
+  1.4.9 pre-release security scan.
+
+- **Pre-authentication resource-exhaustion hardening** (gitlab#233, MEDIUM /
+  CWE-770/405/1284, ADVISORY 2026-25): several paths let a crafted file drive
+  unbounded KDF cost past the pre-auth memory ceiling (gitlab#128), OOM-killing
+  or wedging decrypt before the password is verified. Balloon `parallel_cost`
+  (taken verbatim from the file) is now hard-capped in `balloon_m` and modeled
+  by the decryption estimator (F9); the estimator now also folds in the
+  `kdf_config` the executor actually consumes when it is shadowed inside
+  `derivation_config.hash_config` (F28) or supplied via a legacy v1–v3
+  `hash_config` (F29), so the memory ceiling sees those costs; and the recovery
+  path caps the number of slots processed before any KDF runs, enforces the
+  memory ceiling per slot, and the per-slot Argon2 memory cap is lowered to
+  1 GiB (F16). Found by the 1.4.9 pre-release security scan.
+
+- **Signature verification now rejects revoked and expired GPG keys**
+  (gitlab#232, MEDIUM / CWE-347, ADVISORY 2026-24): `gpg_runner.verify_detached`
+  — the single primitive behind plugin signatures (ENFORCE by default), the
+  per-package `PLUGIN.manifest` and the source-integrity manifest — decided a
+  signature was good from a `VALIDSIG`/`GOODSIG` status line alone, never
+  inspecting the gpg exit status or the `REVKEYSIG`/`EXPKEYSIG`/`EXPSIG` lines.
+  GnuPG emits `VALIDSIG` *alongside* `REVKEYSIG` for a cryptographically valid
+  signature made by a revoked key, so a compromised-then-revoked signing key (or
+  the project key after expiry) still got plugins accepted and executed.
+  Verification now requires `GOODSIG` + `VALIDSIG`, fails closed on
+  `REVKEYSIG`/`EXPKEYSIG`/`EXPSIG`/`ERRSIG`/`BADSIG` and on a non-zero gpg exit,
+  and binds the expected-fingerprint check to `VALIDSIG`'s primary-key
+  fingerprint rather than the possibly-subkey signing fingerprint. Found by the
+  1.4.9 pre-release security scan.
+
+- **Built-in plugin trust is now an allowlist, not a denylist** (gitlab#231,
+  MEDIUM / CWE-347, ADVISORY 2026-23): `_is_builtin_plugin` treated every file
+  under the package `plugins/` directory as a trusted built-in (skipping
+  signature verification, the AST scan and the TOCTOU hash pin) *except* the
+  three `user`/`community`/`official` subdirs — so a plugin dropped directly in
+  `plugins/` (top-level `plugins/*.py`) or under any new/unknown subdirectory
+  was trusted and `exec()`'d in the CLI process. `PLUGIN_DEVELOPMENT.md`
+  directed third-party authors to `plugins/` (top-level), so following the docs
+  bypassed the ENFORCE-by-default signature policy (arbitrary code execution
+  from an unsigned plugin). Built-in trust is now an **allowlist** of the
+  shipped plugin packages; top-level `plugins/*.py` and every unknown
+  subdirectory go through the full signature + AST + hash-pin gate, and the docs
+  now direct third-party plugins to `plugins/user`. Found by the 1.4.9
+  pre-release security scan.
+
+- **Identity loading now re-derives the fingerprint from the keys and fails
+  closed on a mismatch** (gitlab#230, MEDIUM / CWE-345, ADVISORY 2026-22):
+  `Identity.load` copied the `fingerprint` field verbatim from an untrusted
+  `identity.json` and never re-derived it from the sibling public-key `.pem`
+  files (only the import path did). Under the supplied-store threat model a
+  store whose JSON claimed a genuine out-of-band-verified fingerprint but whose
+  `.pem` files held attacker keys was indistinguishable from a real pinned
+  contact: `identity show` printed the good fingerprint while
+  `encrypt --for-identity` encapsulated to the attacker's key, signature
+  verification printed "verified from: <legitimate fingerprint>" against the
+  substituted signing key, and re-importing the real bundle raised no TOFU
+  warning. `Identity.load` now calls `check_fingerprint_consistency()` and
+  refuses to load an entry whose stored fingerprint does not match the public
+  keys on disk (so `list_identities` skips and reports it), and the
+  `add_identity` TOFU key-change check now compares the **recomputed**
+  fingerprint on both sides so a substitution is detected from the actual keys.
+  Found by the 1.4.9 pre-release security scan.
+
+- **Decryption now refuses a file that embeds an unencrypted post-quantum
+  private key** (gitlab#229, MEDIUM / CWE-287, ADVISORY 2026-21): `decrypt_file`
+  adopted a PQC private key embedded in a file's own metadata verbatim whenever
+  `pqc_key_encrypted` was false or absent (it defaults to `False`), and for
+  mayo/cross/ML-KEM hybrids the bulk key derives *only* from that embedded key —
+  so a crafted self-contained file decrypted under **any** password, printing
+  "integrity verified" and writing attacker-chosen plaintext (the mayo/cross
+  variant needs no liboqs). `decrypt_file` now **default-denies** any file whose
+  metadata carries an embedded PQC private key that is not marked encrypted,
+  *before* any key derivation runs, so no plaintext is produced; the legitimate
+  encryptor never emits such a key, so no real file is affected. A trusted
+  legacy file can still be read by passing the new
+  `allow_unencrypted_pqc_key=True`. Found by the 1.4.9 pre-release security scan.
+
+- **Dependency updates for published CVEs** (Dependabot; patched versions
+  smoke-tested against the crypto/PQC/steganography suites, 794 tests green):
+  - `pillow` 12.2.0 → 12.3.0 — 13 image-parsing CVEs (heap OOB writes in
+    `RankFilter`/`paste`/`crop`/`ImageCmsTransform`, decompression-bomb DoS
+    in the PDF/font/BDF/PCF readers, an mmap OOB read, a TGA-encoder heap
+    disclosure, and a Windows-viewer command injection: CVE-2026-54058/
+    54059/54060, 55379/55380, 55798, 59197/59198/59199/59200/59203/59204/
+    59205). Directly relevant: the steganography plugin parses
+    attacker-supplied cover images through Pillow.
+  - `cryptography` 48.0.1 → 50.0.0 — CVE-2026-69247 (Bleichenbacher oracle
+    in PKCS#7 EnvelopedData decryption). Not exercised by this project,
+    which uses its own AEAD/KEM stack and only PKCS#7 *block padding*, never
+    CMS EnvelopedData; bumped as hygiene.
+  - dev-only: `nltk` 3.9.4 → 3.10.0 — CVE-2026-12061 (ReDoS), 12072/12074
+    (path traversal in corpus readers), 12075 (DNS-rebinding SSRF filter
+    bypass); not imported by the shipped package.
+  - dev-only: `black` → 26.3.1 — CVE-2026-32274 (arbitrary file write via an
+    unsanitized cache filename); dev-time formatter, coordinated with the
+    `.pre-commit-config.yaml` rev (which had drifted to 23.12.1), and the
+    tree was reformatted to match.
+  The flatpak build manifest's `cryptography`/`Pillow` pins were bumped in
+  lockstep (enforced by `test_flatpak_pin_consistency`).
+
+- **Legacy `--parallel-kdf` dispatcher retired; every format now derives
+  through the single component implementation** (gitlab#224, hardening — no
+  user-relevant vulnerability, so no advisory): the parallel entry point kept
+  its own multiprocessing copy of every KDF/hash component for v11/v12 files,
+  and that duplication is where every parallel-vs-sequential divergence has
+  lived (the M3 Argon2 rounds bug, the RandomX silent drop #71). Two live
+  defects remained: the worker task list silently **omitted the whirlpool
+  component** — so a v11 whirlpool config derived a different (weaker) key
+  under `--parallel-kdf` than without it (silent key weakening on encrypt via
+  the API; an `AuthenticationError` instead of a decrypt on the CLI) — and its
+  balloon branch imported a module that never existed, so v11 balloon +
+  `--parallel-kdf` always errored. `generate_key_independent_xor_parallel` now
+  routes **all** format versions through
+  `crypt_core.generate_key_independent_xor(parallel=True)` (the #220 thread
+  pool, byte-identical to sequential by construction), retiring
+  `_hash_worker`/`_kdf_worker` and the progress-queue machinery outright, so
+  the two paths can never drift again. Whirlpool participates in the pool,
+  balloon works under `--parallel-kdf`, and the all-empty-config handling now
+  lives in the shared path: a parallel request is refused (the retired
+  dispatcher's contract), the sequential path keeps deriving for API
+  compatibility but now warns that the key is a single unstretched hash
+  (previously the check was unreachable and it proceeded silently), and
+  decryption metadata is fully exempt so any legacy file stays readable.
+  The Python 3.13 whirlpool loader also registers the extension in
+  `sys.modules`, so the component's lazy import agrees with
+  `WHIRLPOOL_AVAILABLE` instead of failing after the capability check passed.
+  Compatibility note (M3 precedent): a v11 whirlpool file encrypted **with**
+  `--parallel-kdf` by ≤1.4.7 got the dropped-component key baked in and only
+  decrypted with the flag; such quirk files (whirlpool explicitly enabled AND
+  parallel encrypt) lose that accidental decrypt path — the recorded KDF
+  config is now honored exactly.
+
+- **Parallel-KDF thread-pool hardening** (gitlab#224, hardening — no
+  user-relevant vulnerability, so no advisory): the #220 pool defaulted to one
+  worker per component (up to 13 threads) regardless of cores; it now honors
+  the `--kdf-workers` contract ("max: CPU count") — capped at the CPU count,
+  the component count, **and** the largest count whose worst-case co-resident
+  memory-hard components stay within the 8 GiB decrypt safety ceiling
+  (concurrency turns peak KDF memory from max(components) into a sum, and the
+  encrypt path had no ceiling check of its own — a custom high-memory config
+  could previously be encrypted above the ceiling and then be refused by
+  `decrypt --parallel-kdf`'s summed-estimate enforcement). Per-component
+  memory comes from the same estimator the decrypt ceiling uses, so encrypt
+  and decrypt agree on what a config costs; an unparseable config estimates
+  as over-ceiling and degrades toward sequential execution. Abort handling:
+  Ctrl-C while deriving no longer gets captured as a component failure — it
+  previously made the pool drain **every** remaining component (minutes of
+  apparent hang for expensive configs, and a second Ctrl-C then bypassed the
+  error-path zeroization sweep); the abort now propagates immediately,
+  cancels unstarted components and deterministically wipes the already-
+  collected component buffers — including results that finished but were
+  never retrieved. (Honesty note: a component already running in a worker
+  thread cannot be cancelled mid-KDF, so the *process* still waits for the
+  slowest in-flight component before exiting; its buffer is wiped when it
+  completes.) When several components fail, the non-first failures are now
+  logged (labels and exception text only) instead of silently vanishing
+  behind the first. The decrypt-side ceiling now enforces the same
+  worst-case *co-resident* sum the encrypt clamp guarantees (sum of the
+  worker-count largest components) instead of the sum of all components,
+  which refused legitimately-produced files with more than two memory-hard
+  components; and whirlpool derivation falls back to the `pywhirlpool`
+  interface when only that package is installed, matching the legacy chain
+  instead of failing closed on a capability the probe reported as present.
+
+- **Secret-redaction follow-ups from the #144 review** (gitlab#147), four
+  hardening fixes (no user-relevant vulnerability, so no advisory):
+  - Strict UTF-8 encodes on secret material could leak a byte through a
+    `UnicodeEncodeError` message (which embeds the offending character and its
+    offset), printed verbatim by the generic CLI handler outside the
+    `debug_secret()` chokepoint. The `debug_secret` chokepoint, the rekey
+    password encode, and the recovery `_passphrase_kek` encode now use
+    `surrogateescape` (round-tripping the non-UTF-8 bytes `os.environ`/argv
+    already decoded that way) and refuse the residual lone-high-surrogate case
+    with a value-free error instead of echoing bytes.
+  - `security_logger._value_looks_secret` could itself raise from inside log
+    scrubbing on a lone-surrogate value, propagating into the operation being
+    logged; it now fails closed (treats an unencodable value as secret).
+  - Secret environment variables (`CRYPT_PASSWORD`, `OPENSSL_ENCRYPT_PASSWORD`,
+    `OPENSSL_ENCRYPT_REKEY_PASSWORD`) were deleted without first registering
+    their fingerprint, so redaction went inert the moment the variable was
+    removed — a later `log_event` could then write the value unredacted. Every
+    such site now registers before deleting.
+  - `-p/--password` on `add-recovery`/`remove-recovery` now warns that it is
+    visible in the world-readable process list, matching `--recovery-code` and
+    `--rekey-password`.
+
+- **Credential-channel follow-ups from the #154/#159 review** (gitlab#180),
+  three defense-in-depth/consistency fixes (no user-relevant vulnerability, so
+  no advisory):
+  - `$OPENSSL_ENCRYPT_SIGNER_PASSPHRASE` is now consumed up front on the
+    `encrypt --sign-with` path — right after argument handling, before the
+    plugin system, HSM/pepper plugins and keyserver connections come up — and
+    passed to the resolver as an already-read value, restoring the same
+    read-once-and-remove guarantee `sign` gets. Previously the variable stayed
+    live in `os.environ` through plugin import and network setup (no
+    full-environment child is spawned in that window, so this is hardening).
+  - `info` can now request the second password non-interactively: it reaches
+    the monolithic parser, which lacked `--hidden-header`, so
+    `$OPENSSL_ENCRYPT_SECOND_PASSWORD` was never read and the ignored-variable
+    warning told the user to pass a flag `info` could not accept — leaving only
+    the tty prompt the environment channel exists to replace for GUI/CI
+    callers. `info --hidden-header` now reads a keyed hidden file's metadata
+    through the env channel. The flag only *requests* the credential; a planted
+    variable still cannot enable keyed mode by itself.
+  - The `--second-password-fd` blank check now routes through the same
+    canonical rule (`credential_env.validated`) the flag and env channels use,
+    instead of a bytes-only `.strip()` that treated a Unicode-whitespace-only
+    value (e.g. U+00A0) as non-blank on the fd channel while `--second-password`
+    rejected it. The env channel now also rejects an embedded newline only when
+    encrypting, matching fd/flag, so a keyed hidden file stays readable through
+    every channel.
+
+- **A planted template file can no longer rank itself first or downgrade key
+  derivation** (gitlab#169, ADVISORY 2026-19): the template subsystem trusted a
+  template file for its self-asserted `security_score`/`security_level` (taken
+  verbatim, and used as the `template list` sort key), and applied a template's
+  `hash_config` with no KDF floor — so a `.json`/`.yaml` dropped into the
+  template directory could advertise a top rating, sort to the front, and set
+  e.g. `pbkdf2_iterations: 1` with Argon2 off (a downgrade). The directory was
+  also created group/other-writable (~0755), letting another local user plant
+  one. Now: the rating is **recomputed from the actual config on load** (a
+  file's claim is discarded; an unanalysable config sorts last); applying a file
+  template **warns loudly** when its KDF params fall below a floor (no memory-hard
+  KDF at strength and pbkdf2 < 600 000); and the template directory has its
+  group/other write bits stripped on both the management and the `encrypt
+  --template` read paths, closing the plant vector. Local attack only (requires
+  template-dir write); Medium. The KDF-downgrade + directory-permission fixes
+  apply to **both** maintenance lines (the `encrypt --template` path exists on
+  1.5.x too — fixed there in 1.5.0); only the self-asserted-score ranking is
+  1.4.x-specific, since the template-management subsystem does not exist on
+  1.5.x. (The warning is advisory and goes to stderr; the directory permissions
+  are the load-bearing protection against a planted template.)
+
+- **`identity create --hsm onlykey` no longer silently binds the identity to
+  the YubiKey** (gitlab#218, ADVISORY 2026-18): `cmd_create` computed the
+  correct `hsm_type` but used it only for a pre-flight check — `Identity.generate()`
+  had no `hsm_type` parameter and built the protection service with the
+  `yubikey` default, and the recorded `hsm_config.hsm_type` was never consulted
+  for plugin selection (both `_encrypt_private_key` and `_decrypt_private_key`
+  also used the default). So an OnlyKey selection was dropped: with only an
+  OnlyKey present, creation failed with a misleading "no Yubikey available"
+  error; with both devices present, the identity was silently YubiKey-bound and
+  could never be opened with the OnlyKey. `generate()` now takes an `hsm_type`
+  (default `yubikey`, threaded from `identity create`), and the encrypt/decrypt
+  paths build the service from the identity's recorded `hsm_config.hsm_type`, so
+  an OnlyKey identity uses the OnlyKey plugin end to end; HSM error messages name
+  the configured device instead of hardcoding "Yubikey". Existing YubiKey
+  identities are unaffected (the `yubikey` default and the legacy fallback are
+  preserved). Not remotely exploitable (no adversary, no key disclosure); Medium
+  for the wrong-trust-anchor and lockout risk. Recreate any onlykey identity
+  made on an affected release with both devices attached.
+
+- **The file password was printed in cleartext by the `--debug` argv dump
+  for bundled and abbreviated option spellings** (gitlab#209, ADVISORY
+  2026-17). Under `--debug` the tool prints its own argv, routing
+  secret-valued options through the redaction chokepoint first — but it
+  selected what to redact by *exact string membership*, plus `--option=value`
+  and a rule matching a token literally starting with `-p`. argparse accepts
+  two further spellings that neither covers.
+
+  `encrypt` declares `-a/--armor`, `-f/--overwrite` and `-s/--shred` as
+  booleans on the same parser as the value-taking `-p/--password`, so
+  argparse resolves `-apHunter2` to `-a` plus `-p=Hunter2` — a token that
+  does not start with `-p`. And no parser sets `allow_abbrev=False`, so
+  `--manifest-p` binds `--manifest-password` while matching no set member.
+
+  This one **does** affect released versions: the v1.4.8 sanitizer was
+  lifted from the tag and executed, and both `-apHunter2` and `-ap Hunter2`
+  printed the password. Rotate any password used with `--debug` and a
+  bundled or abbreviated spelling. The documented `-p PASSWORD` and
+  `-pPASSWORD` forms were always redacted and are unaffected.
+
+  Each token is now resolved the way argparse resolves it before the
+  redaction decision. Ambiguity fails **closed** — an unresolvable option
+  that could name a secret is redacted, which is deliberately the opposite
+  of the command scan's default, because printing a password is worse than
+  redacting a filename.
+
+- **`--` defeated the keyserver-credential redaction, and could trigger a
+  keyring deletion** (security review of gitlab#177). gitlab#177 made `--`
+  a working spelling in the argv layer; two argv scanners had not learned
+  about it.
+
+  The `--debug` argv dump redacts the token *immediately after* the
+  `keyserver set-token`/`login` positional. With `--` in between it redacted
+  the separator and printed the credential verbatim — and `--` is precisely
+  what a user must type when the token starts with `-`, which base64url
+  tokens and JWT segments do. stderr reaches terminal scrollback, is merged
+  by `2>&1`, and the desktop GUI keeps a persistent debug log. The
+  separator is now skipped rather than consuming the redaction.
+
+  Separately, `--keyring-remove` was a raw membership test over the whole of
+  `sys.argv`, running before any parsing, so
+  `crypt shred -- --keyring-remove important-label` **deleted that stored
+  password** and exited 0 having shredded nothing — when what the user
+  described was two files with those names. It is now honoured only in
+  top-level option position (before any `--`, before the command), and the
+  `--keyring-remove=LABEL` spelling works, which the old scan missed
+  entirely.
+
+  Neither is a regression against a released version: the positional
+  redaction rule is itself new in 1.4.9 — 1.4.8 did not redact that token at
+  all, which is the already-recorded gitlab#133–136 item — and `--` was not
+  usable in this layer before gitlab#177.
+
+- **`enable-plugin`/`disable-plugin` reported success and changed nothing**
+  (gitlab#199): both set an in-memory flag on a registration object that
+  defaults to enabled at construction. Nothing wrote it to disk and nothing
+  read it back, and the CLI builds a fresh manager per invocation — so the
+  process died with the only copy of that state:
+
+  ```
+  $ openssl-encrypt disable-plugin --plugin-id steganography
+  ✅ Plugin steganography disabled successfully
+  $ openssl-encrypt list-plugins | grep -i stegano
+  🟢 Enabled Steganography (v1.0.0)
+  ```
+
+  This is worse than a missing feature: a user who disables a plugin *for a
+  security reason* got an unambiguous success message while the plugin
+  loaded and ran enabled on the very next command — a false assurance about
+  a control they believed they had applied.
+
+  The state is now persisted through the plugin config and read back at
+  load time, and a plugin recorded as disabled is registered but **not
+  initialized** — `initialize()` is where a plugin claims resources and
+  installs hooks — and not dispatched. It stays listed, as disabled, so it
+  can be turned back on. If the state cannot be written, the command now
+  reports failure instead of falling back to the flag that caused this.
+
+  Residual, stated rather than papered over: a disabled plugin is still
+  discovered and imported, so its module-level code runs. Refusing the
+  import needs a file-to-id map that does not exist before the module is
+  loaded.
+
+  Reachable only from 1.4.9 (gitlab#179), so no released version is
+  affected and no advisory is warranted.
+
+- **`create-usb` overwrote root autorun files and wrote drive secrets at
+  the default umask** (gitlab#207): `_is_removable_drive` only ever logged a
+  warning, so a mistyped `--usb-path` went ahead — creating a portable
+  installation in, say, the home directory and **overwriting** any
+  `autorun.inf`, `autorun.sh` or `.autorun` already there, with no existence
+  check at all. Those are now refused unless `--yes` is given, and a target
+  that does not look removable requires confirmation (or `--yes`
+  non-interactively) before anything is written.
+
+  Nothing on this path was `chmod`'d except the three files deliberately
+  made 0755, so the per-drive salt, the integrity manifest and the portable
+  config were created at the process umask — typically 0644. They are now
+  owner-only where the filesystem supports it, best-effort so that a FAT32
+  target (where modes are meaningless) does not fail the whole operation.
+
+  The confirmation lives at the CLI layer rather than in the library
+  function: one that prompts is unusable from a script.
+
+- **The helper written onto the drive could not run** (gitlab#206):
+  `create-usb` writes a standalone `crypt.py` to the drive, chmods it 0755,
+  and points the workspace README and the Windows batch files at it — and
+  its template carried a package-relative import (`from ..crypt_utils
+  import eprint`), which in a standalone script fails immediately with
+  `ImportError: attempted relative import with no known parent package`. It
+  now has a local `eprint` and runs.
+
+  Two more defects from the same generator: the Windows batch files were
+  written from a non-raw string containing `\n`, so each was a single
+  unusable line with a literal escape; and the generated help told users to
+  pass the master password as `--password mypass`, putting it in the
+  process list and shell history. The batch files no longer take a password
+  argument at all, and the help now points at the prompt or
+  `CRYPT_PASSWORD`, with the reason stated. Guidance written *by* the
+  security tool onto the medium carries more weight than a user's own
+  habit, which is why this counted as more than a docs nit.
+
+  Finally, `--executable-path` and `--keystore-to-include` silently skipped
+  a path that did not exist, recording `included: False` while the CLI
+  summary just omitted the line — so a typo left the user believing their
+  keystore was on the drive. Both are now checked up front and refused.
+
+- **A new USB drive got the weakest key derivation in the tool, and
+  `--pbkdf2-iterations` was silently ignored** (gitlab#205): every round
+  option defaults to 0, so a plain `create-usb --usb-path X` passed no
+  config and derived with PBKDF2-HMAC-SHA256 at 100 000 iterations — what
+  this codebase's own comment calls "below the OWASP floor" — to protect an
+  encrypted keystore and integrity manifest on removable media, the
+  artifact with the highest offline-attack exposure the tool writes.
+  Argon2, scrypt and Balloon are not wired into this path at all.
+
+  Separately, `multi_hash_password` never reads `pbkdf2_iterations`: 100k
+  and 5M derive the *identical* key. The value was still written into
+  `hash_config.json` and `.integrity`, so the drive advertised a work
+  factor that had never been applied. That option is now refused with a
+  pointer to the round options that do work, rather than recorded as a
+  control that was not applied.
+
+  A drive created with no explicit rounds now **records** a strong config
+  instead of falling through to the weak default. Expressed as hash rounds
+  rather than a raised PBKDF2 count deliberately: the fallback's iteration
+  count is recorded nowhere a verifier can read — the drive's
+  `security_profile` lives inside `.integrity`, which is encrypted with the
+  key derived from that profile — so raising it would derive a different
+  key, fail to decrypt, and report a good drive as **tampered**. Rounds are
+  stored on the drive and read back on verify, so new drives carry their
+  own parameters and the no-config path stays byte-identical for drives
+  that already exist.
+
+- **`create-usb` could be tricked into overwriting an arbitrary file**
+  (gitlab#204): the hash-manifest encryption wrote to a path built by
+  string concatenation — `temp_input_path + ".enc"`. The *input* was a
+  claimed 0600 temporary file, but the output was an unclaimed sibling in
+  the shared temp directory whose name anyone able to list it could derive,
+  and `encrypt_file` defaults to `secure_mode=False`, so no `O_NOFOLLOW`
+  was applied. A local attacker who pre-planted that name as a symlink got
+  an arbitrary file overwrite as the invoking user — demonstrated, with the
+  victim file replaced by ciphertext — and the subsequent permission fix-up
+  then chmod'd the symlink target.
+
+  Both temporary paths are now claimed by their own `mkstemp`, and the
+  encryption runs with `secure_mode=True` so a symlink at the output path
+  is refused at the OS level instead of followed.
+
+- **`create-usb` copied private keys onto the drive** (gitlab#203): the
+  project copy used `shutil.copytree` with no filter and the default
+  `symlinks=False`, so run from a source checkout — which the project-root
+  walk explicitly targets — it copied the whole tree. Against this checkout
+  that was **4 test identity private keys** (`*_private.pem` under
+  `unittests/testfiles/`) and 23 MB, landing unencrypted on a drive that is
+  by design carried around, typically on FAT32 where the preserved mode
+  bits mean nothing. They are test fixtures rather than production secrets,
+  but the same path would copy a real key a user had placed in the tree.
+
+  Key material (`*.pem`, `*.key`, `*.pqc`), the test tree and build caches
+  are now excluded, matched by name at every depth — a key does not become
+  safe to ship by sitting a directory deeper — and symlinks are copied as
+  links instead of being dereferenced, which was a second way for content
+  outside the copied subtree to end up on the drive. The copy is 5 MB and
+  the tool itself is unchanged.
+
+- **A planted named pipe hung `verify-usb` forever** (gitlab#202):
+  `_sha256_file` claimed in its own docstring that its byte bound stopped "a
+  FIFO / symlink to an unbounded stream ... from looping forever". It did
+  not — the bound applies to the read, but `open()` on a FIFO blocks inside
+  `open()` itself, before a byte is read. The added-file and autorun scans
+  guarded with `is_file()`; the main manifest loop guarded with `exists()`,
+  which is true for a FIFO. So replacing any manifest-listed file with a
+  named pipe hung verification indefinitely — on the exact command whose
+  job is to tell you the drive was tampered with.
+
+  Files are now opened `O_NOFOLLOW | O_NONBLOCK` and required to be regular,
+  and a listed name that is no longer a regular file is reported as
+  **tampering** rather than hashed. That is the correct verdict: a real
+  manifest lists regular files, so anything else at that path is a
+  substitution. `O_NOFOLLOW` also stops a listed name replaced by a symlink
+  from causing a file outside the drive to be read.
+
+- **The portable-USB drive key was never actually wiped** (gitlab#201):
+  every `secure_memzero` call on that path was a no-op whose return value
+  was discarded. `PBKDF2HMAC.derive()`, `multi_hash_password` and the
+  length-normalising `sha256(...).digest()` all return immutable `bytes`,
+  and `secure_memzero` refuses immutable input and returns `False` without
+  touching the caller's buffer — the documented M10 contract. So the
+  AES-256 key protecting an encrypted keystore and the integrity manifest
+  *on removable media* stayed resident for the process lifetime while the
+  code read as though it had been wiped.
+
+  The derived key is now held in a `bytearray` from creation, so the
+  existing wipes take effect. Derived values are byte-identical — pinned by
+  a test against a known PBKDF2 vector — so existing drives verify
+  unchanged.
+
+  `verify_usb_integrity` also wiped on the success path only: a bare
+  `except: raise` with no `finally`, so the overwhelmingly common outcome —
+  a wrong password, or an actually tampered drive — left both the key and
+  the password resident. That and the equivalent gap in
+  `_read_hash_config_from_integrity` are now `try/finally`, matching
+  `create_portable_usb`, which already had it.
+
+- **`verify-usb` took its key-derivation cost from the drive it was
+  checking** (gitlab#200): `verify-usb` is the command you run *because you
+  do not trust the drive*, and with no `--sha*-rounds` flags it read
+  `config/hash_config.json` — plaintext, unauthenticated, sitting on that
+  same drive — and fed it straight to the KDF before any integrity check
+  ran. Measured before the fix, the attacker set the work factor linearly:
+  `{"sha512": 1}` derived in 0.02 s, `1000000` in 2.48 s, so `10**12`
+  extrapolates to roughly 29 days; an Argon2 or scrypt block with a large
+  `memory_cost`/`N` exhausts memory instead, and the uncapped `json.load`
+  OOM'd on a planted multi-GB file before parsing finished.
+
+  The read is now capped and the document validated against an allowlist of
+  exactly what `create-usb` writes — the flat hash-round keys, the PBKDF2
+  iteration count, and the `type` key — with integer values in range. An
+  allowlist rather than a per-key ceiling because the file carries no
+  authentication at all: there is no reason to honour a shape the writer
+  never produces, which is what refuses the memory-hard blocks by shape. A
+  rejected file falls back to the built-in derivation exactly as a missing
+  one does, so a real drive still verifies.
+
+  Reachable only from 1.4.9: `verify-usb` exits 2 with `invalid choice` in
+  every release up to 1.4.8 (gitlab#179), so no released version is
+  affected and no advisory is warranted.
 
 ### Fixed
 
@@ -23,6 +1232,1582 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`standard`/`paranoia`) or combines with `--algorithm` for a custom
   chain, and the cipher is `xchacha20-poly1305`, not `xcha-poly1305`.
   Documentation only; no code changes.
+
+- **Synced the stdout-leak whitelist with `info --json`'s `ensure_ascii=True`**
+  (gitlab#246): `test_no_stdout_leaks` anchors each authorized `print` on its
+  exact source text, but the `print_file_info` JSON print was hardened to
+  `ensure_ascii=True` (terminal-escape neutralization) without updating the
+  anchor, so the whitelist test failed. Updated the anchor to match. Test-only.
+
+- **Repaired newline-corrupted asymmetric-wrap identity test fixtures**
+  (gitlab#227): the `end-of-file-fixer`/`trailing-whitespace` pre-commit
+  hooks lacked a `testfiles/` exclude (which `detect-private-key` already
+  has), so a trailing newline had been appended to the raw-binary key
+  fixtures under `unittests/testfiles/asymmetric_wrap/` when they were last
+  regenerated. That extra byte lands in the AES-GCM tag of the encrypted
+  private-key blobs (→ `InvalidTag`) and overruns the fixed-length ML-KEM /
+  ML-DSA public keys (→ "byte string too long" / signature-verify failure),
+  so `test_password_wrap_ct_binding` failed deterministically on this line
+  (1.5.x was unaffected; it surfaced only now because feature-branch CI
+  never ran the suite before the manual test job was added). The spurious
+  byte was stripped from the eight affected key files (verification-driven —
+  the legitimately-`0x0a`-terminated encrypted-corpus fixtures are left as
+  they are), and both whitespace hooks now exclude `testfiles/` so binary
+  fixtures can no longer be mangled. Test-only; no product code changed.
+
+- **Batch-tab hardening follow-ups from the #214 review** (gitlab#215):
+  `--verify-from` and `--no-verify` are now mutually exclusive at the CLI
+  parser boundary (the pair was accepted and `--no-verify` silently won —
+  claiming an authenticity check that never ran); the batch run snapshots
+  its **entire** configuration into a value object at start (password,
+  algorithm, hash/KDF config, recipients, signer, cascade, HSM/pepper,
+  integrity settings — previously half were read live mid-run, so editing a
+  control changed how the remaining files were processed); a class-level
+  run guard refuses a second concurrent batch after the tab was left and
+  re-entered mid-run (the fresh state's idle UI allowed one over the same
+  output paths); the Decrypt tab distinguishes an identity-store **load
+  failure** from an empty store (the "create one" hint over an unreachable
+  CLI sent users the wrong way) and surfaces store entries the CLI reported
+  as unreadable; merged signer dropdown entries carry their `(own)`/
+  `(contact)` source tag so a name collision stays visible (#173 surface);
+  the debug-window command mask covers every secret-valued flag
+  (`--stego-password`, keystore/rekey/second passwords, recovery code,
+  TOTP code) instead of only `--password`, and the CLI's `--debug` argv
+  dump now redacts `--stego-password`. A widget test drives a full 2-file
+  batch decrypt through the fake CLI seam and pins that every argv keeps
+  `--no-verify` (never `--verify-from`) and every results row carries the
+  "verification SKIPPED" marker.
+
+- **Parallel-KDF GUI wording and stale comments refreshed** (gitlab#225):
+  the desktop Encrypt tab's existing "Parallel key derivation" control (this
+  line has had it since gitlab#153) now describes the post-#220/#224 reality
+  — same key with or without the flag, speedup on memory-hard KDF
+  configurations, worker count capped by CPU cores and the memory safety
+  ceiling — and the CLIService/core comments that still described the
+  retired unclamped multiprocessing implementation were corrected. (The
+  wiring itself was the 1.5.x half of this issue.)
+
+- **The orphan-password NOTE now fires on every incomplete encrypt exit,
+  with wording that tracks whether a usable ciphertext exists**
+  (gitlab#223): the `--random-password-out` file is written before the
+  ciphertext, and the NOTE announcing a leftover 0600 orphan was wired into
+  individually chosen early-exit sites — a set the #222 review found
+  incomplete (XOR mutual-exclusivity aborts, keystore-branch failures and
+  validation `sys.exit(1)` sites bypass the top-level `except Exception` by
+  language rule, leaving an unannounced orphan a retry then refuses with
+  `FileExistsError`). Coverage is now structural: the encrypt dispatch runs
+  under a `try/finally` tracking two facts — *a usable output exists on
+  disk* (set the moment the ciphertext is written, before stego/armor
+  post-processing) and *the run completed normally* (set last). Every
+  incomplete exit announces the orphan exactly once; the wording says
+  "verify before removing" whenever an output may exist (e.g. a
+  steganography or armor failure after the ciphertext was written — telling
+  the user "you can remove it" there would delete the only credential of a
+  live encrypted file) and "you can remove it" only when provably none
+  does; and a completed run stays silent. The same guarded NOTE now also
+  fires from the signal handler (Ctrl-C during a memory-hard KDF was the
+  most likely unannounced orphan of all — a signal death runs neither the
+  dispatch `finally` nor `atexit`). A pre-existing `--random-password-out`
+  destination is refused with its own message instead of the removable-
+  orphan NOTE (it may hold the password of an earlier, successful run), and
+  the NOTE sanitizes the echoed path like every other untrusted terminal
+  echo (#172 discipline).
+
+- **Parallel-KDF truthfulness and pinning follow-ups** (gitlab#224 items
+  6/7/9/10): the `--parallel-kdf` help still described the retired
+  implementation ("v11 only, requires --independent-xor … Requires
+  multiprocessing support"); both parsers now state what the flag actually
+  does — thread-pool derivation for every producible format, byte-identical
+  key, never needed to decrypt — and set honest performance expectations
+  (measured: memory-hard KDF configs ~1.9× faster, pure hash-round configs
+  ~1.0× because the loops serialize on the GIL). The components' heavy lazy
+  imports (blake3, whirlpool, argon2, balloon, randomx — the last runs
+  subprocess availability probes at import) are resolved on the main thread
+  before workers start. New golden pins cover the component-salt names and a
+  one-of-each-component key for v13/v14 in both modes — previously only
+  sha256/argon2/scrypt had goldens, so a typo in any other component's
+  domain-separation name would have changed derived keys undetected. Stale
+  "parallel delegates to sequential" invariant wording in the balloon
+  fail-closed tests updated to describe the thread-pool reality.
+
+- **`--parallel-kdf` now actually parallelizes v13/v14 files** (gitlab#220):
+  the only formats this line can produce are v14 (the default) and v13, both of
+  which use the Independent-XOR key derivation. `--parallel-kdf` routed those
+  straight back to the sequential derivation (printing "Parallel KDF not
+  supported for v13"), so the flag was a no-op for every file a user could make.
+  The Independent-XOR components are mutually independent — each derives from the
+  same normalized input with a domain-separated per-component salt — and are
+  combined with (commutative) XOR, so they can be computed concurrently with a
+  **byte-identical** result. `generate_key_independent_xor` now builds the
+  per-component work as a task list and runs it either sequentially or on a
+  `ThreadPoolExecutor` (`--kdf-workers`, capped at the component count), and the
+  parallel entry point dispatches v13/v14 there instead of downgrading. A file
+  encrypted with `--parallel-kdf` decrypts without it and vice-versa. The
+  RandomX fail-closed guard (an enabled-but-unavailable RandomX aborts rather
+  than silently dropping a component, gitlab#71) is preserved in both modes, and
+  on the decrypt path the existing memory ceiling is already enforced against
+  the *summed* (concurrent) KDF memory when `--parallel-kdf` is set, so a crafted
+  file cannot amplify peak memory past the guard. Intermediate component buffers
+  are deterministically zeroized on the parallel error path.
+
+- **`PepperConfig.get_default_config_path()` did not exist** (gitlab#221):
+  three error paths in `crypt_cli.py` and `crypt_core.py` call
+  `PepperConfig.get_default_config_path()` to point the user at the pepper
+  config file, but only the module-level `_get_default_config_path()` existed —
+  so any path that reached those sites raised `AttributeError` instead of the
+  intended "Configure at: …" message. Added the missing static accessor.
+
+- **`telemetry opt-out` now persists** (gitlab#166 part 5): `opt_out()` stopped
+  uploads, cleared the buffer and deleted the API key, but wrote no persistent
+  disable — so a stale `OPENSSL_ENCRYPT_TELEMETRY=1` in the environment silently
+  re-enabled collection and registered a fresh key on the next run, defeating the
+  privacy control the user just invoked. `opt_out()` now writes a persistent
+  marker (`~/.openssl_encrypt/telemetry/opted_out`) that `_is_telemetry_enabled`
+  honours ahead of the env/config sources; removing the file (and unsetting the
+  env var) re-enables. This resolves the last part of gitlab#166.
+
+- **Template subsystem hygiene and hardening** (gitlab#169 parts 3/4/6): the
+  `template create`/`analyze`/`delete` subcommands read `args.template_name`
+  while the parser defines the positionals `name`/`template`, so each always
+  exited 1 — they read the right dest now; and `template list --use-case`
+  filtered on an undefined `args.category` (silently ignored), now filters by
+  the template's declared use-cases. Hardening: `create_template_from_args` no
+  longer copies `vars(args)` wholesale into the saved template (secret-named
+  keys are dropped — defense-in-depth, since a template's config is KDF
+  parameters, not credentials), `save_template` writes the file atomically at
+  `0600` instead of at the umask, and `TemplateManager.load_template` constrains
+  every candidate path to the template directory (`os.path.commonpath`) rather
+  than reading a raw caller-supplied absolute path first. 1.4.x only — the
+  template-management subsystem does not exist on 1.5.x.
+
+- **`identity`/PIV CLI hygiene** (gitlab#163): three misleading-or-dead
+  bits of the identity/HSM surface. (1) `identity create` declared
+  `--hsm-piv-slot`/`--hsm-pkcs11-lib`/`--hsm-biometric` but its `--hsm` choices
+  exclude `piv` and `cmd_create` never read them, so a caller could pass a PIV
+  slot and have it silently ignored — those flags are removed from `identity
+  create` (they remain on the commands that actually use the PIV backend). (2)
+  `--no-touch`'s help claimed to "Disable HSM touch / button-press requirement",
+  but it only suppresses the interactive "touch your device" prompt — the
+  device's touch policy is configured on the device itself; the help now says
+  so. (3) `--hsm-piv-slot` accepted slot `9c`, which this backend cannot use
+  (signing on 9c needs per-signature re-authentication and fails at runtime with
+  `CKR_USER_NOT_LOGGED_IN`); `9c` is now rejected at the argument parser with a
+  clear message pointing to 9a/9d/9e, instead of failing cryptically mid-operation.
+
+- **`analyze-config` no longer crashes on every invocation** (gitlab#219):
+  `main_with_args`'s subparser-args compatibility layer back-fills
+  `args.algorithm = None` for any command that does not define `--algorithm`,
+  and analyze-config defines only `--encryption-data-algorithm`. The old cipher
+  extraction read that back-filled `None` (the `config.get("algorithm",
+  "aes-gcm")` fallback never fired because the key was present), and the scorer
+  then did `"gcm" in None` → `TypeError`, so `analyze-config --output-format
+  json` printed nothing and exited 1 for every flag combination. The gitlab#168
+  whitelist fix reads `encryption_data_algorithm` instead of the back-filled
+  `algorithm`, so the command runs end-to-end again; a regression test now
+  drives the REAL `build_subparser()` → `main_with_args()` path (which every
+  prior analyze-config test bypassed). 1.4.x only — the analyze-config cluster
+  was removed on 1.5.x.
+
+- **`analyze-config` now scores the flags you pass, not argparse defaults**
+  (gitlab#168, gitlab#166 part 2): `run_config_analyzer` fed `vars(args)`
+  straight into the analyzer, but the analyzer reads different key names than
+  the analyze-config parser produces — `pbkdf2_iterations` vs `pbkdf2_rounds`,
+  `argon2_memory` vs `argon2_memory_cost`, `enable_scrypt`/`enable_balloon`/
+  `enable_hkdf` (never defined on that parser at all), and `algorithm` vs
+  `encryption_data_algorithm`. So `analyze-config --pbkdf2-rounds 600000
+  --scrypt-n 1048576` scored PBKDF2 and scrypt as **absent** and
+  `--encryption-data-algorithm` was ignored in favour of a hardcoded
+  `aes-gcm`, making the report largely unrelated to the configuration. The
+  argv is now translated into the keys the analyzer reads (Balloon and HKDF
+  also appear in the summary's active KDFs), so a flag the user passes moves
+  the reported score. The translation is an explicit **whitelist**: only
+  analysis inputs are copied, so the analyzer never receives the live argparse
+  namespace — which the old `config = vars(args)` aliased and then mutated,
+  and which on the monolithic-parser entry can carry secret-valued attributes
+  (defense-in-depth against a future `eprint(config)`; no current path printed
+  it). 1.4.x only — the analyze-config cluster was removed on 1.5.x.
+
+- **`analyze-config --compliance-frameworks` is now repeatable** (gitlab#166
+  part 4): the flag used the default `store` action, so a caller emitting one
+  flag per selection (`--compliance-frameworks fips_140_2
+  --compliance-frameworks nist_guidelines` — exactly what a GUI does) kept only
+  the last and silently dropped the rest. It now uses `action="extend"`, which
+  accumulates across repeats and still accepts the space-separated form
+  (`--compliance-frameworks a b`); each value remains choices-validated. 1.4.x
+  only — the analyze-config cluster was removed on 1.5.x.
+
+- **Desktop GUI: the stdin subprocess helper drains output before closing
+  stdin** (gitlab#175): `_runCLICommandWithStdin` wrote, flushed and closed
+  stdin before it began reading stdout/stderr. Two latent consequences on the
+  path that now carries pasted contact documents (arbitrary size), not just
+  short passphrases: a child that exits early — e.g. a stale CLI bundle that
+  does not know `--data-stdin` — made the `flush`/`close` raise a broken-pipe
+  `SocketException` that masked the child's real argparse error; and a child
+  that emitted more than a pipe buffer (~64 KiB) before reading stdin could
+  deadlock against a large payload. The write/drain logic is extracted into
+  `pumpStdinAndCollect`, which starts draining stdout/stderr concurrently
+  before writing stdin and swallows a write-side broken pipe so the child's
+  real exit code and stderr surface instead. Covered by tests that spawn real
+  short-lived processes for the early-exit, large-payload-no-deadlock and
+  normal round-trip cases.
+
+- **Desktop GUI: the batch tab's "Skip signature verification" checkbox is
+  reachable again — with the Decrypt tab's guard set** (gitlab#214 /
+  github#125): the checkbox — whose value is passed to the CLI on every
+  batch asymmetric decrypt — sat behind an `if (_showAdvanced)` gate, but
+  nothing in the widget ever set `_showAdvanced`, so the option could never
+  be enabled from the batch tab. Surfaced by `flutter analyze`'s
+  `prefer_final_fields` on the never-written flag.
+
+  Unhiding it naively would have armed states the single-file Decrypt tab
+  deliberately prevents, so the batch tab now mirrors those guards
+  (security review, this change): the signature sub-options only render
+  once a decryption identity is chosen (CLIService omits
+  `--verify-from`/`--no-verify` otherwise, so the UI never implies a
+  setting it does not send); arming "skip" clears and disables the
+  "verify from" dropdown (the CLI silently discards `--verify-from` when
+  `--no-verify` is set); the skip choice is reset on any change of
+  identity, encryption mode, or operation; the controls are inert while a
+  batch is running, and the verification settings are snapshotted before
+  the loop so a mid-run edit cannot split a batch into verified and
+  unverified halves; the red warning banner renders only while skipping is
+  actually armed; and each batch result now records — and the results list
+  shows — when a file was decrypted with verification skipped, so an
+  unverified batch is no longer indistinguishable from a verified one —
+  amber `gpp_maybe` row instead of a green check, and the completion
+  snackbar counts files decrypted without verification.
+
+  A second review round hardened the surroundings: the encryption-mode
+  selector and the results Clear button are inert while a batch runs (the
+  mode decides `_processFile`'s branch; clearing would wipe the
+  verification audit trail mid-run), the operation/mode are snapshotted
+  with the verification settings, `CLIService` itself now refuses to emit
+  `--verify-from` together with `--no-verify` at all three decrypt sites
+  (the CLI silently prefers `--no-verify`, so the pair would claim an
+  authenticity check that never happens), the batch identity/signer
+  dropdowns gained the Decrypt tab's `_dedupeByName` guard (a contact
+  shadowing an own identity could crash the tab or mislabel the trust
+  source — gitlab#173 territory), and batch error rows sanitize CLI
+  stderr / drop raw `jsonDecode` excerpts before display. Pinned by six
+  new widget tests (`batch_skip_verification_test.dart`). Remaining
+  review residuals tracked in gitlab#215 / github#126.
+
+- **Desktop GUI: the draggable debug window is reachable again** (gitlab#213 /
+  github#124): `_toggleDebugWindow()` — the only way to show the draggable
+  live-debug-log overlay, and the GUI's only live log viewer — lost its one
+  caller when the old `TextCryptoTab` wiring was dropped in the GUI
+  restructure, leaving the whole window unreachable (and
+  `flutter analyze` flagging the method as unused). The toggle is now wired
+  to a 'Debug Window' item in the Help menu. Covered by widget tests for
+  opening/closing via the menu, the window's own close button, and safe
+  main-screen teardown while the overlay is shown.
+
+- **Desktop GUI widget tests spawned the real Python CLI** (gitlab#211 /
+  github#122): `_EncryptTabState.initState` (and the decrypt tab's identity
+  load) call `CLIService` while the widget tree is being built, so
+  `flutter test` ran `Process.run` inside the test binding — the process
+  timer was still pending at teardown and failed four `widget_test.dart`
+  tests with `!timersPending`, racily, wherever the CLI didn't resolve in
+  time. `CLIService` now exposes a `@visibleForTesting`
+  `commandRunnerOverride` seam at the process boundary (plus
+  `resetForTesting`), and the widget tests inject a fake runner with canned
+  `list-available-algorithms` / `identity list` JSON — no subprocess, no
+  timers, deterministic tests that no longer need a working Python CLI.
+  `getAvailabilityInfo` also stops polling with 50 ms timers when a fetch
+  is already in flight: concurrent callers now share one single-flight
+  future (same retry-on-failure behaviour), removing the other timer
+  source.
+
+- **`generate-password` still claimed to have cleared the screen**
+  (gitlab#182): gitlab#152 removed that claim from `encrypt --random`
+  because it is false — the escape sequence repaints the visible screen and
+  removes nothing from scrollback, a pipe, a `script(1)` transcript or a CI
+  log — but the same message survived on the other command that shows a
+  generated password. It now says what actually happens, and adds the
+  "this is the only time it is shown" warning the other path already had.
+
+- **A hardlinked `--random-password-out` destination escaped the collision
+  check** (gitlab#182): the check used `realpath`, which resolves symlinks
+  but not hard links, so a destination hardlinked to `--output` was accepted
+  and then truncated by the ciphertext write moments later — destroying the
+  password while reporting success. `os.path.samefile` now closes that for
+  a destination that already exists; a destination this run creates is
+  still covered by the path comparison and `O_EXCL`.
+
+- **The orphan generated-password NOTE missed the early-exit paths**
+  (gitlab#182): a `--random-password-out` file is written before the
+  ciphertext, so a later failure can leave a 0600 orphan that a retry then
+  refuses with `FileExistsError`. The NOTE warning about it lived only in the
+  top-level exception handler, so the failures that `return 1`/`sys.exit(1)`
+  instead of raising — a steganography failure (which happens *after* the
+  ciphertext is on disk, exactly the case the NOTE exists for), a
+  cascade-diversity abort, and the write-failure handler itself (where the
+  0600 file may have been created before `os.write`/`os.fsync` failed) — never
+  reached it. The NOTE is now a helper called from every such site.
+
+- **`telemetry status` reported a constant, not the real setting**
+  (gitlab#166): `get_status()` returned a hardcoded `"enabled": True`, so
+  the one command a user runs to check whether telemetry is on answered
+  "yes" regardless — including immediately after `telemetry opt-out`, and on
+  an install where it had never been enabled (it is opt-in, default off). It
+  now reports what `_is_telemetry_enabled()` resolves, and fails closed: if
+  the setting cannot be read, the honest answer for a privacy control is
+  "not on".
+
+- **The metadata validator's fallback path was unreachable, and unbounded**
+  (gitlab#118): `StdinMetadataExtractor._parse_metadata` imports the JSON
+  validator *inside* the `try` that uses it, with
+  `except (JSONSecurityError, JSONValidationError)` as the first handler —
+  and evaluating that tuple needs names the failed import never bound, so it
+  raised `UnboundLocalError` before `except ImportError` was ever
+  considered. The reported crash could not happen because the fallback never
+  ran at all. The import is now resolved first, and the fallback bounds
+  `format_version` to an `int` (not a `bool`) in range, matching the
+  equivalent site in `crypt_core.py`.
+
+- **AES-SIV was called with the wrong API on the adapter path**
+  (gitlab#120): pyca's `AESSIV` takes `(data, associated_data_list)` with no
+  separate nonce, which the native path special-cases; the liboqs-KEM
+  adapter called every cipher the same way, so an aes-siv file reaching it
+  raised `TypeError` instead of decrypting. Fixed on both encrypt and
+  decrypt — otherwise the adapter could read a format it could not write.
+  Fail-closed, so no security impact.
+
+- **The legacy-KDF retry discarded its cause** (gitlab#119): the double
+  failure re-raised a static `ValueError` without `from e`, so the only
+  diagnostic was lost. The user-facing message is unchanged, so this adds
+  no oracle — the cause appears only in a traceback.
+
+- **`--identity-store` given before the command was silently ignored**
+  (gitlab#210): the flag is declared on the top-level parser *and* on five
+  subcommands, and argparse copies a subcommand's whole namespace back over
+  the parent's — so the subcommand's `default=None` overwrote the global
+  value. `crypt --identity-store <store> identity list` therefore listed the
+  **default** store and reported "No identities found."
+
+  `identity list` merely shows nothing, but the same flag is on the
+  destructive commands: someone running `identity delete` with
+  `--identity-store` pointed at one store, believing they were working
+  there, was working on the default store instead — removing an identity
+  and its private keys from somewhere they did not intend, with no error to
+  signal it.
+
+  This is the third instance of the same dest-clobber; `--quiet`
+  (gitlab#171) and `--yes` (gitlab#176) were fixed the same way, with
+  `default=argparse.SUPPRESS`, and pinned by the same shape of test.
+
+- **`verify-signature --json` went silent on the outcomes that matter, and
+  exposed only the unauthenticated algorithm labels** (gitlab#160). A
+  pinned-signer mismatch, an unknown pinned identity, an unknown signer, a
+  malformed sidecar and a missing signature file each wrote to stderr and
+  exited 1 **without emitting any JSON** — so a consumer that asked for a
+  machine-readable answer got an empty stdout and a bare exit code for
+  exactly the cases meaning "this signature is not from who you said", and
+  had to infer the verdict. Every refusal now emits the same document shape
+  as any other invalid verdict, with a `reason`; the exit code still
+  signals failure.
+
+  Separately, the document carried `components[].component` — free text
+  from the sidecar, deliberately *not* part of the signed payload, so a
+  valid signature can carry labels naming an algorithm that was never used
+  — while `algorithm`, which **is** bound into the signed payload, was
+  absent entirely. The only algorithm information a consumer could display
+  was the part an attacker controls. The authenticated `algorithm` is now
+  included.
+
+- **`--keyring-store` silently stored nothing when the password came from
+  the environment** (gitlab#156): the store was gated on `args.password`,
+  which only `-p/--password` sets. `CRYPT_PASSWORD` is consumed straight
+  into the secure buffer and never assigned there, so for every caller
+  using the environment — the recommended way, and the only one the desktop
+  GUI uses — the flag did nothing.
+
+  The silence is what made it dangerous rather than merely broken: the
+  confirmation lived inside the same `if`, so there was no error *and* no
+  confirmation. A user who believed the password was now recoverable from
+  the keyring could discard their only copy of it and lose the data.
+
+  The store now runs after the password is resolved, from whatever source —
+  command line, environment, file, fd or prompt. A missing keyring package
+  is reported up front, before the operation runs, and a backend failure
+  now says so and tells the user not to discard their copy.
+
+- **Confirmation questions were invisible when stdout was redirected**
+  (gitlab#174): `eprint` writes to stderr, but `input("...")` writes its
+  prompt to *stdout*. Every security confirmation mixed the two — the
+  warning block to stderr, the question to stdout — so redirecting stdout
+  (`crypt … > out.txt`, a pipeline, a GUI capturing stdout as data) left the
+  user with a frightening warning followed by an apparently hung program,
+  no visible question, and no indication that typing anything other than
+  `yes` is what protects them.
+
+  Prompts now go through `tty_write`, which the codebase already had for
+  exactly this: it writes to `/dev/tty` so the question survives
+  redirection of either stream, falling back to stderr where there is no
+  terminal. End of input resolves to the refusing answer instead of
+  raising, so an unattended run cannot proceed by accident.
+
+  The issue named two sites; a lint over the whole `modules/` tree found
+  **21**, including the keyserver trust prompt, the telemetry opt-out, the
+  KDF-cost ceiling override and the shared `request_confirmation` helper.
+  The lint is now a test, so a new gate cannot reintroduce the pattern;
+  wholly interactive flows that own stdout for their whole run (the config
+  wizard, the password tester) are exempted by name.
+
+- **`--keyring-remove` deleted from the wrong position, was a no-op in two
+  spellings, and reported failure as success** (follow-up security review of
+  gitlab#177). Three defects in one credential-removal control:
+
+  Its pre-scan did not skip an option's *value*, so
+  `crypt --identity-store --keyring-remove encrypt -i f` — a "forgot the
+  path" typo — deleted the keyring entry named `encrypt` and exited 0, where
+  argparse would have failed outright and deleted nothing. The scan now
+  skips option values, takes the last occurrence as argparse does, and
+  refuses a label that looks like a flag or is empty.
+
+  Nothing anywhere reads `args.keyring_remove` — the option works only
+  through that pre-scan — so an abbreviation such as `--keyring-rem`, which
+  argparse binds happily, silently did nothing. Abbreviations are now
+  honoured. The option was also declared on `encrypt`, `decrypt` and two
+  other subcommands, where it appeared in `--help` and did nothing at all;
+  those dead declarations are removed.
+
+  A failed deletion was reported as "No password found" with exit 0, so a
+  script could not tell "removed" from "backend unavailable, still there".
+  A confirmed absence still exits 0; a backend error now says so and exits
+  1.
+
+- **Combined short options, abbreviated long options and a leading `--`
+  broke command routing** (security review of gitlab#177). The command scan
+  classified each leading option as boolean or value-taking by exact
+  membership, which cannot express two forms argparse accepts — so the
+  command was read as somebody else's value and the invocation failed:
+
+  ```
+  crypt -qy install-dependencies    ->  invalid choice: 'install-dependencies'
+  crypt -q -y install-dependencies  ->  works
+  crypt --deb identity list         ->  invalid choice: 'identity'
+  crypt --debug identity list       ->  works
+  ```
+
+  `-qy` is the natural spelling for the one command `--yes` exists for, and
+  no parser here sets `allow_abbrev=False`, so `--deb` is a valid prefix.
+  Bundled short options are now boolean only if every letter is, and long
+  options resolve by unambiguous prefix; unknown or ambiguous still means
+  "takes a value", the fail-closed direction that stopped `--alias
+  telemetry` being read as a command.
+
+  A leading `--` went the other way: `crypt -- identity list` found no
+  command and routed to the wrong parser. POSIX reads that as "identity is
+  a positional" — but argparse does **not** strip the separator before a
+  subparser, it reports `invalid choice: '--'`, so finding the command was
+  not enough and a leading separator is now removed. (The review's premise
+  that argparse strips it does not hold; verified directly.) A separator
+  *after* the command is still preserved, which is what gitlab#177 fixed.
+
+  Also fixes the hardcoded fallback used when the parser cannot be built:
+  it listed `--kdf-workers` as boolean, so on that path it would not consume
+  its value and the scan would read `4` as the command — verbatim the
+  gitlab#171 bug. It now excludes the value-carrying flags.
+
+- **`install-dependencies --yes` was rejected** (gitlab#176): `--yes`/`-y`
+  is declared on the top-level parser with the help text "Automatic yes to
+  prompts (for install-dependencies command)" and was recognised by the
+  routing scan — but it was never *relocated*, and the
+  `install-dependencies` subparser declares no arguments at all, so the one
+  invocation the flag exists for exited 2 with
+  `unrecognized arguments: --yes`.
+
+  It was held back from gitlab#171 because `hsm fido2-unregister` declares
+  its own `--yes`, and argparse copies a subcommand's whole namespace back
+  over the parent's, so that subparser's `False` default would silently
+  overwrite a relocated one. That declaration now uses
+  `default=argparse.SUPPRESS` — the same treatment `--quiet` needed — and
+  `--yes` joins the relocatable set. Both directions are pinned: a relocated
+  `--yes` survives that subcommand, and not passing it still leaves it
+  false.
+
+  The other half of this issue — `main()`'s routing skip-set being a
+  hand-maintained duplicate — was closed by gitlab#177's shared scan. The
+  remaining list is now covered by a test asserting the monolithic parser's
+  command `choices` are all known commands, which immediately found `info`
+  missing from that list. Harmless today (it routes to the flat parser,
+  which accepts global flags anywhere) but latent: a subparser for `info`
+  would have broken it the day it was added.
+
+- **Global-flag relocation ignored `--` and could read an option value as
+  the command** (gitlab#177): the preprocessing that lets `--debug` and
+  friends work after a subcommand did not stop at a bare `--`, so a file
+  literally named `--quiet` was hoisted out of its subcommand's arguments
+  and read as a flag — in exactly the place a user reaches for `--` to stop
+  that happening. And it looked for the command name anywhere, including
+  option *values*: gitlab#171 widened the recognised set from 20 names to
+  42, adding ordinary barewords (`test`, `version`, `sign`, `recover`,
+  `template`, `identity`, `plugin`, `hsm`, `armor`), so
+  `--alias telemetry` opened the relocation gate on a command line with no
+  subcommand at all.
+
+  Impact was low rather than nil — relocation moves only exact global-flag
+  tokens and preserves relative order, so no positional was ever read as a
+  password — but the behaviour was unpredictable in the two places users
+  reach for predictability.
+
+  Both scans now stop at `--` and skip an option's value. They are also now
+  the *same* scan: `main()`'s routing decision was a third hand-maintained
+  copy of "which flags carry a value", and it had already drifted twice.
+  Which options take a value is read off the real parser rather than
+  listed, and both the value-taking and boolean sets are needed — `--yes`
+  and `-h` are top-level booleans that are deliberately not relocatable, so
+  keying off the relocatable set alone made `crypt --yes encrypt` swallow
+  the command.
+
+- **Seven documented commands could not be run** (gitlab#179 / github#94):
+  `create-usb`, `verify-usb`, `list-plugins`, `plugin-info`,
+  `enable-plugin`, `disable-plugin` and `reload-plugin` were listed in
+  `--help`, documented, declared by the parser and backed by working
+  handlers — and every one of them exited 2 with
+  `argument command: invalid choice`. They were named in the list that
+  decides which commands go to the subparser, no subparser had ever been
+  registered for them, and nothing connected those two claims. The
+  plugin-management surface was unreachable from the CLI as a result.
+
+  The list answered two different questions at once: "is this token the
+  command, so the flags after it belong to it" (true of every command,
+  whichever parser handles it) and "which parser handles it" (true only of
+  the 35 with a registered subparser). Those are now separate:
+  `KNOWN_COMMANDS` keeps the first, and the routing set is read off the
+  built subparser rather than maintained beside it, so a command with no
+  subparser falls through to the monolithic parser that declares it. A
+  routed-but-unregistered command is no longer representable, which is the
+  point — the same drift produced gitlab#171 in the same file.
+
+  Verified equivalent for everything that already worked: the derived set
+  differs from the old list by exactly these seven and nothing else, and
+  all 42 known commands now dispatch. `SUBPARSER_COMMANDS` remains as an
+  alias.
+
+- **A lint for GUI service surface with no caller** (gitlab#198 /
+  github#116): the argv lint reads the argv `cli_service.dart` *builds* and
+  checks it against the real argparse tree, catching a flag the GUI sends
+  that the CLI cannot accept. This is the mirror image — surface the GUI
+  declares and never sends, because no widget passes it. Both are "the
+  plumbing exists, one end is missing", and both hide behind a green test
+  run.
+
+  It exists because the audit found `CHANGELOG` entries describing
+  Encrypt-tab controls that do not exist: the service half of gitlab#153
+  landed, the widget half did not, and nothing noticed. gitlab#141's
+  password-strength meter is in the same state — `checkPassword()` is
+  implemented and nothing calls it.
+
+  Run against the current tree it finds **50 unwired parameters across 8
+  methods**, including the whole steganography surface: `encryptWithStego­
+  graphy`, `encryptTextWithSteganography` and `decryptFromSteganography` are
+  declared with 35 parameters between them and **no widget calls any of
+  them**, so that feature is unreachable from this GUI regardless of what the
+  flags say. Each gap is registered in `KNOWN_UNWIRED` against the issue that
+  tracks it, and a stale entry is an error — an exemption that outlives its
+  gap stops the check protecting that surface.
+
+- **Recovery passphrases are held to the password policy** (gitlab#149):
+  `add-recovery` accepted a one-character recovery passphrase — the check
+  added under gitlab#144 rejected only blank and whitespace-only values —
+  while the primary password from `OPENSSL_ENCRYPT_PASSWORD` was policy-
+  checked. A recovery slot is an *additional wrapping of the same file key*,
+  so a file's confidentiality is that of its weakest slot, and Argon2id at
+  t=3/64 MiB does not rescue a three-character secret. The weaker credential
+  on the same key was getting the weaker check.
+
+  Both channels — `$OPENSSL_ENCRYPT_ADD_RECOVERY_PASSPHRASE` and the
+  interactive prompt — now go through the same policy as a password, with
+  `--force-password` to override and `--password-policy` to choose the level,
+  matching the flags the rest of the tool uses. The desktop GUI can pass
+  `--force-password` too; without that, its users would have been told to use
+  a flag the app had no way to send.
+
+  The refusal lists the actual reasons — too short, no uppercase, no digit —
+  on stderr, unconditionally, because `ValidationError` is a `SecureError`
+  whose message is otherwise replaced by a generic string. A first version
+  printed a strength verdict instead and managed to say **STRONG** directly
+  above the refusal, because that figure is raw search space while the gate
+  is character classes; a refusal the user cannot understand is one they will
+  bypass. The entropy number is gone entirely: it inverts to the exact
+  distinct-character count and class set of a credential that unwraps the
+  file key, on a stream that reaches scrollback and the GUI's debug log.
+
+  `--password-policy none` is deliberately not offered on this subcommand. It
+  would be a second, silent bypass beside `--force-password`, and because
+  `main_with_args` back-fills that exact value for namespaces lacking the
+  attribute, honouring it would turn the check into a no-op the day the flag
+  is renamed — a fix that fails open with nothing to notice.
+
+  **Unlocking is deliberately not policy-checked.** Enforcing there would
+  refuse a passphrase the user already holds, on a file whose primary
+  password is usually already gone — turning a weak-credential warning into
+  permanent data loss. Slots created before this change, or with
+  `--force-password`, still open; only creating a new one is gated. Blank
+  stays refused on both paths, and `--force-password` does not reach it: a
+  blank-passphrase slot is equivalent to publishing the file.
+
+  Six existing tests used weak literals and now fail the policy; they were
+  testing the add/recover mechanism, the environment channel and the
+  variable-consumption rule, not password strength, so they use
+  policy-passing values. The one that guards against silent normalisation
+  keeps its surrounding whitespace — that padding *is* the property under
+  test, and the policy does not touch it.
+
+- **`rekey`/`decrypt` with `-o` equal to `-i` truncated the input**
+  (gitlab#195 / github#112): the residual gitlab#148 left behind. That issue
+  fixed the envelope header writer, but the slow paths still decided
+  atomicity from a flag rather than from the filesystem — `rekey_file` used
+  `in_place = output_file is None`, so naming the input as the output took
+  the non-atomic branch and handed that path straight to `encrypt_file`,
+  which opens it `"wb"`. `decrypt_file` had the same shape. Both truncated
+  the user's only copy before the replacement existed, so a crash, a full
+  disk or an exception in between left a shortened, unreadable file where the
+  original had been.
+
+  Both now derive the answer with `_write_destroys_input` — the same
+  predicate the envelope writer uses, so there is no third definition of "the
+  same file" to drift out of step, which is exactly how these two paths came
+  to be missed. `decrypt -i f -o f` and `rekey -i f -o f` go through a temp
+  file and `os.replace`; `/dev/stdout` and `/dev/stderr` still stream, since
+  they are not files to replace and nothing of the user's is at risk there.
+
+  The envelope writer's machinery is factored out as
+  `_write_replacement_bytes`, so "replace a file's contents without
+  destroying it" now has one implementation rather than one per caller. The
+  asymmetric decrypt path is routed through it too, and gained the plaintext
+  permission clamp it was missing — the atomic path inherits the *original*
+  file's mode, and a `.enc` that arrived by scp or a git checkout is commonly
+  0644, so `decrypt --with-key --overwrite` could leave world-readable
+  plaintext.
+
+  `encrypt -i f -o f` is covered as well, on the failure path only: a
+  successful same-file encrypt was always fine (verified at 3 MB and at
+  13.5 MB, above the streaming threshold), but an interrupted one destroyed
+  the plaintext before the ciphertext existed. Refusing the command would
+  have broken something that works.
+
+  `rekey` asks two questions rather than one. Deriving only "does this write
+  land on its own input" and then calling `os.replace` broke hard links:
+  replace installs a *new* inode, so `rekey -i a -o b` on two names for one
+  file gave `b` the new password and left `a` readable with the **old** one,
+  while reporting "Rekey completed successfully" — a rotation that silently
+  half-happened. It now also asks whether the target may be replaced at all,
+  and writes through the shared inode when it may not.
+
+  Both regression tests inject a disk-full failure at the layer the fixed
+  path actually writes through, which took two attempts to get right: the
+  first version patched `builtins.open`, which the atomic path never calls,
+  so it passed while asserting that a *successful* same-file decrypt leaves
+  the ciphertext unchanged — not the contract. Reverting either fix now fails
+  the corresponding test.
+
+- **`--gui` was unreachable via `python -m`, and started the legacy GUI**
+  (gitlab#197 / github#115): two defects stacked on each other.
+
+  `python -m openssl_encrypt --gui` failed with `the following arguments are
+  required: action`. There were two entry points into the program and only
+  one handled the flag: the console script is declared as
+  `openssl_encrypt.cli:main`, which checks for `--gui`, but `__main__.py`
+  imported `main` from `modules.crypt_cli` directly and so never saw it.
+  `__main__.py` now routes through `cli.main`, and a test asserts the two
+  cannot diverge again.
+
+  Underneath that, `--gui` launched `crypt_gui.py` — the tkinter interface —
+  while the current GUI is the Flutter desktop application under
+  `desktop_gui/`, which had no entry point from the Python side at all.
+  Fixing only the routing would have sent the flag to the wrong program more
+  reliably.
+
+  `--gui` now starts the desktop application, looking in a defined order: the
+  `OPENSSL_ENCRYPT_GUI` override, the installed Flatpak
+  (`com.opensslencrypt.OpenSSLEncrypt`), a built bundle in the source tree
+  (release before debug), then a binary on `PATH`. If none is found it says
+  so and names the ways to get one, rather than falling back to the legacy
+  interface — silently starting a different program than the one asked for is
+  the defect this fixes, so it is not the remedy for it either.
+
+  The tkinter interface stays reachable as `--gui-legacy`; it needs no build
+  step, which makes it useful where the desktop app cannot run.
+
+  The Flutter toolchain is never invoked implicitly. `flutter run` compiles
+  and executes code from the working tree, which is not something a `--gui`
+  flag should do on the user's behalf, so it is only suggested in the
+  not-found message. The launcher passes an argv list to `subprocess.run`
+  with no shell, and the tests pin that.
+- **`--pqc-keyfile`: a second implementation wrote the post-quantum private
+  key in the clear, and the flag could never save** (gitlab#157):
+  `crypt_cli.py` carried two independent copies of the keyfile save/load
+  logic. `320305ee` added password-wrapping to the copy that existed then;
+  `c41a3a1cb` ("fix for claude code massive deletions") reconstructed the
+  file and reintroduced the pre-fix plaintext pattern as a second copy; and
+  `aef4ab42` (gitlab#131/F16) later upgraded the wrapping to Argon2id, its
+  own message describing "the one write site". The duplicate wrote
+  `private_key` as bare base64 with no `key_encrypted` marker, and its loader
+  read `private_key` unconditionally — so handed a properly wrapped keyfile
+  it would have base64-decoded the AES-GCM ciphertext and used it as the key.
+  The duplicate is deleted.
+
+  Separately, `--pqc-keyfile` could not save through the documented
+  `encrypt` subcommand: the save branch is gated on `--pqc-gen-key`, which was
+  declared only on a vestigial monolithic parser inside `main_with_args`, so
+  `encrypt --pqc-gen-key` exited 2 with `unrecognized arguments`. Naming a
+  path that did not exist matched neither branch and raised nothing — the user
+  got an ephemeral key, no file, and no way to open the ciphertext with the
+  keyfile they believed they had made. (The legacy argument ordering, with an
+  option before the subcommand, *did* reach the monolithic parser and save;
+  that is how the cleartext writer above was reachable at all.)
+  `--pqc-gen-key` is now declared on the `encrypt` subparser, naming a
+  non-existent keyfile without it is refused with an instruction instead of
+  ignored, and `--pqc-gen-key` without `--pqc-keyfile` — the mirror image, and
+  newly reachable now that the flag exists — is refused too.
+
+  The keyfile is also resolved **once**, before the overwrite branch, so both
+  output paths use the same keypair. Deleting the duplicate without moving
+  this left `--overwrite` with no keyfile handling at all: it encrypted with
+  an ephemeral key and only reached the keyfile code afterwards, so an
+  unreadable or missing keyfile was reported *after* the input had already
+  been replaced. Caught in review; the input is now left untouched when the
+  keyfile cannot be used.
+
+  The keyfile is written through `create_secure_file(..., exclusive=True)`,
+  so it is created 0600 rather than at the umask (typically 0644), a
+  pre-planted symlink or FIFO at that path is refused rather than followed,
+  and an existing file is never silently clobbered.
+
+- **argv lint: a declared flag is not necessarily a correct flag**
+  (gitlab#190): the lint checked that every flag the GUI sends exists on the
+  target subcommand, but not that it can take the value placed after it.
+  That is how gitlab#190 survived it — the GUI sends `-a <algorithm>`, and
+  `-a` does exist, as the short form of `--armor`, a `store_true`. argparse
+  sets `armor=True` and leaves the algorithm as an unrecognised positional,
+  so the command exits 2 while every flag in it is "declared", and the
+  user's cipher choice would silently have become "ASCII armor" had it
+  parsed.
+
+  The lint now checks arity too. Doing so required reading argv *elements*
+  rather than string literals: the offending value is a Dart variable, not a
+  quoted string, so a literal-only reader saw nothing after the flag at all
+  and could not have found this no matter how the check was worded. The GUI
+  call is corrected to `--algorithm`, so steganographic encryption works from
+  the GUI for the first time.
+
+  Commands that declare a positional are exempt, because a stray value is
+  absorbed by it rather than rejected — `generate-password` is the live case,
+  and it is also where this lint's flattening of `if`/`else` branches into one
+  argv would otherwise have produced a false positive.
+- **GUI command previews were not covered by the argv lint** (gitlab#191):
+  the lint anchored on `_runCLICommand*(` call sites, so it checked every
+  argv the GUI *executes* but neither of the two builders that construct a
+  full command line and render it to the user as copy-pasteable text. Same
+  defect surface — a preview that fails at argparse if pasted — and they
+  build `args` the same way, so only the anchor had to widen; a missing
+  builder is now a hard error rather than silent lost coverage.
+
+  On this line the previews were already flag-clean — `--whirlpool-rounds`
+  went with gitlab#189 — so widening the anchor added coverage without
+  finding a defect here. It found one on 1.5.x.
+- **GUI identity deletion sent `--contact`, a flag that never existed**
+  (gitlab#185): `identity delete <name> --contact` exited 2 at argparse, so
+  GUI contact deletion had never worked, and with no `--force` the CLI's
+  confirmation `input()` raised EOFError on a non-tty pipe. It now sends
+  `--kind own|contact` — the flag gitlab#173 added for exactly this choice —
+  and `--force`, since the app runs its own confirmation dialogue.
+
+  Getting this wrong is not cosmetic: deleting *both* entries destroys the
+  own identity's private keys, making every file encrypted to it unreadable,
+  and drops the contact's TOFU pin so a later import of that name is
+  accepted as first use with no key-change warning.
+- **`keyserver show-token` no longer prints part of the bearer token**
+  (gitlab#178): the handler revealed the first 8 and last 4 characters with a
+  plain `eprint`, bypassing the `debug_secret()` chokepoint every other
+  secret in this codebase goes through. Twelve characters of a bearer token
+  is still key material, and stderr is not a private channel — it reaches
+  terminal scrollback, is merged by `2>&1`, and the desktop GUI keeps a
+  persistent debug log.
+
+  The command keeps its job: it reports whether a token is configured, in
+  the standard redacted form (byte length plus a per-process keyed
+  fingerprint), and names the token file. Reading the value back
+  deliberately now goes through the same explicit `--debug
+  --unsafe-show-secrets` opt-in as every other secret, instead of a private
+  masking rule of its own. Rotate any token whose prefix may have been
+  captured in a log.
+- **Recovery-slot rewrites cannot destroy the ciphertext they manage**
+  (gitlab#148): the envelope writer has an atomic path (temp file in the
+  same directory, fsync, `os.replace`, mode preserved) and a truncating one
+  that opens the destination `"wb"`. A crash or ENOSPC part-way through the
+  truncating path leaves a shortened, unreadable file and no copy of the
+  original — and when the destination is the input, that is the user's only
+  ciphertext. Recovery slots exist precisely so a file survives losing its
+  password, so destroying it while managing them defeats the feature.
+
+  The CLI already chose the atomic path for same-file rewrites; the writer
+  now derives that choice itself, immediately before the write, and no
+  longer trusts the caller's `in_place` flag — a caller that omits it (the
+  documented Python API example did exactly that) cannot truncate a file in
+  place, and a caller that asserts it cannot skip the exclusions below.
+  `output_file=None`, the sibling API's "rewrite in place" convention, is
+  honoured rather than raising.
+
+  Three cases cannot use the atomic path, because `os.replace` installs a
+  *new* inode and each of them depends on the existing one surviving: a
+  symlink on either side (the link itself would be replaced), a file with
+  more than one hard link (the other name would keep the old envelope — for
+  `remove-recovery` a silent revocation failure reported as success), and
+  anything that is not a regular file (a FIFO named as both input and
+  output would be destroyed rather than written through). The hardlink
+  exclusion reverses an earlier decision, for the same reason the symlink
+  one was made.
+
+  Being excluded from the atomic path does **not** mean being unprotected:
+  those cases must be written *through* the existing inode, so the writer
+  copies the original to an fsynced backup beside it first, restores it —
+  also fsynced, before the backup is removed — if the write fails, and
+  removes it on success. If the restore fails too, the backup is kept and
+  its location is printed to stderr, because at that point it is the only
+  copy of the file and it is dot-prefixed, so an `ls` would not show it. A
+  crash leaves the backup on disk for manual recovery; if it cannot be
+  removed afterwards, that is reported rather than passed over, since it is
+  a copy of the file as it was *before* the change — for `remove-recovery`
+  still openable by the credential just revoked, for `rekey` by the old
+  password.
+
+  A same-file rewrite of something that is *not* a regular file — a FIFO or
+  a device node named as both input and output — is now refused rather than
+  written: no backup of it can be taken, so it could not be made
+  recoverable. Nothing legitimate reaches that case.
+
+  A failure to *open* the destination — a read-only file in a writable
+  directory, an immutable one, a read-only filesystem — truncated nothing,
+  so it no longer runs the recovery handler. Otherwise a routine permission
+  error was reported as `CRITICAL: … the original could not be restored`
+  and left a full copy of the envelope behind, for a file that was never
+  touched.
+
+  This makes the two write-through commands O(file) rather than O(header)
+  for a symlinked or multiply-linked envelope, and they need free space
+  equal to the file; noted in `docs/OPEN_QUESTIONS.md`.
+
+  The envelope rekey fast-path carried a second, weaker copy of this write
+  logic (no fsync, no same-file check), so the guarantee applied to the
+  recovery-slot commands only. It now delegates to the same writer, which
+  is byte-for-byte equivalent, so both paths get the same protection.
+
+  Regression tests simulate a genuine disk-full failure part-way through
+  the write — earlier coverage only proved that failing *before* any byte
+  was written was safe — on both the atomic and the write-through paths,
+  and assert the original bytes and inode survive with nothing left behind.
+  One of them pins a mistake worth naming: the "your file is at *path*"
+  guidance was originally carried in the raised exception, and `SecureError`
+  replaces the message it is given with a generic string unless `DEBUG=1` is
+  set in the environment. The test passed only because pytest sets
+  `PYTEST_CURRENT_TEST`, which flips the same switch, so it asserted a
+  message no user would ever have seen.
+
+- **Desktop GUI: dead `plugin` subcommand controls removed or rewired**
+  (gitlab#188 / github#105): the GUI's keyserver, pepper and integrity
+  controls called `plugin keyserver`/`plugin pepper`/`plugin integrity`
+  subcommands that have never existed — `plugin` offers only `sign`,
+  `trust-key` and `list-keys` — so every one failed at argparse and was
+  swallowed.
+
+  The keyserver controls are **rewired to the commands that do exist**:
+  cache clearing now calls `keyserver cache-clear --force` (the `--force`
+  skips a confirmation no GUI subprocess can answer), and the connection
+  test calls `keyserver status`. That command takes no `--url`, so the
+  button is relabelled "Check status" and reports on the *configured*
+  server rather than implying the URL in the field was probed.
+
+  The pepper and integrity controls are **kept**: their CLI surface is
+  planned (gitlab#193, gitlab#194), and they are declared in the argv
+  lint's known-broken registry so the gap is tracked rather than silently
+  tolerated — the lint will demand those entries be deleted the day the
+  subcommands land.
+
+  One integrity defect is fixed independently of that: batch verification
+  treated *any* falsy result as a hash mismatch and reported "Integrity
+  verification failed - hash mismatch". The underlying call returns
+  `exitCode == 0`, so it cannot tell a genuine mismatch from an
+  unreachable server or a missing command — and raising an integrity alarm
+  for a healthy file is the worse error. It now reports only what is
+  known: that integrity could not be confirmed.
+
+- **Whirlpool removed from the desktop GUI** (gitlab#189 / github#106): the
+  GUI offered Whirlpool as a hash option and emitted `--whirlpool-rounds`,
+  which no subparser declares — so any encryption configured with it exited
+  2 before doing work, and the GUI swallowed the error. Whirlpool is
+  decrypt-only on this line and removed entirely in 1.5, so it has no place
+  in a configuration for *new* encryption.
+
+  The option is gone from the profile editor and from both argv builders
+  (the executed one and the command preview). The gating it previously sat
+  behind defaulted to *showing* the option whenever CLI version detection
+  failed — the moment the GUI should be most conservative — so it is
+  removed rather than inverted. Profiles saved by an older build can still
+  carry a whirlpool entry, so the editor filters it out rather than
+  assuming it is absent.
+
+- **stdout-leak lint authorizes individual calls, not regions** (gitlab#150 /
+  github#68): the whitelist that permits a `print()` to write to stdout —
+  stdout carries decrypted plaintext and derived key material, so every
+  emission must be individually justified — matched on file plus line
+  proximity, with a tolerance of 50 lines against a documented ±5. Each entry
+  therefore authorized any stdout `print()` within 50 lines of its anchor,
+  and with several anchors in one file the windows merged: in
+  `recovery_slots.py` they covered 299 lines spanning the code that handles a
+  generated recovery code, so turning that `eprint` into a `print` would not
+  have tripped the lint added to guard exactly that file. Line drift also
+  forced a manual re-anchor on nearly every commit touching a whitelisted
+  file.
+
+  Entries now state the call's own source text and how many times it may
+  appear, compared against `ast.get_source_segment` for **equality** with
+  whitespace and black's magic trailing comma normalized away. Equality
+  rather than a prefix, because a prefix leaves everything after it
+  unconstrained — adding a credential to an authorized JSON payload would
+  otherwise still match. The occurrence count closes the one dimension where
+  shape matching is looser than a position anchor: a second copy of an
+  authorized call no longer inherits the first's authorization. Path
+  suffixes are matched on component boundaries, so a vendored or
+  similarly-named module cannot inherit another's entries.
+
+  One entry was stale in a way the old scheme could not detect: the
+  `usb_creator.py` entry authorized a `print(` that exists only inside a
+  *generated launcher-script string*, which raw-line matching cannot
+  distinguish from code — and `eprint(` contains `print(`, so the validity
+  check passed on the helper it was meant to exclude. That file has no real
+  `print()` call, so the entry is deleted. New tests pin properties rather
+  than positions: every entry must start with a `print(` call, the whitelist
+  must describe exactly the calls that exist, a `print()` adjacent to a
+  whitelisted call must not inherit its authorization, an authorized payload
+  extended with a credential must lose it, a vendored path must not inherit,
+  and an anchor must survive its own call being reflowed.
+
+- **Desktop GUI identity listing has never worked** (gitlab#183 /
+  github#100): `CLIService.listIdentities()` runs
+  `identity list --include-contacts --json`, but `identity list` declared no
+  `--json` flag, so argparse exited 2 and the GUI swallowed the failure into
+  empty lists. Every consumer was affected — the Identity Management screen,
+  the Decrypt tab's identity selector, and the main window — so the GUI
+  always showed an empty identity list with no error. Third flag in this
+  series that was emitted but never existed, after `--data`/`--alias`
+  (gitlab#164) and `encrypt --random`'s character-class reads (gitlab#181).
+
+  `identity list --json` now emits a single JSON document on stdout —
+  `own` and `contacts` lists of `{name, email, fingerprint, kem_algorithm,
+  sig_algorithm, created_at}` — and nothing else, since the GUI feeds all of
+  stdout to a JSON parser; the human report is unchanged without the flag.
+  The JSON channel is deliberately **not** display-sanitized: it is
+  machine-readable, the transport escapes control characters, and the
+  consumer renders. Display safety therefore belongs to the renderer, so the
+  GUI sanitizes at the decode boundary — where the untrusted values enter
+  the app, rather than per widget, which had already missed the recipient
+  picker and the signature-verification picker, the two controls that decide
+  who can read the plaintext and whose signature is trusted. Its sanitizer
+  now escapes rather than blanks (matching the CLI's escape-not-strip rule,
+  so a spoofing attempt stays distinguishable from an unrenderable glyph)
+  and covers the C1 range, the bidi/format controls, U+2028/U+2029 and the
+  zero-width set; ZWNJ/ZWJ stay untouched, being load-bearing in Persian and
+  Indic scripts and in emoji sequences. Flutter honours bidi overrides in
+  text rendering and, unlike a terminal, treats U+2028/U+2029 as mandatory
+  line breaks, so those characters are now also rejected at the CLI's own
+  import boundary alongside gitlab#172's terminal-control class.
+
+  Two failure modes that let this bug hide for the feature's whole life are
+  closed with it: the GUI no longer turns a failed `identity list` into an
+  empty identity list (it raises, so the screen's error banner — previously
+  dead code — actually renders), and a store entry that fails to load is now
+  reported rather than silently absent, in both the JSON (`skipped`) and the
+  human output. Presenting a short list as complete would silently drop a
+  recipient, or make an own identity look deleted.
+- **Global flags after a subcommand are relocated for every subcommand, not
+  half of them** (gitlab#171 / github#89): `--debug`, `--verbose`, `--quiet`
+  and the other top-level flags are declared on the main parser, so argparse
+  rejects them once a subcommand has been seen. `preprocess_global_args`
+  exists to move them to the front, but kept its own hand-maintained copy of
+  the subcommand list, and that copy had drifted to 20 of the 42 real
+  subcommands. For the missing 22 — including `identity`, `keyserver`,
+  `telemetry`, `plugin`, `hsm`, `test`, `sign`, `verify-signature` and the
+  recovery commands — argv was returned unchanged and the subparser rejected
+  the flag with exit 2. The desktop GUI appends `--debug` after the
+  subcommand at 19 call sites, so with its debug toggle on every one of those
+  commands failed before doing any work. Both the preprocessor and `main()`
+  now read a single module-level `SUBPARSER_COMMANDS` constant, so the two
+  cannot drift again; a test asserts relocation works for every entry rather
+  than for a list of names that would itself need maintaining.
+
+  Relocating a flag is only half the job — argparse parses a subcommand into a
+  fresh namespace and copies every key back over the parent's, so a subparser
+  that declares the same option name silently overwrites the relocated value
+  with its own default. Five subparsers (`recover`, `add-recovery`,
+  `remove-recovery`, `verify-integrity` and the `test` subcommands) declare
+  their own `--quiet`; those now use `default=argparse.SUPPRESS` so the key
+  stays absent unless the flag is actually given there. Tests assert the flag
+  survives a full parse, not merely that it was moved.
+
+  Third-party HTTP loggers (`urllib3`, `requests`, `httpx`, `httpcore`) are
+  now clamped to WARNING under `--debug`. `--debug` set the *root* logger to
+  DEBUG, which was previously unreachable for `keyserver` and `telemetry`
+  because argparse rejected the flag; urllib3 logs the full request line, and
+  the keyserver interpolates the identifier — a fingerprint or an email
+  address — into the request path, so contact metadata would have reached
+  stderr and the desktop GUI's persistent debug log outside the
+  `debug_secret()` chokepoint.
+
+  Two latent argv-handling bugs found in the same code are fixed: `main()`'s
+  scan for the command never actually skipped `--kdf-workers`' value (both
+  branches fell through to the same `continue`), so with the flag now
+  relocated to the front for every subcommand the value itself would have been
+  read as the command name and silently routed to the monolithic parser; and
+  `-t`/`--template` was listed as a value-carrying global flag, which was dead
+  code — it is a subcommand option selecting KDF parameters, and making it
+  reachable would have meant `encrypt -t hardened` silently encrypting at
+  default cost. `--kdf-workers=4` (the `=` spelling) is now relocated too; an
+  exact-token test missed it, leaving the same symptom live for that form.
+
+  `verify-integrity --quiet` now always prints the `Signature: VALID/NOT
+  VALID` verdict. `--quiet` is documented as shortening the trust warning, but
+  it had been silently dropped for this command, and once it started working
+  it would have reduced a failed verification to an exit code.
+- **`identity import` accepts `--data-stdin` and `--alias`; GUI contact import
+  works for the first time** (gitlab#164 / github#82):
+  `CLIService.importContact` has always emitted `identity import --data <json>`
+  plus an optional `--alias <name>`, but the parser accepted neither — only a
+  required `--file` — so every contact import from the desktop GUI died at
+  argparse with exit 2. The import parser now takes `--file` and
+  `--data-stdin` as a required mutually exclusive group, and `cmd_import`
+  reads whichever was given.
+
+  The document is read from **stdin rather than argv**: `/proc/PID/cmdline` is
+  world-readable, so an inline flag would publish the contact's name, email
+  and fingerprint to every local process — and the GUI field feeding it is a
+  free-text paste box, so a mis-pasted private key or passphrase would be
+  exposed at `execve`, before the CLI could reject it. Both the stdin and the
+  file path now parse through `SecureJSONValidator.validate_json_security`,
+  picking up the pre-parse nesting-depth scan added for #94, and a document
+  that is not a JSON object is rejected with a clear message instead of a
+  `TypeError` from inside `import_public`.
+
+  `--alias` stores the contact under a local name instead of the one in the
+  document. The fingerprint is computed from the algorithms and public keys
+  (`calculate_fingerprint_v2`) and does not cover the name, so an alias cannot
+  mask a key substitution; the alias is run through `validate_identity_name`
+  because the name becomes a directory name under the identity store. The
+  rename happens before `add_identity`, so TOFU key-change pinning keys on the
+  name actually stored — covered by an end-to-end test that imports a
+  different key under an existing alias and asserts the import is refused.
+
+  Because the document and the interactive key-change confirmation would
+  otherwise share one channel, the refusal to replace a pinned key now keys on
+  the document's *source* rather than on `isatty()` alone: a pty EOF is soft,
+  so a supplier sending `{...}<^D>yes` could otherwise have answered its own
+  trust prompt. A stdin-sourced document never reaches the prompt and always
+  requires `--allow-key-change`.
+
+  Both input paths are read through a shared bounded read, so the file path is
+  no longer materialised before its size is checked, and `--file` now requires
+  a regular file — a FIFO or `/dev/zero` previously passed the `exists()`
+  check and blocked forever. Identity documents are read and written as UTF-8
+  explicitly rather than in the locale default, under which a name or email
+  could round-trip to different characters while the ASCII key fields kept the
+  fingerprint check passing.
+- **Desktop GUI: main screen no longer asserts on teardown** (gitlab#143 /
+  github#61): `_MainScreenState.dispose()` cleaned up the debug overlay through
+  `_hideDebugWindow()`, which calls `setState()` — but by the time `dispose()`
+  runs the element is already defunct, so Flutter's
+  `_lifecycleState != _ElementLifecycle.defunct` assertion fired on every
+  shutdown of the main screen in debug builds (in release builds assertions are
+  compiled out, but marking a defunct element as needing rebuild is still
+  wrong). `dispose()` now detaches the overlay entry through a new
+  `_removeDebugOverlay()` helper that touches no widget state; the interactive
+  hide path keeps its `setState()`. Covered by a teardown regression test.
+
+- **`template list` and `compare --format json` now emit JSON** (gitlab#167 /
+  github#85): `--format {table,json}` was declared and never read on either
+  handler, so a caller could request the machine-readable form, receive exit 0,
+  and get nothing on stdout. Both now write the document to stdout with the
+  human report left on stderr, and `template` no longer exits 0 for an
+  unrecognised subcommand. The payloads deliberately omit the security score
+  and level: for the metadata-bearing template format those are taken verbatim
+  from the file and never recomputed, and templates are ranked by that value,
+  so publishing it as an authoritative rating would be the wrong direction to
+  resolve that in (gitlab#169) — the `compare` document carries the two
+  templates' names and use-cases plus the security and performance verdicts,
+  each labelled with its trust `basis` (`template_declared` for the
+  self-asserted security verdict, `analyzer_computed` for performance) so a
+  machine consumer can tell them apart. Every field is length-bounded and
+  type-coerced, since a template file is any document a local process can place
+  in the template directory.
+
+- **`telemetry` reports failure through its exit code** (gitlab#166 /
+  github#84): the command ended in an unconditional `sys.exit(0)`, and every
+  failure inside the handler — plugin unavailable, plugin initialisation
+  failure, a refused `opt-out`, a failed `flush` — only printed to stderr and
+  returned. A caller could not tell a completed opt-out from one that never
+  happened, which matters because opt-out is destructive: it deletes pending
+  events and the API key. Any wrapper checking the exit status would have
+  reported a user's telemetry data as deleted when it was not, or cleared local
+  state believing a failed upload had succeeded. Declining the confirmation
+  prompt now returns a distinct status as well, so a caller can tell "the user
+  said no" from "done" and from "it broke". The success message no longer
+  overstates the effect: opt-out writes no persistent setting, so telemetry can
+  be switched on again by `OPENSSL_ENCRYPT_TELEMETRY=1` or a config file, which
+  registers a new key.
+
+- **`analyze-config` no longer claims post-quantum protection that is not
+  configured** (gitlab#166 / github#84): `--pqc-algorithm` defaults to the
+  string `"none"`, and five separate places tested the raw value for
+  truthiness, which a non-empty string satisfies. The report therefore said
+  `post_quantum_enabled: true`, `post_quantum_ready: true` and estimated
+  longevity as "quantum-resistant" for a configuration with post-quantum off,
+  while suppressing the recommendation to enable it — asserting a protection
+  the user did not have and withholding the advice that would provide it. All
+  five now use one predicate that normalises the value, so `"none"`, `"None"`,
+  whitespace, empty and non-string values are treated as absent. The reported
+  overall score for such a configuration drops slightly, because it no longer
+  receives a post-quantum bonus it had not earned. Correcting this also exposed
+  a latent crash: the branch recommending post-quantum encryption was
+  unreachable while the flag was wrongly read as enabled, and it indexed
+  `--use-case`, which argparse leaves as `None` rather than empty — so
+  `analyze-config` with no options now runs instead of failing.
+
+- **Telemetry confirmation prompts no longer traceback without a terminal**
+  (gitlab#166 / github#84): `telemetry clear` and `telemetry opt-out` called
+  `input()` directly, so a caller with no usable stdin — a GUI subprocess or a
+  CI job — got an `EOFError` traceback and an exit code outside the command's
+  own contract. Both now treat that, and an interrupt, as a decline. Declining
+  returns status 3 rather than 2, so it cannot be confused with argparse's
+  usage-error code.
+
+### Security
+
+- **A contact stored under an own identity's name can no longer substitute
+  its keys** (gitlab#173, ADVISORY 2026-15): `get_by_name` resolves own
+  identities before contacts, but `add_identity` chose its destination purely
+  from whether the identity was an own one. Importing a contact whose name
+  matched an existing own identity created a *shadowed* contact entry —
+  invisible while the own identity existed, because every lookup resolved the
+  own identity first. `delete_identity` removed only the first location it
+  found, so deleting the own identity left the shadow behind and `get_by_name`
+  then resolved to the contact's keys under a name the user trusts. Since
+  recipient resolution goes through `get_by_name`, that is a live key
+  substitution: files encrypted to that name go to the attacker's key. The
+  TOFU key-change dialogue does fire on the import, but it is a gate about a
+  *changed key* — designed to be passable with `--allow-key-change`, and
+  silent when the fingerprints happen to match.
+
+  `add_identity` now refuses a name that already exists as the other kind, in
+  both directions and independently of the key-change gate: one name resolves
+  to one key, so the collision fails closed on its own. `delete_identity`
+  removes both locations, so a store that already contains a shadow cannot
+  promote it. `IdentityStore.find_shadowed_names()` reports colliding names,
+  and `identity list` surfaces them in both its human output and its `--json`
+  document (a `shadowed` key), so an existing shadow is visible rather than
+  silent.
+
+  Review of the fix caught that deleting both sides had become a trap: the
+  warning told users to remove "the one you did not intend to keep", but
+  `identity delete` had no way to do that and removed both — destroying the
+  own identity's private keys (making every file encrypted to it unreadable)
+  *and* the contact's TOFU pin, so a later import of that name would be
+  accepted as first use with no key-change warning at all. `identity delete`
+  now takes `--kind own|contact|both` (default `both`), shows both entries
+  and both fingerprints before the confirmation, and says what each deletion
+  costs. `contacts` is also reserved as an entry name: it is the store's own
+  container directory, so an entry of that name was written *into* it —
+  unlistable yet resolvable, and deleting it would have removed every pinned
+  contact in the store.
+
+- **Imported identity email can no longer forge the fingerprint line with
+  terminal escapes** (gitlab#172, ADVISORY 2026-14): `Identity.import_public`
+  validated the identity name but took `email` completely raw, and the CLI
+  printed it unsanitized directly above the `Fingerprint:` line in
+  `identity import`/`list`/`show`. A JSON string may carry `\u001b` escape
+  sequences — the JSON security validator rejects only *literal* control
+  characters, whose escaped source text is printable — so a crafted bundle's
+  email could move the cursor and overwrite the genuine fingerprint with one
+  the victim trusts. Out-of-band fingerprint comparison is the only
+  authenticity mechanism the identity design has, so forging that readout
+  enables exactly the key substitution the TOFU ceremony exists to surface.
+  The same class existed on error paths: a rejected identity name or
+  `--alias` was interpolated verbatim into the `IdentityError` message the
+  CLI echoes.
+
+  Security review of the fix found the same class live on **every other
+  identity display surface**, including one reachable by a fully remote
+  attacker: the keyserver TOFU trust prompt printed a fetched bundle's
+  `name`/`email`/`created_at` raw around the very fingerprint it tells the
+  user to verify out of band (`created_at` is printed *after* the
+  fingerprint and was completely unconstrained) — and the bundle's
+  self-signature is no defence, since it verifies against the signing key
+  shipped *in* the bundle. `identity create --email` was the producer-side
+  gap: the value is exported verbatim and uploaded, attacking other users'
+  prompts. Stored identity files were a third channel (an
+  `--identity-store` directory from an archive or shared folder feeds
+  `list`/`show` and the TOFU key-change warning without any import-time
+  check), and a signature sidecar leaked through three fields: its
+  `signer_fingerprint` printed on the unknown-signer error path before any
+  cryptographic check, its `algorithm` echoed by the unsupported-algorithm
+  error pre-verification, and its display-only `component` name — deliberately
+  excluded from the signed payload, so any tamperer can rewrite it on a
+  *valid* signature — printed inside the ✅ GOOD-signature verdict block. A
+  keyserver's raw HTTP error body (unbounded remote text) also reached the
+  terminal through exception messages.
+
+  The fix validates at every boundary and sanitizes at every display:
+  `import_public`, `Identity.generate`, `Identity.load`, and
+  `PublicKeyBundle` now validate `email` (string, ≤ 320 chars, no control
+  characters), `fingerprint` (the colon-separated lowercase hex shape the
+  tool has always written), and `created_at` (≤ 64 chars, no controls);
+  `parse_signature` format-validates `signer_fingerprint`, `algorithm`, and
+  every `component` name; keyserver HTTP error bodies are truncated and
+  sanitized; and `identity.json` is read bounded, explicitly UTF-8, and
+  through the JSON security validator, so a hostile store directory cannot
+  DoS `identity list`. A display
+  sanitizer escapes C0 controls, DEL, the C1 range (one-byte CSI
+  introducers included), backslash (so escaped output is unambiguous), and
+  the bidi/format controls (which VTE/Kitty honour and which can visually
+  reverse an email within its line) at every terminal display of identity
+  name/email/fingerprint, the keyserver trust prompt and `keyserver search`
+  display, the TOFU key-change warning, the verified-signature sender line,
+  and every identity CLI error path. Escaping rather than stripping keeps
+  the evidence visible — the user sees `\x1b[1A` instead of having their
+  display rewritten. Contacts and cached keyserver bundles imported by
+  earlier versions with crafted fields are neutralized at display time by
+  the same sanitizer.
+- **`encrypt --random` has a safe delivery channel for the generated password**
+  (gitlab#152 / github#70): the password was printed to **stderr** in a banner,
+  held for a 10-second countdown, then "cleared" with ANSI escapes. stderr is
+  merged into stdout by `2>&1` and lands in terminal scrollback, `script(1)`
+  transcripts, CI job logs and the desktop GUI's persistent debug log; the
+  screen-clear repainted the visible screen and removed the password from none
+  of those. A non-interactive caller had no way to receive it at all.
+
+  `--random-password-out PATH` now writes it to a file created 0600 through the
+  same hardened primitive as the recovery-code channel (gitlab#146): `O_EXCL`
+  and `O_NOFOLLOW`, non-regular and foreign-owned targets rejected, mode pinned
+  with an unconditional `fchmod`, and both the file and its directory entry
+  fsynced. Naming a destination replaces the display rather than adding to it,
+  and a destination equal to `--input` or `--output` is refused — equal to the
+  output it would have been truncated by the ciphertext write moments later,
+  sealing the file under a password that no longer existed anywhere, and
+  reporting success.
+
+  A destination is **required** whenever the password cannot be displayed:
+  stderr not a terminal, or `--quiet`, which suppresses the banner entirely.
+  Encrypting anyway would have produced a file nobody could open. The password
+  is now delivered *before* the file is encrypted, on both channels — disclosing
+  after the ciphertext is written means any later failure (armor, steganography,
+  the permissions call, the audit log) leaves an encrypted file whose password
+  was never shown. If encryption then fails, the password file is deliberately
+  **not** deleted — a failure does not prove the ciphertext was not written —
+  but its existence is now reported.
+
+  The retained terminal display no longer claims to erase anything; it states
+  plainly that the password is in scrollback and in any transcript of the
+  session. The generated password is also registered with the audit-log
+  redactor, which its shape heuristic would not otherwise match.
+- **`encrypt --random` crashed instead of running** (gitlab#181 / github#96):
+  the handler read `args.use_lowercase` and three siblings, which are declared
+  on `generate-password` and on the monolithic parser but not on the `encrypt`
+  subparser — and `encrypt` always routes through the subparser. The feature
+  had never worked, which also means the stderr display above was unreachable
+  in practice. The reads now default to all character classes enabled.
+- **`keyserver login <client_id>` no longer appears in the `--debug` argv dump
+  or in the keyserver logs** (gitlab#171 / github#89): `client_id` is a
+  positional argument, so `SECRET_VALUE_CLI_OPTIONS` — which matches option
+  *names* — could not redact it, and the login request body is
+  `{"client_id": ...}` with the password optional, meaning the client_id alone
+  yields access and refresh tokens. `sanitize_argv_for_debug` now redacts the
+  value following any subcommand in the new `SECRET_POSITIONAL_SUBCOMMANDS`
+  set (`set-token`, `login`), and three `logger.info` calls in the keyserver
+  plugin no longer interpolate the client_id. Newly *reachable* rather than
+  newly introduced, and only on this development branch: until the global-flag
+  fix in this release, argparse rejected `--debug` after `keyserver`, so
+  neither code path could run in any released version.
+- **Third-party HTTP loggers are clamped under `--debug`** (gitlab#171): the
+  `--debug` handler sets the *root* logger to DEBUG, and urllib3 logs the full
+  request line. The keyserver interpolates the identifier — a fingerprint or
+  an email address — into the request path, so enabling `--debug` for
+  `keyserver`/`telemetry` would have written contact metadata to stderr and to
+  the desktop GUI's persistent debug log, outside the `debug_secret()`
+  chokepoint. `urllib3`, `requests`, `httpx`, `httpcore` and `asyncio` are now
+  held at WARNING.
+- **Plugin sandbox no longer authorizes sibling directories via a bare path
+  prefix** (gitlab#133 / F15, GHSA-vr4h-5xqv-xxxf): `PluginSandbox._is_safe_path` allowed a
+  path with a plain string-prefix match, so a sandboxed plugin `foo` (without
+  `READ_FILES`) could read/write another plugin's directory `.../plugins/foobar`
+  because it shared the `.../plugins/foo` prefix — a cross-plugin access break
+  within the same user. Each allowed directory is now matched as itself or with a
+  trailing separator (`dir` / `dir + os.sep`), so a prefix-sharing sibling is
+  refused.
+
+- **Keyserver bearer token is redacted in the `--debug` argv dump** (gitlab#134 /
+  F17, GHSA-jqqp-pf9j-889j): the `keyserver set-token <token>` positional bearer token was
+  echoed in cleartext by the `--debug` `sys.argv` dump (even without
+  `--unsafe-show-secrets`), persisting the credential in logs/terminal history.
+  The positional after `set-token` is now routed through the `debug_secret`
+  redaction chokepoint like other secret CLI values.
+
+- **Trust-anchor enrollment requires the full fingerprint (no suffix match)**
+  (gitlab#136 / F21, GHSA-xg52-638v-jc5m): `enroll_trust_key` bound a plugin-signing trust
+  anchor using suffix-tolerant matching, so confirming a short (forgeable) GPG
+  key id could enrol an attacker's colliding key — which then vouches for
+  malicious plugins under the ENFORCE signature policy. Enrollment now requires
+  the confirmed value to equal the full primary-key fingerprint exactly
+  (case-insensitive, whitespace-stripped); short/partial confirmations are
+  rejected.
+
+- **PIV smartcard PIN materializes one fewer unwipeable copy** (gitlab#135 /
+  F20): `TokenSession.login` decoded the PIN through an intermediate immutable
+  `bytes()` before the `str` the PKCS#11 binding requires, leaving an extra
+  non-zeroable plaintext PIN copy on the heap. It now decodes the wiped bytearray
+  directly, so only the binding-required `str` (an accepted, minimized-lifetime
+  residual) is materialized; the PIN bytearrays are still zeroized. Memory
+  hygiene only — no behavior change.
+
+- **Portable-USB integrity now detects added executables and protects
+  root-level autorun files; the hash-manifest fallback uses the per-drive salt**
+  (gitlab#132 / F13 + F19, GHSA-8jx3-27qf-3p97): the module's threat model
+  treats the removable drive as untrusted (physical write access). Integrity
+  verification previously only re-hashed the files listed in the manifest, so a
+  file **added** to the drive — including a root-level `autorun.*` payload (which
+  lives above the portable directory and is auto-executed by the OS on insert) —
+  was never noticed and verification still passed. New drives now write a v2
+  integrity manifest that is an **allowlist** of every file in the tool tree
+  (plus the root `autorun.inf`/`autorun.sh`/`.autorun` hashes), so verification
+  flags **any** file added afterward — a planted `.dll`/`.so`/`.pyd`/`.exe` or
+  any other payload, not just a fixed set of extensions — and any tampered,
+  added, or removed root autorun file. The user's mutable workspace (`data/`)
+  and `logs/` are excluded, so the normal use case (encrypting files onto the
+  drive) still verifies. Drives created before this fix carry no v2 marker and
+  verify exactly as before (backward compatible); re-create a drive to gain the
+  stronger checks. Separately, the cryptographic hash-manifest
+  fallback path derived its key with the global fixed salt (F19); it now uses the
+  drive's unique per-drive salt (`salt.bin`), matching the main key-derivation
+  path already hardened earlier.
+
+- **The weak 10k-PBKDF2 dual-encryption file-password verifier is no longer
+  trusted; the mismatch state fails closed** (gitlab#131 / F18,
+  GHSA-fmjx-p826-6fvr): dual-encrypted files carried a `pqc_dual_encrypt_verify`
+  hash — a 10,000-iteration PBKDF2 pre-check over the file password stored in
+  cleartext metadata — that an attacker with the file could brute-force offline
+  to recover the second-factor file password. That pre-check is no longer
+  recomputed or trusted (and is no longer propagated into re-processed
+  metadata): the file password is authenticated by the dual-encryption AES-GCM
+  tag during keystore key retrieval, which derives the file key with the
+  keystore's own Argon2id KDF and is not brute-forceable offline. The one state
+  where the AES-GCM tag would not gate the file password — a file that claims
+  dual encryption backed by a non-dual keystore key entry (a metadata/keystore
+  mismatch) — now fails closed in `get_key`, so removing the weak pre-check
+  cannot let a wrong file password through. Legacy dual-encrypted files still
+  decrypt unchanged; re-encrypt them to drop the weak verifier from their
+  metadata.
+
+- **`.pqc` keyfiles wrap the private key with Argon2id instead of PBKDF2-SHA256
+  100k** (gitlab#131 / F16, GHSA-fmjx-p826-6fvr): a keyfile created with
+  `--pqc-keyfile` wrapped the long-lived PQC private key under a key derived
+  from a single PBKDF2-HMAC-SHA256 pass at 100,000 iterations — below the OWASP
+  floor and far weaker than the Argon2id used for file and keystore material, so
+  an attacker who obtained the keyfile could brute-force the wrapping password
+  cheaply offline. New keyfiles now derive the wrapping key with Argon2id and
+  record a self-describing `key_kdf` descriptor; the redundant trailing SHA-256
+  is dropped. Existing PBKDF2-wrapped keyfiles still decrypt unchanged (no
+  `key_kdf` → legacy path). The Argon2 cost read from a keyfile is bounded
+  (memory ≤ 2 GiB, time ≤ 64, parallelism ≤ 16) so a tampered keyfile cannot
+  OOM the host on decrypt before the AES-GCM tag authenticates. Re-wrap existing
+  keyfiles (regenerate or re-save) to move them onto Argon2id.
+
+- **Unsigned third-party plugins are refused by default (signature policy now
+  ENFORCE)** (gitlab#130, GHSA-587j-4r3v-cm2c): the plugin loader defaulted to
+  `warn`, so an unsigned/unverifiable non-built-in plugin was exec'd in the host
+  process after only an AST denylist scan — a scan that is bypassable (e.g.
+  `getattr`/`__import__` indirection), giving arbitrary code execution to anyone
+  who could drop a `.py` into a plugin directory. The default signature policy is
+  now `enforce`: a non-built-in plugin must carry a valid detached signature from
+  an enrolled trust anchor or it is refused before its code is imported. Built-in
+  bundled plugins keep their trust shortcut and are unaffected, so no shipped
+  functionality changes. Users who deliberately load unsigned third-party plugins
+  can opt back into the old behavior with
+  `OPENSSL_ENCRYPT_PLUGIN_SIGNATURE_POLICY=warn` (or `off`), or an explicit
+  `signature_policy=` argument; an unrecognized env value now fails closed to
+  `enforce` with a warning rather than silently weakening the policy.
+  Additionally, the built-in trust shortcut is now scoped to the genuinely
+  shipped plugin subtree: the advertised third-party drop directories
+  (`plugins/user`, `plugins/community`, `plugins/official`) are no longer
+  treated as built-in, so a plugin placed there must pass the full signature +
+  AST + TOCTOU gate — otherwise the ENFORCE default would have been bypassable
+  by dropping an unsigned plugin into the directory the tool advertises for
+  third-party plugins.
+
+- **Decryption refuses crafted files/keystores whose KDF cost would exhaust
+  memory** (gitlab#128, GHSA-7894-5gw8-69hr): Argon2 `memory_cost`, scrypt `N`,
+  and balloon `space_cost` read from file metadata (and from a keystore header)
+  were passed to the KDF before authentication with no upper bound — scrypt's
+  own `maxmem` guard was even computed from the attacker-supplied `N`, so it
+  could never trip. A single crafted file could drive a multi-terabyte
+  allocation and OOM-crash the host on decrypt, with no correct password
+  required. Decryption now estimates peak memory before any KDF runs and refuses
+  when it exceeds an 8 GiB safety ceiling — 4× the largest shipped preset, so no
+  legitimately written file is affected — overridable per file with
+  `--allow-high-kdf-cost` or an interactive confirmation (users may still choose
+  expensive parameters for their own files). The same ceiling is enforced on
+  every key-derivation path that consumes untrusted metadata — standard and
+  streaming decrypt, the envelope rekey fast-path, recovery-slot add/remove,
+  asymmetric `--no-verify` decrypt, and the PQC keystore header — and the scrypt
+  memory estimate (previously under-reported as zero, which would have let a
+  high-`N` file slip past the ceiling) is corrected. CPU/time cost stays
+  advisory — only memory, which OOM-kills uninterruptibly, is hard-guarded.
+
+- **Identity-file unlock bounds its Argon2 cost parameters** (gitlab#129,
+  GHSA-783h-8q2f-f762): an identity file's password-protection block carried an
+  unbounded `memory_cost` read straight from JSON, and `_derive_key` fed it to
+  Argon2 before the AEAD tag authenticated the private key — a tampered or
+  attacker-authored identity with a gigabyte-scale `memory_cost` OOM-crashed the
+  host on unlock, pre-authentication (same class as gitlab#128 on the
+  identity-file surface). The Argon2 cost parameters are now clamped to sane
+  maxima (memory ≤ 2 GiB, time ≤ 64, parallelism ≤ 16) before derivation.
+  Legitimate identities use the 64 MB default, far under the cap, so no file
+  changes behavior.
+
+- **Balloon KDF fails closed on v14+ metadata missing `space_cost`**
+  (security review 2026-07-13 INFO-2, gitlab#125): the decrypt-side
+  derivation fell back to the historically weak `space_cost=16` whenever
+  the field was absent from balloon metadata. That fallback is load-bearing
+  for v11 files written by released v1.4.0–v1.4.3 (pre-M3, guarded by
+  `test_balloon_defaults_m3.py`) and is kept for v11–13 — but v14 postdates
+  the M3 fix, so every released v14+ writer persists the field; a missing
+  `space_cost` at v14+ can only be crafted or corrupted metadata and now
+  raises a clear `ValueError` instead of silently deriving with ~512 bytes
+  of memory hardness. The parallel KDF path needs no gate of its own (v13+
+  parallel dispatch delegates to the sequential, gated path — invariant now
+  pinned by a test). No legitimately written file changes behavior.
+
+- **The legacy no-hash-iterations KDF seed is now wipeable and wiped**
+  (security review 2026-07-13 INFO-1, gitlab#124): with no hash iterations
+  configured, `generate_key` built its seed as the immutable concatenation
+  `password + salt + hsm_pepper`, which the existing wipe at the return
+  site silently refused (M10 — immutable input). The seed is now written
+  into one exact-size `bytearray` through a memoryview and is effectively
+  zeroized in the `finally`, including when a KDF rebinds the working
+  variable. Legacy sequential formats only; derived keys are byte-identical
+  (pinned by golden-value regression tests).
+
+- **`derive-password` no longer leaves the HSM pepper and derived-key
+  copies unwiped** (security review 2026-07-13 LOW-1, gitlab#123): the
+  handler held the hardware pepper as immutable bytes that were never
+  zeroized, and "cleaned up" the derived key by wiping a throwaway
+  `bytearray(key)` copy while the printed output slice stayed resident.
+  The pepper is now held in a wipeable buffer from acquisition (a mutable
+  plugin buffer is wiped in place), the truncated output is copied into a
+  `bytearray` via a memoryview (no intermediate immutable slice), and both
+  are zeroized in a `finally` on all exit paths. The immutable `bytes`
+  returned by `generate_key` remains a documented accepted residual (M10
+  design, common to all callers). Derived outputs are unchanged.
+
+### Internal
+
+- **Batch tab: steganography (gitlab#155 P24) declined and pinned**: a
+  batch run would need a distinct cover file per input plus per-pair
+  capacity checks — a new design, not parity wiring — so single-file
+  steganography stays on the Encrypt tab and `batch_parity_test.dart` now
+  pins the absence as a decision. With P20–P23 long landed (shared
+  hash/KDF, HSM and pepper sections, all pinned), this closes gitlab#155.
+
+- **The gitlab#198 has-a-caller lint had never scanned the widget
+  directories** (gitlab#198 follow-up, gitlab#217): its caller scan read
+  only top-level `lib/*.dart`, while every tab and shared widget lives in
+  `lib/tabs/`, `lib/widgets/` and `lib/screens/` — so 13 of the 14
+  `KNOWN_UNWIRED` exemptions described Encrypt-tab wiring that in fact
+  existed (gitlab#153's keyfile/composition/parallel-KDF controls among
+  them), and the registry hid the one real gap. The scan now recurses; the
+  registry is pruned to the verified truth: `decryptFromSteganography` has
+  no caller (the Decrypt tab has no steg-extraction UI — new gitlab#217),
+  `configurePepperDeadman` waits on the pepper CLI (gitlab#193),
+  `validateCascade(strict:)` has no control, and the explicit
+  `independentXor` flag is deliberately unexposed (it is already the CLI's
+  default composition). Also fixed: the extractor no longer misparses the
+  `commandRunnerOverride` function-typed field as a service method, and the
+  argv lint's pinned interpolated-flag set follows the gitlab#214
+  brace-free spelling (`--$hashName-rounds`, byte-identical argv).
+
+- **Desktop GUI: `flutter analyze` is clean — 77 issues to 0** (gitlab#214 /
+  github#125). Warnings: removed the unused
+  `_isPostQuantumAlgorithm`/`_getNonPostQuantumAlgorithms` duplicates from
+  `_SettingsScreenWrapperState` — copy-paste leftovers of the pair that lives
+  (and is used) in `_BatchOperationsTabState`; the settings wrapper has no
+  algorithm UI, so no wiring was missing — and the never-called `openAdvanced`
+  helper from `test/batch_parity_test.dart`. Deprecations (Flutter 3.44):
+  `Radio`/`RadioListTile` `groupValue`/`onChanged` migrated to `RadioGroup`
+  ancestors (per-tile disabling via `enabled: !_isLoading`);
+  `DropdownButtonFormField.value` renamed to `initialValue` at all 17 sites
+  after verifying in the SDK that `didUpdateWidget` still syncs a changed
+  `initialValue` into the field state, so rebuild-driven updates behave as
+  before; `ReorderableListView.onReorder` moved to `onReorderItem`, which
+  takes over the manual `newIndex -= 1` adjustment; `withOpacity` replaced by
+  `withValues(alpha:)`. The four `use_build_context_synchronously` hits in
+  `_SettingsScreenState` now guard with the State's own `mounted` instead of
+  `context.mounted`. Remaining `prefer_const_*`/interpolation/conditional-
+  assignment lints auto-fixed via `dart fix --apply` (diff reviewed; the
+  `cli_service.dart` rewrites are argv- and semantics-identical). Two
+  pre-existing `// ignore: use_build_context_synchronously` suppressions
+  (settings reset dialog, profile-created snackbar) hid real
+  shadowed-dialog-context bugs — the State's `mounted` says nothing about
+  the dialog's context; the settings-reset dialog now pops before the
+  await (popping after the gap could pop the wrong route if the dialog
+  was barrier-dismissed mid-reset) and the profile-created snackbar
+  resolves its messenger before the await, no suppression needed.
+  `pubspec.yaml`'s SDK floor raised to `^3.10.0` (Flutter 3.44), which is
+  where the migrated `RadioGroup` / `initialValue` / `onReorderItem` APIs
+  exist. All 61 widget tests pass.
+
+  Parity follow-up from the 1.5.x review round (gitlab#215 item 8):
+  Decrypt/Encrypt tab failure results are sanitized
+  (`InputValidator.sanitizeForDisplay`) before rendering — the exception
+  embeds raw CLI stderr, which on the asymmetric path can carry
+  attacker-influenced signer text; the Decrypt tab loads identities only
+  in Pro mode (Simple mode never renders the asymmetric section, so it no
+  longer shells out for data it never shows); and
+  `decrypt_tab_asym_test.dart` installs the gitlab#211 fake-CLI seam
+  instead of spawning the real CLI inside the test binding, with both new
+  test files resetting via `CLIService.resetForTesting`.
+
+- **The combined-pepper concatenation is now documented as an accepted
+  residual** (gitlab#117): `_combine_peppers` joins the HSM and remote
+  peppers and the result enters the v14 seed encoder as one length-prefixed
+  field, so the boundary between them is not itself prefixed. Not
+  exploitable — both peppers are fixed-length and tool-generated, so no two
+  distinct pairs can collide — and not fixable inside v14, whose seed
+  encoding is pinned by cross-line golden vectors. Recorded at the site, and
+  pinned by tests over the two assumptions that make it safe, so a future
+  variable-length pepper source fails there rather than silently
+  invalidating the analysis.
+
+- **Desktop GUI widget tests: corrected button finders**: the Rekey and Secure
+  Shred screen tests looked their action button up with
+  `find.widgetWithText(ElevatedButton, ...)`, but both buttons are built with
+  `ElevatedButton.icon`, whose runtime type is the private
+  `_ElevatedButtonWithIcon` subclass. `find.byType` compares `runtimeType`
+  exactly and does no subtype test, so those finders matched nothing and the
+  tests could never pass. They now match on `find.bySubtype<ElevatedButton>()`.
+  The Rekey tap test additionally calls `ensureVisible()` first — the button
+  sits below the fold of the 800x600 test viewport, so the tap previously
+  missed silently.
+
+- **Completed plan documents removed from `docs/`** (plan-tracker
+  verification 2026-07-13, mirroring the 1.5.x cleanup):
+  `FORMAT_V14_PLAN.md`, `FORMAT_V14_IMPLEMENTATION_PLAN.md`,
+  `V14_REVIEW_LOW_FIX_PLAN.md` and `V14_REVIEW_FIXES_2026-07-10.md` — all
+  steps verified implemented in this branch's code before removal;
+  recoverable via git history.
+
+- **`KDF_CHAIN_SECURITY_RESEARCH.md` moved** from the repo-root `docs/`
+  into the package documentation (`openssl_encrypt/docs/`), joining the
+  other shipped guides.
+
 
 ## [1.4.8] - 2026-07-12
 
