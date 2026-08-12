@@ -226,6 +226,25 @@ relevant.
 
 ## Security Advisories
 
+### ADVISORY 2026-44: Recovery-Slot Presence Was Not Authenticated — Recovery Slots Could Be Stripped Undetected — Resolved
+
+**Severity:** Medium · **CWE-354** (Improper Validation of Integrity Check Value) / **CWE-347** (Improper Verification of Cryptographic Signature)
+**Affected versions:** releases with envelope-format recovery slots, up to and including **1.4.8**. **Fixed in 1.4.9** (both the 1.4.x and 1.5.x lines).
+
+**Summary:** envelope-format files wrap a random data key (DEK) under a password key (`encryption.wrapped_dek`) and, optionally, under recovery credentials (`encryption.dek_slots`, authenticated by a DEK-keyed `encryption.dek_slots_mac`). The recovery-slot fields were excluded from the bulk AEAD associated data so slots could be added or removed without re-encrypting the payload, and the slot-set MAC was only verified when slots were present. An attacker who could rewrite the file header could therefore delete both recovery-slot fields wholesale — no key required — and the password decrypt path would proceed as if the file had never had any recovery slots.
+
+**Impact:** a recovery path the owner deliberately added (e.g. a recovery code handed to a custodian) could be silently removed by anyone with write access to the file, with no error on the owner's normal password decrypt. Confidentiality of the payload was not broken; the flaw is unauthenticated modification of the file's recovery structure (CWE-354/347). No remote exposure.
+
+**Fixed in 1.4.9:** a recovery-slot-count commitment (`encryption.dek_slot_count`) is bound into the wrapped DEK's AEAD associated data (`envelope.wrapped_dek_aad`). Because the wrapped DEK cannot be recomputed without the password key, and decryption binds the count deterministically — using the bound associated data whenever the commitment is present, with **no** fallback to the legacy unbound form — the recovery slots can no longer be stripped, the count zeroed, or the file downgraded without the password unwrap failing closed. Decryption additionally fails closed unless the recovery slots present match the authenticated count (and, when the count is non-zero, the DEK-keyed slot-set MAC verifies), on both the password and recovery-credential paths. Managing recovery slots before or after this change never touches the bulk ciphertext (it stays an O(header) rewrite).
+
+**Behavior change:** adding or removing a recovery slot (`add-recovery` / `remove-recovery`) now requires the primary password. Re-binding the wrapped key to the new slot count needs the password key, which a recovery credential does not recover — so a recovery credential alone can no longer add or remove slots.
+
+**Known limitation (by design):** on the recovery-credential decrypt path the wrapped DEK is not unwrapped, so the count's authenticity there rests on the DEK-keyed slot-set MAC plus a length check rather than the password-key-gated wrapped-DEK binding. This is sufficient against the threat this advisory addresses (a party with no credential cannot forge the DEK-keyed MAC, so stripping still fails closed); a party who already holds a valid recovery credential — and therefore full read access — can re-author the slot set, which is an inherent property of the DEK-keyed design, not a new exposure.
+
+**Mitigation for existing installs:** upgrade to 1.4.9. Files written by earlier versions carry no count commitment and cannot be retrofitted in place; re-encrypt (or add/remove a recovery slot on 1.4.9, which upgrades the file to the bound form) to gain the protection.
+
+**Disclosure:** tracked as gitlab#264 and GHSA-grhj-cpmg-f5mx (published with the 1.4.9 release). **Credit:** found by the 1.4.9 pre-release security scan (findings F17/F18).
+
 ### ADVISORY 2026-43: Portable USB Workspace Advertised AES-256-GCM Encryption While Storing Files in Cleartext — Resolved
 
 **Severity:** Medium · **CWE-311** (Missing Encryption of Sensitive Data)

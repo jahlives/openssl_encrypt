@@ -1050,8 +1050,10 @@ def recover_cli(args) -> None:
 def add_recovery_cli(args) -> None:
     """`add-recovery`: add a recovery slot to an existing envelope file.
 
-    Unlock with --password (or an existing --recovery-code); add one of
-    --add-code (generated and printed) or --add-passphrase (prompted).
+    Unlock with the primary password (--password / $CRYPT_PASSWORD); add one of
+    --add-code (generated and printed) or --add-passphrase (prompted). A recovery
+    code can no longer authorize a slot change (F17/F18, gitlab#234): the wrapped
+    key is re-bound to the new slot count, which requires the password KEK.
     """
     import getpass
 
@@ -1097,12 +1099,17 @@ def add_recovery_cli(args) -> None:
 
     existing_code = _read_recovery_code(args, env["code"])
 
-    # How to unlock the existing file (to recover the DEK).
-    unlock = {}
+    # F17/F18 (gitlab#234): adding a slot re-binds the wrapped key to the new
+    # slot count, which needs the password KEK -- a recovery code recovers only
+    # the DEK. Refuse a recovery-code unlock rather than prompt (a GUI passing
+    # only a code would otherwise hang on getpass).
     if existing_code:
-        unlock["recovery_code"] = existing_code
-    else:
-        unlock["password"] = _read_password(args, env["password"])
+        raise ValueError(
+            "add-recovery now requires the primary password: a recovery code can "
+            "no longer authorize adding a slot. Re-run with --password / "
+            "$CRYPT_PASSWORD."
+        )
+    unlock = {"password": _read_password(args, env["password"])}
 
     creds = []
     generated_code = None
@@ -1207,12 +1214,17 @@ def remove_recovery_cli(args) -> None:
     # consumed anyway so a stray value cannot survive the invocation.
     env = _consume_recovery_env()
 
-    unlock = {}
+    # F17/F18 (gitlab#234): removing a slot re-binds the wrapped key to the new
+    # slot count, which needs the password KEK. A recovery code can no longer
+    # authorize a slot change.
     existing_code = _read_recovery_code(args, env["code"])
     if existing_code:
-        unlock["recovery_code"] = existing_code
-    else:
-        unlock["password"] = _read_password(args, env["password"])
+        raise ValueError(
+            "remove-recovery now requires the primary password: a recovery code "
+            "can no longer authorize removing a slot. Re-run with --password / "
+            "$CRYPT_PASSWORD."
+        )
+    unlock = {"password": _read_password(args, env["password"])}
     remove_recovery_slot(
         args.input,
         args.output,

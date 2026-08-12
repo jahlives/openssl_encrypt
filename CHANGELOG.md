@@ -461,6 +461,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Recovery-slot presence is now authenticated — slots can no longer be
+  stripped undetected** (gitlab#264, MEDIUM / CWE-354/347, ADVISORY 2026-44):
+  envelope files exclude the recovery-slot fields (`dek_slots`/`dek_slots_mac`)
+  from the bulk AEAD so slots can be managed without re-encrypting the payload,
+  and the slot-set MAC was only verified when slots were present — so an
+  attacker who could rewrite the header could delete both fields wholesale (no
+  key needed) and the password decrypt path proceeded as if the file never had
+  recovery slots, silently removing a recovery path the owner added. The DEK
+  wrap is now AEAD-bound to a recovery-slot-count commitment
+  (`encryption.dek_slot_count`, via `envelope.wrapped_dek_aad`): because the
+  wrapped DEK cannot be recomputed without the password KEK and decrypt binds
+  the count deterministically (no legacy fallback for files that carry the
+  commitment), the slots can no longer be stripped, the count zeroed, or the
+  file downgraded without the password unwrap failing closed. Decrypt also
+  fails closed unless the present slot set matches the authenticated count (and,
+  when non-zero, the DEK-keyed slot-set MAC verifies), on both the password and
+  recovery-credential paths; `dek_slot_count` is excluded from the bulk AAD so
+  slot add/remove stays an O(header) rewrite. **Behavior change:** managing
+  recovery slots (`add-recovery`/`remove-recovery`) now requires the primary
+  password — re-binding the wrapped key to the new count needs the password KEK,
+  so a recovery credential alone can no longer add or remove slots. Both lines.
 - **Portable USB workspace is now genuinely encrypted (was a false claim)**
   (gitlab#263, MEDIUM / CWE-311, ADVISORY 2026-43): the portable-USB creator
   branded the workspace as an "Encrypted USB Workspace" with "AES-256-GCM

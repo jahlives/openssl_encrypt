@@ -7574,12 +7574,26 @@ def encrypt_file(
     _envelope_wrapped_dek = None
     _envelope_dek_slots = None
     _envelope_dek_slots_mac = None
+    _envelope_dek_slot_count = 0
     # Recovery credentials imply envelope mode (recovery slots wrap the DEK).
     if envelope or recovery_credentials:
-        from .envelope import generate_dek, wrap_dek, wrap_dek_cascade
+        from .envelope import generate_dek, wrap_dek, wrap_dek_cascade, wrapped_dek_aad
 
         _dek = generate_dek()
         try:
+            # Build recovery slots FIRST so the slot count is known before the
+            # DEK is wrapped: the wrap binds encryption.dek_slot_count in its
+            # AEAD associated data (F17/F18, gitlab#234), so an attacker cannot
+            # strip the recovery slots from the header and have the password
+            # decrypt path silently proceed. Bind the slot set with a DEK-keyed
+            # MAC as before.
+            if recovery_credentials:
+                from .recovery_slots import build_recovery_slots, compute_slot_set_mac
+
+                _envelope_dek_slots = build_recovery_slots(bytes(_dek), recovery_credentials)
+                _envelope_dek_slots_mac = compute_slot_set_mac(bytes(_dek), _envelope_dek_slots)
+            _envelope_dek_slot_count = len(_envelope_dek_slots or [])
+            _wrap_aad = wrapped_dek_aad(_envelope_dek_slot_count)
             if cascade and cipher_names:
                 # Cascade bulk: wrap the DEK under the SAME chain so the envelope
                 # is never the weak link (matches the bulk's guarantee). New
@@ -7587,17 +7601,15 @@ def encrypt_file(
                 # xchacha layer, so the DEK wrap must mirror the bulk (format 2)
                 # to keep envelope and bulk in the same nonce format.
                 _envelope_wrapped_dek = wrap_dek_cascade(
-                    bytes(_dek), key, cipher_names, cascade_hash, xchacha_nonce_format=2
+                    bytes(_dek),
+                    key,
+                    cipher_names,
+                    cascade_hash,
+                    xchacha_nonce_format=2,
+                    aad=_wrap_aad,
                 )
             else:
-                _envelope_wrapped_dek = wrap_dek(bytes(_dek), key)
-            # Optional recovery slots: wrap the SAME DEK under independent
-            # recovery credentials, and bind the slot set with a DEK-keyed MAC.
-            if recovery_credentials:
-                from .recovery_slots import build_recovery_slots, compute_slot_set_mac
-
-                _envelope_dek_slots = build_recovery_slots(bytes(_dek), recovery_credentials)
-                _envelope_dek_slots_mac = compute_slot_set_mac(bytes(_dek), _envelope_dek_slots)
+                _envelope_wrapped_dek = wrap_dek(bytes(_dek), key, aad=_wrap_aad)
         finally:
             secure_memzero(key)
             key = bytes(_dek)
@@ -7722,6 +7734,11 @@ def encrypt_file(
             metadata.setdefault("encryption", {})["wrapped_dek"] = base64.b64encode(
                 _envelope_wrapped_dek
             ).decode("ascii")
+            # F17/F18 (gitlab#234): commit the recovery-slot count. It is bound
+            # into the wrapped_dek AEAD (wrapped_dek_aad) and EXCLUDED from the
+            # bulk AAD, so decrypt fails closed if the slots are stripped, while
+            # slot add/remove stays an O(header) header rewrite.
+            metadata.setdefault("encryption", {})["dek_slot_count"] = _envelope_dek_slot_count
         # Recovery slots are additive: present only when recovery credentials
         # were supplied. Absent on every other file (full backward compat).
         if _envelope_dek_slots:
@@ -8587,6 +8604,11 @@ def encrypt_file(
             metadata.setdefault("encryption", {})["wrapped_dek"] = base64.b64encode(
                 _envelope_wrapped_dek
             ).decode("ascii")
+            # F17/F18 (gitlab#234): commit the recovery-slot count. It is bound
+            # into the wrapped_dek AEAD (wrapped_dek_aad) and EXCLUDED from the
+            # bulk AAD, so decrypt fails closed if the slots are stripped, while
+            # slot add/remove stays an O(header) header rewrite.
+            metadata.setdefault("encryption", {})["dek_slot_count"] = _envelope_dek_slot_count
         # Recovery slots are additive: present only when recovery credentials
         # were supplied. Absent on every other file (full backward compat).
         if _envelope_dek_slots:
@@ -8890,6 +8912,11 @@ def encrypt_file(
             metadata.setdefault("encryption", {})["wrapped_dek"] = base64.b64encode(
                 _envelope_wrapped_dek
             ).decode("ascii")
+            # F17/F18 (gitlab#234): commit the recovery-slot count. It is bound
+            # into the wrapped_dek AEAD (wrapped_dek_aad) and EXCLUDED from the
+            # bulk AAD, so decrypt fails closed if the slots are stripped, while
+            # slot add/remove stays an O(header) header rewrite.
+            metadata.setdefault("encryption", {})["dek_slot_count"] = _envelope_dek_slot_count
         # Recovery slots are additive: present only when recovery credentials
         # were supplied. Absent on every other file (full backward compat).
         if _envelope_dek_slots:
@@ -9808,7 +9835,14 @@ def _rekey_envelope_fast(
         envelope write is delegated to _write_envelope_header, which derives
         eligibility itself (gitlab#148).
     """
-    from .envelope import envelope_aad, unwrap_dek, unwrap_dek_cascade, wrap_dek, wrap_dek_cascade
+    from .envelope import (
+        envelope_aad,
+        unwrap_dek,
+        unwrap_dek_cascade,
+        wrap_dek,
+        wrap_dek_cascade,
+        wrapped_dek_aad,
+    )
 
     with open(input_file, "rb") as f:
         raw = f.read()
@@ -9885,6 +9919,10 @@ def _rekey_envelope_fast(
     # unwrap and rewrap -- otherwise the rewrapped DEK would no longer match the
     # bulk's construction.
     _xchacha_format = encryption.get("xchacha_nonce_format", 1)
+    # F17/F18 (gitlab#234): the rekey retains the recovery-slot set verbatim, so
+    # the DEK wrap keeps its existing slot-count binding (absent => legacy None)
+    # on both unwrap and rewrap.
+    _wrap_aad = wrapped_dek_aad(encryption.get("dek_slot_count"))
     try:
         if is_cascade:
             dek = unwrap_dek_cascade(
@@ -9893,9 +9931,10 @@ def _rekey_envelope_fast(
                 cipher_chain,
                 hkdf_hash,
                 xchacha_nonce_format=_xchacha_format,
+                aad=_wrap_aad,
             )
         else:
-            dek = unwrap_dek(base64.b64decode(wrapped_b64), old_kek)
+            dek = unwrap_dek(base64.b64decode(wrapped_b64), old_kek, aad=_wrap_aad)
     finally:
         secure_memzero(old_kek)
 
@@ -9917,9 +9956,10 @@ def _rekey_envelope_fast(
                     cipher_chain,
                     hkdf_hash,
                     xchacha_nonce_format=_xchacha_format,
+                    aad=_wrap_aad,
                 )
             else:
-                new_wrapped = wrap_dek(bytes(dek), new_kek)
+                new_wrapped = wrap_dek(bytes(dek), new_kek, aad=_wrap_aad)
         finally:
             secure_memzero(new_kek)
         new_meta["encryption"]["wrapped_dek"] = base64.b64encode(new_wrapped).decode("ascii")
@@ -9967,6 +10007,54 @@ def list_recovery_slots(input_file: str) -> list:
     return out
 
 
+def _enforce_dek_slot_presence(enc: dict, dek: bytes) -> None:
+    """Fail closed unless the recovery slots present match their commitment.
+
+    F17/F18 (gitlab#234, CWE-354/347). Two cases:
+
+    * New files carry an authenticated ``encryption.dek_slot_count`` (bound into
+      the wrapped_dek AEAD, so the count was already authenticated by the unwrap
+      on the password path). Require the present ``dek_slots`` set to match the
+      count exactly, and -- when the count is non-zero -- require the DEK-keyed
+      ``dek_slots_mac`` to verify. This is what detects wholesale stripping: an
+      attacker who deletes the slots but leaves the count trips the length
+      check, and one who also zeroes/removes the count breaks the wrapped_dek
+      unwrap upstream (no legacy fallback).
+
+    * Legacy files predate the binding (no ``dek_slot_count``). Keep the original
+      behavior: authenticate the slot set only when slots are present.
+
+    Args:
+        enc: The file's ``encryption`` metadata dict.
+        dek: The recovered DEK (used to key the slot-set MAC).
+
+    Raises:
+        AuthenticationError: If the slot set does not authenticate.
+    """
+    from .recovery_slots import verify_slot_set_mac
+
+    count = enc.get("dek_slot_count")
+    slots = enc.get("dek_slots") or []
+    mac_b64 = enc.get("dek_slots_mac")
+
+    def _mac_ok() -> bool:
+        return bool(mac_b64) and verify_slot_set_mac(bytes(dek), slots, base64.b64decode(mac_b64))
+
+    if count is not None:
+        if not isinstance(count, int) or isinstance(count, bool) or count < 0:
+            raise AuthenticationError("Recovery-slot count is malformed")
+        if len(slots) != count:
+            raise AuthenticationError(
+                "Recovery-slot set does not match the authenticated count " "(possible tampering)"
+            )
+        if count > 0 and not _mac_ok():
+            raise AuthenticationError("Recovery slot set failed authentication")
+    else:
+        # Legacy file: only present slots are checked.
+        if slots and not _mac_ok():
+            raise AuthenticationError("Recovery slot set failed authentication")
+
+
 def _recover_envelope_dek(
     meta: dict,
     *,
@@ -9979,17 +10067,19 @@ def _recover_envelope_dek(
     """Recover the envelope DEK via the password or a recovery credential, then
     authenticate the existing slot set with it (fail-closed). Returns a
     bytearray (caller must secure_memzero it)."""
-    from .envelope import unwrap_dek, unwrap_dek_cascade
+    from .envelope import unwrap_dek, unwrap_dek_cascade, wrapped_dek_aad
     from .recovery_slots import (
         MAX_DEK_SLOTS,
         unlock_passphrase_slot,
         unlock_pqc_slot,
         unlock_recovery_code_slot,
-        verify_slot_set_mac,
     )
 
     enc = meta.get("encryption", {})
     wrapped_b64 = enc.get("wrapped_dek")
+    # F17/F18: bind the wrapped_dek unwrap to the recovery-slot count (absent =>
+    # legacy, aad=None). No fallback: a bound wrap never unwraps under None.
+    _wrap_aad = wrapped_dek_aad(enc.get("dek_slot_count"))
     if not wrapped_b64:
         raise ValidationError("File is not an envelope file (no wrapped_dek)")
     slots = enc.get("dek_slots") or []
@@ -10049,9 +10139,10 @@ def _recover_envelope_dek(
                     enc.get("cipher_chain"),
                     enc.get("hkdf_hash", "sha256"),
                     xchacha_nonce_format=enc.get("xchacha_nonce_format", 1),
+                    aad=_wrap_aad,
                 )
             else:
-                dek = unwrap_dek(base64.b64decode(wrapped_b64), kek)
+                dek = unwrap_dek(base64.b64decode(wrapped_b64), kek, aad=_wrap_aad)
         finally:
             secure_memzero(kek)
     else:
@@ -10074,11 +10165,11 @@ def _recover_envelope_dek(
         if dek is None:
             raise DecryptionError("No recovery slot matched the supplied credential")
 
-    if slots:
-        _mac_b64 = enc.get("dek_slots_mac")
-        if not _mac_b64 or not verify_slot_set_mac(bytes(dek), slots, base64.b64decode(_mac_b64)):
-            secure_memzero(dek)
-            raise AuthenticationError("Recovery slot set failed authentication")
+    try:
+        _enforce_dek_slot_presence(enc, dek)
+    except Exception:
+        secure_memzero(dek)
+        raise
     return dek
 
 
@@ -10500,6 +10591,129 @@ def _write_envelope_header(meta: dict, payload: bytes, input_file, output_file):
     _write_replacement_bytes(new_payload, input_file, output_file)
 
 
+def _password_unwrap_and_rewrapper(meta: dict, password, allow_high_kdf_cost: bool = False):
+    """Slot-management primitive (F17/F18, gitlab#234).
+
+    Recovery-slot add/remove must re-bind the wrapped DEK to the NEW slot count,
+    which requires the password KEK (a recovery credential recovers only the DEK,
+    not the KEK). This helper requires the primary password, derives the KEK
+    (guarding the KDF cost ceiling against a crafted header), unwraps the DEK
+    binding the CURRENT slot count, and returns a rewrap closure that re-binds
+    the DEK to a new count.
+
+    Returns:
+        (dek, rewrap, dispose):
+          * dek -- recovered DEK (bytearray; caller MUST secure_memzero it),
+          * rewrap(new_count) -> base64 str of the DEK re-wrapped binding new_count,
+          * dispose() -- zeroes the retained KEK (call in the caller's finally).
+
+    Raises:
+        ValidationError: If the password is missing or the file is not an envelope.
+        DecryptionError: If the password is wrong (unwrap fails).
+    """
+    from .envelope import (
+        unwrap_dek,
+        unwrap_dek_cascade,
+        wrap_dek,
+        wrap_dek_cascade,
+        wrapped_dek_aad,
+    )
+
+    if password is None:
+        raise ValidationError(
+            "Managing recovery slots requires the primary password: a recovery "
+            "credential alone can no longer add or remove slots (the wrapped key "
+            "must be re-bound to the new slot count)."
+        )
+    if isinstance(password, str):
+        password = password.encode("utf-8")
+
+    enc = meta.get("encryption", {})
+    wrapped_b64 = enc.get("wrapped_dek")
+    if not wrapped_b64:
+        raise ValidationError("File is not an envelope file (no wrapped_dek)")
+
+    is_cascade = bool(enc.get("cascade", False))
+    algorithm = "cascade" if is_cascade else enc.get("algorithm")
+    cipher_chain = enc.get("cipher_chain")
+    hkdf_hash = enc.get("hkdf_hash", "sha256")
+    xchacha_format = enc.get("xchacha_nonce_format", 1)
+
+    # Guard the KDF cost ceiling before deriving from the file's own
+    # (attacker-controllable) config (gitlab#128/#247), exactly as the recover
+    # and rekey paths do -- add/remove never reaches decrypt_file.
+    from .decryption_estimator import (
+        enforce_memory_ceiling,
+        enforce_time_ceiling,
+        estimate_decryption_cost,
+    )
+
+    try:
+        _est = estimate_decryption_cost(meta)
+    except Exception:
+        _est = None
+    if _est is None:
+        enforce_memory_ceiling(float("inf"), allow_high_kdf_cost=allow_high_kdf_cost)
+    else:
+        enforce_memory_ceiling(_est.peak_memory_kb, allow_high_kdf_cost=allow_high_kdf_cost)
+        enforce_time_ceiling(_est.total_time_seconds, allow_high_kdf_cost=allow_high_kdf_cost)
+
+    kek = _derive_envelope_kek(
+        password,
+        meta.get("derivation_config"),
+        algorithm,
+        meta.get("format_version"),
+        meta.get("xor_mode", "sequential"),
+    )
+    old_aad = wrapped_dek_aad(enc.get("dek_slot_count"))
+    try:
+        if is_cascade:
+            dek = unwrap_dek_cascade(
+                base64.b64decode(wrapped_b64),
+                kek,
+                cipher_chain,
+                hkdf_hash,
+                xchacha_nonce_format=xchacha_format,
+                aad=old_aad,
+            )
+        else:
+            dek = unwrap_dek(base64.b64decode(wrapped_b64), kek, aad=old_aad)
+    except Exception:
+        secure_memzero(kek)
+        raise
+
+    # Authenticate the EXISTING slot set before a slot change rewrites and
+    # re-MACs it (review F1): otherwise add/remove would launder a tampered or
+    # injected incoming slot set into a freshly authenticated, count-bound
+    # header instead of refusing it. Fail closed.
+    try:
+        _enforce_dek_slot_presence(enc, dek)
+    except Exception:
+        secure_memzero(dek)
+        secure_memzero(kek)
+        raise
+
+    def rewrap(new_count: int) -> str:
+        new_aad = wrapped_dek_aad(new_count)
+        if is_cascade:
+            wb = wrap_dek_cascade(
+                bytes(dek),
+                kek,
+                cipher_chain,
+                hkdf_hash,
+                xchacha_nonce_format=xchacha_format,
+                aad=new_aad,
+            )
+        else:
+            wb = wrap_dek(bytes(dek), kek, aad=new_aad)
+        return base64.b64encode(wb).decode("ascii")
+
+    def dispose() -> None:
+        secure_memzero(kek)
+
+    return dek, rewrap, dispose
+
+
 def add_recovery_slots(
     input_file: str,
     output_file: Optional[str],
@@ -10527,14 +10741,10 @@ def add_recovery_slots(
 
     meta, payload = _read_envelope_file(input_file)
     aad_before = envelope_aad(meta)
-    dek = _recover_envelope_dek(
-        meta,
-        password=password,
-        recovery_code=recovery_code,
-        recovery_passphrase=recovery_passphrase,
-        recovery_private_key=recovery_private_key,
-        allow_high_kdf_cost=allow_high_kdf_cost,
-    )
+    # F17/F18 (gitlab#234): requires the primary password so the DEK can be
+    # re-wrapped binding the new slot count. recovery_* params are accepted for
+    # signature compatibility but no longer authorize a slot change on their own.
+    dek, rewrap, dispose = _password_unwrap_and_rewrapper(meta, password, allow_high_kdf_cost)
     try:
         enc = meta.setdefault("encryption", {})
         existing = list(enc.get("dek_slots") or [])
@@ -10546,8 +10756,12 @@ def add_recovery_slots(
         enc["dek_slots_mac"] = base64.b64encode(compute_slot_set_mac(bytes(dek), combined)).decode(
             "ascii"
         )
+        # Re-bind the wrapped DEK to the new count so a later strip fails closed.
+        enc["dek_slot_count"] = len(combined)
+        enc["wrapped_dek"] = rewrap(len(combined))
     finally:
         secure_memzero(dek)
+        dispose()
 
     if envelope_aad(meta) != aad_before:
         raise RekeyError("Recovery-slot change would alter the bound metadata subset")
@@ -10585,14 +10799,9 @@ def remove_recovery_slot(
     if len(remaining) == len(existing):
         raise ValidationError(f"No recovery slot with id {slot_id!r}")
 
-    dek = _recover_envelope_dek(
-        meta,
-        password=password,
-        recovery_code=recovery_code,
-        recovery_passphrase=recovery_passphrase,
-        recovery_private_key=recovery_private_key,
-        allow_high_kdf_cost=allow_high_kdf_cost,
-    )
+    # F17/F18 (gitlab#234): requires the primary password so the DEK can be
+    # re-wrapped binding the new (smaller) slot count.
+    dek, rewrap, dispose = _password_unwrap_and_rewrapper(meta, password, allow_high_kdf_cost)
     try:
         if remaining:
             enc["dek_slots"] = remaining
@@ -10602,8 +10811,12 @@ def remove_recovery_slot(
         else:
             enc.pop("dek_slots", None)
             enc.pop("dek_slots_mac", None)
+        # Re-bind the wrapped DEK to the new count (0 when the last slot is gone).
+        enc["dek_slot_count"] = len(remaining)
+        enc["wrapped_dek"] = rewrap(len(remaining))
     finally:
         secure_memzero(dek)
+        dispose()
 
     if envelope_aad(meta) != aad_before:
         raise RekeyError("Recovery-slot change would alter the bound metadata subset")
@@ -12055,7 +12268,6 @@ def decrypt_file(
             unlock_passphrase_slot,
             unlock_pqc_slot,
             unlock_recovery_code_slot,
-            verify_slot_set_mac,
         )
 
         _slots = _enc_meta.get("dek_slots") or []
@@ -12091,15 +12303,22 @@ def decrypt_file(
                 continue
         if _dek is None:
             raise _DecErr("No recovery slot matched the supplied recovery material")
-        _mac_b64 = _enc_meta.get("dek_slots_mac")
-        if not _mac_b64 or not verify_slot_set_mac(bytes(_dek), _slots, base64.b64decode(_mac_b64)):
+        # Authenticate the whole slot set (and its count, when the file carries
+        # the F17/F18 commitment) with the recovered DEK. Fail closed.
+        try:
+            _enforce_dek_slot_presence(_enc_meta, _dek)
+        except Exception:
             secure_memzero(_dek)
-            raise _AuthErr("Recovery slot set failed authentication")
+            raise
         key = bytes(_dek)
         secure_memzero(_dek)
     elif _wrapped_dek_b64:
-        from .envelope import unwrap_dek, unwrap_dek_cascade
+        from .envelope import unwrap_dek, unwrap_dek_cascade, wrapped_dek_aad
 
+        # F17/F18 (gitlab#234): bind the unwrap to the recovery-slot count. A
+        # stripped or zeroed count fails the unwrap here (no legacy fallback);
+        # absent count => legacy file wrapped with aad=None.
+        _wrap_aad = wrapped_dek_aad(_enc_meta.get("dek_slot_count"))
         _kek = key
         try:
             if is_cascade and cascade_cipher_chain:
@@ -12115,26 +12334,20 @@ def decrypt_file(
                     xchacha_nonce_format=metadata.get("encryption", {}).get(
                         "xchacha_nonce_format", 1
                     ),
+                    aad=_wrap_aad,
                 )
             else:
-                _dek = unwrap_dek(base64.b64decode(_wrapped_dek_b64), _kek)
+                _dek = unwrap_dek(base64.b64decode(_wrapped_dek_b64), _kek, aad=_wrap_aad)
         finally:
             secure_memzero(_kek)
         key = bytes(_dek)
         secure_memzero(_dek)
 
-        # If recovery slots are present, authenticate the slot SET with the
-        # recovered DEK on the password path too (slot fields are excluded from
-        # the bulk AAD, so this MAC is what detects tampering). Fail closed.
-        _dek_slots = _enc_meta.get("dek_slots")
-        if _dek_slots:
-            from .recovery_slots import verify_slot_set_mac
-
-            _slots_mac_b64 = _enc_meta.get("dek_slots_mac")
-            if not _slots_mac_b64 or not verify_slot_set_mac(
-                key, _dek_slots, base64.b64decode(_slots_mac_b64)
-            ):
-                raise AuthenticationError("Recovery slot set failed authentication")
+        # Authenticate recovery-slot PRESENCE with the recovered DEK on the
+        # password path (slot fields + count are excluded from the bulk AAD).
+        # New files fail closed if the slots were stripped while the count says
+        # otherwise; legacy files keep the present-slots-only MAC check.
+        _enforce_dek_slot_presence(_enc_meta, key)
 
     # Helper function to get expected nonce size for each algorithm
     def get_nonce_size(alg, include_legacy=True):

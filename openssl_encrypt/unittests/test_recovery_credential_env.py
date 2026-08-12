@@ -118,17 +118,23 @@ class TestRecoveryCodeFromEnv(RecoveryEnvBase):
         warnings = [c for c in ep.call_args_list if "process list" in str(c)]
         self.assertTrue(warnings, "expected a process-list warning for --recovery-code")
 
-    def test_add_recovery_unlocks_with_env_code(self):
+    def test_add_recovery_requires_password_not_env_code(self):
+        # F17/F18 (gitlab#234): a recovery code (even from the env) no longer
+        # authorizes adding a slot -- it re-binds the wrapped key to the new
+        # count, which needs the password. The env code is still consumed.
         code = generate_recovery_code()
         self._encrypt([{"type": "recovery_code", "code": code}])
 
         with mock.patch.dict(os.environ, {RECOVERY_CODE_ENV: code}):
-            add_recovery_cli(_ns(input=self.enc, output=self.enc, add_code=True))
+            with self.assertRaises(ValueError):
+                add_recovery_cli(_ns(input=self.enc, output=self.enc, add_code=True))
             self.assertNotIn(RECOVERY_CODE_ENV, os.environ)
 
+        # The primary password authorizes it.
+        add_recovery_cli(_ns(input=self.enc, output=self.enc, add_code=True, password=PASSWORD))
         self.assertEqual(len(list_recovery_slots(self.enc)), 2)
 
-    def test_remove_recovery_unlocks_with_env_code(self):
+    def test_remove_recovery_requires_password_not_env_code(self):
         c1, c2 = generate_recovery_code(), generate_recovery_code()
         self._encrypt(
             [{"type": "recovery_code", "code": c1}, {"type": "recovery_code", "code": c2}]
@@ -136,9 +142,13 @@ class TestRecoveryCodeFromEnv(RecoveryEnvBase):
         slot_id = list_recovery_slots(self.enc)[0]["id"]
 
         with mock.patch.dict(os.environ, {RECOVERY_CODE_ENV: c1}):
-            remove_recovery_cli(_ns(input=self.enc, output=self.enc, slot_id=slot_id))
+            with self.assertRaises(ValueError):
+                remove_recovery_cli(_ns(input=self.enc, output=self.enc, slot_id=slot_id))
             self.assertNotIn(RECOVERY_CODE_ENV, os.environ)
 
+        remove_recovery_cli(
+            _ns(input=self.enc, output=self.enc, slot_id=slot_id, password=PASSWORD)
+        )
         self.assertEqual(len(list_recovery_slots(self.enc)), 1)
 
 
@@ -422,15 +432,19 @@ class TestUnusedCredentialsAreConsumed(RecoveryEnvBase):
             self.assertNotIn(ADD_RECOVERY_PASSPHRASE_ENV, os.environ)
             self.assertNotIn("CRYPT_PASSWORD", os.environ)
 
-    def test_crypt_password_consumed_even_when_code_unlocks(self):
+    def test_crypt_password_consumed_even_when_add_refuses_code(self):
+        # add-recovery now refuses a recovery-code unlock (F17/F18), but every
+        # credential env var is still consumed before that refusal raises.
         code = generate_recovery_code()
         self._encrypt([{"type": "recovery_code", "code": code}])
 
         with mock.patch.dict(
             os.environ, {RECOVERY_CODE_ENV: code, "CRYPT_PASSWORD": "unused-primary"}
         ):
-            add_recovery_cli(_ns(input=self.enc, output=self.enc, add_code=True))
+            with self.assertRaises(ValueError):
+                add_recovery_cli(_ns(input=self.enc, output=self.enc, add_code=True))
             self.assertNotIn("CRYPT_PASSWORD", os.environ)
+            self.assertNotIn(RECOVERY_CODE_ENV, os.environ)
 
 
 class TestSelectorValidatedBeforeCredentials(RecoveryEnvBase):

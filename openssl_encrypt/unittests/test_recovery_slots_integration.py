@@ -328,13 +328,23 @@ class TestSlotManagement(unittest.TestCase):
             for p in (inp, out):
                 os.unlink(p)
 
-    def test_add_via_existing_recovery_code(self):
+    def test_add_requires_password_not_recovery_code(self):
+        # F17/F18 (gitlab#234): adding a slot now re-binds the wrapped key to the
+        # new slot count, which needs the primary password. A recovery code can
+        # no longer authorize a slot change; the password can.
         c1 = generate_recovery_code()
         inp = self._write(_encrypt(recovery_credentials=[{"type": "recovery_code", "code": c1}]))
         out = self._write(b"")
         c2 = generate_recovery_code()
         try:
-            add_recovery_slots(inp, out, [{"type": "recovery_code", "code": c2}], recovery_code=c1)
+            with self.assertRaises(
+                (ValidationError, ValueError, AuthenticationError, DecryptionError)
+            ):
+                add_recovery_slots(
+                    inp, out, [{"type": "recovery_code", "code": c2}], recovery_code=c1
+                )
+            # With the primary password it succeeds; both codes then decrypt.
+            add_recovery_slots(inp, out, [{"type": "recovery_code", "code": c2}], password=PASSWORD)
             with open(out, "rb") as f:
                 enc = f.read()
             self.assertEqual(_decrypt(enc, recovery_code=c2), PLAINTEXT)
