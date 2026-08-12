@@ -113,26 +113,7 @@ git clone https://gitlab.rm-rf.ch/world/openssl_encrypt/
 cd openssl_encrypt
 ```
 
-**Step 2: Build the Flutter Desktop GUI**
-```bash
-# Navigate to Flutter project directory
-cd desktop_gui
-
-# Get Flutter dependencies
-flutter pub get
-
-# Build for your platform
-# Linux:
-flutter build linux --release
-
-# macOS:
-flutter build macos --release
-
-# Windows:
-flutter build windows --release
-```
-
-**Step 3: Install OpenSSL Encrypt CLI**
+**Step 2: Install OpenSSL Encrypt CLI**
 
 Choose one of the following methods:
 
@@ -144,25 +125,33 @@ pip install openssl_encrypt
 **Method B: Build and Install Locally**
 ```bash
 # From the main project directory
-cd ..  # Back to openssl_encrypt root
 pip install -e .
 ```
 
-**Step 4: Run the Flutter GUI**
-```bash
-# Linux:
-./desktop_gui/build/linux/x64/release/bundle/openssl_encrypt_gui
+**Step 3: Install the Desktop GUI (separate project)**
 
-# macOS:
-open ./desktop_gui/build/macos/Build/Products/Release/openssl_encrypt_gui.app
+The desktop GUI is now maintained and released as its own project,
+**openssl_encrypt_gui** (https://gitlab.rm-rf.ch/world/openssl_encrypt_gui). It
+is no longer built from this repository. Install it one of these ways:
 
-# Windows:
-./desktop_gui/build/windows/x64/runner/Release/openssl_encrypt_gui.exe
-```
+- **Flatpak** (bundles the CLI and GUI together) — the recommended install.
+- **From source** — clone `openssl_encrypt_gui` and follow its README to run
+  `flutter build <linux|macos|windows> --release`, then put the resulting
+  launcher on `PATH` as `openssl-encrypt-gui` (or point `OPENSSL_ENCRYPT_GUI` at
+  it).
+
+**Step 4: Launch the GUI**
+
+With the CLI installed, `openssl-encrypt --gui` locates and starts the installed
+desktop GUI (via the Flatpak, a known install location, `OPENSSL_ENCRYPT_GUI`,
+or an `openssl-encrypt-gui` launcher on `PATH`). You can also start the GUI
+directly.
 
 ### Integration with CLI
 
-The Flutter GUI automatically detects and integrates with the installed OpenSSL Encrypt CLI, providing seamless access to all encryption features through an intuitive interface.
+The desktop GUI shells out to the installed OpenSSL Encrypt CLI and adapts to the
+CLI version it is paired with (via the CLI's `capabilities` manifest), so a
+single GUI build works against the CLI it finds.
 
 ### Troubleshooting Flutter Installation
 

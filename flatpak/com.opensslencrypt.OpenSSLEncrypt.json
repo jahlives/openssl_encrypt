@@ -161,20 +161,6 @@
       "sources": []
     },
     {
-      "name": "flutter-desktop-gui",
-      "buildsystem": "simple",
-      "build-commands": [
-        "echo '📦 Installing pre-built Flutter desktop GUI...'",
-        "if [ -d desktop_gui/build/linux/x64/release/bundle ]; then echo '✅ Found pre-built Flutter binary' && mkdir -p /app/bin/openssl-encrypt-gui && cp -r desktop_gui/build/linux/x64/release/bundle/* /app/bin/openssl-encrypt-gui/ && chmod +x /app/bin/openssl-encrypt-gui/openssl_encrypt && echo '✅ Flutter desktop GUI installed successfully'; else echo '⚠️  No pre-built Flutter binary found' && echo '⚠️  Run: cd desktop_gui && flutter build linux --release' && echo '⚠️  Continuing without Flutter GUI (tkinter fallback available)'; fi"
-      ],
-      "sources": [
-        {
-          "type": "dir",
-          "path": ".."
-        }
-      ]
-    },
-    {
       "name": "openssl-encrypt",
       "buildsystem": "simple",
       "build-options": {

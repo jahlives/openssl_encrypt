@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.4.10] - TBD
 
+### Removed
+
+- **The in-tree desktop GUI (`desktop_gui/`) is removed from this repository**
+  (gitlab#265, `docs/gui-split-unified-plan.md` P14): the Flutter desktop GUI is
+  now maintained and released as its own project, `openssl_encrypt_gui`. The
+  Flatpak manifest's GUI copy step, the two CLI-repo GUI-vs-parser lint tests
+  (their cross-repo role is replaced by the GUI repo's contract tests), the
+  `--build-flutter` build-script path, and the CI Flatpak build/publish jobs are
+  removed with it; the combined GUI + CLI Flatpak is built from the GUI repo.
+  This repository now builds the CLI only. Docs point at the GUI project for
+  building and installing the GUI, and `--gui` resolves an installed GUI (see the
+  launcher change below).
+
 ### Changed
 
 - **`--gui` now resolves an *installed* desktop GUI, not a build in this tree**

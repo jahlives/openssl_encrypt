@@ -729,7 +729,6 @@ tests/
 openssl_encrypt/unittests/
 ├── __init__.py
 ├── unittests.py               # Legacy unit tests
-├── gui_test_utility.py        # GUI testing utility
 └── testfiles/                 # Encrypted test files
 ```
 
