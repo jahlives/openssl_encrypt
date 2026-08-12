@@ -97,6 +97,15 @@ _JSON_ENDPOINTS = [
     "add-recovery",
     "remove-recovery",
     "check-password",
+    # total-json Phase 1a (gitlab#268): version/catalog reporters. All emit
+    # the {"status","data"} envelope EXCEPT list-available-algorithms, whose
+    # bare document predates the envelope and is frozen for its GUI consumer.
+    "version",
+    "show-version-file",
+    "list-algorithms",
+    "list-available-algorithms",
+    "check-argon2",
+    "check-pqc",
 ]
 
 # Per-endpoint output field intent. Seeded; grows as endpoints are pinned.
@@ -115,6 +124,20 @@ _MANIFEST_KEYS = [
 _JSON_FIELDS = {
     "capabilities": _MANIFEST_KEYS,
     "check-password": ["category", "entropy", "raw_entropy", "warnings", "passed"],
+    # Envelope endpoints list their "data" fields.
+    "version": ["version", "git_commit", "python", "platform"],
+    "show-version-file": ["version", "git_commit", "author", "license", "copyright", "history"],
+    "list-algorithms": ["ciphers", "hashes", "kdfs", "kems", "signatures"],
+    "list-available-algorithms": [
+        "ciphers",
+        "hashes",
+        "kdfs",
+        "kems",
+        "signatures",
+        "libraries",
+    ],
+    "check-argon2": ["available", "version", "variants", "functional"],
+    "check-pqc": ["available", "liboqs_version", "algorithms"],
 }
 
 

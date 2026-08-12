@@ -50,6 +50,22 @@ EXCLUDE_FILES = {"version.py", "crypt_gui.py", "example_usage.py"}
 
 STDOUT_WHITELIST = [
     # --- machine-readable JSON channels (the consumer parses stdout) ---
+    # json_output.py — THE stdout emitters for the total-json envelope
+    # (gitlab#268). Machine output is stdout's purpose; everything human goes
+    # through eprint(). These two calls are the funnel all new --json
+    # endpoints share, so nothing else needs whitelisting per endpoint.
+    (
+        "modules/json_output.py",
+        'print(json.dumps({"status": "ok", "data": data}), flush=True)',
+        1,
+        "total-json success envelope",
+    ),
+    (
+        "modules/json_output.py",
+        'print(json.dumps({"status": "error", "error": {"message": str(message)}}), flush=True)',
+        1,
+        "total-json error envelope",
+    ),
     (
         "modules/crypt_core.py",
         "print(json.dumps(metadata, indent=2, ensure_ascii=True))",

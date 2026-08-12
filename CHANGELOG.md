@@ -53,6 +53,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Uniform JSON output, Phase 1a** (gitlab#268, github#142/#144,
+  `docs/total-json-output-plan.md`): `version`, `show-version-file`,
+  `list-algorithms`, `check-argon2` and `check-pqc` gain `--json`, emitting
+  exactly one `{"status": "ok", "data": …}` envelope document on stdout while
+  the human reports stay on stderr; `list-available-algorithms`' existing bare
+  JSON document is registered as-is (its GUI consumer predates the envelope).
+  All six are now listed in the capabilities manifest's
+  `json_endpoints`/`json_fields`, so the separately-shipped GUI can gate on
+  the JSON surface per CLI version. `--json` on a not-yet-converted command
+  stays refused (fail-closed) instead of being accepted and ignored.
+
 - **`crypt capabilities` — machine-readable capability manifest** (gitlab#265,
   github#140): a new `capabilities` command prints a JSON manifest of what this
   CLI build supports — `schema_version`, `cli_version`, `line`, `commands`,
