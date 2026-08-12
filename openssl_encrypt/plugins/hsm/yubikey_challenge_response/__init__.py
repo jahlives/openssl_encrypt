@@ -29,7 +29,7 @@ Usage:
 import logging
 from typing import Any, Dict, Set
 
-from ....modules.crypt_utils import tty_clear_line, tty_write
+from ....modules.crypt_utils import eprint, tty_clear_line, tty_write
 from ....modules.plugin_system.plugin_base import (
     HSMPlugin,
     PluginCapability,
@@ -258,9 +258,17 @@ class YubikeyHSMPlugin(HSMPlugin):
 
             # Perform Challenge-Response
             self.logger.info(f"Performing Challenge-Response with Yubikey slot {slot}...")
-            # Write touch prompt directly to the terminal (bypasses stdout/stderr
-            # redirection) so it's always visible to the user.
-            tty_write(f"👆 Touch your Yubikey now (slot {slot})...\n")
+            # Prompt for touch. tty_write goes to the controlling terminal so it
+            # is visible regardless of stdout/stderr redirection. When it reaches
+            # a REAL terminal (returns True, i.e. not the stderr fallback), also
+            # echo the prompt on stderr so a GUI/subprocess that captures stderr
+            # -- and cannot read /dev/tty -- can surface a touch prompt too. The
+            # guard avoids a duplicate line in the no-tty (stderr-fallback) case.
+            # The slot number is not secret; no key material is emitted.
+            if tty_write(f"👆 Touch your Yubikey now (slot {slot})...\n"):
+                # flush so the GUI sees it BEFORE the blocking CR call, even when
+                # stderr is a pipe (block-buffered).
+                eprint(f"Touch your Yubikey now (slot {slot})...", flush=True)
             response = self._calculate_challenge_response(salt, slot)
             tty_clear_line()
 
