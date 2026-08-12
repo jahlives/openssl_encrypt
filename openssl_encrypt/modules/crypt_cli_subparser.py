@@ -2830,6 +2830,7 @@ def setup_identity_parser(subparser):
 
     # Show identity details
     show_parser = identity_subparsers.add_parser("show", help="Show identity details")
+    _add_json_flag(show_parser)
     show_parser.add_argument("identity_name", help="Identity name to show")
 
     # Export public identity
@@ -3034,6 +3035,7 @@ def setup_hsm_parser(subparser):
         "fido2-status",
         help="Show FIDO2 registration status and list registered credentials",
     )
+    _add_json_flag(fido2_status_parser)
     fido2_status_parser.add_argument(
         "--rp-id",
         help="Custom Relying Party ID (default: openssl-encrypt.local)",
@@ -3120,7 +3122,10 @@ def setup_keyserver_parser(subparser):
     keyserver_subparsers.add_parser("disable", help="Disable keyserver plugin")
 
     # Status subcommand
-    keyserver_subparsers.add_parser("status", help="Show keyserver status and configuration")
+    keyserver_status_parser = keyserver_subparsers.add_parser(
+        "status", help="Show keyserver status and configuration"
+    )
+    _add_json_flag(keyserver_status_parser)
 
     # Register subcommand (no auth required)
     register_parser = keyserver_subparsers.add_parser(
@@ -3191,7 +3196,10 @@ def setup_keyserver_parser(subparser):
     )
     cache_clear_parser.add_argument("--force", action="store_true", help="Skip confirmation prompt")
 
-    keyserver_subparsers.add_parser("cache-stats", help="Show cache statistics")
+    keyserver_cache_stats_parser = keyserver_subparsers.add_parser(
+        "cache-stats", help="Show cache statistics"
+    )
+    _add_json_flag(keyserver_cache_stats_parser)
 
 
 def setup_telemetry_parser(subparser):

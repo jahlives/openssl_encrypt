@@ -540,6 +540,22 @@ def cmd_show(args) -> int:
             )
             return 1
 
+        if getattr(args, "json", False):
+            from .json_output import emit_json
+
+            # Raw values, deliberately unsanitized (gitlab#183): display
+            # safety is the consumer's decode-boundary job. Public metadata
+            # only - never key material.
+            emit_json(
+                {
+                    "name": identity.name,
+                    "email": identity.email,
+                    "fingerprint": identity.fingerprint,
+                    "created_at": getattr(identity, "created_at", None),
+                }
+            )
+            return 0
+
         # Display information
         eprint("Identity Information:")
         eprint("=" * 80)

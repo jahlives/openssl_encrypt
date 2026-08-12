@@ -3887,6 +3887,29 @@ def handle_hsm_command(args):
 
     elif action == "fido2-status":
         # Show FIDO2 registration status
+        if getattr(args, "json", False):
+            from .json_output import emit_json
+
+            _creds = plugin._load_credentials() if plugin.is_registered() else []
+            # Public metadata only: credential ids/descriptions, never key
+            # material (the credential file itself holds no secrets either).
+            emit_json(
+                {
+                    "registered": bool(_creds),
+                    "count": len(_creds),
+                    "rp_id": plugin.rp_id,
+                    "credentials": [
+                        {
+                            "id": c["id"],
+                            "description": c.get("description"),
+                            "created_at": c.get("created_at"),
+                            "is_backup": bool(c.get("is_backup", False)),
+                        }
+                        for c in _creds
+                    ],
+                }
+            )
+            sys.exit(0)
         eprint("\n🔐 FIDO2 Registration Status")
         eprint("=" * 50)
 
@@ -4176,6 +4199,24 @@ def handle_keyserver_command(args):
         # Show keyserver status
         plugin = KeyserverPlugin(config)
         cache_stats = plugin.get_cache_stats()
+
+        if getattr(args, "json", False):
+            from .json_output import emit_json
+
+            # Status fields only: has_api_token is a boolean, never the token
+            # (same rule as telemetry status --json, gitlab#162).
+            emit_json(
+                {
+                    "enabled": config.enabled,
+                    "servers": list(config.servers),
+                    "cache_ttl_seconds": config.cache_ttl_seconds,
+                    "cache_max_entries": config.cache_max_entries,
+                    "upload_enabled": config.upload_enabled,
+                    "has_api_token": bool(config.load_api_token()),
+                    "cache": cache_stats,
+                }
+            )
+            return
 
         eprint("\nKEYSERVER STATUS")
         eprint("=" * 60)
@@ -4477,6 +4518,12 @@ def handle_keyserver_command(args):
         # Show cache statistics
         plugin = KeyserverPlugin(config)
         stats = plugin.get_cache_stats()
+
+        if getattr(args, "json", False):
+            from .json_output import emit_json
+
+            emit_json(stats)
+            return
 
         eprint("\nKEYSERVER CACHE STATISTICS")
         eprint("=" * 60)

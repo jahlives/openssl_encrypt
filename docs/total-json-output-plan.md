@@ -1,6 +1,6 @@
 # Plan: uniform JSON output (`--json`) across the CLI
 
-Status: draft
+Status: done
 Created: 2026-08-12
 
 ## Goal
@@ -45,21 +45,21 @@ Excluded by design: `config-wizard`, `install-dependencies` (interactive),
   `analyze-config` (alias to existing --output-format), `template` (listing),
   `list-plugins`, `plugin-info`.
   target: openssl_encrypt/modules/crypt_cli.py
-- [ ] P4: Phase 1c — verifiers gain `--json`: `verify-integrity`,
+- [x] P4: Phase 1c (DONE 2026-08-12, 1.4.x 1789b3d2 / 1.5.x 1945e728) — verifiers gain `--json`: `verify-integrity`,
   `verify-signature`, `verify-usb`.
   target: openssl_encrypt/modules/crypt_cli.py
-- [ ] P5: Phase 2 — operation result reports gain `--json`: `encrypt`,
+- [x] P5: Phase 2 (DONE 2026-08-12, 1.4.x 41e2e570 / 1.5.x f58a502b; decrypt --json requires -o as decided) — operation result reports gain `--json`: `encrypt`,
   `decrypt`, `rekey`, `sign`, `armor`, `dearmor`, `shred`, `create-usb`,
   `derive-password`, `generate-password` (secret in stdout JSON only).
   target: openssl_encrypt/modules/crypt_cli.py
-- [ ] P6: Phase 3 — grouped-command subcommands gain `--json` where output
+- [x] P6: Phase 3 (DONE 2026-08-12: keyserver status/cache-stats, hsm fido2-status, identity show; keyserver/hsm/plugin groups registered) — grouped-command subcommands gain `--json` where output
   exists: `hsm`, `keyserver`, `plugin` (beyond the existing pepper/integrity
   JSON), remaining `identity` subcommands.
   target: openssl_encrypt/modules/crypt_cli.py, plugin CLI modules
-- [ ] P7: Port each completed phase to feature/v1.5.x-development (P2-P6
+- [x] P7: Port each completed phase (done per phase, same-day cherry-picks) to feature/v1.5.x-development (P2-P6
   applied to the 1.5.x command set).
   target: 1.5.x line
-- [ ] P8: Documentation: JSON usage section in the user guide; changelog files
+- [x] P8: Documentation (user guide 'Machine-Readable Output (--json)' section; changelogs updated per phase): JSON usage section in the user guide; changelog files
   per phase (both lines).
   target: openssl_encrypt/docs/, CHANGELOG.md etc.
 

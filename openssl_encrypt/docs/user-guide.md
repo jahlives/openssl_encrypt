@@ -767,6 +767,31 @@ python -m openssl_encrypt.crypt encrypt -i sensitive.txt \
 # 4. Show progress during operation
 ```
 
+## Machine-Readable Output (--json)
+
+Most commands support `--json` for scripting and GUI integration
+(gitlab#268). The conventions:
+
+- New JSON endpoints print exactly ONE document on stdout, in the envelope
+  `{"status": "ok", "data": {...}}` on success or
+  `{"status": "error", "error": {"message": "..."}}` on failure. Progress and
+  human reports stay on stderr; exit codes are unchanged.
+- A few older endpoints keep their historical bare documents (e.g. `info`,
+  `list-available-algorithms`, `analyze-config`, `generate-password`,
+  `verify-integrity`, `verify-signature`) — their shapes are frozen.
+- `decrypt --json` requires an output path (`-o`); the JSON report cannot
+  share stdout with the plaintext.
+- Secrets appear only in the stdout document, never in logs
+  (`generate-password`, `derive-password`; the raw byte format is refused in
+  JSON mode).
+- JSON values are raw and deliberately not display-sanitized — escape
+  untrusted fields at your decode boundary before rendering to a terminal.
+- Asking for `--json` from a command that cannot produce it is refused
+  (exit 2) rather than silently ignored.
+- The authoritative, per-version list of JSON-capable commands is the
+  capabilities manifest: `crypt capabilities` (see `json_endpoints` and
+  `json_fields`).
+
 ## Troubleshooting
 
 ### Common Issues
