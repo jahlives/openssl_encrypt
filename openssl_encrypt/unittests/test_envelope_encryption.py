@@ -964,8 +964,8 @@ class TestEnvelopeKeyHygiene(unittest.TestCase):
         captured = []
         real_unwrap = envelope_mod.unwrap_dek
 
-        def spy(wrapped, kek):
-            r = real_unwrap(wrapped, kek)
+        def spy(wrapped, kek, aad=None):
+            r = real_unwrap(wrapped, kek, aad=aad)
             captured.append(r)
             return r
 
@@ -997,8 +997,8 @@ class TestEnvelopeKeyHygiene(unittest.TestCase):
         captured = []
         real_unwrap = envelope_mod.unwrap_dek
 
-        def spy(wrapped, kek):
-            r = real_unwrap(wrapped, kek)
+        def spy(wrapped, kek, aad=None):
+            r = real_unwrap(wrapped, kek, aad=aad)
             captured.append(r)
             return r
 

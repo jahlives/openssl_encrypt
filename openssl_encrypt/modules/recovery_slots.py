@@ -874,22 +874,28 @@ def _policy_checked_passphrase(value, source, args=None):
 def add_recovery_cli(args) -> None:
     """`add-recovery`: add a recovery slot to an existing envelope file.
 
-    Unlock with --password (or an existing --recovery-code); add one of
+    Unlock with the primary password (--password / $CRYPT_PASSWORD); add one of
     --add-code (generated and printed), --add-passphrase (prompted), or
     --add-shares K-of-N (a Shamir-split recovery secret; shares written to
-    --shares-dir).
+    --shares-dir). A recovery code can no longer authorize a slot change
+    (F17/F18, gitlab#234): the wrapped key is re-bound to the new slot count,
+    which requires the password KEK.
     """
     import getpass
 
     from .crypt_core import add_recovery_slots
     from .crypt_utils import eprint
 
-    # How to unlock the existing file (to recover the DEK).
-    unlock = {}
+    # F17/F18 (gitlab#234): adding a slot re-binds the wrapped key to the new
+    # slot count, which needs the password KEK -- a recovery code recovers only
+    # the DEK. Refuse a recovery-code unlock rather than prompt.
     if getattr(args, "recovery_code", None):
-        unlock["recovery_code"] = args.recovery_code
-    else:
-        unlock["password"] = _read_password(args)
+        raise ValueError(
+            "add-recovery now requires the primary password: a recovery code can "
+            "no longer authorize adding a slot. Re-run with --password / "
+            "$CRYPT_PASSWORD."
+        )
+    unlock = {"password": _read_password(args)}
 
     creds = []
     generated_code = None
@@ -951,11 +957,16 @@ def remove_recovery_cli(args) -> None:
     from .crypt_core import remove_recovery_slot
     from .crypt_utils import eprint
 
-    unlock = {}
+    # F17/F18 (gitlab#234): removing a slot re-binds the wrapped key to the new
+    # slot count, which needs the password KEK. A recovery code can no longer
+    # authorize a slot change.
     if getattr(args, "recovery_code", None):
-        unlock["recovery_code"] = args.recovery_code
-    else:
-        unlock["password"] = _read_password(args)
+        raise ValueError(
+            "remove-recovery now requires the primary password: a recovery code "
+            "can no longer authorize removing a slot. Re-run with --password / "
+            "$CRYPT_PASSWORD."
+        )
+    unlock = {"password": _read_password(args)}
     remove_recovery_slot(
         args.input,
         args.output,
