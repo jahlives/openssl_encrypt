@@ -116,6 +116,12 @@ _JSON_ENDPOINTS = [
     "list-plugins",
     "plugin-info",
     "security-info",
+    # total-json Phase 1c (gitlab#268): verifiers. verify-integrity and
+    # verify-signature keep their pre-existing bare documents (frozen);
+    # verify-usb emits the envelope around its result dict.
+    "verify-integrity",
+    "verify-signature",
+    "verify-usb",
 ]
 
 # Per-endpoint output field intent. Seeded; grows as endpoints are pinned.
@@ -165,6 +171,15 @@ _JSON_FIELDS = {
     "list-plugins": ["plugins"],
     "plugin-info": ["name", "version", "type", "description", "enabled", "capabilities"],
     "security-info": ["report"],
+    "verify-integrity": ["exit_code", "files", "scope", "signature", "trust_warning"],
+    "verify-signature": [
+        "valid",
+        "file_match",
+        "signature_valid",
+        "signer",
+        "signer_fingerprint",
+    ],
+    "verify-usb": ["integrity_ok", "verified_files"],
 }
 
 

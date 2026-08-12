@@ -53,6 +53,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Uniform JSON output, Phase 1c** (gitlab#268, github#144): the verifiers
+  are JSON-capable and registered. `verify-integrity --json` and
+  `verify-signature --json` (pre-existing bare documents) are frozen and
+  listed in the capabilities manifest; `verify-usb --json` wraps its result
+  in the status/data envelope, reports exceptions as a JSON error document
+  in JSON mode, and keeps its exit-code semantics.
+
 - **Uniform JSON output, Phase 1b** (gitlab#268, github#144): the file/config
   reporters are JSON-capable. `list-plugins`, `plugin-info` and
   `security-info` emit the status/data envelope (`plugin-info --json` also
