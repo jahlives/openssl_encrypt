@@ -2740,6 +2740,9 @@ def run_config_analyzer(args):
         quiet = getattr(args, "quiet", False)
         use_case = getattr(args, "use_case", None)
         output_format = getattr(args, "output_format", "text")
+        if getattr(args, "json", False):
+            # total-json alias (gitlab#268) for --output-format json.
+            output_format = "json"
         compliance_frameworks = getattr(args, "compliance_frameworks", None)
 
         if not quiet and output_format == "text":
@@ -3504,7 +3507,8 @@ def _handle_template_list(template_mgr: TemplateManager, args):
     if use_case:
         templates = [t for t in templates if use_case in (t.metadata.use_cases or [])]
 
-    if getattr(args, "format", "table") == "json":
+    # --json is the total-json alias for --format json (gitlab#268).
+    if getattr(args, "format", "table") == "json" or getattr(args, "json", False):
         # --format was declared on this parser and never read, so a caller could
         # ask for JSON, get exit 0, and receive nothing (gitlab#167). stdout
         # carries the document; the human report stays on stderr.
@@ -6486,6 +6490,20 @@ def main_with_args(args=None):
     if getattr(args, "enable_balloon", False):
         args.use_balloon = True
 
+    # Fail-closed for the monolithic global --json (gitlab#268): an action the
+    # monolithic parser routes that has no JSON emitter must refuse the flag
+    # instead of silently ignoring it. Subparser-routed commands are exempt -
+    # they only ever see --json where their own parser declares it (and reject
+    # it everywhere else at parse time).
+    if getattr(args, "json", False) and args.action not in _subparser_choices():
+        _mono_json_actions = {"info", "list-plugins", "plugin-info", "capabilities"}
+        if args.action not in _mono_json_actions:
+            eprint(
+                f"Error: --json is not supported for '{args.action}' (yet); "
+                "refusing rather than silently ignoring it."
+            )
+            sys.exit(2)
+
     if args.action == "version":
         if getattr(args, "json", False):
             import platform
@@ -6833,6 +6851,12 @@ def main_with_args(args=None):
 
     # Check for utility and information actions first
     if args.action == "security-info":
+        if getattr(args, "json", False):
+            from .crypt_utils import security_recommendations_text
+            from .json_output import emit_json
+
+            emit_json({"report": security_recommendations_text()})
+            sys.exit(0)
         show_security_recommendations()
         sys.exit(0)
 
@@ -7150,6 +7174,11 @@ def main_with_args(args=None):
 
             # List loaded plugins
             plugins = plugin_manager.list_plugins()
+            if getattr(args, "json", False):
+                from .json_output import emit_json
+
+                emit_json({"plugins": plugins})
+                sys.exit(0)
             if not plugins:
                 eprint("No plugins loaded")
             else:
@@ -7196,8 +7225,21 @@ def main_with_args(args=None):
 
             plugin_info = plugin_manager.get_plugin_info(args.plugin_id)
             if not plugin_info:
+                if getattr(args, "json", False):
+                    from .json_output import emit_json_error
+
+                    # JSON mode: the caller parses stdout, so the error has to
+                    # arrive there in the same envelope as a success.
+                    emit_json_error(f"Plugin not found: {args.plugin_id}")
+                    sys.exit(1)
                 eprint(f"❌ Plugin not found: {args.plugin_id}")
                 sys.exit(1)
+
+            if getattr(args, "json", False):
+                from .json_output import emit_json
+
+                emit_json(plugin_info)
+                sys.exit(0)
 
             # Show detailed plugin information
             eprint(f"\nPlugin Information: {args.plugin_id}")

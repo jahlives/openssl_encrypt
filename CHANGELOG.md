@@ -53,6 +53,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Uniform JSON output, Phase 1b** (gitlab#268, github#144): the file/config
+  reporters are JSON-capable. `list-plugins`, `plugin-info` and
+  `security-info` emit the status/data envelope (`plugin-info --json` also
+  reports "not found" as a JSON error document); `analyze-config` and
+  `template list` gain `--json` as an alias for their pre-existing
+  `--output-format json` / `--format json` (frozen document shapes); `info
+  --json` (pre-existing bare metadata document) is registered. The monolithic
+  parser's global `--json` — previously silently ignored by every action
+  except `info` — is now fail-closed: an action without a JSON emitter
+  refuses it. All six endpoints registered in the capabilities manifest.
+
 - **Uniform JSON output, Phase 1a** (gitlab#268, github#142/#144,
   `docs/total-json-output-plan.md`): `version`, `show-version-file`,
   `list-algorithms`, `check-argon2` and `check-pqc` gain `--json`, emitting

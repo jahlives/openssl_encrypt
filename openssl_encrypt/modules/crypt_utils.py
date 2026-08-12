@@ -652,6 +652,25 @@ def secure_shred_file(file_path, passes=3, quiet=False, secure_mode=False):
         return False
 
 
+def security_recommendations_text() -> str:
+    """Return the security-recommendations report as one string.
+
+    Reuses show_security_recommendations() verbatim (its eprint stream is the
+    single source of the report) by capturing stderr, so the JSON endpoint
+    (gitlab#268) can never drift from the human report.
+
+    Returns:
+        The full report text.
+    """
+    import io
+    from contextlib import redirect_stderr
+
+    buf = io.StringIO()
+    with redirect_stderr(buf):
+        show_security_recommendations()
+    return buf.getvalue()
+
+
 def show_security_recommendations():
     """
     Display security recommendations for the different hashing algorithms.

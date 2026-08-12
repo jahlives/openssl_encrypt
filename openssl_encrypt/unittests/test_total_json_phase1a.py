@@ -145,9 +145,10 @@ class TestCapabilitiesRegistration(unittest.TestCase):
 
 class TestFailClosed(unittest.TestCase):
     def test_json_on_unconverted_action_is_refused(self):
-        # security-info is not converted yet: --json must be rejected, not
-        # silently ignored (no half-machine output, nothing on stdout).
-        code, out, err = _run(["security-info", "--json"])
+        # config-wizard is excluded from total-json by design (interactive):
+        # --json must be rejected, not silently ignored (no half-machine
+        # output, nothing on stdout).
+        code, out, err = _run(["config-wizard", "--json"])
         self.assertNotEqual(code, 0)
         self.assertEqual(out.strip(), "")
 

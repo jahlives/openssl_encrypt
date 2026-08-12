@@ -2384,6 +2384,13 @@ def setup_template_parser(subparser):
 
     # List templates
     list_parser = template_subparsers.add_parser("list", help="List available templates")
+    # --json is the total-json alias for the pre-existing --format json
+    # (gitlab#268); the emitted document keeps its frozen shape.
+    list_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Machine-readable JSON output on stdout (same document as --format json)",
+    )
     list_parser.add_argument(
         "--use-case",
         choices=["personal", "business", "compliance", "archival"],
@@ -3486,6 +3493,7 @@ def build_subparser():
         formatter_class=argparse.RawTextHelpFormatter,
     )
     setup_simple_parser(security_info_parser)
+    _add_json_flag(security_info_parser)
 
     analyze_security_parser = subparsers.add_parser(
         "analyze-security",
@@ -3518,6 +3526,9 @@ def build_subparser():
         formatter_class=argparse.RawTextHelpFormatter,
     )
     setup_analyze_config_parser(analyze_config_parser)
+    # --json is the total-json alias for the pre-existing --output-format json
+    # (gitlab#268); the emitted document keeps its frozen shape.
+    _add_json_flag(analyze_config_parser)
 
     template_parser = subparsers.add_parser(
         "template",
