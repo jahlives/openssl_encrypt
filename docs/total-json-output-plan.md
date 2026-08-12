@@ -33,12 +33,13 @@ Excluded by design: `config-wizard`, `install-dependencies` (interactive),
 
 ## Steps
 
-- [ ] P1: Shared envelope helper `emit_json(data)` / `emit_json_error(...)`
+- [x] P1: Shared envelope helper `emit_json(data)` / `emit_json_error(...)`
   used by all new endpoints (single stdout emission, envelope shape above).
   target: openssl_encrypt/modules/json_output.py
-- [ ] P2: Phase 1a — version-and-catalog reporters gain `--json`:
+- [x] P2: Phase 1a (DONE 2026-08-12, 1.4.x 2ac6663a / 1.5.x 758cf917; security-info deferred to P3's batch) — version-and-catalog reporters gain `--json`:
   `version`, `show-version-file`, `list-algorithms`,
-  `list-available-algorithms`, `security-info`, `check-argon2`, `check-pqc`.
+  `list-available-algorithms` (bare document frozen, registered as-is),
+  `check-argon2`, `check-pqc`.
   target: openssl_encrypt/modules/crypt_cli.py (+ per-command handlers)
 - [ ] P3: Phase 1b — file/config reporters gain `--json`: `info`,
   `analyze-config` (alias to existing --output-format), `template` (listing),
