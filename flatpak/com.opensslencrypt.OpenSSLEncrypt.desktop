@@ -2,12 +2,10 @@
 Version=1.0
 Type=Application
 Name=OpenSSL Encrypt
-Comment=Military-grade encryption with post-quantum cryptography (Flutter Desktop GUI)
-Exec=openssl-encrypt --gui
+Comment=Military-grade encryption with post-quantum cryptography (command-line tool)
+Exec=openssl-encrypt --help
 Icon=com.opensslencrypt.OpenSSLEncrypt
-Terminal=false
+Terminal=true
 Categories=Security;Utility;
-StartupNotify=true
-MimeType=application/octet-stream;
 Keywords=encrypt;decrypt;security;cryptography;post-quantum;
 GenericName=Encryption Tool

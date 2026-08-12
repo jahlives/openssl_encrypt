@@ -30,8 +30,9 @@
 
           <section id="description">
               <h2>&#128214; Description</h2>
-              <p>OpenSSL Encrypt is a comprehensive encryption tool that provides military-grade security with cutting-edge post-quantum cryptography. Protect your files against both current and future quantum computing threats.</p>
-              <p>Perfect for individuals and organizations requiring the highest levels of data protection, including protection against future quantum computer attacks.</p>
+              <p>OpenSSL Encrypt is a comprehensive command-line encryption tool that provides military-grade security with cutting-edge post-quantum cryptography. Protect your files against both current and future quantum computing threats.</p>
+              <p>This Flatpak ships the command-line tool with all dependencies prebuilt (including liboqs for post-quantum cryptography) &mdash; no local build required. Perfect for individuals and organizations requiring the highest levels of data protection.</p>
+              <p>Prefer a graphical interface? The desktop GUI is a separate app that bundles this CLI: <a href="../openssl-encrypt-gui/">OpenSSL Encrypt GUI</a>.</p>
           </section>
 
           <section id="features">
@@ -76,14 +77,13 @@
                   </div>
 
                   <div class="feature-category">
-                      <h3>&#128187; User Interface</h3>
+                      <h3>&#128187; Command-Line Interface</h3>
                       <ul>
-                          <li>Modern GUI with dark/light themes</li>
-                          <li>Command-line interface</li>
+                          <li>Full-featured CLI for scripting and automation</li>
                           <li>Comprehensive debug mode with --debug flag</li>
-                          <li>Drag & drop file support</li>
-                          <li>Progress indicators</li>
-                          <li>Batch processing</li>
+                          <li>Progress indicators on stderr (pipe-safe output)</li>
+                          <li>Password via environment variable or prompt</li>
+                          <li>Desktop GUI available as a separate app (OpenSSL Encrypt GUI)</li>
                       </ul>
                   </div>
 

@@ -43,8 +43,7 @@ for arg in "$@"; do
             ;;
         *)
             echo "Unknown argument: $arg"
-            echo "Usage: $0 [--build-flutter] [-f|--force] [--local-install|--dev-install]"
-            echo "  --build-flutter   Build Flutter desktop GUI before Flatpak"
+            echo "Usage: $0 [-f|--force] [--local-install|--dev-install]"
             echo "  -f, --force       Force clean build cache"
             echo "  --local-install   Install locally as stable branch (overwrites production)"
             echo "  --dev-install     Install locally as versioned dev branch (X.Y.Z-dev, parallel to production and to other dev versions)"
@@ -53,7 +52,6 @@ for arg in "$@"; do
             echo "  $0                          # Build only (for build-remote.sh)"
             echo "  $0 --local-install          # Build and install as stable"
             echo "  $0 --dev-install            # Build and install as development (recommended for testing)"
-            echo "  $0 --build-flutter --dev-install  # Build with GUI and install as development"
             exit 1
             ;;
     esac
@@ -103,9 +101,9 @@ flatpak install -y flathub org.freedesktop.Platform//24.08 org.freedesktop.Sdk//
 # Build Flutter desktop GUI if requested
 if [[ "$BUILD_FLUTTER" == "true" ]]; then
     echo "❌ --build-flutter is no longer supported."
-    echo "   The desktop GUI moved to its own project (openssl_encrypt_gui) and is"
-    echo "   no longer built from this repository. Build the combined GUI + Flatpak"
-    echo "   from that repo; this manifest builds the CLI only."
+    echo "   The desktop GUI is its own Flatpak app (com.opensslencrypt.OpenSSLEncryptGui),"
+    echo "   built from the openssl_encrypt_gui repository. This manifest builds the"
+    echo "   CLI-only app."
     exit 1
 fi
 
@@ -158,12 +156,7 @@ if [[ "$LOCAL_INSTALL" == "true" ]]; then
     echo ""
     echo "🎯 To test the locally installed application:"
     echo "   CLI: flatpak run com.opensslencrypt.OpenSSLEncrypt//$FLATPAK_BRANCH --help"
-    if [[ "$BUILD_FLUTTER" == "true" ]]; then
-        echo "   GUI: flatpak run com.opensslencrypt.OpenSSLEncrypt//$FLATPAK_BRANCH --gui"
-    else
-        echo "   GUI: flatpak run com.opensslencrypt.OpenSSLEncrypt//$FLATPAK_BRANCH --gui"
-        echo "   Note: Run with --build-flutter to include Flutter GUI"
-    fi
+    echo "   (the desktop GUI is the separate com.opensslencrypt.OpenSSLEncryptGui app)"
     echo ""
     if [[ "$DEV_INSTALL" == "true" ]]; then
         echo "ℹ️  This is a development branch - it runs parallel to production"
@@ -190,8 +183,6 @@ fi
 echo ""
 echo "🛠️  Build options:"
 echo "   Build only:              $0"
-echo "   With Flutter:            $0 --build-flutter"
 echo "   Force clean:             $0 --force (or -f)"
 echo "   Stable branch install:   $0 --local-install"
-echo "   Dev branch install:      $0 --dev-install (recommended for testing v1.3.0)"
-echo "   Combined example:        $0 --build-flutter --dev-install --force"
+echo "   Dev branch install:      $0 --dev-install (recommended for testing)"
