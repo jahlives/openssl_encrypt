@@ -3207,6 +3207,7 @@ def build_subparser():
         formatter_class=argparse.RawTextHelpFormatter,
     )
     setup_simple_parser(security_info_parser)
+    _add_json_flag(security_info_parser)
 
     identity_parser = subparsers.add_parser(
         "identity",

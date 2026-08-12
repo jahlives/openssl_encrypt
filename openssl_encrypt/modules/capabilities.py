@@ -106,6 +106,16 @@ _JSON_ENDPOINTS = [
     "list-available-algorithms",
     "check-argon2",
     "check-pqc",
+    # total-json Phase 1b (gitlab#268): file/config reporters. info,
+    # analyze-config and template (list) emit pre-existing BARE documents
+    # (frozen shapes; --json aliases --output-format/--format json where those
+    # exist); list-plugins, plugin-info and security-info use the envelope.
+    "info",
+    "analyze-config",
+    "template",
+    "list-plugins",
+    "plugin-info",
+    "security-info",
 ]
 
 # Per-endpoint output field intent. Seeded; grows as endpoints are pinned.
@@ -138,6 +148,23 @@ _JSON_FIELDS = {
     ],
     "check-argon2": ["available", "version", "variants", "functional"],
     "check-pqc": ["available", "liboqs_version", "algorithms"],
+    # Bare-document endpoints list their guaranteed top-level keys.
+    "info": ["format_version"],
+    "analyze-config": [
+        "overall_score",
+        "security_level",
+        "analysis_timestamp",
+        "configuration_summary",
+        "performance_assessment",
+        "compatibility_matrix",
+        "compliance_status",
+        "future_proofing",
+        "recommendations",
+    ],
+    "template": ["templates"],
+    "list-plugins": ["plugins"],
+    "plugin-info": ["name", "version", "type", "description", "enabled", "capabilities"],
+    "security-info": ["report"],
 }
 
 
