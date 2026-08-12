@@ -17,7 +17,7 @@
       <li>Post-quantum cryptography (ML-KEM, HQC, Kyber) for quantum-resistant protection</li>
       <li>Advanced password protection with multiple KDF options (Argon2, Scrypt)</li>
       <li>Secure file operations with secure deletion</li>
-      <li>Both GUI and command-line interfaces</li>
+      <li>Full-featured command-line interface (the desktop GUI is the separate OpenSSL Encrypt GUI app)</li>
       <li>Comprehensive cryptographic hash support (SHA-3, BLAKE2b)</li>
     </ul>
     <p>
