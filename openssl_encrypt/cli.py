@@ -8,9 +8,10 @@ script (declared in setup.py as ``openssl_encrypt.cli:main``) and
 ``__main__.py`` imported the CLI directly and so never saw ``--gui`` -- and
 keeping them on one path is the point of this module (gitlab#197).
 
-``--gui`` launches the Flutter desktop application under ``desktop_gui/``.
-The tkinter GUI in ``crypt_gui.py`` is legacy and stays reachable under
-``--gui-legacy``.
+``--gui`` launches the desktop application, which is now a separate project
+(``openssl_encrypt_gui``) installed alongside this CLI rather than built from
+this repository; ``_resolve_gui_command`` locates that install. The tkinter GUI
+in ``crypt_gui.py`` is legacy and stays reachable under ``--gui-legacy``.
 """
 
 import os
@@ -26,13 +27,22 @@ from .modules.crypt_utils import eprint
 # The Flatpak application id, as published in the metainfo.
 FLATPAK_APP_ID = "com.opensslencrypt.OpenSSLEncrypt"
 
-# The executable Flutter produces for the Linux desktop bundle.
-BUNDLE_EXECUTABLE = "openssl_encrypt"
+# The launcher name of the INSTALLED desktop GUI on PATH. The GUI is now a
+# separate application (its own project, openssl_encrypt_gui) and is no longer
+# built from this repository, so --gui resolves an installed GUI rather than a
+# bundle under desktop_gui/. The name is deliberately distinct from the CLI's
+# own ``openssl-encrypt`` so the two can sit on PATH together.
+GUI_EXECUTABLE = "openssl-encrypt-gui"
 
-# Build flavours, most preferred first: a release build is what a user
-# means by "the app"; a debug build is a developer's, and is only a
-# fallback so a working tree without a release build still launches.
-BUNDLE_FLAVOURS = ("release", "debug")
+# Known fixed locations a packaged GUI install drops its launcher, checked
+# before a PATH lookup. The first is where the Flatpak's GUI module installs
+# the bundle, so a CLI running inside the Flatpak launches the co-installed GUI
+# directly instead of shelling out to a nested ``flatpak run``.
+GUI_INSTALL_PATHS = (
+    "/app/bin/openssl-encrypt-gui/openssl_encrypt",
+    "/usr/lib/openssl-encrypt-gui/openssl-encrypt-gui",
+    "/usr/local/lib/openssl-encrypt-gui/openssl-encrypt-gui",
+)
 
 # Explicit override. A packager or an unusual install needs a supported
 # answer that does not depend on this module guessing correctly.
@@ -41,11 +51,6 @@ GUI_OVERRIDE_ENV = "OPENSSL_ENCRYPT_GUI"
 
 class GuiNotAvailable(RuntimeError):
     """No desktop GUI could be found to launch."""
-
-
-def _repository_root():
-    """The source tree this package lives in, if it is one."""
-    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def _is_executable(path):
@@ -71,10 +76,12 @@ def _flatpak_app_installed():
 
 
 def _resolve_gui_command():
-    """The argv that starts the desktop GUI, most specific source first.
+    """The argv that starts the INSTALLED desktop GUI, most specific first.
 
-    Order: the ``OPENSSL_ENCRYPT_GUI`` override, the installed Flatpak app,
-    a built bundle in this source tree, then a binary on PATH.
+    The GUI is a separate application now, so this resolves an install rather
+    than a build in this tree. Order: the ``OPENSSL_ENCRYPT_GUI`` override, a
+    known fixed install location (including the in-Flatpak bundle), the
+    installed Flatpak app, then the launcher on PATH.
 
     Raises:
         GuiNotAvailable: If none of them is present. Deliberately an error
@@ -92,26 +99,23 @@ def _resolve_gui_command():
             )
         return [override]
 
-    if _flatpak_app_installed():
-        return [shutil.which("flatpak"), "run", FLATPAK_APP_ID]
-
-    root = _repository_root()
-    for flavour in BUNDLE_FLAVOURS:
-        candidate = os.path.join(
-            root, "desktop_gui", "build", "linux", "x64", flavour, "bundle", BUNDLE_EXECUTABLE
-        )
+    for candidate in GUI_INSTALL_PATHS:
         if _is_executable(candidate):
             return [candidate]
 
-    on_path = shutil.which(BUNDLE_EXECUTABLE)
+    if _flatpak_app_installed():
+        return [shutil.which("flatpak"), "run", FLATPAK_APP_ID]
+
+    on_path = shutil.which(GUI_EXECUTABLE)
     if on_path:
         return [on_path]
 
     raise GuiNotAvailable(
-        "The desktop application was not found. Build it with "
-        "`cd desktop_gui && flutter build linux`, run it from source with "
-        "`cd desktop_gui && flutter run -d linux`, install the Flatpak "
-        f"({FLATPAK_APP_ID}), or set {GUI_OVERRIDE_ENV} to its path.\n"
+        "The desktop GUI is a separate application and was not found. It now "
+        "lives in its own project (openssl_encrypt_gui) and is no longer built "
+        f"from this repository. Install the Flatpak ({FLATPAK_APP_ID}), install "
+        f"the {GUI_EXECUTABLE} package so its launcher is on PATH, or set "
+        f"{GUI_OVERRIDE_ENV} to the GUI executable.\n"
         "  The legacy tkinter interface is still available as --gui-legacy."
     )
 

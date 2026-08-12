@@ -100,49 +100,49 @@ class TestGuiResolution(unittest.TestCase):
             with self.assertRaises(cli.GuiNotAvailable):
                 cli._resolve_gui_command()
 
-    def test_a_built_bundle_in_the_tree_is_found(self):
-        bundle = os.path.join(self.tmp, "desktop_gui", "build", "linux", "x64", "release", "bundle")
-        os.makedirs(bundle)
-        target = os.path.join(bundle, "openssl_encrypt")
-        with open(target, "w", encoding="utf-8") as handle:
-            handle.write("#!/bin/sh\nexit 0\n")
-        os.chmod(target, os.stat(target).st_mode | stat.S_IXUSR)
+    def test_a_known_install_path_is_found(self):
+        """A GUI dropped at a fixed install location (e.g. inside the Flatpak).
 
+        The GUI is a separate application now; it is resolved from an install,
+        not from a build under desktop_gui/ in this repository.
+        """
+        target = self._executable("openssl-encrypt-gui-installed")
         with mock.patch.dict(os.environ, {}, clear=False):
             os.environ.pop("OPENSSL_ENCRYPT_GUI", None)
-            with mock.patch.object(cli, "_repository_root", return_value=self.tmp):
+            with mock.patch.object(cli, "GUI_INSTALL_PATHS", (target,)):
                 with mock.patch.object(cli, "_flatpak_app_installed", return_value=False):
                     with mock.patch.object(shutil, "which", return_value=None):
                         self.assertEqual(cli._resolve_gui_command()[0], target)
 
-    def test_release_is_preferred_over_debug(self):
-        for flavour in ("debug", "release"):
-            bundle = os.path.join(
-                self.tmp, "desktop_gui", "build", "linux", "x64", flavour, "bundle"
-            )
-            os.makedirs(bundle)
-            target = os.path.join(bundle, "openssl_encrypt")
-            with open(target, "w", encoding="utf-8") as handle:
-                handle.write("#!/bin/sh\nexit 0\n")
-            os.chmod(target, os.stat(target).st_mode | stat.S_IXUSR)
+    def test_the_installed_launcher_on_path_is_found(self):
+        """Falls through to the installed GUI launcher on PATH."""
+        target = self._executable("openssl-encrypt-gui")
+
+        def which(name):
+            return target if name == cli.GUI_EXECUTABLE else None
 
         with mock.patch.dict(os.environ, {}, clear=False):
             os.environ.pop("OPENSSL_ENCRYPT_GUI", None)
-            with mock.patch.object(cli, "_repository_root", return_value=self.tmp):
+            with mock.patch.object(cli, "GUI_INSTALL_PATHS", ()):
                 with mock.patch.object(cli, "_flatpak_app_installed", return_value=False):
-                    with mock.patch.object(shutil, "which", return_value=None):
-                        self.assertIn("release", cli._resolve_gui_command()[0])
+                    with mock.patch.object(shutil, "which", side_effect=which):
+                        self.assertEqual(cli._resolve_gui_command()[0], target)
 
     def test_nothing_found_raises_rather_than_starting_the_legacy_gui(self):
         with mock.patch.dict(os.environ, {}, clear=False):
             os.environ.pop("OPENSSL_ENCRYPT_GUI", None)
-            with mock.patch.object(cli, "_repository_root", return_value=self.tmp):
+            with mock.patch.object(cli, "GUI_INSTALL_PATHS", ()):
                 with mock.patch.object(cli, "_flatpak_app_installed", return_value=False):
                     with mock.patch.object(shutil, "which", return_value=None):
                         with self.assertRaises(cli.GuiNotAvailable) as caught:
                             cli._resolve_gui_command()
-        message = str(caught.exception)
-        self.assertIn("flutter", message.lower(), "the message does not say how to get a GUI")
+        message = str(caught.exception).lower()
+        # The message must point at the SEPARATE, installed GUI -- not at
+        # building it from this repository (P12/P14: the GUI left this repo).
+        self.assertIn("flatpak", message, "the message does not say how to get a GUI")
+        self.assertIn("separate", message)
+        self.assertNotIn("flutter build", message, "still telling users to build the GUI here")
+        self.assertNotIn("desktop_gui", message)
 
 
 class TestGuiLaunchIsNotAShell(unittest.TestCase):

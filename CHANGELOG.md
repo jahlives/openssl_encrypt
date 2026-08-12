@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.4.10] - TBD
 
+### Changed
+
+- **`--gui` now resolves an *installed* desktop GUI, not a build in this tree**
+  (gitlab#265, `docs/gui-split-unified-plan.md` P12): the desktop GUI is becoming
+  a separate application (its own project, `openssl_encrypt_gui`), so the
+  launcher no longer looks for a Flutter bundle under `desktop_gui/build`. It
+  resolves, in order: `OPENSSL_ENCRYPT_GUI`, a known fixed install location
+  (including the in-Flatpak bundle), the installed Flatpak app, then an
+  `openssl-encrypt-gui` launcher on `PATH`. When none is found it now tells the
+  user to install the separate GUI / Flatpak instead of pointing at
+  `flutter build`. The override, no-shell, and refuse-rather-than-fall-back
+  invariants are unchanged.
+
 ### Added
 
 - **`crypt capabilities` — machine-readable capability manifest** (gitlab#265,
