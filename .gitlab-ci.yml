@@ -383,7 +383,7 @@ test-fallback:
     # Clone liboqs at the pinned commit and verify it (gitlab#252, F31): the
     # clone was previously floating on the upstream default branch.
     - git clone --recurse-submodules --branch "$LIBOQS_VERSION" https://github.com/open-quantum-safe/liboqs.git
-    - test "$(git -C liboqs rev-parse HEAD)" = "$LIBOQS_COMMIT" || { echo "ERROR: liboqs HEAD does not match pinned $LIBOQS_COMMIT (possible tag tampering)"; exit 1; }
+    - 'test "$(git -C liboqs rev-parse HEAD)" = "$LIBOQS_COMMIT" || { echo "ERROR: liboqs HEAD does not match pinned $LIBOQS_COMMIT (possible tag tampering)"; exit 1; }'
     # Build and install liboqs
     - cd liboqs
     - mkdir build && cd build
