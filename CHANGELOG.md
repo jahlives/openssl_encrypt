@@ -53,6 +53,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Uniform JSON output — security-review fixes** (gitlab#268, review
+  2026-08-13): JSON mode now refuses *stream* output targets (`-`,
+  `/dev/stdout`) for `decrypt`, `encrypt` (including implicit stdout with
+  stdin input) and `armor`/`dearmor`, not just a missing `-o` — the payload
+  is attacker-influenceable content that could forge an envelope line on the
+  shared stream. `derive-password --json`'s exit code no longer relies on a
+  fail-open `locals()` lookup; `encrypt --json` reports the canonical
+  algorithm name (`aes-gcm`, not the enum repr); the shared `--json` flag
+  uses `default=SUPPRESS` like the hand-written declarations it generalizes.
+
 - **Uniform JSON output, Phase 3 + docs** (gitlab#268, github#144): the
   grouped commands' reporting subcommands emit JSON — `keyserver status` /
   `keyserver cache-stats` (status fields only; `has_api_token` is a boolean,

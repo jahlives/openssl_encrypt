@@ -72,6 +72,16 @@ class TestEncryptDecryptRekey(unittest.TestCase):
         self.assertEqual(data["output"], self.enc)
         self.assertTrue(os.path.exists(self.enc))
 
+    def test_decrypt_json_refuses_stream_output_targets(self):
+        # Security review 2026-08-13 F1: with a stream target the payload and
+        # the envelope would share stdout, letting attacker-influenceable
+        # plaintext forge an envelope line for line-oriented consumers.
+        self._encrypt()
+        for target in ("-", "/dev/stdout"):
+            code, out, err = _run(["decrypt", "-i", self.enc, "-o", target, "--json"], env=self.env)
+            self.assertEqual(code, 2, target)
+            self.assertEqual(json.loads(out)["status"], "error")
+
     def test_decrypt_json_report_and_refusal_without_output(self):
         self._encrypt()
         code, out, err = _run(["decrypt", "-i", self.enc, "--json"], env=self.env)

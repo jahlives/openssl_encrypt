@@ -2160,6 +2160,10 @@ def _add_json_flag(subparser):
     subparser.add_argument(
         "--json",
         action="store_true",
+        # SUPPRESS, not a False default: `json` is also a global option dest
+        # and argparse copies the subcommand namespace back over the parent's
+        # (same reasoning as the hand-written --json declarations above).
+        default=argparse.SUPPRESS,
         help="Machine-readable JSON output on stdout (envelope: status/data)",
     )
 

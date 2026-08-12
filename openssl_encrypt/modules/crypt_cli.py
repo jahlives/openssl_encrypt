@@ -6537,6 +6537,28 @@ def main_with_args(args=None):
     if getattr(args, "enable_balloon", False):
         args.use_balloon = True
 
+    # JSON mode cannot share stdout with a payload stream: the payload is
+    # attacker-influenceable content that could forge an envelope line
+    # (security review 2026-08-13 F1). "-" and the stdout devices count.
+    _JSON_STREAM_OUTPUTS = {"-", "/dev/stdout", "/dev/fd/1"}
+
+    def _json_output_conflicts(a):
+        out = getattr(a, "output", None)
+        return (not out) or (out in _JSON_STREAM_OUTPUTS)
+
+    if getattr(args, "json", False) and args.action in ("encrypt", "armor", "dearmor"):
+        _out = getattr(args, "output", None)
+        _stdin_implicit_stdout = (
+            args.action == "encrypt"
+            and not _out
+            and (getattr(args, "input", None) in ("/dev/stdin", "-"))
+        )
+        if (_out in _JSON_STREAM_OUTPUTS) or _stdin_implicit_stdout:
+            from .json_output import emit_json_error
+
+            emit_json_error(f"{args.action} --json requires a file output path (-o/--output)")
+            sys.exit(2)
+
     # Fail-closed for the monolithic global --json (gitlab#268): an action the
     # monolithic parser routes that has no JSON emitter must refuse the flag
     # instead of silently ignoring it. Subparser-routed commands are exempt -
@@ -8001,6 +8023,7 @@ def main_with_args(args=None):
             derived = bytearray(memoryview(key)[:output_length])
 
             # Output the derived key
+            _json_rc = 0
             output_format = getattr(args, "output_format", "hex") or "hex"
             if getattr(args, "json", False):
                 from .json_output import emit_json, emit_json_error
@@ -8038,7 +8061,7 @@ def main_with_args(args=None):
             if derived is not None:
                 secure_memzero(derived)
 
-        sys.exit(locals().get("_json_rc", 0))
+        sys.exit(_json_rc)
 
     # For other actions, input file is required
     if getattr(args, "input", None) is None and args.action not in [
@@ -11539,7 +11562,11 @@ def main_with_args(args=None):
                             "action": "encrypt",
                             "input": args.input,
                             "output": output_file,
-                            "algorithm": str(getattr(args, "algorithm", None)),
+                            "algorithm": (
+                                args.algorithm.value
+                                if hasattr(getattr(args, "algorithm", None), "value")
+                                else str(getattr(args, "algorithm", None))
+                            ),
                         }
                     )
 
@@ -11581,12 +11608,14 @@ def main_with_args(args=None):
                 sys.exit(1)
 
         elif args.action == "decrypt":
-            if getattr(args, "json", False) and not getattr(args, "output", None):
+            if getattr(args, "json", False) and _json_output_conflicts(args):
                 from .json_output import emit_json_error
 
-                # Without -o the plaintext goes to stdout; the JSON report
-                # cannot share that stream (docs/total-json-output-plan.md).
-                emit_json_error("decrypt --json requires an output path (-o/--output)")
+                # Without -o (or with a stream target) the plaintext shares
+                # stdout with the JSON report - and the payload is attacker-
+                # influenceable content that could forge an envelope line
+                # (security review 2026-08-13 F1).
+                emit_json_error("decrypt --json requires a file output path (-o/--output)")
                 sys.exit(2)
             # Check if asymmetric mode by reading metadata
             try:
