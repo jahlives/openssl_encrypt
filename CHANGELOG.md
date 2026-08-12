@@ -594,6 +594,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **YubiKey touch prompt now reaches a GUI, not just the terminal** (gitlab#265):
+  the Challenge-Response plugin wrote its "Touch your Yubikey" prompt only to the
+  controlling terminal (`/dev/tty`), so an app that drives the CLI as a
+  subprocess and captures stderr — the desktop GUI launched from a terminal —
+  never saw it and could not tell the user to touch the key. When the prompt goes
+  to a real terminal it is now also echoed on stderr (and flushed before the
+  blocking Challenge-Response call), so a capturing GUI can surface a touch
+  prompt too; the terminal behavior is unchanged and no key material or secret is
+  emitted (the slot number is not secret).
+
 - **Synced the stdout-leak whitelist with `info --json`'s `ensure_ascii=True`**
   (gitlab#246): `test_no_stdout_leaks` anchors each authorized `print` on its
   exact source text, but the `print_file_info` JSON print was hardened to
