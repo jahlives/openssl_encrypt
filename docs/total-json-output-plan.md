@@ -41,7 +41,7 @@ Excluded by design: `config-wizard`, `install-dependencies` (interactive),
   `list-available-algorithms` (bare document frozen, registered as-is),
   `check-argon2`, `check-pqc`.
   target: openssl_encrypt/modules/crypt_cli.py (+ per-command handlers)
-- [ ] P3: Phase 1b — file/config reporters gain `--json`: `info`,
+- [x] P3: Phase 1b (DONE 2026-08-12, 1.4.x 5aa4cca0 / 1.5.x 9551023d; incl. deferred security-info; on 1.5.x analyze-config/template do not exist — manifest self-filters; template is subparser-registered but non-functional there, see gitlab#269) — file/config reporters gain `--json`: `info`,
   `analyze-config` (alias to existing --output-format), `template` (listing),
   `list-plugins`, `plugin-info`.
   target: openssl_encrypt/modules/crypt_cli.py

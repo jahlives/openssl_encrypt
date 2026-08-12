@@ -84,8 +84,18 @@ class TestSecurityInfo(unittest.TestCase):
         self.assertIn("SECURITY RECOMMENDATIONS", err)
 
 
+def _manifest_commands():
+    code, out, _ = _run(["capabilities"])
+    assert code == 0
+    return set(json.loads(out)["commands"])
+
+
 class TestAliases(unittest.TestCase):
+    # These commands exist on the 1.4.x line only (the 1.5.x surface
+    # reduction removed them); the manifest is the line-accurate source.
     def test_analyze_config_json_alias(self):
+        if "analyze-config" not in _manifest_commands():
+            self.skipTest("analyze-config not on this line")
         code, out, err = _run(["analyze-config", "--json"])
         self.assertEqual(code, 0, err[-300:])
         doc = json.loads(out)  # bare document, frozen shape (no envelope)
@@ -93,6 +103,8 @@ class TestAliases(unittest.TestCase):
         self.assertNotIn("status", doc)
 
     def test_template_list_json_alias(self):
+        if "template" not in _manifest_commands():
+            self.skipTest("template not on this line")
         code, out, err = _run(["template", "list", "--json"])
         self.assertEqual(code, 0, err[-300:])
         doc = json.loads(out)
@@ -149,6 +161,8 @@ class TestCapabilitiesRegistration(unittest.TestCase):
             "plugin-info",
             "security-info",
         ):
+            if endpoint not in manifest["commands"]:
+                continue  # not on this line; the manifest filters it out
             self.assertIn(endpoint, manifest["json_endpoints"], endpoint)
             self.assertIn(endpoint, manifest["json_fields"], endpoint)
             self.assertTrue(manifest["json_fields"][endpoint])
