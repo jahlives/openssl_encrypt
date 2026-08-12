@@ -122,6 +122,18 @@ _JSON_ENDPOINTS = [
     "verify-integrity",
     "verify-signature",
     "verify-usb",
+    # total-json Phase 2 (gitlab#268): operation result reports (envelope),
+    # except generate-password whose pre-existing bare document is frozen.
+    "encrypt",
+    "decrypt",
+    "rekey",
+    "sign",
+    "armor",
+    "dearmor",
+    "shred",
+    "create-usb",
+    "derive-password",
+    "generate-password",
 ]
 
 # Per-endpoint output field intent. Seeded; grows as endpoints are pinned.
@@ -180,6 +192,16 @@ _JSON_FIELDS = {
         "signer_fingerprint",
     ],
     "verify-usb": ["integrity_ok", "verified_files"],
+    "encrypt": ["action", "input", "output", "algorithm"],
+    "decrypt": ["action", "input", "output"],
+    "rekey": ["action", "input"],
+    "sign": ["input", "signature"],
+    "armor": ["action", "input", "output"],
+    "dearmor": ["action", "input", "output"],
+    "shred": ["action", "pattern", "matched", "success"],
+    "create-usb": ["success", "usb_path"],
+    "derive-password": ["derived", "format"],
+    "generate-password": ["password"],
 }
 
 

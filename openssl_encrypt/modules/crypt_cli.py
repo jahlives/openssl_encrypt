@@ -4863,7 +4863,14 @@ def main_with_args(args=None):
     # they only ever see --json where their own parser declares it (and reject
     # it everywhere else at parse time).
     if getattr(args, "json", False) and args.action not in _subparser_choices():
-        _mono_json_actions = {"info", "list-plugins", "plugin-info", "capabilities", "verify-usb"}
+        _mono_json_actions = {
+            "info",
+            "list-plugins",
+            "plugin-info",
+            "capabilities",
+            "verify-usb",
+            "create-usb",
+        }
         if args.action not in _mono_json_actions:
             eprint(
                 f"Error: --json is not supported for '{args.action}' (yet); "
@@ -5077,6 +5084,12 @@ def main_with_args(args=None):
                 manifest_hash_config=manifest_hash_config,
             )
 
+            if getattr(args, "json", False):
+                from .json_output import emit_json
+
+                emit_json(result)
+                return 0 if result.get("success") else 1
+
             if result.get("success"):
                 eprint(f"✓ Successfully created portable USB at: {result['usb_path']}")
                 eprint(f"  Security Profile: {result['security_profile']}")
@@ -5245,6 +5258,21 @@ def main_with_args(args=None):
     elif args.action in ("armor", "dearmor"):
         from .armor import run_armor_cli
 
+        if getattr(args, "json", False):
+            from .json_output import emit_json, emit_json_error
+
+            _rc = run_armor_cli(args)
+            if _rc == 0:
+                emit_json(
+                    {
+                        "action": args.action,
+                        "input": getattr(args, "input", None),
+                        "output": getattr(args, "output", None),
+                    }
+                )
+            else:
+                emit_json_error(f"{args.action} failed (exit {_rc})")
+            sys.exit(_rc)
         sys.exit(run_armor_cli(args))
 
     elif args.action == "verify-integrity":
@@ -6193,7 +6221,26 @@ def main_with_args(args=None):
 
             # Output the derived key
             output_format = getattr(args, "output_format", "hex") or "hex"
-            if output_format == "hex":
+            if getattr(args, "json", False):
+                from .json_output import emit_json, emit_json_error
+
+                # The derived key IS the payload (stdout-only, like
+                # generate-password --json, gitlab#187). Raw bytes cannot be
+                # carried in JSON - refuse rather than mis-encode.
+                if output_format == "raw":
+                    emit_json_error("--output-format raw cannot be combined with --json")
+                    _json_rc = 1
+                else:
+                    if output_format == "base64":
+                        import base64 as _b64
+
+                        _derived_out = _b64.b64encode(derived).decode("ascii")
+                    else:
+                        output_format = "hex"
+                        _derived_out = derived.hex()
+                    emit_json({"derived": _derived_out, "format": output_format})
+                    _json_rc = 0
+            elif output_format == "hex":
                 print(derived.hex())
             elif output_format == "base64":
                 print(base64.b64encode(derived).decode("ascii"))
@@ -6208,7 +6255,7 @@ def main_with_args(args=None):
             if derived is not None:
                 secure_memzero(derived)
 
-        sys.exit(0)
+        sys.exit(locals().get("_json_rc", 0))
 
     # For other actions, input file is required
     if getattr(args, "input", None) is None and args.action not in [
@@ -9512,6 +9559,17 @@ def main_with_args(args=None):
                     # Skip leading newline for stdout/stderr to avoid blank line
                     prefix = "" if output_file in ("/dev/stdout", "/dev/stderr") else "\n"
                     eprint(f"{prefix}File encrypted successfully: {output_file}")
+                if getattr(args, "json", False):
+                    from .json_output import emit_json
+
+                    emit_json(
+                        {
+                            "action": "encrypt",
+                            "input": args.input,
+                            "output": output_file,
+                            "algorithm": str(getattr(args, "algorithm", None)),
+                        }
+                    )
 
                 # If shredding was requested and encryption was successful
                 if args.shred and not args.overwrite:
@@ -9608,6 +9666,15 @@ def main_with_args(args=None):
                 from .file_signature import sign_file_cli
 
                 sign_file_cli(args)
+                if getattr(args, "json", False):
+                    from .json_output import emit_json
+
+                    emit_json(
+                        {
+                            "input": args.input,
+                            "signature": getattr(args, "output", None) or (args.input + ".sig"),
+                        }
+                    )
                 sys.exit(0)
             except Exception as e:
                 print(f"Error: {sanitize_for_display(e)}", file=sys.stderr)
@@ -9628,6 +9695,13 @@ def main_with_args(args=None):
             # (Foreign-format interop, `--from`, is handled earlier in
             # main_with_args, before native password/detection handling.)
 
+            if getattr(args, "json", False) and not getattr(args, "output", None):
+                from .json_output import emit_json_error
+
+                # Without -o the plaintext goes to stdout; the JSON report
+                # cannot share that stream (docs/total-json-output-plan.md).
+                emit_json_error("decrypt --json requires an output path (-o/--output)")
+                sys.exit(2)
             # Check if asymmetric mode by reading metadata
             try:
                 import base64
@@ -10508,6 +10582,10 @@ def main_with_args(args=None):
                         # Skip leading newline for stdout/stderr to avoid blank line
                         prefix = "" if args.output in ("/dev/stdout", "/dev/stderr") else "\n"
                         eprint(f"{prefix}File decrypted successfully: {args.output}")
+                    if getattr(args, "json", False):
+                        from .json_output import emit_json
+
+                        emit_json({"action": "decrypt", "input": args.input, "output": args.output})
 
                 # If shredding was requested and decryption was successful
                 if args.shred and success:
@@ -10760,6 +10838,13 @@ def main_with_args(args=None):
                     exit_code = 1
                     if not args.quiet:
                         print("Rekey operation failed.", file=sys.stderr)
+                if getattr(args, "json", False):
+                    from .json_output import emit_json, emit_json_error
+
+                    if success:
+                        emit_json({"action": "rekey", "input": args.input})
+                    else:
+                        emit_json_error("Rekey operation failed")
 
             except Exception as e:
                 exit_code = 1
@@ -10832,6 +10917,17 @@ def main_with_args(args=None):
                 # Set exit code to failure if any operation failed
                 if not overall_success:
                     exit_code = 1
+                if getattr(args, "json", False):
+                    from .json_output import emit_json
+
+                    emit_json(
+                        {
+                            "action": "shred",
+                            "pattern": args.input,
+                            "matched": len(matched_paths),
+                            "success": overall_success,
+                        }
+                    )
 
     except Exception as e:
         if not args.quiet:

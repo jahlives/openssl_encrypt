@@ -3151,6 +3151,7 @@ def build_subparser():
         formatter_class=argparse.RawTextHelpFormatter,
     )
     setup_encrypt_parser(encrypt_parser)
+    _add_json_flag(encrypt_parser)
 
     decrypt_parser = subparsers.add_parser(
         "decrypt",
@@ -3158,6 +3159,7 @@ def build_subparser():
         formatter_class=argparse.RawTextHelpFormatter,
     )
     setup_decrypt_parser(decrypt_parser)
+    _add_json_flag(decrypt_parser)
 
     rekey_parser = subparsers.add_parser(
         "rekey",
@@ -3165,6 +3167,7 @@ def build_subparser():
         formatter_class=argparse.RawTextHelpFormatter,
     )
     setup_rekey_parser(rekey_parser)
+    _add_json_flag(rekey_parser)
 
     armor_parser = subparsers.add_parser(
         "armor",
@@ -3172,6 +3175,7 @@ def build_subparser():
         formatter_class=argparse.RawTextHelpFormatter,
     )
     setup_armor_parser(armor_parser)
+    _add_json_flag(armor_parser)
 
     dearmor_parser = subparsers.add_parser(
         "dearmor",
@@ -3179,6 +3183,7 @@ def build_subparser():
         formatter_class=argparse.RawTextHelpFormatter,
     )
     setup_armor_parser(dearmor_parser)
+    _add_json_flag(dearmor_parser)
 
     shred_parser = subparsers.add_parser(
         "shred",
@@ -3186,6 +3191,7 @@ def build_subparser():
         formatter_class=argparse.RawTextHelpFormatter,
     )
     setup_shred_parser(shred_parser)
+    _add_json_flag(shred_parser)
 
     generate_password_parser = subparsers.add_parser(
         "generate-password",
@@ -3200,6 +3206,7 @@ def build_subparser():
         formatter_class=argparse.RawTextHelpFormatter,
     )
     setup_derive_password_parser(derive_password_parser)
+    _add_json_flag(derive_password_parser)
 
     security_info_parser = subparsers.add_parser(
         "security-info",
@@ -3383,6 +3390,7 @@ def build_subparser():
         formatter_class=argparse.RawTextHelpFormatter,
     )
     setup_sign_parser(sign_parser)
+    _add_json_flag(sign_parser)
 
     # Verify-signature command — verify a detached signature
     verify_signature_parser = subparsers.add_parser(

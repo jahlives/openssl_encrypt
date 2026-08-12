@@ -53,6 +53,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Uniform JSON output, Phase 2** (gitlab#268, github#144): the operations
+  report their results as JSON. `encrypt`, `decrypt`, `rekey`, `sign`,
+  `armor`, `dearmor`, `shred` and `create-usb` emit the status/data envelope
+  on completion (progress stays on stderr; exit codes unchanged; failures
+  arrive as JSON error documents in JSON mode). `decrypt --json` requires an
+  output path — the report cannot share stdout with the plaintext.
+  `derive-password --json` carries the derived key in the envelope
+  (stdout-only, like generate-password; the raw byte format is refused in
+  JSON mode), and `generate-password`'s pre-existing bare document is
+  registered as-is.
+
 - **Uniform JSON output, Phase 1c** (gitlab#268, github#144): the verifiers
   are JSON-capable and registered. `verify-integrity --json` and
   `verify-signature --json` (pre-existing bare documents) are frozen and
