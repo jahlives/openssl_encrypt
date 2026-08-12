@@ -102,49 +102,11 @@ flatpak install -y flathub org.freedesktop.Platform//24.08 org.freedesktop.Sdk//
 
 # Build Flutter desktop GUI if requested
 if [[ "$BUILD_FLUTTER" == "true" ]]; then
-    echo "🦋 Building Flutter desktop GUI..."
-
-    # Store current directory
-    FLATPAK_DIR="$(pwd)"
-
-    # Change to desktop_gui directory
-    cd ../desktop_gui
-
-    # Check if Flutter is available
-    if ! command -v flutter &> /dev/null; then
-        echo "❌ Flutter not found. Please install Flutter SDK first."
-        echo "   Visit: https://docs.flutter.dev/get-started/install/linux"
-        exit 1
-    fi
-
-    # Clean previous builds only if force clean is requested
-    if [[ "$FORCE_CLEAN" == "true" ]]; then
-        echo "🧹 Cleaning previous Flutter builds..."
-        flutter clean
-    else
-        echo "🏃 Skipping Flutter clean (preserving build cache)"
-    fi
-
-    # Get dependencies
-    echo "📦 Getting Flutter dependencies..."
-    flutter pub get
-
-    # Build for Linux
-    echo "🔨 Building Flutter for Linux release..."
-    flutter build linux --release
-
-    # Verify build output
-    if [[ -f "build/linux/x64/release/bundle/openssl_encrypt" ]]; then
-        echo "✅ Flutter build successful"
-        echo "📁 Binary: $(pwd)/build/linux/x64/release/bundle/openssl_encrypt"
-    else
-        echo "❌ Flutter build failed - binary not found"
-        exit 1
-    fi
-
-    # Return to flatpak directory
-    cd "$FLATPAK_DIR"
-    echo "📁 Returned to Flatpak directory: $(pwd)"
+    echo "❌ --build-flutter is no longer supported."
+    echo "   The desktop GUI moved to its own project (openssl_encrypt_gui) and is"
+    echo "   no longer built from this repository. Build the combined GUI + Flatpak"
+    echo "   from that repo; this manifest builds the CLI only."
+    exit 1
 fi
 
 # Clean up build directory and optionally cache

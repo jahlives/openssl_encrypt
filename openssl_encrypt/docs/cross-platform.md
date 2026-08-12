@@ -2,6 +2,15 @@
 
 This documentation explains how to install and build openssl_encrypt for Windows, macOS, and Linux.
 
+> **The desktop GUI now lives in its own project.** The Flutter GUI is
+> maintained and released separately as **openssl_encrypt_gui**
+> (https://gitlab.rm-rf.ch/world/openssl_encrypt_gui) and is no longer built
+> from this repository. Where sections below say `cd desktop_gui` and
+> `flutter build …`, run those in a checkout of `openssl_encrypt_gui` instead;
+> its README is the source of truth for building the GUI on each platform. This
+> repository builds the CLI only. The combined GUI + CLI Flatpak is also built
+> from `openssl_encrypt_gui`.
+
 ## Overview
 
 | Platform | Build System | CLI Packaging | Native Deps |
