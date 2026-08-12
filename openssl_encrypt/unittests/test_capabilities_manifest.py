@@ -278,5 +278,60 @@ class TestRealCliManifest(unittest.TestCase):
         self.assertIn("--disable-common-password-check", flags)  # documented in monolithic
 
 
+class TestGuiFacingContractIsStable(unittest.TestCase):
+    """The manifest is a contract the separately-released desktop GUI gates on
+    (docs/gui-split-unified-plan.md, P15). Dropping or renaming a top-level field
+    or a feature name breaks the GUI's gating silently against a paired CLI, so
+    both vocabularies are pinned here. Changing either is a DELIBERATE act: update
+    the GUI's capability map (lib/capabilities.dart) and the GUI-side contract
+    tests in the same change, and bump CAPABILITIES_SCHEMA_VERSION if the shape
+    changes. This is the CLI-repo half of P15's drift guard.
+    """
+
+    def test_top_level_field_vocabulary_is_pinned(self):
+        m = cap.build_capabilities_manifest(_synthetic_parser())
+        self.assertEqual(
+            set(m),
+            {
+                "schema_version",
+                "cli_version",
+                "line",
+                "commands",
+                "flags",
+                "features",
+                "command_flags",
+                "json_endpoints",
+                "json_fields",
+            },
+        )
+
+    def test_feature_name_vocabulary_is_pinned(self):
+        self.assertEqual(
+            set(cap._FEATURE_RULES),
+            {
+                "armor",
+                "decryption",
+                "encryption",
+                "envelope",
+                "hsm",
+                "identity",
+                "integrity_verify",
+                "keyserver",
+                "password_generator",
+                "plugins",
+                "portable_usb",
+                "pqc",
+                "pqc_keyfile",
+                "recovery_slots",
+                "rekey",
+                "shred",
+                "signature_verify",
+                "signing",
+                "steganography",
+                "telemetry",
+            },
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
