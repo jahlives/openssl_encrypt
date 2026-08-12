@@ -6496,7 +6496,7 @@ def main_with_args(args=None):
     # they only ever see --json where their own parser declares it (and reject
     # it everywhere else at parse time).
     if getattr(args, "json", False) and args.action not in _subparser_choices():
-        _mono_json_actions = {"info", "list-plugins", "plugin-info", "capabilities"}
+        _mono_json_actions = {"info", "list-plugins", "plugin-info", "capabilities", "verify-usb"}
         if args.action not in _mono_json_actions:
             eprint(
                 f"Error: --json is not supported for '{args.action}' (yet); "
@@ -6803,6 +6803,13 @@ def main_with_args(args=None):
                 hash_config=hash_config if hash_config else None,
             )
 
+            if getattr(args, "json", False):
+                from .json_output import emit_json
+
+                # Same envelope, same exit-code semantics as the human path.
+                emit_json(result)
+                return 0 if result.get("integrity_ok") else 1
+
             if result.get("integrity_ok"):
                 eprint("✓ USB integrity verification PASSED")
                 eprint(f"  Files verified: {result['verified_files']}")
@@ -6837,6 +6844,13 @@ def main_with_args(args=None):
             eprint("Error: Portable media module not available")
             return 1
         except Exception as e:
+            if getattr(args, "json", False):
+                from .json_output import emit_json_error
+
+                # JSON mode: the caller parses stdout, so the error arrives
+                # there in the envelope (path/exception text, no secrets).
+                emit_json_error(f"Error verifying USB: {sanitize_for_display(e)}")
+                return 1
             # The exception message can embed the user-supplied --usb-path or
             # decrypted-manifest fragments; sanitize for consistency with the
             # other error sinks (gitlab#238 review).
