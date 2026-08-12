@@ -22,6 +22,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The Flatpak under `com.opensslencrypt.OpenSSLEncrypt` is now the CLI-only
+  app** (gitlab#267, github#142, `docs/flatpak-two-app-split.md` P1–P3): with
+  the two-app Flatpak split, the desktop GUI is its own Flatpak app
+  (`com.opensslencrypt.OpenSSLEncryptGui`, built from `openssl_encrypt_gui`),
+  and this repository's Flatpak ships the command-line tool with all
+  dependencies prebuilt (liboqs, pcsc-lite, the Python stack, Threefish).
+  Existing installs of the old id upgrade in place to the CLI-only app; former
+  combined-package users install the GUI app once under its new id. The
+  manifest drops the GUI-only sandbox permissions (X11/Wayland, dri, a11y,
+  ipc, GDK backend) and the leftover `x11-tools` module; the in-Flatpak `--gui`
+  flag now prints where to get the GUI app instead of failing on a missing
+  bundle; the desktop entry opens the CLI in a terminal; the CI
+  `flatpak-build[:clean]`/`flatpak-publish[:clean]` jobs are revived CLI-only
+  (no Flutter step); and the repository web pages list both apps (the landing
+  page and shared assets are kept byte-identical with the GUI repo, which
+  deploys to the same server directory).
+
 - **`--gui` now resolves an *installed* desktop GUI, not a build in this tree**
   (gitlab#265, `docs/gui-split-unified-plan.md` P12): the desktop GUI is becoming
   a separate application (its own project, `openssl_encrypt_gui`), so the

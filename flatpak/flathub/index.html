@@ -11,19 +11,20 @@
 
           <div class="setup-section">
               <h2>&#9881; Setup Instructions</h2>
-              <p>Add this repository to your system:</p>
+              <p>Add this repository to your system (both configurations point at the same repository; add the one matching the app you install):</p>
               <pre>flatpak remote-add --if-not-exists openssl-encrypt https://flatpak.rm-rf.ch/openssl-encrypt.flatpakrepo</pre>
+              <pre>flatpak remote-add --if-not-exists openssl-encrypt-gui https://flatpak.rm-rf.ch/openssl-encrypt-gui.flatpakrepo</pre>
           </div>
 
           <section>
               <h2>&#128230; Available Applications</h2>
 
               <div class="app">
-                  <h3>&#128272; OpenSSLEncrypt</h3>
+                  <h3>&#128272; OpenSSL Encrypt (CLI)</h3>
                   <div class="app-description">
-                      <p>OpenSSL Encrypt is a comprehensive encryption tool that provides military-grade security with cutting-edge post-quantum cryptography. Protect your files against both current and future quantum computing threats.</p>
+                      <p>OpenSSL Encrypt is a comprehensive command-line encryption tool that provides military-grade security with cutting-edge post-quantum cryptography. Protect your files against both current and future quantum computing threats.</p>
 
-                      <p>Perfect for individuals and organizations requiring the highest levels of data protection, including protection against future quantum computer attacks.</p>
+                      <p>This Flatpak ships the command-line tool with all its dependencies prebuilt (including liboqs for post-quantum cryptography) &mdash; no local build required.</p>
                   </div>
 
                   <div class="contact-info">
@@ -40,13 +41,37 @@
                       <pre>flatpak install openssl-encrypt com.opensslencrypt.OpenSSLEncrypt</pre>
                   </div>
               </div>
+
+              <div class="app">
+                  <h3>&#128421; OpenSSL Encrypt GUI (GUI + CLI)</h3>
+                  <div class="app-description">
+                      <p>The desktop GUI for OpenSSL Encrypt, bundled together with the full command-line tool. One install provides the graphical app and the exact CLI release it is paired with; the GUI adapts its features to the bundled CLI's capabilities.</p>
+
+                      <p><strong>&#128260; Migration note:</strong> the combined GUI + CLI package was previously published under <code>com.opensslencrypt.OpenSSLEncrypt</code>. That ID is now the CLI-only app; if you used the combined package, reinstall the GUI once under the new ID below.</p>
+                  </div>
+
+                  <div class="contact-info">
+                      <p>&#128236; To report bugs or request features, send email to: <a href="mailto:issue+world-openssl-encrypt-gui-28-issue-+gitlab@rm-rf.ch">issue+world-openssl-encrypt-gui-28-issue-+gitlab@rm-rf.ch</a></p>
+                  </div>
+
+                  <div style="margin: 20px 0;">
+                      <a href="apps/openssl-encrypt-gui/" class="details-btn">&#128214; View Details</a>
+                      <button onclick="installFlatpak('com.opensslencrypt.OpenSSLEncryptGui')" class="install-btn">&#128229; Quick Install</button>
+                  </div>
+
+                  <div>
+                      <strong>&#128187; Manual install:</strong>
+                      <pre>flatpak install openssl-encrypt-gui com.opensslencrypt.OpenSSLEncryptGui</pre>
+                  </div>
+              </div>
           </section>
 
           <div class="repo-files">
               <h2>&#128193; Repository Files</h2>
               <ul>
                   <li><a href="repo.gpg">&#128273; GPG Public Key</a></li>
-                  <li><a href="openssl-encrypt.flatpakrepo">&#9881; Repository Configuration</a></li>
+                  <li><a href="openssl-encrypt.flatpakrepo">&#9881; Repository Configuration (CLI)</a></li>
+                  <li><a href="openssl-encrypt-gui.flatpakrepo">&#9881; Repository Configuration (GUI)</a></li>
               </ul>
           </div>
       </div>
