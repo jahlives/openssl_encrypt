@@ -134,6 +134,12 @@ _JSON_ENDPOINTS = [
     "create-usb",
     "derive-password",
     "generate-password",
+    # total-json Phase 3 (gitlab#268): grouped commands whose reporting
+    # subcommands emit JSON (keyserver: status/cache-stats/search/show-pending;
+    # hsm: fido2-status; identity: list/show/export already partially JSON).
+    "keyserver",
+    "hsm",
+    "plugin",
 ]
 
 # Per-endpoint output field intent. Seeded; grows as endpoints are pinned.
@@ -202,6 +208,11 @@ _JSON_FIELDS = {
     "create-usb": ["success", "usb_path"],
     "derive-password": ["derived", "format"],
     "generate-password": ["password"],
+    "keyserver": ["enabled", "servers", "has_api_token", "cache"],
+    "hsm": ["registered", "count", "rp_id", "credentials"],
+    # plugin's JSON lives in its pepper/integrity subcommand groups
+    # (gitlab#193/#194); the fields name those groups.
+    "plugin": ["pepper", "integrity"],
 }
 
 

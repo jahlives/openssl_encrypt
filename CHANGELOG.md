@@ -53,6 +53,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Uniform JSON output, Phase 3 + docs** (gitlab#268, github#144): the
+  grouped commands' reporting subcommands emit JSON — `keyserver status` /
+  `keyserver cache-stats` (status fields only; `has_api_token` is a boolean,
+  never the token), `hsm fido2-status` (public credential metadata only) and
+  `identity show` (raw public metadata, display safety at the consumer per
+  gitlab#183) join the pre-existing `keyserver search`/`show-pending`,
+  `identity list/export` and `plugin pepper`/`integrity` JSON. The
+  `keyserver`, `hsm` and `plugin` groups are registered in the capabilities
+  manifest, and the user guide gains a "Machine-Readable Output (--json)"
+  section documenting the envelope and conventions.
+
 - **Uniform JSON output, Phase 2** (gitlab#268, github#144): the operations
   report their results as JSON. `encrypt`, `decrypt`, `rekey`, `sign`,
   `armor`, `dearmor`, `shred` and `create-usb` emit the status/data envelope
