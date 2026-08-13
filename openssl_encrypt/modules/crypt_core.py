@@ -6595,6 +6595,14 @@ def encrypt_file(
             except Exception as e:
                 raise KeyDerivationError(f"HSM operation failed: {str(e)}")
 
+        # Extract keystore_id from hash_config once, ahead of the streaming
+        # branch — the streaming and non-streaming metadata sites must never
+        # diverge on it again (gitlab#275 happened because the streaming site
+        # drifted).
+        keystore_id = (
+            hash_config.get("pqc_keystore_key_id") if isinstance(hash_config, dict) else None
+        )
+
         # --- Streaming decision (must precede ALL format_version-dependent
         # derivation: pepper keys, the main key, and cascade setup) ---
         # Streaming files always record format_version=12 in their metadata, and
@@ -7033,8 +7041,22 @@ def encrypt_file(
             include_encrypted_hash=False,
             encrypted_hash=None,
             aad_mode=True,
+            # gitlab#275: streamed files must reference their key-material
+            # plugins exactly like non-streamed ones — this call used to omit
+            # them, so a streamed pepper/HSM file carried no plugin reference,
+            # decrypt never fetched the pepper, and the file was silently
+            # undecryptable with the correct password.
+            hsm_plugin_name=hsm_plugin.plugin_id if hsm_plugin else None,
+            hsm_slot_used=hsm_slot_used,
+            keystore_id=keystore_id,
+            pepper_plugin_name="remote" if has_remote_pepper else None,
+            pepper_name=remote_pepper_name,
             format_version=format_version,
         )
+        # gitlab#274: record the server-side wrap format so decrypt can detect
+        # a downgrade back to the weak legacy blob (ADVISORY 2026-35).
+        if has_remote_pepper and remote_pepper_name is not None and pepper_wrap_version:
+            metadata.setdefault("encryption", {})["pepper_wrap_version"] = pepper_wrap_version
 
         # Add streaming section to metadata
         import base64 as _b64_streaming
@@ -7753,10 +7775,7 @@ def encrypt_file(
                         )
                         pqc_info["dual_encrypt_key"] = True
 
-        # Extract keystore_id from hash_config if present
-        keystore_id = (
-            hash_config.get("pqc_keystore_key_id") if isinstance(hash_config, dict) else None
-        )
+        # keystore_id extracted once above the streaming branch (gitlab#275).
 
         # Prepare cascade encryption if enabled
         cascade_salt_bytes = None
@@ -8111,10 +8130,7 @@ def encrypt_file(
                         )
                         pqc_info["dual_encrypt_key"] = True
 
-        # Extract keystore_id from hash_config if present
-        keystore_id = (
-            hash_config.get("pqc_keystore_key_id") if isinstance(hash_config, dict) else None
-        )
+        # keystore_id extracted once above the streaming branch (gitlab#275).
 
         # Create metadata - use V8 format for v8/v10, otherwise use V6 for backward compatibility
         if format_version in [8, 10]:

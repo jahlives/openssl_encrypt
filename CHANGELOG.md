@@ -709,6 +709,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Streaming no longer silently writes undecryptable pepper/HSM files**
+  (gitlab#275): the streaming encrypt path built its metadata without the
+  plugin-reference fields the non-streaming path records (`pepper_plugin`,
+  `pepper_name`, `hsm_plugin`, `hsm_slot_used`, `keystore_id`), so a file
+  above the streaming threshold (10 MB default) encrypted with a remote
+  pepper carried no pepper reference — decryption never fetched the pepper,
+  derived a different key, and failed chunk authentication despite the
+  correct password, with no warning at encrypt time. Discovered by the
+  gitlab#274 security review and confirmed by an executed round-trip.
+  Streamed files now record the same plugin metadata as non-streamed ones
+  (including `pepper_wrap_version`, covered by both the raw-header chunk
+  AAD and the envelope AAD), the legacy re-seal works on the streaming path
+  too, and the `keystore_id` extraction is hoisted to a single site so the
+  paths cannot drift again. Regression-pinned by
+  `test_streaming_pepper_275.py` (7 tests, including a wrong-pepper
+  negative and an envelope-streamed case). **Files already written by
+  earlier releases with streaming + remote pepper remain undecryptable**
+  (their AAD-bound header carries no pepper reference, so it cannot be
+  patched); keep their plaintext sources — a decrypt-side recovery option
+  is tracked in gitlab#275.
+
 - **CI test job generates `version.py` before running the suite** (gitlab#273,
   github#152): `show-version-file --json` correctly reports an error when the
   generated `openssl_encrypt/version.py` (gitignored, produced from
