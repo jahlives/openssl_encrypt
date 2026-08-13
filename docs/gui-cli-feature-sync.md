@@ -194,10 +194,17 @@ emitted-but-nonexistent flags the argv lint now catches.
 - [x] P4: New Password Generator screen with char/diceware toggle and a
       NavigationRail entry, calling P2/P3.
       target: desktop_gui/lib/ (new password_generator_screen.dart) + lib/main.dart
-- [ ] P5: Generated password can be inserted into the Encrypt and Decrypt
+- [x] P5: Generated password can be inserted into the Encrypt and Decrypt
       password fields (copy-to-field action).
       target: desktop_gui/lib/tabs/encrypt_tab.dart, desktop_gui/lib/tabs/decrypt_tab.dart
-  - **Not wired**: no widget consumes the generated password; the screen shows and copies it, but there is no insert-into-tab path.
+  - **DONE 2026-08-13 in the GUI repo** (post-split home: world/openssl_encrypt_gui
+    35267db, gitlab gui#4 / gh#147): "Use for Encrypt/Decrypt" actions on the
+    generator + one-shot TARGET-BOUND PasswordHandoff slot consumed by the tab's
+    initState; fail-closed navigation by entry identity. Security-reviewed
+    (Medium fixed: obscured fields made the handed-off password write-only →
+    both password fields gained reveal toggles; 30s clipboard auto-clear on the
+    generator). The optional clipboard-auto-clear idea from the original remark
+    is included.
 - [x] P6: `CLIService.shred()` emits the `shred` command
       (`--input` incl. glob, `--shred-passes`, `--recursive`).
       target: desktop_gui/lib/cli_service.dart
