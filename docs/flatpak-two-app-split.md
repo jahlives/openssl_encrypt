@@ -1,6 +1,6 @@
 # Plan: split the Flatpak into two apps — CLI-only and GUI+CLI
 
-Status: draft
+Status: done
 Created: 2026-08-12
 
 ## Goal
@@ -32,8 +32,9 @@ the GUI app takes a new identity.
   ipc/at-spi/a11y/talk-names/GDK_BACKEND — CLI never touches a display) + the
   no-op x11-tools module; launcher --gui now points at the GUI app instead of
   exec'ing a missing bundle; desktop entry runs the CLI in a terminal;
-  build-flatpak.sh no longer advertises --build-flutter. NOT yet built with a
-  real flatpak-builder (static validation only).
+  build-flatpak.sh no longer advertises --build-flutter. VALIDATED 2026-08-13
+  (user, real flatpak-builder, 1.5.x line / branch 1.5.0-dev): builds, runs
+  under the old id, and --gui prints the pointer to the separate GUI app.
 - [x] P2: Revive the CLI-repo Flatpak build+deploy that P14 removed — restore the
   CI `flatpak-build`/`flatpak-publish` jobs (CLI-only, no Flutter step); the
   `build-flatpak.sh` / `build-remote.sh` in that repo already target the CLI-only
@@ -112,9 +113,10 @@ the GUI app takes a new identity.
   independent of App 2.
 - Reset the flathub `changelog.html` for the GUI app (P7) — deferred; user wants
   to think about the changelog approach more deeply.
-- Share the same GPG signing key and `LOCAL_REPO` for both apps, or separate
-  per-app repos/keys? (build-remote.sh currently uses one shared LOCAL_REPO and
-  one key.)
+- ~~Share the same GPG signing key and `LOCAL_REPO` for both apps, or separate
+  per-app repos/keys?~~ **DECIDED 2026-08-13: shared** — one GPG key and one
+  shared LOCAL_REPO/server ostree repo for both apps (the current script
+  state; both `.flatpakrepo` files point at the same signed repo).
 
 ## Context / current state (2026-08-12)
 
