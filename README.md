@@ -26,10 +26,10 @@ While the source code is public, usage is subject to strict ethical conditions. 
 ### Prohibited Use Cases
 By using this software, you agree that it shall **not** be used for:
 
-* **Violations of Human Rights:** Usage by any entity that undermines the [UN Universal Declaration of Human Rights](https://github.com/jahlives/openssl_encrypt/blob/main/LICENSE#L51) is strictly prohibited (See [License Section 2.1](https://github.com/jahlives/openssl_encrypt/blob/main/LICENSE#L51)).
-* **Mass Surveillance:** The software may not be used for bulk, warrantless monitoring or data collection (See [License Section 2.2.a](https://github.com/jahlives/openssl_encrypt/blob/main/LICENSE#L58)).
+* **Violations of Human Rights:** Usage by any entity that undermines the [UN Universal Declaration of Human Rights](https://github.com/jahlives/openssl_encrypt/blob/main/LICENSE#L58) is strictly prohibited (See [License Section 3.1](https://github.com/jahlives/openssl_encrypt/blob/main/LICENSE#L58)).
+* **Mass Surveillance:** The software may not be used for bulk, warrantless monitoring or data collection (See [License Section 3.1.21](https://github.com/jahlives/openssl_encrypt/blob/main/LICENSE#L159)).
 * **Government Intelligence Agencies:** Usage by agencies (such as NSA, GCHQ, etc.) or their contractors for offensive cyber operations or domestic spying is not permitted under this license.
-* **Military & Weapons:** Usage by or for the defense industry, specifically for the development of lethal weaponry, targeting systems, or military-grade surveillance equipment (See [License Section 2.2](https://github.com/jahlives/openssl_encrypt/blob/main/LICENSE#L58)).
+* **Military & Weapons:** Usage by or for the defense industry, specifically for the development of lethal weaponry, targeting systems, or military-grade surveillance equipment (See [License Section 3.1.22](https://github.com/jahlives/openssl_encrypt/blob/main/LICENSE#L163)).
 
 
 ### Why this License?
