@@ -322,8 +322,9 @@ test:
   before_script:
     - pip install -r requirements.txt --break-system-packages
     - pip install setuptools pytest-xdist pytest-cov --break-system-packages  # Provides pkg_resources, parallel testing, and coverage
-    # Build Threefish Rust extension
-    - apt-get update && apt-get install -y --no-install-recommends cargo patchelf
+    # Build Threefish Rust extension; gnupg so the real-gpg integration tests
+    # run instead of skipping (gitlab#272)
+    - apt-get update && apt-get install -y --no-install-recommends cargo patchelf gnupg
     - pip install maturin --break-system-packages
     - cd threefish_native && PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1 maturin build --release && cd ..
     - pip install threefish_native/target/wheels/*.whl --break-system-packages
