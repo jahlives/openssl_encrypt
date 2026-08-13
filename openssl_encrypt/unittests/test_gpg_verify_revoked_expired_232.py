@@ -64,8 +64,12 @@ class TestStatusParsing(unittest.TestCase):
                 return _completed(0, b"")
             return _completed(returncode, status)
 
-        with mock.patch.object(gpg_runner, "_run", side_effect=fake_run):
-            return verify_detached(b"data", b"sig", public_key=b"pub", **kw)
+        # _resolve_gpg probes the real system (shutil.which) BEFORE _run is
+        # reached, so it must be patched too or this class silently requires
+        # an installed gpg — the exact dependency it exists to avoid (gitlab#272).
+        with mock.patch.object(gpg_runner, "_resolve_gpg", return_value="gpg"):
+            with mock.patch.object(gpg_runner, "_run", side_effect=fake_run):
+                return verify_detached(b"data", b"sig", public_key=b"pub", **kw)
 
     def test_good_goodsig_validsig_accepted(self):
         res = self._verify_with_status(
