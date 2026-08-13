@@ -322,6 +322,9 @@ test:
   before_script:
     - pip install -r requirements.txt --break-system-packages
     - pip install setuptools pytest-xdist pytest-cov --break-system-packages  # Provides pkg_resources, parallel testing, and coverage
+    # Generate openssl_encrypt/version.py from its template — it is gitignored,
+    # and show-version-file (total-json tests) fails without it (gitlab#273)
+    - python3 setup.py --version >/dev/null
     # Build Threefish Rust extension; gnupg so the real-gpg integration tests
     # run instead of skipping (gitlab#272)
     - apt-get update && apt-get install -y --no-install-recommends cargo patchelf gnupg

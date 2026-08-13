@@ -144,6 +144,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **CI test job generates `version.py` before running the suite** (gitlab#273,
+  github#152): `show-version-file --json` correctly reports an error when the
+  generated `openssl_encrypt/version.py` (gitignored, produced from
+  `version.py.template` by `setup.py`) is missing — but the CI `test` job never
+  generated it, so the two total-json tests covering the command failed in CI
+  while passing on any machine where the module had ever been generated.
+  Previously masked by the gpg failures below. The job now runs
+  `python3 setup.py --version` before the suite; no product code change.
+
 - **gpg status-parsing tests no longer require an installed gpg, and CI runs
   the real-gpg integration tests** (gitlab#272, github#151): the
   `TestStatusParsing` class in `test_gpg_verify_revoked_expired_232.py` is
