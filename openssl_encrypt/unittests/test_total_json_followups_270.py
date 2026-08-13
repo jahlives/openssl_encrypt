@@ -66,9 +66,10 @@ class TestF3RoutingProofGuard(unittest.TestCase):
         # --json BEFORE the command makes the argv scan swallow the command
         # token and fall through to the monolithic parser, which accepts the
         # global --json for every action - the old guard exempted any name
-        # that is also subparser-registered, so config-wizard slipped through
-        # and silently ignored the flag.
-        code, out, err, _ = _run(["--json", "config-wizard"])
+        # that is also subparser-registered, letting such invocations
+        # silently ignore the flag. enable-plugin exists on both lines and
+        # has no JSON emitter.
+        code, out, err, _ = _run(["--json", "enable-plugin"])
         self.assertEqual(code, 2)
         self.assertEqual(out.strip(), "")
         self.assertIn("--json is not supported", err)
