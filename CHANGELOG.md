@@ -53,6 +53,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Uniform JSON output — remaining review follow-ups** (gitlab#270,
+  github#146): `decrypt --json` without a usable output path is refused
+  *before* any password source is consumed, so a scripted caller keeps its
+  `CRYPT_PASSWORD`/fd/keyring credential for the corrected retry; the
+  fail-closed `--json` guard now keys on the curated JSON-endpoint set
+  instead of parser routing (`crypt --json config-wizard` is refused, not
+  silently ignored); JSON mode emits exactly one document even on failure
+  paths (shred no-match, sign refusal, create-usb errors, missing FIDO2
+  stack — which previously escaped as a raw NameError — and a generic
+  fallback envelope on any failed exit); and a new test enforces that every
+  endpoint's emitted keys stay within the capabilities manifest's curated
+  `json_fields`, making the manifest the allowlist for JSON payloads.
+
 - **Uniform JSON output — security-review fixes** (gitlab#268, review
   2026-08-13): JSON mode now refuses *stream* output targets (`-`,
   `/dev/stdout`) for `decrypt`, `encrypt` (including implicit stdout with

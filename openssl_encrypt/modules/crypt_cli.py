@@ -3829,12 +3829,25 @@ def handle_hsm_command(args):
     if action.startswith("fido2-"):
         try:
             from ..plugins.hsm.fido2_pepper import FIDO2_AVAILABLE, FIDO2HSMPlugin
-        except ImportError:
+        except (ImportError, NameError):
+            # NameError: the plugin module's class body references fido2
+            # types in annotations, so a missing fido2 stack can surface as
+            # NameError at import rather than ImportError (gitlab#270 F4).
+            if getattr(args, "json", False):
+                from .json_output import emit_json_error
+
+                emit_json_error("FIDO2 library not available (pip install fido2>=1.1.0)")
+                sys.exit(1)
             eprint("❌ Error: FIDO2 library not available")
             eprint("Install with: pip install fido2>=1.1.0")
             sys.exit(1)
 
         if not FIDO2_AVAILABLE:
+            if getattr(args, "json", False):
+                from .json_output import emit_json_error
+
+                emit_json_error("FIDO2 library not available (pip install fido2>=1.1.0)")
+                sys.exit(1)
             eprint("❌ Error: FIDO2 library not available")
             eprint("Install with: pip install fido2>=1.1.0")
             sys.exit(1)
@@ -5207,6 +5220,9 @@ def _resolve_second_password_with_fallback(args, explicit_second_password):
 
 def main_with_args(args=None):
     """Main logic with pre-parsed arguments (or None to parse from command line)"""
+    from .json_output import reset_emitted
+
+    reset_emitted()
     # Original main function continues below...
     # Global variable to track temporary files that need cleanup
     temp_files_to_cleanup = []
@@ -6546,14 +6562,19 @@ def main_with_args(args=None):
         out = getattr(a, "output", None)
         return (not out) or (out in _JSON_STREAM_OUTPUTS)
 
-    if getattr(args, "json", False) and args.action in ("encrypt", "armor", "dearmor"):
+    if getattr(args, "json", False) and args.action in ("encrypt", "decrypt", "armor", "dearmor"):
         _out = getattr(args, "output", None)
         _stdin_implicit_stdout = (
             args.action == "encrypt"
             and not _out
             and (getattr(args, "input", None) in ("/dev/stdin", "-"))
         )
-        if (_out in _JSON_STREAM_OUTPUTS) or _stdin_implicit_stdout:
+        # decrypt additionally REQUIRES an output path: without one the
+        # plaintext goes to stdout. Checked HERE, before the password
+        # resolution below, so a refused invocation does not consume the
+        # caller's CRYPT_PASSWORD/fd/keyring sources (gitlab#270 F2).
+        _decrypt_conflict = args.action == "decrypt" and _json_output_conflicts(args)
+        if (_out in _JSON_STREAM_OUTPUTS) or _stdin_implicit_stdout or _decrypt_conflict:
             from .json_output import emit_json_error
 
             emit_json_error(f"{args.action} --json requires a file output path (-o/--output)")
@@ -6564,16 +6585,16 @@ def main_with_args(args=None):
     # instead of silently ignoring it. Subparser-routed commands are exempt -
     # they only ever see --json where their own parser declares it (and reject
     # it everywhere else at parse time).
-    if getattr(args, "json", False) and args.action not in _subparser_choices():
-        _mono_json_actions = {
-            "info",
-            "list-plugins",
-            "plugin-info",
-            "capabilities",
-            "verify-usb",
-            "create-usb",
-        }
-        if args.action not in _mono_json_actions:
+    if getattr(args, "json", False):
+        # Keyed on the curated JSON-endpoint set, NOT on parser routing
+        # (gitlab#270 F3): `--json <command>` with the flag BEFORE the command
+        # makes the argv scan swallow the command token and fall through to
+        # the monolithic parser, whose global --json every action accepts -
+        # the old routing-based exemption let such invocations silently
+        # ignore the flag for subparser-registered-but-unconverted commands.
+        from .capabilities import _JSON_ENDPOINTS
+
+        if args.action not in _JSON_ENDPOINTS:
             eprint(
                 f"Error: --json is not supported for '{args.action}' (yet); "
                 "refusing rather than silently ignoring it."
@@ -6830,9 +6851,19 @@ def main_with_args(args=None):
                 return 1
 
         except ImportError:
+            if getattr(args, "json", False):
+                from .json_output import emit_json_error
+
+                emit_json_error("Portable media module not available")
+                return 1
             eprint("Error: Portable media module not available")
             return 1
         except Exception as e:
+            if getattr(args, "json", False):
+                from .json_output import emit_json_error
+
+                emit_json_error(f"Error creating USB: {sanitize_for_display(e)}")
+                return 1
             eprint(f"Error creating USB: {e}")
             return 1
 
@@ -7056,7 +7087,21 @@ def main_with_args(args=None):
                     }
                 )
             sys.exit(0)
+        except SystemExit as e:
+            # sign_file_cli exits directly on refusal (e.g. unknown signer);
+            # a JSON caller still gets its one document (gitlab#270 F4).
+            if getattr(args, "json", False) and e.code not in (0, None):
+                from .json_output import document_emitted, emit_json_error
+
+                if not document_emitted():
+                    emit_json_error("sign failed (see stderr for details)")
+            raise
         except Exception as e:
+            if getattr(args, "json", False):
+                from .json_output import emit_json_error
+
+                emit_json_error(f"Error: {sanitize_for_display(e)}")
+                sys.exit(1)
             print(f"Error: {sanitize_for_display(e)}", file=sys.stderr)
             sys.exit(1)
 
@@ -11608,15 +11653,8 @@ def main_with_args(args=None):
                 sys.exit(1)
 
         elif args.action == "decrypt":
-            if getattr(args, "json", False) and _json_output_conflicts(args):
-                from .json_output import emit_json_error
-
-                # Without -o (or with a stream target) the plaintext shares
-                # stdout with the JSON report - and the payload is attacker-
-                # influenceable content that could forge an envelope line
-                # (security review 2026-08-13 F1).
-                emit_json_error("decrypt --json requires a file output path (-o/--output)")
-                sys.exit(2)
+            # (--json output-path validation happens in the early guard,
+            # before password resolution - gitlab#270 F2.)
             # Check if asymmetric mode by reading metadata
             try:
                 import base64
@@ -12908,6 +12946,10 @@ def main_with_args(args=None):
             if not matched_paths:
                 if not args.quiet:
                     eprint(f"No files or directories match the pattern: {args.input}")
+                if getattr(args, "json", False):
+                    from .json_output import emit_json_error
+
+                    emit_json_error(f"No files or directories match the pattern: {args.input}")
                 exit_code = 1
             else:
                 # If there are multiple files/dirs to shred, inform the user
@@ -13005,6 +13047,14 @@ def main_with_args(args=None):
                 pass
 
     # Exit with appropriate code
+    # One document per JSON invocation (gitlab#270 F4): a failed operation
+    # whose path never reached an emitter still owes its caller an error
+    # envelope (details are on stderr as before).
+    if getattr(args, "json", False) and exit_code not in (0, None):
+        from .json_output import document_emitted, emit_json_error
+
+        if not document_emitted():
+            emit_json_error("operation failed (see stderr for details)")
     sys.exit(exit_code)
 
 

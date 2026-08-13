@@ -17,6 +17,22 @@ the consumer's decode-boundary job). Endpoints that predate the envelope
 import json
 from typing import Any
 
+# One document per invocation (gitlab#270 F4): the emitters record that a
+# document went out so the CLI's exit path can add a fallback error envelope
+# when a JSON-mode operation fails without ever reaching an emitter.
+_document_emitted = False
+
+
+def document_emitted() -> bool:
+    """True once emit_json/emit_json_error has printed a document."""
+    return _document_emitted
+
+
+def reset_emitted() -> None:
+    """Reset the emitted flag (start of an invocation; in-process tests)."""
+    global _document_emitted
+    _document_emitted = False
+
 
 def emit_json(data: Any) -> None:
     """Print the success envelope for ``data`` as one stdout JSON document.
@@ -24,6 +40,8 @@ def emit_json(data: Any) -> None:
     Args:
         data: JSON-serializable payload for the ``data`` field.
     """
+    global _document_emitted
+    _document_emitted = True
     print(json.dumps({"status": "ok", "data": data}), flush=True)
 
 
@@ -33,4 +51,6 @@ def emit_json_error(message: str) -> None:
     Args:
         message: Human-readable error description (no secrets).
     """
+    global _document_emitted
+    _document_emitted = True
     print(json.dumps({"status": "error", "error": {"message": str(message)}}), flush=True)
