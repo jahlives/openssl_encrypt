@@ -4,7 +4,7 @@ A Python-based file encryption tool with modern ciphers, post-quantum algorithms
 
 Built to encrypt anything from grandma's pie recipe to the nuclear launch codes — with parameters to satisfy every paranoia level in between. Sensible, secure defaults out of the box; fully tunable KDF chains and cipher choices when you want to crank the cost to match the threat.
 
-> **Looking for the stable release?** The latest stable version is [v1.4.8](https://github.com/jahlives/openssl_encrypt/releases/tag/v1.4.8) on the releases/1.4.x branch.
+> **Looking for the stable release?** The latest stable version is [v1.4.9](https://github.com/jahlives/openssl_encrypt/releases/tag/v1.4.9) on the releases/1.4.x branch — a **security & maintenance release**; upgrading from 1.4.8 is recommended.
 
 ## History
 
@@ -58,12 +58,22 @@ For deep-dives into the cryptographic design and security policies of this proje
 * **Threefish-512/1024**: Native AEAD ciphers with 256/512-bit post-quantum security margins.
 * **Streaming Chunked Encryption**: Constant-memory authenticated encryption for multi-gigabyte files (format v12).
 ---
-## 🚀 What's New in v1.4.8
+## 🚀 What's New in v1.4.9
 
-**Current Release:** v1.4.8 | **Status:** Stable | **Tests:** 3100+ passing
+**Current Release:** v1.4.9 | **Type:** Security & maintenance release | **Status:** Stable | **Tests:** 4300+ passing
 
 Everything that landed since v1.4.1:
 
+- **Pre-authentication hardening batch (1.4.9)**: decryption, keystore, identity and portable-USB paths now refuse crafted key-derivation cost parameters (Argon2 memory, scrypt `N`, balloon `space_cost`) before any password work — peak memory is estimated and refused above an 8 GiB ceiling (overridable per file), with a hard KDF *time* ceiling on top; untrusted length/count fields are bounded (decrypt auto-detection, FLAC steganography, multi-QR import); and a large terminal-escape/output-injection batch escapes control characters on every surface that prints untrusted metadata (contact fingerprints, keyserver prompts, `info`, signature fields).
+- **Recovery slots bound to the file (1.4.9)**: recovery-slot presence is now cryptographically bound to the wrapped key, so slots can no longer be stripped from a file's header while normal password decryption silently succeeds; adding or removing a slot requires the primary password. Files gain the protection once re-encrypted or once a slot is added/removed on 1.4.9.
+- **Portable USB genuinely encrypted (1.4.9)**: the "encrypted workspace" previously derived a key and never used it, leaving the directory in cleartext — new `seal`/`unlock` commands manage a real AES-256-GCM authenticated vault (re-create the drive to get it); USB integrity verification now records an allowlist of every file on the tool tree and flags anything added afterward, including planted autorun payloads; `create-usb`/`verify-usb` got a broad hardening batch (no private keys copied to the drive, no drive secrets on the command line, symlink/named-pipe refusal).
+- **Plugins must be signed by default (1.4.9)**: unsigned or unverifiable third-party plugins are refused unless `OPENSSL_ENCRYPT_PLUGIN_SIGNATURE_POLICY=warn`/`off` is set deliberately; built-in trust is now an allowlist scoped to the shipped subtree, and trust-anchor enrollment requires the full key fingerprint.
+- **Cryptographic wrapping & format hygiene (1.4.9)**: `.pqc` key files wrap the post-quantum private key with Argon2id instead of weak PBKDF2-SHA256 (re-save a key file to upgrade); the 10k-iteration PBKDF2 dual-encryption verifier is no longer written or trusted; the remote pepper is sealed with a salted memory-hard wrap key; the plaintext-hash confirmation oracle was removed from the file header; files embedding an unencrypted PQC private key are refused.
+- **Credentials via environment variables (1.4.9)**: the second password, signer passphrase, and recovery codes/passphrases can be supplied through dedicated `OPENSSL_ENCRYPT_*` environment variables — each read once and cleared; plus a secret-redaction batch (`--debug` argv dump, keyserver bearer token, HSM pepper buffers).
+- **CLI management & JSON output (1.4.9)**: new `plugin pepper` (TOTP 2FA, dead-man's switch) and `plugin integrity` (four-outcome verification) command groups; machine-readable output for `analyze-security`, `smart-recommendations`, `telemetry status`, `generate-password`, `identity list`, and the recovery-slot commands; `verify-signature --json` answers on every outcome.
+- **CLI reliability (1.4.9)**: seven documented commands that failed with "invalid choice" (`create-usb`, `verify-usb`, and the plugin commands) now run, with command routing derived from the parser so the drift cannot recur; global flags (`--debug`, `--verbose`, `--quiet`) work after every subcommand; `--parallel-kdf` actually parallelizes v13/v14 files; `rekey`/`decrypt` onto the input path no longer truncates it; `--pqc-keyfile` actually saves the key file; `analyze-config` no longer crashes and scores the flags you actually pass.
+- **Desktop GUI parity screens — work in progress (1.4.9)**: many screens landed (steganography extraction, password generator, secure shred, rekey, recovery slots, verify-signature, batch-tab parity, PQC controls), but the GUI is **not** the recommended interface for 1.4.9 — the CLI is. The GUI is being extracted into its own project and rewritten as a single unified application; until that ships, treat it as a preview.
+- **Compatibility (1.4.9)**: no default on-disk format change — files written by 1.4.8 and 1.4.9 are compatible and all earlier files decrypt unchanged. Some protections apply only to data re-processed on 1.4.9: re-encrypt (or touch a recovery slot) to bind slots, re-create portable USB drives, re-save `.pqc` key files.
 - **Format version 14 is the default write format (1.4.8)**: new encryptions derive keys with the independent-XOR robust combiner — as strong as the *strongest* configured KDF component instead of a sequential cascade's weakest link — from a length-prefixed TLV seed (unambiguous password/salt/pepper boundaries), and PQC files bind the KEM key to the full transcript (algorithm, AEAD, encapsulation ciphertext). Sequential XOR stays available as an opt-in pinned at format v13; every existing file decrypts unchanged.
 - **Cross-line PQC compatibility (1.4.8)**: PQC KEM keys for format v12+ files now derive identically to the 1.5.x line (HKDF-SHA256), so PQC files finally interoperate across both maintenance lines; files from releases up to 1.4.7 remain fully decryptable via an authenticated legacy retry.
 - **`check-password` & pattern-aware strength (1.4.8)**: a read-only subcommand reports password strength (pattern-aware category, entropy, weakness warnings, policy pass/fail) with `--json` for scripting; strength feedback now detects dictionary words, keyboard walks, sequences and dates instead of trusting raw character-space entropy (optional `zxcvbn`, built-in fallback), with an opt-in `--strict-strength` gate.
@@ -84,7 +94,8 @@ Everything that landed since v1.4.1:
 - **Platform support**: Python 3.11+ required; Python 3.14 fully supported including the Threefish native extension (PyO3 0.26)
 
 **Release History:**
-- **v1.4.8** (Current) - Format v14 default (independent-XOR TLV seed, KEM transcript binding), cross-line PQC compatibility, `check-password` + pattern-aware strength, signed per-package plugin manifests, security-review fix batch
+- **v1.4.9** (Current) - Security & maintenance release: pre-authentication KDF cost ceilings, authenticated recovery slots, genuinely encrypted portable-USB workspace, plugin signing by default, environment-variable credentials, `plugin pepper`/`plugin integrity` CLIs, JSON output batch, seven broken commands fixed
+- **v1.4.8** - Format v14 default (independent-XOR TLV seed, KEM transcript binding), cross-line PQC compatibility, `check-password` + pattern-aware strength, signed per-package plugin manifests, security-review fix batch
 - **v1.4.7** - Documentation/packaging release: README and PyPI project page updated for the 1.4.6 feature set (no functional changes)
 - **v1.4.6** - PIV/PKCS#11 HSM backend, source-code integrity manifest, envelope encryption with O(header) rekey, detached ML-DSA-65 signing, ASCII armor, Independent XOR v13 default, sequential-XOR KDF-cost fix (ADVISORY 2026-02), streaming decrypt fix
 - **v1.4.5** - Security dependency update (CVE fixes) and flatpak pin CI guard
@@ -107,14 +118,14 @@ Sequential encryption using multiple cipher algorithms with chained HKDF key der
 - Attacker must break all ciphers to decrypt data
 - Minimum 2 ciphers required, supports unlimited cascade depth
 - Each layer adds entropy to the next layer's key derivation
-- CLI support: `--cascade "aes-256-gcm,chacha20-poly1305,xcha-poly1305"`
+- CLI support: `--cascade "aes-gcm,chacha20-poly1305,xchacha20-poly1305"`
 - Automatic cipher diversity validation
-- New metadata format V8
+- Introduced with metadata format v8
 
 **Example:**
 ```bash
 python -m openssl_encrypt.crypt encrypt -i file.txt \
-    --cascade "aes-256-gcm,chacha20-poly1305,xcha-poly1305"
+    --cascade "aes-gcm,chacha20-poly1305,xchacha20-poly1305"
 ```
 
 ### Threefish Post-Quantum Ciphers
@@ -186,11 +197,11 @@ Enhanced asymmetric key handling with improved format and HSM integration.
 
 Centralized cryptographic algorithm registration and validation framework.
 
-- Cipher Registry: 12+ symmetric encryption algorithms
-- Hash Registry: 15+ cryptographic hash functions
+- Cipher Registry: 8 symmetric encryption algorithms
+- Hash Registry: 12 cryptographic hash functions
 - KDF Registry: 8 key derivation functions
-- KEM Registry: 9 Key Encapsulation Mechanisms (Kyber, ML-KEM, HQC)
-- Signature Registry: 15 post-quantum signature algorithms
+- KEM Registry: 6 Key Encapsulation Mechanisms (ML-KEM, HQC)
+- Signature Registry: 14 post-quantum signature algorithms
 - CLI command: `crypt list-algorithms`
 - Security level indicators and validation
 
@@ -210,13 +221,13 @@ Centralized cryptographic algorithm registration and validation framework.
   RSA-PSS) are rejected. New flags: `--hsm-pkcs11-lib PATH` (required),
   `--hsm-piv-slot {9a,9c,9d,9e}`, `--hsm-biometric`. Requires
   `python-pkcs11` (`pip install -r requirements-hsm.txt`). See
-  [docs/PIV_BACKEND.md](docs/PIV_BACKEND.md) for setup.
+  [PIV_BACKEND.md](openssl_encrypt/docs/PIV_BACKEND.md) for setup.
 - **OnlyKey support** (`--hsm onlykey` / `--hsm onlykey-only`, slots 1..12)
   alongside YubiKey. Same HMAC-SHA1 wire protocol — fleets mixing
   YubiKey and OnlyKey devices loaded with the same 20-byte secret are
   deterministic across either backend. See
-  [docs/hardware-tokens.md](docs/hardware-tokens.md) for setup and
-  [docs/migration-from-yubikey-only.md](docs/migration-from-yubikey-only.md)
+  [hardware-tokens.md](openssl_encrypt/docs/hardware-tokens.md) for setup and
+  [migration-from-yubikey-only.md](openssl_encrypt/docs/migration-from-yubikey-only.md)
   for adding OnlyKey to an existing YubiKey fleet.
 
 ### `info` action — encrypted file inspection with CLI reconstruction
@@ -432,10 +443,10 @@ Complete overhaul of the desktop GUI with advanced cryptographic features and im
 
 ### Backward Compatibility
 
-- Compatible with v3, v4, v5, v6, v7, and v8 encrypted files
+- Compatible with all earlier encrypted files: v3–v13 decrypt unchanged
 - Automatic format detection and migration
-- V3-V8 metadata formats deprecated due to security vulnerability (read-only support maintained)
-- V9 metadata format (current) with secure chained salt derivation
+- V3–V8 metadata formats deprecated due to security vulnerability (read-only support maintained; the cost-bypassing v8/v10 sequential-XOR variants are refused for *new* files)
+- V14 metadata format (current): independent-XOR robust combiner with a length-prefixed TLV seed and KEM transcript binding
 - **Re-encryption strongly recommended for ALL files with format version < v9 or encrypted with code version < 1.4.0**
 ---
 ## Known Issues
@@ -571,14 +582,14 @@ The v1.3.0 codebase received an independent security review:
 - **Medium findings**: 3 (defense-in-depth improvements, not blocking)
 - **Dependencies**: pip-audit clean, zero known vulnerabilities
 
-See <SECURITY_REVIEW_v1.3.0.md> for the full report.
+See [SECURITY_REVIEW_v1.3.0.md](openssl_encrypt/docs/SECURITY_REVIEW_v1.3.0.md) for the full report.
 
 ### Source-Code Integrity
 
 Core cryptographic/security source files are covered by a PGP-signed integrity
 manifest. Verify with `openssl-encrypt verify-integrity` (a convenience tripwire) or,
 authoritatively, with `gpg` against the out-of-band fingerprint published in
-[SECURITY.md](SECURITY.md). Full runbook: [docs/SOURCE_INTEGRITY.md](docs/SOURCE_INTEGRITY.md).
+[SECURITY.md](SECURITY.md). Full runbook: [SOURCE_INTEGRITY.md](openssl_encrypt/docs/SOURCE_INTEGRITY.md).
 
 ---
 ## Features
@@ -595,8 +606,8 @@ Modern AEAD (Authenticated Encryption with Associated Data) ciphers:
 |XChaCha20-Poly1305|✅ Recommended |Extended nonce (192-bit)           |
 |AES-SIV           |✅ Supported   |Deterministic encryption           |
 |Fernet            |✅ Default     |AES-128-CBC + HMAC, simple API     |
-|AES-OCB3          |⚠ Decrypt only|Deprecated in v1.2.0               |
-|Camellia          |⚠ Decrypt only|Deprecated in v1.2.0               |
+|AES-OCB3          |⚠ Deprecated  |Since v1.2.0; warns on new encrypts|
+|Camellia          |⚠ Deprecated  |Since v1.2.0; warns on new encrypts|
 
 ### Post-Quantum Cryptography
 
@@ -625,7 +636,7 @@ Hybrid encryption combining classical symmetric ciphers with post-quantum KEMs:
 |Scrypt  |Memory-hard       |✅ Supported   |GPU-resistant               |
 |HKDF    |Extract-and-expand|✅ Supported   |Key expansion               |
 |RandomX |CPU-hard          |✅ Supported   |Anti-ASIC (from Monero)     |
-|PBKDF2  |Iterative         |⚠ Decrypt only|Deprecated in v1.2.0        |
+|PBKDF2  |Iterative         |⚠ Deprecated  |Warns on use; still in `--quick`|
 
 ### Hash Functions
 
@@ -635,7 +646,7 @@ For key derivation chaining:
 - **SHA-3 Family** (FIPS 202): SHA3-512, SHA3-384, SHA3-256, SHA3-224
 - **BLAKE Family**: BLAKE2b, BLAKE3
 - **SHAKE** (XOF): SHAKE-256, SHAKE-128
-- **Legacy**: Whirlpool (decrypt only in v1.2.0+)
+- **Legacy**: Whirlpool (deprecated since v1.2.0; warns on use)
 
 ### Additional Security Features
 
@@ -774,19 +785,25 @@ python -m openssl_encrypt.crypt encrypt -i file.txt --paranoid   # Maximum secur
 python -m openssl_encrypt.crypt decrypt -i file.txt.enc -o file.txt
 
 # Secure file deletion
-python -m openssl_encrypt.crypt shred -i sensitive.txt --passes 3
+python -m openssl_encrypt.crypt shred -i sensitive.txt --shred-passes 3
 
 # Generate random password
-python -m openssl_encrypt.crypt generate --length 20
+python -m openssl_encrypt.crypt generate-password --length 20
 ```
 
 ### Graphical User Interface
 
 ```bash
-python -m openssl_encrypt.crypt_gui
-# or
+# Desktop application (Flutter) — see the work-in-progress note in "What's New"
 python -m openssl_encrypt.cli --gui
+
+# Legacy tkinter interface
+python -m openssl_encrypt.cli --gui-legacy
 ```
+
+The desktop GUI is not the recommended interface for 1.4.9 — the CLI is. It is
+being extracted into its own project and rewritten as a single unified
+application; treat the bundled GUI as a preview.
 
 ### Flutter Desktop GUI
 
@@ -796,11 +813,11 @@ Cross-platform GUI available for Linux, macOS, and Windows. See the [User Guide]
 
 ```bash
 # Create keystore
-python -m openssl_encrypt.keystore_cli_main create --keystore-path keys.pqc
+python -m openssl_encrypt.modules.keystore_cli create --keystore keys.pqc
 
 # Generate PQC keypair
-python -m openssl_encrypt.keystore_cli_main generate --keystore-path keys.pqc \
-    --algorithm ml-kem-768
+python -m openssl_encrypt.modules.keystore_cli add-key ml-kem-768 \
+    --keystore keys.pqc
 
 # Encrypt with keystore
 python -m openssl_encrypt.crypt encrypt -i file.txt \
@@ -811,11 +828,11 @@ python -m openssl_encrypt.crypt encrypt -i file.txt \
 
 Pre-configured security profiles in `templates/`:
 
-|Template       |Use Case                      |KDF                    |Rounds|Time |
-|---------------|------------------------------|-----------------------|------|-----|
-|`quick.json`   |Fast encryption, good security|Argon2                 |1     |~1s  |
-|`standard.json`|Balanced (default)            |Argon2 + SHA3          |3     |~5s  |
-|`paranoid.json`|Maximum security              |Argon2 + Balloon + SHA3|10+   |~60s+|
+|Template       |Use Case                      |KDF                                          |Time |
+|---------------|------------------------------|---------------------------------------------|-----|
+|`quick.json`   |Fast encryption, good security|PBKDF2 (100k) + SHA-256/SHA3-512 rounds      |~1s  |
+|`standard.json`|Balanced (default)            |Argon2id + Scrypt + SHA/BLAKE/SHAKE rounds   |~5s  |
+|`paranoid.json`|Maximum security              |Argon2id + Scrypt + extended hash-round chain|~60s+|
 ---
 ## Project Structure
 
@@ -838,8 +855,7 @@ openssl_encrypt/
 │   ├── password_policy.py   # Password validation
 │   ├── dbus_service.py      # D-Bus integration (Linux)
 │   └── plugin_system/       # Plugin sandbox
-├── unittests/
-│   ├── unittests.py         # Main test suite (950+ tests)
+├── unittests/               # Modularized test suite (4300+ tests, domain-specific files)
 │   └── testfiles/           # Test vectors (password: 1234)
 ├── templates/               # Security profiles
 └── docs/                    # Documentation
@@ -851,7 +867,7 @@ openssl_encrypt/
 |------------------------------------------------------------------|----------------------------------------------|
 |[User Guide](openssl_encrypt/docs/user-guide.md)                  |Installation, usage, examples, troubleshooting|
 |[Keystore Guide](openssl_encrypt/docs/keystore-guide.md)          |PQC key management, dual encryption           |
-|[Security Documentation](openssl_encrypt/docs/security.md)        |Architecture, threat model, best practices    |
+|[Security Policy](SECURITY.md)                                    |Threat model, standards, disclosure process   |
 |[Algorithm Reference](openssl_encrypt/docs/algorithm-reference.md)|Cipher and KDF specifications                 |
 |[Metadata Formats](openssl_encrypt/docs/metadata-formats.md)      |File format specs (v3, v4, v5)                |
 |[Development Setup](openssl_encrypt/docs/development-setup.md)    |Contributing, CI/CD, testing                  |
