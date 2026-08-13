@@ -52,11 +52,13 @@ class TestKeyserverReporters(unittest.TestCase):
 
 class TestHsmFido2Status(unittest.TestCase):
     def test_fido2_status_json(self):
-        try:
-            code, out, err = _run(["hsm", "fido2-status", "--json"])
-        except NameError:
-            # The fido2 plugin fails at import time without the fido2 stack.
-            self.skipTest("fido2 stack unavailable in this environment")
+        code, out, err = _run(["hsm", "fido2-status", "--json"])
+        if code != 0 and out.strip():
+            # Since gitlab#270 F4 a missing fido2 stack yields a JSON error
+            # document (previously a raw NameError escaped the handler).
+            doc = json.loads(out)
+            if doc.get("status") == "error" and "FIDO2" in doc["error"]["message"]:
+                self.skipTest("fido2 stack unavailable in this environment")
         if code != 0 and not out.strip():
             self.skipTest("fido2 plugin unavailable in this environment")
         self.assertEqual(code, 0, err[-300:])
