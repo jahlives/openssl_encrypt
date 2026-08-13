@@ -144,6 +144,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **gpg status-parsing tests no longer require an installed gpg, and CI runs
+  the real-gpg integration tests** (gitlab#272, github#151): the
+  `TestStatusParsing` class in `test_gpg_verify_revoked_expired_232.py` is
+  documented as gpg-free (it drives `verify_detached` from crafted status
+  output by mocking the gpg subprocess), but `verify_detached` resolves the
+  gpg binary from the real system *before* the mocked call, so on any machine
+  without gnupg all nine tests failed with `GpgUnavailableError` — this
+  failed the `test` job on the v1.4.9 tag pipelines and blocked every
+  downstream job, including the PyPI publish. The test helper now patches the
+  resolver alongside the subprocess runner, and the CI `test` job installs
+  gnupg so the `TestRealGpgIntegration` class actually runs on release
+  pipelines instead of silently skipping.
+
 - **README refreshed for the 1.4.9 release**: the stable-release pointer, the
   "What's New" section, and the release history now describe 1.4.9 (flagged as
   a security & maintenance release; the metainfo 1.4.9 `<release>` entry
