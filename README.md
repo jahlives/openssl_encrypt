@@ -58,6 +58,16 @@ For deep-dives into the cryptographic design and security policies of this proje
 * **Threefish-512/1024**: Native AEAD ciphers with 256/512-bit post-quantum security margins.
 * **Streaming Chunked Encryption**: Constant-memory authenticated encryption for multi-gigabyte files (format v12).
 ---
+## 🚧 What's New in v1.4.10 (unreleased)
+
+**In development on the 1.4.x line** — everything below is merged but not yet released.
+
+- **Desktop GUI moved to its own project (1.4.10)**: the in-tree Flutter GUI (`desktop_gui/`) is removed from this repository; it is now developed and released separately as `openssl_encrypt_gui`, and this repository builds the CLI only. `--gui` now launches an *installed* GUI — resolved via `OPENSSL_ENCRYPT_GUI`, a known install location, the GUI Flatpak, or an `openssl-encrypt-gui` launcher on `PATH` — and tells you where to get it when none is found (`--gui-legacy` still starts the built-in tkinter interface).
+- **CLI-only Flatpak (1.4.10)**: `com.opensslencrypt.OpenSSLEncrypt` is now the command-line app with all dependencies prebuilt (liboqs, pcsc-lite, Threefish); the desktop GUI ships as its own Flatpak app (`com.opensslencrypt.OpenSSLEncryptGui`, built from the GUI project). Existing installs of the old id upgrade in place to the CLI-only app.
+- **Uniform JSON output across the CLI (1.4.10)**: `--json` now works on the version/config reporters, the verifiers, the operations (`encrypt`, `decrypt`, `rekey`, `sign`, `armor`, `dearmor`, `shred`, `create-usb`, `derive-password`) and the grouped subcommands (`keyserver`, `hsm`, `identity`, `plugin`), each emitting exactly one `{"status": …, "data": …}` envelope document on stdout while human reports stay on stderr. The surface is fail-closed: `--json` on a command without a JSON emitter is refused instead of ignored, payload-carrying operations refuse stream output targets so a report can never share stdout with plaintext, failures arrive as JSON error documents, and a test pins every endpoint's emitted keys to the capabilities manifest's allowlist. JSON documents never carry secrets (booleans like `has_api_token`, never the token itself).
+- **`crypt capabilities` — machine-readable capability manifest (1.4.10)**: prints a JSON manifest of what this CLI build supports (commands, flags, features, JSON endpoints/fields), introspected from the live parsers so it cannot drift — built so the separately-released GUI can gate its screens on the CLI version it is actually paired with.
+- **Fixes (1.4.10)**: the YubiKey touch prompt is echoed to stderr so a GUI driving the CLI as a subprocess can surface it; README refreshed for the 1.4.9 release plus a documentation-vs-code staleness sweep.
+
 ## 🚀 What's New in v1.4.9
 
 **Current Release:** v1.4.9 | **Type:** Security & maintenance release | **Status:** Stable | **Tests:** 4300+ passing

@@ -159,7 +159,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   leftover (v14 is current), "decrypt only" labels on deprecated algorithms
   that in fact still encrypt with a warning, the test-suite description
   (modularized, 4300+ tests), and several dead relative links into
-  `openssl_encrypt/docs/`.
+  `openssl_encrypt/docs/`. The development-branch README additionally carries
+  a "What's New in v1.4.10 (unreleased)" section tracking this line's
+  in-development changes (GUI split, CLI-only Flatpak, uniform JSON output,
+  capabilities manifest).
 
 - **YubiKey touch prompt now reaches a GUI, not just the terminal** (gitlab#265):
   the Challenge-Response plugin wrote its "Touch your Yubikey" prompt only to the
