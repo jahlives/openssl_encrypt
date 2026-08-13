@@ -163,9 +163,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   carries `urgency="high"` accordingly). A documentation-vs-code sweep also
   corrected long-stale content: the keystore CLI examples (the referenced
   `keystore_cli_main` module does not exist — real invocation is
-  `python -m openssl_encrypt.modules.keystore_cli` with `--keystore` and
-  `add-key`), the cascade example's algorithm identifiers (`aes-gcm`,
-  `xchacha20-poly1305`), `shred --shred-passes`, `generate-password`, the
+  `python -m openssl_encrypt.modules.keystore_cli --keystore <path> <command>`,
+  global options before the subcommand; verified by running them), the cascade
+  example (`--cascade` takes no value — the list goes in
+  `--algorithm "aes-256-gcm,chacha20-poly1305,xchacha20-poly1305"`),
+  `shred --shred-passes`, `generate-password` (length is positional), the
   `--gui`/`--gui-legacy` launch commands, algorithm-registry counts (8 ciphers
   / 12 hashes / 6 KEMs / 14 signatures), the template table's real KDF stacks
   (quick = PBKDF2 100k + hash rounds, not Argon2), the "current format v9"

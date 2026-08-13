@@ -128,14 +128,14 @@ Sequential encryption using multiple cipher algorithms with chained HKDF key der
 - Attacker must break all ciphers to decrypt data
 - Minimum 2 ciphers required, supports unlimited cascade depth
 - Each layer adds entropy to the next layer's key derivation
-- CLI support: `--cascade "aes-gcm,chacha20-poly1305,xchacha20-poly1305"`
+- CLI support: `--cascade --algorithm "aes-256-gcm,chacha20-poly1305,xchacha20-poly1305"`
 - Automatic cipher diversity validation
 - Introduced with metadata format v8
 
 **Example:**
 ```bash
 python -m openssl_encrypt.crypt encrypt -i file.txt \
-    --cascade "aes-gcm,chacha20-poly1305,xchacha20-poly1305"
+    --cascade --algorithm "aes-256-gcm,chacha20-poly1305,xchacha20-poly1305"
 ```
 
 ### Threefish Post-Quantum Ciphers
@@ -797,8 +797,8 @@ python -m openssl_encrypt.crypt decrypt -i file.txt.enc -o file.txt
 # Secure file deletion
 python -m openssl_encrypt.crypt shred -i sensitive.txt --shred-passes 3
 
-# Generate random password
-python -m openssl_encrypt.crypt generate-password --length 20
+# Generate random password (length is positional, default 32)
+python -m openssl_encrypt.crypt generate-password 20
 ```
 
 ### Graphical User Interface
@@ -822,16 +822,16 @@ Cross-platform GUI available for Linux, macOS, and Windows. See the [User Guide]
 ### Keystore Operations
 
 ```bash
-# Create keystore
-python -m openssl_encrypt.modules.keystore_cli create --keystore keys.pqc
+# Create keystore (global options go BEFORE the subcommand)
+python -m openssl_encrypt.modules.keystore_cli --keystore keys.pqc create
 
-# Generate PQC keypair
-python -m openssl_encrypt.modules.keystore_cli add-key ml-kem-768 \
-    --keystore keys.pqc
-
-# Encrypt with keystore
+# Encrypt with a PQC algorithm using the keystore (a keypair is
+# auto-generated and stored in the keystore on first use)
 python -m openssl_encrypt.crypt encrypt -i file.txt \
-    --keystore keys.pqc --key-id my-key
+    --algorithm ml-kem-768-hybrid --keystore-path keys.pqc
+
+# List keys in the keystore
+python -m openssl_encrypt.modules.keystore_cli --keystore keys.pqc list-keys
 ```
 ---
 ## Configuration Templates
