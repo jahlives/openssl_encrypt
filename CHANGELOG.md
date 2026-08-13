@@ -142,6 +142,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   manifest contains only public names — never a secret value — and is
   independent of the process environment.
 
+### Security
+
+- **Legacy remote-pepper blobs: named peppers re-sealed in place, and
+  server-side downgrades to the weak wrap are refused** (gitlab#274,
+  ADVISORY 2026-35 follow-up): 1.4.9 hardened the remote-pepper wrap on the
+  write path (v2 Argon2id blob), but a pepper referenced by `--pepper-name`
+  was only ever read, so the advisory's "re-encrypt to re-seal" mitigation
+  never drained legacy blobs for named peppers — they stayed guessable at
+  ~1 SHA-256 per password candidate on a hostile keyserver. Encrypting with
+  a named pepper whose server blob is legacy now re-wraps it to v2 and
+  pushes it back in place (non-fatal, warned, if the push fails). Legacy
+  acceptance is no longer silent or permanent either: every legacy unwrap
+  prints a loud deprecation warning, files record
+  `encryption.pepper_wrap_version` at write time, and decrypt refuses a
+  legacy-format blob for a file that recorded the v2 wrap — a server-side
+  downgrade signature — unless `OPENSSL_ENCRYPT_ALLOW_LEGACY_PEPPER_WRAP=1`
+  is set deliberately (mirroring the legacy-XOR escape-hatch precedent).
+  The recorded version is validated as a plain int, so tampered metadata
+  cannot crash the gate, and files without a recorded version (written by
+  older releases) keep decrypting legacy blobs unchanged.
+  Regression-pinned by `test_legacy_pepper_reseal_274.py` (10 tests).
+  Legacy-wrap read support is planned for removal once blobs are drained.
+
 ### Fixed
 
 - **CI test job generates `version.py` before running the suite** (gitlab#273,
