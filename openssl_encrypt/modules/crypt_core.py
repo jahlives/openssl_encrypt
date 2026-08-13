@@ -5942,6 +5942,16 @@ def _unwrap_remote_pepper(
     # Legacy (pre-1.4.9) blob: nonce(12) || AES-GCM(ct||tag), no AAD.
     if len(blob) < 28:  # 12 + 16 minimum
         raise KeyDerivationError("Invalid encrypted pepper data format")
+    # gitlab#274: loud, unconditional deprecation warning — a legacy blob means
+    # the server-side pepper is still guessable at ~1 SHA-256 per password
+    # candidate (ADVISORY 2026-35), and a silent downgrade served by a hostile
+    # keyserver must at least be visible.
+    eprint(
+        f"WARNING: remote pepper '{sanitize_for_display(str(pepper_name))[:16]}...' "
+        "is sealed with the deprecated pre-1.4.9 wrap (unsalted, not memory-hard). "
+        "Re-encrypt a file using this pepper to re-seal it (see ADVISORY 2026-35); "
+        "legacy wrap support will be removed in a future release."
+    )
     nonce = blob[:12]
     ciphertext_with_tag = blob[12:]
     pepper_key = _derive_pepper_key(password, format_version=format_version)
@@ -5949,6 +5959,58 @@ def _unwrap_remote_pepper(
         return bytearray(AESGCM(pepper_key).decrypt(nonce, ciphertext_with_tag, None))
     finally:
         secure_memzero(pepper_key)
+
+
+def _reseal_legacy_pepper(
+    pepper_plugin, password: bytes, pepper, pepper_name: str, quiet: bool = False
+) -> int:
+    """Re-seal a legacy-wrapped remote pepper to the v2 format in place (gitlab#274).
+
+    ADVISORY 2026-35's mitigation is "re-encrypt to re-seal", but the named-pepper
+    encrypt branch only ever read the blob — so named peppers stayed on the weak
+    legacy wrap forever. Called after a successful legacy unwrap: wraps the same
+    pepper with the v2 format (Argon2id, per-blob salt, name AAD) and pushes it
+    back to the server. A push failure is non-fatal (the encryption proceeds with
+    the pepper we already hold) but is warned, and the caller must record wrap
+    version 1 so the decrypt-side downgrade gate does not lock the user out of a
+    server that legitimately still holds the legacy blob.
+
+    Args:
+        pepper_plugin: The remote pepper plugin (``update_pepper`` is used).
+        password: Raw password bytes.
+        pepper: The plaintext pepper just unwrapped (bytes or bytearray; passed
+            through without copying — no immutable copy of key material).
+        pepper_name: Server-side pepper name; bound as AEAD AAD in the new blob.
+        quiet: Suppress the routine success notice. The two WARNING paths (the
+            legacy-blob deprecation and a failed re-seal push) stay unconditional.
+
+    Returns:
+        int: 2 if the server now holds the v2 blob, 1 if the push failed.
+    """
+    safe_name = sanitize_for_display(str(pepper_name))[:16]
+    try:
+        resealed = _wrap_remote_pepper(password, pepper, pepper_name)
+        pepper_plugin.update_pepper(
+            name=pepper_name,
+            pepper_encrypted=resealed,
+            description="Re-sealed with the v2 wrap (ADVISORY 2026-35)",
+        )
+    except Exception as e:
+        # Deliberately NOT gated on quiet: the server keeping the weak blob is
+        # security-relevant, and the exception text comes from the (untrusted)
+        # server, so it is sanitized before display.
+        eprint(
+            f"WARNING: could not re-seal pepper '{safe_name}...' to the v2 wrap: "
+            f"{sanitize_for_display(str(e))}. The server still holds the weak "
+            "legacy blob; re-encrypt again later to retry."
+        )
+        return 1
+    if not quiet:
+        eprint(
+            f"Re-sealed remote pepper '{safe_name}...' with the v2 wrap "
+            "(Argon2id); the weak legacy blob on the server has been replaced."
+        )
+    return 2
 
 
 def _derive_pqc_sig_key(
@@ -6618,6 +6680,10 @@ def encrypt_file(
         # Remote pepper generation/retrieval if pepper plugin provided
         remote_pepper = None
         remote_pepper_name = None
+        # gitlab#274: which wrap format the SERVER holds for this pepper after
+        # this operation (2 = v2 OEPPWRP2, 1 = legacy remains). Recorded in the
+        # metadata so decrypt can detect a server-side downgrade.
+        pepper_wrap_version = None
 
         if pepper_plugin:
             if not quiet:
@@ -6654,6 +6720,16 @@ def encrypt_file(
                         )
 
                     remote_pepper_name = pepper_name
+
+                    # gitlab#274: ADVISORY 2026-35's "re-encrypt to re-seal"
+                    # mitigation must actually drain legacy blobs for NAMED
+                    # peppers too — re-seal in place on first use.
+                    if encrypted_pepper_data.startswith(_PEPPER_WRAP_V2_MAGIC):
+                        pepper_wrap_version = 2
+                    else:
+                        pepper_wrap_version = _reseal_legacy_pepper(
+                            pepper_plugin, password, remote_pepper, pepper_name, quiet=quiet
+                        )
 
                 else:
                     # Auto-generate mode: create new pepper
@@ -6717,6 +6793,10 @@ def encrypt_file(
                             raise KeyDerivationError(
                                 f"Failed to store pepper on remote server: {e}"
                             )
+
+                    # Sealed with the v2 wrap and stored/updated above (every
+                    # failure path raised), so the server holds v2 (gitlab#274).
+                    pepper_wrap_version = 2
 
                 # Validate pepper
                 if not remote_pepper or len(remote_pepper) < 16:
@@ -7788,6 +7868,10 @@ def encrypt_file(
                 "original_path": _archive_original_path,
             }
 
+        # gitlab#274: record the server-side wrap format so decrypt can detect
+        # a downgrade back to the weak legacy blob (ADVISORY 2026-35).
+        if has_remote_pepper and remote_pepper_name is not None and pepper_wrap_version:
+            metadata.setdefault("encryption", {})["pepper_wrap_version"] = pepper_wrap_version
         if _envelope_wrapped_dek is not None:
             metadata.setdefault("encryption", {})["wrapped_dek"] = base64.b64encode(
                 _envelope_wrapped_dek
@@ -8085,6 +8169,10 @@ def encrypt_file(
                 "original_path": _archive_original_path,
             }
 
+        # gitlab#274: record the server-side wrap format so decrypt can detect
+        # a downgrade back to the weak legacy blob (ADVISORY 2026-35).
+        if has_remote_pepper and remote_pepper_name is not None and pepper_wrap_version:
+            metadata.setdefault("encryption", {})["pepper_wrap_version"] = pepper_wrap_version
         # If scrypt is used, add rounds to hash_config
         # Serialize and encode the metadata
         if _envelope_wrapped_dek is not None:
@@ -10959,6 +11047,9 @@ def decrypt_file(
         # Extract pepper configuration if present (v5+)
         pepper_plugin_name = encryption.get("pepper_plugin")
         pepper_name = encryption.get("pepper_name")
+        # gitlab#274: wrap format recorded at write time (untrusted metadata —
+        # validated as a plain int where the downgrade gate arms).
+        pepper_wrap_recorded = encryption.get("pepper_wrap_version")
 
         # Extract PQC information if present
         pqc_info = None
@@ -11006,6 +11097,7 @@ def decrypt_file(
         # Pepper plugin not supported in older format versions
         pepper_plugin_name = None
         pepper_name = None
+        pepper_wrap_recorded = None
 
         # AEAD binding not supported in older format versions
         aead_binding = False
@@ -11405,7 +11497,10 @@ def decrypt_file(
                     )
 
                 if not quiet:
-                    eprint(f"Retrieving pepper '{pepper_name[:16]}...' from remote server...")
+                    eprint(
+                        f"Retrieving pepper '{sanitize_for_display(str(pepper_name))[:16]}...' "
+                        "from remote server..."
+                    )
 
                 try:
                     encrypted_pepper_data = pepper_plugin.get_pepper(pepper_name)
@@ -11413,6 +11508,36 @@ def decrypt_file(
                     raise KeyDerivationError(
                         f"Failed to retrieve pepper from server. "
                         f"Ensure you have network access and proper mTLS configuration. Error: {e}"
+                    )
+
+                # gitlab#274: a file that recorded the v2 wrap must never fall
+                # back to a legacy blob the server chose to serve — that is a
+                # downgrade to a wrap guessable at ~1 SHA-256 per password
+                # candidate (ADVISORY 2026-35). Fail closed behind an explicit
+                # escape hatch, mirroring the legacy-XOR precedent. The recorded
+                # value is untrusted metadata: only a plain int >= 2 arms the
+                # gate (stripping the field is caught by the metadata AAD
+                # binding on AEAD-mode files).
+                if (
+                    isinstance(pepper_wrap_recorded, int)
+                    and not isinstance(pepper_wrap_recorded, bool)
+                    and pepper_wrap_recorded >= 2
+                    and not encrypted_pepper_data.startswith(_PEPPER_WRAP_V2_MAGIC)
+                ):
+                    if os.environ.get("OPENSSL_ENCRYPT_ALLOW_LEGACY_PEPPER_WRAP") != "1":
+                        raise KeyDerivationError(
+                            "This file records its remote pepper as sealed with "
+                            "the hardened v2 wrap, but the server returned a "
+                            "legacy-format blob — a possible downgrade by the "
+                            "keyserver. Refusing to use it. If this is expected "
+                            "(e.g. a restored server backup), set "
+                            "OPENSSL_ENCRYPT_ALLOW_LEGACY_PEPPER_WRAP=1 to "
+                            "override."
+                        )
+                    eprint(
+                        "WARNING: accepting a legacy-wrapped remote pepper for a "
+                        "file that recorded the v2 wrap "
+                        "(OPENSSL_ENCRYPT_ALLOW_LEGACY_PEPPER_WRAP override active)."
                     )
 
                 # Decrypt pepper with password. _unwrap_remote_pepper auto-detects

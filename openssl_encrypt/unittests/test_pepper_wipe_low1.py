@@ -18,8 +18,6 @@ import unittest
 from types import SimpleNamespace
 from unittest import mock
 
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-
 from openssl_encrypt.modules import crypt_core
 from openssl_encrypt.modules.crypt_core import decrypt_file, encrypt_file
 
@@ -31,10 +29,14 @@ PEPPER_NAME = "low1-test-pepper"
 
 
 def _encrypted_pepper_blob() -> bytes:
-    """Encrypt REMOTE_PEPPER the way the remote pepper store holds it."""
-    key = crypt_core._derive_pepper_key(TEST_PASSWORD, format_version=14)
-    nonce = b"\x00" * 12
-    return nonce + AESGCM(bytes(key)).encrypt(nonce, REMOTE_PEPPER, None)
+    """Encrypt REMOTE_PEPPER the way the remote pepper store holds it.
+
+    v2 wrap since gitlab#274: encrypt re-seals a legacy blob in place and the
+    file records the v2 wrap, so a mock server that keeps serving the legacy
+    blob on decrypt would (correctly) trip the downgrade gate. The legacy
+    unwrap path's own wipe is covered by test_legacy_pepper_reseal_274.
+    """
+    return crypt_core._wrap_remote_pepper(TEST_PASSWORD, REMOTE_PEPPER, PEPPER_NAME)
 
 
 def _fake_hsm_plugin() -> mock.MagicMock:
