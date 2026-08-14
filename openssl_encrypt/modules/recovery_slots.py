@@ -699,27 +699,158 @@ def _recover_kwargs_from_args(args):
     return {}
 
 
+def _capped(value, limit=256):
+    """Bound an untrusted header field before echoing it into JSON output.
+
+    id/type/key_id are copied verbatim out of the plaintext file header, so a
+    crafted file could otherwise drive an arbitrarily large stdout document at
+    a consumer that buffers the whole thing. A non-string is not merely long,
+    it is the wrong shape for the documented schema, so it is reported as null
+    rather than passed through.
+    """
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        return None
+    if len(value) > limit:
+        # Report as null rather than truncate: a truncated slot id would no
+        # longer round-trip into remove-recovery --slot-id (exact match).
+        return None
+    return value
+
+
+def _display_safe(value, limit=256):
+    """Bound and de-fang an untrusted header field before printing it.
+
+    json.dumps escapes control characters for the --json path; the human path
+    writes straight to a terminal, so strip C0/C1 controls (ANSI escapes,
+    carriage returns, newlines) that a crafted file could otherwise use to
+    spoof or overwrite output.
+
+    Args:
+        value: The raw header field.
+        limit: Maximum characters to keep.
+
+    Returns:
+        A printable string, or "" for a missing or non-string value.
+    """
+    capped = _capped(value, limit)
+    if capped is None:
+        return ""
+    return "".join(ch for ch in capped if ch.isprintable())
+
+
+def _write_recovery_code_file(path, code):
+    """Write a generated recovery code to a file only its owner can read.
+
+    A recovery code unwraps the DEK of every file it is added to, so it is
+    password-equivalent and must not travel on a general-purpose stream:
+    stdout is the conventional target of `> file` (created at the caller's
+    umask, typically world-readable) and is collapsed into stderr by `2>&1`;
+    stderr lands in terminal scrollback and in the desktop GUI's persistent
+    debug log. Writing it ourselves is the only way the tool controls the
+    permissions.
+
+    Args:
+        path: Destination path, created 0600 and refused if it already exists.
+        code: The generated recovery code.
+
+    Raises:
+        FileExistsError: If the destination already exists.
+        OSError: If the file cannot be created or written.
+    """
+    import os
+
+    from .file_permissions import PermissionLevel, create_secure_file
+
+    # The hardened primitive adds O_NOFOLLOW, rejects non-regular and
+    # foreign-owned targets, pins the mode with an unconditional fchmod, and
+    # applies a DACL on Windows; exclusive adds O_EXCL, so a pre-planted
+    # symlink, FIFO or device is refused outright.
+    # Value-free charset check first: a strict .encode("ascii") failure would
+    # embed a character of the credential in the UnicodeEncodeError message,
+    # the gitlab#147 leak class this module already fixed twice.
+    if not set(code) <= (_BASE32_ALPHABET | {"-"}):
+        raise ValueError("recovery code contains unexpected characters")
+    fd = create_secure_file(path, PermissionLevel.OWNER_ONLY, exclusive=True)
+    try:
+        os.write(fd, (code + "\n").encode("ascii"))
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+    # fsync the directory too: the point of writing the credential before the
+    # envelope is that it survives a crash the envelope also survives. Best
+    # effort by design — failing here would abort a correct operation after
+    # the O_EXCL file already exists, making a retry die on FileExistsError.
+    try:
+        dir_fd = os.open(os.path.dirname(os.path.abspath(path)), os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(dir_fd)
+    except OSError:  # pragma: no cover - platform/filesystem dependent
+        pass
+    finally:
+        os.close(dir_fd)
+
+
 def list_recovery_cli(args) -> None:
     """`list-recovery`: print the recovery slots in a file (no credential)."""
     from .crypt_core import list_recovery_slots
     from .crypt_utils import eprint
 
     slots = list_recovery_slots(args.input)
+    if getattr(args, "json", False):
+        from .json_output import emit_json
+
+        # Full key_id, not the 16-char display truncation below: a machine
+        # consumer needs the whole value (gitlab#277). emit_json wraps this
+        # in the total-json envelope (gitlab#268) like every 1.5.x endpoint.
+        # The list is capped at MAX_DEK_SLOTS (the unlock paths enforce the
+        # same bound) so a crafted header cannot drive an unbounded stdout
+        # document; the cap is reported rather than applied silently.
+        payload = {
+            "slots": [
+                {
+                    "id": _capped(s.get("id")),
+                    "type": _capped(s.get("type")),
+                    "key_id": _capped(s.get("key_id")),
+                }
+                for s in slots[:MAX_DEK_SLOTS]
+            ]
+        }
+        if len(slots) > MAX_DEK_SLOTS:
+            payload["truncated"] = True
+        emit_json(payload)
+        return
     if not slots:
         eprint("No recovery slots on this file.")
         return
     eprint(f"{len(slots)} recovery slot(s):")
+    if len(slots) > MAX_DEK_SLOTS:
+        # Same bound as the JSON path and the unlock paths: a crafted header
+        # must not flood the terminal either.
+        eprint(f"  (showing the first {MAX_DEK_SLOTS}; the file claims {len(slots)})")
+        slots = slots[:MAX_DEK_SLOTS]
     for s in slots:
-        line = f"  id={s['id']}  type={s['type']}"
-        if s.get("key_id"):
-            line += f"  key_id={s['key_id'][:16]}..."
+        # These come verbatim from the plaintext file header, i.e. from
+        # whoever authored the file. Listing requires no credential, so raw
+        # output would let a crafted file emit ANSI escapes into the
+        # operator's terminal (same class as gitlab#172).
+        slot_id = _display_safe(s.get("id"))
+        slot_type = _display_safe(s.get("type"))
+        key_id = _display_safe(s.get("key_id"))
+        line = f"  id={slot_id}  type={slot_type}"
+        if key_id:
+            line += f"  key_id={key_id[:16]}..."
         eprint(line)
 
 
 def recover_cli(args) -> None:
     """`recover`: decrypt a file using a recovery credential (not the password)."""
     from .crypt_core import decrypt_file
-    from .crypt_utils import eprint
+    from .crypt_utils import eprint, sanitize_for_display
 
     kwargs = _recover_kwargs_from_args(args)
     if not kwargs:
@@ -727,13 +858,22 @@ def recover_cli(args) -> None:
             "Provide a recovery credential: --recovery-code, "
             "--recovery-passphrase, or --recovery-share"
         )
+    json_mode = getattr(args, "json", False)
     decrypt_file(
         input_file=args.input,
         output_file=args.output,
-        quiet=getattr(args, "quiet", False),
+        # Under --json all human output is redundant and some legacy decrypt
+        # branches print to stdout when not quiet — force quiet so stdout
+        # stays a single JSON document (gitlab#277 review).
+        quiet=json_mode or getattr(args, "quiet", False),
         **kwargs,
     )
-    eprint(f"Recovered to: {args.output}")
+    if json_mode:
+        from .json_output import emit_json
+
+        emit_json({"output": args.output})
+    else:
+        eprint(f"Recovered to: {sanitize_for_display(args.output)}")
 
 
 def _validated_passphrase(value, source):
@@ -774,7 +914,7 @@ def _policy_checked_passphrase(value, source, args=None):
     check on the weaker credential (gitlab#149).
 
     Deliberately NOT used when unlocking -- that is `recover` only, via
-    `_read_recovery_passphrase`; `add-recovery` and `remove-recovery` cannot
+    `_recover_kwargs_from_args`; `add-recovery` and `remove-recovery` cannot
     unlock with a passphrase at all. Two reasons, and the second is the
     stronger one:
 
@@ -853,23 +993,6 @@ def _policy_checked_passphrase(value, source, args=None):
     eprint("  Use --force-password to add it anyway (not recommended).")
     raise ValidationError(f"Recovery passphrase does not meet the {level} password policy")
 
-    try:
-        validate_password_or_raise(value, policy_level=level, quiet=getattr(args, "quiet", False))
-    except Exception:
-        # eprint before re-raising: ValidationError is a SecureError, which
-        # replaces the message it is given with a generic string unless
-        # DEBUG=1 is set, so the reason would otherwise reach nobody.
-        entropy, strength = get_password_strength(value)
-        eprint(f"\nRecovery passphrase strength: {strength} (entropy: {entropy:.1f} bits)")
-        eprint(f"Recovery passphrase ({source}) does not meet the {level} password policy.")
-        eprint(
-            "  A recovery slot is another wrapping of the same file key, so the "
-            "file is only as strong as its weakest slot."
-        )
-        eprint("  Use --force-password to add it anyway (not recommended).")
-        raise
-    return value
-
 
 def add_recovery_cli(args) -> None:
     """`add-recovery`: add a recovery slot to an existing envelope file.
@@ -882,6 +1005,7 @@ def add_recovery_cli(args) -> None:
     which requires the password KEK.
     """
     import getpass
+    import os
 
     from .crypt_core import add_recovery_slots
     from .crypt_utils import eprint, sanitize_for_display
@@ -895,15 +1019,85 @@ def add_recovery_cli(args) -> None:
             "no longer authorize adding a slot. Re-run with --password / "
             "$CRYPT_PASSWORD."
         )
+
+    add_code = getattr(args, "add_code", False)
+    add_passphrase = getattr(args, "add_passphrase", False)
+    add_shares = getattr(args, "add_shares", None)
+    json_mode = getattr(args, "json", False)
+    code_out = getattr(args, "recovery_code_out", None)
+
+    # Validate EVERY usage error before acquiring the unlock credential:
+    # otherwise a bare `add-recovery -i f -o g` blocks on a getpass() prompt
+    # (indefinitely, for a GUI subprocess) only to fail with a usage error
+    # afterwards (gitlab#277 port of the 1.4.x rules).
+    selected = [bool(add_code), bool(add_passphrase), bool(add_shares)]
+    if sum(selected) > 1:
+        raise ValueError("Specify only one of --add-code, --add-passphrase, or --add-shares")
+    if sum(selected) == 0:
+        raise ValueError("Specify --add-code, --add-passphrase, or --add-shares K-of-N")
+    if code_out and not add_code:
+        # Silently ignoring it would let a wrapper that always passes the flag
+        # read back a stale file from an earlier run and present it as the new
+        # credential.
+        raise ValueError("--recovery-code-out is only meaningful with --add-code")
+    if json_mode and add_code and not code_out:
+        # Fail closed rather than silently withhold the credential: under
+        # --json there is no safe general-purpose stream to put it on (see
+        # _write_recovery_code_file), so the caller must name a destination.
+        raise ValueError(
+            "--add-code with --json requires --recovery-code-out PATH: the "
+            "generated code is never written to stdout or stderr in JSON mode"
+        )
+    if code_out:
+        # A destination equal to the envelope would be truncated by the header
+        # write moments later, destroying the credential and reporting success.
+        code_real = os.path.realpath(code_out)
+        for label, other in (("--input", args.input), ("--output", args.output)):
+            if other and code_real == os.path.realpath(other):
+                raise ValueError(f"--recovery-code-out must differ from {label}")
+
+    threshold = num_shares = None
+    out_dir = None
+    shares = []
+    if add_shares:
+        threshold, num_shares = _parse_k_of_n(add_shares)
+        out_dir = getattr(args, "shares_dir", ".") or "."
+        if os.path.exists(out_dir) and not os.path.isdir(out_dir):
+            # Refuse BEFORE create_secure_directory: its defense-in-depth
+            # chmod would otherwise hit a regular file (gitlab#276 review).
+            raise ValueError(f"--shares-dir is not a directory: {sanitize_for_display(out_dir)}")
+        if os.path.isdir(out_dir):
+            # Pre-flight all target names before any prompt or write: share
+            # files are never overwritten (exclusive create in to_file), and
+            # failing midway would leave a partial share set next to an old
+            # one.
+            existing = [
+                f"recovery_share_{i}.json"
+                for i in range(1, num_shares + 1)
+                if os.path.lexists(os.path.join(out_dir, f"recovery_share_{i}.json"))
+            ]
+            if existing:
+                raise ValueError(
+                    f"Share file(s) already exist in {sanitize_for_display(out_dir)}: "
+                    f"{', '.join(existing)} — choose a different --shares-dir or move them away"
+                )
+
     unlock = {"password": _read_password(args)}
 
     creds = []
     generated_code = None
     written_shares = []
-    if getattr(args, "add_code", False):
+    slot_source = None
+    if add_code:
         generated_code = generate_recovery_code()
+        # Not caught by the log redactor's shape heuristic: a grouped base32
+        # code has no 32-char contiguous run. Register it explicitly.
+        from .security_logger import register_consumed_secret
+
+        register_consumed_secret("generated_recovery_code", generated_code)
         creds.append({"type": "recovery_code", "code": generated_code})
-    elif getattr(args, "add_passphrase", False):
+        slot_source = "generated recovery code"
+    elif add_passphrase:
         p1 = getpass.getpass("New recovery passphrase: ")
         p2 = getpass.getpass("Confirm recovery passphrase: ")
         if p1 != p2:
@@ -917,40 +1111,18 @@ def add_recovery_cli(args) -> None:
                 "passphrase": _policy_checked_passphrase(p1, "interactive prompt", args),
             }
         )
-    elif getattr(args, "add_shares", None):
-        import os
-
+        slot_source = "interactively entered passphrase"
+    else:
         from .secret_sharing import split_secret
 
-        threshold, num_shares = _parse_k_of_n(args.add_shares)
         secret = secrets.token_bytes(32)
         shares = split_secret(secret, threshold, num_shares)
-        out_dir = getattr(args, "shares_dir", ".") or "."
-        if os.path.exists(out_dir) and not os.path.isdir(out_dir):
-            # Refuse BEFORE create_secure_directory: its defense-in-depth
-            # chmod would otherwise hit a regular file (gitlab#276 review).
-            raise ValueError(f"--shares-dir is not a directory: {sanitize_for_display(out_dir)}")
         if not os.path.isdir(out_dir):
             # 0700: the directory holds a key-escrow set. A pre-existing
             # directory is deliberately left untouched (gitlab#276 review).
             from .file_permissions import create_secure_directory
 
             create_secure_directory(out_dir)
-        # Pre-flight all target names: share files are never overwritten
-        # (exclusive create in to_file), and failing midway would leave a
-        # partial share set next to an old one.
-        existing = [
-            f"recovery_share_{sh.metadata.share_index}.json"
-            for sh in shares
-            if os.path.lexists(
-                os.path.join(out_dir, f"recovery_share_{sh.metadata.share_index}.json")
-            )
-        ]
-        if existing:
-            raise ValueError(
-                f"Share file(s) already exist in {sanitize_for_display(out_dir)}: "
-                f"{', '.join(existing)} — choose a different --shares-dir or move them away"
-            )
         for sh in shares:
             path = os.path.join(out_dir, f"recovery_share_{sh.metadata.share_index}.json")
             sh.to_file(path)
@@ -958,20 +1130,73 @@ def add_recovery_cli(args) -> None:
         creds.append(
             {"type": "shamir", "secret": secret, "threshold": threshold, "num_shares": num_shares}
         )
-    else:
-        raise ValueError("Specify --add-code, --add-passphrase, or --add-shares K-of-N")
+        slot_source = f"generated Shamir shares ({threshold}-of-{num_shares})"
 
-    add_recovery_slots(
-        args.input,
-        args.output,
-        creds,
-        allow_high_kdf_cost=getattr(args, "allow_high_kdf_cost", False),
-        **unlock,
-    )
-    eprint(f"Recovery slot added; wrote: {args.output}")
+    # Deliver the credential BEFORE modifying the envelope. The reverse order
+    # risks the worst outcome available here: the slot is durably written and
+    # the only credential that opens it is then lost to a failed write.
+    if generated_code is not None and code_out:
+        _write_recovery_code_file(code_out, generated_code)
+
+    try:
+        add_recovery_slots(
+            args.input,
+            args.output,
+            creds,
+            allow_high_kdf_cost=getattr(args, "allow_high_kdf_cost", False),
+            **unlock,
+        )
+    except Exception:
+        # Deliberately do NOT delete the code/share files here: a raise does
+        # not prove the slot was not written (add_recovery_slots writes the
+        # envelope before setting its permissions), and deleting them would
+        # destroy the one credential that opens it. Orphans open nothing.
+        if generated_code is not None and code_out:
+            eprint(
+                f"NOTE: a recovery code was written to {sanitize_for_display(code_out)} "
+                "before this failure. If the slot was not added, that file is "
+                "unused and can be deleted; verify with list-recovery first. A "
+                "retry with the same --recovery-code-out will fail until it is "
+                "removed."
+            )
+        if written_shares:
+            eprint(
+                "NOTE: share files were written before this failure. If the "
+                "slot was not added they are unused and can be deleted; verify "
+                "with list-recovery first."
+            )
+        raise
+
+    if json_mode:
+        doc = {
+            "output": args.output,
+            "slot_type": creds[0]["type"],
+            # Which credential produced the slot: an unintended env/planted
+            # path must be distinguishable from a typed one.
+            "credential_source": slot_source,
+        }
+        if generated_code is not None:
+            doc["recovery_code_written_to"] = code_out
+        if written_shares:
+            doc["shares"] = written_shares
+            doc["threshold"] = threshold
+            doc["num_shares"] = num_shares
+        from .json_output import emit_json
+
+        emit_json(doc)
+        return
+
+    eprint(f"Recovery slot added ({slot_source}); wrote: {sanitize_for_display(args.output)}")
     if generated_code is not None:
-        eprint("\n=== RECOVERY CODE (store this securely; it is shown only once) ===")
-        eprint(f"  {generated_code}")
+        if code_out:
+            # The caller named a private destination, which is the strongest
+            # possible statement that the credential must not go on a stream —
+            # stderr reaches terminal scrollback and the GUI's persistent
+            # debug log. Honour that regardless of --json.
+            eprint(f"Recovery code written to: {sanitize_for_display(code_out)}")
+        else:
+            eprint("\n=== RECOVERY CODE (store this securely; it is shown only once) ===")
+            eprint(f"  {generated_code}")
     for p in written_shares:
         eprint(f"  wrote share: {sanitize_for_display(p)}")
 
@@ -979,7 +1204,7 @@ def add_recovery_cli(args) -> None:
 def remove_recovery_cli(args) -> None:
     """`remove-recovery`: remove a recovery slot by id from an envelope file."""
     from .crypt_core import remove_recovery_slot
-    from .crypt_utils import eprint
+    from .crypt_utils import eprint, sanitize_for_display
 
     # F17/F18 (gitlab#234): removing a slot re-binds the wrapped key to the new
     # slot count, which needs the password KEK. A recovery code can no longer
@@ -998,7 +1223,15 @@ def remove_recovery_cli(args) -> None:
         allow_high_kdf_cost=getattr(args, "allow_high_kdf_cost", False),
         **unlock,
     )
-    eprint(f"Removed recovery slot {args.slot_id!r}; wrote: {args.output}")
+    if getattr(args, "json", False):
+        from .json_output import emit_json
+
+        emit_json({"output": args.output, "removed_slot_id": args.slot_id})
+    else:
+        eprint(
+            f"Removed recovery slot {sanitize_for_display(args.slot_id)!r}; "
+            f"wrote: {sanitize_for_display(args.output)}"
+        )
 
 
 def _parse_k_of_n(spec: str):

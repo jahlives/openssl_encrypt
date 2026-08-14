@@ -709,6 +709,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The recovery-slot commands now deliver the `--json` output the
+  capabilities manifest was already promising** (gitlab#277, github#156):
+  the gitlab#146 machine-readable-output work for `list-recovery`,
+  `add-recovery`, `remove-recovery` and `recover` was never ported when
+  the 1.5.x line diverged, yet the capabilities manifest advertised
+  `--json` for all four — a GUI trusting the manifest got
+  `unrecognized arguments: --json` (exit 2). All four commands now emit
+  one total-json envelope document on stdout (`{"status":"ok","data":…}`,
+  error envelope on failure), adapted to the 1.5.x surface:
+  `list-recovery` reports each slot's id, type and full (untruncated)
+  key_id with length-capped untrusted header fields, and its human view
+  now control-character-escapes those fields before printing (the
+  gitlab#172 class); `add-recovery --add-shares K-of-N --json` reports
+  the written share paths plus threshold/num_shares (paths only — never
+  share content); and the credential-delivery rule is ported with it: a
+  generated recovery code never travels on stdout or stderr under
+  `--json` — the new `--recovery-code-out PATH` (0600, exclusive create,
+  fsynced, refused if colliding with the envelope) is required with
+  `--add-code --json`, is honoured in human mode too, and the code file
+  is written *before* the envelope is modified so a failed rewrite can
+  never orphan a slot whose only credential was lost. Usage errors
+  (including the new mutual-exclusion check for
+  `--add-code/--add-passphrase/--add-shares`) are validated before any
+  password prompt, so a GUI subprocess can never hang on getpass behind
+  a usage error. The pre-commit security review hardened the port
+  further: the one-document stdout contract is enforced up front —
+  `recover`/`add-recovery`/`remove-recovery` with `--json` refuse a
+  stream output (`-o -`, `/dev/stdout`, `/dev/fd/1`) exactly like
+  encrypt/decrypt, `recover --json` forces quiet decryption so legacy
+  stdout prints cannot precede the document, the JSON slot list is
+  capped at the format's 32-slot bound with an explicit `truncated`
+  marker, an over-long slot id is reported as null rather than
+  truncated into a value that no longer round-trips into
+  `remove-recovery`, the code-file writer charset-checks the credential
+  value-free before an ASCII encode could embed a character of it in an
+  exception, output paths on the human report lines are
+  control-character-escaped, the dispatch error envelope is guarded by
+  `document_emitted()`, and the four endpoints now declare their `data`
+  fields in the capabilities manifest's `json_fields`. Pinned by
+  `test_recovery_json_277.py` (24 tests).
+
 - **`split-secret` and `combine-secrets` are usable for the first time**
   (gitlab#276, github#155): the two Shamir secret-sharing actions dispatch
   through the monolithic parser, but their specific flags (`--shares`,

@@ -172,6 +172,13 @@ _JSON_FIELDS = {
     ],
     "check-argon2": ["available", "version", "variants", "functional"],
     "check-pqc": ["available", "liboqs_version", "algorithms"],
+    # Recovery-slot endpoints (gitlab#277). add-recovery's optional keys
+    # (recovery_code_written_to / shares / threshold / num_shares) appear
+    # per credential type; only always-present keys are promised here.
+    "list-recovery": ["slots"],
+    "recover": ["output"],
+    "add-recovery": ["output", "slot_type", "credential_source"],
+    "remove-recovery": ["output", "removed_slot_id"],
     # Bare-document endpoints list their guaranteed top-level keys.
     "info": ["format_version"],
     "analyze-config": [

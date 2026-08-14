@@ -5002,7 +5002,20 @@ def main_with_args(args=None):
         out = getattr(a, "output", None)
         return (not out) or (out in _JSON_STREAM_OUTPUTS)
 
-    if getattr(args, "json", False) and args.action in ("encrypt", "decrypt", "armor", "dearmor"):
+    # recover/add-recovery/remove-recovery joined the guarded set with the
+    # gitlab#277 --json port: recover writes user plaintext to --output, and
+    # add-/remove-recovery copy the (attacker-influenceable) envelope payload
+    # verbatim — any of them aimed at a stdout device would put those bytes
+    # ahead of the one JSON document.
+    if getattr(args, "json", False) and args.action in (
+        "encrypt",
+        "decrypt",
+        "armor",
+        "dearmor",
+        "recover",
+        "add-recovery",
+        "remove-recovery",
+    ):
         _out = getattr(args, "output", None)
         _stdin_implicit_stdout = (
             args.action == "encrypt"
@@ -9837,7 +9850,16 @@ def main_with_args(args=None):
                 }[args.action](args)
                 sys.exit(0)
             except Exception as e:
-                print(f"Error: {e}", file=sys.stderr)
+                # A JSON caller must get its one document even on failure —
+                # and only one: skip the error envelope if a success document
+                # already went out (total-json rules, gitlab#268/#270 F4/#277).
+                if getattr(args, "json", False):
+                    from .json_output import document_emitted, emit_json_error
+
+                    if not document_emitted():
+                        emit_json_error(f"Error: {sanitize_for_display(e)}")
+                    sys.exit(1)
+                print(f"Error: {sanitize_for_display(e)}", file=sys.stderr)
                 sys.exit(1)
 
         elif args.action == "sign":
