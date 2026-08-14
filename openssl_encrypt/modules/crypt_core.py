@@ -9588,7 +9588,12 @@ def _recover_envelope_dek(
                 except Exception:
                     continue
         finally:
-            if isinstance(_secret, (bytes, bytearray)):
+            # combine_shares returns a wipeable bytearray (SecureBytes):
+            # wipe it in place; only fall back to a best-effort copy-wipe
+            # for an immutable bytes value (which cannot be scrubbed).
+            if isinstance(_secret, bytearray):
+                secure_memzero(_secret)
+            elif isinstance(_secret, bytes):
                 secure_memzero(bytearray(_secret))
         if dek is None:
             raise DecryptionError("No recovery slot matched the supplied credential")
@@ -11755,7 +11760,12 @@ def decrypt_file(
                 except (_DecErr, _AuthErr, _ValErr, Exception):
                     continue
         finally:
-            if isinstance(_shamir_secret, (bytes, bytearray)):
+            # combine_shares returns a wipeable bytearray (SecureBytes):
+            # wipe it in place; only fall back to a best-effort copy-wipe
+            # for an immutable bytes value (which cannot be scrubbed).
+            if isinstance(_shamir_secret, bytearray):
+                secure_memzero(_shamir_secret)
+            elif isinstance(_shamir_secret, bytes):
                 secure_memzero(bytearray(_shamir_secret))
         if _dek is None:
             raise _DecErr("No recovery slot matched the supplied recovery material")

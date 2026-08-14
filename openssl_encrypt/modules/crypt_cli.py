@@ -4667,6 +4667,41 @@ def main_with_args(args=None):
         "Default: 10M. Files below this size use one-shot encryption.",
     )
 
+    # Secret sharing options (split-secret / combine-secrets, gitlab#276).
+    # --shares carries both spellings on the monolithic parser: a single
+    # integer for split-secret, one or more share-file paths for
+    # combine-secrets; the handlers normalize and validate per action.
+    sharing_group = parser.add_argument_group(
+        "Secret Sharing Options", "Options for the split-secret and combine-secrets actions"
+    )
+    sharing_group.add_argument(
+        "--shares",
+        nargs="+",
+        metavar="N|FILE",
+        default=None,
+        help="split-secret: total number of shares to create (a single integer). "
+        "combine-secrets: paths of the share files to combine.",
+    )
+    sharing_group.add_argument(
+        "--threshold",
+        # Deliberately NOT type=int: argparse's "invalid int value: '...'"
+        # would echo the raw token, which can be a mis-ordered password.
+        # The handler converts and errors without echoing (gitlab#276 review).
+        metavar="K",
+        default=None,
+        help="split-secret: minimum number of shares needed to reconstruct "
+        "the secret (2 <= K <= total shares).",
+    )
+    sharing_group.add_argument(
+        "--output-dir",
+        metavar="DIR",
+        # Default None, not ".": the action guard needs to distinguish
+        # "not given" from an explicit value; the handler falls back to ".".
+        default=None,
+        help="split-secret: directory where the generated share files are "
+        "written (default: current directory).",
+    )
+
     parser.add_argument(
         "--envelope",
         action="store_true",
@@ -4807,6 +4842,44 @@ def main_with_args(args=None):
     for attr, default_val in default_attrs.items():
         if not hasattr(args, attr):
             setattr(args, attr, default_val)
+
+    # Fail closed on misplaced secret-sharing flags (gitlab#276): silently
+    # ignoring an option the user typed is this parser's known drift trap
+    # (same doctrine as the --json and --random guards). This must run HERE,
+    # before the per-action early-exit chain (create-usb, list-plugins, ...)
+    # and before any password/prompt resolution, so every monolithic action
+    # is covered and no secret is touched first.
+    _sharing_flag_values = (
+        ("--shares", getattr(args, "shares", None)),
+        ("--threshold", getattr(args, "threshold", None)),
+        ("--output-dir", getattr(args, "output_dir", None)),
+    )
+    if args.action not in ("split-secret", "combine-secrets"):
+        for _flag, _value in _sharing_flag_values:
+            if _value is not None:
+                parser.error(f"{_flag} is only valid with split-secret/combine-secrets")
+    else:
+        if getattr(args, "keyring_load", None):
+            parser.error("--keyring-load is not supported with split-secret/combine-secrets")
+        if args.action == "split-secret":
+            if getattr(args, "input", None) is not None:
+                parser.error(
+                    "split-secret splits the password itself, not a file: --input is not "
+                    "used (use combine-secrets --input to decrypt with reconstructed shares)"
+                )
+        else:  # combine-secrets
+            if getattr(args, "output_dir", None) is not None:
+                parser.error("--output-dir is only valid with split-secret")
+            if getattr(args, "hsm", None) or getattr(args, "second_password", None):
+                parser.error(
+                    "--hsm/--second-password are not supported with combine-secrets: "
+                    "it reconstructs the password from shares and performs a plain decrypt"
+                )
+            if getattr(args, "password", None):
+                parser.error(
+                    "--password is not used by combine-secrets: the password is "
+                    "reconstructed from the share files"
+                )
 
     # Resolve the optional second password (hidden keyed mode) exactly once, so
     # an interactive prompt is shown at most a single time per invocation.
@@ -6369,6 +6442,8 @@ def main_with_args(args=None):
         "version",
         "show-version-file",
         "capabilities",
+        # split-secret splits the password itself, not a file (gitlab#276)
+        "split-secret",
     ]:
         parser.error("the following arguments are required: --input/-i")
 

@@ -60,7 +60,7 @@ Three new features for the openssl_encrypt project, implemented on `feature/v1.5
 
 Core GF(256) implementation (no external deps):
 
-- `GF256` class — constant-time table-lookup arithmetic:
+- `GF256` class — log/exp table-lookup arithmetic (secret-indexed lookups, NOT strictly constant-time; see module docstring):
   - Pre-computed `EXP_TABLE`/`LOG_TABLE` for irreducible polynomial x^8+x^4+x^3+x+1
   - `mul(a, b)`, `inv(a)`, `evaluate_polynomial(coeffs, x)`, `lagrange_interpolate(points)`
 - `ShareMetadata` dataclass: `threshold`, `total_shares`, `share_index`, `key_id` (UUID), `algorithm` ("shamir-gf256"), `created_at`
@@ -69,7 +69,7 @@ Core GF(256) implementation (no external deps):
 - `split_secret(secret: bytes, threshold: int, num_shares: int) -> List[Share]`
   - Per-byte: generate (k-1) random coefficients, evaluate polynomial at x=1..n
   - Validation: 2 <= k <= n <= 255
-- `combine_shares(shares: List[Share]) -> bytes`
+- `combine_shares(shares: List[Share]) -> SecureBytes` (wipeable buffer; caller zeroizes)
   - Per-byte: Lagrange interpolation at x=0
   - Validation: matching key_ids, sufficient shares, no duplicate indices
 
@@ -88,18 +88,14 @@ Core GF(256) implementation (no external deps):
 
 **`crypt_cli.py`**
 - Add `"split-secret"` and `"combine-secrets"` to action choices
-- `split-secret` handler: prompt password → derive key → `split_secret(key)` → write share files (or store in keystore, or export QR)
+- `split-secret` handler: obtain password (-p / CRYPT_PASSWORD / confirmed double prompt) → `split_secret(password)` → write share files exclusively at 0600 (splits the password itself; takes NO --input file)
 - `combine-secrets` handler: read share files → `combine_shares()` → use reconstructed key to decrypt
 
-**`crypt_cli_subparser.py`**
-- `setup_split_secret_parser()`:
-  - `--input/-i`: encrypted file
-  - `--shares/-n` (int): total shares
-  - `--threshold/-k` (int): minimum for recovery
-  - `--output-dir/-d`: directory for share files
-  - `--keystore`/`--keystore-path`: store in keystore
-  - `--qr`: export as QR codes
-  - Password args (reuse existing pattern)
+**`crypt_cli.py` (monolithic parser — the dead subparsers were removed in gitlab#208; flags made live in gitlab#276)**
+- Secret Sharing Options group (long options only, no short forms):
+  - `--shares`: split-secret takes a single integer; combine-secrets takes share-file paths (shared nargs="+" definition, normalized per action)
+  - `--threshold`: minimum for recovery (kept a raw string on the parser so argparse never echoes a mis-ordered token; handler converts)
+  - `--output-dir`: directory for share files (created 0700 when missing; --input is rejected for split-secret)
 - `setup_combine_secrets_parser()`:
   - `--input/-i`: encrypted file to decrypt
   - `--shares` (nargs='+'): share file paths
@@ -199,8 +195,8 @@ echo "corrupt" >> test.txt.enc
 ```bash
 # Encrypt, split into 3-of-5 shares, combine 3 to decrypt
 .venv/bin/python -m openssl_encrypt.crypt encrypt -i secret.txt --algorithm aes-gcm -p testpass --force-password
-.venv/bin/python -m openssl_encrypt.crypt split-secret -i secret.txt.enc -n 5 -k 3 -p testpass --force-password
-.venv/bin/python -m openssl_encrypt.crypt combine-secrets -i secret.txt.enc --shares share_1.json share_2.json share_4.json -o recovered.txt
+.venv/bin/python -m openssl_encrypt.crypt split-secret --shares 5 --threshold 3 -p testpass --force-password
+.venv/bin/python -m openssl_encrypt.crypt combine-secrets -i secret.txt.encrypted --shares share_1.json share_2.json share_4.json -o recovered.txt
 diff secret.txt recovered.txt
 # Run tests
 .venv/bin/python -m pytest openssl_encrypt/unittests/test_secret_sharing.py openssl_encrypt/unittests/test_secret_sharing_integration.py -v

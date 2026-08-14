@@ -709,6 +709,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`split-secret` and `combine-secrets` are usable for the first time**
+  (gitlab#276, github#155): the two Shamir secret-sharing actions dispatch
+  through the monolithic parser, but their specific flags (`--shares`,
+  `--threshold`, `--output-dir`) were only ever defined on the dead
+  subparsers nothing routed to (removed in gitlab#208) — every real
+  invocation failed with `unrecognized arguments` while the handlers sat
+  unreachable behind the parse error. The three flags are now defined on
+  the live parser (`--shares` doubles as split's integer count and
+  combine's share-file list, normalized per action in the handlers),
+  `split-secret` no longer demands the `--input` file it never used (it
+  splits the password itself), and missing/malformed sharing arguments —
+  including the K/N range checks — fail with actionable messages before
+  any password is prompted for or read. The pre-commit security review
+  hardened the newly reachable surface: share files are created
+  exclusively at 0600 (`O_EXCL|O_NOFOLLOW` — no permission window, no
+  planted-symlink follow, no silent clobber of an earlier share set), a
+  freshly created `--output-dir` is 0700, share files are strictly
+  validated as the untrusted inputs they are (typed/ranged metadata,
+  byte-list data with a length cap — a crafted integer `data` field could
+  previously force a multi-GB allocation), the reconstructed secret stays
+  in a wipeable buffer end to end instead of leaking immutable copies,
+  `CRYPT_PASSWORD` is fingerprint-registered and cleared from the
+  environment like the encrypt path does, an interactively entered
+  split password must be confirmed (a typo would otherwise produce shares
+  of an unusable password), the sharing flags are refused on actions they
+  don't belong to (including the early-exit monolithic actions), and
+  `combine-secrets` refuses `--hsm`/`--second-password`/`--password`
+  rather than silently decrypting without them. Share files are also
+  size-bounded and type-checked before being read or parsed (a hostile
+  multi-GB "share" is refused up front), error paths never echo raw argv
+  tokens or unsanitized file-derived strings, share writes fsync, and a
+  partially colliding target share set is refused before anything is
+  written. Pinned by `test_split_secret_cli_276.py` (37 tests: flag
+  parsing, exclusive 0600 share writes, symlink/clobber refusal,
+  encrypt → split → 2-of-3 combine round-trip, below-threshold refusal,
+  crafted/oversized-share-file refusals, env-password cleanup, prompt
+  confirmation, token-echo suppression, and flag-scoping errors).
+
 - **Streaming no longer silently writes undecryptable pepper/HSM files**
   (gitlab#275): the streaming encrypt path built its metadata without the
   plugin-reference fields the non-streaming path records (`pepper_plugin`,

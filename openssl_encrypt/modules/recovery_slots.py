@@ -884,7 +884,7 @@ def add_recovery_cli(args) -> None:
     import getpass
 
     from .crypt_core import add_recovery_slots
-    from .crypt_utils import eprint
+    from .crypt_utils import eprint, sanitize_for_display
 
     # F17/F18 (gitlab#234): adding a slot re-binds the wrapped key to the new
     # slot count, which needs the password KEK -- a recovery code recovers only
@@ -926,7 +926,31 @@ def add_recovery_cli(args) -> None:
         secret = secrets.token_bytes(32)
         shares = split_secret(secret, threshold, num_shares)
         out_dir = getattr(args, "shares_dir", ".") or "."
-        os.makedirs(out_dir, exist_ok=True)
+        if os.path.exists(out_dir) and not os.path.isdir(out_dir):
+            # Refuse BEFORE create_secure_directory: its defense-in-depth
+            # chmod would otherwise hit a regular file (gitlab#276 review).
+            raise ValueError(f"--shares-dir is not a directory: {sanitize_for_display(out_dir)}")
+        if not os.path.isdir(out_dir):
+            # 0700: the directory holds a key-escrow set. A pre-existing
+            # directory is deliberately left untouched (gitlab#276 review).
+            from .file_permissions import create_secure_directory
+
+            create_secure_directory(out_dir)
+        # Pre-flight all target names: share files are never overwritten
+        # (exclusive create in to_file), and failing midway would leave a
+        # partial share set next to an old one.
+        existing = [
+            f"recovery_share_{sh.metadata.share_index}.json"
+            for sh in shares
+            if os.path.lexists(
+                os.path.join(out_dir, f"recovery_share_{sh.metadata.share_index}.json")
+            )
+        ]
+        if existing:
+            raise ValueError(
+                f"Share file(s) already exist in {sanitize_for_display(out_dir)}: "
+                f"{', '.join(existing)} — choose a different --shares-dir or move them away"
+            )
         for sh in shares:
             path = os.path.join(out_dir, f"recovery_share_{sh.metadata.share_index}.json")
             sh.to_file(path)
@@ -949,7 +973,7 @@ def add_recovery_cli(args) -> None:
         eprint("\n=== RECOVERY CODE (store this securely; it is shown only once) ===")
         eprint(f"  {generated_code}")
     for p in written_shares:
-        eprint(f"  wrote share: {p}")
+        eprint(f"  wrote share: {sanitize_for_display(p)}")
 
 
 def remove_recovery_cli(args) -> None:
