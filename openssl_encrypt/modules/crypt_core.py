@@ -9384,31 +9384,115 @@ def _rekey_envelope_fast(
     return True
 
 
-def _read_envelope_file(input_file: str):
+# Same bound as _read_metadata_only's incremental scan: no legitimate
+# envelope header approaches it, and the credential-free listing must not
+# let an attacker-sized header dictate memory use (gitlab#279).
+_MAX_ENVELOPE_METADATA = 2 * 1024 * 1024
+
+
+def _read_envelope_file(input_file: str, *, header_only: bool = False) -> tuple:
     """Read an encrypted file into (metadata dict, payload bytes).
+
+    Args:
+        input_file: Path to the envelope file (untrusted content).
+        header_only: Read only up to the metadata separator, in bounded
+            chunks, and return ``b""`` as payload. For credential-free
+            paths (the listing) where an attacker-supplied file must not
+            be able to force a whole-file read into memory (gitlab#279).
 
     Raises:
         ValidationError: If the file is not a valid envelope (missing
-            separator, undecodable/oversized metadata, or a non-dict
-            document) — parse failures are normalized to this type so a
-            crafted header cannot surface raw internal exceptions.
+            separator, oversized metadata past the
+            ``_MAX_ENVELOPE_METADATA`` cap, undecodable metadata, or a
+            non-dict document) — parse failures are normalized to this
+            type so a crafted header cannot surface raw internal
+            exceptions.
     """
-    with open(input_file, "rb") as f:
-        raw = f.read()
-    meta_b64, sep, payload = raw.partition(b":")
-    if not sep:
-        raise ValidationError("Not a valid encrypted file (missing metadata separator)")
+    cap = _MAX_ENVELOPE_METADATA
+    if header_only:
+        header = bytearray()
+        with open(input_file, "rb") as f:
+            while True:
+                chunk = f.read(65536)
+                if not chunk:
+                    raise ValidationError("Not a valid encrypted file (missing metadata separator)")
+                idx = chunk.find(b":")
+                if idx >= 0:
+                    header.extend(chunk[:idx])
+                    break
+                header.extend(chunk)
+                if len(header) > cap:
+                    raise ValidationError("Not a valid encrypted file (oversized metadata)")
+        meta_b64: bytes = bytes(header)
+        payload = b""
+    else:
+        # The write paths rewrite the payload, so they need the whole file.
+        with open(input_file, "rb") as f:
+            raw = f.read()
+        meta_b64, sep, payload = raw.partition(b":")
+        if not sep:
+            raise ValidationError("Not a valid encrypted file (missing metadata separator)")
+    if len(meta_b64) > cap:
+        raise ValidationError("Not a valid encrypted file (oversized metadata)")
     try:
         meta = json.loads(base64.b64decode(meta_b64))
-    except ValueError:
-        # Covers bad base64 (binascii.Error is a ValueError), bad JSON, and
-        # CPython's int_max_str_digits limit on absurd numeric literals. The
+    except (ValueError, RecursionError):
+        # ValueError covers bad base64 (binascii.Error is a ValueError), bad
+        # JSON, and CPython's int_max_str_digits limit on absurd numeric
+        # literals; RecursionError covers a deeply-nested JSON bomb. The
         # header is untrusted input: a crafted file must fail as "malformed
-        # file", not surface a raw internal exception (gitlab#278 review).
+        # file", not surface a raw internal exception (gitlab#278/#279
+        # reviews).
         raise ValidationError("Not a valid encrypted file (malformed metadata)") from None
     if not isinstance(meta, dict):
         raise ValidationError("Malformed file metadata")
     return meta, payload
+
+
+def _validated_slot_container(meta: dict, *, create: bool = False) -> tuple:
+    """Return ``(encryption_section, slot_list)`` from untrusted metadata.
+
+    Shared by the ``dek_slots`` readers (:func:`list_recovery_slots`,
+    :func:`add_recovery_slots`, :func:`remove_recovery_slot`,
+    :func:`_recover_envelope_dek`, and the decrypt-time recovery branch) so
+    crafted container shapes fail uniformly as ValidationError instead of
+    surfacing a raw internal AttributeError from whichever reader touches
+    them first (gitlab#280). Only an absent/None section and ``{}`` keep the
+    established "no slots" meaning; every other non-dict — falsy or not —
+    is the same crafted-input class and gets the same failure mode
+    (review F7).
+
+    Args:
+        meta: The parsed (untrusted) header metadata dict.
+        create: Insert the (fresh, empty) encryption dict into ``meta`` when
+            the section is absent, for the write paths that will populate it.
+
+    Returns:
+        tuple: The encryption dict and a new list of the slot dicts.
+
+    Raises:
+        ValidationError: On a non-dict ``encryption`` section (other than
+            None), a non-list ``dek_slots`` (other than None), or a
+            non-dict slot entry.
+    """
+    enc = meta.get("encryption")
+    if enc is None:
+        enc = {}
+        if create:
+            meta["encryption"] = enc
+    if not isinstance(enc, dict):
+        raise ValidationError("Malformed file metadata (encryption section)")
+    raw_slots = enc.get("dek_slots")
+    if raw_slots is None:
+        raw_slots = []
+    if not isinstance(raw_slots, list):
+        raise ValidationError("Malformed recovery-slot metadata")
+    slots = []
+    for slot in raw_slots:
+        if not isinstance(slot, dict):
+            raise ValidationError("Malformed recovery-slot metadata")
+        slots.append(slot)
+    return enc, slots
 
 
 def list_recovery_slots(input_file: str) -> list:
@@ -9426,20 +9510,21 @@ def list_recovery_slots(input_file: str) -> list:
         ValidationError: If the metadata shape is malformed (non-dict
             ``encryption`` section, non-list ``dek_slots``, non-dict slot).
     """
-    meta, _ = _read_envelope_file(input_file)
+    from .recovery_slots import MAX_DEK_SLOTS
+
+    meta, _ = _read_envelope_file(input_file, header_only=True)
     # The header is untrusted: every container shape must be checked before
     # attribute access, or a crafted file turns the credential-free listing
-    # into an internal AttributeError (gitlab#278 review).
-    enc = meta.get("encryption") or {}
-    if not isinstance(enc, dict):
-        raise ValidationError("Malformed file metadata (encryption section)")
-    raw_slots = enc.get("dek_slots") or []
-    if not isinstance(raw_slots, list):
-        raise ValidationError("Malformed recovery-slot metadata")
+    # into an internal AttributeError (gitlab#278 review; shared with the
+    # write paths since gitlab#280).
+    _, raw_slots = _validated_slot_container(meta)
     out = []
-    for slot in raw_slots:
-        if not isinstance(slot, dict):
-            raise ValidationError("Malformed recovery-slot metadata")
+    # Materialize at most MAX_DEK_SLOTS + 1 summaries: the unlock paths
+    # refuse >MAX_DEK_SLOTS anyway, so a crafted multi-thousand-slot header
+    # must not amplify into an in-memory list on a credential-free command;
+    # the +1 lets callers detect an over-cap file without the flood
+    # (gitlab#279).
+    for slot in raw_slots[: MAX_DEK_SLOTS + 1]:
         item = {"id": slot.get("id"), "type": slot.get("type")}
         params = slot.get("params")
         if not isinstance(params, dict):
@@ -9459,9 +9544,14 @@ def list_recovery_slots(input_file: str) -> list:
             if isinstance(shamir, dict):
                 # shamir slots nest their key_id under params.shamir (unlike
                 # the pqc builder's top-level params.key_id) — surface it so
-                # multiple share sets stay distinguishable (gitlab#278 review).
-                if "key_id" not in item and isinstance(shamir.get("key_id"), str):
-                    item["key_id"] = shamir["key_id"]
+                # multiple share sets stay distinguishable (gitlab#278
+                # review). The type-native location wins, so a crafted or
+                # stale top-level params.key_id cannot relabel a share set;
+                # empty strings are omitted exactly like on the top-level
+                # path, never surfaced as "" (gitlab#280).
+                shamir_key_id = shamir.get("key_id")
+                if shamir_key_id and isinstance(shamir_key_id, str):
+                    item["key_id"] = shamir_key_id
                 threshold = shamir.get("threshold")
                 num_shares = shamir.get("num_shares")
                 if (
@@ -9552,14 +9642,18 @@ def _recover_envelope_dek(
         unlock_shamir_slot,
     )
 
-    enc = meta.get("encryption", {})
+    # Self-protecting shape validation: the add/remove callers pre-validate,
+    # but `recover` publishes this function's sanitized exception string in
+    # the JSON error document, so a crafted container must fail as
+    # ValidationError here too, not as a raw internal AttributeError
+    # (gitlab#280 review F4).
+    enc, slots = _validated_slot_container(meta)
     wrapped_b64 = enc.get("wrapped_dek")
     # F17/F18: bind the wrapped_dek unwrap to the recovery-slot count (absent =>
     # legacy, aad=None). No fallback: a bound wrap never unwraps under None.
     _wrap_aad = wrapped_dek_aad(enc.get("dek_slot_count"))
     if not wrapped_b64:
         raise ValidationError("File is not an envelope file (no wrapped_dek)")
-    slots = enc.get("dek_slots") or []
     # F16 (gitlab#233, CWE-405): dek_slots is attacker-controlled plaintext and
     # the recovery-credential branch below runs a full Argon2id per passphrase
     # slot before the slot-set MAC. add_recovery_slots/remove_recovery_slot pass
@@ -10242,13 +10336,14 @@ def add_recovery_slots(
 
     meta, payload = _read_envelope_file(input_file)
     aad_before = envelope_aad(meta)
+    # Crafted container shapes are refused before the password is consumed
+    # (gitlab#280; mirrors the gitlab#277 validate-before-credential rule).
+    enc, existing = _validated_slot_container(meta, create=True)
     # F17/F18 (gitlab#234): requires the primary password so the DEK can be
     # re-wrapped binding the new slot count. recovery_* params are accepted for
     # signature compatibility but no longer authorize a slot change on their own.
     dek, rewrap, dispose = _password_unwrap_and_rewrapper(meta, password, allow_high_kdf_cost)
     try:
-        enc = meta.setdefault("encryption", {})
-        existing = list(enc.get("dek_slots") or [])
         new_slots = build_recovery_slots(bytes(dek), recovery_credentials)
         # Globally unique slot ids (avoid collisions with existing slots).
         for slot in new_slots:
@@ -10297,8 +10392,11 @@ def remove_recovery_slot(
 
     meta, payload = _read_envelope_file(input_file)
     aad_before = envelope_aad(meta)
-    enc = meta.setdefault("encryption", {})
-    existing = list(enc.get("dek_slots") or [])
+    # Crafted container shapes are refused before the password is consumed
+    # (gitlab#280; mirrors the gitlab#277 validate-before-credential rule).
+    # No create: removing from a file without slots always fails below, so
+    # inserting a section would only mutate meta on an error path (F7).
+    enc, existing = _validated_slot_container(meta)
     remaining = [s for s in existing if s.get("id") != slot_id]
     if len(remaining) == len(existing):
         raise ValidationError(f"No recovery slot with id {slot_id!r}")
@@ -11766,7 +11864,15 @@ def decrypt_file(
     # If the file was written in envelope mode, the password-derived key is the
     # KEK: unwrap the stored DEK and rebind ``key`` to it so every bulk
     # decryption path uses the DEK. Files without wrapped_dek are unaffected.
-    _enc_meta = metadata.get("encryption", {}) if isinstance(metadata, dict) else {}
+    _enc_meta = metadata.get("encryption") if isinstance(metadata, dict) else None
+    if not _enc_meta:
+        _enc_meta = {}
+    elif not isinstance(_enc_meta, dict):
+        # A crafted non-dict encryption section must fail as ValidationError,
+        # not a raw AttributeError — the recovery endpoints publish the
+        # sanitized message in a machine-readable error document
+        # (gitlab#280 review F4).
+        raise ValidationError("Malformed file metadata (encryption section)")
     _wrapped_dek_b64 = _enc_meta.get("wrapped_dek")
     _is_envelope = bool(_wrapped_dek_b64)
     if _recovery_requested:
@@ -11784,7 +11890,10 @@ def decrypt_file(
             unlock_shamir_slot,
         )
 
-        _slots = _enc_meta.get("dek_slots") or []
+        # Shape-validated like every other dek_slots reader (gitlab#280
+        # review F4): a crafted container fails as ValidationError before
+        # any slot is touched.
+        _, _slots = _validated_slot_container(metadata if isinstance(metadata, dict) else {})
         # F16 (gitlab#233, CWE-405): dek_slots is attacker-controlled plaintext
         # (excluded from the bulk AAD) and each passphrase slot below runs a full
         # Argon2id BEFORE the slot-set MAC can reject a tampered set. Cap the slot

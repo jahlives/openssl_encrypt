@@ -465,7 +465,9 @@ class TestManifestJsonFields(unittest.TestCase):
     def test_recovery_endpoints_declare_their_data_fields(self):
         from openssl_encrypt.modules.capabilities import _JSON_FIELDS as fields
 
-        self.assertEqual(fields["list-recovery"], ["slots"])
+        # metadata_authenticated + truncated joined the declared surface in
+        # gitlab#280/#279 (unauthenticated-listing marker, cap marker).
+        self.assertEqual(fields["list-recovery"], ["metadata_authenticated", "slots", "truncated"])
         self.assertEqual(fields["recover"], ["output"])
         self.assertEqual(fields["add-recovery"], ["output", "slot_type", "credential_source"])
         self.assertEqual(fields["remove-recovery"], ["output", "removed_slot_id"])

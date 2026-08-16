@@ -175,7 +175,12 @@ _JSON_FIELDS = {
     # Recovery-slot endpoints (gitlab#277). add-recovery's optional keys
     # (recovery_code_written_to / shares / threshold / num_shares) appear
     # per credential type; only always-present keys are promised here.
-    "list-recovery": ["slots"],
+    # list-recovery's metadata_authenticated marks the credential-free
+    # listing as unverified-until-decrypt so a GUI can gate destructive
+    # advice on it (gitlab#280); truncated appears only when the slot list
+    # was capped (gitlab#277/#279). Per-slot keys are pinned by
+    # SLOT_DOC_KEYS in recovery_slots.py.
+    "list-recovery": ["metadata_authenticated", "slots", "truncated"],
     "recover": ["output"],
     "add-recovery": ["output", "slot_type", "credential_source"],
     "remove-recovery": ["output", "removed_slot_id"],

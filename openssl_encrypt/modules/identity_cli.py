@@ -340,6 +340,11 @@ def cmd_list(args) -> int:
                 ensure_ascii=True,
             )
             print(listing_json)
+            # Bare document: record emission so a dispatch-level
+            # document_emitted() guard stays truthful (gitlab#280 review F2).
+            from .json_output import mark_emitted
+
+            mark_emitted()
             return 0
 
         # A store written before gitlab#173 can carry a name that exists as

@@ -312,6 +312,54 @@ class TestMalformedShamirParams(unittest.TestCase):
         self.assertNotIn('type="shamir" (2 of 3)', err.getvalue())
 
 
+class TestShamirKeyIdNormalization(unittest.TestCase):
+    """key_id handling is symmetric and type-native (gitlab#280).
+
+    The share-set id of a shamir slot is stamped under params.shamir by the
+    1.5.x builder; a top-level params.key_id (crafted or stale) must not
+    relabel a share set, and an empty string is omitted exactly like on the
+    top-level path (never surfaced as "" where the sibling yields null).
+    """
+
+    def _slots_for(self, params):
+        import openssl_encrypt.modules.crypt_core as cc
+
+        meta = {
+            "encryption": {
+                "dek_slots": [{"id": "s-1", "type": "shamir", "wrap": "AAAA", "params": params}]
+            }
+        }
+        with mock.patch.object(cc, "_read_envelope_file", return_value=(meta, b"")):
+            return cc.list_recovery_slots("ignored.enc")
+
+    def test_empty_nested_key_id_is_omitted(self):
+        slot = self._slots_for({"shamir": {"threshold": 2, "num_shares": 3, "key_id": ""}})[0]
+        self.assertNotIn("key_id", slot)
+
+    def test_type_native_key_id_wins_for_shamir_slots(self):
+        slot = self._slots_for(
+            {
+                "key_id": "crafted-top-level",
+                "shamir": {"threshold": 2, "num_shares": 3, "key_id": "set-A"},
+            }
+        )[0]
+        self.assertEqual(slot["key_id"], "set-A")
+
+    def test_top_level_key_id_is_the_fallback(self):
+        slot = self._slots_for(
+            {"key_id": "top-level", "shamir": {"threshold": 2, "num_shares": 3}}
+        )[0]
+        self.assertEqual(slot["key_id"], "top-level")
+
+    def test_non_string_nested_key_id_is_omitted(self):
+        slot = self._slots_for({"shamir": {"threshold": 2, "num_shares": 3, "key_id": 7}})[0]
+        self.assertNotIn("key_id", slot)
+
+
+class TestMalformedHeaderShapes(unittest.TestCase):
+    """Container-shape attacks must fail as ValidationError, not internals."""
+
+
 class TestMalformedHeaderShapes(unittest.TestCase):
     """Container-shape attacks must fail as ValidationError, not internals."""
 

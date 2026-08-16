@@ -68,9 +68,16 @@ All four commands emit one total-json envelope document on stdout
 `list-recovery` slot schema:
 
 ```json
-{"slots": [{"id": "...", "type": "...", "key_id": "...|null",
+{"metadata_authenticated": false,
+ "slots": [{"id": "...", "type": "...", "key_id": "...|null",
             "threshold": 2, "num_shares": 3}], "truncated": true}
 ```
+
+- `metadata_authenticated` is always `false`: the listing is
+  credential-free and everything in it comes from the unauthenticated
+  plaintext header — a consumer must not take destructive advice (e.g.
+  discarding surplus share files) from it (gitlab#280). All fields are
+  declared in the capabilities manifest `json_fields`.
 
 - `id`/`type`/`key_id` are always present (`null` when the header value is
   missing, non-string, or longer than 256 chars). For shamir slots,

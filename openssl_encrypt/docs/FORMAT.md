@@ -684,7 +684,12 @@ src: recovery_slots.py:39-49):
 
 (src: recovery_slots.py:124-538; info strings prefixed `openssl_encrypt.envelope.`.)
 Shamir shares are written out-of-band as `recovery_share_<i>.json`; the slot stores
-only `{threshold, num_shares}` (src: recovery_slots.py:287-295,710-726).
+`params.shamir` = `{threshold, num_shares}` plus an optional share-set `key_id`
+(stamped by `add-recovery --add-shares` on slot and share files, so multiple
+share sets stay distinguishable; src: recovery_slots.py `build_shamir_slot`).
+Both layouts are pinned by committed goldens:
+`testfiles/recovery_slots/shamir.enc` (no `key_id`, early build) and
+`shamir_keyid.enc` + `shamir_keyid_share_{1,2,3}.json` (`key_id`-stamped).
 
 > **Version gating (verified).** No `format_version` constant gates the *presence*
 > of envelope/recovery fields — they are purely additive under `encryption`, and a
@@ -940,7 +945,8 @@ Golden corpus root: `openssl_encrypt/unittests/testfiles/`:
 - `xchacha_legacy/`, `xchacha_v2/` — XChaCha nonce-format-1 vs -2 cross-version vectors.
 - `envelope_xchacha_v14/` — envelope + XChaCha 1.4.x cross-version fixtures.
 - `recovery_slots/` — recovery-slot golden fixtures (`recovery_code.enc`,
-  `passphrase.enc`, `shamir.enc`, `shamir_share_{1,2,3}.json`; fixed password `1234`).
+  `passphrase.enc`, `shamir.enc`, `shamir_share_{1,2,3}.json`,
+  `shamir_keyid.enc`, `shamir_keyid_share_{1,2,3}.json`; fixed password `1234`).
 - `openpgp/`, `openpgp_pubkey/` — OpenPGP interop fixtures.
 
 Primitive KATs are hardcoded in tests (no standalone generators): XChaCha

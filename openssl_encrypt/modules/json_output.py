@@ -34,6 +34,19 @@ def reset_emitted() -> None:
     _document_emitted = False
 
 
+def mark_emitted() -> None:
+    """Record that a document went out via a bare print().
+
+    Endpoints that predate the envelope print their document themselves
+    (keeping the exact payload inside the stdout-whitelist call text) and
+    must call this right after the print — otherwise the dispatch-level
+    ``document_emitted()`` guard against a second (error) document is inert
+    by construction (gitlab#280 confirmation review).
+    """
+    global _document_emitted
+    _document_emitted = True
+
+
 def emit_json(data: Any) -> None:
     """Print the success envelope for ``data`` as one stdout JSON document.
 

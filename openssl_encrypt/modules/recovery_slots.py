@@ -795,6 +795,72 @@ def _write_recovery_code_file(path, code):
         os.close(dir_fd)
 
 
+# The complete per-slot payload of the credential-free `list-recovery --json`
+# listing. The document is built in _slot_doc, outside emit_json's call site,
+# so the field set is pinned here: _slot_doc filters its output through this
+# tuple, and test_stdout_payload_pinning_280.py pins the tuple's contents.
+# Growing the listing's payload therefore always shows up as an edit to this
+# constant (a reviewable security decision), never as a silent ride-along
+# (gitlab#280).
+SLOT_DOC_KEYS = ("id", "type", "key_id", "threshold", "num_shares")
+
+# The complete top-level key set of the list-recovery --json data document,
+# fail-closed like the per-slot SLOT_DOC_KEYS: a conditional key added under
+# a branch the tests don't exercise is filtered out unless pinned here
+# (gitlab#280 confirmation review, F5).
+LISTING_DOC_KEYS = ("metadata_authenticated", "slots", "truncated")
+
+
+def _kofn_int(value) -> bool:
+    """True if a K-of-N header value is a plain int in the format's range.
+
+    list_recovery_slots already validates these, but this module's rendering
+    convention is that the output boundary de-fangs untrusted header data
+    itself — a future producer, a second caller, or a partial revert of the
+    core validation must not put an unsanitized header string (or an absurd
+    numeric literal) straight into --json or a terminal line (gitlab#280).
+    Bools are excluded (int subclass, wrong shape); the 2..255 bound is the
+    creation invariant the core check enforces.
+    """
+    return isinstance(value, int) and not isinstance(value, bool) and 2 <= value <= 255
+
+
+def _kofn_pair(s) -> bool:
+    """True if slot ``s`` carries a renderable K-of-N pair (K <= N)."""
+    threshold, num_shares = s.get("threshold"), s.get("num_shares")
+    return _kofn_int(threshold) and _kofn_int(num_shares) and threshold <= num_shares
+
+
+def _slot_doc(s):
+    """Build the --json document for one slot, filtered through SLOT_DOC_KEYS.
+
+    Args:
+        s: One slot dict as surfaced by list_recovery_slots (untrusted
+            header data, already value-validated there).
+
+    Returns:
+        dict: The stdout-safe slot document; never carries a key outside
+            SLOT_DOC_KEYS.
+    """
+    # Full key_id, not the 16-char display truncation of the human view: a
+    # machine consumer needs the whole value (gitlab#277).
+    doc = {
+        "id": _capped(s.get("id")),
+        "type": _capped(s.get("type")),
+        "key_id": _capped(s.get("key_id")),
+    }
+    # Present only for shamir slots. Re-validated as plain in-range ints at
+    # this boundary (gitlab#280); both keys required so a future producer
+    # setting one alone cannot emit a partial pair from attacker-authored
+    # input.
+    if _kofn_pair(s):
+        doc["threshold"] = s["threshold"]
+        doc["num_shares"] = s["num_shares"]
+    # Fail closed: whatever the builder above comes to hold, only pinned
+    # keys leave this function (gitlab#280).
+    return {k: doc[k] for k in SLOT_DOC_KEYS if k in doc}
+
+
 def list_recovery_cli(args) -> None:
     """`list-recovery`: print the recovery slots in a file (no credential)."""
     from .crypt_core import list_recovery_slots
@@ -804,46 +870,49 @@ def list_recovery_cli(args) -> None:
     if getattr(args, "json", False):
         from .json_output import emit_json
 
-        # Full key_id, not the 16-char display truncation below: a machine
-        # consumer needs the whole value (gitlab#277). emit_json wraps this
-        # in the total-json envelope (gitlab#268) like every 1.5.x endpoint.
-        # The list is capped at MAX_DEK_SLOTS (the unlock paths enforce the
-        # same bound) so a crafted header cannot drive an unbounded stdout
-        # document; the cap is reported rather than applied silently.
-        def _slot_doc(s):
-            doc = {
-                "id": _capped(s.get("id")),
-                "type": _capped(s.get("type")),
-                "key_id": _capped(s.get("key_id")),
-            }
-            # Already validated as in-range ints by list_recovery_slots
-            # (gitlab#278); present only for shamir slots. Guard both keys so
-            # a future producer setting one alone cannot KeyError on
-            # attacker-authored input.
-            if "threshold" in s and "num_shares" in s:
-                doc["threshold"] = s["threshold"]
-                doc["num_shares"] = s["num_shares"]
-            return doc
-
-        payload = {"slots": [_slot_doc(s) for s in slots[:MAX_DEK_SLOTS]]}
+        # metadata_authenticated: the listing is credential-free, so nothing
+        # in it is verified until decrypt (the slot set incl. K-of-N is
+        # MAC-bound to the DEK). The human view says so in prose; the machine
+        # document says so in-band, so a consumer can gate destructive advice
+        # (e.g. "discard surplus shares") on it — a tampered header that
+        # under-reports N must not cost a user their remaining shares
+        # (gitlab#280). Slots are capped at the format's MAX_DEK_SLOTS bound
+        # (the unlock paths enforce the same bound) with an explicit marker,
+        # so a capped listing can never read as complete (gitlab#277/#279).
+        # Top-level keys are pinned by TestUnauthenticatedMarker, per-slot
+        # keys by SLOT_DOC_KEYS; all are declared in the capabilities
+        # manifest json_fields.
+        payload = {
+            "metadata_authenticated": False,
+            "slots": [_slot_doc(s) for s in slots[:MAX_DEK_SLOTS]],
+        }
         if len(slots) > MAX_DEK_SLOTS:
             payload["truncated"] = True
+        # Fail closed at the top level too (mirrors _slot_doc's per-slot
+        # filter): only pinned keys reach the envelope (review F5).
+        payload = {k: payload[k] for k in LISTING_DOC_KEYS if k in payload}
         emit_json(payload)
         return
     if not slots:
         eprint("No recovery slots on this file.")
         return
-    eprint(f"{len(slots)} recovery slot(s):")
+    if len(slots) > MAX_DEK_SLOTS:
+        # Same bound as the JSON path and the unlock paths: a crafted header
+        # must not flood the terminal either (gitlab#279). The core listing
+        # caps materialization at MAX_DEK_SLOTS + 1, so the exact claimed
+        # count is unknown here — never present the capped length as the
+        # file's slot count (review F1).
+        eprint(
+            f"more than {MAX_DEK_SLOTS} recovery slot(s); " f"showing the first {MAX_DEK_SLOTS}:"
+        )
+        slots = slots[:MAX_DEK_SLOTS]
+    else:
+        eprint(f"{len(slots)} recovery slot(s):")
     # The listing needs no credential, so nothing below is authenticated: the
     # slot set (incl. K-of-N) is MAC-bound to the DEK and checked only when
     # the file is actually unlocked (gitlab#278 review).
     eprint("  (slot metadata is read from the unauthenticated file header;")
     eprint("   it is verified only when the file is decrypted)")
-    if len(slots) > MAX_DEK_SLOTS:
-        # Same bound as the JSON path and the unlock paths: a crafted header
-        # must not flood the terminal either.
-        eprint(f"  (showing the first {MAX_DEK_SLOTS}; the file claims {len(slots)})")
-        slots = slots[:MAX_DEK_SLOTS]
     for s in slots:
         # These come verbatim from the plaintext file header, i.e. from
         # whoever authored the file. Listing requires no credential, so raw
@@ -856,8 +925,9 @@ def list_recovery_cli(args) -> None:
         slot_type = _display_safe(s.get("type"))
         key_id = _display_safe(s.get("key_id"))
         line = f"  id={json.dumps(slot_id)}  type={json.dumps(slot_type)}"
-        if "threshold" in s and "num_shares" in s:
-            # Validated ints from list_recovery_slots (gitlab#278).
+        if _kofn_pair(s):
+            # Re-validated as plain in-range ints at this boundary
+            # (gitlab#280).
             line += f" ({s['threshold']} of {s['num_shares']})"
         if key_id:
             line += f"  key_id={json.dumps(key_id[:16] + '...')}"
