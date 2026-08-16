@@ -278,6 +278,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that a shamir slot stores "only `{threshold, num_shares}`" is corrected
   — the builder also stamps an optional share-set `key_id`.
 
+- **`list-recovery --json` failures now answer with a JSON error
+  document** (gitlab#281, github#159): the recovery dispatch handler
+  printed `Error: ...` to stderr and exited without emitting any JSON —
+  under `--json` a failed invocation produced empty stdout plus a bare
+  exit code, exactly on the crafted-file inputs the gitlab#278/#279/#280
+  hardening turned into clean `ValidationError`s. The handler now emits
+  the standard error envelope on stdout in JSON mode (guarded against
+  double emission; mirrors the 1.5.x gitlab#277 behavior); the human
+  contract is unchanged. Pinned by `test_recovery_json_error_281.py`.
+
 - **Streaming no longer silently writes undecryptable pepper/HSM files**
   (gitlab#275): the streaming encrypt path built its metadata without the
   plugin-reference fields the non-streaming path records (`pepper_plugin`,

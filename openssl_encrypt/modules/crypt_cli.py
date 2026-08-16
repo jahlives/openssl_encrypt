@@ -7137,6 +7137,17 @@ def main_with_args(args=None):
             # untrusted header fields and filesystem paths, and one of them
             # now carries a data-recovery instruction -- exactly the line an
             # escape sequence would want to forge (gitlab#172 class).
+            if getattr(args, "json", False):
+                # A JSON caller gets its one document even on failure
+                # (gitlab#281; mirrors the 1.5.x gitlab#277 behavior) —
+                # previously a failed --json invocation produced empty
+                # stdout plus a bare exit code. Guarded so a failure after
+                # the success document cannot emit a second one.
+                from .json_output import document_emitted, emit_json_error
+
+                if not document_emitted():
+                    emit_json_error(f"Error: {sanitize_for_display(e)}")
+                sys.exit(1)
             print(f"Error: {sanitize_for_display(e)}", file=sys.stderr)
             sys.exit(1)
 
