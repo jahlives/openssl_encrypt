@@ -979,30 +979,53 @@ def _recover_kwargs_from_args(args):
     return {}
 
 
+# The complete stdout payload of the credential-free `list-recovery --json`
+# listing. The stdout-leak lint (test_no_stdout_leaks.py) authorizes the
+# print() call by its exact source text, but since gitlab#278 the payload is
+# built in _slot_doc, outside that text — so the field set is pinned here
+# instead: _slot_doc filters its output through this tuple, and
+# test_stdout_payload_pinning_280.py pins the tuple's contents. Growing the
+# listing's payload therefore always shows up as an edit to this constant
+# (a reviewable security decision), never as a silent ride-along (gitlab#280).
+SLOT_DOC_KEYS = ("id", "type", "key_id", "threshold", "num_shares")
+
+
+def _slot_doc(s):
+    """Build the --json document for one slot, filtered through SLOT_DOC_KEYS.
+
+    Args:
+        s: One slot dict as surfaced by list_recovery_slots (untrusted
+            header data, already value-validated there).
+
+    Returns:
+        dict: The stdout-safe slot document; never carries a key outside
+            SLOT_DOC_KEYS.
+    """
+    # Full key_id, not the 16-char display truncation of the human view: a
+    # machine consumer needs the whole value.
+    doc = {
+        "id": _capped(s.get("id")),
+        "type": _capped(s.get("type")),
+        "key_id": _capped(s.get("key_id")),
+    }
+    # Already validated as in-range ints by list_recovery_slots (gitlab#278);
+    # present only for shamir slots (creatable on the 1.5.x line, listable
+    # here). Guard both keys so a future producer setting one alone cannot
+    # KeyError on attacker-authored input.
+    if "threshold" in s and "num_shares" in s:
+        doc["threshold"] = s["threshold"]
+        doc["num_shares"] = s["num_shares"]
+    # Fail closed: whatever the builder above comes to hold, only pinned
+    # keys leave this function (gitlab#280).
+    return {k: doc[k] for k in SLOT_DOC_KEYS if k in doc}
+
+
 def list_recovery_cli(args) -> None:
     """`list-recovery`: print the recovery slots in a file (no credential)."""
     from .crypt_core import list_recovery_slots
 
     slots = list_recovery_slots(args.input)
     if getattr(args, "json", False):
-
-        def _slot_doc(s):
-            # Full key_id, not the 16-char display truncation below: a machine
-            # consumer needs the whole value.
-            doc = {
-                "id": _capped(s.get("id")),
-                "type": _capped(s.get("type")),
-                "key_id": _capped(s.get("key_id")),
-            }
-            # Already validated as in-range ints by list_recovery_slots
-            # (gitlab#278); present only for shamir slots (creatable on the
-            # 1.5.x line, listable here). Guard both keys so a future producer
-            # setting one alone cannot KeyError on attacker-authored input.
-            if "threshold" in s and "num_shares" in s:
-                doc["threshold"] = s["threshold"]
-                doc["num_shares"] = s["num_shares"]
-            return doc
-
         print(json.dumps({"slots": [_slot_doc(s) for s in slots]}, indent=2))
         sys.stdout.flush()
         return

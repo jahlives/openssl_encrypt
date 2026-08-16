@@ -185,6 +185,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Regression-pinned by `test_legacy_pepper_reseal_274.py` (10 tests).
   Legacy-wrap read support is planned for removal once blobs are drained.
 
+- **`list-recovery --json` stdout payload re-pinned after the gitlab#278
+  refactor** (gitlab#280, hardening): the #278 port moved the slot payload
+  out of the whitelisted `print()` call into a `_slot_doc` builder, which
+  broke the stdout-leak lint (the suite was red) and, more importantly, its
+  pinned-payload property — a field later added inside the builder (e.g. a
+  slot's `wrap` or `params.salt`) would no longer have tripped the lint on
+  the credential-free listing. The payload is now pinned at the source: a
+  module-level `SLOT_DOC_KEYS` allowlist that `_slot_doc` filters every
+  document through (fail closed — unpinned keys are dropped, so growing the
+  listing's output always requires a visible edit to the constant), with the
+  lint whitelist updated to the new call text. Pinned by
+  `test_stdout_payload_pinning_280.py` (allowlist contents, per-slot-type
+  filtering incl. hostile credential-shaped fields, partial K-of-N pairs).
+
 ### Fixed
 
 - **Streaming no longer silently writes undecryptable pepper/HSM files**
