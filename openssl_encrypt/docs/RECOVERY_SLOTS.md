@@ -103,7 +103,17 @@ encrypted with such a value stay decryptable.
 
 ```bash
 openssl-encrypt list-recovery -i secret.enc --json
-#   -> {"slots": [{"id": ..., "type": ..., "key_id": ...}]}
+#   -> {"metadata_authenticated": false,
+#       "slots": [{"id": ..., "type": ..., "key_id": ...,
+#                  "threshold": ..., "num_shares": ...}]}
+#
+# metadata_authenticated is always false: the listing is credential-free and
+# everything in it comes from the unauthenticated plaintext header — a
+# consumer must not take destructive advice (e.g. discarding surplus share
+# files) from it (gitlab#280). threshold/num_shares appear only on shamir
+# slots. The slot list is capped at the format's 32-slot bound; a capped
+# document additionally carries "truncated": true (gitlab#279). All fields
+# are declared in the capabilities manifest json_fields.
 
 # A generated code is never written to stdout or stderr in JSON mode — it
 # unwraps the file's key. Name a destination; it is created 0600 and the

@@ -129,6 +129,29 @@ class TestCliCaps(unittest.TestCase):
         self.assertIn(f"showing the first {MAX_DEK_SLOTS}", out)
         self.assertEqual(out.count("  id="), MAX_DEK_SLOTS)
 
+    def test_human_view_never_states_a_wrong_count(self):
+        """Core caps at MAX+1, so on a truncated listing the exact claimed
+        count is unknown — the header line must not present the capped
+        length (e.g. "33") as the file's slot count (review F1)."""
+        args = argparse.Namespace(input="ignored", json=False, quiet=True)
+        err = io.StringIO()
+        with mock.patch.object(
+            cc, "list_recovery_slots", return_value=self._mocked_slots(MAX_DEK_SLOTS + 1)
+        ):
+            with redirect_stderr(err):
+                list_recovery_cli(args)
+        out = err.getvalue()
+        self.assertNotIn(f"{MAX_DEK_SLOTS + 1} recovery slot(s)", out)
+        self.assertIn(f"more than {MAX_DEK_SLOTS} recovery slot(s)", out)
+
+    def test_human_view_exact_count_when_not_truncated(self):
+        args = argparse.Namespace(input="ignored", json=False, quiet=True)
+        err = io.StringIO()
+        with mock.patch.object(cc, "list_recovery_slots", return_value=self._mocked_slots(3)):
+            with redirect_stderr(err):
+                list_recovery_cli(args)
+        self.assertIn("3 recovery slot(s):", err.getvalue())
+
 
 if __name__ == "__main__":
     unittest.main()

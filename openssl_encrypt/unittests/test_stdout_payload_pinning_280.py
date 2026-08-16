@@ -35,6 +35,15 @@ HOSTILE_EXTRAS = {
 
 
 class TestSlotDocKeyPinning(unittest.TestCase):
+    def test_top_level_allowlist_is_pinned(self):
+        """The document's top level is fail-closed like the per-slot level:
+        a conditional key added under a branch the tests don't exercise must
+        be filtered out unless it is pinned here (review F5)."""
+        self.assertEqual(
+            recovery_slots.LISTING_DOC_KEYS,
+            ("metadata_authenticated", "slots", "truncated"),
+        )
+
     def test_allowlist_is_pinned(self):
         """Extending the stdout payload must require editing this pin.
 
@@ -95,6 +104,20 @@ class TestRenderBoundaryValidation(unittest.TestCase):
     """
 
     NON_INTS = ("2", b"2", 2.0, True, False, None, [2], {"n": 2})
+    # Out-of-range or mis-ordered pairs a reverted core could pass through:
+    # the boundary defends the full 2 <= K <= N <= 255 invariant, not just
+    # the type (review F6).
+    BAD_PAIRS = (
+        {"threshold": 0, "num_shares": 3},
+        {"threshold": 1, "num_shares": 3},
+        {"threshold": 2, "num_shares": 256},
+        {"threshold": 256, "num_shares": 256},
+        # Below CPython's 4300-digit int->str limit so the test's own
+        # diagnostics can render it; the boundary must drop it either way.
+        {"threshold": 10**4000, "num_shares": 10**4000},
+        {"threshold": 5, "num_shares": 2},
+        {"threshold": -3, "num_shares": 3},
+    )
 
     def test_slot_doc_drops_non_int_kofn_values(self):
         for bad in self.NON_INTS:
@@ -103,6 +126,28 @@ class TestRenderBoundaryValidation(unittest.TestCase):
             )
             self.assertNotIn("threshold", doc, repr(bad))
             self.assertNotIn("num_shares", doc, repr(bad))
+
+    def test_slot_doc_drops_out_of_range_or_misordered_pairs(self):
+        for pair in self.BAD_PAIRS:
+            doc = recovery_slots._slot_doc({"id": "x", "type": "shamir", **pair})
+            self.assertNotIn("threshold", doc, repr(pair)[:60])
+            self.assertNotIn("num_shares", doc, repr(pair)[:60])
+
+    def test_human_view_drops_out_of_range_pairs(self):
+        import argparse
+        import io
+        from contextlib import redirect_stderr
+        from unittest import mock
+
+        import openssl_encrypt.modules.crypt_core as cc
+
+        hostile = [{"id": "s-1", "type": "shamir", "threshold": 255, "num_shares": 2}]
+        args = argparse.Namespace(input="ignored", json=False, quiet=True)
+        err = io.StringIO()
+        with mock.patch.object(cc, "list_recovery_slots", return_value=hostile):
+            with redirect_stderr(err):
+                recovery_slots.list_recovery_cli(args)
+        self.assertNotIn("(255 of 2)", err.getvalue())
 
     def test_human_view_drops_non_int_kofn_values(self):
         """A hostile string never reaches the terminal K-of-N suffix."""
@@ -146,6 +191,56 @@ class TestRenderBoundaryValidation(unittest.TestCase):
             with redirect_stderr(err):
                 recovery_slots.list_recovery_cli(args)
         self.assertIn('type="shamir" (2 of 3)', err.getvalue())
+
+
+class TestBareDocumentMarksEmitted(unittest.TestCase):
+    """Bare-document endpoints must record that a document went out.
+
+    The recovery dispatch's error path is guarded by document_emitted() so a
+    failure after the success document cannot emit a second one — but the
+    recovery success documents are printed bare (the payload stays inside
+    the whitelisted call text), so unless they mark the flag themselves the
+    guard is inert by construction (confirmation review of the gitlab#280
+    batch, finding F2).
+    """
+
+    def setUp(self):
+        from openssl_encrypt.modules import json_output
+
+        json_output.reset_emitted()
+        self.json_output = json_output
+
+    def tearDown(self):
+        self.json_output.reset_emitted()
+
+    def _run_list(self, json_mode):
+        import argparse
+        import io
+        from contextlib import redirect_stderr, redirect_stdout
+        from unittest import mock
+
+        import openssl_encrypt.modules.crypt_core as cc
+
+        args = argparse.Namespace(input="ignored", json=json_mode, quiet=True)
+        out, err = io.StringIO(), io.StringIO()
+        with mock.patch.object(
+            cc, "list_recovery_slots", return_value=[{"id": "s", "type": "recovery_code"}]
+        ):
+            with redirect_stdout(out), redirect_stderr(err):
+                recovery_slots.list_recovery_cli(args)
+
+    def test_json_success_marks_the_document_as_emitted(self):
+        self._run_list(json_mode=True)
+        self.assertTrue(self.json_output.document_emitted())
+
+    def test_human_mode_does_not_mark(self):
+        self._run_list(json_mode=False)
+        self.assertFalse(self.json_output.document_emitted())
+
+    def test_mark_emitted_primitive(self):
+        self.assertFalse(self.json_output.document_emitted())
+        self.json_output.mark_emitted()
+        self.assertTrue(self.json_output.document_emitted())
 
 
 class TestUnauthenticatedMarker(unittest.TestCase):

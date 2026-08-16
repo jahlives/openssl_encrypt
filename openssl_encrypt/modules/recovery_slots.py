@@ -36,6 +36,7 @@ from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 from .credential_env import consume_env as _shared_consume_env
 from .crypt_utils import eprint
+from .json_output import mark_emitted
 from .secure_memory import secure_memzero
 from .secure_ops import constant_time_compare
 from .security_logger import register_consumed_secret
@@ -990,16 +991,31 @@ def _recover_kwargs_from_args(args):
 SLOT_DOC_KEYS = ("id", "type", "key_id", "threshold", "num_shares")
 
 
+# The complete top-level key set of the list-recovery --json document,
+# fail-closed like the per-slot SLOT_DOC_KEYS: a conditional key added under
+# a branch the tests don't exercise is filtered out unless pinned here
+# (gitlab#280 confirmation review, F5).
+LISTING_DOC_KEYS = ("metadata_authenticated", "slots", "truncated")
+
+
 def _kofn_int(value) -> bool:
-    """True if a K-of-N header value is a plain int (bools excluded).
+    """True if a K-of-N header value is a plain int in the format's range.
 
     list_recovery_slots already validates these, but this module's rendering
     convention is that the output boundary de-fangs untrusted header data
     itself — a future producer, a second caller, or a partial revert of the
-    core validation must not put an unsanitized header string straight into
-    --json or a terminal line (gitlab#280).
+    core validation must not put an unsanitized header string (or an absurd
+    numeric literal) straight into --json or a terminal line (gitlab#280).
+    Bools are excluded (int subclass, wrong shape); the 2..255 bound is the
+    creation invariant the core check enforces.
     """
-    return isinstance(value, int) and not isinstance(value, bool)
+    return isinstance(value, int) and not isinstance(value, bool) and 2 <= value <= 255
+
+
+def _kofn_pair(s) -> bool:
+    """True if slot ``s`` carries a renderable K-of-N pair (K <= N)."""
+    threshold, num_shares = s.get("threshold"), s.get("num_shares")
+    return _kofn_int(threshold) and _kofn_int(num_shares) and threshold <= num_shares
 
 
 def _slot_doc(s):
@@ -1024,7 +1040,7 @@ def _slot_doc(s):
     # here). Re-validated as plain ints at this boundary (gitlab#280); both
     # keys required so a future producer setting one alone cannot emit a
     # partial pair from attacker-authored input.
-    if _kofn_int(s.get("threshold")) and _kofn_int(s.get("num_shares")):
+    if _kofn_pair(s):
         doc["threshold"] = s["threshold"]
         doc["num_shares"] = s["num_shares"]
     # Fail closed: whatever the builder above comes to hold, only pinned
@@ -1055,25 +1071,34 @@ def list_recovery_cli(args) -> None:
         }
         if len(slots) > MAX_DEK_SLOTS:
             listing_doc["truncated"] = True
+        # Fail closed at the top level too (mirrors _slot_doc's per-slot
+        # filter): only pinned keys leave this function (review F5).
+        listing_doc = {k: listing_doc[k] for k in LISTING_DOC_KEYS if k in listing_doc}
         print(json.dumps(listing_doc, indent=2))
+        mark_emitted()
         sys.stdout.flush()
         return
     if not slots:
         eprint("No recovery slots on this file.")
         return
-    eprint(f"{len(slots)} recovery slot(s):")
+    if len(slots) > MAX_DEK_SLOTS:
+        # Same bound as the JSON path and the unlock paths (which refuse
+        # >MAX_DEK_SLOTS): a crafted header must not flood the terminal
+        # either (gitlab#279). The core listing caps materialization at
+        # MAX_DEK_SLOTS + 1, so the exact claimed count is unknown here —
+        # never present the capped length as the file's slot count
+        # (review F1).
+        eprint(
+            f"more than {MAX_DEK_SLOTS} recovery slot(s); " f"showing the first {MAX_DEK_SLOTS}:"
+        )
+        slots = slots[:MAX_DEK_SLOTS]
+    else:
+        eprint(f"{len(slots)} recovery slot(s):")
     # The listing needs no credential, so nothing below is authenticated: the
     # slot set (incl. K-of-N) is MAC-bound to the DEK and checked only when
     # the file is actually unlocked (gitlab#278 review).
     eprint("  (slot metadata is read from the unauthenticated file header;")
     eprint("   it is verified only when the file is decrypted)")
-    if len(slots) > MAX_DEK_SLOTS:
-        # Same bound as the JSON path and the unlock paths (which refuse
-        # >MAX_DEK_SLOTS): a crafted header must not flood the terminal
-        # either (gitlab#279). The core listing caps materialization at
-        # MAX_DEK_SLOTS + 1, so the exact claimed count is unknown here.
-        eprint(f"  (showing the first {MAX_DEK_SLOTS}; the file claims more)")
-        slots = slots[:MAX_DEK_SLOTS]
     for s in slots:
         # These come verbatim from the plaintext file header, i.e. from whoever
         # authored the file. Listing a file requires no credential, so raw
@@ -1087,7 +1112,7 @@ def list_recovery_cli(args) -> None:
         slot_type = _display_safe(s.get("type"))
         key_id = _display_safe(s.get("key_id"))
         line = f"  id={json.dumps(slot_id)}  type={json.dumps(slot_type)}"
-        if _kofn_int(s.get("threshold")) and _kofn_int(s.get("num_shares")):
+        if _kofn_pair(s):
             # Re-validated as plain ints at this boundary (gitlab#280).
             line += f" ({s['threshold']} of {s['num_shares']})"
         if key_id:
@@ -1114,6 +1139,7 @@ def recover_cli(args) -> None:
     )
     if getattr(args, "json", False):
         print(json.dumps({"output": args.output}, indent=2))
+        mark_emitted()
         sys.stdout.flush()
     else:
         eprint(f"Recovered to: {args.output}")
@@ -1259,6 +1285,7 @@ def add_recovery_cli(args) -> None:
         if generated_code is not None:
             doc["recovery_code_written_to"] = code_out
         print(json.dumps(doc, indent=2))
+        mark_emitted()
         sys.stdout.flush()
         return
 
@@ -1306,6 +1333,7 @@ def remove_recovery_cli(args) -> None:
     )
     if getattr(args, "json", False):
         print(json.dumps({"output": args.output, "removed_slot_id": args.slot_id}, indent=2))
+        mark_emitted()
         sys.stdout.flush()
     else:
         eprint(f"Removed recovery slot {args.slot_id!r}; wrote: {args.output}")

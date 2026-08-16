@@ -18,13 +18,21 @@ from unittest import mock
 import openssl_encrypt.modules.crypt_core as cc
 from openssl_encrypt.modules.crypt_errors import ValidationError
 
-# The same shapes test_list_recovery_shamir_278.py pins for the listing.
+# The same shapes test_list_recovery_shamir_278.py pins for the listing,
+# plus the falsy non-dict/non-list shapes (review F7): the same crafted-input
+# class must not get two failure modes depending on truthiness. Only
+# None/absent and {} keep the "no slots" meaning.
 MALFORMED = (
     {"encryption": "x"},
     {"encryption": ["x"]},
+    {"encryption": ""},
+    {"encryption": 0},
+    {"encryption": False},
     {"encryption": {"dek_slots": "abc"}},
     {"encryption": {"dek_slots": {"a": 1}}},
     {"encryption": {"dek_slots": [1]}},
+    {"encryption": {"dek_slots": ""}},
+    {"encryption": {"dek_slots": 0}},
     {"encryption": {"dek_slots": [{"id": "a", "type": "recovery_code"}, None]}},
 )
 
@@ -75,6 +83,31 @@ class TestAddPathContainerShapes(unittest.TestCase):
                 with self.assertRaises(ValidationError, msg=meta):
                     cc.add_recovery_slots("in.enc", None, [], password=b"pw")
                 unwrap.assert_not_called()
+
+
+class TestRecoverDekReaderShapes(unittest.TestCase):
+    """_recover_envelope_dek self-protects against crafted containers.
+
+    The add/remove callers pre-validate since gitlab#280, but `recover` is
+    one of the endpoints whose sanitized exception string now reaches the
+    machine-readable error document — a raw AttributeError there would be
+    exactly the internal-shape disclosure #280 removed (confirmation
+    review, finding F4).
+    """
+
+    def test_non_dict_encryption_raises_validation_error(self):
+        with self.assertRaises(ValidationError):
+            cc._recover_envelope_dek({"encryption": "x"}, password=b"pw")
+
+    def test_string_dek_slots_raises_validation_error(self):
+        meta = {"encryption": {"wrapped_dek": "AAAA", "dek_slots": "abc"}}
+        with self.assertRaises(ValidationError):
+            cc._recover_envelope_dek(meta, recovery_code="AAAAA-BBBBB")
+
+    def test_non_dict_slot_entry_raises_validation_error(self):
+        meta = {"encryption": {"wrapped_dek": "AAAA", "dek_slots": [{"type": "pqc"}, 7]}}
+        with self.assertRaises(ValidationError):
+            cc._recover_envelope_dek(meta, recovery_code="AAAAA-BBBBB")
 
 
 if __name__ == "__main__":

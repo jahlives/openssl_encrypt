@@ -10150,34 +10150,39 @@ def _read_envelope_file(input_file: str, *, header_only: bool = False) -> tuple:
 def _validated_slot_container(meta: dict, *, create: bool = False) -> tuple:
     """Return ``(encryption_section, slot_list)`` from untrusted metadata.
 
-    Shared by the three ``dek_slots`` readers (:func:`list_recovery_slots`,
-    :func:`add_recovery_slots`, :func:`remove_recovery_slot`) so crafted
-    container shapes fail uniformly as ValidationError instead of surfacing
-    a raw internal AttributeError from whichever reader touches them first
-    (gitlab#280). Falsy sections keep their established meaning of
-    "no slots".
+    Shared by the ``dek_slots`` readers (:func:`list_recovery_slots`,
+    :func:`add_recovery_slots`, :func:`remove_recovery_slot`,
+    :func:`_recover_envelope_dek`, and the decrypt-time recovery branch) so
+    crafted container shapes fail uniformly as ValidationError instead of
+    surfacing a raw internal AttributeError from whichever reader touches
+    them first (gitlab#280). Only an absent/None section and ``{}`` keep the
+    established "no slots" meaning; every other non-dict — falsy or not —
+    is the same crafted-input class and gets the same failure mode
+    (review F7).
 
     Args:
         meta: The parsed (untrusted) header metadata dict.
         create: Insert the (fresh, empty) encryption dict into ``meta`` when
-            the section is absent or falsy, for the write paths that will
-            populate it.
+            the section is absent, for the write paths that will populate it.
 
     Returns:
         tuple: The encryption dict and a new list of the slot dicts.
 
     Raises:
-        ValidationError: On a truthy non-dict ``encryption`` section, a
-            truthy non-list ``dek_slots``, or a non-dict slot entry.
+        ValidationError: On a non-dict ``encryption`` section (other than
+            None), a non-list ``dek_slots`` (other than None), or a
+            non-dict slot entry.
     """
     enc = meta.get("encryption")
-    if not enc:
+    if enc is None:
         enc = {}
         if create:
             meta["encryption"] = enc
     if not isinstance(enc, dict):
         raise ValidationError("Malformed file metadata (encryption section)")
-    raw_slots = enc.get("dek_slots") or []
+    raw_slots = enc.get("dek_slots")
+    if raw_slots is None:
+        raw_slots = []
     if not isinstance(raw_slots, list):
         raise ValidationError("Malformed recovery-slot metadata")
     slots = []
@@ -10334,14 +10339,18 @@ def _recover_envelope_dek(
         unlock_recovery_code_slot,
     )
 
-    enc = meta.get("encryption", {})
+    # Self-protecting shape validation: the add/remove callers pre-validate,
+    # but `recover` publishes this function's sanitized exception string in
+    # the JSON error document, so a crafted container must fail as
+    # ValidationError here too, not as a raw internal AttributeError
+    # (gitlab#280 review F4).
+    enc, slots = _validated_slot_container(meta)
     wrapped_b64 = enc.get("wrapped_dek")
     # F17/F18: bind the wrapped_dek unwrap to the recovery-slot count (absent =>
     # legacy, aad=None). No fallback: a bound wrap never unwraps under None.
     _wrap_aad = wrapped_dek_aad(enc.get("dek_slot_count"))
     if not wrapped_b64:
         raise ValidationError("File is not an envelope file (no wrapped_dek)")
-    slots = enc.get("dek_slots") or []
     # F16 (gitlab#233, CWE-405): dek_slots is attacker-controlled plaintext and
     # the recovery-credential branch below runs a full Argon2id per passphrase
     # slot before the slot-set MAC. add_recovery_slots/remove_recovery_slot pass
@@ -11055,7 +11064,9 @@ def remove_recovery_slot(
     aad_before = envelope_aad(meta)
     # Crafted container shapes are refused before the password is consumed
     # (gitlab#280; mirrors the gitlab#277 validate-before-credential rule).
-    enc, existing = _validated_slot_container(meta, create=True)
+    # No create: removing from a file without slots always fails below, so
+    # inserting a section would only mutate meta on an error path (F7).
+    enc, existing = _validated_slot_container(meta)
     remaining = [s for s in existing if s.get("id") != slot_id]
     if len(remaining) == len(existing):
         raise ValidationError(f"No recovery slot with id {slot_id!r}")
@@ -12551,7 +12562,15 @@ def decrypt_file(
     # If the file was written in envelope mode, the password-derived key is the
     # KEK: unwrap the stored DEK and rebind ``key`` to it so every bulk
     # decryption path uses the DEK. Files without wrapped_dek are unaffected.
-    _enc_meta = metadata.get("encryption", {}) if isinstance(metadata, dict) else {}
+    _enc_meta = metadata.get("encryption") if isinstance(metadata, dict) else None
+    if not _enc_meta:
+        _enc_meta = {}
+    elif not isinstance(_enc_meta, dict):
+        # A crafted non-dict encryption section must fail as ValidationError,
+        # not a raw AttributeError — the recovery endpoints publish the
+        # sanitized message in a machine-readable error document
+        # (gitlab#280 review F4).
+        raise ValidationError("Malformed file metadata (encryption section)")
     _wrapped_dek_b64 = _enc_meta.get("wrapped_dek")
     _is_envelope = bool(_wrapped_dek_b64)
     if _recovery_requested:
@@ -12568,7 +12587,10 @@ def decrypt_file(
             unlock_recovery_code_slot,
         )
 
-        _slots = _enc_meta.get("dek_slots") or []
+        # Shape-validated like every other dek_slots reader (gitlab#280
+        # review F4): a crafted container fails as ValidationError before
+        # any slot is touched.
+        _, _slots = _validated_slot_container(metadata if isinstance(metadata, dict) else {})
         # F16 (gitlab#233, CWE-405): dek_slots is attacker-controlled plaintext
         # (excluded from the bulk AAD) and each passphrase slot below runs a full
         # Argon2id BEFORE the slot-set MAC can reject a tampered set. Cap the slot

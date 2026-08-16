@@ -264,6 +264,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   "showing the first 32" notice instead of flooding the terminal. Pinned
   by `test_list_recovery_caps_279.py`.
 
+- **Confirmation-review follow-ups on the listing hardening batch**
+  (gitlab#279/#280): the truncated human listing no longer presents the
+  capped length as the file's slot count (it says "more than 32 recovery
+  slot(s)"); the bare-document `--json` endpoints (four recovery commands
+  and `identity list`) now record emission via `mark_emitted()`, so the
+  dispatch guard against a second document after a post-print failure is
+  real instead of inert; the `--json` top level is fail-closed through a
+  pinned `LISTING_DOC_KEYS` exactly like the per-slot keys; the rendering
+  boundary's K-of-N re-validation now defends the full
+  `2 <= K <= N <= 255` invariant, not just the type; the decrypt/recover
+  readers (`_recover_envelope_dek` and the decrypt-time recovery branch)
+  use the shared container validation, so a crafted section can no longer
+  push a raw `AttributeError` into `recover`'s JSON error document; the
+  falsy/truthy asymmetry in the container check is gone (only None/absent
+  and `{}` mean "no slots"); `RECOVERY_SLOTS.md` documents
+  `metadata_authenticated` and `truncated`; and a second 1.5.x-produced
+  golden (`shamir_keyid.enc`, from `add-recovery --add-shares 2-of-3`)
+  pins the share-set `key_id` listing against real producer output.
+
 ### Fixed
 
 - **Shamir listing pinned against real 1.5.x producer output**
