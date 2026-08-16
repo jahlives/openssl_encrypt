@@ -219,6 +219,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   consumed (mirroring the gitlab#277 validate-before-credential rule).
   Pinned by `test_dek_slot_container_280.py`.
 
+- **Shamir share-set `key_id` normalization in the listing** (gitlab#280,
+  hardening): the type-native `params.shamir.key_id` now wins over a
+  top-level `params.key_id` for shamir slots, so a crafted or stale
+  top-level value cannot relabel a share set (e.g. to mimic a pqc
+  recipient fingerprint), and an empty-string nested `key_id` is omitted
+  exactly like on the top-level path instead of surfacing as `""` where
+  the sibling yields `null`. Pinned by `TestShamirKeyIdNormalization` in
+  `test_list_recovery_shamir_278.py`.
+
 ### Fixed
 
 - **Streaming no longer silently writes undecryptable pepper/HSM files**

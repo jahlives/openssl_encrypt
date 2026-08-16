@@ -10193,9 +10193,14 @@ def list_recovery_slots(input_file: str) -> list:
             if isinstance(shamir, dict):
                 # shamir slots nest their key_id under params.shamir (unlike
                 # the pqc builder's top-level params.key_id) — surface it so
-                # multiple share sets stay distinguishable (gitlab#278 review).
-                if "key_id" not in item and isinstance(shamir.get("key_id"), str):
-                    item["key_id"] = shamir["key_id"]
+                # multiple share sets stay distinguishable (gitlab#278
+                # review). The type-native location wins, so a crafted or
+                # stale top-level params.key_id cannot relabel a share set;
+                # empty strings are omitted exactly like on the top-level
+                # path, never surfaced as "" (gitlab#280).
+                shamir_key_id = shamir.get("key_id")
+                if shamir_key_id and isinstance(shamir_key_id, str):
+                    item["key_id"] = shamir_key_id
                 threshold = shamir.get("threshold")
                 num_shares = shamir.get("num_shares")
                 if (
