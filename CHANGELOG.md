@@ -228,6 +228,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the sibling yields `null`. Pinned by `TestShamirKeyIdNormalization` in
   `test_list_recovery_shamir_278.py`.
 
+- **`list-recovery --json` carries an in-band unauthenticated-metadata
+  marker** (gitlab#280): the human view already warns that the
+  credential-free listing is unverified until decrypt, but the GUI — the
+  stated consumer — reads `--json`, where a tampered header that
+  under-reports N ("2 of 3" for a real 3-of-5 set) could lead a user to
+  destroy shares they still need. The document now opens with
+  `"metadata_authenticated": false` so a consumer can gate destructive
+  advice on it (additive key; existing consumers reading `slots` are
+  unaffected), and the top-level key set is test-pinned like the per-slot
+  keys. The four recovery endpoints (`list-recovery`, `recover`,
+  `add-recovery`, `remove-recovery`) also declare their JSON fields in the
+  capabilities manifest `json_fields` (gitlab#281), so a GUI can discover
+  `threshold`/`num_shares`/`metadata_authenticated` before relying on
+  them. Pinned by `TestUnauthenticatedMarker` in
+  `test_stdout_payload_pinning_280.py`. NOTE: schema addition must land
+  identically on the 1.5.x line.
+
 ### Fixed
 
 - **Streaming no longer silently writes undecryptable pepper/HSM files**

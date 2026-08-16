@@ -1038,7 +1038,19 @@ def list_recovery_cli(args) -> None:
 
     slots = list_recovery_slots(args.input)
     if getattr(args, "json", False):
-        print(json.dumps({"slots": [_slot_doc(s) for s in slots]}, indent=2))
+        # metadata_authenticated: the listing is credential-free, so nothing
+        # in it is verified until decrypt (the slot set incl. K-of-N is
+        # MAC-bound to the DEK). The human view says so in prose; the machine
+        # document says so in-band, so a consumer can gate destructive advice
+        # (e.g. "discard surplus shares") on it — a tampered header that
+        # under-reports N must not cost a user their remaining shares
+        # (gitlab#280). Declared in the capabilities manifest json_fields.
+        print(
+            json.dumps(
+                {"metadata_authenticated": False, "slots": [_slot_doc(s) for s in slots]},
+                indent=2,
+            )
+        )
         sys.stdout.flush()
         return
     if not slots:

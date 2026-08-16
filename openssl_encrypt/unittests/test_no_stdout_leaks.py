@@ -226,7 +226,8 @@ STDOUT_WHITELIST = [
     # through it) and test_stdout_payload_pinning_280.py (pins its contents).
     (
         "modules/recovery_slots.py",
-        'print(json.dumps({"slots": [_slot_doc(s) for s in slots]}, indent=2))',
+        'print(json.dumps({"metadata_authenticated": False, '
+        '"slots": [_slot_doc(s) for s in slots]}, indent=2))',
         1,
         "list-recovery JSON slot list",
     ),

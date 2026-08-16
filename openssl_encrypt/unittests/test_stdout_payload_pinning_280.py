@@ -148,5 +148,54 @@ class TestRenderBoundaryValidation(unittest.TestCase):
         self.assertIn('type="shamir" (2 of 3)', err.getvalue())
 
 
+class TestUnauthenticatedMarker(unittest.TestCase):
+    """--json carries an in-band unauthenticated-metadata marker (gitlab#280).
+
+    The human view warns that the listing is unverified until decrypt, but
+    the GUI — the stated consumer — reads --json. Without an in-band signal,
+    a tampered header that under-reports N ("2 of 3" for a real 3-of-5 set)
+    could lead a user to destroy shares they still need. The document-level
+    marker lets a consumer gate destructive advice on it, and the top-level
+    key set is pinned here for the same reason SLOT_DOC_KEYS pins the
+    per-slot keys.
+    """
+
+    def _doc(self, slots):
+        import argparse
+        import io
+        import json
+        from contextlib import redirect_stdout
+        from unittest import mock
+
+        import openssl_encrypt.modules.crypt_core as cc
+
+        args = argparse.Namespace(input="ignored", json=True, quiet=True)
+        out = io.StringIO()
+        with mock.patch.object(cc, "list_recovery_slots", return_value=slots):
+            with redirect_stdout(out):
+                recovery_slots.list_recovery_cli(args)
+        return json.loads(out.getvalue())
+
+    def test_marker_is_present_and_false(self):
+        doc = self._doc([{"id": "s-1", "type": "recovery_code"}])
+        self.assertIs(doc["metadata_authenticated"], False)
+
+    def test_top_level_keys_are_pinned(self):
+        doc = self._doc([])
+        self.assertEqual(set(doc), {"metadata_authenticated", "slots"})
+
+    def test_marker_is_declared_in_the_capabilities_manifest(self):
+        """A GUI must be able to discover the field before relying on it
+        (gitlab#281 finding: list-recovery had no json_fields entry at all).
+        Asserted on the curated _JSON_FIELDS map — the manifest builder
+        passes it through filtered by json_endpoints, and
+        test_capabilities_manifest.py pins that wiring."""
+        from openssl_encrypt.modules.capabilities import _JSON_FIELDS
+
+        self.assertEqual(_JSON_FIELDS["list-recovery"], ["metadata_authenticated", "slots"])
+        for endpoint in ("recover", "add-recovery", "remove-recovery"):
+            self.assertIn(endpoint, _JSON_FIELDS)
+
+
 if __name__ == "__main__":
     unittest.main()

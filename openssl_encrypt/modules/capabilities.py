@@ -213,6 +213,15 @@ _JSON_FIELDS = {
     # plugin's JSON lives in its pepper/integrity subcommand groups
     # (gitlab#193/#194); the fields name those groups.
     "plugin": ["pepper", "integrity"],
+    # Bare-document recovery endpoints (gitlab#146; declared gitlab#280).
+    # list-recovery's metadata_authenticated marks the credential-free
+    # listing as unverified-until-decrypt, so a GUI can gate destructive
+    # advice on it; per-slot keys are pinned by SLOT_DOC_KEYS in
+    # recovery_slots.py.
+    "list-recovery": ["metadata_authenticated", "slots"],
+    "recover": ["output"],
+    "add-recovery": ["output", "slot_type", "credential_source", "recovery_code_written_to"],
+    "remove-recovery": ["output", "removed_slot_id"],
 }
 
 
