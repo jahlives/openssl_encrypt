@@ -10109,6 +10109,47 @@ def _read_envelope_file(input_file: str):
     return meta, payload
 
 
+def _validated_slot_container(meta: dict, *, create: bool = False) -> tuple:
+    """Return ``(encryption_section, slot_list)`` from untrusted metadata.
+
+    Shared by the three ``dek_slots`` readers (:func:`list_recovery_slots`,
+    :func:`add_recovery_slots`, :func:`remove_recovery_slot`) so crafted
+    container shapes fail uniformly as ValidationError instead of surfacing
+    a raw internal AttributeError from whichever reader touches them first
+    (gitlab#280). Falsy sections keep their established meaning of
+    "no slots".
+
+    Args:
+        meta: The parsed (untrusted) header metadata dict.
+        create: Insert the (fresh, empty) encryption dict into ``meta`` when
+            the section is absent or falsy, for the write paths that will
+            populate it.
+
+    Returns:
+        tuple: The encryption dict and a new list of the slot dicts.
+
+    Raises:
+        ValidationError: On a truthy non-dict ``encryption`` section, a
+            truthy non-list ``dek_slots``, or a non-dict slot entry.
+    """
+    enc = meta.get("encryption")
+    if not enc:
+        enc = {}
+        if create:
+            meta["encryption"] = enc
+    if not isinstance(enc, dict):
+        raise ValidationError("Malformed file metadata (encryption section)")
+    raw_slots = enc.get("dek_slots") or []
+    if not isinstance(raw_slots, list):
+        raise ValidationError("Malformed recovery-slot metadata")
+    slots = []
+    for slot in raw_slots:
+        if not isinstance(slot, dict):
+            raise ValidationError("Malformed recovery-slot metadata")
+        slots.append(slot)
+    return enc, slots
+
+
 def list_recovery_slots(input_file: str) -> list:
     """Summarize the recovery slots in an envelope file (no credential needed).
 
@@ -10128,17 +10169,11 @@ def list_recovery_slots(input_file: str) -> list:
     meta, _ = _read_envelope_file(input_file)
     # The header is untrusted: every container shape must be checked before
     # attribute access, or a crafted file turns the credential-free listing
-    # into an internal AttributeError (gitlab#278 review).
-    enc = meta.get("encryption") or {}
-    if not isinstance(enc, dict):
-        raise ValidationError("Malformed file metadata (encryption section)")
-    raw_slots = enc.get("dek_slots") or []
-    if not isinstance(raw_slots, list):
-        raise ValidationError("Malformed recovery-slot metadata")
+    # into an internal AttributeError (gitlab#278 review; shared with the
+    # write paths since gitlab#280).
+    _, raw_slots = _validated_slot_container(meta)
     out = []
     for slot in raw_slots:
-        if not isinstance(slot, dict):
-            raise ValidationError("Malformed recovery-slot metadata")
         item = {"id": slot.get("id"), "type": slot.get("type")}
         params = slot.get("params")
         if not isinstance(params, dict):
@@ -10915,13 +10950,14 @@ def add_recovery_slots(
 
     meta, payload = _read_envelope_file(input_file)
     aad_before = envelope_aad(meta)
+    # Crafted container shapes are refused before the password is consumed
+    # (gitlab#280; mirrors the gitlab#277 validate-before-credential rule).
+    enc, existing = _validated_slot_container(meta, create=True)
     # F17/F18 (gitlab#234): requires the primary password so the DEK can be
     # re-wrapped binding the new slot count. recovery_* params are accepted for
     # signature compatibility but no longer authorize a slot change on their own.
     dek, rewrap, dispose = _password_unwrap_and_rewrapper(meta, password, allow_high_kdf_cost)
     try:
-        enc = meta.setdefault("encryption", {})
-        existing = list(enc.get("dek_slots") or [])
         new_slots = build_recovery_slots(bytes(dek), recovery_credentials)
         for slot in new_slots:
             slot["id"] = f"{slot['type']}-{secrets.token_hex(4)}"
@@ -10967,8 +11003,9 @@ def remove_recovery_slot(
 
     meta, payload = _read_envelope_file(input_file)
     aad_before = envelope_aad(meta)
-    enc = meta.setdefault("encryption", {})
-    existing = list(enc.get("dek_slots") or [])
+    # Crafted container shapes are refused before the password is consumed
+    # (gitlab#280; mirrors the gitlab#277 validate-before-credential rule).
+    enc, existing = _validated_slot_container(meta, create=True)
     remaining = [s for s in existing if s.get("id") != slot_id]
     if len(remaining) == len(existing):
         raise ValidationError(f"No recovery slot with id {slot_id!r}")

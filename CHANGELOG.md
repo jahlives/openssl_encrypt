@@ -205,6 +205,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   filtering incl. hostile credential-shaped fields, partial K-of-N pairs,
   non-int/bool K-of-N values on both views).
 
+- **Crafted `dek_slots` container shapes now fail uniformly as
+  `ValidationError` on all three readers** (gitlab#280, hardening):
+  gitlab#278 gave `list_recovery_slots` container-shape validation, but
+  `add_recovery_slots` and `remove_recovery_slot` read the same untrusted
+  header structure and still surfaced raw internal `AttributeError`s for
+  the same crafted files (a string `encryption` section, a string
+  `dek_slots` whose iteration yields characters, a non-dict slot entry) —
+  an internal-shape disclosure in the error string and an inconsistent
+  failure mode for the same input. All three readers now share one
+  validated accessor (`_validated_slot_container`), and the two write
+  paths refuse a crafted container *before* the primary password is
+  consumed (mirroring the gitlab#277 validate-before-credential rule).
+  Pinned by `test_dek_slot_container_280.py`.
+
 ### Fixed
 
 - **Streaming no longer silently writes undecryptable pepper/HSM files**
