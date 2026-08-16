@@ -122,6 +122,25 @@ one-time terminal display rather than adding to it.
 > and `decrypt_file(recovery_private_key=...)`); CLI flags for it are a planned
 > follow-up.
 
+### `list-recovery` and shamir slots from 1.5.x files (gitlab#278)
+
+Shamir slots cannot be created on this line, but files authored on 1.5.x
+are listable here. For `type: "shamir"` slots, `list-recovery` reports two
+OPTIONAL extra fields in `--json` — `threshold` and `num_shares` — and
+renders a `(2 of 3)` suffix in the human view. They are surfaced only when
+the header values validate as ints with `2 <= K <= N <= 255` (the 1.5.x
+creation invariant); malformed values are omitted, never echoed. For such
+slots `key_id` is the share-set UUID stamped on the 1.5.x share files (when
+the authoring version recorded one — earlier 1.5.x dev builds did not, and
+those slots list `key_id` as `null`), so multiple share sets stay
+distinguishable.
+
+Everything `list-recovery` reports comes from the **unauthenticated**
+plaintext header: the slot set (including K-of-N) is MAC-bound to the DEK
+and verified only when the file is actually decrypted. Do not discard
+share files based on the listing alone — a tampered header could
+under-report N.
+
 ## Python API
 
 ```python

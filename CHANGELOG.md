@@ -53,6 +53,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`list-recovery` reports shamir K-of-N parameters** (gitlab#278,
+  github#157, 1.5.x port): shamir slots cannot be created on this line
+  (the secret-sharing module is 1.5.x-only) but 1.5.x-authored files are
+  listable here; their shamir slot entries now carry `threshold` and
+  `num_shares` in `--json` (and render as `type="shamir" (2 of 3)` in the
+  human view), so a GUI can show "needs 2 of 3 shares" without parsing
+  raw metadata. The values come from the untrusted plaintext header and
+  are passed through only when both validate as ints with
+  `2 <= K <= N <= 255` (the 1.5.x creation invariant) — malformed values
+  are omitted, not echoed. Malformed-file parse errors on this path now
+  surface as `ValidationError` (API callers catching `ValueError` should
+  adjust). Hardened alongside (security-review follow-ups): malformed
+  header container shapes now fail as `ValidationError` instead of
+  leaking raw internal exceptions through the credential-free listing;
+  human-view fields are quoted so a crafted slot id cannot forge the
+  K-of-N suffix; and the human view states that listed metadata is
+  unauthenticated until decrypt. Pinned by
+  `test_list_recovery_shamir_278.py` (crafted-header omission,
+  container-shape, and forgery cases).
+
 - **Uniform JSON output — remaining review follow-ups** (gitlab#270,
   github#146): `decrypt --json` without a usable output path is refused
   *before* any password source is consumed, so a scripted caller keeps its

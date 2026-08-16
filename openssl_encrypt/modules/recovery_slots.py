@@ -985,41 +985,54 @@ def list_recovery_cli(args) -> None:
 
     slots = list_recovery_slots(args.input)
     if getattr(args, "json", False):
-        # Full key_id, not the 16-char display truncation below: a machine
-        # consumer needs the whole value.
-        print(
-            json.dumps(
-                {
-                    "slots": [
-                        {
-                            "id": _capped(s.get("id")),
-                            "type": _capped(s.get("type")),
-                            "key_id": _capped(s.get("key_id")),
-                        }
-                        for s in slots
-                    ]
-                },
-                indent=2,
-            )
-        )
+
+        def _slot_doc(s):
+            # Full key_id, not the 16-char display truncation below: a machine
+            # consumer needs the whole value.
+            doc = {
+                "id": _capped(s.get("id")),
+                "type": _capped(s.get("type")),
+                "key_id": _capped(s.get("key_id")),
+            }
+            # Already validated as in-range ints by list_recovery_slots
+            # (gitlab#278); present only for shamir slots (creatable on the
+            # 1.5.x line, listable here). Guard both keys so a future producer
+            # setting one alone cannot KeyError on attacker-authored input.
+            if "threshold" in s and "num_shares" in s:
+                doc["threshold"] = s["threshold"]
+                doc["num_shares"] = s["num_shares"]
+            return doc
+
+        print(json.dumps({"slots": [_slot_doc(s) for s in slots]}, indent=2))
         sys.stdout.flush()
         return
     if not slots:
         eprint("No recovery slots on this file.")
         return
     eprint(f"{len(slots)} recovery slot(s):")
+    # The listing needs no credential, so nothing below is authenticated: the
+    # slot set (incl. K-of-N) is MAC-bound to the DEK and checked only when
+    # the file is actually unlocked (gitlab#278 review).
+    eprint("  (slot metadata is read from the unauthenticated file header;")
+    eprint("   it is verified only when the file is decrypted)")
     for s in slots:
         # These come verbatim from the plaintext file header, i.e. from whoever
         # authored the file. Listing a file requires no credential, so raw
         # output here would let a crafted file emit ANSI escapes and newlines
         # into the operator's terminal, and an over-long or non-string value
-        # would garble or crash the listing.
+        # would garble or crash the listing. _display_safe strips controls but
+        # keeps spaces, so the values are additionally quoted with json.dumps
+        # (escapes embedded quotes) — otherwise an id like
+        # 'x  type=shamir (2 of 3)' would forge the structured suffix.
         slot_id = _display_safe(s.get("id"))
         slot_type = _display_safe(s.get("type"))
         key_id = _display_safe(s.get("key_id"))
-        line = f"  id={slot_id}  type={slot_type}"
+        line = f"  id={json.dumps(slot_id)}  type={json.dumps(slot_type)}"
+        if "threshold" in s and "num_shares" in s:
+            # Validated ints from list_recovery_slots (gitlab#278).
+            line += f" ({s['threshold']} of {s['num_shares']})"
         if key_id:
-            line += f"  key_id={key_id[:16]}..."
+            line += f"  key_id={json.dumps(key_id[:16] + '...')}"
         eprint(line)
 
 
