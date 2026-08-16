@@ -220,14 +220,14 @@ STDOUT_WHITELIST = [
     # 0600 file via --recovery-code-out, and only that path appears in the
     # JSON. These four entries are exactly why the tolerance mattered — under
     # the old anchors their windows merged over the credential-printing code.
-    # Since gitlab#278 the slot payload is built in _slot_doc, outside this
-    # call text — the exact-payload property this whitelist normally gives is
-    # restored by SLOT_DOC_KEYS in recovery_slots.py (the builder filters
-    # through it) and test_stdout_payload_pinning_280.py (pins its contents).
+    # Since gitlab#278/#279 the listing payload is built outside this call
+    # text — the exact-payload property this whitelist normally gives is
+    # restored by SLOT_DOC_KEYS in recovery_slots.py (the per-slot builder
+    # filters through it) plus TestUnauthenticatedMarker (pins the
+    # document's top-level keys) in test_stdout_payload_pinning_280.py.
     (
         "modules/recovery_slots.py",
-        'print(json.dumps({"metadata_authenticated": False, '
-        '"slots": [_slot_doc(s) for s in slots]}, indent=2))',
+        "print(json.dumps(listing_doc, indent=2))",
         1,
         "list-recovery JSON slot list",
     ),

@@ -245,6 +245,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `test_stdout_payload_pinning_280.py`. NOTE: schema addition must land
   identically on the 1.5.x line.
 
+- **Credential-free `list-recovery` is bounded end to end** (gitlab#279,
+  hardening): the listing path no longer lets an attacker-sized file
+  dictate memory or output. `_read_envelope_file` gains a `header_only`
+  mode used by the listing that reads the header in bounded chunks up to a
+  2 MB cap (matching `_read_metadata_only`) instead of slurping the whole
+  file — its docstring previously *claimed* an oversized-metadata guard
+  that did not exist — and the full-read mode used by the slot write paths
+  now enforces the same header cap; a deeply-nested JSON bomb
+  (`RecursionError`) is normalized to `ValidationError` like every other
+  parse failure. `list_recovery_slots` materializes at most
+  `MAX_DEK_SLOTS + 1` slot summaries (the unlock paths refuse
+  >`MAX_DEK_SLOTS` anyway, so a crafted multi-thousand-slot header
+  amplified ~30x into memory for nothing), and `list-recovery` caps both
+  views at `MAX_DEK_SLOTS`: the JSON document carries an explicit
+  `truncated: true` marker (declared in the capabilities manifest) so a
+  capped listing can never read as complete, and the human view prints a
+  "showing the first 32" notice instead of flooding the terminal. Pinned
+  by `test_list_recovery_caps_279.py`.
+
 ### Fixed
 
 - **Streaming no longer silently writes undecryptable pepper/HSM files**

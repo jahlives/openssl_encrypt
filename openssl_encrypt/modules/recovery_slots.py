@@ -1044,13 +1044,18 @@ def list_recovery_cli(args) -> None:
         # document says so in-band, so a consumer can gate destructive advice
         # (e.g. "discard surplus shares") on it — a tampered header that
         # under-reports N must not cost a user their remaining shares
-        # (gitlab#280). Declared in the capabilities manifest json_fields.
-        print(
-            json.dumps(
-                {"metadata_authenticated": False, "slots": [_slot_doc(s) for s in slots]},
-                indent=2,
-            )
-        )
+        # (gitlab#280). Slots are capped at the format's MAX_DEK_SLOTS bound
+        # with an explicit marker, so a capped listing can never read as
+        # complete (gitlab#279). Top-level keys are pinned by
+        # TestUnauthenticatedMarker, per-slot keys by SLOT_DOC_KEYS; all are
+        # declared in the capabilities manifest json_fields.
+        listing_doc = {
+            "metadata_authenticated": False,
+            "slots": [_slot_doc(s) for s in slots[:MAX_DEK_SLOTS]],
+        }
+        if len(slots) > MAX_DEK_SLOTS:
+            listing_doc["truncated"] = True
+        print(json.dumps(listing_doc, indent=2))
         sys.stdout.flush()
         return
     if not slots:
@@ -1062,6 +1067,13 @@ def list_recovery_cli(args) -> None:
     # the file is actually unlocked (gitlab#278 review).
     eprint("  (slot metadata is read from the unauthenticated file header;")
     eprint("   it is verified only when the file is decrypted)")
+    if len(slots) > MAX_DEK_SLOTS:
+        # Same bound as the JSON path and the unlock paths (which refuse
+        # >MAX_DEK_SLOTS): a crafted header must not flood the terminal
+        # either (gitlab#279). The core listing caps materialization at
+        # MAX_DEK_SLOTS + 1, so the exact claimed count is unknown here.
+        eprint(f"  (showing the first {MAX_DEK_SLOTS}; the file claims more)")
+        slots = slots[:MAX_DEK_SLOTS]
     for s in slots:
         # These come verbatim from the plaintext file header, i.e. from whoever
         # authored the file. Listing a file requires no credential, so raw

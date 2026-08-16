@@ -218,7 +218,8 @@ _JSON_FIELDS = {
     # listing as unverified-until-decrypt, so a GUI can gate destructive
     # advice on it; per-slot keys are pinned by SLOT_DOC_KEYS in
     # recovery_slots.py.
-    "list-recovery": ["metadata_authenticated", "slots"],
+    # truncated appears only when the slot list was capped (gitlab#279).
+    "list-recovery": ["metadata_authenticated", "slots", "truncated"],
     "recover": ["output"],
     "add-recovery": ["output", "slot_type", "credential_source", "recovery_code_written_to"],
     "remove-recovery": ["output", "removed_slot_id"],

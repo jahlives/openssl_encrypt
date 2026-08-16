@@ -184,6 +184,15 @@ class TestUnauthenticatedMarker(unittest.TestCase):
         doc = self._doc([])
         self.assertEqual(set(doc), {"metadata_authenticated", "slots"})
 
+    def test_top_level_keys_are_pinned_when_truncated(self):
+        """The only conditional top-level key is the gitlab#279 cap marker."""
+        from openssl_encrypt.modules.recovery_slots import MAX_DEK_SLOTS
+
+        doc = self._doc(
+            [{"id": f"s-{i}", "type": "recovery_code"} for i in range(MAX_DEK_SLOTS + 1)]
+        )
+        self.assertEqual(set(doc), {"metadata_authenticated", "slots", "truncated"})
+
     def test_marker_is_declared_in_the_capabilities_manifest(self):
         """A GUI must be able to discover the field before relying on it
         (gitlab#281 finding: list-recovery had no json_fields entry at all).
@@ -192,7 +201,9 @@ class TestUnauthenticatedMarker(unittest.TestCase):
         test_capabilities_manifest.py pins that wiring."""
         from openssl_encrypt.modules.capabilities import _JSON_FIELDS
 
-        self.assertEqual(_JSON_FIELDS["list-recovery"], ["metadata_authenticated", "slots"])
+        self.assertEqual(
+            _JSON_FIELDS["list-recovery"], ["metadata_authenticated", "slots", "truncated"]
+        )
         for endpoint in ("recover", "add-recovery", "remove-recovery"):
             self.assertIn(endpoint, _JSON_FIELDS)
 

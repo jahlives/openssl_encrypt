@@ -10082,27 +10082,65 @@ def _rekey_envelope_fast(
     return True
 
 
-def _read_envelope_file(input_file: str):
+# Same bound as _read_metadata_only's incremental scan: no legitimate
+# envelope header approaches it, and the credential-free listing must not
+# let an attacker-sized header dictate memory use (gitlab#279).
+_MAX_ENVELOPE_METADATA = 2 * 1024 * 1024
+
+
+def _read_envelope_file(input_file: str, *, header_only: bool = False) -> tuple:
     """Read an encrypted file into (metadata dict, payload bytes).
+
+    Args:
+        input_file: Path to the envelope file (untrusted content).
+        header_only: Read only up to the metadata separator, in bounded
+            chunks, and return ``b""`` as payload. For credential-free
+            paths (the listing) where an attacker-supplied file must not
+            be able to force a whole-file read into memory (gitlab#279).
 
     Raises:
         ValidationError: If the file is not a valid envelope (missing
-            separator, undecodable/oversized metadata, or a non-dict
-            document) — parse failures are normalized to this type so a
-            crafted header cannot surface raw internal exceptions.
+            separator, oversized metadata past the
+            ``_MAX_ENVELOPE_METADATA`` cap, undecodable metadata, or a
+            non-dict document) — parse failures are normalized to this
+            type so a crafted header cannot surface raw internal
+            exceptions.
     """
-    with open(input_file, "rb") as f:
-        raw = f.read()
-    meta_b64, sep, payload = raw.partition(b":")
-    if not sep:
-        raise ValidationError("Not a valid encrypted file (missing metadata separator)")
+    cap = _MAX_ENVELOPE_METADATA
+    if header_only:
+        header = bytearray()
+        with open(input_file, "rb") as f:
+            while True:
+                chunk = f.read(65536)
+                if not chunk:
+                    raise ValidationError("Not a valid encrypted file (missing metadata separator)")
+                idx = chunk.find(b":")
+                if idx >= 0:
+                    header.extend(chunk[:idx])
+                    break
+                header.extend(chunk)
+                if len(header) > cap:
+                    raise ValidationError("Not a valid encrypted file (oversized metadata)")
+        meta_b64: bytes = bytes(header)
+        payload = b""
+    else:
+        # The write paths rewrite the payload, so they need the whole file.
+        with open(input_file, "rb") as f:
+            raw = f.read()
+        meta_b64, sep, payload = raw.partition(b":")
+        if not sep:
+            raise ValidationError("Not a valid encrypted file (missing metadata separator)")
+    if len(meta_b64) > cap:
+        raise ValidationError("Not a valid encrypted file (oversized metadata)")
     try:
         meta = json.loads(base64.b64decode(meta_b64))
-    except ValueError:
-        # Covers bad base64 (binascii.Error is a ValueError), bad JSON, and
-        # CPython's int_max_str_digits limit on absurd numeric literals. The
+    except (ValueError, RecursionError):
+        # ValueError covers bad base64 (binascii.Error is a ValueError), bad
+        # JSON, and CPython's int_max_str_digits limit on absurd numeric
+        # literals; RecursionError covers a deeply-nested JSON bomb. The
         # header is untrusted input: a crafted file must fail as "malformed
-        # file", not surface a raw internal exception (gitlab#278 review).
+        # file", not surface a raw internal exception (gitlab#278/#279
+        # reviews).
         raise ValidationError("Not a valid encrypted file (malformed metadata)") from None
     if not isinstance(meta, dict):
         raise ValidationError("Malformed file metadata")
@@ -10166,14 +10204,21 @@ def list_recovery_slots(input_file: str) -> list:
         ValidationError: If the metadata shape is malformed (non-dict
             ``encryption`` section, non-list ``dek_slots``, non-dict slot).
     """
-    meta, _ = _read_envelope_file(input_file)
+    from .recovery_slots import MAX_DEK_SLOTS
+
+    meta, _ = _read_envelope_file(input_file, header_only=True)
     # The header is untrusted: every container shape must be checked before
     # attribute access, or a crafted file turns the credential-free listing
     # into an internal AttributeError (gitlab#278 review; shared with the
     # write paths since gitlab#280).
     _, raw_slots = _validated_slot_container(meta)
     out = []
-    for slot in raw_slots:
+    # Materialize at most MAX_DEK_SLOTS + 1 summaries: the unlock paths
+    # refuse >MAX_DEK_SLOTS anyway, so a crafted multi-thousand-slot header
+    # must not amplify into an in-memory list on a credential-free command;
+    # the +1 lets callers detect an over-cap file without the flood
+    # (gitlab#279).
+    for slot in raw_slots[: MAX_DEK_SLOTS + 1]:
         item = {"id": slot.get("id"), "type": slot.get("type")}
         params = slot.get("params")
         if not isinstance(params, dict):
