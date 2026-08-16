@@ -684,7 +684,11 @@ src: recovery_slots.py:39-49):
 
 (src: recovery_slots.py:124-538; info strings prefixed `openssl_encrypt.envelope.`.)
 Shamir shares are written out-of-band as `recovery_share_<i>.json`; the slot stores
-only `{threshold, num_shares}` (src: recovery_slots.py:287-295,710-726).
+`params.shamir` = `{threshold, num_shares}` plus an optional share-set `key_id`
+(stamped when shares are bound to the slot, so multiple share sets stay
+distinguishable; src: 1.5.x recovery_slots.py `build_shamir_slot` — the shamir
+builder is 1.5.x-only, this line only lists/password-decrypts such files,
+gitlab#278/#281).
 
 > **Version gating (verified).** No `format_version` constant gates the *presence*
 > of envelope/recovery fields — they are purely additive under `encryption`, and a

@@ -266,6 +266,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Shamir listing pinned against real 1.5.x producer output**
+  (gitlab#281, github#159): the gitlab#278 tests constructed the very
+  header shape they then asserted on, so a layout mismatch with the actual
+  1.5.x `build_shamir_slot` would have made the K-of-N listing a silent
+  no-op on real files. The 1.5.x golden fixtures (`shamir.enc` +
+  `shamir_share_{1,2,3}.json`) are now part of this line's corpus:
+  `list_recovery_slots` is asserted to report 2-of-3 from the real file
+  (the `params.shamir` nesting was verified against the 1.5.x builder),
+  and the primary password still decrypts it here. `FORMAT.md`'s claim
+  that a shamir slot stores "only `{threshold, num_shares}`" is corrected
+  — the builder also stamps an optional share-set `key_id`.
+
 - **Streaming no longer silently writes undecryptable pepper/HSM files**
   (gitlab#275): the streaming encrypt path built its metadata without the
   plugin-reference fields the non-streaming path records (`pepper_plugin`,
