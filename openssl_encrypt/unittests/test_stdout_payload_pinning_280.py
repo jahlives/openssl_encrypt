@@ -83,5 +83,70 @@ class TestSlotDocKeyPinning(unittest.TestCase):
             self.assertNotIn("num_shares", doc)
 
 
+class TestRenderBoundaryValidation(unittest.TestCase):
+    """The rendering layer re-validates K-of-N instead of trusting core.
+
+    list_recovery_slots guarantees threshold/num_shares are validated
+    in-range ints, but the module's own convention is that the rendering
+    boundary de-fangs untrusted header data itself — a future producer, a
+    second caller, or a partial revert of the core validation must not put
+    an unsanitized header string straight into --json or a terminal line
+    (gitlab#280 finding 2).
+    """
+
+    NON_INTS = ("2", b"2", 2.0, True, False, None, [2], {"n": 2})
+
+    def test_slot_doc_drops_non_int_kofn_values(self):
+        for bad in self.NON_INTS:
+            doc = recovery_slots._slot_doc(
+                {"id": "x", "type": "shamir", "threshold": bad, "num_shares": 3}
+            )
+            self.assertNotIn("threshold", doc, repr(bad))
+            self.assertNotIn("num_shares", doc, repr(bad))
+
+    def test_human_view_drops_non_int_kofn_values(self):
+        """A hostile string never reaches the terminal K-of-N suffix."""
+        import argparse
+        import io
+        from contextlib import redirect_stderr
+        from unittest import mock
+
+        import openssl_encrypt.modules.crypt_core as cc
+
+        hostile = [
+            {
+                "id": "s-1",
+                "type": "shamir",
+                "threshold": "\x1b[31mEVIL",
+                "num_shares": "of everything",
+            }
+        ]
+        args = argparse.Namespace(input="ignored", json=False, quiet=True)
+        err = io.StringIO()
+        with mock.patch.object(cc, "list_recovery_slots", return_value=hostile):
+            with redirect_stderr(err):
+                recovery_slots.list_recovery_cli(args)
+        out = err.getvalue()
+        self.assertNotIn("EVIL", out)
+        self.assertNotIn(" of ", out.split("unauthenticated")[-1].split("id=")[-1])
+
+    def test_human_view_keeps_valid_kofn(self):
+        """The re-validation must not eat the legitimate case."""
+        import argparse
+        import io
+        from contextlib import redirect_stderr
+        from unittest import mock
+
+        import openssl_encrypt.modules.crypt_core as cc
+
+        good = [{"id": "s-1", "type": "shamir", "threshold": 2, "num_shares": 3}]
+        args = argparse.Namespace(input="ignored", json=False, quiet=True)
+        err = io.StringIO()
+        with mock.patch.object(cc, "list_recovery_slots", return_value=good):
+            with redirect_stderr(err):
+                recovery_slots.list_recovery_cli(args)
+        self.assertIn('type="shamir" (2 of 3)', err.getvalue())
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -990,6 +990,18 @@ def _recover_kwargs_from_args(args):
 SLOT_DOC_KEYS = ("id", "type", "key_id", "threshold", "num_shares")
 
 
+def _kofn_int(value) -> bool:
+    """True if a K-of-N header value is a plain int (bools excluded).
+
+    list_recovery_slots already validates these, but this module's rendering
+    convention is that the output boundary de-fangs untrusted header data
+    itself — a future producer, a second caller, or a partial revert of the
+    core validation must not put an unsanitized header string straight into
+    --json or a terminal line (gitlab#280).
+    """
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
 def _slot_doc(s):
     """Build the --json document for one slot, filtered through SLOT_DOC_KEYS.
 
@@ -1008,11 +1020,11 @@ def _slot_doc(s):
         "type": _capped(s.get("type")),
         "key_id": _capped(s.get("key_id")),
     }
-    # Already validated as in-range ints by list_recovery_slots (gitlab#278);
-    # present only for shamir slots (creatable on the 1.5.x line, listable
-    # here). Guard both keys so a future producer setting one alone cannot
-    # KeyError on attacker-authored input.
-    if "threshold" in s and "num_shares" in s:
+    # Present only for shamir slots (creatable on the 1.5.x line, listable
+    # here). Re-validated as plain ints at this boundary (gitlab#280); both
+    # keys required so a future producer setting one alone cannot emit a
+    # partial pair from attacker-authored input.
+    if _kofn_int(s.get("threshold")) and _kofn_int(s.get("num_shares")):
         doc["threshold"] = s["threshold"]
         doc["num_shares"] = s["num_shares"]
     # Fail closed: whatever the builder above comes to hold, only pinned
@@ -1051,8 +1063,8 @@ def list_recovery_cli(args) -> None:
         slot_type = _display_safe(s.get("type"))
         key_id = _display_safe(s.get("key_id"))
         line = f"  id={json.dumps(slot_id)}  type={json.dumps(slot_type)}"
-        if "threshold" in s and "num_shares" in s:
-            # Validated ints from list_recovery_slots (gitlab#278).
+        if _kofn_int(s.get("threshold")) and _kofn_int(s.get("num_shares")):
+            # Re-validated as plain ints at this boundary (gitlab#280).
             line += f" ({s['threshold']} of {s['num_shares']})"
         if key_id:
             line += f"  key_id={json.dumps(key_id[:16] + '...')}"

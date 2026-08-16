@@ -195,9 +195,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   module-level `SLOT_DOC_KEYS` allowlist that `_slot_doc` filters every
   document through (fail closed — unpinned keys are dropped, so growing the
   listing's output always requires a visible edit to the constant), with the
-  lint whitelist updated to the new call text. Pinned by
+  lint whitelist updated to the new call text. The rendering boundary also
+  re-validates the shamir K-of-N values as plain ints itself (bools
+  excluded) in both the JSON and human views instead of trusting the core
+  listing's validation — a future producer, second caller, or partial
+  revert of the core check can no longer put an unsanitized header string
+  into `--json` or a terminal line. Pinned by
   `test_stdout_payload_pinning_280.py` (allowlist contents, per-slot-type
-  filtering incl. hostile credential-shaped fields, partial K-of-N pairs).
+  filtering incl. hostile credential-shaped fields, partial K-of-N pairs,
+  non-int/bool K-of-N values on both views).
 
 ### Fixed
 
