@@ -120,7 +120,8 @@
         "pip3 install --prefix=${FLATPAK_DEST} 'numpy==2.3.2'",
         "pip3 install --prefix=${FLATPAK_DEST} 'qrcode[pil]==8.2'",
         "pip3 install --prefix=${FLATPAK_DEST} 'pyzbar==0.1.9'",
-        "pip3 install --prefix=${FLATPAK_DEST} 'RandomX==1.1.10.post3'",
+        "pip3 install --prefix=${FLATPAK_DEST} 'RandomX @ git+https://github.com/jahlives/RandomX-Python@101d3e6826dcf27e0253a44a6b7926b9033b9666'",
+        "true # RandomX from the fixed fork: PyPI 1.1.10.post3 never links the ARM JIT assembly, breaking aarch64 flatpak builds (gitlab#282); the fork is identical on x86_64",
         "pip3 install --prefix=${FLATPAK_DEST} 'git+https://github.com/open-quantum-safe/liboqs-python.git@0.12.0'",
         "pip3 install --prefix=${FLATPAK_DEST} 'yubikey-manager>=5.0.0,<6.0.0'",
         "pip3 install --prefix=${FLATPAK_DEST} 'fido2>=2.0.0,<3.0.0'"
