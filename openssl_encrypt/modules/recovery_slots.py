@@ -810,16 +810,22 @@ def list_recovery_cli(args) -> None:
         # The list is capped at MAX_DEK_SLOTS (the unlock paths enforce the
         # same bound) so a crafted header cannot drive an unbounded stdout
         # document; the cap is reported rather than applied silently.
-        payload = {
-            "slots": [
-                {
-                    "id": _capped(s.get("id")),
-                    "type": _capped(s.get("type")),
-                    "key_id": _capped(s.get("key_id")),
-                }
-                for s in slots[:MAX_DEK_SLOTS]
-            ]
-        }
+        def _slot_doc(s):
+            doc = {
+                "id": _capped(s.get("id")),
+                "type": _capped(s.get("type")),
+                "key_id": _capped(s.get("key_id")),
+            }
+            # Already validated as in-range ints by list_recovery_slots
+            # (gitlab#278); present only for shamir slots. Guard both keys so
+            # a future producer setting one alone cannot KeyError on
+            # attacker-authored input.
+            if "threshold" in s and "num_shares" in s:
+                doc["threshold"] = s["threshold"]
+                doc["num_shares"] = s["num_shares"]
+            return doc
+
+        payload = {"slots": [_slot_doc(s) for s in slots[:MAX_DEK_SLOTS]]}
         if len(slots) > MAX_DEK_SLOTS:
             payload["truncated"] = True
         emit_json(payload)
@@ -828,6 +834,11 @@ def list_recovery_cli(args) -> None:
         eprint("No recovery slots on this file.")
         return
     eprint(f"{len(slots)} recovery slot(s):")
+    # The listing needs no credential, so nothing below is authenticated: the
+    # slot set (incl. K-of-N) is MAC-bound to the DEK and checked only when
+    # the file is actually unlocked (gitlab#278 review).
+    eprint("  (slot metadata is read from the unauthenticated file header;")
+    eprint("   it is verified only when the file is decrypted)")
     if len(slots) > MAX_DEK_SLOTS:
         # Same bound as the JSON path and the unlock paths: a crafted header
         # must not flood the terminal either.
@@ -837,13 +848,19 @@ def list_recovery_cli(args) -> None:
         # These come verbatim from the plaintext file header, i.e. from
         # whoever authored the file. Listing requires no credential, so raw
         # output would let a crafted file emit ANSI escapes into the
-        # operator's terminal (same class as gitlab#172).
+        # operator's terminal (same class as gitlab#172). _display_safe strips
+        # controls but keeps spaces, so the values are additionally quoted
+        # with json.dumps (escapes embedded quotes) — otherwise an id like
+        # 'x  type=shamir (2 of 3)' would forge the structured suffix.
         slot_id = _display_safe(s.get("id"))
         slot_type = _display_safe(s.get("type"))
         key_id = _display_safe(s.get("key_id"))
-        line = f"  id={slot_id}  type={slot_type}"
+        line = f"  id={json.dumps(slot_id)}  type={json.dumps(slot_type)}"
+        if "threshold" in s and "num_shares" in s:
+            # Validated ints from list_recovery_slots (gitlab#278).
+            line += f" ({s['threshold']} of {s['num_shares']})"
         if key_id:
-            line += f"  key_id={key_id[:16]}..."
+            line += f"  key_id={json.dumps(key_id[:16] + '...')}"
         eprint(line)
 
 
@@ -1128,7 +1145,16 @@ def add_recovery_cli(args) -> None:
             sh.to_file(path)
             written_shares.append(path)
         creds.append(
-            {"type": "shamir", "secret": secret, "threshold": threshold, "num_shares": num_shares}
+            {
+                "type": "shamir",
+                "secret": secret,
+                "threshold": threshold,
+                "num_shares": num_shares,
+                # split_secret stamps every share file with this UUID; storing
+                # it on the slot too lets list-recovery tell which share set
+                # opens which slot when a file carries several (gitlab#278).
+                "key_id": shares[0].metadata.key_id,
+            }
         )
         slot_source = f"generated Shamir shares ({threshold}-of-{num_shares})"
 

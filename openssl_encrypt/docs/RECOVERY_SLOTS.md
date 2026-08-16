@@ -61,6 +61,37 @@ openssl-encrypt recover -i secret.enc -o secret.txt --recovery-share shares/reco
 > and `decrypt_file(recovery_private_key=...)`); the CLI flags for it are a
 > planned follow-up.
 
+## Machine-readable output (`--json`, gitlab#277/#278)
+
+All four commands emit one total-json envelope document on stdout
+(`{"status": "ok", "data": ...}`; error envelope on failure). The
+`list-recovery` slot schema:
+
+```json
+{"slots": [{"id": "...", "type": "...", "key_id": "...|null",
+            "threshold": 2, "num_shares": 3}], "truncated": true}
+```
+
+- `id`/`type`/`key_id` are always present (`null` when the header value is
+  missing, non-string, or longer than 256 chars). For shamir slots,
+  `key_id` is the share-set UUID stamped on the share files that
+  `add-recovery --add-shares` writes, so multiple share sets stay
+  distinguishable.
+- `threshold`/`num_shares` are OPTIONAL and appear only for `type: "shamir"`
+  slots whose header values validate as ints with `2 <= K <= N <= 255`;
+  malformed values are omitted, never echoed.
+- Everything `list-recovery` reports comes from the **unauthenticated**
+  plaintext header: the slot set (including K-of-N) is MAC-bound to the DEK
+  and verified only when the file is actually decrypted. Do not discard
+  share files based on the listing alone — a tampered header could
+  under-report N.
+- `truncated` appears only when the file claims more than 32 slots (the
+  format's `MAX_DEK_SLOTS` bound); the list is capped there.
+- `add-recovery --json` reports `output`, `slot_type`, `credential_source`,
+  plus `recovery_code_written_to` (with `--add-code`; requires
+  `--recovery-code-out`) or `shares`/`threshold`/`num_shares` (with
+  `--add-shares` — share file paths only, never share content).
+
 ## Python API
 
 ```python

@@ -9385,13 +9385,27 @@ def _rekey_envelope_fast(
 
 
 def _read_envelope_file(input_file: str):
-    """Read an encrypted file into (metadata dict, payload bytes)."""
+    """Read an encrypted file into (metadata dict, payload bytes).
+
+    Raises:
+        ValidationError: If the file is not a valid envelope (missing
+            separator, undecodable/oversized metadata, or a non-dict
+            document) — parse failures are normalized to this type so a
+            crafted header cannot surface raw internal exceptions.
+    """
     with open(input_file, "rb") as f:
         raw = f.read()
     meta_b64, sep, payload = raw.partition(b":")
     if not sep:
         raise ValidationError("Not a valid encrypted file (missing metadata separator)")
-    meta = json.loads(base64.b64decode(meta_b64))
+    try:
+        meta = json.loads(base64.b64decode(meta_b64))
+    except ValueError:
+        # Covers bad base64 (binascii.Error is a ValueError), bad JSON, and
+        # CPython's int_max_str_digits limit on absurd numeric literals. The
+        # header is untrusted input: a crafted file must fail as "malformed
+        # file", not surface a raw internal exception (gitlab#278 review).
+        raise ValidationError("Not a valid encrypted file (malformed metadata)") from None
     if not isinstance(meta, dict):
         raise ValidationError("Malformed file metadata")
     return meta, payload
@@ -9400,16 +9414,68 @@ def _read_envelope_file(input_file: str):
 def list_recovery_slots(input_file: str) -> list:
     """Summarize the recovery slots in an envelope file (no credential needed).
 
-    Returns a list of ``{"id", "type", "key_id"?}`` dicts. Empty if the file
-    has no recovery slots.
+    Returns:
+        A list of ``{"id", "type", "key_id"?, "threshold"?, "num_shares"?}``
+        dicts, empty if the file has no recovery slots. ``threshold`` and
+        ``num_shares`` are present only for shamir slots whose header values
+        validate as ints with ``2 <= K <= N <= 255``; malformed values are
+        omitted, never echoed. All values come from the unauthenticated
+        plaintext header and are verified only when the file is decrypted.
+
+    Raises:
+        ValidationError: If the metadata shape is malformed (non-dict
+            ``encryption`` section, non-list ``dek_slots``, non-dict slot).
     """
     meta, _ = _read_envelope_file(input_file)
+    # The header is untrusted: every container shape must be checked before
+    # attribute access, or a crafted file turns the credential-free listing
+    # into an internal AttributeError (gitlab#278 review).
+    enc = meta.get("encryption") or {}
+    if not isinstance(enc, dict):
+        raise ValidationError("Malformed file metadata (encryption section)")
+    raw_slots = enc.get("dek_slots") or []
+    if not isinstance(raw_slots, list):
+        raise ValidationError("Malformed recovery-slot metadata")
     out = []
-    for slot in meta.get("encryption", {}).get("dek_slots", []) or []:
+    for slot in raw_slots:
+        if not isinstance(slot, dict):
+            raise ValidationError("Malformed recovery-slot metadata")
         item = {"id": slot.get("id"), "type": slot.get("type")}
-        key_id = (slot.get("params") or {}).get("key_id")
-        if key_id:
+        params = slot.get("params")
+        if not isinstance(params, dict):
+            params = {}
+        key_id = params.get("key_id")
+        # Untrusted header: only pass a string through, so the Python API
+        # cannot return a crafted non-string shape (gitlab#278 review).
+        if key_id and isinstance(key_id, str):
             item["key_id"] = key_id
+        if slot.get("type") == "shamir":
+            # Surface K-of-N so a consumer can show "needs 2 of 3 shares"
+            # (gitlab#278). The values come from the untrusted plaintext
+            # header: pass them through only when both validate as ints in
+            # the format's range, omit otherwise (bool is an int subclass
+            # and the wrong shape).
+            shamir = params.get("shamir")
+            if isinstance(shamir, dict):
+                # shamir slots nest their key_id under params.shamir (unlike
+                # the pqc builder's top-level params.key_id) — surface it so
+                # multiple share sets stay distinguishable (gitlab#278 review).
+                if "key_id" not in item and isinstance(shamir.get("key_id"), str):
+                    item["key_id"] = shamir["key_id"]
+                threshold = shamir.get("threshold")
+                num_shares = shamir.get("num_shares")
+                if (
+                    isinstance(threshold, int)
+                    and not isinstance(threshold, bool)
+                    and isinstance(num_shares, int)
+                    and not isinstance(num_shares, bool)
+                    # Mirror the creation invariant (split_secret /
+                    # _parse_k_of_n): a crafted header must not render an
+                    # impossible policy like "255 of 1".
+                    and 2 <= threshold <= num_shares <= 255
+                ):
+                    item["threshold"] = threshold
+                    item["num_shares"] = num_shares
         out.append(item)
     return out
 
