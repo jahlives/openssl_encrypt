@@ -42,7 +42,11 @@ pyzbar==0.1.9
     # via -r requirements-prod.in
 qrcode[pil]==8.2
     # via -r requirements-prod.in
-randomx==1.1.10.post3
+randomx==1.1.10.post3 ; platform_machine != "aarch64"
+    # via -r requirements-prod.in
+    # aarch64: PyPI build broken (no ARM JIT assembly linked), use the
+    # one-line-fixed fork pinned by commit (gitlab#282)
+randomx @ git+https://github.com/jahlives/RandomX-Python@101d3e6826dcf27e0253a44a6b7926b9033b9666 ; platform_machine == "aarch64"
     # via -r requirements-prod.in
 referencing==0.37.0
     # via

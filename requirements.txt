@@ -15,8 +15,13 @@ pyzbar>=0.1.9,<1.0.0
 # Optional post-quantum cryptography dependencies
 # liboqs-python>=0.7.0  # Uncomment to enable post-quantum cryptography support
 
-# Optional RandomX KDF dependencies
-RandomX>=1.1.10  # RandomX key derivation function
+# Optional RandomX KDF dependencies. The PyPI binding's aarch64 build is
+# broken (setup.py never links the ARM JIT assembly -> ImportError:
+# randomx_program_aarch64_cacheline_align_mask1); arm64 installs use the
+# one-line-fixed fork pinned by commit until upstream releases a fix
+# (gitlab#282, github#162).
+RandomX>=1.1.10 ; platform_machine != "aarch64"  # RandomX key derivation function
+RandomX @ git+https://github.com/jahlives/RandomX-Python@101d3e6826dcf27e0253a44a6b7926b9033b9666 ; platform_machine == "aarch64"
 
 # JSON schema validation
 jsonschema>=4.0.0,<5.0.0

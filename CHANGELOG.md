@@ -766,6 +766,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **RandomX now installs and works on aarch64** (gitlab#282, github#162):
+  the RandomX PyPI binding (1.1.10.post3, `xloem/RandomX-Python` around
+  `tevador/RandomX` v1.1.10) never links the ARM JIT assembly — its
+  `setup.py` references `jit_compiler_a64_static.s` where the vendored
+  file is `.S` — so the extension fails to import on every arm64 install
+  (`undefined symbol: randomx_program_aarch64_cacheline_align_mask1`) and
+  the RandomX KDF stage is unavailable there (the v11+ independent path
+  correctly fails closed, so RandomX-configured files cannot be processed
+  at all on arm64). Requirements now select a one-character-fixed fork
+  (`jahlives/RandomX-Python@101d3e68`, pinned by commit) on
+  `platform_machine == "aarch64"` while non-ARM platforms keep the PyPI
+  package unchanged; the flatpak manifest installs from the fixed fork
+  (identical on x86_64) so ARM flatpak builds work. Verified on
+  Linux/aarch64: the extension builds and imports, and golden files
+  encrypted on x86_64 decrypt correctly — the KDF output is
+  architecture-independent, only the packaging was broken. An upstream
+  fix has been proposed to the binding project.
+
 - **The recovery-slot commands now deliver the `--json` output the
   capabilities manifest was already promising** (gitlab#277, github#156):
   the gitlab#146 machine-readable-output work for `list-recovery`,
