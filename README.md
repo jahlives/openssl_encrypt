@@ -768,6 +768,14 @@ pip install -e .
 ```
 
 **Note:** For full post-quantum support (HQC, ML-DSA), you need to manually install liboqs and liboqs-python. The Flatpak version includes these by default.
+
+**ARM64 note (RandomX KDF):** the RandomX binding on PyPI (1.1.10.post3) cannot import on aarch64 (its build never links the ARM JIT assembly), so PyPI installs on ARM64 skip RandomX — the RandomX KDF then fails closed with a clear error instead of degrading silently. To enable it, install the one-line-fixed fork, pinned by commit:
+
+```bash
+pip install 'RandomX @ git+https://github.com/jahlives/RandomX-Python@101d3e6826dcf27e0253a44a6b7926b9033b9666'
+```
+
+Installs from `requirements.txt`/`requirements-prod.txt` and the Flatpak build pick the fixed fork automatically on aarch64.
 ---
 ## Usage
 

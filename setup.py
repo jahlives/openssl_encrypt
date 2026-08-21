@@ -235,18 +235,63 @@ class PostInstallCommand(Command):
             print("You may need to manually install Whirlpool: pip install whirlpool-py311")
 
 
+# Published dependency metadata is declared explicitly instead of being
+# derived from the pip-compile lockfile (gitlab#283): the lockfile carries a
+# direct-URL git requirement for the aarch64 RandomX fork (gitlab#282), which
+# PyPI rejects in Requires-Dist and which must not become install-time trust
+# for published packages. test_install_requires_metadata.py keeps this list in
+# sync with requirements-prod.in.
+INSTALL_REQUIRES = [
+    "cryptography>=50.0.0,<51.0.0",
+    "argon2-cffi>=23.1.0,<24.0.0",
+    "whirlpool-py311>=1.0.0,<2.0.0; python_version >= '3.11'",
+    "PyYAML>=6.0.2,<7.0.0",
+    "blake3>=1.0.0,<2.0.0",
+    "jsonschema>=4.0.0,<5.0.0",
+    "requests>=2.31.0,<3.0.0",
+    "Pillow>=12.3.0,<13.0.0",
+    "numpy>=2.1.0,<3.0.0",
+    "qrcode[pil]>=7.0.0,<9.0.0",
+    "pyzbar>=0.1.9,<1.0.0",
+    "pywin32>=306,<307; sys_platform == 'win32'",
+    # The PyPI build cannot import on aarch64 (no ARM JIT assembly linked);
+    # arm64 users install the commit-pinned fixed fork manually (see README).
+    'RandomX>=1.1.10,<2.0.0; platform_machine != "aarch64"',
+]
+
+
+def read_requirements(path: str) -> List[str]:
+    """Read requirement strings from a requirements file for extras metadata.
+
+    Skips blank lines, comments (including pip-compile's indented "# via ..."
+    lines), pip option lines, and PEP 508 direct-URL references — none of
+    which may appear in published package metadata.
+
+    Args:
+        path: Path to the requirements file, relative to the repo root.
+
+    Returns:
+        List of requirement strings safe to expose as Requires-Dist.
+    """
+    requirements = []
+    with open(path) as req_file:
+        for raw_line in req_file:
+            line = raw_line.strip()
+            if not line or line.startswith("#") or line.startswith("-"):
+                continue
+            if "://" in line or "git+" in line:
+                continue
+            requirements.append(line)
+    return requirements
+
+
 setup(
     cmdclass={
         "post_install": PostInstallCommand,
     },
     name="openssl_encrypt",
     version=VERSION,
-    # Read requirements from requirements-prod.txt
-    install_requires=[
-        line.strip()
-        for line in open("requirements-prod.txt")
-        if line.strip() and not line.startswith("#") and not line.startswith("-")
-    ],
+    install_requires=INSTALL_REQUIRES,
     entry_points={
         "console_scripts": [
             "openssl-encrypt=openssl_encrypt.cli:main",
@@ -254,28 +299,13 @@ setup(
             "openssl-encrypt-check-deps=openssl_encrypt.versions:main",
         ],
     },
-    # Read dev requirements from requirements-dev.txt
     extras_require={
         "dev": [
-            line.strip()
-            for line in open("requirements-dev.txt")
-            if line.strip()
-            and not line.startswith("#")
-            and not line.startswith("-")
-            and line.strip()
-            not in [
-                prod_line.strip()
-                for prod_line in open("requirements-prod.txt")
-                if prod_line.strip()
-                and not prod_line.startswith("#")
-                and not prod_line.startswith("-")
-            ]
+            line
+            for line in read_requirements("requirements-dev.txt")
+            if line not in read_requirements("requirements-prod.txt")
         ],
-        "hsm": [
-            line.strip()
-            for line in open("requirements-hsm.txt")
-            if line.strip() and not line.startswith("#") and not line.startswith("-")
-        ],
+        "hsm": read_requirements("requirements-hsm.txt"),
         "threefish": [
             "openssl-encrypt-threefish>=1.0.0",
         ],

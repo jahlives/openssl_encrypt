@@ -283,6 +283,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   golden (`shamir_keyid.enc`, from `add-recovery --add-shares 2-of-3`)
   pins the share-set `key_id` listing against real producer output.
 
+- **Published package metadata no longer derives from the pip-compile
+  lockfile** (gitlab#283): `setup.py` built `install_requires` by reading
+  `requirements-prod.txt` line-by-line, which (a) let the aarch64 RandomX
+  fork's direct-URL git requirement (gitlab#282) into `Requires-Dist` — PyPI
+  rejects such uploads outright, and the fork would have become install-time
+  trust baked into the published metadata of every aarch64 install — and
+  (b) leaked pip-compile's indented `# via ...` comments into the metadata as
+  invalid requirement strings. Dependencies are now declared explicitly in
+  `setup.py` (RandomX from PyPI only, scoped `platform_machine != "aarch64"`
+  where that build cannot import; arm64 pip users install the commit-pinned
+  fork with the one-liner documented in the README), the dev/hsm extras parse
+  their requirements files with comment- and URL-safe filtering, and a new
+  metadata test suite pins the contract: every declared requirement parses as
+  PEP 508, none is a direct URL, RandomX stays scoped off aarch64, and the
+  declared set cannot drift from `requirements-prod.in`.
+
 ### Fixed
 
 - **RandomX now installs and works on aarch64** (gitlab#282, github#162):
