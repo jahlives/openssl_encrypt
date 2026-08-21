@@ -206,14 +206,15 @@ impl Vm {
     /// Run one hash with the VM lock taken inside the GIL-released section.
     fn hash_locked(&self, py: Python<'_>, data: &[u8], output: &mut [u8; HASH_SIZE]) -> PyResult<()> {
         let state_mutex = &self.state;
-        let in_addr = data.as_ptr() as usize;
+        let in_ptr = SendPtr(data.as_ptr() as *mut u8);
         let in_len = data.len();
-        let out_addr = output.as_mut_ptr() as usize;
+        let out_ptr = SendPtr(output.as_mut_ptr());
         // The Mutex MUST be taken inside the detached (GIL-free) section:
         // locking it while holding the GIL deadlocks against a second thread
-        // that holds the GIL while waiting for the Mutex. Addresses are
-        // passed as usize because detach requires a Send closure; both
-        // buffers outlive this call (owned by the caller).
+        // that holds the GIL while waiting for the Mutex. Pointers cross the
+        // Send boundary via SendPtr (provenance preserved); both buffers
+        // outlive this call (owned by the caller), and the input pointer is
+        // never written through despite the *mut transport type.
         let result = py.detach(move || match state_mutex.lock() {
             Ok(state) => {
                 // SAFETY: pointers are valid for the duration of the call;
@@ -221,9 +222,9 @@ impl Vm {
                 let rc = unsafe {
                     ffi::rxs_calculate_hash(
                         state.vm.as_ptr(),
-                        in_addr as *const c_void,
+                        in_ptr.get() as *const c_void,
                         in_len,
-                        out_addr as *mut c_void,
+                        out_ptr.get() as *mut c_void,
                     )
                 };
                 if rc == 0 {
@@ -336,13 +337,15 @@ fn init_cache_with_fallback(
     cache: Cache,
     effective: c_int,
     key: &[u8],
+    large_pages: bool,
 ) -> PyResult<(Cache, c_int)> {
     let run_init = |py: Python<'_>, cache_ptr: SendPtr<ffi::randomx_cache>, key: &[u8]| {
-        let key_addr = key.as_ptr() as usize;
+        let key_ptr = SendPtr(key.as_ptr() as *mut u8);
         let key_len = key.len();
-        // SAFETY: cache is freshly allocated; key buffer outlives the call.
+        // SAFETY: cache is freshly allocated; key buffer outlives the call
+        // and is never written through despite the *mut transport type.
         py.detach(move || unsafe {
-            ffi::rxs_init_cache(cache_ptr.get(), key_addr as *const c_void, key_len)
+            ffi::rxs_init_cache(cache_ptr.get(), key_ptr.get() as *const c_void, key_len)
         })
     };
 
@@ -352,7 +355,7 @@ fn init_cache_with_fallback(
     if effective & FLAG_JIT != 0 {
         drop(cache);
         let (retry_cache, retry_flags) =
-            alloc_cache_with_fallback(effective & !FLAG_JIT, false)?;
+            alloc_cache_with_fallback(effective & !FLAG_JIT, large_pages)?;
         if run_init(py, SendPtr(retry_cache.0.as_ptr()), key) == 0 {
             return Ok((retry_cache, retry_flags));
         }
@@ -402,6 +405,12 @@ fn RandomX(
     }
     if secure {
         requested |= FLAG_SECURE;
+    } else {
+        // randomx_get_flags() force-sets SECURE on some platforms (OpenBSD,
+        // NetBSD, Apple Silicon). Honor the explicit argument; if the JIT
+        // genuinely cannot run without W^X there, VM creation falls back to
+        // the interpreted VM below.
+        requested &= !FLAG_SECURE;
     }
     if large_pages {
         requested |= FLAG_LARGE_PAGES;
@@ -415,7 +424,7 @@ fn RandomX(
     };
 
     let (cache, effective) = alloc_cache_with_fallback(requested, large_pages)?;
-    let (cache, effective) = init_cache_with_fallback(py, cache, effective, &key_bytes)?;
+    let (cache, effective) = init_cache_with_fallback(py, cache, effective, &key_bytes, large_pages)?;
 
     let dataset = if full_mem {
         let ptr = unsafe { ffi::randomx_alloc_dataset(effective) };
@@ -516,14 +525,10 @@ fn RandomX(
     } else {
         vm_flags
     };
-    if strict && reported_flags != reported_requested {
-        return Err(PyRuntimeError::new_err(format!(
-            "strict: requested RandomX configuration unavailable \
-             (requested flags {reported_requested:#x}, effective {reported_flags:#x})"
-        )));
-    }
-
-    Ok(Vm {
+    // Construct the owning Vm BEFORE the strict check: an early return must
+    // run randomx_destroy_vm via Drop, or the C VM (holding a verbatim key
+    // copy in light mode) leaks for the process lifetime.
+    let vm = Vm {
         state: Mutex::new(VmState {
             vm,
             _cache: kept_cache,
@@ -531,7 +536,14 @@ fn RandomX(
         }),
         flags: reported_flags,
         requested_flags: reported_requested,
-    })
+    };
+    if strict && reported_flags != reported_requested {
+        return Err(PyRuntimeError::new_err(format!(
+            "strict: requested RandomX configuration unavailable \
+             (requested flags {reported_requested:#x}, effective {reported_flags:#x})"
+        )));
+    }
+    Ok(vm)
 }
 
 /// The recommended randomx_flags for this machine (parity helper).

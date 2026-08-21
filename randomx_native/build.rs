@@ -23,10 +23,13 @@
 //!   exact IEEE semantics, and inherited CFLAGS/CXXFLAGS like -Ofast would
 //!   silently change KDF output; such environments are rejected outright.
 //!
-//! Windows/MSVC note: the MASM variant of the x86 JIT assembly
-//! (jit_compiler_x86_static.asm) is not wired up; an MSVC build gets the
-//! interpreted VM only (byte-identical, slower). Revisit when Windows
-//! wheels are actually produced.
+//! Windows/MSVC note: NOT SUPPORTED. The MASM variant of the x86 JIT
+//! assembly (jit_compiler_x86_static.asm) is not wired up, and common.hpp
+//! enables the JIT compiler under _M_X64 regardless — so an MSVC build
+//! would fail at assemble/link time (and cl rejects -std=c++11). The JIT
+//! source pair is therefore gated off for msvc targets below, which still
+//! fails the build (unresolved JIT symbols) but for an honest reason.
+//! Revisit properly when Windows wheels are actually produced.
 
 use std::env;
 use std::path::{Path, PathBuf};
@@ -40,17 +43,31 @@ const FLAG_ENV_VARS: [&str; 6] = [
     "HOST_CXXFLAGS",
 ];
 
-const FORBIDDEN_FLAG_FRAGMENTS: [&str; 3] = ["fast-math", "-Ofast", "unsafe-math"];
+// fast-math variants change RandomX KDF output (byte-identity violation);
+// -march=native silently produces non-portable wheels.
+const FORBIDDEN_FLAG_FRAGMENTS: [&str; 4] =
+    ["fast-math", "-Ofast", "unsafe-math", "-march=native"];
 
 fn reject_output_changing_env_flags() {
-    for var in FLAG_ENV_VARS {
+    // The cc crate also honors target-suffixed variants (both dash and
+    // underscore triple forms), which take PRECEDENCE over the plain names.
+    let mut vars: Vec<String> = FLAG_ENV_VARS.iter().map(|v| v.to_string()).collect();
+    if let Ok(target) = env::var("TARGET") {
+        let underscored = target.replace('-', "_");
+        for base in ["CFLAGS", "CXXFLAGS"] {
+            vars.push(format!("{base}_{target}"));
+            vars.push(format!("{base}_{underscored}"));
+        }
+    }
+    for var in &vars {
         println!("cargo:rerun-if-env-changed={var}");
         if let Ok(value) = env::var(var) {
             for fragment in FORBIDDEN_FLAG_FRAGMENTS {
                 assert!(
                     !value.contains(fragment),
                     "{var} contains '{fragment}': fast-math-style flags change RandomX \
-                     KDF output (byte-identity violation); refusing to build"
+                     KDF output (byte-identity violation) and -march=native breaks \
+                     wheel portability; refusing to build"
                 );
             }
         }
@@ -110,8 +127,9 @@ fn main() {
     // 32-bit x86 deliberately gets NO JIT pair: jit_compiler.hpp selects the
     // x86 JIT only for __x86_64__, and the .S file is x86-64-only assembly
     // (review F7). Unlisted arches fall back to the interpreted VM.
+    let target_env = env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
     match arch.as_str() {
-        "x86_64" => {
+        "x86_64" if target_env != "msvc" => {
             cpp_files.push(src.join("jit_compiler_x86.cpp"));
             asm_files.push(src.join("jit_compiler_x86_static.S"));
         }
