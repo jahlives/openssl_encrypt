@@ -299,6 +299,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   PEP 508, none is a direct URL, RandomX stays scoped off aarch64, and the
   declared set cannot drift from `requirements-prod.in`.
 
+- **Flatpak: the aarch64 RandomX fork is confined to aarch64** (gitlab#284):
+  the manifest installed the commit-pinned fork (gitlab#282) on every
+  architecture, making a single-maintainer personal repository the source of
+  a password-KDF stage on x86_64 builds that have a working PyPI package —
+  and RandomX is not fail-loud against tampering, so that trust expansion
+  carried real weight. RandomX now installs from PyPI in an
+  `exclude-arches: ["aarch64"]` module and from the fork only in an
+  `only-arches: ["aarch64"]` module, mirroring the requirements files'
+  platform markers; new manifest tests pin that any git-sourced RandomX
+  stays aarch64-only and that other arches get the PyPI pin.
+
 ### Fixed
 
 - **RandomX now installs and works on aarch64** (gitlab#282, github#162):
