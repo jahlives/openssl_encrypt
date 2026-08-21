@@ -144,5 +144,71 @@ class TestRealFilesConsistent(unittest.TestCase):
         )
 
 
+def _module_installs_randomx_from_git(module: dict) -> bool:
+    """True if any build command installs RandomX from a git URL."""
+    return any(
+        "randomx" in command.lower() and "git+" in command
+        for command in module.get("build-commands", [])
+    )
+
+
+def _module_installs_randomx_from_pypi(module: dict) -> bool:
+    """True if any build command installs a pinned RandomX from PyPI."""
+    return any(
+        _normalize(name) == "randomx"
+        for command in module.get("build-commands", [])
+        if "git+" not in command
+        for name, _version in _PIN_RE.findall(command)
+    )
+
+
+class TestRandomXArchScoping(unittest.TestCase):
+    """The personal RandomX fork is an aarch64 workaround (gitlab#282) and must
+    not become the trust root for other architectures (gitlab#284).
+
+    RandomX is a password-KDF stage: a tampered build could silently weaken
+    derived keys, so the fork's blast radius must stay confined to the one
+    arch whose PyPI build cannot import.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.modules = json.loads(MANIFEST.read_text()).get("modules", [])
+
+    def test_git_fork_confined_to_aarch64(self):
+        offenders = [
+            module["name"]
+            for module in self.modules
+            if _module_installs_randomx_from_git(module)
+            and module.get("only-arches") != ["aarch64"]
+        ]
+        self.assertEqual(
+            offenders,
+            [],
+            msg="Modules installing the RandomX git fork without "
+            '"only-arches": ["aarch64"]: ' + repr(offenders),
+        )
+
+    def test_non_aarch64_gets_pypi_randomx(self):
+        pypi_modules = [
+            module
+            for module in self.modules
+            if _module_installs_randomx_from_pypi(module)
+            and module.get("only-arches") != ["aarch64"]
+        ]
+        self.assertEqual(
+            len(pypi_modules),
+            1,
+            msg="Expected exactly one module installing RandomX from PyPI for "
+            "non-aarch64 arches",
+        )
+        self.assertEqual(
+            pypi_modules[0].get("exclude-arches"),
+            ["aarch64"],
+            msg="The PyPI RandomX module must exclude aarch64, where that "
+            "build cannot import (gitlab#282)",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
