@@ -65,12 +65,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ways by `test_randomx_native_bindings.py`: the official RandomX v1.1.10
   test vectors, byte-equivalence against the reference binding (including
   the exact `kdf_registry` and `modules/randomx` chaining patterns), and
-  fast-mode/light-mode agreement. Security posture: W^X JIT pages
-  (`secure=True`) by default, empty keys refused, key/message copies held
-  in zeroizing buffers, an internally serialized VM (the C VM is not
-  thread-safe), no `-march=native`, no network at build time, and a
-  committed `Cargo.lock`. The openssl_encrypt KDF does not switch to it
-  yet — the import preference lands separately once wheels are published.
+  fast-mode/light-mode agreement. Security posture (hardened further by
+  the pre-push security review): W^X JIT pages (`secure=True`) by default
+  with `jit`/`strict` controls and honest degradation reporting
+  (`requested_flags`/`degraded`); a project-owned exception shim so
+  page-protection or allocation failures inside the C library surface as
+  Python exceptions instead of aborting the process; hardware-AES
+  intrinsics compiled in but runtime-gated (no `-march=native`, portable
+  wheels, no soft-AES cache-timing side channel on AES-capable CPUs);
+  empty keys refused; validated dataset-init thread counts; key/message
+  copies held in zeroizing buffers with `calculate_hash_into` for
+  wipeable digests (the C library's own unwiped internal key copies are
+  documented as residuals, and fast mode releases the cache — and its key
+  copy — right after dataset init); no network at build time; a committed
+  `Cargo.lock`; a sha256 manifest over the vendored tree recomputed by
+  the test suite; and a build that rejects fast-math flags (they would
+  change KDF output). The openssl_encrypt KDF does not switch to it yet —
+  the import preference lands separately once wheels are published.
 
 - **`list-recovery` reports shamir K-of-N parameters** (gitlab#278,
   github#157): shamir slot entries now carry `threshold` and `num_shares`

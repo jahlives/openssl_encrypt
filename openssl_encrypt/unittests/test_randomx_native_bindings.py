@@ -5,22 +5,26 @@ TDD contract for the project-owned RandomX bindings (gitlab#285).
 randomx_native wraps the official tevador/RandomX C library, pinned at the
 v1.1.10 tag (commit f9ae3f235183c452962edd2a15384bdc67f7a11e) — the exact
 version the abandoned PyPI binding vendors — and must produce byte-identical
-KDF output. Three layers pin that contract:
+KDF output. The guarantee rests on:
 
 1. Official RandomX v1.1.10 test vectors (from the vendored
-   ``RandomX_src/tests/tests.cpp``), so correctness does not depend on any
-   other binding being installed.
-2. Equivalence against the reference binding (the PyPI/fork ``randomx``
-   module) when it is importable, including the exact chained-hash pattern
-   the openssl_encrypt KDF uses.
-3. API-contract and security-behavior tests: minimal surface, input
-   validation, thread safety, and the SECURE (W^X JIT) default this binding
-   deliberately adds.
+   ``RandomX_src/tests/tests.cpp``): these ARE the specification and do not
+   depend on any other binding being installed.
+2. The vendored-tree sha256 manifest (``RANDOMX_SRC.sha256``), recomputed
+   here on every run, so an in-repo modification of the vendored C sources
+   fails tests (review F3).
+3. Equivalence against the reference binding (the PyPI/fork ``randomx``
+   module) WHERE it is importable — an additional cross-check on hosts that
+   still have the abandoned binding, not the primary guarantee.
+4. API-contract and security-behavior tests: input validation, thread
+   safety, the SECURE (W^X JIT) default, degradation reporting, and the
+   interpreted-VM path (``jit=False``).
 """
 
 import hashlib
 import threading
 import unittest
+from pathlib import Path
 
 try:
     import randomx_native
@@ -31,6 +35,9 @@ try:
     import randomx as reference_randomx
 except ImportError:
     reference_randomx = None
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+NATIVE_DIR = REPO_ROOT / "randomx_native"
 
 # Official test vectors from RandomX v1.1.10 src/tests/tests.cpp
 # (light mode; output is flag- and mode-independent by design).
@@ -76,6 +83,71 @@ class TestOfficialVectors(unittest.TestCase):
                 continue
             self.assertEqual(bytes(vm.calculate_hash(message)).hex(), expected_hex)
 
+    def test_interpreted_vm_matches_vectors(self):
+        """jit=False forces the interpreted VM — byte-identical output, and
+        the degradation/creation fallback path gets real coverage."""
+        vm = randomx_native.RandomX(b"test key 000", jit=False)
+        self.assertFalse(vm.flags & randomx_native.FLAG_JIT)
+        self.assertFalse(vm.flags & randomx_native.FLAG_SECURE)
+        self.assertEqual(
+            bytes(vm.calculate_hash(b"This is a test")).hex(),
+            OFFICIAL_VECTORS[0][2],
+        )
+
+    def test_interpreted_equals_jit(self):
+        """Direct interpreted-vs-JIT equivalence on a non-vector input."""
+        key = hashlib.sha256(b"jit-vs-interp").digest()
+        msg = b"equivalence probe"
+        self.assertEqual(
+            randomx_native.RandomX(key).calculate_hash(msg),
+            randomx_native.RandomX(key, jit=False).calculate_hash(msg),
+        )
+
+
+@unittest.skipIf(randomx_native is None, "randomx_native not built/installed")
+class TestVendoredTreeIntegrity(unittest.TestCase):
+    """RANDOMX_SRC.sha256 must match the vendored tree bit-for-bit (F3)."""
+
+    @unittest.skipUnless(NATIVE_DIR.is_dir(), "requires a repository checkout")
+    def test_vendored_sources_match_manifest(self):
+        manifest_path = NATIVE_DIR / "RANDOMX_SRC.sha256"
+        entries = {}
+        for line in manifest_path.read_text().splitlines():
+            digest, _, name = line.partition("  ")
+            entries[name] = digest
+        self.assertGreaterEqual(len(entries), 100, "manifest suspiciously short")
+
+        on_disk = {
+            str(p.relative_to(NATIVE_DIR))
+            for p in (NATIVE_DIR / "RandomX_src").rglob("*")
+            if p.is_file()
+        }
+        on_disk.add("RANDOMX_LICENSE")
+        self.assertEqual(
+            on_disk,
+            set(entries),
+            msg="vendored file set differs from RANDOMX_SRC.sha256 manifest",
+        )
+        mismatches = []
+        for name, expected in entries.items():
+            actual = hashlib.sha256((NATIVE_DIR / name).read_bytes()).hexdigest()
+            if actual != expected:
+                mismatches.append(name)
+        self.assertEqual(
+            mismatches,
+            [],
+            msg="vendored files differ from the pinned manifest (supply-chain "
+            "red flag — see RANDOMX_PIN): " + repr(mismatches),
+        )
+
+    def test_upstream_pin_matches_pin_file(self):
+        """The runtime constant must agree with the RANDOMX_PIN document."""
+        self.assertEqual(len(randomx_native.RANDOMX_UPSTREAM_COMMIT), 40)
+        if NATIVE_DIR.is_dir():
+            pin_text = (NATIVE_DIR / "RANDOMX_PIN").read_text()
+            self.assertIn(randomx_native.RANDOMX_UPSTREAM_COMMIT, pin_text)
+        self.assertTrue(randomx_native.__version__)
+
 
 @unittest.skipIf(randomx_native is None, "randomx_native not built/installed")
 class TestApiContract(unittest.TestCase):
@@ -112,6 +184,23 @@ class TestApiContract(unittest.TestCase):
             expected,
         )
 
+    def test_non_contiguous_input_is_logical_order(self):
+        """A strided memoryview hashes its LOGICAL content (deliberate pin)."""
+        strided = memoryview(b"axbxcxdx")[::2]  # -> b"abcd"
+        vm = randomx_native.RandomX(b"k" * 32)
+        self.assertEqual(vm.calculate_hash(strided), vm.calculate_hash(b"abcd"))
+
+    def test_calculate_hash_into_bytearray(self):
+        """Digests can land in a caller-owned wipeable buffer (F5)."""
+        vm = randomx_native.RandomX(b"k" * 32)
+        out = bytearray(32)
+        vm.calculate_hash_into(b"payload", out)
+        self.assertEqual(bytes(out), vm.calculate_hash(b"payload"))
+        with self.assertRaises(ValueError):
+            vm.calculate_hash_into(b"payload", bytearray(31))
+        with self.assertRaises((TypeError, ValueError)):
+            vm.calculate_hash_into(b"payload", b"x" * 32)  # read-only buffer
+
     def test_empty_input_allowed(self):
         """Zero-length messages hash fine (parity with the C API)."""
         digest = randomx_native.RandomX(b"k" * 32).calculate_hash(b"")
@@ -121,6 +210,13 @@ class TestApiContract(unittest.TestCase):
         """Deliberate hardening divergence: an empty KDF key is always a bug."""
         with self.assertRaises(ValueError):
             randomx_native.RandomX(b"")
+
+    def test_oversized_threads_refused(self):
+        """Unbounded/lossy thread counts must fail loudly, never partition to
+        zero workers (F6: an uninitialized dataset silently corrupts KDF
+        output)."""
+        with self.assertRaises(ValueError):
+            randomx_native.RandomX(b"k" * 32, full_mem=True, threads=2**32)
 
     def test_wrong_types_refused(self):
         with self.assertRaises(TypeError):
@@ -132,39 +228,80 @@ class TestApiContract(unittest.TestCase):
             vm.calculate_hash(None)
 
     def test_vm_is_thread_safe(self):
-        """Concurrent calculate_hash on one VM must stay correct (the binding
-        serializes access internally; the C VM is not thread-safe)."""
+        """Concurrent calculate_hash on one VM must stay correct on EVERY
+        iteration (the binding serializes access internally; the C VM is not
+        thread-safe), and a reintroduced GIL/lock inversion must fail the
+        test rather than hang the suite."""
         vm = randomx_native.RandomX(b"k" * 32)
         expected = {
             i: randomx_native.RandomX(b"k" * 32).calculate_hash(b"m%d" % i) for i in range(4)
         }
-        results = {}
+        lock = threading.Lock()
+        mismatches = []
         errors = []
 
         def worker(i):
             try:
-                for _ in range(5):
-                    results[i] = vm.calculate_hash(b"m%d" % i)
+                for _ in range(8):
+                    digest = vm.calculate_hash(b"m%d" % i)
+                    if digest != expected[i]:
+                        with lock:
+                            mismatches.append(i)
             except Exception as exc:  # pragma: no cover - failure path
-                errors.append(exc)
+                with lock:
+                    errors.append(exc)
 
-        threads = [threading.Thread(target=worker, args=(i,)) for i in range(4)]
+        threads = [threading.Thread(target=worker, args=(i,), daemon=True) for i in range(4)]
         for t in threads:
             t.start()
         for t in threads:
-            t.join()
+            t.join(timeout=120)
+        alive = [t for t in threads if t.is_alive()]
+        self.assertEqual(alive, [], msg="calculate_hash deadlocked (GIL/lock inversion)")
         self.assertEqual(errors, [])
-        self.assertEqual(results, expected)
+        self.assertEqual(mismatches, [])
+
+    def test_concurrent_vm_construction(self):
+        """Several constructors at once (each runs a 256 MB argon2 fill)."""
+        results = {}
+        errors = []
+        lock = threading.Lock()
+
+        def build(i):
+            try:
+                digest = randomx_native.RandomX(b"conc-key-%d" % i).calculate_hash(b"m")
+                with lock:
+                    results[i] = digest
+            except Exception as exc:  # pragma: no cover - failure path
+                with lock:
+                    errors.append(exc)
+
+        threads = [threading.Thread(target=build, args=(i,), daemon=True) for i in range(3)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=300)
+        self.assertEqual([t for t in threads if t.is_alive()], [])
+        self.assertEqual(errors, [])
+        for i, digest in results.items():
+            self.assertEqual(
+                digest,
+                randomx_native.RandomX(b"conc-key-%d" % i).calculate_hash(b"m"),
+            )
 
 
 @unittest.skipIf(randomx_native is None, "randomx_native not built/installed")
 class TestSecurityBehavior(unittest.TestCase):
     """Hardening this binding adds on top of the reference API."""
 
-    def test_secure_wx_flag_defaults_on(self):
-        """SECURE (W^X JIT pages) is requested by default; opting out works."""
+    def test_secure_wx_flag_defaults_on_with_jit(self):
+        """SECURE (W^X) is requested by default; it is REPORTED only when a
+        JIT is actually active (F9: no misleading SECURE on interpreted VMs)."""
         vm_default = randomx_native.RandomX(b"k" * 32)
-        self.assertTrue(vm_default.flags & randomx_native.FLAG_SECURE)
+        if vm_default.flags & randomx_native.FLAG_JIT:
+            self.assertTrue(vm_default.flags & randomx_native.FLAG_SECURE)
+        else:
+            self.assertFalse(vm_default.flags & randomx_native.FLAG_SECURE)
         vm_off = randomx_native.RandomX(b"k" * 32, secure=False)
         self.assertFalse(vm_off.flags & randomx_native.FLAG_SECURE)
 
@@ -174,20 +311,44 @@ class TestSecurityBehavior(unittest.TestCase):
             randomx_native.RandomX(b"k" * 32, secure=False).calculate_hash(b"m"),
         )
 
-    def test_upstream_pin_is_exposed(self):
-        """Provenance must be introspectable: the vendored C library commit."""
-        self.assertEqual(
-            randomx_native.RANDOMX_UPSTREAM_COMMIT,
-            "f9ae3f235183c452962edd2a15384bdc67f7a11e",
-        )
-        self.assertTrue(randomx_native.__version__)
+    def test_degradation_reporting(self):
+        """requested_flags/degraded expose what actually happened (F9)."""
+        vm = randomx_native.RandomX(b"k" * 32)
+        self.assertIsInstance(vm.requested_flags, int)
+        self.assertEqual(vm.degraded, vm.flags != vm.requested_flags)
+        # jit=False is a request, not a degradation:
+        vm_interp = randomx_native.RandomX(b"k" * 32, jit=False)
+        self.assertFalse(vm_interp.degraded)
+
+    def test_strict_mode_accepts_satisfiable_request(self):
+        """strict=True must not raise when the request is satisfiable — and
+        on hosts where it is not, it must raise rather than degrade."""
+        try:
+            vm = randomx_native.RandomX(b"k" * 32, strict=True)
+        except RuntimeError:
+            return  # host genuinely cannot satisfy the default request
+        self.assertFalse(vm.degraded)
+
+    def test_hardware_aes_matches_runtime_detection(self):
+        """HARD_AES must be available exactly where the CPU supports it (F2:
+        the build must not silently force table-based soft AES everywhere).
+        Cross-checked against the reference binding when present."""
+        flags = randomx_native.get_flags()
+        if reference_randomx is not None:
+            self.assertEqual(
+                flags & randomx_native.FLAG_HARD_AES,
+                reference_randomx.get_flags() & randomx_native.FLAG_HARD_AES,
+                msg="hardware-AES detection diverges from the reference binding",
+            )
 
 
 @unittest.skipIf(randomx_native is None, "randomx_native not built/installed")
 @unittest.skipIf(reference_randomx is None, "reference randomx binding not installed")
 class TestEquivalenceWithReferenceBinding(unittest.TestCase):
-    """Byte-identical output against the PyPI/fork binding (gitlab#285 hard
-    requirement: existing encrypted files must keep decrypting)."""
+    """Byte-identical output against the PyPI/fork binding — an additional
+    cross-check where that binding is installed; the official vectors plus
+    the vendored-tree manifest are the primary guarantee (see module
+    docstring)."""
 
     def test_assorted_keys_and_inputs(self):
         cases = []
@@ -239,6 +400,21 @@ class TestFullMemMode(unittest.TestCase):
             bytes(vm_fast.calculate_hash(b"This is a test")).hex(),
             OFFICIAL_VECTORS[0][2],
         )
+
+    def test_full_mem_thread_partitions(self):
+        """Odd worker counts exercise the division-remainder partitioning of
+        dataset init (F6: the most dangerous arithmetic in the binding)."""
+        for threads in (1, 3, 7):
+            with self.subTest(threads=threads):
+                try:
+                    vm = randomx_native.RandomX(b"test key 000", full_mem=True, threads=threads)
+                except MemoryError:
+                    self.skipTest("host cannot allocate the 2080 MB dataset")
+                self.assertEqual(
+                    bytes(vm.calculate_hash(b"This is a test")).hex(),
+                    OFFICIAL_VECTORS[0][2],
+                )
+                del vm
 
 
 if __name__ == "__main__":

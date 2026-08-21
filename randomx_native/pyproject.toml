@@ -31,9 +31,13 @@ Repository = "https://github.com/jahlives/openssl_encrypt"
 features = ["pyo3/extension-module"]
 module-name = "randomx_native"
 strip = true
-# The vendored RandomX C library must ship in the sdist (no network at build).
+# The vendored RandomX C library must ship in the sdist (no network at
+# build), together with everything a pinned offline rebuild needs.
 include = [
     { path = "RandomX_src/**", format = "sdist" },
     { path = "RANDOMX_PIN", format = "sdist" },
     { path = "RANDOMX_LICENSE", format = "sdist" },
+    { path = "RANDOMX_SRC.sha256", format = "sdist" },
+    { path = "Cargo.lock", format = "sdist" },
+    { path = "build.rs", format = "sdist" },
 ]
