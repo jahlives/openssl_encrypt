@@ -1,0 +1,22 @@
+Vendored RandomX C library provenance (gitlab#285)
+===================================================
+
+upstream:  https://github.com/tevador/RandomX
+tag:       v1.1.10
+commit:    f9ae3f235183c452962edd2a15384bdc67f7a11e
+
+RandomX_src/ is a verbatim copy of that commit's src/ directory;
+RANDOMX_LICENSE is that commit's LICENSE file. This is the exact upstream
+commit the reference PyPI binding (RandomX 1.1.10.post3) vendors as its
+submodule, which is what makes the KDF output byte-identical.
+
+DO NOT bump this pin casually: newer RandomX versions may change hashing
+semantics and silently break decryption of existing files. Any bump needs
+the golden equivalence tests plus cross-line file-format goldens re-run.
+
+To re-verify the vendored tree against upstream:
+
+    git clone https://github.com/tevador/RandomX.git /tmp/rx
+    git -C /tmp/rx checkout f9ae3f235183c452962edd2a15384bdc67f7a11e
+    diff -r /tmp/rx/src RandomX_src   # must be empty
+    diff /tmp/rx/LICENSE RANDOMX_LICENSE   # must be empty

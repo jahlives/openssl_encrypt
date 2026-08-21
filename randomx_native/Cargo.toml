@@ -1,0 +1,24 @@
+[package]
+name = "openssl-encrypt-randomx"
+version = "1.0.0"
+edition = "2021"
+authors = ["OpenSSL Encrypt Team"]
+description = "RandomX KDF bindings for openssl-encrypt over the official tevador/RandomX library (vendored, pinned v1.1.10)"
+license = "MIT"
+repository = "https://github.com/jahlives/openssl_encrypt"
+
+[lib]
+name = "randomx_native"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.29", features = ["extension-module"] }
+zeroize = "1.7"
+
+[build-dependencies]
+cc = "1.0"
+
+[profile.release]
+lto = true              # Link-time optimization
+codegen-units = 1       # Better optimization
+strip = true            # Strip debug symbols
