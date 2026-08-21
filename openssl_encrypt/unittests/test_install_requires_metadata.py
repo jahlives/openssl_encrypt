@@ -40,6 +40,10 @@ def _normalize(name: str) -> str:
 def _captured_setup_kwargs() -> dict:
     """Execute setup.py with setuptools.setup() replaced by a recorder.
 
+    setup.py regenerates openssl_encrypt/version.py at import time; that file
+    is snapshotted and restored so a parallel test worker importing the
+    package never observes a half-written file.
+
     Returns:
         The keyword arguments setup.py passed to setuptools.setup().
     """
@@ -48,6 +52,8 @@ def _captured_setup_kwargs() -> dict:
     def _record(**kwargs):
         captured.update(kwargs)
 
+    version_path = REPO_ROOT / "openssl_encrypt" / "version.py"
+    version_snapshot = version_path.read_bytes() if version_path.exists() else None
     old_cwd = os.getcwd()
     os.chdir(REPO_ROOT)  # setup.py opens its inputs via relative paths
     try:
@@ -55,6 +61,10 @@ def _captured_setup_kwargs() -> dict:
             runpy.run_path(str(REPO_ROOT / "setup.py"), run_name="__main__")
     finally:
         os.chdir(old_cwd)
+        if version_snapshot is not None:
+            version_path.write_bytes(version_snapshot)
+        elif version_path.exists():
+            version_path.unlink()
     return captured
 
 
@@ -70,6 +80,10 @@ def _all_declared_requirements(kwargs: dict) -> list:
     return entries
 
 
+@unittest.skipUnless(
+    (REPO_ROOT / "setup.py").exists() and (REPO_ROOT / "requirements-prod.in").exists(),
+    "packaging metadata checks need a repository checkout",
+)
 class TestPublishedMetadata(unittest.TestCase):
     """Requires-Dist content must be valid and PyPI-acceptable."""
 
@@ -79,14 +93,11 @@ class TestPublishedMetadata(unittest.TestCase):
         cls.entries = _all_declared_requirements(cls.kwargs)
 
     def test_setup_declares_requirements(self):
+        # Completeness is enforced exactly by
+        # test_install_requires_matches_requirements_prod_in.
         self.assertTrue(
             self.kwargs.get("install_requires"),
             msg="setup.py must declare install_requires",
-        )
-        self.assertGreaterEqual(
-            len(self.kwargs["install_requires"]),
-            10,
-            msg="install_requires suspiciously small — parsing likely broke",
         )
 
     def test_every_requirement_parses_as_pep508(self):

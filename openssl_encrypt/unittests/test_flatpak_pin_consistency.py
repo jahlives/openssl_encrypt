@@ -210,5 +210,48 @@ class TestRandomXArchScoping(unittest.TestCase):
         )
 
 
+class TestRandomXForkCommitPin(unittest.TestCase):
+    """The aarch64 RandomX fork must stay pinned to one full commit hash
+    everywhere it is referenced (gitlab#283/#284 follow-up).
+
+    A mutable ref (branch/tag) on a KDF-stage dependency is the CWE-494
+    exposure test_liboqs_supply_chain_pin_252.py closes for liboqs; and a
+    partial bump would hand aarch64 flatpak users a different RandomX binary
+    than aarch64 pip users.
+    """
+
+    FORK_RE = re.compile(r"RandomX-Python(@[^\s'\"#;]*)?")
+    COMMIT_RE = re.compile(r"@([0-9a-f]{40})\b")
+
+    PIN_FILES = [
+        MANIFEST,
+        REPO_ROOT / "requirements.txt",
+        REPO_ROOT / "requirements-prod.in",
+        REPO_ROOT / "requirements-prod.txt",
+        REPO_ROOT / "requirements-dev.txt",
+        REPO_ROOT / "README.md",
+    ]
+
+    def test_every_fork_reference_is_commit_pinned_and_identical(self):
+        shas = {}
+        for path in self.PIN_FILES:
+            text = path.read_text()
+            refs = self.FORK_RE.findall(text)
+            self.assertTrue(refs, msg=f"{path.name}: expected at least one fork reference")
+            for ref in refs:
+                match = self.COMMIT_RE.fullmatch(ref or "")
+                self.assertIsNotNone(
+                    match,
+                    msg=f"{path.name}: fork reference must be pinned by a "
+                    f"full 40-hex commit, found {ref!r}",
+                )
+                shas.setdefault(match.group(1), []).append(path.name)
+        self.assertEqual(
+            len(shas),
+            1,
+            msg="All fork references must pin the SAME commit: " + repr(shas),
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
