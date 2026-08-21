@@ -53,6 +53,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Project-owned RandomX KDF bindings: `randomx_native` /
+  `openssl-encrypt-randomx`** (gitlab#285, github#163): a new Rust/PyO3
+  extension under `randomx_native/` wraps the official tevador/RandomX C
+  library — vendored verbatim in-tree and pinned at v1.1.10
+  (`f9ae3f235183`, the exact commit the abandoned PyPI binding vendors;
+  provenance in `RANDOMX_PIN`, introspectable at runtime via
+  `RANDOMX_UPSTREAM_COMMIT`) — following the `threefish_native` precedent.
+  The public surface matches what the KDF uses (`RandomX(key, full_mem=…)`,
+  `calculate_hash` → 32 bytes) and output is byte-identical, pinned three
+  ways by `test_randomx_native_bindings.py`: the official RandomX v1.1.10
+  test vectors, byte-equivalence against the reference binding (including
+  the exact `kdf_registry` and `modules/randomx` chaining patterns), and
+  fast-mode/light-mode agreement. Security posture: W^X JIT pages
+  (`secure=True`) by default, empty keys refused, key/message copies held
+  in zeroizing buffers, an internally serialized VM (the C VM is not
+  thread-safe), no `-march=native`, no network at build time, and a
+  committed `Cargo.lock`. The openssl_encrypt KDF does not switch to it
+  yet — the import preference lands separately once wheels are published.
+
 - **`list-recovery` reports shamir K-of-N parameters** (gitlab#278,
   github#157): shamir slot entries now carry `threshold` and `num_shares`
   in `--json` (and render as `type="shamir" (2 of 3)` in the human view),
