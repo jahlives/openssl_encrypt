@@ -15,13 +15,23 @@
 
 #include "randomx.h"
 
+// glibc thread cancellation unwinds with abi::__forced_unwind; a bare
+// catch(...) that does not rethrow it would convert cancellation into
+// std::terminate. Not reachable from CPython threads today, but guard anyway.
+#if defined(__GLIBCXX__) || defined(__GLIBCPP__)
+#include <cxxabi.h>
+#define RXS_RETHROW_FORCED_UNWIND catch (abi::__forced_unwind &) { throw; }
+#else
+#define RXS_RETHROW_FORCED_UNWIND
+#endif
+
 extern "C" {
 
 int rxs_init_cache(randomx_cache *cache, const void *key, size_t key_size) {
     try {
         randomx_init_cache(cache, key, key_size);
         return 0;
-    } catch (...) {
+    } RXS_RETHROW_FORCED_UNWIND catch (...) {
         return -1;
     }
 }
@@ -31,7 +41,7 @@ int rxs_calculate_hash(randomx_vm *machine, const void *input, size_t input_size
     try {
         randomx_calculate_hash(machine, input, input_size, output);
         return 0;
-    } catch (...) {
+    } RXS_RETHROW_FORCED_UNWIND catch (...) {
         return -1;
     }
 }
@@ -41,7 +51,7 @@ int rxs_init_dataset(randomx_dataset *dataset, randomx_cache *cache,
     try {
         randomx_init_dataset(dataset, cache, start_item, item_count);
         return 0;
-    } catch (...) {
+    } RXS_RETHROW_FORCED_UNWIND catch (...) {
         return -1;
     }
 }

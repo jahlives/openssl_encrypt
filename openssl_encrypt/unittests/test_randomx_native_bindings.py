@@ -22,6 +22,7 @@ KDF output. The guarantee rests on:
 """
 
 import hashlib
+import platform
 import threading
 import unittest
 from pathlib import Path
@@ -104,13 +105,27 @@ class TestOfficialVectors(unittest.TestCase):
         )
 
 
-@unittest.skipIf(randomx_native is None, "randomx_native not built/installed")
+@unittest.skipUnless(NATIVE_DIR.is_dir(), "requires a repository checkout")
 class TestVendoredTreeIntegrity(unittest.TestCase):
-    """RANDOMX_SRC.sha256 must match the vendored tree bit-for-bit (F3)."""
+    """RANDOMX_SRC.sha256 must match the vendored tree bit-for-bit (F3).
 
-    @unittest.skipUnless(NATIVE_DIR.is_dir(), "requires a repository checkout")
+    Deliberately NOT gated on the extension being importable: the vendored
+    C sources live in the repo whether or not the Rust build ran, and this
+    is exactly the check that must not silently skip on plain-Python CI.
+    """
+
     def test_vendored_sources_match_manifest(self):
         manifest_path = NATIVE_DIR / "RANDOMX_SRC.sha256"
+        # The manifest itself is anchored in RANDOMX_PIN, so tampering with
+        # a vendored file requires forging both in one commit — and the pin
+        # file names the upstream commit anyone can re-clone and diff.
+        pin_text = (NATIVE_DIR / "RANDOMX_PIN").read_text()
+        self.assertIn(
+            hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
+            pin_text,
+            msg="RANDOMX_SRC.sha256 digest not recorded in RANDOMX_PIN "
+            "(manifest regenerated without updating the pin?)",
+        )
         entries = {}
         for line in manifest_path.read_text().splitlines():
             digest, _, name = line.partition("  ")
@@ -118,7 +133,7 @@ class TestVendoredTreeIntegrity(unittest.TestCase):
         self.assertGreaterEqual(len(entries), 100, "manifest suspiciously short")
 
         on_disk = {
-            str(p.relative_to(NATIVE_DIR))
+            p.relative_to(NATIVE_DIR).as_posix()
             for p in (NATIVE_DIR / "RandomX_src").rglob("*")
             if p.is_file()
         }
@@ -140,6 +155,7 @@ class TestVendoredTreeIntegrity(unittest.TestCase):
             "red flag — see RANDOMX_PIN): " + repr(mismatches),
         )
 
+    @unittest.skipIf(randomx_native is None, "randomx_native not built/installed")
     def test_upstream_pin_matches_pin_file(self):
         """The runtime constant must agree with the RANDOMX_PIN document."""
         self.assertEqual(len(randomx_native.RANDOMX_UPSTREAM_COMMIT), 40)
@@ -215,7 +231,7 @@ class TestApiContract(unittest.TestCase):
         """Unbounded/lossy thread counts must fail loudly, never partition to
         zero workers (F6: an uninitialized dataset silently corrupts KDF
         output)."""
-        with self.assertRaises(ValueError):
+        with self.assertRaises((ValueError, OverflowError)):
             randomx_native.RandomX(b"k" * 32, full_mem=True, threads=2**32)
 
     def test_wrong_types_refused(self):
@@ -331,9 +347,25 @@ class TestSecurityBehavior(unittest.TestCase):
 
     def test_hardware_aes_matches_runtime_detection(self):
         """HARD_AES must be available exactly where the CPU supports it (F2:
-        the build must not silently force table-based soft AES everywhere).
-        Cross-checked against the reference binding when present."""
+        the build must not silently force table-based soft AES everywhere —
+        a cache-timing side channel and a KDF slowdown). Self-contained via
+        /proc/cpuinfo on Linux; additionally cross-checked against the
+        reference binding when present."""
         flags = randomx_native.get_flags()
+        cpuinfo = Path("/proc/cpuinfo")
+        if platform.system() == "Linux" and platform.machine() in ("x86_64", "aarch64"):
+            cpu_has_aes = any(
+                line.split(":", 1)[0].strip() in ("flags", "Features")
+                and " aes" in " " + line.split(":", 1)[1]
+                for line in cpuinfo.read_text().splitlines()
+                if ":" in line
+            )
+            if cpu_has_aes:
+                self.assertTrue(
+                    flags & randomx_native.FLAG_HARD_AES,
+                    msg="CPU advertises AES but the binding reports soft AES — "
+                    "build regression (missing -maes / +crypto)?",
+                )
         if reference_randomx is not None:
             self.assertEqual(
                 flags & randomx_native.FLAG_HARD_AES,
