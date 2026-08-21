@@ -1,6 +1,7 @@
 """Setup script for the openssl-encrypt package."""
 
 import os
+import re
 import shutil
 import subprocess  # nosec B404
 import sys
@@ -11,7 +12,8 @@ from setuptools.command.build_py import build_py
 from setuptools.command.develop import develop
 from setuptools.command.install import install
 
-# Dependencies are now specified in pyproject.toml
+# Published dependency metadata is declared in INSTALL_REQUIRES below and
+# kept in sync with requirements-prod.in by test_install_requires_metadata.py.
 
 # Required versions for external dependencies
 REQUIRED_LIBOQS_VERSION = "0.12.0"
@@ -260,15 +262,20 @@ INSTALL_REQUIRES = [
 ]
 
 
-def read_requirements(path: str) -> List[str]:
+def read_requirements(path: str, skip_direct_urls: bool = False) -> List[str]:
     """Read requirement strings from a requirements file for extras metadata.
 
     Skips blank lines, comments (including pip-compile's indented "# via ..."
-    lines), pip option lines, and PEP 508 direct-URL references — none of
-    which may appear in published package metadata.
+    lines and inline "pkg>=1.0  # rationale" comments) and pip option lines —
+    none of which may appear in published package metadata.
 
     Args:
         path: Path to the requirements file, relative to the repo root.
+        skip_direct_urls: When True, PEP 508 direct-URL references are
+            silently excluded (the pip-compile lockfiles legitimately carry
+            the commit-pinned aarch64 RandomX fork, which must never reach
+            published metadata). When False, a direct URL is a hard build
+            error so a dependency cannot silently vanish from an extra.
 
     Returns:
         List of requirement strings safe to expose as Requires-Dist.
@@ -279,10 +286,23 @@ def read_requirements(path: str) -> List[str]:
             line = raw_line.strip()
             if not line or line.startswith("#") or line.startswith("-"):
                 continue
-            if "://" in line or "git+" in line:
+            line = line.split(" #", 1)[0].strip()
+            if not line:
                 continue
+            if "://" in line or "git+" in line:
+                if skip_direct_urls:
+                    continue
+                raise ValueError(
+                    f"direct-URL requirement not allowed in published metadata ({path}): {line}"
+                )
             requirements.append(line)
     return requirements
+
+
+def requirement_name(line: str) -> str:
+    """PEP 503-normalized project name of a requirement line."""
+    name = re.split(r"[\s;\[<>=!~@]", line, maxsplit=1)[0]
+    return re.sub(r"[-_.]+", "-", name).lower()
 
 
 setup(
@@ -299,10 +319,16 @@ setup(
         ],
     },
     extras_require={
+        # Subtract on normalized names, not raw lines: the two lockfiles'
+        # pins drift, and a drifted prod pin must not leak into [dev].
         "dev": [
             line
-            for line in read_requirements("requirements-dev.txt")
-            if line not in read_requirements("requirements-prod.txt")
+            for line in read_requirements("requirements-dev.txt", skip_direct_urls=True)
+            if requirement_name(line)
+            not in {
+                requirement_name(prod_line)
+                for prod_line in read_requirements("requirements-prod.txt", skip_direct_urls=True)
+            }
         ],
         "hsm": read_requirements("requirements-hsm.txt"),
         "threefish": [

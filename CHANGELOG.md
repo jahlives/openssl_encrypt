@@ -812,6 +812,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   platform markers; new manifest tests pin that any git-sourced RandomX
   stays aarch64-only and that other arches get the PyPI pin.
 
+- **Packaging-metadata follow-ups from the gitlab#283/#284 confirmation
+  review**: the metadata test no longer leaves a rewritten
+  `openssl_encrypt/version.py` behind (snapshot/restore, fixing a parallel
+  test-run flake) and skips outside a repo checkout; the aarch64 RandomX
+  fork's commit pin is now asserted identical across all six files that
+  reference it (manifest, four requirements files, README) so a mutable ref
+  or partial bump fails tests; `read_requirements()` strips inline comments
+  and fails the build on an unexpected direct-URL requirement instead of
+  silently dropping the dependency from an extra; and the dev extra
+  subtracts on normalized package names, so drifted prod pins no longer
+  leak into `[dev]`.
+
 ### Fixed
 
 - **RandomX now installs and works on aarch64** (gitlab#282, github#162):
