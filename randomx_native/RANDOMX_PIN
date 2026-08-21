@@ -20,3 +20,11 @@ To re-verify the vendored tree against upstream:
     git -C /tmp/rx checkout f9ae3f235183c452962edd2a15384bdc67f7a11e
     diff -r /tmp/rx/src RandomX_src   # must be empty
     diff /tmp/rx/LICENSE RANDOMX_LICENSE   # must be empty
+
+Continuous verification: RANDOMX_SRC.sha256 is a sha256sum manifest over
+every file in RandomX_src/ plus RANDOMX_LICENSE, generated at vendoring
+time; test_randomx_native_bindings.py recomputes it on every run, so any
+in-repo modification of the vendored tree fails tests. The manifest's own
+digest, for the record:
+
+    sha256(RANDOMX_SRC.sha256) = 23f4a3d4d47cf1c69bd3f99149ffe17cdd49a80291353741575ffff17d7925af
