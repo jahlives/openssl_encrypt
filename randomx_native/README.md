@@ -74,3 +74,20 @@ maturin build --release   # or: maturin develop --release
 
 Requires a C/C++ toolchain (the vendored RandomX library is compiled into
 the extension) and Rust.
+
+## Releasing (maintainer, user-owned step)
+
+CI (`randomx-wheel` job) builds the wheel + sdist on every development-branch
+pipeline and verifies the official RandomX v1.1.10 vector against the
+produced wheel. Publishing to PyPI is a manual release step:
+
+```bash
+cd randomx_native
+maturin build --release -o dist && maturin sdist -o dist
+twine upload dist/*            # needs the maintainer's PyPI credentials
+```
+
+After the first publish, the requirements files can pin
+`openssl-encrypt-randomx` by version + `--hash` (closing review finding F3:
+`--require-hashes` becomes possible on every arch), and the aarch64 fork pin
+for the abandoned `RandomX` package can be retired.

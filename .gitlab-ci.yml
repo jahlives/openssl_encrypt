@@ -327,10 +327,14 @@ test:
     - python3 setup.py --version >/dev/null
     # Build Threefish Rust extension; gnupg so the real-gpg integration tests
     # run instead of skipping (gitlab#272)
-    - apt-get update && apt-get install -y --no-install-recommends cargo patchelf gnupg
+    - apt-get update && apt-get install -y --no-install-recommends cargo patchelf gnupg g++
     - pip install maturin --break-system-packages
     - cd threefish_native && PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1 maturin build --release && cd ..
     - pip install threefish_native/target/wheels/*.whl --break-system-packages
+    # Build the project-owned RandomX bindings (gitlab#285) so their test
+    # suite (incl. the vendored-tree integrity check) runs instead of skipping
+    - cd randomx_native && maturin build --release && cd ..
+    - pip install randomx_native/target/wheels/*.whl --break-system-packages
   script:
     - python3 -m pytest openssl_encrypt/unittests/ -n auto --dist=worksteal -v --durations=20 --cov=openssl_encrypt --cov-report=term --cov-report=html --cov-report=xml
   artifacts:
@@ -402,6 +406,9 @@ test-fallback:
     - pip install maturin --break-system-packages
     - cd threefish_native && PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1 maturin build --release && cd ..
     - pip install threefish_native/target/wheels/*.whl --break-system-packages
+    # Build the project-owned RandomX bindings (gitlab#285)
+    - cd randomx_native && maturin build --release && cd ..
+    - pip install randomx_native/target/wheels/*.whl --break-system-packages
   script:
     - python3 -m pytest openssl_encrypt/unittests/ -n auto --dist=worksteal -v --durations=20 --cov=openssl_encrypt --cov-report=term --cov-report=html --cov-report=xml
   rules:
@@ -444,6 +451,38 @@ build:
     - if: $CI_COMMIT_BRANCH =~ /^releases\/.*/ && $DOCS_ONLY != "true"
     - if: $CI_COMMIT_BRANCH == "testing" && $DOCS_ONLY != "true"
     - if: $CI_COMMIT_BRANCH == "dev" && $DOCS_ONLY != "true"
+
+
+# Build distributable openssl-encrypt-randomx artifacts (gitlab#285) and run
+# the official RandomX v1.1.10 vector against the PRODUCED wheel — a
+# fast-math-poisoned or mis-flagged build would change KDF output silently.
+randomx-wheel:
+  stage: build
+  image: python:3.13
+  script:
+    - apt-get update && apt-get install -y --no-install-recommends cargo g++ patchelf
+    - pip install maturin --break-system-packages
+    - cd randomx_native
+    - maturin build --release -o ../randomx-dist
+    - maturin sdist -o ../randomx-dist
+    - cd ..
+    - pip install randomx-dist/openssl_encrypt_randomx-*.whl --break-system-packages
+    - |
+      python3 - <<'PYEOF'
+      import randomx_native
+      digest = randomx_native.RandomX(b"test key 000").calculate_hash(b"This is a test")
+      expected = "639183aae1bf4c9a35884cb46b09cad9175f04efd7684e7262a0ac1c2f0b4e3f"
+      assert digest.hex() == expected, f"wheel KDF output diverges: {digest.hex()}"
+      print("wheel vector smoke OK", randomx_native.__version__,
+            randomx_native.RANDOMX_UPSTREAM_COMMIT)
+      PYEOF
+  artifacts:
+    paths:
+      - randomx-dist/
+  rules:
+    - if: $CI_COMMIT_TAG && $DOCS_ONLY != "true"
+    - if: $CI_COMMIT_BRANCH =~ /^feature\/v1\.[45]\.x-development$/ && $DOCS_ONLY != "true"
+    - if: $CI_COMMIT_BRANCH == "main" && $DOCS_ONLY != "true"
 
 
 publish:

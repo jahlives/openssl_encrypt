@@ -225,6 +225,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   independent-XOR and parallel paths already propagated correctly.
   Regression-pinned by `test_randomx_fail_closed_287.py`.
 
+- **CI builds and verifies `openssl-encrypt-randomx` artifacts**
+  (gitlab#285): the test jobs build the bindings so their suite (including
+  the vendored-tree integrity check) runs instead of skipping, and a new
+  `randomx-wheel` job produces the wheel + sdist and asserts the official
+  RandomX v1.1.10 vector against the PRODUCED wheel — a mis-flagged or
+  fast-math-poisoned build would otherwise change KDF output silently.
+  The sdist was verified to build standalone; PyPI upload remains a
+  manual maintainer step (documented in `randomx_native/README.md`).
+
 - **Legacy remote-pepper blobs: named peppers re-sealed in place, and
   server-side downgrades to the weak wrap are refused** (gitlab#274,
   ADVISORY 2026-35 follow-up): 1.4.9 hardened the remote-pepper wrap on the
