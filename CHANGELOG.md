@@ -74,10 +74,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   release artifacts to PyPI** (gitlab#285, github#163): play-button job in the
   publish stage that twine-uploads exactly the `randomx-wheel` job's
   integrity-gated, vector-smoked `randomx-dist/` artifact, replacing the
-  local-upload release recipe (which remains documented as fallback). Requires
-  the `PYPI_API_TOKEN_RANDOMX` CI variable; the first upload needs an
-  account-scoped token (trusted publishing is unavailable on self-hosted
-  GitLab).
+  local-upload release recipe (which remains documented as fallback). Reuses
+  the account-scoped `PYPI_API_TOKEN_PROD` CI variable — the first upload
+  creates the PyPI project and needs account scope (trusted publishing is
+  unavailable on self-hosted GitLab).
 
 - **Project-owned RandomX KDF bindings: `randomx_native` /
   `openssl-encrypt-randomx`** (gitlab#285, github#163): a new Rust/PyO3
