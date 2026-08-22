@@ -991,6 +991,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and failed with `g++` not found — the `build-essential` install only came
   afterwards. The `apt-get` toolchain step now runs first.
 
+- **CI: the `test-fallback` job generates `version.py` like the `test` job
+  does** (gitlab#292, github#171): the gitlab#273 fix (`python3 setup.py
+  --version` generates the gitignored `openssl_encrypt/version.py`) was only
+  applied to the `test` job, so the two `show-version-file --json` total-json
+  tests failed in `test-fallback` — invisible until gitlab#291 let the job
+  reach pytest at all.
+
 - **RandomX now installs and works on aarch64** (gitlab#282, github#162):
   the RandomX PyPI binding (1.1.10.post3, `xloem/RandomX-Python` around
   `tevador/RandomX` v1.1.10) never links the ARM JIT assembly — its
