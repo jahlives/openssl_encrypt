@@ -59,6 +59,10 @@ def _get_subprocess_env():
 
     env = {k: v for k, v in os.environ.items() if k in _SUBPROCESS_ENV_ALLOWLIST}
     env["PYTHONPATH"] = os.pathsep.join(p for p in sys.path if p and os.path.isabs(p))
+    # python -c prepends the CWD to sys.path regardless of PYTHONPATH, which
+    # would let a module planted in the working directory shadow the real
+    # binding inside the probe child; PYTHONSAFEPATH (3.11+) disables that.
+    env["PYTHONSAFEPATH"] = "1"
     # Propagate virtualenv prefix so the subprocess activates the same venv
     if hasattr(sys, "prefix") and sys.prefix != sys.base_prefix:
         env["VIRTUAL_ENV"] = sys.prefix
@@ -112,6 +116,32 @@ def _test_randomx_import():
         return False
 
 
+def _test_native_import():
+    """Test if randomx_native can be imported without fatal errors.
+
+    Same subprocess discipline as the other probes: a broken native build
+    must not be able to take the parent process down at import time.
+    """
+    import subprocess
+
+    python_exe = _get_python_executable()
+    if python_exe is None:
+        return False
+
+    try:
+        result = subprocess.run(
+            [python_exe, "-c", 'import randomx_native; print("SUCCESS")'],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            env=_get_subprocess_env(),
+        )
+
+        return result.returncode == 0 and "SUCCESS" in result.stdout
+    except (subprocess.TimeoutExpired, subprocess.SubprocessError, FileNotFoundError):
+        return False
+
+
 def _test_pyrx_import():
     """Test if pyrx can be imported without causing illegal instruction errors."""
     import subprocess
@@ -135,46 +165,65 @@ def _test_pyrx_import():
         return False
 
 
-# Try to import RandomX library (try RandomX package first, then pyrx as fallback)
+# Select a RandomX binding, in preference order (gitlab#285):
+#   1. randomx_native — the project-owned bindings over the pinned official
+#      RandomX library (byte-identical output, security-hardened);
+#   2. randomx — the PyPI/fork binding (same VM API);
+#   3. pyrx — legacy fallback with a different call surface.
+# Every candidate is probed in a subprocess first: a broken extension can
+# die with SIGILL at import time and must not take this process with it.
 try:
-    # First test if RandomX import is safe
-    if _test_randomx_import():
-        import randomx
+    if _test_native_import():
+        import randomx_native as randomx
 
         RANDOMX_AVAILABLE = True
-        RANDOMX_LIBRARY = "randomx"
-        logger.info("RandomX library loaded successfully")
+        RANDOMX_LIBRARY = "randomx_native"
+        logger.info("RandomX bindings loaded: randomx_native (project-owned)")
     else:
-        raise ImportError("RandomX import test failed - likely CPU incompatibility")
-except (ImportError, SystemError, OSError, Exception) as e:
-    logger.warning(f"RandomX import failed: {e}")
+        raise ImportError("randomx_native not installed or import test failed")
+except (ImportError, SystemError, OSError, Exception) as native_err:
+    logger.info(f"randomx_native not usable ({native_err}); trying the PyPI binding")
     try:
-        # Test if pyrx import is safe before attempting it
-        if _test_pyrx_import():
-            import pyrx
+        # First test if RandomX import is safe
+        if _test_randomx_import():
+            import randomx
 
-            # Check if this is the correct RandomX pyrx library (not the schema validator)
-            if hasattr(pyrx, "get_rx_hash"):
-                randomx = pyrx  # Use pyrx as randomx for compatibility
-                RANDOMX_AVAILABLE = True
-                RANDOMX_LIBRARY = "pyrx"
-                logger.info("RandomX (pyrx) library loaded successfully")
-            else:
-                RANDOMX_AVAILABLE = False
-                RANDOMX_LIBRARY = None
-                randomx = None
-                logger.warning(
-                    "Wrong pyrx library detected (schema validator instead of RandomX). "
-                    "Install correct RandomX: pip install RandomX"
-                )
+            RANDOMX_AVAILABLE = True
+            RANDOMX_LIBRARY = "randomx"
+            logger.info("RandomX library loaded successfully")
         else:
-            raise ImportError("pyrx import test failed - likely CPU incompatibility")
+            raise ImportError("RandomX import test failed - likely CPU incompatibility")
     except (ImportError, SystemError, OSError, Exception) as e:
-        RANDOMX_AVAILABLE = False
-        RANDOMX_LIBRARY = None
-        randomx = None
-        logger.warning(f"RandomX library not available or incompatible with CPU architecture: {e}")
-        logger.warning("Install with: pip install RandomX")
+        logger.warning(f"RandomX import failed: {e}")
+        try:
+            # Test if pyrx import is safe before attempting it
+            if _test_pyrx_import():
+                import pyrx
+
+                # Check if this is the correct RandomX pyrx library (not the schema validator)
+                if hasattr(pyrx, "get_rx_hash"):
+                    randomx = pyrx  # Use pyrx as randomx for compatibility
+                    RANDOMX_AVAILABLE = True
+                    RANDOMX_LIBRARY = "pyrx"
+                    logger.info("RandomX (pyrx) library loaded successfully")
+                else:
+                    RANDOMX_AVAILABLE = False
+                    RANDOMX_LIBRARY = None
+                    randomx = None
+                    logger.warning(
+                        "Wrong pyrx library detected (schema validator instead of RandomX). "
+                        "Install correct RandomX: pip install RandomX"
+                    )
+            else:
+                raise ImportError("pyrx import test failed - likely CPU incompatibility")
+        except (ImportError, SystemError, OSError, Exception) as e:
+            RANDOMX_AVAILABLE = False
+            RANDOMX_LIBRARY = None
+            randomx = None
+            logger.warning(
+                f"RandomX library not available or incompatible with CPU architecture: {e}"
+            )
+            logger.warning("Install with: pip install RandomX")
 
 # RandomX mode configurations
 RANDOMX_MODES = {
@@ -335,7 +384,7 @@ def randomx_kdf(
 
             # Generate RandomX hash for this round
             try:
-                if RANDOMX_LIBRARY == "randomx":
+                if RANDOMX_LIBRARY in ("randomx_native", "randomx"):
                     # Using RandomX package from PyPI
                     vm = randomx.RandomX(seed_hash, full_mem=(mode == "fast"))
                     current_hash = vm.calculate_hash(current_hash)

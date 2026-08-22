@@ -14,6 +14,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import secrets
 import signal
 import sys
@@ -1991,23 +1992,39 @@ def output_available_algorithms_json(args):
     except ImportError:
         pass
 
-    # Check randomx (using subprocess for safety - may cause SIGILL on unsupported CPUs)
-    try:
-        proc = subprocess.run(
-            [
-                sys.executable,
-                "-c",
-                "import randomx; print(getattr(randomx, '__version__', 'installed'))",
-            ],
-            capture_output=True,
-            timeout=2,
-            check=False,
-        )
-        if proc.returncode == 0:
-            libraries["randomx"]["available"] = True
-            libraries["randomx"]["version"] = proc.stdout.decode().strip()
-    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
-        pass
+    # Check randomx (using subprocess for safety - may cause SIGILL on
+    # unsupported CPUs). One child PER candidate binding: a fatally crashing
+    # randomx_native must not mask a working PyPI binding. The child gets the
+    # scrubbed allowlist environment (#88) — this process's env can carry
+    # password variables, and the child's whole job is importing native code.
+    from .randomx import _get_python_executable, _get_subprocess_env
+
+    randomx_python_exe = _get_python_executable()
+    if randomx_python_exe is not None:
+        for randomx_module in ("randomx_native", "randomx"):
+            try:
+                proc = subprocess.run(
+                    [
+                        randomx_python_exe,
+                        "-c",
+                        f"import {randomx_module} as m; "
+                        "print(getattr(m, '__version__', 'installed'))",
+                    ],
+                    capture_output=True,
+                    timeout=10,
+                    check=False,
+                    env=_get_subprocess_env(),
+                )
+            except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+                continue
+            if proc.returncode == 0:
+                raw_version = proc.stdout.decode(errors="replace").strip()
+                # A planted module's __version__ must not reach the terminal
+                # verbatim: printable ASCII only, bounded length.
+                safe_version = re.sub(r"[^\x20-\x7e]", "?", raw_version)[:64]
+                libraries["randomx"]["available"] = True
+                libraries["randomx"]["version"] = f"{safe_version} ({randomx_module})"
+                break
 
     # Check liboqs
     try:

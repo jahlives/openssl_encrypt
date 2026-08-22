@@ -22,6 +22,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The RandomX KDF now prefers the project-owned `randomx_native`
+  bindings** (gitlab#285, github#163): binding selection in
+  `modules/randomx.py` is `randomx_native` → PyPI `randomx` → `pyrx`, each
+  candidate probed in its own subprocess first (a broken extension dying
+  with SIGILL must not take the process down, and a crashing preferred
+  binding must not mask a working fallback); the registry KDF selects
+  `randomx_native` → `randomx` per call, with per-candidate subprocess
+  availability probes. The
+  availability probe accepts either VM binding, so a host with only
+  `randomx_native` installed is fully RandomX-capable, and
+  `check-deps`/`version` report which binding serves. KDF output is
+  byte-identical across bindings — pinned by the new
+  `test_randomx_binding_preference.py` (fresh-subprocess selection tests,
+  per-call fallback in the registry KDF, output equality for both the
+  registry KDF and the legacy `randomx_kdf` chain) and verified end-to-end
+  by cross-binding encrypt/decrypt of real files in both directions.
+
 - **The Flatpak under `com.opensslencrypt.OpenSSLEncrypt` is now the CLI-only
   app** (gitlab#267, github#142, `docs/flatpak-two-app-split.md` P1–P3): with
   the two-app Flatpak split, the desktop GUI is its own Flatpak app
@@ -80,8 +97,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   copy — right after dataset init); no network at build time; a committed
   `Cargo.lock`; a sha256 manifest over the vendored tree recomputed by
   the test suite; and a build that rejects fast-math flags (they would
-  change KDF output). The openssl_encrypt KDF does not switch to it yet —
-  the import preference lands separately once wheels are published.
+  change KDF output). The KDF prefers these bindings when they are
+  installed — see the binding-preference entry under Changed.
 
 - **`list-recovery` reports shamir K-of-N parameters** (gitlab#278,
   github#157): shamir slot entries now carry `threshold` and `num_shares`

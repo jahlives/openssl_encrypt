@@ -19,6 +19,7 @@ from .base import (
     AlgorithmBase,
     AlgorithmCategory,
     AlgorithmInfo,
+    AlgorithmNotAvailableError,
     RegistryBase,
     SecurityLevel,
     ValidationError,
@@ -710,17 +711,33 @@ class RandomX(KDFBase):
                 cls._available = False
                 return cls._available
 
-            try:
-                result = subprocess.run(
-                    [python_exe, "-c", "import randomx"],
-                    capture_output=True,
-                    timeout=2,
-                    check=False,
-                    env=_get_subprocess_env(),
-                )
-                cls._available = result.returncode == 0
-            except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
-                cls._available = False
+            # Either binding makes the KDF available: prefer the project-owned
+            # randomx_native, accept the PyPI binding as fallback (gitlab#285).
+            # One subprocess PER candidate: a native extension dying with
+            # SIGILL at import kills its child, and that must not mask a
+            # working second binding. A transient probe timeout returns False
+            # WITHOUT caching, so a loaded host is re-probed next call.
+            timed_out = False
+            available = False
+            for module_name in ("randomx_native", "randomx"):
+                try:
+                    result = subprocess.run(
+                        [python_exe, "-c", f"import {module_name}"],
+                        capture_output=True,
+                        timeout=10,
+                        check=False,
+                        env=_get_subprocess_env(),
+                    )
+                    if result.returncode == 0:
+                        available = True
+                        break
+                except subprocess.TimeoutExpired:
+                    timed_out = True
+                except (FileNotFoundError, OSError):
+                    break
+            if not available and timed_out:
+                return False  # transient; leave cls._available unset
+            cls._available = available
         return cls._available
 
     @classmethod
@@ -748,7 +765,21 @@ class RandomX(KDFBase):
 
         import hashlib
 
-        import randomx
+        try:
+            # Project-owned bindings over the pinned official RandomX library
+            # (gitlab#285); byte-identical output, security-hardened.
+            import randomx_native as randomx
+        except Exception:
+            # A broken-but-importable native module (OSError from a missing
+            # shared library, SystemError) must fall back exactly like a
+            # missing one; if neither binding imports in THIS process, fail
+            # with the registry's documented error, not a bare ImportError.
+            try:
+                import randomx
+            except Exception as import_err:
+                raise AlgorithmNotAvailableError(
+                    "RandomX bindings not importable in this process"
+                ) from import_err
 
         # M10: hashlib accepts a bytearray/SecureBytes (concatenated with the
         # salt) directly, so no wipeable-only copy of the secret is made here.
