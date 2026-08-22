@@ -3280,7 +3280,7 @@ def generate_key_independent_xor(
                     # errors propagate). In the parallel executor this exception
                     # re-raises out of future.result(), preserving fail-closed.
                     logger.warning(f"RandomX KDF enabled but unavailable: {e}")
-                    raise ValidationError(
+                    raise KeyDerivationError(
                         "RandomX KDF is enabled but unavailable; refusing to derive a "
                         "weaker key. Install RandomX support or disable RandomX in the "
                         f"KDF configuration. ({e})"
@@ -3579,6 +3579,43 @@ def generate_key_independent_xor(
 
 
 @secure_key_derivation_error_handler
+def _randomx_recovery_allowed(hash_config) -> bool:
+    """gitlab#287 escape hatch: legacy files written by pre-fix versions with
+    the RandomX stage silently dropped can ONLY be decrypted by reproducing
+    that dropped-stage derivation. Allowed exclusively for DECRYPTION (the
+    metadata marker set by the decrypt paths) and only with the explicit
+    opt-in environment variable — encryption never gets a weakened key.
+
+    Returns:
+        bool: True when the stage-dropped legacy derivation may be used.
+    """
+    import os
+
+    return bool(
+        hash_config
+        and hash_config.get("_is_from_decryption_metadata", False)
+        and os.environ.get("OPENSSL_ENCRYPT_ALLOW_DROPPED_RANDOMX") == "1"
+    )
+
+
+def _best_effort_zeroize(*buffers) -> None:
+    """Zeroize whatever partial key material exists on a failure path.
+
+    The fail-closed raises in generate_key (gitlab#287) bypass the
+    function's normal return-site cleanup; this wipes the chained partial
+    key and intermediates before the exception propagates. Best effort:
+    a buffer that no longer exists or cannot be wiped must not mask the
+    real error.
+    """
+    for buf in buffers:
+        if buf is None:
+            continue
+        try:
+            secure_memzero(buf)
+        except Exception:  # nosec B110 - cleanup must never mask the raise
+            pass
+
+
 def generate_key(
     password,
     salt,
@@ -4574,25 +4611,67 @@ def generate_key(
             # key. This branch is load-bearing since the project-owned
             # bindings surface native failures as exceptions where the old
             # binding aborted the whole process (gitlab#285).
-            if not quiet:
-                eprint("❌ RandomX key derivation failed; refusing to continue without it")
-            logger.error(f"RandomX key derivation failed: {e}")
-            raise KeyDerivationError(
-                "RandomX key derivation failed; refusing to derive a key "
-                "without the configured RandomX stage"
-            ) from e
+            if _randomx_recovery_allowed(hash_config):
+                # Decrypt-only, explicitly opted-in legacy recovery: files
+                # written by pre-fix versions with the stage silently
+                # dropped are only decryptable by reproducing that
+                # derivation. Warn loudly and unconditionally.
+                eprint(
+                    "⚠️ OPENSSL_ENCRYPT_ALLOW_DROPPED_RANDOMX: reproducing the "
+                    "LEGACY stage-dropped RandomX derivation for decryption "
+                    "(gitlab#287). Re-encrypt this file with a healthy setup."
+                )
+                logger.warning(
+                    "RandomX stage failure recovered via "
+                    "OPENSSL_ENCRYPT_ALLOW_DROPPED_RANDOMX (decrypt-only legacy path)"
+                )
+                use_randomx = False
+            else:
+                if not quiet:
+                    eprint("❌ RandomX key derivation failed; refusing to continue without it")
+                logger.error("RandomX key derivation failed: %s", sanitize_for_display(str(e)))
+                # The raise bypasses the return-site cleanup: wipe the chained
+                # partial key and any live intermediates first.
+                for _name in ("password_bytes", "salt_bytes", "base_salt", "password_for_salt"):
+                    _best_effort_zeroize(locals().get(_name))
+                _best_effort_zeroize(password, *(xor_accumulator or []))
+                if xor_accumulator:
+                    xor_accumulator.clear()
+                raise KeyDerivationError(
+                    "RandomX key derivation failed; refusing to derive a key "
+                    "without the configured RandomX stage. If this file was "
+                    "written by a pre-fix version WITH the stage silently "
+                    "dropped, decrypt once with "
+                    "OPENSSL_ENCRYPT_ALLOW_DROPPED_RANDOMX=1 and re-encrypt."
+                ) from e
 
     elif use_randomx and not RANDOMX_AVAILABLE:
         # Fail CLOSED (gitlab#287): a requested stage that silently vanishes
         # is the same weakened-key/mismatch hazard as a mid-stage failure.
-        if not quiet:
-            eprint("❌ RandomX requested but no RandomX binding is available")
-        logger.error("RandomX requested but no RandomX binding is available")
-        raise KeyDerivationError(
-            "RandomX key derivation was requested but no RandomX binding is "
-            "available; install openssl-encrypt-randomx (or the RandomX "
-            "package) instead of deriving a key without the configured stage"
-        )
+        if _randomx_recovery_allowed(hash_config):
+            eprint(
+                "⚠️ OPENSSL_ENCRYPT_ALLOW_DROPPED_RANDOMX: decrypting with the "
+                "LEGACY stage-dropped derivation (no RandomX binding installed, "
+                "gitlab#287). Re-encrypt this file with a healthy setup."
+            )
+            logger.warning(
+                "RandomX unavailable; recovered via "
+                "OPENSSL_ENCRYPT_ALLOW_DROPPED_RANDOMX (decrypt-only legacy path)"
+            )
+        else:
+            if not quiet:
+                eprint("❌ RandomX requested but no RandomX binding is available")
+            logger.error("RandomX requested but no RandomX binding is available")
+            _best_effort_zeroize(password, *(xor_accumulator or []))
+            if xor_accumulator:
+                xor_accumulator.clear()
+            raise KeyDerivationError(
+                "RandomX key derivation was requested but no RandomX binding is "
+                "available; install openssl-encrypt-randomx (or the RandomX "
+                "package). For a legacy file written by a pre-fix version with "
+                "the stage silently dropped, decrypt once with "
+                "OPENSSL_ENCRYPT_ALLOW_DROPPED_RANDOMX=1 and re-encrypt."
+            )
 
     if use_pbkdf2 and use_pbkdf2 > 0:
         # Using a fixed salt initially but then generating unique salts for each iteration

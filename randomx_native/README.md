@@ -81,9 +81,17 @@ CI (`randomx-wheel` job) builds the wheel + sdist on every development-branch
 pipeline and verifies the official RandomX v1.1.10 vector against the
 produced wheel. Publishing to PyPI is a manual release step:
 
+Publish the CI-verified `randomx-dist/` artifact (preferred), or rebuild
+locally and re-run the same gates the CI job applies before uploading:
+
 ```bash
 cd randomx_native
+sha256sum -c --quiet RANDOMX_SRC.sha256      # vendored-tree integrity
 maturin build --release -o dist && maturin sdist -o dist
+pip install dist/openssl_encrypt_randomx-*.whl --force-reinstall
+python3 -c "import randomx_native; \
+  assert randomx_native.RandomX(b'test key 000').calculate_hash(b'This is a test').hex() \
+  == '639183aae1bf4c9a35884cb46b09cad9175f04efd7684e7262a0ac1c2f0b4e3f'"
 twine upload dist/*            # needs the maintainer's PyPI credentials
 ```
 
