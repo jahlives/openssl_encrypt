@@ -84,12 +84,13 @@ CI (preferred) or done locally as a fallback.
 
 **Preferred: the `publish-randomx-pypi` CI job** (gitlab#285). On a pipeline
 whose `randomx-wheel` job succeeded, press its play button — it uploads the
-exact integrity-gated, vector-smoked `randomx-dist/` artifact via twine.
-Prerequisite: the `PYPI_API_TOKEN_RANDOMX` CI variable (masked + protected).
-The very first upload creates the PyPI project and needs an **account-scoped**
-token (PyPI trusted publishing supports gitlab.com only, not this self-hosted
-instance); after the project exists, replace it with a token scoped to
-`openssl-encrypt-randomx`. Note: PyPI accepts only manylinux/musllinux-tagged
+exact integrity-gated, vector-smoked `randomx-dist/` artifact via twine,
+using the existing account-scoped `PYPI_API_TOKEN_PROD` CI variable (an
+account-scoped token is required for the very first upload, which creates
+the PyPI project — PyPI trusted publishing supports gitlab.com only, not
+this self-hosted instance). If that token is ever narrowed to per-project
+scope, give this job its own `openssl-encrypt-randomx`-scoped token.
+Note: PyPI accepts only manylinux/musllinux-tagged
 Linux wheels — if the wheel is rejected as plain `linux_x86_64`, upload the
 sdist alone and fix the wheel tagging (maturin audits the wheel automatically
 when the build environment allows it).
