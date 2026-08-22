@@ -776,6 +776,34 @@ pip install 'RandomX @ git+https://github.com/jahlives/RandomX-Python@101d3e6826
 ```
 
 Installs from `requirements.txt`/`requirements-prod.txt` and the Flatpak build pick the fixed fork automatically on aarch64.
+
+### Recovering legacy files with dropped KDF stages
+
+Older versions could silently skip a configured key-derivation stage
+(Argon2, Balloon, Scrypt, HKDF, or RandomX) when its library failed or was
+missing, writing a file whose metadata still lists the stage. Such files
+cannot be decrypted by a healthy installation — the derived key never
+matches. Current versions refuse to derive a weakened key instead
+(gitlab#287/#288).
+
+If you hold such a legacy file, decrypt it ONE last time with the explicit
+opt-in recovery setting, then re-encrypt it with a healthy setup:
+
+```bash
+# <stage> is one of: argon2, balloon, scrypt, hkdf, randomx
+OPENSSL_ENCRYPT_ALLOW_DROPPED_KDF=<stage> \
+  python -m openssl_encrypt.crypt decrypt -i legacy.enc -o recovered.txt
+
+python -m openssl_encrypt.crypt encrypt -i recovered.txt -o healthy.enc
+```
+
+The setting works only for decryption — encryption always refuses a
+weakened key, and rekey never derives a NEW key through it (managing
+recovery slots on such a file only rewraps under the byte-identical
+existing key). It accepts a comma-separated list of stages and prints a
+loud warning whenever it is used. `OPENSSL_ENCRYPT_ALLOW_DROPPED_RANDOMX=1`
+remains a working alias for the RandomX stage.
+
 ---
 ## Usage
 
