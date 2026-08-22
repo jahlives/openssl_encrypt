@@ -211,6 +211,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **The legacy key-derivation chain fails closed when a configured RandomX
+  stage cannot run** (gitlab#287): `generate_key`'s sequential chain caught
+  any RandomX failure, printed "continuing without RandomX", and derived
+  the key WITHOUT the configured stage — weaker derivation than requested,
+  and a key/metadata mismatch that can strand the file (a healthy host
+  replaying the recorded rounds derives a different key). The sibling
+  branch did the same when RandomX was requested but no binding was
+  importable. Both now raise `KeyDerivationError` with a clear message.
+  The branch was nearly unreachable while the abandoned PyPI binding died
+  with SIGILL instead of raising; the project-owned bindings (gitlab#285)
+  surface native failures as exceptions, making it load-bearing. The v14
+  independent-XOR and parallel paths already propagated correctly.
+  Regression-pinned by `test_randomx_fail_closed_287.py`.
+
 - **Legacy remote-pepper blobs: named peppers re-sealed in place, and
   server-side downgrades to the weak wrap are refused** (gitlab#274,
   ADVISORY 2026-35 follow-up): 1.4.9 hardened the remote-pepper wrap on the

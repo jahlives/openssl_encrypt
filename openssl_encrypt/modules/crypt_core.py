@@ -4567,16 +4567,32 @@ def generate_key(
                     )
 
         except Exception as e:
+            # Fail CLOSED (gitlab#287): silently dropping a configured KDF
+            # stage derives a weaker key than requested and creates a
+            # key/metadata mismatch that can strand the file — a healthy
+            # host replaying the recorded RandomX rounds derives a different
+            # key. This branch is load-bearing since the project-owned
+            # bindings surface native failures as exceptions where the old
+            # binding aborted the whole process (gitlab#285).
             if not quiet:
-                eprint("❌ RandomX failed, continuing without RandomX")
-            logger.warning(f"RandomX key derivation failed: {e}")
-            # Don't fail the entire operation, just skip RandomX
-            use_randomx = False
+                eprint("❌ RandomX key derivation failed; refusing to continue without it")
+            logger.error(f"RandomX key derivation failed: {e}")
+            raise KeyDerivationError(
+                "RandomX key derivation failed; refusing to derive a key "
+                "without the configured RandomX stage"
+            ) from e
 
     elif use_randomx and not RANDOMX_AVAILABLE:
+        # Fail CLOSED (gitlab#287): a requested stage that silently vanishes
+        # is the same weakened-key/mismatch hazard as a mid-stage failure.
         if not quiet:
-            eprint("⚠️ RandomX requested but not available (install pyrx package)")
-        logger.warning("RandomX requested but pyrx library not available")
+            eprint("❌ RandomX requested but no RandomX binding is available")
+        logger.error("RandomX requested but no RandomX binding is available")
+        raise KeyDerivationError(
+            "RandomX key derivation was requested but no RandomX binding is "
+            "available; install openssl-encrypt-randomx (or the RandomX "
+            "package) instead of deriving a key without the configured stage"
+        )
 
     if use_pbkdf2 and use_pbkdf2 > 0:
         # Using a fixed salt initially but then generating unique salts for each iteration
