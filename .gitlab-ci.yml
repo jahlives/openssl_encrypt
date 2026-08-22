@@ -382,12 +382,12 @@ test-fallback:
   variables:
     PQC_QUIET: "true"  # Suppress PQC module initialization messages
   before_script:
+    # Install dependencies for building liboqs and Threefish (Debian packages)
+    # BEFORE any pip install: RandomX/whirlpool-py311 ship no cp313 wheels, so
+    # pip builds their sdists from requirements.txt and needs g++ (gitlab#291).
+    - apt-get update && apt-get install -y --no-install-recommends git build-essential cmake ninja-build golang python3-dev libssl-dev pkg-config cargo patchelf
     - pip install -r requirements.txt --break-system-packages
     - pip install pytest pytest-xdist pytest-cov pytest-order setuptools --break-system-packages  # setuptools provides pkg_resources, parallel testing, and coverage
-    # Install dependencies for building liboqs and Threefish (Debian packages).
-    # glibc base so pip uses manylinux wheels for RandomX/whirlpool (matching
-    # dev/prod), keeping the fixture KDF output reproducible.
-    - apt-get update && apt-get install -y --no-install-recommends git build-essential cmake ninja-build golang python3-dev libssl-dev pkg-config cargo patchelf
     # Clone liboqs at the pinned commit and verify it (gitlab#252, F31): the
     # clone was previously floating on the upstream default branch.
     - git clone --recurse-submodules --branch "$LIBOQS_VERSION" https://github.com/open-quantum-safe/liboqs.git
