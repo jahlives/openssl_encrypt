@@ -493,6 +493,40 @@ randomx-wheel:
     - if: $CI_COMMIT_BRANCH == "main" && $DOCS_ONLY != "true"
 
 
+# Publish the CI-verified openssl-encrypt-randomx artifacts to PyPI
+# (gitlab#285, github#163): manual play-button job that consumes the
+# randomx-wheel artifact, so exactly the integrity-gated, vector-smoked
+# files are uploaded — never a locally rebuilt wheel. Requires the
+# PYPI_API_TOKEN_RANDOMX CI variable (masked+protected). The very first
+# upload creates the PyPI project and therefore needs an account-scoped
+# token (PyPI trusted publishing only supports gitlab.com, not self-hosted
+# instances); switch the variable to a project-scoped token afterwards.
+publish-randomx-pypi:
+  stage: publish
+  image: python:3.13-alpine
+  tags:
+    - amd64  # Exclude arm64-builder, use amd64 runners
+  needs:
+    - job: randomx-wheel
+      artifacts: true
+  script:
+    - pip install --upgrade twine --break-system-packages
+    - twine check randomx-dist/*
+    # PyPI rejects plain linux_x86_64-tagged wheels (manylinux/musllinux
+    # only). If the wheel upload is refused, publish the sdist alone and see
+    # randomx_native/README.md "Releasing".
+    - TWINE_PASSWORD=${PYPI_API_TOKEN_RANDOMX} TWINE_USERNAME=__token__ python3 -m twine upload --verbose randomx-dist/*
+  rules:
+    - if: $CI_COMMIT_TAG && $DOCS_ONLY != "true"
+      when: manual
+      allow_failure: true
+    - if: $CI_COMMIT_BRANCH =~ /^feature\/v1\.[45]\.x-development$/ && $DOCS_ONLY != "true"
+      when: manual
+      allow_failure: true
+    - if: $CI_COMMIT_BRANCH == "main" && $DOCS_ONLY != "true"
+      when: manual
+      allow_failure: true
+
 publish:
   stage: publish
   tags:

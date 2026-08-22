@@ -79,10 +79,23 @@ the extension) and Rust.
 
 CI (`randomx-wheel` job) builds the wheel + sdist on every development-branch
 pipeline and verifies the official RandomX v1.1.10 vector against the
-produced wheel. Publishing to PyPI is a manual release step:
+produced wheel. Publishing to PyPI is a manual release step, triggered from
+CI (preferred) or done locally as a fallback.
 
-Publish the CI-verified `randomx-dist/` artifact (preferred), or rebuild
-locally and re-run the same gates the CI job applies before uploading:
+**Preferred: the `publish-randomx-pypi` CI job** (gitlab#285). On a pipeline
+whose `randomx-wheel` job succeeded, press its play button — it uploads the
+exact integrity-gated, vector-smoked `randomx-dist/` artifact via twine.
+Prerequisite: the `PYPI_API_TOKEN_RANDOMX` CI variable (masked + protected).
+The very first upload creates the PyPI project and needs an **account-scoped**
+token (PyPI trusted publishing supports gitlab.com only, not this self-hosted
+instance); after the project exists, replace it with a token scoped to
+`openssl-encrypt-randomx`. Note: PyPI accepts only manylinux/musllinux-tagged
+Linux wheels — if the wheel is rejected as plain `linux_x86_64`, upload the
+sdist alone and fix the wheel tagging (maturin audits the wheel automatically
+when the build environment allows it).
+
+**Fallback: local upload.** Rebuild locally and re-run the same gates the CI
+job applies before uploading:
 
 ```bash
 cd randomx_native
