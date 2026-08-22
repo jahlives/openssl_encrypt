@@ -8069,6 +8069,12 @@ def main_with_args(args=None):
         pbkdf2_iters = getattr(args, "pbkdf2_iterations", 0) or 0
 
         derived: bytearray = None
+        # gitlab#289: derive-password's output is externally consumed and must
+        # stay byte-stable. It historically derived with the quiet-variant
+        # stretch flag (quiet=True, pre-fix); pin that explicitly so the
+        # verbosity-independence change cannot alter its output.
+        if isinstance(hash_config, dict):
+            hash_config.setdefault("kdf_flag_variant", "quiet")
         try:
             try:
                 key, _, _ = generate_key(

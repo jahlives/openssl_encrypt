@@ -3799,6 +3799,13 @@ def generate_key(
     Returns:
         tuple: (key, salt, hash_config)
 
+    Note:
+        On encryption (no ``_is_from_decryption_metadata`` marker) the passed
+        ``hash_config`` dict is MUTATED to record ``kdf_flag_variant`` — the
+        self-description that lets post-fix files round-trip at any
+        verbosity (gitlab#289). Callers reusing one dict across derivations
+        should pass a copy.
+
     Raises:
         ValidationError: If input parameters are invalid
         KeyDerivationError: If key derivation fails
@@ -3827,6 +3834,13 @@ def generate_key(
         except UnicodeError:
             # If not, it might be using a different encoding - let's keep it as is
             pass
+
+    # gitlab#289: KeyStretch flags are CLASS-level state; without this reset
+    # they leak between generate_key calls in one process, silently changing
+    # the fallback / final-encoding branch of a later derivation. Only
+    # stretching performed within THIS call may count.
+    KeyStretch.key_stretch = False
+    KeyStretch.hash_stretch = False
 
     if salt is None:
         raise ValidationError("Salt cannot be None")
@@ -4854,6 +4868,28 @@ def generate_key(
             pass  # decrypt-only legacy recovery: skip the stage
 
     if use_pbkdf2 and use_pbkdf2 > 0:
+        if use_pbkdf2 is True:
+            # gitlab#289: v4-structured metadata resolves pbkdf2 through
+            # kdf_config only to a boolean, and the count reassignment above
+            # reads top-level keys absent in that structure — so this ran
+            # range(True) == ONE iteration for the stage's entire history.
+            # DECRYPT: format-locked (every existing v4 file was written that
+            # way). ENCRYPT: refuse — silently running one iteration instead
+            # of the configured count is a KDF-cost reduction, and pre-fix
+            # round-trips of this shape never worked anyway.
+            if hash_config and hash_config.get("_is_from_decryption_metadata", False):
+                use_pbkdf2 = 1
+            else:
+                raise ValidationError(
+                    "pbkdf2_iterations was configured through the nested v4 "
+                    "structure, which historically ran a single iteration "
+                    "regardless of the count; refusing to encrypt — configure "
+                    "pbkdf2_iterations directly"
+                )
+        if isinstance(use_pbkdf2, bool) or not isinstance(use_pbkdf2, int) or use_pbkdf2 < 0:
+            # gitlab#289 review F10: a crafted header can put arbitrary JSON
+            # types into pbkdf2 rounds; fail closed with the proper error.
+            raise ValidationError("pbkdf2 rounds must be a non-negative integer")
         # Using a fixed salt initially but then generating unique salts for each iteration
         # to prevent salt reuse attacks
         base_salt = salt
@@ -4905,9 +4941,63 @@ def generate_key(
 
         if not quiet and not progress:
             eprint(" ✅")
-            derived_salt = password[:16]
-            KeyStretch.key_stretch = True
             show_progress("PBKDF2", i + 1, use_pbkdf2)
+        # gitlab#289: the stretch flag gates the 100k fallback AND the final
+        # key-encoding branch — i.e. the DERIVED KEY. Historically it was set
+        # only in the loud display branch, so PBKDF2-bearing legacy configs
+        # derived DIFFERENT keys under --quiet vs normal output, and files
+        # only decrypted at the verbosity they were written with.
+        # ENCRYPTION is now verbosity-independent (always the loud-variant
+        # flag) so no new divergent files can be written. DECRYPTION stays
+        # faithful by default — the variant follows verbosity exactly like
+        # the pre-fix code, since existing files (incl. the project's own
+        # fixture corpus) require it — with an explicit both-way override
+        # for cross-verbosity decryption of legacy files.
+        _is_decryption = bool(
+            hash_config and hash_config.get("_is_from_decryption_metadata", False)
+        )
+        _recorded_variant = None
+        if isinstance(hash_config, dict):
+            _recorded_variant = hash_config.get("kdf_flag_variant")
+            if _recorded_variant is None:
+                _dc = hash_config.get("derivation_config")
+                if isinstance(_dc, dict):
+                    _kc = _dc.get("kdf_config")
+                    if isinstance(_kc, dict):
+                        _recorded_variant = _kc.get("kdf_flag_variant")
+        _variant_raw = os.environ.get("OPENSSL_ENCRYPT_LEGACY_QUIET_KDF_FALLBACK")
+        _variant = None
+        if _variant_raw is not None:
+            _norm = _variant_raw.strip().lower()
+            if _norm in ("1", "true", "yes"):
+                _variant = "1"
+            elif _norm in ("0", "false", "no"):
+                _variant = "0"
+            else:
+                # A recovery knob silently doing nothing would strand users.
+                eprint(
+                    "⚠️ OPENSSL_ENCRYPT_LEGACY_QUIET_KDF_FALLBACK has an "
+                    "unrecognized value and is IGNORED (use 1/0)"
+                )
+        if _recorded_variant == "loud":
+            KeyStretch.key_stretch = True  # self-described file / caller
+        elif _recorded_variant == "quiet":
+            # A caller-pinned quiet variant (e.g. derive-password preserving
+            # its historical deterministic output) or a self-described file.
+            pass
+        elif not _is_decryption:
+            KeyStretch.key_stretch = True
+            # Self-describe: files written from now on record which variant
+            # derived them, so decryption never guesses from verbosity and
+            # NEW quiet round-trips cannot break (gitlab#289).
+            if isinstance(hash_config, dict):
+                hash_config["kdf_flag_variant"] = "loud"
+        elif _variant == "1":
+            pass  # force the quiet-variant derivation (flag stays unset)
+        elif _variant == "0":
+            KeyStretch.key_stretch = True  # force the loud-variant derivation
+        elif not quiet and not progress:
+            KeyStretch.key_stretch = True  # pre-fix behavior: follow verbosity
 
         # NEW: For v10/v8, save PBKDF2 final output to XOR accumulator
         # CRITICAL: Store as SecureBytes, will be zeroed after XOR completes
@@ -5492,6 +5582,12 @@ def create_metadata_v5(
     # Add PBKDF2 config if explicitly configured in hash_config
     # IMPORTANT: Only add PBKDF2 to metadata if it's explicitly in hash_config
     # For v10+, PBKDF2 should not be used for encryption (only backward compat decryption)
+    # gitlab#289: carry the self-described KDF flag variant so decryption
+    # never guesses it from verbosity (new files round-trip at any level).
+    if isinstance(hash_config, dict) and "kdf_flag_variant" in hash_config:
+        metadata["derivation_config"]["kdf_config"]["kdf_flag_variant"] = hash_config[
+            "kdf_flag_variant"
+        ]
     # Check for both pbkdf2 dict format and pbkdf2_iterations int format
     if (
         "pbkdf2" in hash_config
@@ -5661,6 +5757,12 @@ def create_metadata_v6(
     # Add PBKDF2 config if explicitly configured in hash_config
     # IMPORTANT: Only add PBKDF2 to metadata if it's explicitly in hash_config
     # For v10+, PBKDF2 should not be used for encryption (only backward compat decryption)
+    # gitlab#289: carry the self-described KDF flag variant so decryption
+    # never guesses it from verbosity (new files round-trip at any level).
+    if isinstance(hash_config, dict) and "kdf_flag_variant" in hash_config:
+        metadata["derivation_config"]["kdf_config"]["kdf_flag_variant"] = hash_config[
+            "kdf_flag_variant"
+        ]
     # Check for both pbkdf2 dict format and pbkdf2_iterations int format
     if (
         "pbkdf2" in hash_config
@@ -5895,6 +5997,12 @@ def create_metadata_v8(
     # Add PBKDF2 config if explicitly configured in hash_config
     # IMPORTANT: Only add PBKDF2 to metadata if it's explicitly in hash_config
     # For v10+, PBKDF2 should not be used for encryption (only backward compat decryption)
+    # gitlab#289: carry the self-described KDF flag variant so decryption
+    # never guesses it from verbosity (new files round-trip at any level).
+    if isinstance(hash_config, dict) and "kdf_flag_variant" in hash_config:
+        metadata["derivation_config"]["kdf_config"]["kdf_flag_variant"] = hash_config[
+            "kdf_flag_variant"
+        ]
     # Check for both pbkdf2 dict format and pbkdf2_iterations int format
     if (
         "pbkdf2" in hash_config
@@ -6421,6 +6529,13 @@ def decrypt_file_asymmetric(
                     hash_config[kdf_name] = kdf_params
                 elif kdf_name == "pbkdf2":
                     hash_config["pbkdf2_iterations"] = kdf_params.get("rounds", 0)
+                elif kdf_name == "kdf_flag_variant":
+                    # gitlab#289: self-described flag variant of post-fix files
+                    hash_config["kdf_flag_variant"] = kdf_params
+            # gitlab#289: asymmetric decryption is decryption — the marker
+            # gates the faithful verbosity default and the recovery override
+            # for pre-fix files (asym's default config carries PBKDF2).
+            hash_config["_is_from_decryption_metadata"] = True
 
             # Enforce the KDF memory ceiling before the expensive derivation
             # (gitlab#128). The default path verifies the sender signature first
@@ -6750,6 +6865,12 @@ def encrypt_file_asymmetric(
                 metadata_unsigned["derivation_config"]["kdf_config"]["pbkdf2"] = {
                     "rounds": pbkdf2_iterations
                 }
+            # gitlab#289: self-describe the KDF flag variant (see the
+            # symmetric builders); decryption gives this record precedence.
+            if hash_config.get("kdf_flag_variant"):
+                metadata_unsigned["derivation_config"]["kdf_config"]["kdf_flag_variant"] = (
+                    hash_config["kdf_flag_variant"]
+                )
 
             # Copy KDF configurations from hash_config if present
             kdf_algorithms = ["scrypt", "argon2", "balloon", "hkdf", "randomx"]
@@ -10132,6 +10253,12 @@ def _flatten_derivation_config(derivation_config: dict) -> dict:
             hash_config["pbkdf2"] = kdf_params
     hash_config["pbkdf2_iterations"] = pbkdf2_iterations
     hash_config["_is_from_decryption_metadata"] = True
+    kdf_variant = derivation_config.get("kdf_config", {}).get("kdf_flag_variant")
+    if kdf_variant is not None:
+        # gitlab#289: self-described flag variant must survive flattening or
+        # rekey/envelope derivations of new files would fall back to the
+        # verbosity-guessing legacy default.
+        hash_config["kdf_flag_variant"] = kdf_variant
     return hash_config
 
 
@@ -10335,6 +10462,10 @@ def _rekey_envelope_fast(
         new_meta = json.loads(base64.b64decode(meta_b64))
         new_salt = secrets.token_bytes(old_salt_len)
         new_meta["derivation_config"]["salt"] = base64.b64encode(new_salt).decode("ascii")
+        # gitlab#289: the NEW KEK is a new derivation — self-describe its flag
+        # variant so the rekeyed file round-trips at any verbosity (the AAD
+        # excludes derivation_config, so this cannot trip the AAD invariant).
+        new_meta["derivation_config"].setdefault("kdf_config", {})["kdf_flag_variant"] = "loud"
 
         new_kek = _derive_envelope_kek(
             new_password, new_meta["derivation_config"], algorithm, format_version, xor_mode
@@ -12158,6 +12289,9 @@ def decrypt_file(
             elif kdf_name == "pbkdf2" and isinstance(kdf_params, dict) and "rounds" in kdf_params:
                 # Store pbkdf2 config from metadata
                 hash_config["pbkdf2"] = kdf_params
+            elif kdf_name == "kdf_flag_variant":
+                # gitlab#289: self-described flag variant of post-fix files
+                hash_config["kdf_flag_variant"] = kdf_params
 
         # Add pbkdf2_iterations for consistency with generate_key expectations
         hash_config["pbkdf2_iterations"] = pbkdf2_iterations

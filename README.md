@@ -804,6 +804,28 @@ existing key). It accepts a comma-separated list of stages and prints a
 loud warning whenever it is used. `OPENSSL_ENCRYPT_ALLOW_DROPPED_RANDOMX=1`
 remains a working alias for the RandomX stage.
 
+### Files written under `--quiet` with legacy PBKDF2 configs
+
+On the 1.4.x line, older versions derived a DIFFERENT key under `--quiet`
+than with normal output for legacy-chain configurations involving PBKDF2
+(gitlab#289) — such files only decrypt at the verbosity they were written
+with. Decryption keeps that behavior by default, so nothing changes for
+same-verbosity use; to decrypt at the OTHER verbosity, force the variant
+explicitly (then re-encrypt):
+
+```bash
+# file was written with --quiet, decrypting loudly:
+OPENSSL_ENCRYPT_LEGACY_QUIET_KDF_FALLBACK=1 \
+  python -m openssl_encrypt.crypt decrypt -i legacy.enc -o recovered.txt
+# file was written loudly, decrypting with --quiet:
+OPENSSL_ENCRYPT_LEGACY_QUIET_KDF_FALLBACK=0 \
+  python -m openssl_encrypt.crypt decrypt --quiet -i legacy.enc -o recovered.txt
+```
+
+Encryption always uses the normal-output derivation now, so newly written
+files decrypt at any verbosity.
+
+
 ---
 ## Usage
 

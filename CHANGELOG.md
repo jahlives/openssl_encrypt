@@ -211,6 +211,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Key derivation no longer depends on prior-call state, and encryption no
+  longer depends on verbosity** (gitlab#289): on the 1.4.x line, the legacy
+  PBKDF2 chain stage set the internal stretch flag only inside the loud
+  display branch — so the SAME configuration derived DIFFERENT keys under
+  `--quiet` vs normal output (through both the 100k fallback and the final
+  key-encoding branch), and files only decrypted at the verbosity they were
+  written with. ENCRYPTION is now verbosity-independent (always the
+  normal-output variant), so no new divergent files can be written;
+  DECRYPTION stays faithful to the pre-fix behavior by default — the
+  variant follows verbosity, because existing files (including the
+  project's own fixture corpus, which is quiet-written) require it — with a
+  documented both-way override (`OPENSSL_ENCRYPT_LEGACY_QUIET_KDF_FALLBACK=1`
+  forces the quiet-variant, `=0` the loud-variant) for cross-verbosity
+  decryption; all variants are pinned byte-exact against pre-fix goldens.
+  `KeyStretch` flags are also reset at `generate_key` entry on both lines —
+  they were class-level state that leaked between calls in one process,
+  silently changing a later derivation's fallback/encoding branch. Also made
+  explicit: v4-structured metadata resolved `pbkdf2_iterations` to a
+  boolean, so the stage always ran exactly ONE iteration regardless of the
+  configured count — format-locked (every existing v4 file was written that
+  way) and now explicit, with the "Applying True rounds" display corrected.
+  New files are additionally **self-describing**: encryption records the
+  flag variant in metadata (`kdf_config.kdf_flag_variant`), and decryption
+  gives that record precedence over both the env override and verbosity —
+  so files written from now on round-trip at ANY verbosity combination
+  (pinned by an end-to-end matrix test), while old files keep the faithful
+  verbosity-following default.
+  The review pass extended coverage to every derivation surface: the
+  ASYMMETRIC path (whose default config carries PBKDF2) now sets the
+  decryption marker and records/reads the variant — pre-fix quiet asym
+  files decrypt via the same override, and new asym files round-trip at
+  any verbosity (pinned by a real-file matrix test); REKEY self-describes
+  the new KEK's variant so rekeyed legacy files round-trip; the
+  `derive-password` command explicitly pins its historical quiet-variant
+  derivation so its externally consumed output stays byte-stable (golden
+  test); encrypt-side v4-shape pbkdf2 configs are refused instead of
+  silently running one iteration; crafted non-integer pbkdf2 rounds fail
+  closed with `ValidationError`; and the recovery variable accepts
+  1/true/yes and 0/false/no, warning loudly on anything else. Note: the
+  `kind_action` class flag (600k-vs-legacy fallback selector) is
+  unchanged in this pass and still process-ambient; it only matters in
+  the already-rare dropped-KDF fallback and is tracked for a follow-up.
+  Regression suite: `test_pbkdf2_kdf_quirks_289.py`.
 - **Every legacy-chain KDF stage now fails closed** (gitlab#288, completing
   gitlab#287): Argon2, Balloon, Scrypt, and HKDF failures in `generate_key`'s
   sequential chain previously printed a fallback message and silently

@@ -107,17 +107,23 @@ class TestLegacyRecoveryHatch(unittest.TestCase):
         return config
 
     def test_hatch_reproduces_stage_dropped_key_on_decrypt(self):
-        no_randomx_key, _s, _c = crypt_core.generate_key(
-            PASSWORD, SALT, {"randomx": {"enabled": False}}, quiet=True
-        )
-        with mock.patch.dict("os.environ", {"OPENSSL_ENCRYPT_ALLOW_DROPPED_RANDOMX": "1"}):
-            with mock.patch.object(crypt_core, "RANDOMX_AVAILABLE", False):
+        """Baseline mocks the recovery gate itself (same skip path, same
+        config): a disabled-stage config is NOT a valid oracle — the enabled
+        flag feeds any_kdf_requested and the encoding branches (see the
+        gitlab#288/#289 test suites; this test previously passed only via
+        the cross-call flag leak gitlab#289 fixed)."""
+        crypt_core.KeyStretch.key_stretch = False
+        with mock.patch.object(crypt_core, "RANDOMX_AVAILABLE", False):
+            with mock.patch.object(crypt_core, "_dropped_stage_recovery_allowed", lambda *a: True):
+                baseline, _s, _c = crypt_core.generate_key(
+                    PASSWORD, SALT, self._decrypt_config(), quiet=True
+                )
+            crypt_core.KeyStretch.key_stretch = False
+            with mock.patch.dict("os.environ", {"OPENSSL_ENCRYPT_ALLOW_DROPPED_RANDOMX": "1"}):
                 key, _s2, _c2 = crypt_core.generate_key(
                     PASSWORD, SALT, self._decrypt_config(), quiet=True
                 )
-        self.assertEqual(
-            key, no_randomx_key, msg="hatch must reproduce the legacy dropped-stage key"
-        )
+        self.assertEqual(key, baseline, msg="env-var hatch must match the recovery skip path")
 
     def test_hatch_refused_for_encryption(self):
         """Without the decryption marker the env var must change nothing."""
