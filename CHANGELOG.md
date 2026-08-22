@@ -492,6 +492,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **CI: the `test-fallback` job installs its build toolchain before pip**
+  (gitlab#291, github#169): the job pip-installed `requirements.txt` as its
+  first step, but on `python:3.13-slim` the pinned `RandomX` and
+  `whirlpool-py311` packages ship no cp313 wheels, so pip built their sdists
+  and failed with `g++` not found — the `build-essential` install only came
+  afterwards. The `apt-get` toolchain step now runs first.
+
 - **RandomX now installs and works on aarch64** (gitlab#282, github#162):
   the RandomX PyPI binding (1.1.10.post3, `xloem/RandomX-Python` around
   `tevador/RandomX` v1.1.10) never links the ARM JIT assembly — its
