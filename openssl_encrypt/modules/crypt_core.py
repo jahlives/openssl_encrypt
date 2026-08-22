@@ -3322,6 +3322,13 @@ def generate_key(
             # If not, it might be using a different encoding - let's keep it as is
             pass
 
+    # gitlab#289: KeyStretch flags are CLASS-level state; without this reset
+    # they leak between generate_key calls in one process, silently changing
+    # the fallback / final-encoding branch of a later derivation. Only
+    # stretching performed within THIS call may count.
+    KeyStretch.key_stretch = False
+    KeyStretch.hash_stretch = False
+
     if salt is None:
         raise ValidationError("Salt cannot be None")
 
