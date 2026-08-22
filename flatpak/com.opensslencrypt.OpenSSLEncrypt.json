@@ -129,29 +129,18 @@
     {
       "name": "python3-randomx",
       "buildsystem": "simple",
-      "exclude-arches": ["aarch64"],
       "build-options": {
         "build-args": [
           "--share=network"
-        ]
+        ],
+        "append-path": "/usr/lib/sdk/rust-stable/bin",
+        "env": {
+          "CARGO_HOME": "/run/build/python3-randomx/cargo"
+        }
       },
       "build-commands": [
-        "pip3 install --prefix=${FLATPAK_DEST} 'RandomX==1.1.10.post3'"
-      ],
-      "sources": []
-    },
-    {
-      "name": "python3-randomx-aarch64",
-      "buildsystem": "simple",
-      "only-arches": ["aarch64"],
-      "build-options": {
-        "build-args": [
-          "--share=network"
-        ]
-      },
-      "build-commands": [
-        "true # aarch64 only (gitlab#282, gitlab#284): the PyPI 1.1.10.post3 build never links the ARM JIT assembly and cannot import; use the one-line-fixed fork, commit-pinned. Other arches install from PyPI above so the fork never becomes their trust root.",
-        "pip3 install --prefix=${FLATPAK_DEST} 'RandomX @ git+https://github.com/jahlives/RandomX-Python@101d3e6826dcf27e0253a44a6b7926b9033b9666'"
+        "true # Project-owned RandomX binding over the official tevador/RandomX v1.1.10 tree, every arch (gitlab#285, gitlab#293). Replaces the abandoned PyPI RandomX package and the aarch64 fork workaround (gitlab#282, gitlab#284). Where no matching wheel exists, pip builds the sdist with maturin via the rust-stable SDK extension on the path.",
+        "pip3 install --prefix=${FLATPAK_DEST} 'openssl-encrypt-randomx==1.0.0'"
       ],
       "sources": []
     },

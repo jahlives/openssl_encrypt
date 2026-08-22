@@ -804,13 +804,20 @@ pip install -e .
 
 **Note:** For full post-quantum support (HQC, ML-DSA), you need to manually install liboqs and liboqs-python. The Flatpak version includes these by default.
 
-**ARM64 note (RandomX KDF):** the RandomX binding on PyPI (1.1.10.post3) cannot import on aarch64 (its build never links the ARM JIT assembly), so PyPI installs on ARM64 skip RandomX — the RandomX KDF then fails closed with a clear error instead of degrading silently. To enable it, install the one-line-fixed fork, pinned by commit:
+**RandomX KDF binding:** the RandomX stage is served by the project-owned
+`openssl-encrypt-randomx` package (the `randomx_native` module — Rust/PyO3
+bindings over the official tevador/RandomX v1.1.10 tree, vendored and
+commit-pinned; see `randomx_native/README.md`). It installs on every
+architecture, including aarch64, where the abandoned PyPI `RandomX` binding
+could not import. Where no matching wheel exists for your platform or Python
+version, pip builds the sdist, which needs a Rust toolchain (`cargo`).
+Installs from `requirements.txt`/`requirements-prod.txt`, `pip install
+openssl_encrypt`, and the Flatpak build all ship it automatically; manual
+install is just:
 
 ```bash
-pip install 'RandomX @ git+https://github.com/jahlives/RandomX-Python@101d3e6826dcf27e0253a44a6b7926b9033b9666'
+pip install openssl-encrypt-randomx
 ```
-
-Installs from `requirements.txt`/`requirements-prod.txt` and the Flatpak build pick the fixed fork automatically on aarch64.
 
 ### Recovering legacy files with dropped KDF stages
 

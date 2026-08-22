@@ -22,6 +22,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **RandomX installs as the published `openssl-encrypt-randomx` 1.0.0 on
+  every architecture** (gitlab#293, github#172; gitlab#285 follow-up, review
+  F3): all install surfaces — `requirements.txt`, `requirements-prod.in`,
+  `requirements-prod.txt`, `requirements-dev.txt`, `setup.py`
+  `install_requires`, and the flatpak manifest (the two arch-split modules
+  collapsed into one) — now pin the project-owned binding, replacing the
+  abandoned PyPI `RandomX` package and retiring the commit-pinned aarch64
+  fork workaround (gitlab#282/#284). ARM64 installs get the RandomX KDF out
+  of the box. The pin-consistency tests
+  (`test_flatpak_pin_consistency.py`, `test_install_requires_metadata.py`)
+  now enforce that neither legacy source reappears and that every surface
+  pins the same version. Recorded 1.0.0 artifact hashes in
+  `requirements.txt`; full `--require-hashes` mode remains a separate
+  all-dependencies step. The Windows helper
+  `scripts/build_local_deps.ps1` still builds the legacy upstream binding
+  locally (the runtime binding preference accepts it as fallback).
+
 - **The RandomX KDF now prefers the project-owned `randomx_native`
   bindings** (gitlab#285, github#163): binding selection in
   `modules/randomx.py` is `randomx_native` → PyPI `randomx` → `pyrx`, each

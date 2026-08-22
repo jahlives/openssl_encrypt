@@ -89,12 +89,16 @@ class TestPublishedMetadata(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        """Capture the setup() kwargs once for all assertions."""
         cls.kwargs = _captured_setup_kwargs()
         cls.entries = _all_declared_requirements(cls.kwargs)
 
     def test_setup_declares_requirements(self):
-        # Completeness is enforced exactly by
-        # test_install_requires_matches_requirements_prod_in.
+        """A non-empty install_requires reaches setuptools.setup().
+
+        Completeness is enforced exactly by
+        test_install_requires_matches_requirements_prod_in.
+        """
         self.assertTrue(
             self.kwargs.get("install_requires"),
             msg="setup.py must declare install_requires",
@@ -115,7 +119,7 @@ class TestPublishedMetadata(unittest.TestCase):
         )
 
     def test_no_direct_url_requirements(self):
-        """PyPI rejects any distribution whose metadata contains a direct URL."""
+        """Published metadata must not contain direct URLs (rejected by PyPI)."""
         direct = []
         for origin, line in self.entries:
             try:
@@ -134,32 +138,45 @@ class TestPublishedMetadata(unittest.TestCase):
             "repositories): " + repr(direct),
         )
 
-    def test_randomx_declared_only_off_aarch64(self):
-        """The PyPI RandomX build is broken on aarch64 (gitlab#282); published
-        metadata must scope it away instead of shipping the git fork."""
-        randomx = [
-            Requirement(line)
+    def test_randomx_ships_as_project_binding_on_every_arch(self):
+        """The RandomX stage ships as the project-owned openssl-encrypt-randomx binding
+        (gitlab#285/#293); the abandoned PyPI ``RandomX`` package and the
+        aarch64 fork (gitlab#282 history) must not reappear in metadata.
+        """
+        legacy = [
+            line
             for line in self.kwargs.get("install_requires", [])
             if _normalize(Requirement(line).name) == "randomx"
         ]
         self.assertEqual(
-            len(randomx),
-            1,
-            msg="install_requires must declare RandomX exactly once "
-            "(the aarch64 fork line must not be there): " + repr([str(r) for r in randomx]),
+            legacy,
+            [],
+            msg="The abandoned PyPI RandomX package must not be declared "
+            "(gitlab#293 replaced it): " + repr(legacy),
         )
-        req = randomx[0]
-        self.assertIsNone(req.url, msg="RandomX must come from PyPI, not a URL")
-        self.assertIsNotNone(req.marker, msg="RandomX must carry a platform_machine marker")
-        self.assertIn(
-            'platform_machine != "aarch64"',
-            str(req.marker),
-            msg="RandomX must be excluded on aarch64, where the PyPI build " "cannot import",
+        binding = [
+            Requirement(line)
+            for line in self.kwargs.get("install_requires", [])
+            if _normalize(Requirement(line).name) == "openssl-encrypt-randomx"
+        ]
+        self.assertEqual(
+            len(binding),
+            1,
+            msg="install_requires must declare openssl-encrypt-randomx "
+            "exactly once: " + repr([str(r) for r in binding]),
+        )
+        req = binding[0]
+        self.assertIsNone(req.url, msg="openssl-encrypt-randomx must come from PyPI, not a URL")
+        self.assertIsNone(
+            req.marker,
+            msg="openssl-encrypt-randomx serves every arch — no platform "
+            "marker (the aarch64 split ended with the fork retirement)",
         )
 
     def test_install_requires_matches_requirements_prod_in(self):
         """Anti-drift: the explicit declaration must cover exactly the packages
-        named in requirements-prod.in (the abstract dependency input)."""
+        named in requirements-prod.in (the abstract dependency input).
+        """
         declared = {
             _normalize(Requirement(line).name) for line in self.kwargs.get("install_requires", [])
         }
