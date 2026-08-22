@@ -20,13 +20,14 @@ pyzbar>=0.1.9,<1.0.0
 # Optional post-quantum cryptography dependencies
 # liboqs-python>=0.7.0  # Uncomment to enable post-quantum cryptography support
 
-# Optional RandomX KDF dependencies. The PyPI binding's aarch64 build is
-# broken (setup.py never links the ARM JIT assembly -> ImportError:
-# randomx_program_aarch64_cacheline_align_mask1); arm64 installs use the
-# one-line-fixed fork pinned by commit until upstream releases a fix
-# (gitlab#282, github#162).
-RandomX>=1.1.10 ; platform_machine != "aarch64"  # RandomX key derivation function
-RandomX @ git+https://github.com/jahlives/RandomX-Python@101d3e6826dcf27e0253a44a6b7926b9033b9666 ; platform_machine == "aarch64"
+# RandomX KDF: the project-owned binding over the official tevador/RandomX
+# v1.1.10 tree, serving every arch (gitlab#285/#293; replaces the abandoned
+# PyPI RandomX package and the aarch64 fork workaround from gitlab#282).
+# Exact pin: a KDF-stage dependency. 1.0.0 artifact hashes for reference
+# (full --require-hashes mode is a separate, all-deps step):
+#   wheel  sha256:9f99b32abefa1f4482094b5a7a36dc4352b29306055fe72ae7fbc581b90d1da2
+#   sdist  sha256:3941e2cc7a314fc62ed6f3fbed5293473fd75ba734036593d9fcaef7ec16ea5e
+openssl-encrypt-randomx==1.0.0
 
 # JSON schema validation
 jsonschema>=4.0.0,<5.0.0

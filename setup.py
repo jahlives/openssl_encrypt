@@ -256,9 +256,9 @@ INSTALL_REQUIRES = [
     "qrcode[pil]>=7.0.0,<9.0.0",
     "pyzbar>=0.1.9,<1.0.0",
     "pywin32>=306,<307; sys_platform == 'win32'",
-    # The PyPI build cannot import on aarch64 (no ARM JIT assembly linked);
-    # arm64 users install the commit-pinned fixed fork manually (see README).
-    'RandomX>=1.1.10,<2.0.0; platform_machine != "aarch64"',
+    # Project-owned RandomX binding, every arch (gitlab#285/#293; replaces
+    # the abandoned PyPI RandomX package and the aarch64 fork workaround).
+    "openssl-encrypt-randomx>=1.0.0,<2.0.0",
 ]
 
 
