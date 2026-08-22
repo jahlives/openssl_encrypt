@@ -17,7 +17,7 @@ from unittest import mock
 
 from openssl_encrypt.modules import crypt_core
 from openssl_encrypt.modules.crypt_core import generate_key_independent_xor
-from openssl_encrypt.modules.crypt_errors import ValidationError
+from openssl_encrypt.modules.crypt_errors import KeyDerivationError
 
 
 class TestRandomXFailClosed(unittest.TestCase):
@@ -32,7 +32,7 @@ class TestRandomXFailClosed(unittest.TestCase):
             raise AssertionError(f"unexpected KDF call: {kwargs.get('kdf_type')}")
 
         with mock.patch.object(crypt_core, "compute_kdf_independent", side_effect=fake_kdf):
-            with self.assertRaises(ValidationError):
+            with self.assertRaises(KeyDerivationError):
                 generate_key_independent_xor(
                     password=b"correct horse",
                     salt=b"0123456789abcdef",

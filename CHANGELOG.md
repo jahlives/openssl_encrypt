@@ -763,8 +763,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The branch was nearly unreachable while the abandoned PyPI binding died
   with SIGILL instead of raising; the project-owned bindings (gitlab#285)
   surface native failures as exceptions, making it load-bearing. The v14
-  independent-XOR and parallel paths already propagated correctly.
-  Regression-pinned by `test_randomx_fail_closed_287.py`.
+  independent-XOR and parallel paths already propagated correctly (the
+  independent path's unavailable-raise is aligned to `KeyDerivationError`
+  as well). The confirmation review hardened the fix further: the raise
+  paths now zeroize the chained partial key and XOR intermediates first;
+  the failure log is sanitized (a crafted file's KDF config can no longer
+  push escape sequences into the log); and a decrypt-only, explicit
+  opt-in recovery hatch (`OPENSSL_ENCRYPT_ALLOW_DROPPED_RANDOMX=1`)
+  reproduces the legacy stage-dropped derivation for files a pre-fix
+  version wrote that way — such files are otherwise undecryptable by any
+  code path; encryption never gets the hatch. The four sibling stages'
+  fail-open fallbacks are tracked as gitlab#288.
+  Regression-pinned by `test_randomx_fail_closed_287.py` (which now runs
+  its branch guards on hosts without any RandomX binding).
 
 - **CI builds and verifies `openssl-encrypt-randomx` artifacts**
   (gitlab#285): the test jobs build the bindings so their suite (including
@@ -772,8 +783,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `randomx-wheel` job produces the wheel + sdist and asserts the official
   RandomX v1.1.10 vector against the PRODUCED wheel — a mis-flagged or
   fast-math-poisoned build would otherwise change KDF output silently.
-  The sdist was verified to build standalone; PyPI upload remains a
-  manual maintainer step (documented in `randomx_native/README.md`).
+  The job checks the vendored-tree sha256 manifest BEFORE building, uses
+  no shared pip cache, and pins maturin; the sdist was verified to build
+  standalone; PyPI upload remains a manual maintainer step whose recipe
+  re-runs the same gates (documented in `randomx_native/README.md`).
 
 - **Legacy remote-pepper blobs: named peppers re-sealed in place, and
   server-side downgrades to the weak wrap are refused** (gitlab#274,

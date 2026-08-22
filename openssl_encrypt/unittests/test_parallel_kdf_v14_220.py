@@ -137,7 +137,7 @@ class TestParallelV14RandomXFailClosed(unittest.TestCase):
     def _run(self, parallel):
         import openssl_encrypt.modules.crypt_core as cc
         from openssl_encrypt.modules.crypt_core import (
-            ValidationError,
+            KeyDerivationError,
             generate_key_independent_xor,
         )
 
@@ -149,7 +149,7 @@ class TestParallelV14RandomXFailClosed(unittest.TestCase):
             return real(*a, **k)
 
         with mock.patch.object(cc, "compute_kdf_independent", boom):
-            with self.assertRaises(ValidationError):
+            with self.assertRaises(KeyDerivationError):
                 generate_key_independent_xor(
                     PASSWORD,
                     SALT,
