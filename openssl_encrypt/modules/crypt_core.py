@@ -3075,23 +3075,174 @@ def generate_key_independent_xor(
 
 
 @secure_key_derivation_error_handler
-def _randomx_recovery_allowed(hash_config) -> bool:
-    """gitlab#287 escape hatch: legacy files written by pre-fix versions with
-    the RandomX stage silently dropped can ONLY be decrypted by reproducing
+def _dropped_stage_recovery_allowed(hash_config, stage: str) -> bool:
+    """gitlab#287/#288 escape hatch: legacy files written by pre-fix versions
+    with a KDF stage silently dropped can ONLY be decrypted by reproducing
     that dropped-stage derivation. Allowed exclusively for DECRYPTION (the
     metadata marker set by the decrypt paths) and only with the explicit
     opt-in environment variable — encryption never gets a weakened key.
+
+    OPENSSL_ENCRYPT_ALLOW_DROPPED_KDF is a comma-separated list of stage
+    names (argon2, balloon, scrypt, hkdf, randomx); the gitlab#287 variable
+    OPENSSL_ENCRYPT_ALLOW_DROPPED_RANDOMX=1 remains a working alias for the
+    randomx stage.
+
+    Args:
+        hash_config: The KDF configuration (with the decryption marker).
+        stage: The stage name asking for recovery.
 
     Returns:
         bool: True when the stage-dropped legacy derivation may be used.
     """
     import os
 
-    return bool(
-        hash_config
-        and hash_config.get("_is_from_decryption_metadata", False)
-        and os.environ.get("OPENSSL_ENCRYPT_ALLOW_DROPPED_RANDOMX") == "1"
+    if hash_config and hash_config.get("_deny_dropped_stage_recovery", False):
+        # Write paths (e.g. the rekey fast-path's NEW KEK) must never derive
+        # a persisted key through the hatch (gitlab#288 review finding 1).
+        return False
+    if not (hash_config and hash_config.get("_is_from_decryption_metadata", False)):
+        return False
+    allowed = {
+        item.strip().lower()
+        for item in os.environ.get("OPENSSL_ENCRYPT_ALLOW_DROPPED_KDF", "").split(",")
+        if item.strip()
+    }
+    if stage in allowed:
+        return True
+    return stage == "randomx" and os.environ.get("OPENSSL_ENCRYPT_ALLOW_DROPPED_RANDOMX") == "1"
+
+
+def _proactive_stage_drop(hash_config, stage: str, quiet: bool) -> bool:
+    """True when the decrypt-only recovery hatch proactively skips `stage`.
+
+    Needed since gitlab#290 repaired the never-functional legacy-chain HKDF
+    stage: a legacy file recorded with that stage can only be opened by
+    NOT running it, so the hatch must be able to skip a stage that would
+    now succeed. Loud by design; encryption never passes the gate.
+    """
+    if not _dropped_stage_recovery_allowed(hash_config, stage):
+        return False
+    eprint(
+        f"⚠️ OPENSSL_ENCRYPT_ALLOW_DROPPED_KDF: skipping the {stage} stage for "
+        "decryption (legacy stage-dropped file, gitlab#288/#290). Re-encrypt "
+        "this file with a healthy setup."
     )
+    logger.warning("KDF stage %s proactively skipped via the decrypt-only legacy hatch", stage)
+    return True
+
+
+def _kdf_stage_failure(
+    stage: str,
+    hash_config,
+    quiet: bool,
+    password,
+    xor_accumulator,
+    exc: Exception = None,
+    caller_locals=None,
+) -> bool:
+    """Handle a legacy-chain KDF stage that failed or is unavailable.
+
+    Fail CLOSED (gitlab#287/#288): silently dropping a configured stage
+    derives a weaker key than requested and creates a key/metadata mismatch
+    that can strand the file. The only exception is the decrypt-only,
+    explicitly opted-in legacy recovery for files a pre-fix version wrote
+    with the stage silently dropped.
+
+    Args:
+        stage: Stage name (argon2, balloon, scrypt, hkdf, randomx).
+        hash_config: The KDF configuration (with the decryption marker).
+        quiet: Suppress non-warning output.
+        password: The chained partial key to wipe before raising.
+        xor_accumulator: XOR intermediates to wipe before raising (or None).
+        exc: The stage exception, or None for requested-but-unavailable.
+        caller_locals: The caller's locals() snapshot; every known
+            key-material buffer found in it is wiped before raising.
+
+    Returns:
+        bool: True when the caller may skip the stage (legacy recovery);
+        otherwise this function raises.
+
+    Raises:
+        KeyDerivationError: Always, unless recovery is allowed.
+    """
+    reason = "failed" if exc is not None else "was requested but is not available"
+    if (
+        exc is not None
+        and isinstance(exc, (ValueError, TypeError))
+        and hash_config
+        and hash_config.get("_is_from_decryption_metadata", False)
+        and not hash_config.get("_deny_dropped_stage_recovery", False)
+    ):
+        # Deterministic config-class failure (e.g. a recorded scrypt n=1):
+        # the SAME parameters failed identically at encrypt time, so the
+        # file can only have been written with the stage dropped —
+        # reproducing that drop is the only derivation that can open it.
+        # Environmental failures (ImportError/OSError/MemoryError) stay
+        # fail-closed: the encrypt host may have succeeded (gitlab#290).
+        eprint(
+            f"⚠️ {stage} stage fails deterministically with this file's recorded "
+            f"parameters ({sanitize_for_display(str(exc))}); it was written with "
+            "the stage dropped — decrypting accordingly. Re-encrypt this file "
+            "with a healthy configuration."
+        )
+        logger.warning(
+            "KDF stage %s deterministic config failure; reproducing the "
+            "stage-dropped derivation for decryption",
+            stage,
+        )
+        return True
+    if _dropped_stage_recovery_allowed(hash_config, stage):
+        # Loud and quiet-proof: a weakened legacy derivation must be visible.
+        eprint(
+            f"⚠️ OPENSSL_ENCRYPT_ALLOW_DROPPED_KDF: reproducing the LEGACY "
+            f"{stage}-dropped derivation for decryption (gitlab#288). "
+            "Re-encrypt this file with a healthy setup."
+        )
+        logger.warning(
+            "KDF stage %s %s; recovered via the decrypt-only legacy hatch", stage, reason
+        )
+        return True
+    # Deliberately quiet-proof: this is a terminal error and the recovery
+    # instruction is the only way a legacy-file holder learns the way out
+    # (the exception's details are hidden outside debug mode).
+    eprint(
+        f"❌ {stage} key derivation {reason}; refusing to derive a weakened key. "
+        f"For a LEGACY file written by a pre-fix version with this stage "
+        f"silently dropped, decrypt once with "
+        f"OPENSSL_ENCRYPT_ALLOW_DROPPED_KDF={stage} and re-encrypt "
+        f"(see README, 'Recovering legacy files with dropped KDF stages')."
+    )
+    if exc is not None:
+        logger.error("%s key derivation failed: %s", stage, sanitize_for_display(str(exc)))
+    else:
+        logger.error("%s KDF requested but no implementation is available", stage)
+    # The raise bypasses the return-site cleanup: wipe the chained partial
+    # key and every known wipeable intermediate first. Immutable bytes
+    # copies cannot be wiped in place (the documented M10 residual, same as
+    # the return path).
+    if caller_locals:
+        for name in (
+            "legacy_seed_buffer",
+            "base_salt",
+            "round_salt",
+            "iteration_specific_salt",
+            "salt_material",
+            "password_bytes",
+            "salt_bytes",
+            "password_for_salt",
+            "input_key_material",
+        ):
+            if name in caller_locals:
+                _best_effort_zeroize(caller_locals[name])
+    _best_effort_zeroize(password, *(xor_accumulator or []))
+    if xor_accumulator:
+        xor_accumulator.clear()
+    raise KeyDerivationError(
+        f"{stage} key derivation {reason}; refusing to derive a key without "
+        f"the configured {stage} stage. If this file was written by a "
+        f"pre-fix version WITH the stage silently dropped, decrypt once with "
+        f"OPENSSL_ENCRYPT_ALLOW_DROPPED_KDF={stage} and re-encrypt."
+    ) from exc
 
 
 def _best_effort_zeroize(*buffers) -> None:
@@ -3461,7 +3612,7 @@ def generate_key(
     # If hash_config has argon2 section with enabled explicitly set to False, honor that
     # if hash_config and 'argon2' in hash_config and 'enabled' in hash_config['argon2']:
     #    use_argon2 = hash_config['argon2']['enabled']
-    if use_argon2 and ARGON2_AVAILABLE:
+    if use_argon2 and ARGON2_AVAILABLE and not _proactive_stage_drop(hash_config, "argon2", quiet):
         # Create a copy of the salt to prevent modifications affecting the original
         # This helps prevent salt reuse issues
         base_salt = salt
@@ -3639,12 +3790,28 @@ def generate_key(
             if not quiet and not progress:
                 eprint("✅")
         except Exception as e:
-            if not quiet:
-                eprint(f"Argon2 key derivation failed: {str(e)}. KDF failed.")
-            # Mark Argon2 as failed
+            if _kdf_stage_failure(
+                "argon2",
+                hash_config,
+                quiet,
+                password,
+                xor_accumulator,
+                exc=e,
+                caller_locals=locals(),
+            ):
+                use_argon2 = False  # decrypt-only legacy recovery (gitlab#288)
+
+    elif use_argon2 and not ARGON2_AVAILABLE:
+        if _kdf_stage_failure(
+            "argon2", hash_config, quiet, password, xor_accumulator, caller_locals=locals()
+        ):
             use_argon2 = False
 
-    if use_balloon and BALLOON_AVAILABLE:
+    if (
+        use_balloon
+        and BALLOON_AVAILABLE
+        and not _proactive_stage_drop(hash_config, "balloon", quiet)
+    ):
         # Create a copy of the salt to prevent modifications affecting the original
         # This helps prevent salt reuse issues
         base_salt = salt
@@ -3768,11 +3935,24 @@ def generate_key(
             if not quiet and not progress:
                 eprint("✅")
         except Exception as e:
-            if not quiet:
-                eprint(f"Balloon key derivation failed: {str(e)}. KDF failed.")
-            use_balloon = False  # KDF failed, continuing
+            if _kdf_stage_failure(
+                "balloon",
+                hash_config,
+                quiet,
+                password,
+                xor_accumulator,
+                exc=e,
+                caller_locals=locals(),
+            ):
+                use_balloon = False  # decrypt-only legacy recovery (gitlab#288)
 
-    if use_scrypt and SCRYPT_AVAILABLE:
+    elif use_balloon and not BALLOON_AVAILABLE:
+        if _kdf_stage_failure(
+            "balloon", hash_config, quiet, password, xor_accumulator, caller_locals=locals()
+        ):
+            use_balloon = False
+
+    if use_scrypt and SCRYPT_AVAILABLE and not _proactive_stage_drop(hash_config, "scrypt", quiet):
         # Create a copy of the salt to prevent modifications affecting the original
         # This helps prevent salt reuse issues
         base_salt = salt
@@ -3869,9 +4049,22 @@ def generate_key(
             if not quiet and not progress:
                 eprint("✅")
         except Exception as e:
-            if not quiet:
-                eprint(f"Scrypt key derivation failed: {str(e)}. KDF failed.")
-            use_scrypt = False  # KDF failed, continuing
+            if _kdf_stage_failure(
+                "scrypt",
+                hash_config,
+                quiet,
+                password,
+                xor_accumulator,
+                exc=e,
+                caller_locals=locals(),
+            ):
+                use_scrypt = False  # decrypt-only legacy recovery (gitlab#288)
+
+    elif use_scrypt and not SCRYPT_AVAILABLE:
+        if _kdf_stage_failure(
+            "scrypt", hash_config, quiet, password, xor_accumulator, caller_locals=locals()
+        ):
+            use_scrypt = False
 
     if use_hkdf and HKDF_AVAILABLE:
         # Create a copy of the salt to prevent modifications affecting the original
@@ -3881,88 +4074,122 @@ def generate_key(
             eprint("Using HKDF for key derivation", end=" ")
         elif not quiet:
             eprint("Using HKDF for key derivation")
+        # The Threefish key-expansion branches below do a local
+        # `from ... import HKDF`, which makes HKDF a function-local name for
+        # the WHOLE function — without this import the stage dies with
+        # UnboundLocalError, which the old fail-open handler silently
+        # swallowed: this stage never actually ran before gitlab#290.
+        from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+
         hkdf_config = hash_config.get("hkdf", {}) if hash_config else {}
         algorithm = hkdf_config.get("algorithm", "sha256")
         info = hkdf_config.get("info", b"openssl_encrypt_hkdf")
 
-        # Convert string info to bytes if needed
-        if isinstance(info, str):
-            info = info.encode("utf-8")
+        # The hatch check sits AFTER the `algorithm` rebinding above: the
+        # pre-gitlab#290 stage always died right after it (UnboundLocalError,
+        # silently swallowed), so every legacy hkdf file's derivation
+        # includes that side effect on the final key-encoding branch —
+        # skipping earlier would derive a different key than those files.
+        if _proactive_stage_drop(hash_config, "hkdf", quiet):
+            use_hkdf = False
+        else:
 
-        try:
-            # Get hash algorithm
-            if algorithm == "sha256":
-                hash_algorithm = hashes.SHA256()
-            elif algorithm == "sha512":
-                hash_algorithm = hashes.SHA512()
-            elif algorithm == "sha384":
-                hash_algorithm = hashes.SHA384()
-            elif algorithm == "sha224":
-                hash_algorithm = hashes.SHA224()
-            else:
-                hash_algorithm = hashes.SHA256()  # Default fallback
+            # Convert string info to bytes if needed
+            if isinstance(info, str):
+                info = info.encode("utf-8")
 
-            for i in range(hkdf_config.get("rounds", 1)):
-                # Generate a new unique salt for each round to prevent salt reuse attacks
-                if i == 0:
-                    # Use the original salt for the first round
-                    round_salt = base_salt
+            try:
+                # Get hash algorithm
+                if algorithm == "sha256":
+                    hash_algorithm = hashes.SHA256()
+                elif algorithm == "sha512":
+                    hash_algorithm = hashes.SHA512()
+                elif algorithm == "sha384":
+                    hash_algorithm = hashes.SHA384()
+                elif algorithm == "sha224":
+                    hash_algorithm = hashes.SHA224()
                 else:
-                    # Version-aware salt derivation
-                    if format_version >= 7:
-                        # Secure chained derivation (v7, v8, v9, v10+)
-                        # Prevents precomputation attacks by creating dependency chain
-                        if hasattr(password, "to_bytes"):
-                            round_salt = password.to_bytes()[:16]
-                        else:
-                            round_salt = password[:16]
+                    hash_algorithm = hashes.SHA256()  # Default fallback
+
+                for i in range(hkdf_config.get("rounds", 1)):
+                    # Generate a new unique salt for each round to prevent salt reuse attacks
+                    if i == 0:
+                        # Use the original salt for the first round
+                        round_salt = base_salt
                     else:
-                        # Legacy: Predictable derivation for v1-6 (backward compatibility only)
-                        #
-                        salt_material = hashlib.sha256(base_salt + str(i).encode()).digest()
-                        round_salt = salt_material[:16]  # Use 16 bytes for salt
+                        # Version-aware salt derivation
+                        if format_version >= 7:
+                            # Secure chained derivation (v7, v8, v9, v10+)
+                            # Prevents precomputation attacks by creating dependency chain
+                            if hasattr(password, "to_bytes"):
+                                round_salt = password.to_bytes()[:16]
+                            else:
+                                round_salt = password[:16]
+                        else:
+                            # Legacy: Predictable derivation for v1-6 (backward compatibility only)
+                            #
+                            salt_material = hashlib.sha256(base_salt + str(i).encode()).digest()
+                            round_salt = salt_material[:16]  # Use 16 bytes for salt
 
-                # Make a secure copy of the password for this operation
-                if hasattr(password, "to_bytes"):
-                    input_key_material = password.to_bytes()
-                else:
-                    input_key_material = password
+                    # Make a secure copy of the password for this operation
+                    if hasattr(password, "to_bytes"):
+                        input_key_material = password.to_bytes()
+                    else:
+                        input_key_material = password
 
-                # Apply HKDF key derivation
-                hkdf = HKDF(
-                    algorithm=hash_algorithm,
-                    length=key_length,
-                    salt=round_salt,
-                    info=info,
-                )
-                password = hkdf.derive(input_key_material)
+                    # Apply HKDF key derivation
+                    hkdf = HKDF(
+                        algorithm=hash_algorithm,
+                        length=key_length,
+                        salt=round_salt,
+                        info=info,
+                    )
+                    password = SecureBytes(hkdf.derive(input_key_material))
 
-                show_progress("HKDF", i + 1, hkdf_config.get("rounds", 1))
-                KeyStretch.key_stretch = True
+                    show_progress("HKDF", i + 1, hkdf_config.get("rounds", 1))
+                    KeyStretch.key_stretch = True
 
-            if not quiet and not progress:
-                eprint(" ✅")
+                if not quiet and not progress:
+                    eprint(" ✅")
 
-            # Update config to record HKDF usage
-            if isinstance(hash_config, dict) and "hkdf" in hash_config:
-                hash_config["hkdf"]["rounds"] = hkdf_config.get("rounds", 1)
+                # Update config to record HKDF usage
+                if isinstance(hash_config, dict) and "hkdf" in hash_config:
+                    hash_config["hkdf"]["rounds"] = hkdf_config.get("rounds", 1)
 
-            # NEW: For v10/v8, save HKDF final output to XOR accumulator
-            # CRITICAL: Store as SecureBytes, will be zeroed after XOR completes
-            if use_xor_composition:
-                hkdf_normalized = normalize_to_key_length_secure(password, key_length)
-                xor_accumulator.append(hkdf_normalized)  # SecureBytes object
-                if debug:
-                    logger.debug(debug_secret("V10-XOR: Added HKDF final output", hkdf_normalized))
+                # NEW: For v10/v8, save HKDF final output to XOR accumulator
+                # CRITICAL: Store as SecureBytes, will be zeroed after XOR completes
+                if use_xor_composition:
+                    hkdf_normalized = normalize_to_key_length_secure(password, key_length)
+                    xor_accumulator.append(hkdf_normalized)  # SecureBytes object
+                    if debug:
+                        logger.debug(
+                            debug_secret("V10-XOR: Added HKDF final output", hkdf_normalized)
+                        )
 
-        except Exception:
-            if not quiet:
-                eprint("❌ HKDF failed")
-            # Don't set use_hkdf to False here, as we want to record the attempt
-            use_hkdf = False  # KDF failed, continuing
+            except Exception as e:
+                if _kdf_stage_failure(
+                    "hkdf",
+                    hash_config,
+                    quiet,
+                    password,
+                    xor_accumulator,
+                    exc=e,
+                    caller_locals=locals(),
+                ):
+                    use_hkdf = False  # decrypt-only legacy recovery (gitlab#288)
+
+    elif use_hkdf and not HKDF_AVAILABLE:
+        if _kdf_stage_failure(
+            "hkdf", hash_config, quiet, password, xor_accumulator, caller_locals=locals()
+        ):
+            use_hkdf = False
 
     # RandomX KDF - Applied after HKDF as the final KDF in the chain
-    if use_randomx and RANDOMX_AVAILABLE:
+    if (
+        use_randomx
+        and RANDOMX_AVAILABLE
+        and not _proactive_stage_drop(hash_config, "randomx", quiet)
+    ):
         # For RandomX, derive a unique salt from the current password state
         # This ensures RandomX gets different salt material than previous KDFs
         if hasattr(password, "to_bytes"):
@@ -4060,74 +4287,27 @@ def generate_key(
                     )
 
         except Exception as e:
-            # Fail CLOSED (gitlab#287): silently dropping a configured KDF
-            # stage derives a weaker key than requested and creates a
-            # key/metadata mismatch that can strand the file — a healthy
-            # host replaying the recorded RandomX rounds derives a different
-            # key. This branch is load-bearing since the project-owned
-            # bindings surface native failures as exceptions where the old
-            # binding aborted the whole process (gitlab#285).
-            if _randomx_recovery_allowed(hash_config):
-                # Decrypt-only, explicitly opted-in legacy recovery: files
-                # written by pre-fix versions with the stage silently
-                # dropped are only decryptable by reproducing that
-                # derivation. Warn loudly and unconditionally.
-                eprint(
-                    "⚠️ OPENSSL_ENCRYPT_ALLOW_DROPPED_RANDOMX: reproducing the "
-                    "LEGACY stage-dropped RandomX derivation for decryption "
-                    "(gitlab#287). Re-encrypt this file with a healthy setup."
-                )
-                logger.warning(
-                    "RandomX stage failure recovered via "
-                    "OPENSSL_ENCRYPT_ALLOW_DROPPED_RANDOMX (decrypt-only legacy path)"
-                )
-                use_randomx = False
-            else:
-                if not quiet:
-                    eprint("❌ RandomX key derivation failed; refusing to continue without it")
-                logger.error("RandomX key derivation failed: %s", sanitize_for_display(str(e)))
-                # The raise bypasses the return-site cleanup: wipe the chained
-                # partial key and any live intermediates first.
-                for _name in ("password_bytes", "salt_bytes", "base_salt", "password_for_salt"):
-                    _best_effort_zeroize(locals().get(_name))
-                _best_effort_zeroize(password, *(xor_accumulator or []))
-                if xor_accumulator:
-                    xor_accumulator.clear()
-                raise KeyDerivationError(
-                    "RandomX key derivation failed; refusing to derive a key "
-                    "without the configured RandomX stage. If this file was "
-                    "written by a pre-fix version WITH the stage silently "
-                    "dropped, decrypt once with "
-                    "OPENSSL_ENCRYPT_ALLOW_DROPPED_RANDOMX=1 and re-encrypt."
-                ) from e
+            # This branch is load-bearing since the project-owned bindings
+            # surface native failures as exceptions where the old binding
+            # aborted the whole process (gitlab#285/#287).
+            if _kdf_stage_failure(
+                "randomx",
+                hash_config,
+                quiet,
+                password,
+                xor_accumulator,
+                exc=e,
+                caller_locals=locals(),
+            ):
+                use_randomx = False  # decrypt-only legacy recovery
 
     elif use_randomx and not RANDOMX_AVAILABLE:
         # Fail CLOSED (gitlab#287): a requested stage that silently vanishes
         # is the same weakened-key/mismatch hazard as a mid-stage failure.
-        if _randomx_recovery_allowed(hash_config):
-            eprint(
-                "⚠️ OPENSSL_ENCRYPT_ALLOW_DROPPED_RANDOMX: decrypting with the "
-                "LEGACY stage-dropped derivation (no RandomX binding installed, "
-                "gitlab#287). Re-encrypt this file with a healthy setup."
-            )
-            logger.warning(
-                "RandomX unavailable; recovered via "
-                "OPENSSL_ENCRYPT_ALLOW_DROPPED_RANDOMX (decrypt-only legacy path)"
-            )
-        else:
-            if not quiet:
-                eprint("❌ RandomX requested but no RandomX binding is available")
-            logger.error("RandomX requested but no RandomX binding is available")
-            _best_effort_zeroize(password, *(xor_accumulator or []))
-            if xor_accumulator:
-                xor_accumulator.clear()
-            raise KeyDerivationError(
-                "RandomX key derivation was requested but no RandomX binding is "
-                "available; install openssl-encrypt-randomx (or the RandomX "
-                "package). For a legacy file written by a pre-fix version with "
-                "the stage silently dropped, decrypt once with "
-                "OPENSSL_ENCRYPT_ALLOW_DROPPED_RANDOMX=1 and re-encrypt."
-            )
+        if _kdf_stage_failure(
+            "randomx", hash_config, quiet, password, xor_accumulator, caller_locals=locals()
+        ):
+            pass  # decrypt-only legacy recovery: skip the stage
 
     any_kdf_requested = (
         (hash_config and hash_config.get("randomx", {}).get("enabled", False))
@@ -9253,6 +9433,7 @@ def _derive_envelope_kek(
     format_version: int,
     xor_mode: str,
     quiet: bool = False,
+    allow_dropped_recovery: bool = False,
 ) -> bytes:
     """Derive the password KEK for an envelope file from its metadata, mirroring
     ``decrypt_file`` (sequential vs independent-XOR by format_version/xor_mode).
@@ -9278,6 +9459,15 @@ def _derive_envelope_kek(
     )
     salt = base64.b64decode(derivation_config["salt"])
     hash_config = _flatten_derivation_config(derivation_config)
+    if not allow_dropped_recovery:
+        # Secure default: only explicit UNWRAP callers may honor the
+        # decrypt-only dropped-stage recovery hatch. The rekey fast-path's
+        # NEW KEK (fresh salt) always uses this default, so a newly derived
+        # persisted key never comes through the hatch. Documented carve-out:
+        # recovery-slot add/remove rewraps the DEK under the SAME unwrap KEK
+        # (salt unchanged, byte-identical key) — no new weakening occurs
+        # (gitlab#288 review findings 1 and N1).
+        hash_config["_deny_dropped_stage_recovery"] = True
     # v14+ is independent-only: route it here even if a hand-crafted blob
     # omits xor_mode (mirrors the main decrypt router).
     if xor_mode == "independent" or format_version in (11, 12) or format_version >= 14:
@@ -9410,7 +9600,13 @@ def _rekey_envelope_fast(
     # Unwrap with the old KEK. A wrong password makes unwrap raise -- let it
     # propagate (do NOT fall back, or we'd silently full-re-encrypt on bad input).
     old_kek = _derive_envelope_kek(
-        old_password, derivation_config, algorithm, format_version, xor_mode, quiet=quiet
+        old_password,
+        derivation_config,
+        algorithm,
+        format_version,
+        xor_mode,
+        quiet=quiet,
+        allow_dropped_recovery=True,  # unwrap side: legacy-file hatch applies
     )
     # F17/F18 (gitlab#234): the rekey retains the recovery-slot set verbatim, so
     # the DEK wrap keeps its existing slot-count binding (absent => legacy None)
@@ -9796,6 +9992,7 @@ def _recover_envelope_dek(
             algorithm,
             meta.get("format_version"),
             meta.get("xor_mode", "sequential"),
+            allow_dropped_recovery=True,  # unwrap side
         )
         try:
             if is_cascade:
@@ -10352,6 +10549,7 @@ def _password_unwrap_and_rewrapper(meta: dict, password, allow_high_kdf_cost: bo
         algorithm,
         meta.get("format_version"),
         meta.get("xor_mode", "sequential"),
+        allow_dropped_recovery=True,  # unwrap side
     )
     old_aad = wrapped_dek_aad(enc.get("dek_slot_count"))
     try:

@@ -752,6 +752,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Every legacy-chain KDF stage now fails closed** (gitlab#288, completing
+  gitlab#287): Argon2, Balloon, Scrypt, and HKDF failures in `generate_key`'s
+  sequential chain previously printed a fallback message and silently
+  derived the key WITHOUT the configured stage, and a
+  requested-but-unavailable stage was skipped with no message at all — the
+  same weakened-key/metadata-mismatch hazard as the RandomX case, with far
+  more reachable triggers (an OOM at a large Argon2 `memory_cost`, a
+  missing `argon2-cffi`). All five stages share one handler: raise
+  `KeyDerivationError`, with a quiet-proof error naming the recovery path
+  and best-effort wiping of the wipeable intermediates (chained key, legacy
+  seed buffer, per-round salts; immutable `bytes` copies remain the
+  documented M10 residual) before the exception propagates. The recovery
+  hatch is generalized to `OPENSSL_ENCRYPT_ALLOW_DROPPED_KDF=<stage>[,…]`
+  (decrypt-only, explicit opt-in, per stage, documented in the README;
+  `OPENSSL_ENCRYPT_ALLOW_DROPPED_RANDOMX=1` stays a working alias) and is
+  pinned BYTE-EXACT against the pre-fix fail-open derivations by golden
+  keys computed from the last fail-open commits of each line — all five
+  stages, both failure and unavailability. A NEWLY derived persisted key can never
+  come through the hatch: `_derive_envelope_kek` denies recovery by
+  default and only explicit unwrap callers opt in, so the rekey
+  fast-path's new-KEK (fresh salt) is always derived with the full
+  recorded chain or refused (recovery-slot add/remove rewraps under the
+  byte-identical unwrap KEK with the salt unchanged — no new weakening). The 1.4.x-only PBKDF2 iteration stage is
+  outside this fix's scope (pre-existing, format-locked quirks tracked
+  separately). Regression suite: `test_kdf_stages_fail_closed_288.py`.
+
+- **Two latent defects the fail-open handlers had been hiding were surfaced
+  and repaired** (gitlab#290): the legacy chain's HKDF stage NEVER ran — a
+  function-local `HKDF` import in the Threefish branches shadowed the name
+  for the whole function, so the stage died with `UnboundLocalError` on
+  every invocation and the fail-open handler silently dropped it (on 1.4.x
+  with a side effect: the stage rebound the encryption-algorithm local
+  before dying, changing the final key encoding). The stage is repaired
+  (new legacy-chain encrypts derive real HKDF); legacy hkdf files decrypt
+  via the hatch, whose skip is placed exactly where the old stage died so
+  the historical derivation — side effect included — is reproduced,
+  golden-pinned. And deterministic config-class stage failures
+  (`ValueError`/`TypeError`, e.g. a fixture-corpus v7 file recording
+  scrypt `n=1`) now auto-reproduce the stage-dropped derivation on
+  DECRYPT with a loud warning and no env var — the same parameters failed
+  identically at encrypt time, so the drop is the file's only possible
+  derivation; environmental failures stay fail-closed with the hatch.
 - **The legacy key-derivation chain fails closed when a configured RandomX
   stage cannot run** (gitlab#287): `generate_key`'s sequential chain caught
   any RandomX failure, printed "continuing without RandomX", and derived
