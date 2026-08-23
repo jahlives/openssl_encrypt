@@ -252,9 +252,9 @@ STDOUT_WHITELIST = [
     # crypt_core.py — JSON data output
     (
         "modules/crypt_core.py",
-        "print(json.dumps(metadata, indent=2, ensure_ascii=True))",
+        "print(json.dumps(document, indent=2, ensure_ascii=True))",
         1,
-        "print_file_info JSON output",
+        "print_file_info JSON output (+ header-only compatibility key, gitlab#298)",
     ),
     # crypt_core.py — protected DO NOT CHANGE block
     (
