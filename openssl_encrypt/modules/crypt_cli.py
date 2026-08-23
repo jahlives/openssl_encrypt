@@ -819,14 +819,17 @@ def get_template_config(template: str or SecurityTemplate) -> Dict[str, Any]:
                 "blake2b": 0,
                 "shake256": 0,
                 "scrypt": {"enabled": False, "n": 128, "r": 8, "p": 1, "rounds": 1000},
+                # gitlab#271: quick is memory-hard too — Argon2id "low"
+                # preset (~sub-second), replacing the old PBKDF2+hash-rounds
+                # stack that contradicted the "good security" claim.
                 "argon2": {
-                    "enabled": False,
+                    "enabled": True,
                     "time_cost": 2,
-                    "memory_cost": 65536,  # 64MB
-                    "parallelism": 4,
+                    "memory_cost": 32768,  # 32MB ("low" preset)
+                    "parallelism": 2,
                     "hash_len": 32,
                     "type": 2,
-                    "rounds": 10,
+                    "rounds": 1,
                 },
                 "type": "id",
                 "algorithm": "fernet",

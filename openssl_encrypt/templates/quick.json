@@ -6,7 +6,6 @@
     "sha3_512": 10000,
     "blake2b": 0,
     "shake256": 0,
-    "whirlpool": 0,
     "scrypt": {
       "enabled": false,
       "n": 128,
@@ -15,13 +14,13 @@
       "rounds": 1000
     },
     "argon2": {
-      "enabled": false,
+      "enabled": true,
       "time_cost": 2,
-      "memory_cost": 65536,
-      "parallelism": 4,
+      "memory_cost": 32768,
+      "parallelism": 2,
       "hash_len": 32,
       "type": 2,
-      "rounds": 10
+      "rounds": 1
     },
     "hkdf": {
       "enabled": false,
@@ -36,7 +35,6 @@
       "height": 1,
       "hash_len": 32
     },
-    "pbkdf2_iterations": 100000,
     "type": "id",
     "algorithm": "fernet"
   },

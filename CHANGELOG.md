@@ -794,6 +794,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **`--quick` is memory-hard and sheds its deprecated defaults**
+  (gitlab#271, github#150): the quick template now enables Argon2id with
+  the "low" preset (time_cost 2, 32 MB, parallelism 2, 1 round) instead of
+  relying on the deprecated PBKDF2-plus-hash-rounds stack, and
+  `templates/quick.json` drops its stale `pbkdf2_iterations`/`whirlpool`
+  entries (both removed on this line). The quick cipher stays
+  `aes-gcm-siv`. Files previously written by `--quick` decrypt unchanged
+  (algorithm and KDF config come from file metadata). Pinned by
+  `test_quick_template_271.py`; verified by a real `--quick`
+  encrypt/info/decrypt roundtrip.
+
 - **Fully hash-pinned lockfiles with `--require-hashes` installs**
   (gitlab#300, github#179; completes review finding F3 from gitlab#285):
   `requirements-prod.txt` and `requirements-dev.txt` are regenerated with
