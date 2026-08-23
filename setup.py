@@ -18,6 +18,11 @@ from setuptools.command.install import install
 # Required versions for external dependencies
 REQUIRED_LIBOQS_VERSION = "0.12.0"
 REQUIRED_LIBOQS_PYTHON_VERSION = "0.12.0"
+# Immutable commit pins for the versions above (gitlab#252/#253, CWE-494):
+# printed install guidance must show the pinned form, never a mutable tag.
+# Keep in sync with scripts/build_local_deps.sh and .gitlab-ci.yml.
+REQUIRED_LIBOQS_COMMIT = "f4b96220e4bd208895172acc4fedb5a191d9f5b1"
+REQUIRED_LIBOQS_PYTHON_COMMIT = "7906e7879a099fa34217035957d977314f99757d"
 
 
 # Read the contents of your README file
@@ -143,7 +148,7 @@ def build_local_dependencies():
             f"  liboqs {REQUIRED_LIBOQS_VERSION}: https://github.com/open-quantum-safe/liboqs/releases/tag/{REQUIRED_LIBOQS_VERSION}"
         )
         print(
-            f"  liboqs-python {REQUIRED_LIBOQS_PYTHON_VERSION}: pip install git+https://github.com/open-quantum-safe/liboqs-python.git@{REQUIRED_LIBOQS_PYTHON_VERSION}"
+            f"  liboqs-python {REQUIRED_LIBOQS_PYTHON_VERSION}: pip install git+https://github.com/open-quantum-safe/liboqs-python.git@{REQUIRED_LIBOQS_PYTHON_COMMIT}"
         )
         print("=" * 60 + "\n")
         return False
@@ -191,14 +196,15 @@ def build_local_dependencies():
         print(f"  1. Install build tools: cmake, ninja, git")
         print(f"  2. Build liboqs {REQUIRED_LIBOQS_VERSION}:")
         print(
-            f"     git clone --branch {REQUIRED_LIBOQS_VERSION} https://github.com/open-quantum-safe/liboqs.git"
+            f"     git clone --recurse-submodules --branch {REQUIRED_LIBOQS_VERSION} https://github.com/open-quantum-safe/liboqs.git"
         )
-        print(f"     cd liboqs && mkdir build && cd build")
-        print(f"     cmake -GNinja -DCMAKE_INSTALL_PREFIX=$HOME/.local ..")
-        print(f"     ninja && ninja install")
+        print(f"     git -C liboqs checkout {REQUIRED_LIBOQS_COMMIT}  # immutable pin for the tag")
+        print("     cd liboqs && mkdir build && cd build")
+        print("     cmake -GNinja -DCMAKE_INSTALL_PREFIX=$HOME/.local ..")
+        print("     ninja && ninja install")
         print(f"  3. Install liboqs-python {REQUIRED_LIBOQS_PYTHON_VERSION}:")
         print(
-            f"     pip install git+https://github.com/open-quantum-safe/liboqs-python.git@{REQUIRED_LIBOQS_PYTHON_VERSION}"
+            f"     pip install git+https://github.com/open-quantum-safe/liboqs-python.git@{REQUIRED_LIBOQS_PYTHON_COMMIT}"
         )
         print("=" * 60 + "\n")
         return False

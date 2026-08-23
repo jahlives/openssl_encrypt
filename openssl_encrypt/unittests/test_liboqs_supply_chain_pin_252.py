@@ -26,6 +26,10 @@ _CI_DOCKER = _ROOT / ".gitlab-ci-docker.yml"
 # gitlab#286: the flatpak manifest installs liboqs-python too and must obey
 # the same immutable-pin rule as every other install surface.
 _MANIFEST = _ROOT / "flatpak" / "com.opensslencrypt.OpenSSLEncrypt.json"
+# gitlab#253: the printed install-guidance strings must not steer users to
+# the unpinned @<tag> pattern either, even though they never execute.
+_SETUP = _ROOT / "setup.py"
+_VERSIONS = _ROOT / "openssl_encrypt" / "versions.py"
 
 _LIBOQS_SHA = "f4b96220e4bd208895172acc4fedb5a191d9f5b1"
 _LIBOQS_PY_SHA = "7906e7879a099fa34217035957d977314f99757d"
@@ -105,9 +109,9 @@ class TestLiboqsSupplyChainPin(unittest.TestCase):
     def test_no_mutable_tag_liboqs_python_install_anywhere(self):
         # Guard against any file reintroducing the @<tag> form for liboqs-python.
         pat = re.compile(
-            r"liboqs-python\.git@(0\.\d+\.\d+|\$?\{?LIBOQS_PYTHON_VERSION\}?|\$LiboqsPythonVersion\b)"
+            r"liboqs-python\.git@(0\.\d+\.\d+|\$?\{?(REQUIRED_)?LIBOQS_PYTHON_VERSION\}?|\$LiboqsPythonVersion\b)"
         )
-        for path in (_SH, _PS1, _CLI, _DOCKER, _CI, _CI_DOCKER, _MANIFEST):
+        for path in (_SH, _PS1, _CLI, _DOCKER, _CI, _CI_DOCKER, _MANIFEST, _SETUP, _VERSIONS):
             self.assertIsNone(pat.search(self._read(path)), f"mutable tag install in {path.name}")
 
     def test_no_floating_liboqs_clone_anywhere(self):
