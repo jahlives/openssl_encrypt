@@ -794,6 +794,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Pin-consistency blind spots closed** (gitlab#286, github#182): the
+  flatpak manifest's liboqs-python install moves from the mutable `@0.12.0`
+  tag to the commit SHA every other install surface already pins
+  (gitlab#252, CWE-494), and the manifest joins the mutable-tag test's file
+  list so the pattern cannot return. The lockfile guard additionally
+  refuses ranged specifiers (`>=`, `<`, …) in the compiled lockfiles — the
+  pre-gitlab#300 `cryptography>=50,<51` range was exactly the entry the
+  flatpak pin-consistency check silently skipped, and ranges also break
+  `--require-hashes` installs.
+
 - **`remove-recovery` revokes exactly one slot, and over-long slot ids are
   revocable again** (gitlab#256, github#181; F5+F6 of the gitlab#254
   review): the removal filter dropped EVERY slot sharing an id, so a

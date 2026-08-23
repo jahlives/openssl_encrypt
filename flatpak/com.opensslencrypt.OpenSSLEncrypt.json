@@ -120,7 +120,8 @@
         "pip3 install --prefix=${FLATPAK_DEST} 'numpy==2.3.2'",
         "pip3 install --prefix=${FLATPAK_DEST} 'qrcode[pil]==8.2'",
         "pip3 install --prefix=${FLATPAK_DEST} 'pyzbar==0.1.9'",
-        "pip3 install --prefix=${FLATPAK_DEST} 'git+https://github.com/open-quantum-safe/liboqs-python.git@0.12.0'",
+        "true # liboqs-python pinned by commit SHA (gitlab#252/#286, CWE-494): a mutable tag could be retargeted upstream; keep in sync with LIBOQS_PYTHON_COMMIT in .gitlab-ci.yml.",
+        "pip3 install --prefix=${FLATPAK_DEST} 'git+https://github.com/open-quantum-safe/liboqs-python.git@7906e7879a099fa34217035957d977314f99757d'",
         "pip3 install --prefix=${FLATPAK_DEST} 'yubikey-manager>=5.0.0,<6.0.0'",
         "pip3 install --prefix=${FLATPAK_DEST} 'fido2>=2.0.0,<3.0.0'"
       ],
