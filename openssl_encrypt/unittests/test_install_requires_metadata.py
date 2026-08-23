@@ -191,5 +191,47 @@ class TestPublishedMetadata(unittest.TestCase):
         )
 
 
+class TestReadRequirementsHashedLockfiles(unittest.TestCase):
+    """pip-compile --generate-hashes lockfiles must parse cleanly (gitlab#300).
+
+    Hash mode writes each requirement as ``name==ver \\`` followed by
+    indented ``--hash=sha256:...`` continuation lines. The option lines are
+    already skipped (they start with ``-``), but the trailing backslash on
+    the requirement itself must be stripped or it reaches extras metadata as
+    an invalid requirement string.
+    """
+
+    def test_hash_continuation_lines_stripped(self):
+        """A hashed-lockfile entry yields a clean PEP 508 string."""
+        import tempfile
+
+        version_path = REPO_ROOT / "openssl_encrypt" / "version.py"
+        version_snapshot = version_path.read_bytes() if version_path.exists() else None
+        old_cwd = os.getcwd()
+        os.chdir(REPO_ROOT)
+        try:
+            with mock.patch("setuptools.setup", lambda **kwargs: None):
+                module_globals = runpy.run_path(str(REPO_ROOT / "setup.py"), run_name="__main__")
+        finally:
+            os.chdir(old_cwd)
+            if version_snapshot is not None:
+                version_path.write_bytes(version_snapshot)
+            elif version_path.exists():
+                version_path.unlink()
+        read_requirements = module_globals["read_requirements"]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "requirements-hashed.txt")
+            with open(path, "w") as f:
+                f.write(
+                    "annotated-types==0.7.0 \\\n"
+                    "    --hash=sha256:aaaa \\\n"
+                    "    --hash=sha256:bbbb\n"
+                    "    # via pydantic\n"
+                    "zxcvbn==4.5.0\n"
+                )
+            self.assertEqual(read_requirements(path), ["annotated-types==0.7.0", "zxcvbn==4.5.0"])
+
+
 if __name__ == "__main__":
     unittest.main()
