@@ -29,7 +29,7 @@ fi
 
 # Install development dependencies
 echo "📦 Installing development dependencies..."
-pip install -r requirements-dev.txt
+pip install --require-hashes -r requirements-dev.txt
 
 # Install additional static analysis tools
 echo "🔧 Installing static analysis tools..."
@@ -143,7 +143,7 @@ clean:
 
 install-dev:
 	@echo "📦 Installing development dependencies..."
-	pip install -r requirements-dev.txt
+	pip install --require-hashes -r requirements-dev.txt
 
 setup-analysis:
 	@echo "🔧 Setting up static analysis..."

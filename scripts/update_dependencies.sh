@@ -6,11 +6,11 @@ pip install -U pip-tools
 
 # Update production dependencies
 echo "Updating production dependencies..."
-pip-compile --upgrade requirements-prod.in --output-file=requirements-prod.txt
+pip-compile --upgrade --generate-hashes requirements-prod.in --output-file=requirements-prod.txt
 
 # Update development dependencies
 echo "Updating development dependencies..."
-pip-compile --upgrade requirements-dev.in --output-file=requirements-dev.txt
+pip-compile --upgrade --generate-hashes requirements-dev.in --output-file=requirements-dev.txt
 
 # Sync the current environment with the latest dependencies
 echo "Syncing development environment with updated dependencies..."
