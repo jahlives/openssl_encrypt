@@ -728,7 +728,16 @@ class PQCipher:
                     result = encapsulated_key + tf_nonce + ciphertext
                     return result
                 else:
-                    cipher = self.AESGCM(symmetric_key)
+                    # gitlab#295: fail closed — silently substituting AES-GCM
+                    # for an unrecognized name would write bytes that disagree
+                    # with the cipher the metadata records.
+                    raise ValueError(
+                        f"Unsupported encryption_data cipher "
+                        f"'{self.encryption_data}' for PQC hybrid encryption; "
+                        f"supported: aes-gcm, chacha20-poly1305, "
+                        f"xchacha20-poly1305, aes-gcm-siv, aes-siv, "
+                        f"threefish-512, threefish-1024"
+                    )
 
                 # AES-SIV has a different API: encrypt(data, [associated_data])
                 if self.encryption_data == "aes-siv":
@@ -1062,12 +1071,25 @@ class PQCipher:
                         secure_memzero(expanded_key)
                     return plaintext
                 else:
-                    # Default to AES-GCM for unknown algorithms
-                    if not self.quiet:
-                        eprint(
-                            f"Unknown encryption algorithm {self.encryption_data}, falling back to aes-gcm"
+                    # gitlab#295: fail closed — trying AES-GCM against bytes
+                    # of an unknown cipher fails authentication and looked
+                    # exactly like a wrong password. aes-ocb3 gets a pointed
+                    # migration message: 1.4.x supported it as a PQC data
+                    # cipher (its streaming decrypt remains supported, only
+                    # this PQC path lost it).
+                    if self.encryption_data == "aes-ocb3":
+                        raise ValueError(
+                            "encryption_data cipher 'aes-ocb3' for PQC hybrid "
+                            "files was removed in v1.5.0; decrypt this file "
+                            "with openssl-encrypt 1.4.x and re-encrypt"
                         )
-                    cipher = self.AESGCM(symmetric_key)
+                    raise ValueError(
+                        f"Unsupported encryption_data cipher "
+                        f"'{self.encryption_data}' for PQC hybrid decryption; "
+                        f"supported: aes-gcm, chacha20-poly1305, "
+                        f"xchacha20-poly1305, aes-gcm-siv, aes-siv, "
+                        f"threefish-512, threefish-1024"
+                    )
                 # SECURITY (CRIT-1): Empty ciphertext recovery and negative
                 # test pattern detection have been removed from production code.
                 if len(ciphertext) == 0:
