@@ -14,6 +14,11 @@ except ImportError:
 
 LIBOQS_VERSION = "0.12.0"
 LIBOQS_PYTHON_VERSION = "0.12.0"
+# Immutable commit pins for the versions above (gitlab#252/#253, CWE-494):
+# printed install guidance must show the pinned form, never a mutable tag.
+# Keep in sync with scripts/build_local_deps.sh and .gitlab-ci.yml.
+LIBOQS_COMMIT = "f4b96220e4bd208895172acc4fedb5a191d9f5b1"
+LIBOQS_PYTHON_COMMIT = "7906e7879a099fa34217035957d977314f99757d"
 
 
 def check_liboqs_version():
@@ -210,8 +215,10 @@ Manual Installation Instructions:
    - macOS: brew install cmake ninja openssl
 
 2. Build and install liboqs {LIBOQS_VERSION}:
-   git clone --branch {LIBOQS_VERSION} https://github.com/open-quantum-safe/liboqs.git
+   # Easiest: scripts/build_local_deps.sh does all of this with the pinned commits.
+   git clone --recurse-submodules --branch {LIBOQS_VERSION} https://github.com/open-quantum-safe/liboqs.git
    cd liboqs
+   git checkout {LIBOQS_COMMIT}  # immutable pin for the tag
    mkdir build && cd build
    cmake -GNinja -DCMAKE_INSTALL_PREFIX=$HOME/.local -DBUILD_SHARED_LIBS=ON ..
    ninja && ninja install
@@ -220,7 +227,7 @@ Manual Installation Instructions:
    # Note: Use lib64 on 64-bit systems, lib on others
    export PKG_CONFIG_PATH=$HOME/.local/lib64/pkgconfig:$HOME/.local/lib/pkgconfig:$PKG_CONFIG_PATH
    export LD_LIBRARY_PATH=$HOME/.local/lib64:$HOME/.local/lib:$LD_LIBRARY_PATH
-   pip install git+https://github.com/open-quantum-safe/liboqs-python.git@{LIBOQS_PYTHON_VERSION}
+   pip install git+https://github.com/open-quantum-safe/liboqs-python.git@{LIBOQS_PYTHON_COMMIT}
 
 4. Add to your shell profile (~/.bashrc or ~/.zshrc):
    export LD_LIBRARY_PATH="$HOME/.local/lib64:$HOME/.local/lib:$LD_LIBRARY_PATH"

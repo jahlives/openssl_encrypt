@@ -613,6 +613,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Install guidance shows the pinned-commit form** (gitlab#253,
+  github#184; gitlab#252 finding 5): the printed liboqs/liboqs-python
+  instructions in `setup.py` and `versions.py` no longer steer users toward
+  the mutable `@<tag>` pattern the executing paths dropped — they show the
+  immutable commit pins (with the tag as a comment) and point at
+  `scripts/build_local_deps.sh`, and both files join the gitlab#252
+  mutable-tag test's scan list (its pattern now also catches the
+  `REQUIRED_`-prefixed placeholder spelling).
+
 - **`verify-usb` no longer false-positives on runtime bytecode**
   (gitlab#243, github#183): the portable `crypt.py` wrapper suppresses
   bytecode for itself and every CLI subprocess it spawns
