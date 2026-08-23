@@ -794,6 +794,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **`remove-recovery` revokes exactly one slot, and over-long slot ids are
+  revocable again** (gitlab#256, github#181; F5+F6 of the gitlab#254
+  review): the removal filter dropped EVERY slot sharing an id, so a
+  crafted file with N slots under one id turned the "revokes one slot"
+  confirmation into N revocations — an ambiguous match is now refused with
+  `ValidationError`, before the password is consumed. And because the
+  credential-free listing truncates ids at 256 characters while removal
+  matched the full stored value, a planted longer id was unrevocable
+  through any documented interface — the `--json` listing now marks the
+  truncation (`id_truncated: true`, added to the pinned `SLOT_DOC_KEYS`)
+  and `remove-recovery` accepts the 256-character listed form when it
+  uniquely identifies a slot (colliding prefixes refuse as ambiguous;
+  passing the full id keeps working). Pinned by
+  `test_remove_recovery_ambiguity_256.py`.
+
 - **`--quick` is memory-hard and sheds its deprecated defaults**
   (gitlab#271, github#150): the quick template now enables Argon2id with
   the "low" preset (time_cost 2, 32 MB, parallelism 2, 1 round) instead of

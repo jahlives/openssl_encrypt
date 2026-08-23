@@ -713,9 +713,12 @@ def _capped(value, limit=256):
     if not isinstance(value, str):
         return None
     if len(value) > limit:
-        # Report as null rather than truncate: a truncated slot id would no
-        # longer round-trip into remove-recovery --slot-id (exact match).
-        return None
+        # Truncate (gitlab#256 F6): the 256-char listed form now DOES
+        # round-trip — remove-recovery accepts it for a longer stored id
+        # (refusing prefix collisions as ambiguous), and _slot_doc marks the
+        # cut with id_truncated. The previous null-instead-of-truncate made a
+        # planted over-long id invisible as well as unrevocable.
+        return value[:limit]
     return value
 
 
@@ -802,7 +805,7 @@ def _write_recovery_code_file(path, code):
 # Growing the listing's payload therefore always shows up as an edit to this
 # constant (a reviewable security decision), never as a silent ride-along
 # (gitlab#280).
-SLOT_DOC_KEYS = ("id", "type", "key_id", "threshold", "num_shares")
+SLOT_DOC_KEYS = ("id", "id_truncated", "type", "key_id", "threshold", "num_shares")
 
 # The complete top-level key set of the list-recovery --json data document,
 # fail-closed like the per-slot SLOT_DOC_KEYS: a conditional key added under
@@ -844,11 +847,17 @@ def _slot_doc(s):
     """
     # Full key_id, not the 16-char display truncation of the human view: a
     # machine consumer needs the whole value (gitlab#277).
+    raw_id = s.get("id")
     doc = {
-        "id": _capped(s.get("id")),
+        "id": _capped(raw_id),
         "type": _capped(s.get("type")),
         "key_id": _capped(s.get("key_id")),
     }
+    # gitlab#256 (F6): a consumer must be able to tell a truncated id from a
+    # full one — remove-recovery accepts exactly this 256-char listed form
+    # for a longer stored id, refusing prefix collisions as ambiguous.
+    if isinstance(raw_id, str) and len(raw_id) > 256:
+        doc["id_truncated"] = True
     # Present only for shamir slots. Re-validated as plain in-range ints at
     # this boundary (gitlab#280); both keys required so a future producer
     # setting one alone cannot emit a partial pair from attacker-authored
