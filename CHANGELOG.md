@@ -794,6 +794,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Fully hash-pinned lockfiles with `--require-hashes` installs**
+  (gitlab#300, github#179; completes review finding F3 from gitlab#285):
+  `requirements-prod.txt` and `requirements-dev.txt` are regenerated with
+  `pip-compile --generate-hashes`, every consumer of the lockfiles (the two
+  CI jobs installing `requirements-prod.txt`, the static-analysis setup
+  script) installs with `--require-hashes`, and
+  `scripts/update_dependencies.sh` regenerates with `--generate-hashes` so
+  future bumps keep the pins. `test_lockfile_hashes_300.py` guards both:
+  every pinned entry must carry hashes (pip only enforces hash mode when
+  hashes are present, so silently dropping them would downgrade installs
+  without an error) and the refresh script must keep generating them. The
+  loose `requirements.txt` stays range-based by design (dev convenience).
+
 - **Key derivation no longer depends on prior-call state, and encryption no
   longer depends on verbosity** (gitlab#289): on the 1.4.x line, the legacy
   PBKDF2 chain stage set the internal stretch flag only inside the loud

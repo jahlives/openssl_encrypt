@@ -169,7 +169,7 @@ code-quality-scan:
   image: python:3.13
   before_script:
     - pip install pylint pylint-json2html
-    - pip install -r requirements-prod.txt  # Install dependencies for import analysis
+    - pip install --require-hashes -r requirements-prod.txt  # Install dependencies for import analysis
   script:
     # Run pylint with detailed analysis
     - pylint openssl_encrypt/ --output-format=json:pylint-report.json,text:pylint-report.txt,colorized || true
@@ -199,7 +199,7 @@ type-checking:
   image: python:3.13
   before_script:
     - pip install mypy types-PyYAML types-requests
-    - pip install -r requirements-prod.txt  # Install dependencies for type checking
+    - pip install --require-hashes -r requirements-prod.txt  # Install dependencies for type checking
   script:
     # Run mypy type checking
     - mypy openssl_encrypt/ --config-file mypy.ini --txt-report mypy-report --html-report mypy-html || true
