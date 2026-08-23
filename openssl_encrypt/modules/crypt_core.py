@@ -671,6 +671,20 @@ class EncryptionAlgorithm(Enum):
         return None
 
 
+# Legacy -> current algorithm-name aliases for METADATA-SOURCED strings only
+# (gitlab#296): v1.5.0 renamed the Kyber hybrids to their NIST ML-KEM names
+# (a naming change — pqc.py kept normalize_algorithm_name — but the dispatch
+# lost its remap entries, stranding genuine 1.4.x kyber-named files on the
+# generic "Unsupported encryption algorithm" error). Decrypt and rekey
+# normalize the name read from file metadata through this table; encrypt-side
+# validation stays strict so no new file can be written under a removed name.
+LEGACY_ALGORITHM_ALIASES = {
+    "kyber512-hybrid": EncryptionAlgorithm.ML_KEM_512_HYBRID.value,
+    "kyber768-hybrid": EncryptionAlgorithm.ML_KEM_768_HYBRID.value,
+    "kyber1024-hybrid": EncryptionAlgorithm.ML_KEM_1024_HYBRID.value,
+}
+
+
 def is_aead_algorithm(algorithm):
     """Check if algorithm supports native AEAD with AAD.
 
@@ -10834,6 +10848,9 @@ def rekey_file(
             raise RekeyError(f"Cannot read file metadata: {e}", original_exception=e)
 
         original_algorithm = file_metadata.get("algorithm", EncryptionAlgorithm.FERNET.value)
+        # 1.4.x kyber-named hybrids rekey as their ML-KEM successors
+        # (gitlab#296) — the re-encrypted file records the current name.
+        original_algorithm = LEGACY_ALGORITHM_ALIASES.get(original_algorithm, original_algorithm)
         original_format_version = file_metadata.get("format_version", 9)
 
         # Determine encryption settings for re-encryption
@@ -11520,6 +11537,10 @@ def decrypt_file(
             algorithm = "cascade"
         else:
             algorithm = encryption.get("algorithm", EncryptionAlgorithm.FERNET.value)
+            # 1.4.x kyber-named hybrids route as their ML-KEM successors
+            # (gitlab#296); the stored metadata bytes stay untouched, so
+            # AAD/transcript binding is unaffected.
+            algorithm = LEGACY_ALGORITHM_ALIASES.get(algorithm, algorithm)
 
         # For v5+ format, extract encryption_data from metadata (overrides parameter)
         if format_version >= 5 and "encryption_data" in encryption:
@@ -11574,6 +11595,8 @@ def decrypt_file(
         encrypted_hash = metadata.get("encrypted_hash")
         # Default to Fernet for backward compatibility
         algorithm = metadata.get("algorithm", EncryptionAlgorithm.FERNET.value)
+        # 1.4.x kyber-named hybrids route as their ML-KEM successors (gitlab#296)
+        algorithm = LEGACY_ALGORITHM_ALIASES.get(algorithm, algorithm)
 
         # HSM not supported in older format versions
         hsm_plugin_name = None

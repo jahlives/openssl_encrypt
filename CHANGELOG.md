@@ -1001,6 +1001,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Legacy `kyber*-hybrid` files decrypt and rekey again** (gitlab#296,
+  github#175): the v1.5.0 Kyber→ML-KEM rename accidentally dropped the
+  dispatch's legacy-name remap (a dangling "Legacy Kyber mappings" comment
+  survived with nothing under it), so genuine 1.4.x files named
+  `kyber512/768/1024-hybrid` failed with a generic "Unsupported encryption
+  algorithm" — although 1.4.x itself already decrypted them via the ML-KEM
+  liboqs mechanisms, so the wire format is identical. Metadata-sourced names
+  now normalize through `LEGACY_ALGORITHM_ALIASES` for decrypt and rekey
+  (rekeyed files record the current name); encrypt-side validation stays
+  strict, so no new file can be written under a removed name. Pinned by
+  `test_legacy_kyber_routing_296.py`.
+
 - **CI: the `test-fallback` job installs its build toolchain before pip**
   (gitlab#291, github#169): the job pip-installed `requirements.txt` as its
   first step, but on `python:3.13-slim` the pinned `RandomX` and
