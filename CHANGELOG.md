@@ -87,6 +87,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`info` reports decryptability and 1.5.x upgrade readiness**
+  (gitlab#298, github#177, 1.4.x port): a new Compatibility section (human
+  view) and top-level `compatibility` key (`--json`, registered in the
+  capabilities manifest `json_fields`). On this line every legacy component
+  still decrypts, so blockers are only missing local dependencies
+  (`whirlpool`, `threefish_native`, `liboqs-python`) — but files using
+  components that v1.5.0 removed (sequential PBKDF2 chain, Whirlpool,
+  Camellia, non-streaming AES-OCB3, aes-ocb3 PQC data cipher) are listed as
+  `upgrade_blockers` with "rekey before upgrading" guidance. The assessment
+  (`assess_decrypt_compatibility`) is computed exclusively from the public
+  header metadata — no password ever influences it, so `info` cannot become
+  a password oracle — and never aborts on a crafted header. Streaming
+  AES-OCB3 files and legacy kyber-named hybrids decrypt on fixed 1.5.x and
+  are reported as notes. Pinned by `test_info_compatibility_298.py`.
+
 - **CI: manual `publish-randomx-pypi` job uploads the openssl-encrypt-randomx
   release artifacts to PyPI** (gitlab#285, github#163): play-button job in the
   publish stage that twine-uploads exactly the `randomx-wheel` job's

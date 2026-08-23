@@ -173,7 +173,10 @@ _JSON_FIELDS = {
     "check-argon2": ["available", "version", "variants", "functional"],
     "check-pqc": ["available", "liboqs_version", "algorithms"],
     # Bare-document endpoints list their guaranteed top-level keys.
-    "info": ["format_version"],
+    # compatibility (gitlab#298): header-only decryptability assessment
+    # ({decryptable, issues, upgrade_blockers, notes}), computed without
+    # any password.
+    "info": ["format_version", "compatibility"],
     "analyze-config": [
         "overall_score",
         "security_level",

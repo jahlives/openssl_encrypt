@@ -9841,6 +9841,173 @@ def extract_file_metadata(input_file, second_password=None):
         raise ValueError(f"Invalid file format: {str(e)}")
 
 
+def _hash_rounds_from_metadata(metadata: dict, name: str) -> int:
+    """Best-effort read of a hash/KDF stage's recorded rounds (nested or flat)."""
+    rounds = 0
+    derivation_config = metadata.get("derivation_config")
+    if isinstance(derivation_config, dict):
+        for section in ("hash_config", "kdf_config"):
+            cfg = derivation_config.get(section)
+            entry = cfg.get(name) if isinstance(cfg, dict) else None
+            if isinstance(entry, dict):
+                rounds = entry.get("rounds", entry.get("iterations", 0)) or 0
+            elif isinstance(entry, int) and not isinstance(entry, bool):
+                rounds = entry
+            if rounds:
+                return rounds
+    flat = metadata.get("hash_config")
+    entry = flat.get(name, 0) if isinstance(flat, dict) else 0
+    if isinstance(entry, dict):
+        entry = entry.get("rounds", 0) or 0
+    if isinstance(entry, int) and not isinstance(entry, bool) and entry > 0:
+        return entry
+    if name == "pbkdf2":
+        flat_iter = metadata.get("pbkdf2_iterations", 0)
+        if isinstance(flat_iter, int) and not isinstance(flat_iter, bool):
+            return flat_iter
+    return 0
+
+
+def assess_decrypt_compatibility(metadata) -> dict:
+    """Assess, from PUBLIC header metadata only, decryptability and 1.5.x readiness.
+
+    1.4.x flavor of the gitlab#298 feature: this line still decrypts every
+    legacy component, so blockers here are only missing local dependencies —
+    but files using components REMOVED in 1.5.0 are reported as
+    ``upgrade_blockers`` ("rekey before upgrading"). Three hard properties
+    (maintainer requirements, 2026-08-23):
+
+    - **Header-only**: consumes the cleartext metadata dict and (for
+      dependency checks) the local module inventory — never any password, so
+      ``info`` cannot become a password oracle.
+    - **Never raises**: crafted or garbage headers degrade to an empty
+      assessment.
+    - **No false alarms**: legacy kyber-named hybrids decrypt on 1.5.x since
+      its gitlab#296 fix and are notes, not upgrade blockers; streaming
+      aes-ocb3 files keep decrypting on 1.5.x and are notes as well.
+
+    Args:
+        metadata: Parsed metadata dictionary from the file header.
+
+    Returns:
+        dict with ``decryptable`` (bool, this installation), ``issues``
+        (blockers here), ``upgrade_blockers`` (components 1.5.x removed),
+        and ``notes``.
+    """
+    issues: list = []
+    notes: list = []
+    upgrade_blockers: list = []
+
+    def _blocked(kind: str, component: str, detail: str) -> None:
+        issues.append({"kind": kind, "component": component, "detail": detail})
+
+    def _upgrade(component: str, detail: str) -> None:
+        upgrade_blockers.append({"component": component, "detail": detail})
+
+    try:
+        if not isinstance(metadata, dict):
+            return {
+                "decryptable": True,
+                "issues": [],
+                "upgrade_blockers": [],
+                "notes": ["header not assessable"],
+            }
+        import importlib.util
+
+        format_version = metadata.get("format_version", 1)
+        xor_mode = metadata.get("xor_mode", "sequential")
+        routes_independent = xor_mode == "independent" or (
+            isinstance(format_version, int) and (format_version in (11, 12) or format_version >= 14)
+        )
+
+        # Whirlpool: decryptable here only with the module (gitlab#294);
+        # removed entirely in 1.5.0.
+        if _hash_rounds_from_metadata(metadata, "whirlpool") > 0:
+            if not WHIRLPOOL_AVAILABLE:
+                _blocked(
+                    "missing_dependency",
+                    "whirlpool",
+                    "key derivation uses Whirlpool, but the whirlpool module "
+                    "is not installed (pip install whirlpool-py311); for a "
+                    "legacy file written with the old SHA-512 substitution "
+                    f"see {_WHIRLPOOL_FALLBACK_ENV}=1",
+                )
+            _upgrade(
+                "whirlpool",
+                "the Whirlpool hash stage is removed in v1.5.0 — rekey this "
+                "file before upgrading",
+            )
+
+        # PBKDF2 chain stage: works here; 1.5.x refuses sequential-routed
+        # files that recorded rounds (independent-XOR files never used it).
+        if not routes_independent and _hash_rounds_from_metadata(metadata, "pbkdf2") > 0:
+            _upgrade(
+                "pbkdf2",
+                "the PBKDF2 chain stage is removed in v1.5.0 — rekey this " "file before upgrading",
+            )
+
+        encryption = metadata.get("encryption")
+        encryption = encryption if isinstance(encryption, dict) else {}
+        algorithm = encryption.get("algorithm") or metadata.get("algorithm")
+        streaming_cfg = metadata.get("streaming")
+        streaming_enabled = isinstance(streaming_cfg, dict) and streaming_cfg.get("enabled", False)
+
+        if isinstance(algorithm, str):
+            if algorithm == "camellia":
+                _upgrade(
+                    "camellia",
+                    "the Camellia cipher is removed in v1.5.0 — rekey this "
+                    "file before upgrading",
+                )
+            if algorithm == "aes-ocb3":
+                if format_version in (12, 14) and streaming_enabled:
+                    notes.append("aes-ocb3 streaming files keep decrypting on 1.5.x")
+                else:
+                    _upgrade(
+                        "aes-ocb3",
+                        "the aes-ocb3 cipher is removed in v1.5.0 for "
+                        "non-streaming files — rekey this file before "
+                        "upgrading",
+                    )
+            if algorithm.startswith("kyber"):
+                notes.append(
+                    f"legacy algorithm name '{algorithm}' decrypts on 1.5.x "
+                    "under its ML-KEM name"
+                )
+            if algorithm.startswith(("ml-kem-", "hqc-", "mayo-", "cross-", "kyber")):
+                encryption_data = encryption.get("encryption_data")
+                if encryption_data == "aes-ocb3":
+                    _upgrade(
+                        "aes-ocb3",
+                        "the aes-ocb3 PQC data cipher is removed in v1.5.0 — "
+                        "rekey this file before upgrading",
+                    )
+                if importlib.util.find_spec("oqs") is None:
+                    _blocked(
+                        "missing_dependency",
+                        "liboqs-python",
+                        "post-quantum decryption needs liboqs-python, which " "is not installed",
+                    )
+            if algorithm in ("threefish-512", "threefish-1024"):
+                if importlib.util.find_spec("threefish_native") is None:
+                    _blocked(
+                        "missing_dependency",
+                        "threefish_native",
+                        "Threefish decryption needs the threefish_native "
+                        "module (pip install openssl-encrypt-threefish), "
+                        "which is not installed",
+                    )
+    except Exception:  # nosec B110 - the assessment must never abort info
+        notes.append("header not fully assessable")
+
+    return {
+        "decryptable": not issues,
+        "issues": issues,
+        "upgrade_blockers": upgrade_blockers,
+        "notes": notes,
+    }
+
+
 def print_file_info(input_file: str, json_output: bool = False, second_password=None) -> dict:
     """
     Display encrypted file metadata without decrypting.
@@ -9860,11 +10027,18 @@ def print_file_info(input_file: str, json_output: bool = False, second_password=
     info = extract_file_metadata(input_file, second_password=second_password)
     metadata = info["metadata"]
 
+    # Header-only decryptability / 1.5.x-readiness assessment (gitlab#298):
+    # computed purely from the public metadata dict — never from any
+    # password — so info cannot become a password oracle.
+    compatibility = assess_decrypt_compatibility(metadata)
+
     if json_output:
         # ensure_ascii=True so a crafted legacy-format file's raw C1/DEL/bidi
         # bytes are \uXXXX-escaped rather than emitted to the terminal (gitlab#236
         # review). json.dumps only escapes C0 on its own.
-        print(json.dumps(metadata, indent=2, ensure_ascii=True))
+        document = dict(metadata)
+        document["compatibility"] = compatibility
+        print(json.dumps(document, indent=2, ensure_ascii=True))
         return metadata
 
     # Pretty-print metadata
@@ -10000,6 +10174,23 @@ def print_file_info(input_file: str, json_output: bool = False, second_password=
         pepper_name = encryption.get("pepper_name")
         if pepper_name:
             eprint(f"    Name:            {sanitize_for_display(pepper_name)}")
+
+    # Compatibility (gitlab#298): header-only assessment — decryptable on
+    # this installation, and readiness for the 1.5.x upgrade.
+    eprint()
+    eprint("  Compatibility:")
+    if compatibility["decryptable"]:
+        eprint("    No known blockers: this version should decrypt the file.")
+    else:
+        eprint("    NOT decryptable by this installation:")
+        for issue in compatibility["issues"]:
+            eprint(f"      - {sanitize_for_display(issue['detail'])}")
+    if compatibility["upgrade_blockers"]:
+        eprint("    Before upgrading to 1.5.x:")
+        for blocker in compatibility["upgrade_blockers"]:
+            eprint(f"      - {sanitize_for_display(blocker['detail'])}")
+    for note in compatibility["notes"]:
+        eprint(f"    Note: {sanitize_for_display(note)}")
 
     # Reconstructed CLI — show users how they could re-encrypt with the
     # same settings on a fresh file. Salt and per-file random values are
