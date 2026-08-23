@@ -640,6 +640,74 @@ except Exception as e:
     )
     WHIRLPOOL_AVAILABLE = False
 
+# Hash stages every derivation path actually executes on this line
+# (sequential multi_hash_password and the independent-XOR component list
+# agree on this set; whirlpool is real here, unlike 1.5.x). Anything else
+# recorded under hash_config is dead weight: the 2026-08-23 fail-closed
+# audit (gitlab#294) confirmed empirically that recording rounds for the
+# names below never changed the derived key on any release. New encryption
+# must refuse to record them (``_reject_unapplied_hash_rounds``); decrypt
+# keeps ignoring them for compatibility (real files carry them).
+APPLIED_HASH_STAGES = frozenset(
+    {"sha256", "sha512", "sha3_256", "sha3_512", "blake2b", "blake3", "shake256", "whirlpool"}
+)
+UNAPPLIED_HASH_STAGES = frozenset(
+    {"sha384", "sha224", "sha3_384", "sha3_224", "blake2s", "shake128"}
+)
+
+#: Decrypt-only recovery hatch (gitlab#294, mirrors the #288 pattern): the
+#: sequential chain historically SUBSTITUTED SHA-512 for Whirlpool when the
+#: module was missing (warn-only), so files exist whose keys were derived
+#: with the substitution despite whirlpool metadata. Setting this variable
+#: to "1" reproduces that byte-exact legacy derivation to decrypt such
+#: files one last time; the default fails closed.
+_WHIRLPOOL_FALLBACK_ENV = "OPENSSL_ENCRYPT_ALLOW_WHIRLPOOL_SHA512_FALLBACK"
+
+
+def _reject_unapplied_hash_rounds(hash_config) -> None:
+    """Refuse new encryption that requests a hash stage nothing executes.
+
+    Args:
+        hash_config: The caller-supplied flat hash/KDF configuration
+            (hash names map to an int round count, or a dict with "rounds").
+
+    Raises:
+        ValueError: If any stage from UNAPPLIED_HASH_STAGES carries rounds
+            greater than zero (gitlab#294 — recording an unexecuted work
+            factor claims strength the derived key does not have), or if
+            whirlpool rounds are requested while the whirlpool module is
+            missing (the chain would silently substitute SHA-512).
+    """
+    if not isinstance(hash_config, dict):
+        return
+    for name in sorted(UNAPPLIED_HASH_STAGES):
+        value = hash_config.get(name)
+        rounds = value.get("rounds", 0) if isinstance(value, dict) else value
+        if isinstance(rounds, bool) or not isinstance(rounds, int):
+            continue
+        if rounds > 0:
+            raise ValueError(
+                f"Refusing to encrypt with {name} rounds: no key-derivation "
+                f"path executes the {name} hash stage (gitlab#294), so the "
+                f"rounds would be recorded in metadata as a work factor that "
+                f"was never applied. Use one of: " + ", ".join(sorted(APPLIED_HASH_STAGES))
+            )
+    wp = hash_config.get("whirlpool")
+    wp_rounds = wp.get("rounds", 0) if isinstance(wp, dict) else wp
+    if (
+        isinstance(wp_rounds, int)
+        and not isinstance(wp_rounds, bool)
+        and wp_rounds > 0
+        and not WHIRLPOOL_AVAILABLE
+    ):
+        raise ValueError(
+            "Refusing to encrypt with whirlpool rounds: the whirlpool module "
+            "is not installed, and the chain would silently substitute "
+            "SHA-512 while recording whirlpool in metadata (gitlab#294). "
+            "Install whirlpool-py311 or drop --whirlpool-rounds."
+        )
+
+
 # Try to import argon2 library
 try:
     import argon2
@@ -2008,7 +2076,23 @@ def multi_hash_password(
                                     show_progress("Whirlpool", i + 1, params)
                                     KeyStretch.hash_stretch = True
                                 except Exception as e:
-                                    # Log the error and fall back to SHA-512
+                                    # gitlab#294: a mid-chain Whirlpool error
+                                    # used to substitute SHA-512 for the
+                                    # REMAINING rounds (warn-only), deriving a
+                                    # key that mixes both hashes. Fail closed
+                                    # unless the decrypt-only recovery hatch
+                                    # deliberately reproduces the legacy
+                                    # substituted derivation.
+                                    if os.environ.get(_WHIRLPOOL_FALLBACK_ENV) != "1":
+                                        raise KeyDerivationError(
+                                            "Whirlpool hash stage failed; "
+                                            "refusing to substitute SHA-512. "
+                                            "For a legacy file written with "
+                                            "the old substitution, set "
+                                            f"{_WHIRLPOOL_FALLBACK_ENV}=1 to "
+                                            "decrypt it one last time and "
+                                            "re-encrypt."
+                                        ) from e
                                     if not quiet:
                                         eprint(
                                             f"Warning: Whirlpool error ({str(e)}), falling back to SHA-512"
@@ -2032,8 +2116,24 @@ def multi_hash_password(
                             if not quiet and not progress:
                                 eprint("✅")
                     else:
-                        # Fall back to SHA-512 if Whirlpool is not
-                        # available
+                        # gitlab#294: the chain used to silently substitute
+                        # SHA-512 when the whirlpool module was missing
+                        # (warn-only), deriving a different key than the
+                        # metadata claims. Fail closed unless the
+                        # decrypt-only recovery hatch deliberately reproduces
+                        # the legacy substituted derivation for files that
+                        # were WRITTEN that way.
+                        if os.environ.get(_WHIRLPOOL_FALLBACK_ENV) != "1":
+                            raise KeyDerivationError(
+                                "this derivation requires the Whirlpool hash "
+                                "stage, but the whirlpool module is not "
+                                "installed (pip install whirlpool-py311). "
+                                "Refusing to substitute SHA-512. For a "
+                                "legacy file written with the old "
+                                "substitution, set "
+                                f"{_WHIRLPOOL_FALLBACK_ENV}=1 to decrypt it "
+                                "one last time and re-encrypt."
+                            )
                         if not quiet and not progress:
                             eprint(
                                 "Warning: Whirlpool not available, using SHA-512 instead",
@@ -7409,6 +7509,11 @@ def encrypt_file(
             f"{LATEST_STABLE_FORMAT_VERSION}. Omit format_version to use "
             "the current default."
         )
+
+    # Fail closed on hash stages no derivation path executes (gitlab#294):
+    # recording their rounds would claim work the derived key never received.
+    # Raised before any archiving/temp files, like the refusals above.
+    _reject_unapplied_hash_rounds(hash_config)
 
     # Post-v14 review INFO-1: an explicit legacy version is still honored for
     # API backward compatibility, but new files below the latest format lack

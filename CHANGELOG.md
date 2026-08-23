@@ -237,6 +237,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Whirlpool no longer silently substitutes SHA-512, and six no-op hash
+  options are refused** (gitlab#294, github#173; 1.4.x part of the
+  2026-08-23 fail-closed audit): the sequential chain substituted SHA-512
+  for Whirlpool when the module was missing — or even mid-chain on a
+  Whirlpool error — with only a warning, deriving a different key than the
+  metadata claims (the gitlab#288 fail-open class). Both paths now fail
+  closed with `KeyDerivationError`; the decrypt-only recovery hatch
+  `OPENSSL_ENCRYPT_ALLOW_WHIRLPOOL_SHA512_FALLBACK=1` reproduces the
+  byte-exact legacy substitution (the original fallback code is unchanged,
+  only gated) so files written that way decrypt one last time. Separately,
+  `sha384`, `sha224`, `sha3-384`, `sha3-224`, `blake2s` and `shake128` have
+  live CLI flags and are recorded into metadata but were **never executed by
+  any derivation path on any release** — new encryption, `derive-password`,
+  and USB creation now refuse them (`_reject_unapplied_hash_rounds` in
+  `encrypt_file` plus the two CLI paths that bypass it); encryption with
+  Whirlpool rounds is likewise refused while the module is missing. Decrypt
+  and `verify-usb` keep ignoring recorded no-op rounds, which existing files
+  depend on. Pinned by `test_hash_stage_fail_closed_294.py`.
+
 - **Key derivation no longer depends on prior-call state, and encryption no
   longer depends on verbosity** (gitlab#289): on the 1.4.x line, the legacy
   PBKDF2 chain stage set the internal stretch flag only inside the loud
