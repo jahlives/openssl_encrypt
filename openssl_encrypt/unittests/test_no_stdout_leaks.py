@@ -68,9 +68,9 @@ STDOUT_WHITELIST = [
     ),
     (
         "modules/crypt_core.py",
-        "print(json.dumps(metadata, indent=2, ensure_ascii=True))",
+        "print(json.dumps(document, indent=2, ensure_ascii=True))",
         1,
-        "--info --json metadata document",
+        "--info --json metadata document (+ header-only compatibility key, gitlab#298)",
     ),
     (
         "modules/crypt_cli.py",
