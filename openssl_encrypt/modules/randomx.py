@@ -92,6 +92,17 @@ def _get_python_executable():
     return None
 
 
+def _binding_usable(module) -> bool:
+    """True if a candidate binding exposes the usable RandomX surface.
+
+    ``import randomx_native`` can SUCCEED as an empty PEP-420 namespace
+    package — e.g. the source checkout's ``randomx_native/`` Rust directory
+    when the wheel is not installed (gitlab#299) — so import success is not
+    proof of a usable binding: the RandomX VM class must actually exist.
+    """
+    return hasattr(module, "RandomX")
+
+
 # Safely test RandomX import to avoid illegal instruction crashes
 def _test_randomx_import():
     """Test if RandomX can be imported without causing illegal instruction errors."""
@@ -104,7 +115,7 @@ def _test_randomx_import():
     try:
         # Test RandomX import in a subprocess to catch fatal errors
         result = subprocess.run(
-            [python_exe, "-c", 'import randomx; print("SUCCESS")'],
+            [python_exe, "-c", 'import randomx; randomx.RandomX; print("SUCCESS")'],
             capture_output=True,
             text=True,
             timeout=10,
@@ -130,7 +141,14 @@ def _test_native_import():
 
     try:
         result = subprocess.run(
-            [python_exe, "-c", 'import randomx_native; print("SUCCESS")'],
+            [
+                python_exe,
+                "-c",
+                # Assert the VM class, not bare import: a namespace-package
+                # resolution (source checkout's randomx_native/ directory)
+                # imports "successfully" with no attributes (gitlab#299).
+                'import randomx_native; randomx_native.RandomX; print("SUCCESS")',
+            ],
             capture_output=True,
             text=True,
             timeout=10,
@@ -176,6 +194,15 @@ try:
     if _test_native_import():
         import randomx_native as randomx
 
+        if not _binding_usable(randomx):
+            # gitlab#299: an empty namespace package (the source checkout's
+            # randomx_native/ directory shadowing an uninstalled wheel) must
+            # fall through to the PyPI binding, not explode at first use.
+            raise ImportError(
+                "randomx_native resolved to a namespace/incomplete package "
+                f"({list(getattr(randomx, '__path__', []))}); install "
+                "openssl-encrypt-randomx or run outside the source checkout"
+            )
         RANDOMX_AVAILABLE = True
         RANDOMX_LIBRARY = "randomx_native"
         logger.info("RandomX bindings loaded: randomx_native (project-owned)")
@@ -188,6 +215,11 @@ except (ImportError, SystemError, OSError, Exception) as native_err:
         if _test_randomx_import():
             import randomx
 
+            if not _binding_usable(randomx):
+                raise ImportError(
+                    "randomx resolved to a namespace/incomplete package "
+                    "(gitlab#299); the RandomX class is missing"
+                )
             RANDOMX_AVAILABLE = True
             RANDOMX_LIBRARY = "randomx"
             logger.info("RandomX library loaded successfully")

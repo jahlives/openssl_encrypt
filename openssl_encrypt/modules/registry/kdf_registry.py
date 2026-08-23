@@ -769,6 +769,13 @@ class RandomX(KDFBase):
             # Project-owned bindings over the pinned official RandomX library
             # (gitlab#285); byte-identical output, security-hardened.
             import randomx_native as randomx
+
+            if not hasattr(randomx, "RandomX"):
+                # gitlab#299: a namespace-package resolution (the source
+                # checkout's randomx_native/ directory shadowing an
+                # uninstalled wheel) imports "successfully" with no
+                # attributes — fall through like a missing binding.
+                raise ImportError("randomx_native lacks the RandomX class (shadowed?)")
         except Exception:
             # A broken-but-importable native module (OSError from a missing
             # shared library, SystemError) must fall back exactly like a
@@ -776,6 +783,9 @@ class RandomX(KDFBase):
             # with the registry's documented error, not a bare ImportError.
             try:
                 import randomx
+
+                if not hasattr(randomx, "RandomX"):
+                    raise ImportError("randomx lacks the RandomX class (shadowed?)")
             except Exception as import_err:
                 raise AlgorithmNotAvailableError(
                     "RandomX bindings not importable in this process"
