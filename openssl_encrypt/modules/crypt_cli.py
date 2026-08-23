@@ -5188,6 +5188,13 @@ def main_with_args(args=None):
             if hasattr(args, "whirlpool_rounds") and args.whirlpool_rounds:
                 hash_config["whirlpool"] = args.whirlpool_rounds
 
+            # Fail closed on hash stages no derivation path executes
+            # (gitlab#294): the USB creator derives via multi_hash_password
+            # directly, so encrypt_file's backstop never sees this config.
+            from .crypt_core import _reject_unapplied_hash_rounds
+
+            _reject_unapplied_hash_rounds(hash_config)
+
             # 1.4.x additionally refuses the PBKDF2 iteration option here,
             # because multi_hash_password never reads it and the value was
             # still recorded on the drive as a work factor that had not been
@@ -6269,6 +6276,13 @@ def main_with_args(args=None):
             hash_config["shake256"] = args.shake256_rounds
         if hasattr(args, "shake128_rounds") and args.shake128_rounds:
             hash_config["shake128"] = args.shake128_rounds
+
+        # Fail closed on hash stages no derivation path executes
+        # (gitlab#294): derive-password feeds generate_key directly, so
+        # encrypt_file's backstop never sees this config.
+        from .crypt_core import _reject_unapplied_hash_rounds
+
+        _reject_unapplied_hash_rounds(hash_config)
 
         # Add KDF parameters to hash_config (same as encrypt path)
         if getattr(args, "enable_argon2", False):

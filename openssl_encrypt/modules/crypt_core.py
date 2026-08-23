@@ -684,6 +684,51 @@ LEGACY_ALGORITHM_ALIASES = {
     "kyber1024-hybrid": EncryptionAlgorithm.ML_KEM_1024_HYBRID.value,
 }
 
+# Hash stages every derivation path actually executes (sequential
+# multi_hash_password and the independent-XOR component list agree on this
+# set). Anything else recorded under hash_config is dead weight: the
+# 2026-08-23 fail-closed audit (gitlab#294) confirmed empirically that
+# recording rounds for the names below never changed the derived key on any
+# release — and whirlpool, which 1.4.x DID execute, has no implementation
+# left on this line at all. New encryption must refuse to record them
+# (``_reject_unapplied_hash_rounds``); decrypt keeps ignoring the six
+# never-applied names for compatibility (real files carry them), while
+# whirlpool fails closed via ``_check_removed_whirlpool_stage``.
+APPLIED_HASH_STAGES = frozenset(
+    {"sha256", "sha512", "sha3_256", "sha3_512", "blake2b", "blake3", "shake256"}
+)
+UNAPPLIED_HASH_STAGES = frozenset(
+    {"sha384", "sha224", "sha3_384", "sha3_224", "blake2s", "shake128", "whirlpool"}
+)
+
+
+def _reject_unapplied_hash_rounds(hash_config) -> None:
+    """Refuse new encryption that requests a hash stage nothing executes.
+
+    Args:
+        hash_config: The caller-supplied flat hash/KDF configuration
+            (hash names map to an int round count, or a dict with "rounds").
+
+    Raises:
+        ValueError: If any stage from UNAPPLIED_HASH_STAGES carries rounds
+            greater than zero (gitlab#294 — recording an unexecuted work
+            factor claims strength the derived key does not have).
+    """
+    if not isinstance(hash_config, dict):
+        return
+    for name in sorted(UNAPPLIED_HASH_STAGES):
+        value = hash_config.get(name)
+        rounds = value.get("rounds", 0) if isinstance(value, dict) else value
+        if isinstance(rounds, bool) or not isinstance(rounds, int):
+            continue
+        if rounds > 0:
+            raise ValueError(
+                f"Refusing to encrypt with {name} rounds: no key-derivation "
+                f"path executes the {name} hash stage (gitlab#294), so the "
+                f"rounds would be recorded in metadata as a work factor that "
+                f"was never applied. Use one of: " + ", ".join(sorted(APPLIED_HASH_STAGES))
+            )
+
 
 def is_aead_algorithm(algorithm):
     """Check if algorithm supports native AEAD with AAD.
@@ -5699,6 +5744,11 @@ def decrypt_file_asymmetric(
                 },
                 quiet=quiet,
             )
+            # Same for the removed Whirlpool hash stage (gitlab#294).
+            _check_removed_whirlpool_stage(
+                {"derivation_config": derivation_config},
+                quiet=quiet,
+            )
 
             # Enforce the KDF memory ceiling before the expensive derivation
             # (gitlab#128). The default path verifies the sender signature first
@@ -6543,6 +6593,11 @@ def encrypt_file(
             f"{LATEST_STABLE_FORMAT_VERSION}. Omit format_version to use "
             "the current default."
         )
+
+    # Fail closed on hash stages no derivation path executes (gitlab#294):
+    # recording their rounds would claim work the derived key never received.
+    # Raised before any archiving/temp files, like the refusals above.
+    _reject_unapplied_hash_rounds(hash_config)
 
     # Post-v14 review INFO-1: an explicit legacy version is still honored for
     # API backward compatibility, but new files below the latest format lack
@@ -9447,6 +9502,57 @@ def _check_removed_pbkdf2_chain(metadata, quiet: bool = False) -> None:
     )
 
 
+def _check_removed_whirlpool_stage(metadata, quiet: bool = False) -> None:
+    """Refuse files whose derivation used the removed Whirlpool hash stage.
+
+    1.5.0 removed Whirlpool entirely (documented breaking change), but unlike
+    PBKDF2 no decrypt-time guard existed (gitlab#294): a file recording
+    whirlpool rounds silently skipped the stage, derived the wrong key, and
+    failed with a generic AEAD authentication error indistinguishable from a
+    wrong password. Refusing up front (the rounds are public cleartext
+    metadata, so no oracle is introduced) names the actual cause and the
+    migration path.
+
+    Unlike PBKDF2 there is NO independent-XOR exemption: 1.4.x executed
+    Whirlpool on both the sequential and the independent path, so any route
+    with recorded whirlpool rounds cannot derive its key here.
+    """
+    if not isinstance(metadata, dict):
+        return
+
+    rounds = 0
+    derivation_config = metadata.get("derivation_config")
+    if isinstance(derivation_config, dict):
+        hash_config = derivation_config.get("hash_config")
+        wp_cfg = hash_config.get("whirlpool") if isinstance(hash_config, dict) else None
+        if isinstance(wp_cfg, dict):
+            rounds = wp_cfg.get("rounds", 0) or 0
+        elif isinstance(wp_cfg, int) and not isinstance(wp_cfg, bool):
+            rounds = wp_cfg
+    if not rounds:
+        # v3 flat layout stored hash rounds at the top level.
+        flat_config = metadata.get("hash_config")
+        flat = flat_config.get("whirlpool", 0) if isinstance(flat_config, dict) else 0
+        if isinstance(flat, dict):
+            flat = flat.get("rounds", 0) or 0
+        rounds = flat if isinstance(flat, int) and not isinstance(flat, bool) else 0
+    if not isinstance(rounds, int) or rounds <= 0:
+        return
+
+    if not quiet:
+        eprint(
+            f"ERROR: this file's key derivation includes {rounds} rounds of the "
+            f"Whirlpool hash stage, which was removed in v1.5.0 (breaking "
+            f"change). openssl-encrypt 1.5.x cannot derive its key. Decrypt "
+            f"the file with openssl-encrypt 1.4.x and re-encrypt it there or "
+            f"here without Whirlpool."
+        )
+    raise DecryptionError(
+        f"file uses the Whirlpool hash stage ({rounds} rounds) removed in "
+        f"v1.5.0; decrypt it with openssl-encrypt 1.4.x and re-encrypt"
+    )
+
+
 def _derive_envelope_kek(
     password: bytes,
     derivation_config: dict,
@@ -9478,6 +9584,8 @@ def _derive_envelope_kek(
         },
         quiet=quiet,
     )
+    # Same for the removed Whirlpool hash stage (gitlab#294).
+    _check_removed_whirlpool_stage({"derivation_config": derivation_config}, quiet=quiet)
     salt = base64.b64decode(derivation_config["salt"])
     hash_config = _flatten_derivation_config(derivation_config)
     if not allow_dropped_recovery:
@@ -12106,6 +12214,9 @@ def decrypt_file(
         # used the PBKDF2 chain stage removed in 1.5.0 — before burning KDF time
         # on a derivation that cannot succeed.
         _check_removed_pbkdf2_chain(metadata, quiet=quiet)
+        # Same for the removed Whirlpool hash stage (gitlab#294) — unlike
+        # PBKDF2 it applies to every route (1.4.x ran it on both paths).
+        _check_removed_whirlpool_stage(metadata, quiet=quiet)
 
         # Check XOR mode from metadata to determine which key generation function to use
         xor_mode = metadata.get(

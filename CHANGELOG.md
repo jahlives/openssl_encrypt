@@ -1001,6 +1001,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Hash stages fail closed instead of silently not running** (gitlab#294,
+  github#173): (1) a legacy file recording **Whirlpool** rounds silently
+  skipped the stage on this line (Whirlpool was removed in 1.5.0 but, unlike
+  PBKDF2, had no decrypt-time guard), derived the wrong key, and failed like
+  a wrong password — decrypt now refuses such files up front with the
+  removal cause and the 1.4.x migration path
+  (`_check_removed_whirlpool_stage`, wired at the same three sites as the
+  PBKDF2 check; no independent-XOR exemption since 1.4.x ran Whirlpool on
+  both routes). (2) Six hash options — `sha384`, `sha224`, `sha3-384`,
+  `sha3-224`, `blake2s`, `shake128` — had live CLI flags and were recorded
+  into metadata but were **never executed by any derivation path on any
+  release** (empirically byte-identical keys with and without them). New
+  encryption, key derivation (`derive-password`), and USB creation now
+  refuse them (`_reject_unapplied_hash_rounds` in `encrypt_file` plus the
+  two CLI paths that bypass it); decrypt and `verify-usb` keep ignoring
+  recorded rounds, which every existing file depends on. Pinned by
+  `test_hash_stage_fail_closed_294.py`.
+
 - **Legacy `kyber*-hybrid` files decrypt and rekey again** (gitlab#296,
   github#175): the v1.5.0 Kyber→ML-KEM rename accidentally dropped the
   dispatch's legacy-name remap (a dangling "Legacy Kyber mappings" comment
