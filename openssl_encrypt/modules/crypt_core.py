@@ -9553,6 +9553,52 @@ def _check_removed_whirlpool_stage(metadata, quiet: bool = False) -> None:
     )
 
 
+def _check_removed_cipher(algorithm, metadata, quiet: bool = False) -> None:
+    """Refuse files using a cipher removed in v1.5.0 with a pointed error.
+
+    camellia and (non-streaming) aes-ocb3 files written by 1.4.x previously
+    fell through the decrypt dispatch to a generic "Unsupported encryption
+    algorithm" error with no removal cause or migration path (gitlab#297).
+    The algorithm name is public cleartext metadata, so no oracle is
+    introduced.
+
+    aes-ocb3 STREAMING files are exempt by maintainer decision (2026-08-23):
+    streaming.py retains a working AESOCB3 decrypt path, and the streaming
+    branch routes there before the dispatch this check protects.
+    """
+    if algorithm == "camellia":
+        if not quiet:
+            eprint(
+                "ERROR: this file is encrypted with Camellia, which was "
+                "removed in v1.5.0 (breaking change). Decrypt the file with "
+                "openssl-encrypt 1.4.x and re-encrypt it with a supported "
+                "cipher (e.g. aes-gcm)."
+            )
+        raise DecryptionError(
+            "file uses the camellia cipher removed in v1.5.0; decrypt it "
+            "with openssl-encrypt 1.4.x and re-encrypt"
+        )
+    if algorithm == "aes-ocb3":
+        format_version = metadata.get("format_version", 1) if isinstance(metadata, dict) else 1
+        streaming_cfg = metadata.get("streaming") if isinstance(metadata, dict) else None
+        streaming_enabled = isinstance(streaming_cfg, dict) and streaming_cfg.get("enabled", False)
+        if format_version in (12, 14) and streaming_enabled:
+            return
+        if not quiet:
+            eprint(
+                "ERROR: this file is encrypted with AES-OCB3, whose "
+                "non-streaming decrypt path was removed in v1.5.0 (only "
+                "streaming aes-ocb3 files still decrypt here). Decrypt the "
+                "file with openssl-encrypt 1.4.x and re-encrypt it with a "
+                "supported cipher (e.g. aes-gcm)."
+            )
+        raise DecryptionError(
+            "file uses the aes-ocb3 cipher, removed in v1.5.0 for "
+            "non-streaming files (streaming aes-ocb3 files still decrypt); "
+            "decrypt it with openssl-encrypt 1.4.x and re-encrypt"
+        )
+
+
 def _derive_envelope_kek(
     password: bytes,
     derivation_config: dict,
@@ -11649,6 +11695,9 @@ def decrypt_file(
             # (gitlab#296); the stored metadata bytes stay untouched, so
             # AAD/transcript binding is unaffected.
             algorithm = LEGACY_ALGORITHM_ALIASES.get(algorithm, algorithm)
+            # Pointed refusal for ciphers removed in v1.5.0 (gitlab#297);
+            # streaming aes-ocb3 files are exempt and route to streaming.py.
+            _check_removed_cipher(algorithm, metadata, quiet=quiet)
 
         # For v5+ format, extract encryption_data from metadata (overrides parameter)
         if format_version >= 5 and "encryption_data" in encryption:
@@ -11705,6 +11754,8 @@ def decrypt_file(
         algorithm = metadata.get("algorithm", EncryptionAlgorithm.FERNET.value)
         # 1.4.x kyber-named hybrids route as their ML-KEM successors (gitlab#296)
         algorithm = LEGACY_ALGORITHM_ALIASES.get(algorithm, algorithm)
+        # Pointed refusal for ciphers removed in v1.5.0 (gitlab#297)
+        _check_removed_cipher(algorithm, metadata, quiet=quiet)
 
         # HSM not supported in older format versions
         hsm_plugin_name = None
@@ -13183,6 +13234,29 @@ def decrypt_file(
                 raise ValueError("Decryption failed: authentication error")
             else:
                 raise ValueError(f"Unsupported encryption algorithm: {algorithm}")
+
+    # Fail closed on a missing threefish_native BEFORE the dispatch: its
+    # nonce-retry loop swallows every exception, so an ImportError there
+    # surfaced as "authentication error" — a dependency problem masquerading
+    # as a wrong password (gitlab#297).
+    if algorithm in (
+        EncryptionAlgorithm.THREEFISH_512.value,
+        EncryptionAlgorithm.THREEFISH_1024.value,
+    ):
+        try:
+            import threefish_native  # noqa: F401
+        except ImportError as e:
+            if not quiet:
+                eprint(
+                    "ERROR: this file is encrypted with Threefish, which "
+                    "needs the threefish_native module (pip install "
+                    "openssl-encrypt-threefish); it is not installed."
+                )
+            raise DecryptionError(
+                "threefish_native module is required to decrypt Threefish "
+                "files but is not installed (pip install "
+                "openssl-encrypt-threefish)"
+            ) from e
 
     # Only show progress for larger files (> 1MB)
     if len(encrypted_data) > 1024 * 1024 and not quiet:

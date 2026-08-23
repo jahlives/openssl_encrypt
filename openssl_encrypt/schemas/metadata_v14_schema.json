@@ -230,6 +230,7 @@
                 "aes-gcm",
                 "aes-gcm-siv",
                 "aes-ocb3",
+                "camellia",
                 "aes-siv",
                 "chacha20-poly1305",
                 "xchacha20-poly1305",

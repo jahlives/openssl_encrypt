@@ -1001,6 +1001,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **PQC hybrid `encryption_data` fails closed on unknown ciphers**
+  (gitlab#295, github#174): PQCipher silently substituted AES-GCM for any
+  unrecognized data-cipher name — on encrypt with no warning at all (the
+  bytes could disagree with the cipher the metadata records), on decrypt
+  warn-only, so a 1.4.x PQC+aes-ocb3 file failed like a wrong password.
+  Both paths now raise a specific error; the aes-ocb3 decrypt refusal points
+  at 1.4.x (its streaming decrypt remains supported, only the PQC path lost
+  it). Pinned by `test_pqc_encryption_data_fail_closed_295.py`.
+
+- **Removed/unavailable ciphers get pointed errors instead of generic or
+  masked ones** (gitlab#297, github#176): `camellia` files — which could not
+  even parse, because the metadata read schemas lost the name — and
+  non-streaming `aes-ocb3` files now fail up front with the removal cause
+  and the 1.4.x migration path (`_check_removed_cipher`; streaming aes-ocb3
+  files stay decryptable and are exempt). The read schemas re-admit
+  `camellia` (and `aes-ocb3` in v9/v12, where it was also missing) so legacy
+  files reach that refusal. A missing `threefish_native` module is now
+  reported as a named dependency error before the decrypt dispatch, whose
+  nonce-retry loop previously swallowed the ImportError and re-raised it as
+  "authentication error". Pinned by `test_removed_cipher_errors_297.py`.
+
 - **Hash stages fail closed instead of silently not running** (gitlab#294,
   github#173): (1) a legacy file recording **Whirlpool** rounds silently
   skipped the stage on this line (Whirlpool was removed in 1.5.0 but, unlike
