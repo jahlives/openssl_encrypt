@@ -816,16 +816,20 @@ def get_template_config(template: str or SecurityTemplate) -> Dict[str, Any]:
                 "shake256": 0,
                 "whirlpool": 0,
                 "scrypt": {"enabled": False, "n": 128, "r": 8, "p": 1, "rounds": 1000},
+                # gitlab#271: quick is memory-hard too — Argon2id "low"
+                # preset (~sub-second), replacing the deprecated
+                # PBKDF2+hash-rounds stack that contradicted the "good
+                # security" claim.
                 "argon2": {
-                    "enabled": False,
+                    "enabled": True,
                     "time_cost": 2,
-                    "memory_cost": 65536,  # 64MB
-                    "parallelism": 4,
+                    "memory_cost": 32768,  # 32MB ("low" preset)
+                    "parallelism": 2,
                     "hash_len": 32,
                     "type": 2,
-                    "rounds": 10,
+                    "rounds": 1,
                 },
-                "pbkdf2_iterations": 10000,
+                "pbkdf2_iterations": 0,
                 "type": "id",
                 "algorithm": "fernet",
             }
@@ -9201,7 +9205,9 @@ def main_with_args(args=None):
             hash_config["hash_config"]["algorithm"] = "xchacha20-poly1305"
         elif args.quick:
             hash_config = get_template_config(SecurityTemplate.QUICK)
-            hash_config["hash_config"]["algorithm"] = "aes-ocb3"
+            # gitlab#271: modern AEAD instead of the deprecated aes-ocb3
+            # (matches the 1.5.x line and --standard's cipher family).
+            hash_config["hash_config"]["algorithm"] = "aes-gcm-siv"
         elif args.standard:
             hash_config = get_template_config(SecurityTemplate.STANDARD)
             hash_config["hash_config"]["algorithm"] = "aes-gcm-siv"

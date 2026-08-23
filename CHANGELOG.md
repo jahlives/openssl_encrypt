@@ -252,6 +252,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **`--quick` sheds its deprecated defaults and becomes memory-hard**
+  (gitlab#271, github#150): new `--quick` files use `aes-gcm-siv` instead
+  of the deprecated `aes-ocb3` (matching the 1.5.x line and `--standard`'s
+  cipher family — and no longer manufacturing files 1.5.x refuses to
+  decrypt), and the quick KDF enables Argon2id with the "low" preset
+  (time_cost 2, 32 MB, parallelism 2, 1 round) instead of the deprecated
+  non-memory-hard PBKDF2(10k)+hash-rounds stack;
+  `templates/quick.json` matches. Files previously written by `--quick`
+  decrypt unchanged (algorithm and KDF config come from file metadata).
+  Pinned by `test_quick_template_271.py`; verified by a real `--quick`
+  encrypt/info/decrypt roundtrip.
+
 - **Fully hash-pinned lockfiles with `--require-hashes` installs**
   (gitlab#300, github#179; completes review finding F3 from gitlab#285):
   `requirements-prod.txt` and `requirements-dev.txt` are regenerated with
