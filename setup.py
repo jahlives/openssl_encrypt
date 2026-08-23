@@ -287,6 +287,11 @@ def read_requirements(path: str, skip_direct_urls: bool = False) -> List[str]:
             if not line or line.startswith("#") or line.startswith("-"):
                 continue
             line = line.split(" #", 1)[0].strip()
+            # pip-compile --generate-hashes writes each requirement as
+            # "name==ver \" with indented --hash= continuation lines
+            # (gitlab#300); the option lines are skipped above, but the
+            # trailing continuation marker must not reach the metadata.
+            line = line.rstrip("\\").strip()
             if not line:
                 continue
             if "://" in line or "git+" in line:

@@ -1017,6 +1017,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`setup.py` parses `--generate-hashes` lockfiles** (gitlab#300,
+  github#179): pip-compile's hash mode writes each requirement as
+  `name==ver \` with indented `--hash=` continuation lines; the extras
+  reader skipped the option lines but left the trailing backslash on the
+  requirement itself, so regenerated hashed lockfiles produced invalid
+  Requires-Dist strings (caught by `test_install_requires_metadata.py`
+  during the gitlab#300 regeneration). The continuation marker is now
+  stripped; pinned by the new hashed-lockfile parser test.
+
 - **RandomX binding selection is no longer fooled by namespace-package
   shadowing** (gitlab#299, github#178): in a source checkout without
   `openssl-encrypt-randomx` installed, `import randomx_native` succeeds as an
