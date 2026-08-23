@@ -66,6 +66,28 @@ class TestLockfilesStayHashed(unittest.TestCase):
             "include (gitlab#301); found: " + repr(speclike),
         )
 
+    def test_no_ranged_specifiers_in_lockfiles(self):
+        """Lockfile entries must be exact ``==`` pins (gitlab#286).
+
+        Before the gitlab#300 regeneration, requirements-prod.txt carried a
+        hand-edited ``cryptography>=50.0.0,<51.0.0`` range — which the
+        flatpak pin-consistency check silently skipped (its parser only
+        matches ``==``), leaving the most security-relevant dependency
+        unchecked. Ranges also break ``--require-hashes`` installs. None may
+        return.
+        """
+        ranged = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.\[\]-]*\s*(?:>=|<=|~=|!=|>|<)")
+        for name in LOCKFILES:
+            with self.subTest(lockfile=name):
+                text = open(os.path.join(REPO_ROOT, name)).read()
+                offenders = [line.strip() for line in text.splitlines() if ranged.match(line)]
+                self.assertEqual(
+                    offenders,
+                    [],
+                    msg=f"{name}: ranged specifiers evade the pin-consistency "
+                    "check and break hash mode (gitlab#286): " + repr(offenders),
+                )
+
     def test_update_script_keeps_hashes(self):
         """scripts/update_dependencies.sh must regenerate WITH hashes."""
         text = open(os.path.join(REPO_ROOT, "scripts", "update_dependencies.sh")).read()
