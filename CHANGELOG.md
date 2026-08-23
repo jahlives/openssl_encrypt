@@ -265,6 +265,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   without an error) and the refresh script must keep generating them. The
   loose `requirements.txt` stays range-based by design (dev convenience).
 
+- **`requirements.txt` folds onto the hashed lockfile** (gitlab#301,
+  github#180; completes gitlab#300): the last range-based install surface
+  becomes a one-line include of `requirements-prod.txt`, so the documented
+  `pip install -r requirements.txt` path is now a fully hash-verified
+  install (pip enforces hash-checking through includes). The CI test jobs
+  and the Docker base image install the prod lockfile directly with
+  `--require-hashes`; a guard test pins that no version specifier may creep
+  back into the pointer file, and the exact-pin consistency check now reads
+  the lockfile chain instead. Development tooling lives in the hashed
+  `requirements-dev.txt`.
+
 - **Whirlpool no longer silently substitutes SHA-512, and six no-op hash
   options are refused** (gitlab#294, github#173; 1.4.x part of the
   2026-08-23 fail-closed audit): the sequential chain substituted SHA-512
