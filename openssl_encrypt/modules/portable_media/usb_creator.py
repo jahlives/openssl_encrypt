@@ -1440,6 +1440,15 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+# No bytecode on the removable media (gitlab#243): __pycache__/*.pyc written
+# by first use sit outside the v2 integrity manifest, so every later
+# verify-usb would report integrity_ok=False — a false positive that trains
+# users to ignore the evil-maid signal the manifest exists to give. Suppress
+# for this process (the bundled-library imports below) and, via the
+# environment, for every CLI subprocess this wrapper spawns.
+sys.dont_write_bytecode = True
+os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
+
 
 def eprint(*args, **kwargs):
     """Local, not imported: this file runs as a standalone script on the
