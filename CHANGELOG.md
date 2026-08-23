@@ -552,6 +552,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **RandomX binding selection is no longer fooled by namespace-package
+  shadowing** (gitlab#299, github#178): in a source checkout without
+  `openssl-encrypt-randomx` installed, `import randomx_native` succeeds as an
+  empty namespace package resolving to the repo's `randomx_native/` Rust
+  directory; the availability probes only tested import success (and their
+  subprocess env propagates the parent's `sys.path`, so the probe child saw
+  the same empty package), so the empty module was selected and the RandomX
+  KDF crashed at first use with "module 'randomx_native' has no attribute
+  'RandomX'". Probes now assert the `RandomX` class itself, and both the
+  module-level selection and the registry KDF's per-call import validate the
+  usable surface, falling through to the PyPI binding (or the documented
+  registry error) instead. Pinned by
+  `test_randomx_binding_shadowing_299.py`.
+
 - **CI: the `test-fallback` job installs its build toolchain before pip**
   (gitlab#291, github#169): the job pip-installed `requirements.txt` as its
   first step, but on `python:3.13-slim` the pinned `RandomX` and
