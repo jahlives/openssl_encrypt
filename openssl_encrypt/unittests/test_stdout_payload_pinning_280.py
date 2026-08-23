@@ -52,9 +52,12 @@ class TestSlotDocKeyPinning(unittest.TestCase):
         call; this constant names the fields). Growing it is a security
         decision — this test makes that decision explicit in the diff.
         """
+        # id_truncated (gitlab#256 F6): boolean marker that the id field was
+        # capped at 256 chars — carries no header data itself, and lets a
+        # consumer know the listed form is what remove-recovery accepts.
         self.assertEqual(
             recovery_slots.SLOT_DOC_KEYS,
-            ("id", "type", "key_id", "threshold", "num_shares"),
+            ("id", "id_truncated", "type", "key_id", "threshold", "num_shares"),
         )
 
     def test_slot_doc_is_filtered_through_the_allowlist_per_type(self):

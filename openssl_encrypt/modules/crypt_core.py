@@ -11786,9 +11786,35 @@ def remove_recovery_slot(
     # No create: removing from a file without slots always fails below, so
     # inserting a section would only mutate meta on an error path (F7).
     enc, existing = _validated_slot_container(meta)
-    remaining = [s for s in existing if s.get("id") != slot_id]
-    if len(remaining) == len(existing):
+
+    # gitlab#256 (F5/F6): match exactly, or — for ids the credential-free
+    # listing had to truncate — by the 256-char listed form (marked
+    # id_truncated in the --json listing). Ambiguity is refused BEFORE the
+    # password is consumed: a crafted file with N slots under one id (or one
+    # shared truncated prefix) must never turn the "revokes one slot"
+    # confirmation into N revocations.
+    def _matches(stored):
+        stored_id = stored.get("id")
+        if stored_id == slot_id:
+            return True
+        return (
+            isinstance(stored_id, str)
+            and isinstance(slot_id, str)
+            and len(stored_id) > 256
+            and len(slot_id) == 256
+            and stored_id[:256] == slot_id
+        )
+
+    matches = [s for s in existing if _matches(s)]
+    if not matches:
         raise ValidationError(f"No recovery slot with id {slot_id!r}")
+    if len(matches) > 1:
+        raise ValidationError(
+            f"{len(matches)} recovery slots match id {slot_id!r}; "
+            "remove-recovery revokes exactly one slot, refusing the "
+            "ambiguous match"
+        )
+    remaining = [s for s in existing if s is not matches[0]]
 
     # F17/F18 (gitlab#234): requires the primary password so the DEK can be
     # re-wrapped binding the new (smaller) slot count.

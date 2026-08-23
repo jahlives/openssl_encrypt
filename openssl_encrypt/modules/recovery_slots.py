@@ -988,7 +988,7 @@ def _recover_kwargs_from_args(args):
 # test_stdout_payload_pinning_280.py pins the tuple's contents. Growing the
 # listing's payload therefore always shows up as an edit to this constant
 # (a reviewable security decision), never as a silent ride-along (gitlab#280).
-SLOT_DOC_KEYS = ("id", "type", "key_id", "threshold", "num_shares")
+SLOT_DOC_KEYS = ("id", "id_truncated", "type", "key_id", "threshold", "num_shares")
 
 
 # The complete top-level key set of the list-recovery --json document,
@@ -1031,11 +1031,17 @@ def _slot_doc(s):
     """
     # Full key_id, not the 16-char display truncation of the human view: a
     # machine consumer needs the whole value.
+    raw_id = s.get("id")
     doc = {
-        "id": _capped(s.get("id")),
+        "id": _capped(raw_id),
         "type": _capped(s.get("type")),
         "key_id": _capped(s.get("key_id")),
     }
+    # gitlab#256 (F6): a consumer must be able to tell a truncated id from a
+    # full one — remove-recovery accepts exactly this 256-char listed form
+    # for a longer stored id, refusing prefix collisions as ambiguous.
+    if isinstance(raw_id, str) and len(raw_id) > 256:
+        doc["id_truncated"] = True
     # Present only for shamir slots (creatable on the 1.5.x line, listable
     # here). Re-validated as plain ints at this boundary (gitlab#280); both
     # keys required so a future producer setting one alone cannot emit a
