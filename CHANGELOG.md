@@ -1077,6 +1077,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`verify-usb` no longer false-positives on runtime bytecode**
+  (gitlab#243, github#183): the portable `crypt.py` wrapper suppresses
+  bytecode for itself and every CLI subprocess it spawns
+  (`sys.dont_write_bytecode` + `PYTHONDONTWRITEBYTECODE=1`), so first use
+  never writes `__pycache__/*.pyc` outside the v2 integrity manifest —
+  previously every used drive reported `integrity_ok=False`, training users
+  to ignore the exact evil-maid signal the manifest exists to give. Drives
+  already carrying cached bytecode still flag it (correctly, as added
+  files); delete the `__pycache__` directories once. Pinned by
+  `test_usb_no_bytecode_243.py`, including a behavioral check that the
+  wrapper prologue prevents bytecode next to imported drive modules.
+
 - **`setup.py` parses `--generate-hashes` lockfiles** (gitlab#300,
   github#179): pip-compile's hash mode writes each requirement as
   `name==ver \` with indented `--hash=` continuation lines; the extras
