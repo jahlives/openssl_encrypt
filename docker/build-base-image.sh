@@ -143,8 +143,8 @@ RUN export LD_LIBRARY_PATH="/usr/local/lib" && \\
     pip install --no-cache-dir git+https://github.com/open-quantum-safe/liboqs-python.git@${LIBOQS_PYTHON_COMMIT}
 
 # Copy and install project requirements in builder (with build tools available)
-COPY requirements.txt /tmp/requirements.txt
-RUN pip install --no-cache-dir -r /tmp/requirements.txt --break-system-packages
+COPY requirements-prod.txt /tmp/requirements-prod.txt
+RUN pip install --no-cache-dir --require-hashes -r /tmp/requirements-prod.txt --break-system-packages
 
 # Runtime stage
 FROM python:${PYTHON_VERSION}-slim

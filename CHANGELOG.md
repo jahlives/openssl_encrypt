@@ -807,6 +807,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   without an error) and the refresh script must keep generating them. The
   loose `requirements.txt` stays range-based by design (dev convenience).
 
+- **`requirements.txt` folds onto the hashed lockfile** (gitlab#301,
+  github#180; completes gitlab#300): the last range-based install surface
+  becomes a one-line include of `requirements-prod.txt`, so the documented
+  `pip install -r requirements.txt` path is now a fully hash-verified
+  install (pip enforces hash-checking through includes). The CI test jobs
+  and the Docker base image install the prod lockfile directly with
+  `--require-hashes`; a guard test pins that no version specifier may creep
+  back into the pointer file, and the exact-pin consistency check now reads
+  the lockfile chain instead. Development tooling lives in the hashed
+  `requirements-dev.txt`.
+
 - **Key derivation no longer depends on prior-call state, and encryption no
   longer depends on verbosity** (gitlab#289): on the 1.4.x line, the legacy
   PBKDF2 chain stage set the internal stretch flag only inside the loud

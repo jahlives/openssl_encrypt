@@ -1,37 +1,11 @@
-# Core dependencies
-cryptography>=50.0.0,<51.0.0  # GHSA-537c-gmf6-5ccf (bundled OpenSSL) + CVE-2026-69247 (PKCS#7 EnvelopedData; not used here)
-argon2-cffi>=23.1.0,<24.0.0
-# Windows-specific dependencies
-pywin32>=306,<307; sys_platform == 'win32'
-PyYAML>=6.0.2,<7.0.0
-
-blake3>=1.0.0,<2.0.0
-
-# QR Code Key Distribution dependencies (v1.3.0)
-Pillow>=12.3.0,<13.0.0  # Dependabot: 13 image-parsing CVEs fixed in 12.3.0
-qrcode[pil]>=7.0.0,<9.0.0
-pyzbar>=0.1.9,<1.0.0
-
-# Optional post-quantum cryptography dependencies
-# liboqs-python>=0.7.0  # Uncomment to enable post-quantum cryptography support
-
-# RandomX KDF: the project-owned binding over the official tevador/RandomX
-# v1.1.10 tree, serving every arch (gitlab#285/#293; replaces the abandoned
-# PyPI RandomX package and the aarch64 fork workaround from gitlab#282).
-# Exact pin: a KDF-stage dependency. 1.0.0 artifact hashes for reference
-# (full --require-hashes mode is a separate, all-deps step):
-#   wheel  sha256:9f99b32abefa1f4482094b5a7a36dc4352b29306055fe72ae7fbc581b90d1da2
-#   sdist  sha256:3941e2cc7a314fc62ed6f3fbed5293473fd75ba734036593d9fcaef7ec16ea5e
-openssl-encrypt-randomx==1.0.0
-
-# JSON schema validation
-jsonschema>=4.0.0,<5.0.0
-
-# HTTP library for plugins
-requests>=2.31.0,<3.0.0
-
-# Development tools (commented out by default)
-pytest>=9.0.3,<10.0.0
-pytest-cov>=4.1.0,<5.0.0
-black==26.3.1  # keep in sync with the black rev pinned in .pre-commit-config.yaml (CVE-2026-32274)
-pylint>=3.0.0,<4.0.0
+# openssl_encrypt runtime dependencies — single source of truth (gitlab#301).
+#
+# This file is a pointer: the actual pins live in the hash-pinned lockfile
+# requirements-prod.txt (compiled from requirements-prod.in; regenerate with
+# scripts/update_dependencies.sh). pip enforces hash-checking automatically
+# through this include, so `pip install -r requirements.txt` is a fully
+# hash-verified install.
+#
+# Development tooling (pytest, black, pylint, ...): requirements-dev.txt.
+# HSM extras: requirements-hsm.txt.
+-r requirements-prod.txt

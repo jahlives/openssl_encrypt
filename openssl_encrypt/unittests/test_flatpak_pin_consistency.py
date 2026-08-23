@@ -196,7 +196,8 @@ class TestRandomXProjectBinding(unittest.TestCase):
         versions = {}
         install_files = [
             MANIFEST,
-            REPO_ROOT / "requirements.txt",
+            # requirements.txt is a pure include of the prod lockfile since
+            # gitlab#301 and carries no pins of its own.
             REPO_ROOT / "requirements-prod.in",
             REPO_ROOT / "requirements-prod.txt",
             REPO_ROOT / "requirements-dev.txt",

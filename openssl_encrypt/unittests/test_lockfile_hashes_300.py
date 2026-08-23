@@ -43,6 +43,29 @@ class TestLockfilesStayHashed(unittest.TestCase):
                 )
                 self.assertIn("--hash=sha256:", text, msg=f"{name}: no hashes at all")
 
+    def test_requirements_txt_is_a_pure_include(self):
+        """requirements.txt must stay a pointer to the hashed lockfile.
+
+        gitlab#301: the documented ``pip install -r requirements.txt`` path
+        is folded onto requirements-prod.txt via an include — pip enforces
+        hash-checking automatically through it. A version specifier creeping
+        back into this file would reintroduce an unhashed install surface
+        silently, so none may appear.
+        """
+        text = open(os.path.join(REPO_ROOT, "requirements.txt")).read()
+        self.assertIn("-r requirements-prod.txt", text)
+        speclike = [
+            line.strip()
+            for line in text.splitlines()
+            if line.strip() and not line.strip().startswith(("#", "-r "))
+        ]
+        self.assertEqual(
+            speclike,
+            [],
+            msg="requirements.txt must contain only comments and the lockfile "
+            "include (gitlab#301); found: " + repr(speclike),
+        )
+
     def test_update_script_keeps_hashes(self):
         """scripts/update_dependencies.sh must regenerate WITH hashes."""
         text = open(os.path.join(REPO_ROOT, "scripts", "update_dependencies.sh")).read()
