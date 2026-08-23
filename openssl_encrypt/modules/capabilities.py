@@ -185,7 +185,9 @@ _JSON_FIELDS = {
     "add-recovery": ["output", "slot_type", "credential_source"],
     "remove-recovery": ["output", "removed_slot_id"],
     # Bare-document endpoints list their guaranteed top-level keys.
-    "info": ["format_version"],
+    # compatibility (gitlab#298): header-only decryptability assessment
+    # ({decryptable, issues, notes}), computed without any password.
+    "info": ["format_version", "compatibility"],
     "analyze-config": [
         "overall_score",
         "security_level",

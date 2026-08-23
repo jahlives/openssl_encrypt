@@ -8906,8 +8906,15 @@ def print_file_info(
     info = extract_file_metadata(input_file, second_password=second_password)
     metadata = info["metadata"]
 
+    # Header-only decryptability assessment (gitlab#298): computed purely
+    # from the public metadata dict — never from any password — so info
+    # cannot become a password oracle.
+    compatibility = assess_decrypt_compatibility(metadata)
+
     if json_output:
-        print(json.dumps(metadata, indent=2, ensure_ascii=True))
+        document = dict(metadata)
+        document["compatibility"] = compatibility
+        print(json.dumps(document, indent=2, ensure_ascii=True))
         return metadata
 
     # Pretty-print metadata
@@ -9062,6 +9069,18 @@ def print_file_info(
             for entry in manifest["files"]:
                 size_str = _format_size(entry.get("size", 0))
                 eprint(f"    {size_str:>10s}  {entry['path']}")
+
+    # Compatibility (gitlab#298): header-only decryptability assessment.
+    eprint()
+    eprint("  Compatibility:")
+    if compatibility["decryptable"]:
+        eprint("    No known blockers: this version should decrypt the file.")
+    else:
+        eprint("    NOT decryptable by this version:")
+        for issue in compatibility["issues"]:
+            eprint(f"      - {sanitize_for_display(issue['detail'])}")
+    for note in compatibility["notes"]:
+        eprint(f"    Note: {sanitize_for_display(note)}")
 
     # Reconstructed CLI — show users how they could re-encrypt with the
     # same settings on a fresh file. Salt and per-file random values are
@@ -9551,6 +9570,154 @@ def _check_removed_whirlpool_stage(metadata, quiet: bool = False) -> None:
         f"file uses the Whirlpool hash stage ({rounds} rounds) removed in "
         f"v1.5.0; decrypt it with openssl-encrypt 1.4.x and re-encrypt"
     )
+
+
+#: Data ciphers the PQC hybrid path implements (pqc.py encrypt/decrypt
+#: dispatch); anything else recorded as encryption_data fails closed there
+#: (gitlab#295).
+_PQC_DATA_CIPHERS = frozenset(
+    {
+        "aes-gcm",
+        "chacha20-poly1305",
+        "xchacha20-poly1305",
+        "aes-gcm-siv",
+        "aes-siv",
+        "threefish-512",
+        "threefish-1024",
+    }
+)
+
+
+def assess_decrypt_compatibility(metadata) -> dict:
+    """Assess, from PUBLIC header metadata only, whether this version can decrypt.
+
+    Surfaces the fail-closed refusals of gitlab#294/#295/#296/#297 at
+    inspection time (the ``info`` command, gitlab#298) instead of at a failed
+    decrypt. Three hard properties (maintainer requirements, 2026-08-23):
+
+    - **Header-only**: the assessment consumes the cleartext metadata dict
+      and (for dependency checks) the local module inventory — never any
+      password, so ``info`` cannot become a password oracle.
+    - **Never raises**: crafted or garbage headers degrade to an empty
+      assessment; ``info`` must keep printing whatever else it can.
+    - **No false alarms**: streaming aes-ocb3 files and legacy kyber-named
+      hybrids decrypt on this line and are reported as notes, not issues.
+
+    Args:
+        metadata: Parsed metadata dictionary from the file header.
+
+    Returns:
+        dict with ``decryptable`` (bool), ``issues`` (list of dicts with
+        ``kind``/``component``/``detail`` — blockers), and ``notes`` (list of
+        str — non-blocking observations).
+    """
+    issues: list = []
+    notes: list = []
+
+    def _blocked(kind: str, component: str, detail: str) -> None:
+        issues.append({"kind": kind, "component": component, "detail": detail})
+
+    try:
+        if not isinstance(metadata, dict):
+            return {"decryptable": True, "issues": [], "notes": ["header not assessable"]}
+
+        # Removed KDF/hash stages (messages crafted here, not taken from the
+        # raised SecureErrors — their str() is genericized in production).
+        try:
+            _check_removed_pbkdf2_chain(metadata, quiet=True)
+        except DecryptionError:
+            _blocked(
+                "removed",
+                "pbkdf2",
+                "key derivation uses the PBKDF2 chain stage removed in "
+                "v1.5.0; decrypt with openssl-encrypt 1.4.x and re-encrypt",
+            )
+        except Exception:  # nosec B110 - assessment must never abort info
+            pass
+        try:
+            _check_removed_whirlpool_stage(metadata, quiet=True)
+        except DecryptionError:
+            _blocked(
+                "removed",
+                "whirlpool",
+                "key derivation uses the Whirlpool hash stage removed in "
+                "v1.5.0; decrypt with openssl-encrypt 1.4.x and re-encrypt",
+            )
+        except Exception:  # nosec B110
+            pass
+
+        # Cipher: normalize legacy names first (gitlab#296 routes them).
+        encryption = metadata.get("encryption")
+        encryption = encryption if isinstance(encryption, dict) else {}
+        algorithm = encryption.get("algorithm") or metadata.get("algorithm")
+        normalized = LEGACY_ALGORITHM_ALIASES.get(algorithm, algorithm)
+        if normalized != algorithm:
+            notes.append(f"legacy algorithm name '{algorithm}' decrypts as '{normalized}'")
+        if isinstance(normalized, str):
+            try:
+                _check_removed_cipher(normalized, metadata, quiet=True)
+            except DecryptionError:
+                if normalized == "aes-ocb3":
+                    _blocked(
+                        "removed",
+                        "aes-ocb3",
+                        "the aes-ocb3 cipher was removed in v1.5.0 for "
+                        "non-streaming files (streaming aes-ocb3 files still "
+                        "decrypt); decrypt with openssl-encrypt 1.4.x and "
+                        "re-encrypt",
+                    )
+                else:
+                    _blocked(
+                        "removed",
+                        normalized,
+                        f"the {normalized} cipher was removed in v1.5.0; "
+                        "decrypt with openssl-encrypt 1.4.x and re-encrypt",
+                    )
+            except Exception:  # nosec B110
+                pass
+            if normalized == "aes-ocb3" and not issues:
+                notes.append("aes-ocb3 decrypts via the streaming path only")
+
+            # PQC hybrid data cipher (gitlab#295 fails closed on unknowns).
+            if normalized.startswith(("ml-kem-", "hqc-", "mayo-", "cross-")):
+                encryption_data = encryption.get("encryption_data")
+                if isinstance(encryption_data, str) and encryption_data not in _PQC_DATA_CIPHERS:
+                    _blocked(
+                        "removed",
+                        encryption_data,
+                        f"the PQC data cipher '{encryption_data}' is not "
+                        "supported by this version (aes-ocb3 was removed in "
+                        "v1.5.0); decrypt with openssl-encrypt 1.4.x and "
+                        "re-encrypt",
+                    )
+                import importlib.util
+
+                if importlib.util.find_spec("oqs") is None:
+                    _blocked(
+                        "missing_dependency",
+                        "liboqs-python",
+                        "post-quantum decryption needs liboqs-python, which " "is not installed",
+                    )
+
+            # Local dependency: Threefish needs the native module.
+            if normalized in (
+                EncryptionAlgorithm.THREEFISH_512.value,
+                EncryptionAlgorithm.THREEFISH_1024.value,
+            ):
+                import importlib.util
+
+                if importlib.util.find_spec("threefish_native") is None:
+                    _blocked(
+                        "missing_dependency",
+                        "threefish_native",
+                        "Threefish decryption needs the threefish_native "
+                        "module (pip install openssl-encrypt-threefish), "
+                        "which is not installed",
+                    )
+    except Exception:  # nosec B110 - the assessment must never abort info
+        notes.append("header not fully assessable")
+
+    return {"decryptable": not issues, "issues": issues, "notes": notes}
 
 
 def _check_removed_cipher(algorithm, metadata, quiet: bool = False) -> None:

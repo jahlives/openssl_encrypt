@@ -87,6 +87,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`info` reports whether this version can decrypt the file**
+  (gitlab#298, github#177): a new Compatibility section (human view) and
+  top-level `compatibility` key (`--json`, registered in the capabilities
+  manifest `json_fields`) state up front when a file uses a component this
+  line removed — the PBKDF2 chain stage, Whirlpool, Camellia, non-streaming
+  AES-OCB3, or an unsupported PQC data cipher — with the 1.4.x migration
+  path, plus missing local dependencies (`threefish_native`,
+  `liboqs-python`). The assessment (`assess_decrypt_compatibility`) is
+  computed exclusively from the public header metadata — no password ever
+  influences it, so `info` cannot become a password oracle — and it never
+  aborts `info` on a crafted header. Streaming AES-OCB3 files and legacy
+  kyber-named hybrids decrypt on this line and are reported as notes, not
+  blockers. Steganography use is undetectable by design (the payload was
+  extracted from its carrier before the container exists), so no per-file
+  claim is made. Pinned by `test_info_compatibility_298.py`.
+
 - **CI: manual `publish-randomx-pypi` job uploads the openssl-encrypt-randomx
   release artifacts to PyPI** (gitlab#285, github#163): play-button job in the
   publish stage that twine-uploads exactly the `randomx-wheel` job's
