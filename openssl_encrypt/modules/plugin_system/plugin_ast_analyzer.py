@@ -84,6 +84,17 @@ class DangerousPatternVisitor(ast.NodeVisitor):
         "__dict__",
         "__func__",
         "__self__",
+        # gitlab#302 / GHSA-mfpv-pq4w-727m: object.__getattribute__ (and
+        # type.__getattribute__ / the __getattr__ fallback) fetch an arbitrary
+        # attribute by *string* name. Bound and called as
+        # object.__getattribute__(obj, "__mro__") the dangerous name is a
+        # runtime string, so it never appears as a literal Attribute node and
+        # never reaches the getattr() builtin the analyzer watches — bypassing
+        # every other entry in this set. Blocking the fetch primitives
+        # themselves (they are Attribute nodes: object.__getattribute__) closes
+        # the traversal at its root.
+        "__getattribute__",
+        "__getattr__",
         # H8: frame / traceback traversal recovers real builtins and reaches
         # eval, e.g. e.__traceback__.tb_frame.f_back.f_globals['__builtins__'].
         # These are not __dunder__ names but visit_Attribute/getattr checks
@@ -164,6 +175,10 @@ class DangerousPatternVisitor(ast.NodeVisitor):
         self.violations: List[SecurityViolation] = []
         self.imported_modules: Set[str] = set()
         self.imported_names: Set[str] = set()
+        # gitlab#302 finding #1: names bound to the ``getattr`` builtin, so an
+        # aliased ``f = getattr; f(o, "__mro__")`` is checked like a direct
+        # getattr() call instead of sliding past the literal-name check.
+        self.getattr_aliases: Set[str] = {"getattr"}
 
     def add_violation(
         self, node: ast.AST, violation_type: str, description: str, severity: str = "critical"
@@ -216,6 +231,25 @@ class DangerousPatternVisitor(ast.NodeVisitor):
                 if alias.name != "*":
                     self.imported_names.add(alias.name)
 
+        self.generic_visit(node)
+
+    def visit_Assign(self, node: ast.Assign) -> None:
+        """Track aliases of the ``getattr`` builtin (gitlab#302 finding #1).
+
+        ``f = getattr`` (or ``f = <alias>``) lets a plugin call ``f(obj, name)``
+        with the callable no longer spelled ``getattr``, sliding past the
+        literal-name check in visit_Call. Recording the alias lets that call be
+        analysed like a direct getattr() call. Also treats ``x.getattr`` on the
+        RHS (e.g. ``builtins.getattr``) as an alias.
+        """
+        value = node.value
+        is_getattr_alias = (isinstance(value, ast.Name) and value.id in self.getattr_aliases) or (
+            isinstance(value, ast.Attribute) and value.attr == "getattr"
+        )
+        if is_getattr_alias:
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    self.getattr_aliases.add(target.id)
         self.generic_visit(node)
 
     def visit_Call(self, node: ast.Call) -> None:
@@ -278,8 +312,10 @@ class DangerousPatternVisitor(ast.NodeVisitor):
                     "critical",
                 )
 
-        # getattr patterns: getattr(__builtins__, 'eval') or getattr(obj, '__class__')
-        if isinstance(node.func, ast.Name) and node.func.id == "getattr":
+        # getattr patterns: getattr(__builtins__, 'eval') or getattr(obj, '__class__').
+        # gitlab#302: honour aliases (f = getattr; f(obj, ...)), not just the
+        # literal name "getattr".
+        if isinstance(node.func, ast.Name) and node.func.id in self.getattr_aliases:
             if len(node.args) >= 2:
                 if isinstance(node.args[1], ast.Constant):
                     attr_name = node.args[1].value
@@ -391,14 +427,44 @@ class DangerousPatternVisitor(ast.NodeVisitor):
 
         self.generic_visit(node)
 
+    def _check_dunder_string(self, value, node: ast.AST) -> None:
+        """Flag a string literal that names a dangerous dunder/frame attribute.
+
+        gitlab#302 findings #1/#2: the denylist checks only catch dangerous
+        attribute names written as literal syntax (``x.__mro__``) or passed to
+        a literally-spelled ``getattr``. But a fetch-by-string primitive —
+        ``getattr`` under any alias, ``operator.attrgetter("__subclasses__")``,
+        ``functools.reduce(getattr, ["__class__", "__mro__"], obj)`` — names the
+        dangerous attribute as an ordinary string constant, which slid past
+        every check. A sandboxed plugin has no legitimate reason to name any of
+        these internals as a string, so flag the string itself, wherever it
+        appears. attrgetter also accepts dotted paths (``"__class__.__mro__"``),
+        so each "."-separated segment is checked.
+        """
+        if not isinstance(value, str):
+            return
+        for seg in value.split("."):
+            if seg in self.DANGEROUS_DUNDER_ATTRIBUTES:
+                self.add_violation(
+                    node,
+                    "dunder_string_literal",
+                    f"Dangerous attribute name '{seg}' used as a string literal. "
+                    f"Naming sandbox-escape internals as strings (for getattr, "
+                    f"operator.attrgetter, etc.) is a known bypass technique.",
+                    "critical",
+                )
+                return
+
     def visit_Str(self, node: ast.Str) -> None:
         """Check for suspicious strings (base64 encoded code, etc.)"""
         # This is for older Python versions; in 3.8+ ast.Str is deprecated
+        self._check_dunder_string(getattr(node, "s", None), node)
         self.generic_visit(node)
 
     def visit_Constant(self, node: ast.Constant) -> None:
         """Check constant values for suspicious patterns"""
         if isinstance(node.value, str):
+            self._check_dunder_string(node.value, node)
             # Check for base64-looking strings that might be encoded payloads
             if len(node.value) > 50 and node.value.isalnum():
                 # Could be base64, but this is just informational

@@ -33,5 +33,10 @@ BLOCKED_MODULES = frozenset(
         "platform",
         "pathlib",  # Path.read_text() etc. bypass sandbox file restrictions
         "io",  # io.open() bypasses sandbox restricted_open
+        # gitlab#302 finding #2: fetch/enumerate-by-string primitives that walk
+        # the type hierarchy to recover real modules/builtins without ever
+        # writing a dangerous attribute as literal syntax.
+        "inspect",  # inspect.getmembers() enumerates __subclasses__/__globals__
+        "operator",  # operator.attrgetter()/methodcaller() fetch attrs by string
     }
 )

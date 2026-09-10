@@ -730,7 +730,13 @@ class PluginSandbox:
             saved_state["os.popen"] = os.popen
             os.popen = lambda *args, **kwargs: self._raise_process_execution_error()
 
-        # Block os.spawn* family
+        # Block the os-level process-spawning family. subprocess.Popen is
+        # patched above, but a plugin that recovers the real os module (see
+        # gitlab#302 / GHSA-mfpv-pq4w-727m) can call these primitives directly.
+        # posix_spawn/posix_spawnp are what subprocess itself uses on POSIX;
+        # the exec* family replaces the current process image; fork/forkpty
+        # create a child that is no longer under this guard. All must be blocked
+        # when the plugin lacks EXECUTE_PROCESSES.
         spawn_functions = [
             "spawnl",
             "spawnle",
@@ -740,6 +746,18 @@ class PluginSandbox:
             "spawnve",
             "spawnvp",
             "spawnvpe",
+            "posix_spawn",
+            "posix_spawnp",
+            "execl",
+            "execle",
+            "execlp",
+            "execlpe",
+            "execv",
+            "execve",
+            "execvp",
+            "execvpe",
+            "fork",
+            "forkpty",
         ]
 
         for func_name in spawn_functions:
@@ -810,35 +828,16 @@ class PluginSandbox:
 
             subprocess.Popen = saved_state["subprocess"]
 
-        # Restore os.system
-        if "os.system" in saved_state:
-            import os
+        # Restore every os.<name> callable that was patched. Driven by the
+        # saved_state keys rather than a second hardcoded list, so the restore
+        # set can never drift out of sync with _restrict_process_operations
+        # (gitlab#302: the old duplicated spawn list did drift, leaking the
+        # raising sentinel into the host os module after in-process execution).
+        import os
 
-            os.system = saved_state["os.system"]
-
-        # Restore os.popen
-        if "os.popen" in saved_state:
-            import os
-
-            os.popen = saved_state["os.popen"]
-
-        # Restore os.spawn* family
-        spawn_functions = [
-            "spawnl",
-            "spawnle",
-            "spawnlp",
-            "spawnlpe",
-            "spawnv",
-            "spawnve",
-            "spawnvp",
-            "spawnvpe",
-        ]
-        for func_name in spawn_functions:
-            key = f"os.{func_name}"
-            if key in saved_state:
-                import os
-
-                setattr(os, func_name, saved_state[key])
+        for key, original in saved_state.items():
+            if key.startswith("os."):
+                setattr(os, key[len("os.") :], original)
 
     def _is_safe_path(
         self, path: str, context: PluginSecurityContext = None, is_write: bool = False
