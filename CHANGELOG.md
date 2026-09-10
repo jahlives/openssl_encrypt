@@ -252,6 +252,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Plugin sandbox hardening: `__getattribute__`/getattr-alias traversal and
+  the unguarded `os.posix_spawn`/`exec*`/`fork` primitives** (gitlab#302,
+  GHSA-mfpv-pq4w-727m; CWE-693): closes several plugin sandbox-escape vectors a
+  zero-capability plugin could use. The AST validator's dangerous-dunder
+  blocklist omitted `__getattribute__`, so `object.__getattribute__(obj,
+  "__mro__")` — a plain attribute access called with a string name — bypassed
+  the check every other dangerous dunder relies on; the validator now flags
+  `__getattribute__`/`__getattr__`, treats a dangerous attribute name written
+  as a string literal as an escape (closing aliased `getattr`,
+  `operator.attrgetter`, and dunder names inside collection literals), and
+  taint-tracks `getattr` aliases so `f = getattr; f(o, name)` is analysed like
+  a direct call. `operator` and `inspect` join the blocked-module list. The
+  runtime process guard, which patched `subprocess.Popen`, `os.system`,
+  `os.popen` and the eight `spawn*` names, now also blocks `os.posix_spawn`
+  (what `subprocess` uses on POSIX), the `os.exec*` family, and
+  `os.fork`/`os.forkpty`; its restore path is rewritten to be driven by the
+  saved-state keys so it can never again drift out of sync with the block list.
+  Pinned by `test_plugin_sandbox_getattribute_escape.py`. This is
+  defense-in-depth behind the default `ENFORCE` signature policy (exploitation
+  requires a signed-but-malicious/compromised plugin or a `warn`/`off` policy).
+  **This is incremental hardening, not a full fix:** the sandbox is still
+  escapable by a zero-capability plugin through the live `os`/`sys` module
+  objects reachable via other stdlib modules (e.g. `posixpath.os`), tracked as
+  a separate confidential issue (gitlab#303); gitlab#302 stays open and the
+  advisory is withheld until that containment lands.
+
 - **Pin-consistency blind spots closed** (gitlab#286, github#182): the
   flatpak manifest's liboqs-python install moves from the mutable `@0.12.0`
   tag to the commit SHA every other install surface already pins
