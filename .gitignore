@@ -262,3 +262,7 @@ test-logs/
 # unittest workflow logs (CLAUDE.md baseline/after comparison)
 
 test_*.log
+
+# Python virtual environments (per-machine; never portable across hosts/containers)
+.venv/
+venv/
